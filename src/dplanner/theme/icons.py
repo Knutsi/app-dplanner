@@ -10,6 +10,7 @@ from collections.abc import Callable
 from PySide6.QtCore import QLineF, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
     QColor,
+    QGuiApplication,
     QIcon,
     QLinearGradient,
     QPainter,
@@ -26,11 +27,31 @@ ICON_SIZE = 16
 IDLE_GLYPH_ALPHA = 110
 
 
-def _canvas() -> tuple[QPixmap, QPainter]:
-    pixmap = QPixmap(QSize(ICON_SIZE, ICON_SIZE))
+def _ratio() -> float:
+    """How many device pixels this screen gives a logical one.
+
+    A glyph painted into a 16-pixel pixmap and shown at 16 logical points on a 2x display
+    is upscaled by the compositor, and every stroke in it goes soft — which is most of what
+    "the icons look a bit blurry" turns out to mean. Painting at the screen's ratio and
+    stamping that ratio on the pixmap is all Qt needs to draw it crisply.
+    """
+    app = QGuiApplication.instance()
+    return app.devicePixelRatio() if isinstance(app, QGuiApplication) else 1.0
+
+
+def _canvas(width: int = ICON_SIZE, height: int = ICON_SIZE) -> tuple[QPixmap, QPainter]:
+    """A transparent pixmap and a painter over it, in glyph units whatever the screen is.
+
+    The painter is scaled by the device pixel ratio, so every glyph below is written in
+    plain 16-unit coordinates and comes out at the screen's own resolution.
+    """
+    ratio = _ratio()
+    pixmap = QPixmap(QSize(round(width * ratio), round(height * ratio)))
+    pixmap.setDevicePixelRatio(ratio)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.scale(ratio, ratio)
     return pixmap, painter
 
 
@@ -589,10 +610,7 @@ def key_badge_icon(text: str, color: str | QColor) -> QIcon:
     milestone is known by across the graph, and a tag glyph beside a key on the second
     line said the same thing twice.
     """
-    pixmap = QPixmap(KEY_BADGE_W, ICON_SIZE)
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pixmap, painter = _canvas(KEY_BADGE_W)
     tone = QColor(color)
     wash = QColor(tone)
     wash.setAlpha(KEY_BADGE_ALPHA)
@@ -623,14 +641,11 @@ def palette_strip_icon(found: Palette, size: QSize = PALETTE_STRIP) -> QIcon:
     strip in a combo row, a square at :data:`ICON_SIZE` in a list of glyphs — and a wide
     pixmap scaled into a square slot renders as a sliver.
     """
-    pixmap = QPixmap(size)
-    pixmap.fill(Qt.GlobalColor.transparent)
+    pixmap, painter = _canvas(size.width(), size.height())
     gradient = QLinearGradient(QPointF(0, 0), QPointF(size.width(), 0))
     last = len(found.stops) - 1
     for index, stop in enumerate(found.stops):
         gradient.setColorAt(index / last, QColor(stop))
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
     painter.setPen(Qt.PenStyle.NoPen)
     painter.setBrush(gradient)
     painter.drawRoundedRect(
@@ -666,10 +681,7 @@ FILTER_ICON_W = 24  # A dot's slot at the left, then the funnel: one width, on o
 def filter_icon(color: str | QColor, *, active: bool = False) -> QIcon:
     """A funnel with a slot for the indicator before it: outline while no filter is on,
     filled with a dot in the slot while one is — so the face never changes size."""
-    pixmap = QPixmap(QSize(FILTER_ICON_W, ICON_SIZE))
-    pixmap.fill(Qt.GlobalColor.transparent)
-    painter = QPainter(pixmap)
-    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    pixmap, painter = _canvas(FILTER_ICON_W)
     left = FILTER_ICON_W - ICON_SIZE
     funnel = [
         QPointF(left + 2.5, 3.5),

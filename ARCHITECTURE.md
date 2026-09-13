@@ -589,6 +589,26 @@ copy of it, and a mark added later appears under it having touched nothing. It i
 and not a verb with an arrow: there is no verb under it, so it wears the layout picker's
 look rather than the hairline that says two halves do different things.
 
+### An acknowledgement is asked, not written
+
+Help ▸ About was a `QMessageBox.about` naming the template's product, which is two faults in
+one line: a platform dialog where every other surface is a `DialogFrame`, and a name nobody
+had looked at since the fork. What replaced it answers the question a licence page is for.
+
+**The list of components is ours; every fact beside it is the installation's.** A package
+cannot say what it *does here* — "the OS keychain a source's token is kept in" is a sentence
+about this application — so that line is written. The version and the licence are read from
+`importlib.metadata`, in the order the answers got vaguer: `License-Expression` (an SPDX
+expression, and the one to believe), then the free-text `License`, then the trove
+classifiers, which say *MIT License* where the package itself says *MIT*. Asked the other
+way round, two components under one licence read as two different ones.
+
+A hand-kept licence table is a table that drifts, and the one thing an acknowledgement must
+not do is claim the wrong licence: a dependency bumped to a version under different terms
+would go on saying the old ones. And a component this build does not have — an optional
+one, a source checkout missing a wheel — says so in its row rather than vanishing from the
+list, because an acknowledgement that quietly shortens is worse than one that admits a gap.
+
 ### One picker, two lists
 
 *Jump to* wanted what the command palette already was: a field over rich rows, ranked by

@@ -11,12 +11,13 @@ from importlib.resources import files
 from pathlib import Path
 
 import pytest
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import QMenu, QSplitter, QStyle, QToolButton, QWidget
 
 import dplanner
 from dplanner.theme import load_stylesheet, tokens
+from dplanner.theme.icons import ICON_SIZE, plus_icon
 from dplanner.theme.palette import build_palette
 from dplanner.theme.providers import BUILTIN, OMARCHY_THEMES
 from dplanner.theme.style import build_style
@@ -183,6 +184,49 @@ def test_a_buttons_dropdown_arrow_is_a_target_of_its_own(app, theme):
     ground = QColor(theme.bg_overlay).rgb()
     column = [image.pixel(arrow.left() - 2, y) for y in range(4, button.height() - 4)]
     assert all(pixel == ground for pixel in column)
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
+@pytest.mark.parametrize(
+    ("marker", "popup", "room"),
+    (
+        ("hasMenu", QToolButton.ToolButtonPopupMode.MenuButtonPopup, tokens.ARROW_ROOM),
+        ("face", QToolButton.ToolButtonPopupMode.InstantPopup, tokens.INDICATOR_ROOM),
+    ),
+    ids=("arrow", "menu face"),
+)
+def test_a_dense_strips_arrow_keeps_its_room(app, theme, marker, popup, room):
+    """A dense strip narrows every button's sides — and must not narrow the arrow's room.
+
+    ``#ControlBar[dense="true"] #ToolbarButton`` is two names and an attribute, so its
+    padding shorthand outranks the two rules that ask for the arrow's width. It did, and
+    Qt painted a 20 px subcontrol straight over a 16 px glyph: a clipped icon and nothing
+    else to show for it, because a styled subcontrol widens no button by itself.
+    """
+    strip = QWidget()
+    strip.setObjectName("ControlBar")
+    strip.setProperty("dense", True)
+    plain, dropping = (_glyph_button(strip) for _ in range(2))
+    dropping.setMenu(QMenu(dropping))
+    dropping.setPopupMode(popup)
+    dropping.setProperty(marker, True)
+    strip.setStyleSheet(load_stylesheet(theme))
+    strip.show()
+    app.processEvents()
+
+    # The room replaces the dense side padding rather than adding to it, and what is left
+    # is what the arrow is drawn in.
+    gained = dropping.sizeHint().width() - plain.sizeHint().width()
+    assert gained >= room - tokens.DENSE_GAP
+
+
+def _glyph_button(parent):
+    button = QToolButton(parent)
+    button.setObjectName("ToolbarButton")
+    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+    button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+    button.setIcon(plus_icon("#ffffff"))
+    return button
 
 
 def _tool_option(button):

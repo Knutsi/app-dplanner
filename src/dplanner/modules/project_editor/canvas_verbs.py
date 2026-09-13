@@ -170,6 +170,11 @@ class CanvasVerbs:
                 menu="Step",
                 group="navigate",
                 order=4,
+                # A menu shortcut, not a canvas key: Ctrl+F is what every application means
+                # by "find", every text widget reclaims it through ShortcutOverride, and the
+                # state gate keeps it off a tab with no canvas. The bare "/" in keymap.py is
+                # the canvas's own way in, the way the arrows and hjkl both move a selection.
+                shortcut=QKeySequence.StandardKey.Find,
                 icon=jump_icon,
                 tip="Find a step by name or key and put the canvas on it",
                 state=self._on_a_canvas,

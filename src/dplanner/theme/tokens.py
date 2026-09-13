@@ -47,6 +47,10 @@ ARROW_W: Final = 20
 # The room a worded button leaves for it: the arrow's width and DESIGN.md's 4 px beside it.
 # A styled subcontrol is outside Qt's size hint, so the text runs under the arrow without it.
 ARROW_ROOM: Final = ARROW_W + 4
+# And the room a *face* leaves — a control that is only a menu, so its arrow is Qt's plain
+# indicator rather than a target of its own: the layout picker, the aspect bar's template,
+# a strip's glyph face. Narrower than ARROW_ROOM because there is nothing to aim at.
+INDICATOR_ROOM: Final = 20
 
 
 def mix(first: str, second: str, share: float) -> str:

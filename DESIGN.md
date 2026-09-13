@@ -463,7 +463,13 @@ Example Table wears one.
 - **A verb is a glyph, and its words are the tooltip** (with the shortcut beside them). A
   row of words is a sentence the eye has to read every time; a row of glyphs is learned
   once, and the tooltip is there for the first time. Every glyph is one of
-  `theme/icons.py`'s painters, inked in the secondary tone and re-inked on a theme change.
+  `theme/icons.py`'s painters, inked in the secondary tone and re-inked on a theme change —
+  and painted at the screen's device pixel ratio, because a 16-pixel pixmap shown at 16
+  points on a 2× display is upscaled, and every stroke in it goes soft.
+- **A control that drops a menu asks for its arrow's room** (`ARROW_ROOM` for a split
+  button, `INDICATOR_ROOM` for a face). A styled subcontrol is outside Qt's size hint, so
+  nothing widens the button by itself: without the padding the arrow is painted over the
+  glyph, and a clipped icon is the only sign.
 - **What no longer fits folds into a `…` menu at the strip's end**, as glyph *and* words,
   taken from the right — never a second row, and never Qt's own overflow, which pops the
   hidden buttons up as glyphs again. A widget among the verbs (a filter) never enters the
@@ -612,6 +618,8 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 | `DENSE_GAP` | 4 | between the glyphs of a dense strip, and its buttons' sides (*Toolbars*) |
 | `CONTROL_HEIGHT` | 32 | every control on a strip, set in code |
 | `ICON_SIZE` (+ `ICON_GAP`) | 16 (+ 8) | a glyph, and the gap after it |
+| `ARROW_W` / `ARROW_ROOM` | 20 / 24 | a split button's arrow, and the room the words leave it |
+| `INDICATOR_ROOM` | 20 | the room a *face* leaves — a control that is only a menu |
 | `KEY_BADGE_W` | 28 | a key badge, and the slot a glyph column reserves on every row |
 | `RADIUS_SM` / `RADIUS_MD` | 5 / 8 | buttons, chips, fields / wells, cards, tables, lanes |
 | `SECONDARY_ALPHA` | 160 | a painter's secondary ink (~63 %) |
@@ -694,6 +702,9 @@ Dialogs:
   colour. *Jump to* is the same picker over a project's steps.
 - The Run Agent confirmation — the application's most consequential question, as a
   `QMessageBox` with a bulleted list; and fourteen `QInputDialog.getText` prompts.
+- *(done — the graph editor pass)* Help ▸ About was a `QMessageBox.about` still naming the
+  template's product. It is a `DialogFrame` over a `Table` now: the name and version, then
+  what DPlanner is built on, a row per component with its licence.
 
 Tables and lists:
 

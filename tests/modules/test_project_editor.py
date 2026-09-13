@@ -1572,12 +1572,19 @@ def test_jumping_to_a_step_puts_the_canvas_on_it(services, project, tab):
     assert (after - node.body_scene_rect().center()).manhattanLength() < 1.0
 
 
-def test_jump_to_is_a_step_verb_beside_reveal_and_a_canvas_key(services):
+def test_jump_to_is_ctrl_f_everywhere_and_slash_on_the_canvas(services):
+    """Ctrl+F is what every application means by find, and a menu shortcut is how a Ctrl
+    key is bound here — every text widget reclaims it, and the state gate keeps it off a
+    tab with no canvas. The bare key is the canvas's own way in, beside it."""
+    from PySide6.QtGui import QKeySequence
+
+    from dplanner.framework.action_registry import key_sequences
+    from dplanner.modules.project_editor.keymap import bound_actions
+
     spec = services.actions.spec("steps.jump")
     assert (spec.menu, spec.group) == ("Step", "navigate")
     assert spec.icon is not None
-    from dplanner.modules.project_editor.keymap import bound_actions
-
+    assert QKeySequence(QKeySequence.StandardKey.Find) in key_sequences(spec.shortcut)
     assert bound_actions(Qt.Key.Key_Slash, Qt.KeyboardModifier.NoModifier) == ("steps.jump",)
 
 

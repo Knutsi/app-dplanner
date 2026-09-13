@@ -2925,7 +2925,7 @@ switches carried *words* for as long as they did, and why the aspect bar's ten t
 the same fault today. A painter has no stylesheet, so the palette is the only way it can
 learn a colour the stylesheet writes.
 
-**Watch.** Three Qt traps, all found the hard way.
+**Watch.** Four Qt traps, all found the hard way.
 
 1. `QToolButton.setMenu()` on a button that already has a default action **detaches the
    default action**, and the button then renders the action's text in place of a glyph it
@@ -2935,6 +2935,15 @@ learn a colour the stylesheet writes.
    action before seating it, or a button given a null icon falls back to drawing its words.
 3. `_reink()` repaints every glyph on the strip. Calling it once per added verb makes a
    nineteen-verb strip paint 361 pixmaps to build; `add_*` inks only the action it made.
+4. **A dense strip's padding shorthand outranks the rules that ask for an arrow's room.**
+   `#ControlBar[dense="true"] #ToolbarButton { padding: 6px 4px }` is two names and an
+   attribute; `#ToolbarButton[hasMenu="true"] { padding-right: … }` is one. So a dense strip
+   silently took the room back and Qt painted a 20 px subcontrol straight over a 16 px
+   glyph — a clipped icon and nothing else to show for it, because a styled subcontrol
+   widens no button by itself. `theme.qss` now states both dense variants, and
+   `tests/test_theme.py` renders a dense strip and asserts a button that drops a menu is
+   wider than a plain one by the room it was promised. The literal a *face* leaves is
+   `INDICATOR_ROOM` now, so the three rules that shared it share a name too.
 
 **Upstream?** Yes, all of it. A template with a drawing surface wants bands; a template
 with an action registry wants the registry feed; and the checked-glyph ink is a bug fix
@@ -2974,6 +2983,25 @@ pop-up in the application follows.
 
 **Upstream?** Yes, with `submenu`. It is eight lines and the same idea.
 
+### `theme/icons.py` — every glyph painted at the screen's device pixel ratio
+
+**What.** `_canvas()` makes its pixmap `ICON_SIZE * ratio` across, stamps that ratio on it
+and scales the painter by it, so the forty-odd painters below keep writing plain 16-unit
+coordinates. `key_badge_icon`, `filter_icon` and `palette_strip_icon` went through it too,
+rather than making pixmaps of their own.
+
+**Why.** A glyph painted into a 16-pixel pixmap and shown at 16 logical points on a 2x
+display is upscaled by the compositor, and every stroke in it goes soft. That is most of
+what "the icons look a bit blurry" turns out to mean, and it is four lines to fix.
+
+**Watch.** The ratio is read from `QGuiApplication` when the glyph is painted, not when the
+screen changes. Icons are repainted on a theme change, so a window dragged between a 1x and
+a 2x screen keeps the ratio it was painted at until then — which is the same trade every
+`QIcon`-from-`QPixmap` in the application already makes, and the fix if it ever matters is a
+`screenChanged` hook, not a different painter.
+
+**Upstream?** Yes. Any template that paints its own glyphs has this.
+
 ### `theme/tokens.py` — `$BORDER_FAINT` fades towards the elevated ground
 
 **What.** `mix(theme.border, theme.bg_elevated, 0.5)` where it was `bg_base`.
@@ -2985,3 +3013,12 @@ parts nothing. Its only consumers are strip dividers (`#ToolbarDivider`,
 grounds.
 
 **Upstream?** Yes.
+
+### A render script must redirect QSettings
+
+Not a framework change — a rule for `scripts/render_*.py`. `render_graph_editor.py` opens
+the graph's side panel, which writes a per-user preference; the first run wrote it into the
+developer's real settings, and every later run then started with the panel already open, so
+the "closed" screenshot could not be taken twice. The suite's `conftest.py` already
+redirects `QSettings` to a throwaway ini directory for both reasons — a render script wants
+the same two lines, and to `clear()` between themes so each renders from the same state.

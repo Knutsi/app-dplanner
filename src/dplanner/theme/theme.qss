@@ -673,6 +673,19 @@ QProgressBar::chunk {
     padding: 6px ${DENSE_GAP}px;
 }
 
+/* …except where a dropdown arrow needs its room. The shorthand above is more specific than
+   the two rules that ask for it below (two names and an attribute against one), so a dense
+   strip took the arrow's padding away and Qt painted a 20 px subcontrol straight over a
+   16 px glyph. A styled subcontrol is outside Qt's size hint: nothing widens the button,
+   and the only sign is a clipped glyph. */
+#ControlBar[dense="true"] #ToolbarButton[hasMenu="true"] {
+    padding-right: ${ARROW_ROOM}px;
+}
+
+#ControlBar[dense="true"] #ToolbarButton[face="true"] {
+    padding-right: ${INDICATOR_ROOM}px;
+}
+
 #ControlBar::separator {
     background-color: $BORDER_FAINT;
     width: 1px;
@@ -800,7 +813,7 @@ QComboBox QAbstractItemView::item:selected {
    band of the menus. All three leave the indicator its room — a styled subcontrol is
    outside Qt's size hint, so without this the arrow is painted over the last letter. */
 #LayoutButton, #TemplateButton, #ToolbarButton[face="true"] {
-    padding-right: 20px;
+    padding-right: ${INDICATOR_ROOM}px;
 }
 
 #ToolbarLabel {

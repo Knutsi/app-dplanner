@@ -20,7 +20,7 @@ from tempfile import TemporaryDirectory
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["QT_QPA_PLATFORMTHEME"] = ""
 
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSettings
 from PySide6.QtWidgets import QApplication, QWidget
 
 from dplanner.app import new_session
@@ -75,6 +75,10 @@ def discard(widget: QWidget) -> None:
 
 
 def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    # Each theme renders the same states, so each starts from the same preferences: the
+    # side panel this run opens is written to the (throwaway) store, and the second theme
+    # would otherwise open with it already on.
+    QSettings().clear()
     apply_theme(app, theme)
     library_file = workspace / f"library-{theme.name}.json"
     create_library(library_file)
@@ -163,6 +167,12 @@ def main(argv: list[str]) -> int:
     app = QApplication.instance() or QApplication([])
     assert isinstance(app, QApplication)
     with TemporaryDirectory() as tmp:
+        # Opening the side panel writes a per-user preference, and a render script must not
+        # touch the developer's settings — nor read them, or the shot shows whatever state
+        # this machine happens to be in. The suite's conftest redirects QSettings for the
+        # same two reasons.
+        QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+        QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, tmp)
         for theme in (DARK, LIGHT):
             render(app, theme, args.out, Path(tmp))
     return 0

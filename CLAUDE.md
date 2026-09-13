@@ -843,6 +843,16 @@ root, stop and look for the registry or capability you have not found yet.
   is `add_menu_face` instead — the *Options* face renders the Graph menu's `look` band
   through `fill_menu`'s `group` filter and wears the layout picker's look, because a
   hairline down its middle would say two halves do different things.
+- **What DPlanner is built on is asked of the installation, never written down.**
+  Help ▸ *About DPlanner…* (`modules/appshell/about.py`) is a `DialogFrame` over a `Table`:
+  the list of components and what each *does here* is written — no package's metadata can
+  say that — and every version and licence beside it comes from the installed
+  distribution's own metadata, asked in the order the answers got vaguer
+  (`License-Expression`, then `License`, then the trove classifiers). A hand-kept licence
+  table drifts, and the one thing an acknowledgement must not do is claim the wrong
+  licence. A component this build does not have says so in its row rather than being
+  dropped. `ARCHITECTURE.md`'s *An acknowledgement is asked, not written* has the
+  reasoning.
 - **Jump to is a picker, and landing on a step is centring on it.** `framework/picker.py`
   is the one fuzzy picker — a field over `PickerRow`s, the label outranking whatever else a
   row answers to (`also`: a verb's menu path, a step's key), and `landmark` saying which

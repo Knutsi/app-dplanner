@@ -10,7 +10,7 @@ from typing import Any
 
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QKeySequence
-from PySide6.QtWidgets import QMainWindow, QMessageBox
+from PySide6.QtWidgets import QMainWindow
 
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
@@ -27,8 +27,9 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
 from dplanner.framework.window import PanelHost
 from dplanner.framework.zoom import ZoomService
-from dplanner.identity import APP_NAME, APP_VERSION
-from dplanner.theme.icons import redo_icon, undo_icon
+from dplanner.identity import APP_NAME
+from dplanner.modules.appshell.about import AboutDialog
+from dplanner.theme.icons import info_icon, redo_icon, undo_icon
 
 
 @dataclass(frozen=True)
@@ -114,11 +115,9 @@ class AppShellModule:
                 window.showFullScreen()
 
         def run_about(_context: Context) -> None:
-            QMessageBox.about(
-                window,
-                f"About {APP_NAME}",
-                f"<b>{APP_NAME}</b> {APP_VERSION}",
-            )
+            dialog = AboutDialog(window)
+            dialog.exec()
+            dialog.deleteLater()
 
         def run_palette(_context: Context) -> None:
             CommandPalette(deps.actions, deps.context, window).exec()
@@ -370,11 +369,12 @@ class AppShellModule:
         deps.actions.register(
             ActionSpec(
                 id="appshell.about",
-                label="&About Writer",
+                label=f"&About {APP_NAME}…",
                 menu="Help",
                 group="about",
                 order=10,
-                tip="About this application",
+                icon=info_icon,
+                tip=f"What {APP_NAME} is, what it is built on, and the licences it is used under",
                 run=run_about,
             )
         )
