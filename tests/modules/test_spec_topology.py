@@ -60,3 +60,26 @@ def test_the_topology_row_selects_no_document(services, project, activity):
     context = services.context.current()
     assert context.selected_entity("spec_document") is None
     assert not services.actions.spec("spec.remove").state(context).enabled
+
+
+def test_the_default_shape_stands_under_the_editor(services, project, activity):
+    """One asset, two surfaces: the person writing the topology reads what the agent is
+    handed, so the two can never be looking at different documents."""
+    from dplanner.cli.shaping import guide
+
+    services.tabs.open("specs", project.id)
+    shown = activity.default_shape.toPlainText()
+    assert "How a graph is shaped" in shown
+    assert "Project start" in shown
+    assert shown.strip().startswith(guide().split("\n", 1)[0].lstrip("# ").strip())
+
+
+def test_the_default_can_be_shut_and_draws_no_edge_of_its_own(services, project, activity):
+    """A splitter, so somebody who has read it once gets the room back — and the seam is
+    the splitter's, from the one QSplitter::handle rule (DESIGN.md's *Seams*)."""
+    from PySide6.QtWidgets import QSplitter
+
+    split = activity.default_shape.parent().parent()
+    assert isinstance(split, QSplitter)
+    assert split.childrenCollapsible()
+    assert activity.default_shape.frameShape() == activity.default_shape.Shape.NoFrame
