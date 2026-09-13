@@ -51,11 +51,12 @@ MENUS: dict[str, tuple[str, str]] = {
     "steps.redirect_to": ("Step", "Redirect"),
 }
 
-# The last band: the look face, then whatever toggles a panel beside the canvas.
+# The last band: how the graph is drawn, and what stands beside it. Both are about this
+# tab rather than about the plan, which is what puts them together and at the end.
 OPTIONS = "Options"
 LOOK_FACE = "Look"
 LOOK_MENU = ("Graph", "look")
-PANEL_ACTIONS: tuple[str, ...] = ("canvas.side_panel",)
+PANEL_ACTION = "canvas.side_panel"
 
 
 class CanvasToolbar(QWidget):
@@ -86,8 +87,7 @@ class CanvasToolbar(QWidget):
         self.look = self.tools.add_menu_face(
             LOOK_FACE, options_icon, actions, context, LOOK_MENU[0], group=LOOK_MENU[1]
         )
-        for action_id in PANEL_ACTIONS:
-            self.tools.add_action(actions, context, action_id)
+        self.tools.add_action(actions, context, PANEL_ACTION)
         row.addWidget(self.tools, 1)
         for widget in trailing:
             # The far end of the strip — the layout picker's seat, owned by whoever made

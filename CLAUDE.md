@@ -316,6 +316,18 @@ root, stop and look for the registry or capability you have not found yet.
 - **Only the active pane speaks for the user.** The window can show two or three tab groups
   side by side, and there is still exactly one context. An activity that publishes a
   selection must do it only while it is the current one — see `ProjectActivity._is_active`.
+- **A panel the graph tab hosts is not a dock panel.** A dock panel follows the *window* —
+  one instance, retargeted by the context. A panel inside a project tab follows *that tab*:
+  one per tab, handed a context naming its own project, so a background tab never follows
+  the tab in front. The Features list is the first — out of the window's left area and
+  beside the canvas, where the drag onto the graph is short. What goes there is a
+  `SidePanel(title, icon, build)` on `ProjectEditorDeps`, named by the composition root and
+  reached through `framework/panels.py`'s `ContextPanel` protocol, so `project_editor`
+  imports nothing from `feature` and `feature` registers no panel (it offers
+  `create_panel()`, the `step_properties` arrangement). The seam is the splitter's and the
+  panel draws no edge; whether it stands is a field on `Look`, like every other preference
+  the editor keeps. `ARCHITECTURE.md`'s *The Features list lives in the graph, not in the
+  window* has the reasoning.
 - **One panel per surface, not one per tab.** A detail panel is anchored in a window area and
   reads the context; an activity never holds one. Building it inside the tab is what made the
   step editor appear twice in a split window, and the fix deleted code rather than adding a
@@ -796,8 +808,9 @@ root, stop and look for the registry or capability you have not found yet.
   means absent; disabled means not now* has the reasoning.
 - **View is the window; Graph is the canvas.** The graph editor's own verbs are a
   top-level **Graph** menu — `arrange` (Sort, Layout, Divide), `regions`, `look` (Frame,
-  Mark, Snap to Grid, Background) — not a group inside View, which is about panels, tabs,
-  theme and zoom. What is *about a step* stays on Step even though it runs on the canvas:
+  Mark, Snap to Grid, Background — the band the strip's *Options* face renders whole) and
+  `panels` (what stands beside the canvas inside the tab) — not a group inside View, which
+  is about panels *around the tabs*, tabs, theme and zoom. What is *about a step* stays on Step even though it runs on the canvas:
   Connect, Link, Unlink, Isolate, Redirect and Lasso, which is also what keeps them on the
   canvas's right-click (it renders the Step menu). `ARCHITECTURE.md`'s *View is the window;
   Graph is the canvas* has the reasoning.
@@ -807,18 +820,38 @@ root, stop and look for the registry or capability you have not found yet.
   label is written for its submenu and *Vertical* alone is a riddle. The path is
   searchable, and a match on the label always outranks one that needed it.
   `ARCHITECTURE.md`'s *The command palette says where a verb lives* has the reasoning.
-- **A family of verbs is one toolbar button and its arrow, and the strip overflows.**
-  `CanvasToolbar.MENUS` names the `(menu, submenu)` a button drops down — Sort, Divide,
-  Redirect — so the strip carries a family in one seat and the dropdown is the child menu
-  itself, rebuilt on every open, never a copy. Add a verb to the submenu and the button
-  offers it having touched nothing. The row is a `QToolBar` (`framework/toolbar.py`'s
-  `control_bar`) because a canvas can always be dragged narrower than its own strip: a
-  layout answers that by shrinking every button until *Divide* reads *D…e*, a toolbar by
-  moving the groups that no longer fit into its » menu. The layout picker sits outside it
-  and never overflows — it names what the canvas is showing, and is not a verb. **The arrow
-  is a target of its own**: `ARROW_W` wide with a hairline parting it from the button half,
-  and `ARROW_ROOM` of padding so the words step aside — a styled subcontrol is outside Qt's
-  size hint, so widening the arrow without the padding paints it over the last letter.
+- **A strip of verbs is glyphs in named bands, and a band folds whole.** The canvas strip
+  is `framework/toolbar.py`'s `Toolbar`, cut into bands by `add_group(label)` —
+  *Go · Step · Link · Arrange · History · Options* in `canvas_toolbar.py`'s `GROUPS` —
+  because nineteen glyphs in a row are nineteen riddles and six named bands are a thing to
+  learn once. **The glyph is the spec's**: every verb on the strip carries `ActionSpec.icon`
+  and the module keeps no icon table, so adding a button is adding a string to `GROUPS`.
+  A canvas can always be dragged narrower than its own strip, and what no longer fits leaves
+  **a whole band at a time** into the `…` menu, as glyph *and* words with a rule where each
+  band begins — never Qt's `»`, which pops the hidden buttons up as glyphs again. The layout
+  picker sits outside the strip and never folds: it names what the canvas is showing, and is
+  not a verb. **A checked verb's glyph takes `$ON_ACCENT`** (the palette's `BrightText`,
+  which is what carries the theme's `on_accent`), which is what retired the worded switches.
+- **A family of verbs is one toolbar button and its arrow; a band of the menus is one
+  face.** `CanvasToolbar.MENUS` names the `(menu, submenu)` a button drops down — Sort,
+  Divide, Redirect — so the strip carries a family in one seat and the dropdown is the
+  child menu itself, rebuilt on every open, never a copy; add a verb to the submenu and the
+  button offers it having touched nothing. **The arrow is a target of its own**: `ARROW_W`
+  wide with a hairline parting it from the button half, and `ARROW_ROOM` of padding so the
+  words step aside — a styled subcontrol is outside Qt's size hint, so widening the arrow
+  without the padding paints it over the last letter. A control with **no verb under it**
+  is `add_menu_face` instead — the *Options* face renders the Graph menu's `look` band
+  through `fill_menu`'s `group` filter and wears the layout picker's look, because a
+  hairline down its middle would say two halves do different things.
+- **Jump to is a picker, and landing on a step is centring on it.** `framework/picker.py`
+  is the one fuzzy picker — a field over `PickerRow`s, the label outranking whatever else a
+  row answers to (`also`: a verb's menu path, a step's key), and `landmark` saying which
+  rows a long list opens on before anything is typed. The command palette is that picker
+  over the registry; `steps.jump` (`/` on the canvas, Step ▸ navigate beside *Reveal in
+  Graph*) is it over a project's steps, opening on the milestones and features.
+  `GraphView.centre_on_step` is what a pick lands with, and `select_step` calls it, so
+  `steps.reveal` centres from every view that reaches a step. Never zoom on a jump — Frame
+  is the verb that changes how much of the graph is in view.
 - **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
   `MENU_STRUCTURE`, so anything with a context menu owns a menu in that table — the canvas has
   `Step`, the index tree has `Project`, the tab bar renders View's Tabs submenu (via

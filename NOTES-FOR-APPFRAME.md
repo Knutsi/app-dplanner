@@ -2893,3 +2893,95 @@ renders the menu and never a copy.
 
 **Upstream?** Yes, both. Any template whose child menus are data will meet a verb whose
 seat is that menu's entries. The `palette: bool` flag already set the shape.
+
+## 33. From the graph-editor pass
+
+### `framework/toolbar.py` — bands, a registry feed, a menu face, and a checked glyph's ink
+
+**What.** Four additions to the `Toolbar` primitive, and one correction.
+
+- `add_group(label)` opens a **band**: what follows lands in it, `DENSE_GAP` apart, under a
+  name in `#ToolbarGroupLabel`, and a divider is placed before every band but the first. A
+  band is one `_Group` widget and therefore one item of the reflow, so what folds into the
+  `…` menu is a whole band, listed as glyph *and* words with a rule where each begins.
+- `add_action(registry, context, action_id, *, menu=…)` fills a verb from the registry: the
+  glyph is `ActionSpec.icon`, the words and the reason come from `action_words(spec, state)`
+  (which `ActionToolbar._refresh` now shares, so there is one definition of what a button
+  says), the state is restated on every context change, and `menu` gives the button the
+  arrow that drops its own child menu. `dispose()` lets the context go.
+- `add_menu_face(...)` is a button that is *only* a menu — no verb under it, so no split
+  arrow. Folded, it becomes a child menu of the same entries.
+- A **checked verb's glyph is re-inked in `$ON_ACCENT`**, which `theme/palette.py` now
+  carries in `QPalette.ColorRole.BrightText` (it held `accent_hover`, which nothing read).
+
+**Why.** DESIGN.md already said "on a real surface the verbs come from the registry —
+`ActionToolbar` over registered `ActionSpec`s becomes a `Toolbar` fed by them in the design
+passes". The canvas strip was the first such pass. The bands are what a drawing surface's
+strip is; folding by band is what keeps the `…` menu readable.
+
+The checked ink is the interesting one: `#ToolbarButton:checked` fills with the accent, and
+a glyph painted in the secondary tone disappears into it — which is why that strip's mode
+switches carried *words* for as long as they did, and why the aspect bar's ten toggles have
+the same fault today. A painter has no stylesheet, so the palette is the only way it can
+learn a colour the stylesheet writes.
+
+**Watch.** Three Qt traps, all found the hard way.
+
+1. `QToolButton.setMenu()` on a button that already has a default action **detaches the
+   default action**, and the button then renders the action's text in place of a glyph it
+   no longer follows. A face therefore sets its own icon and tooltip and is kept in step by
+   `_ink`, rather than using `setDefaultAction`.
+2. A `QToolButton` copies its default action's icon **at `setDefaultAction` time**. Ink the
+   action before seating it, or a button given a null icon falls back to drawing its words.
+3. `_reink()` repaints every glyph on the strip. Calling it once per added verb makes a
+   nineteen-verb strip paint 361 pixmaps to build; `add_*` inks only the action it made.
+
+**Upstream?** Yes, all of it. A template with a drawing surface wants bands; a template
+with an action registry wants the registry feed; and the checked-glyph ink is a bug fix
+wherever a checkable glyph button exists.
+
+### `framework/picker.py` — the fuzzy picker, with the palette rebuilt on it
+
+**What.** `PickerDialog` over `PickerRow(id, label, detail, trailing, icon, also, landmark)`:
+the field, the ranking, the `TwoLineDelegate` rows, the arrow keys and the after-close pick.
+`fuzzy_score` moved here from `palette.py`, and `CommandPalette` is now the half that turns
+the registry into rows.
+
+**Why.** A second fuzzy picker (the graph's *Jump to*) would otherwise have been a
+hundred-and-thirty-line near-copy of the palette, whose registry and context were wired
+into its constructor. Two surfaces are what justify a primitive.
+
+**Watch.** `also` is what a row is *searched* by beyond its name, and is deliberately not
+`detail` or `trailing`: a palette row shows its shortcut at the right, and folding that
+into the haystack makes "ctrl" match every verb that has one. `landmark` is what a picker
+over hundreds of rows opens on; a list with no landmarks opens whole, which is what the
+palette wants.
+
+**Upstream?** Yes. The template ships the palette, and the palette is this with rows from
+a registry.
+
+### `framework/action_menu.py` — `fill_menu(..., group=…)`
+
+**What.** A filter beside the existing `submenu` one: naming a `group` renders just that
+band of a menu, child menus nested as usual.
+
+**Why.** A toolbar face that stands for a band — the graph strip's *Options* for *Graph*'s
+`look` — must render the menu rather than keep a copy of it, which is the rule every other
+pop-up in the application follows.
+
+**Watch.** The nested `child_menu` helper had a parameter also called `group`; it is
+`entry_group` now, or the new filter would have been shadowed inside it.
+
+**Upstream?** Yes, with `submenu`. It is eight lines and the same idea.
+
+### `theme/tokens.py` — `$BORDER_FAINT` fades towards the elevated ground
+
+**What.** `mix(theme.border, theme.bg_elevated, 0.5)` where it was `bg_base`.
+
+**Why.** A strip of verbs sits on `$BG_ELEVATED`, and faded into the *page's* ground the
+divider came out three levels from the canvas strip on the light theme — a divider that
+parts nothing. Its only consumers are strip dividers (`#ToolbarDivider`,
+`#ControlBar::separator`), so the change is contained and strictly an improvement on both
+grounds.
+
+**Upstream?** Yes.

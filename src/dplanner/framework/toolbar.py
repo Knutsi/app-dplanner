@@ -1,12 +1,18 @@
-"""An in-tab action toolbar: one button per action id, restated on every context change.
+"""Strips of controls a tab page carries, and the verbs on them.
 
-The registry stays the single source of truth — this presenter renders a chosen subset of
+:class:`Toolbar` is **the** strip of verbs (DESIGN.md's *Toolbars*): glyphs with their
+words in tooltips, folding into a ``…`` menu, optionally cut into named bands. Its verbs
+come either from the host (:meth:`Toolbar.add_verb`, a glyph and a slot) or from the action
+registry (:meth:`Toolbar.add_action`), and a band may end in a *face*
+(:meth:`Toolbar.add_menu_face`) — one glyph dropping a band of the menus down.
+
+The registry stays the single source of truth — a presenter here renders a chosen subset of
 specs as buttons, exactly as the menu bar renders all of them as QActions. Shortcuts stay
-with the menu bar's QActions; a click here goes through ``registry.run``, so the state
-gate holds even if a stale context left a button enabled. Toolbars live inside tabs, so
-unlike the app-lifetime menu bar they must be ``dispose()``d when their tab closes.
+with the menu bar's QActions; a click here goes through ``registry.run``, so the state gate
+holds even if a stale context left a button enabled. Strips live inside tabs, so unlike the
+app-lifetime menu bar they must be ``dispose()``d when their tab closes.
 
-**It renders the application's action state, not its own tab's.** A toolbar in a background
+**A strip renders the application's action state, not its own tab's.** One in a background
 tab — or in a tab group the user is not in — shows what the *active* surface can do, because
 there is one ``ContextService``. Invisible while only one tab is on screen; visible once the
 window is split. If that ever matters, the fix is a ``set_active(bool)`` that greys the row
@@ -17,6 +23,11 @@ when its group is not the active one, not a context per group.
 verb on a click and renders that child menu on the arrow — through ``fill_menu``, so it is
 the menu, never a copy of it, and it is refilled on every open against the context and the
 palette of that moment.
+
+:class:`ActionToolbar` is the older presenter — registry-fed like the above, but a plain
+row of *worded* buttons with no overflow of its own. Three surfaces still wear it (the
+Specs tab, the order table and the Time tab); each moves onto :class:`Toolbar` when its
+design pass comes. Write nothing new on it.
 
 :func:`control_bar` is the other strip a tab page carries: a row of *its own* controls — a
 selector, a toggle, a spin box — that overflows into a » menu when the width is short.
