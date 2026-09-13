@@ -221,7 +221,10 @@ class BoxTarget(Target):
         say(f"tar over ssh -> {guest}")
         wipe = (
             f"$d = '{guest}'; New-Item -ItemType Directory -Force -Path $d | Out-Null; "
-            "Get-ChildItem -Force $d | Where-Object Name -ne '.venv' | "
+            # .venv, dist and build stay: they are the guest's own work, excluded from the
+            # host tree, and the first version of this wipe deleted a ten-minute frozen
+            # build to sync a one-line test change.
+            "Get-ChildItem -Force $d | Where-Object { $_.Name -notin @('.venv','dist','build') } | "
             "Remove-Item -Recurse -Force -EA SilentlyContinue; exit 0"
         )
         if (code := self.run(wipe, "sync-wipe", quiet=True)) != 0:
@@ -440,14 +443,26 @@ Write-Host ("dist: {{0:N0}} MB" -f $size)
     )
 
 
+# Not screenshot renders: the icon writes into src/, the sample report is Qt-free.
+NOT_SCREENSHOTS = ("render_icon.py", "render_sample_report.py")
+
+
 def do_render(target: Target) -> int:
-    scripts = sorted(path.name for path in (REPO / "scripts").glob("render_*.py"))
+    """Every screenshot render, offscreen, into docs/screenshots/windows/ in the guest."""
+    scripts = sorted(
+        path.name
+        for path in (REPO / "scripts").glob("render_*.py")
+        if path.name not in NOT_SCREENSHOTS
+    )
     body = "\n".join(
         f"Write-Host '--- {name} ---'; uv run python scripts/{name} "
-        f"--out docs/screenshots/windows/{name[7:-3]}"
+        f"--out docs/screenshots/windows/{name[7:-3]}\n"
+        f"if ($LASTEXITCODE -ne 0) {{ Write-Host '    FAILED'; $failed = $true }}"
         for name in scripts
     )
-    return target.run(f"Set-Location {GUEST_TREE}\n{body}", "render")
+    return target.run(
+        f"Set-Location {GUEST_TREE}\n$failed = $false\n{body}\nif ($failed) {{ exit 1 }}", "render"
+    )
 
 
 def do_window(target: Target, seconds: int) -> int:
