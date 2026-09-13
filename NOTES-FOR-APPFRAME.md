@@ -3301,3 +3301,20 @@ size hint and outside its own box model's intuitions. `ARROW_ROOM`, `INDICATOR_R
 now `INDICATOR_INSET` all exist because of it.
 
 **Upstream?** The finding and the test shape, yes.
+
+## 39. From the architecture-state pass
+
+### A column sized to its contents needs the ceiling of the fractional advance, and the ink
+
+`framework/table.py`'s `sizeHint` measured a cell by `QFontMetrics.boundingRect(text).width()`,
+after an earlier round had found the integer advance a pixel short of the ink on one font.
+It was still a pixel short on another: `QFontMetrics.elidedText` decides against the
+*fractional* advance (`QFontMetricsF.horizontalAdvance`), so a cell whose advance is 15.3
+and whose bounding rect is 14 elides "10" to "…" — DejaVu Sans, the fallback on a machine
+with no desktop fonts, which is where the suite's one deterministic failure came from. And
+the ink can reach past the advance (Liberation Sans's "1"), which does not elide but is
+clipped when painted. Neither measure alone holds; `text_width` takes the wider of the
+ceiling of the fractional advance and the bounding rect, swept over every family on the
+machine (2,160 cases, none eliding), and `tests/framework/test_table.py` keeps that sweep
+over the first forty families installed. Belongs upstream with the table: any delegate
+that sizes a column to its contents and elides in `paint` has the same two slips waiting.

@@ -17,12 +17,13 @@ Three tables were written by hand before this one and disagreed on nine settings
 at a time. ``modules/debug/design_example.py`` is the reference to copy from.
 """
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
 from PySide6.QtCore import QEvent, QModelIndex, QPersistentModelIndex, QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QIcon, QPainter, QPalette
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QFontMetricsF, QIcon, QPainter, QPalette
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
@@ -99,6 +100,20 @@ class Cell:
 
 def snap_up(value: int) -> int:
     return -(-value // GRID) * GRID
+
+
+def text_width(font: QFont, text: str) -> int:
+    """The narrowest width ``text`` is drawn whole in, in ``font``.
+
+    Two measures, and the wider wins, because each falls short on a real font. Qt elides
+    against the *fractional* advance, so an integer advance rounded down (15 for 15.3)
+    elides "10" in DejaVu Sans — the ceiling never does, on every font this was swept
+    over. And ink can reach past the advance — a glyph's side bearing, Liberation Sans's
+    "1" — which does not elide but is clipped when painted, so the bounding rect counts
+    too. ``sizeHint`` measures with this so a column sized to its contents shows them.
+    """
+    laid_out = math.ceil(QFontMetricsF(font).horizontalAdvance(text))
+    return max(laid_out, QFontMetrics(font).boundingRect(text).width())
 
 
 def row_height(font: QFont, rich: bool) -> int:
@@ -366,14 +381,15 @@ class TableDelegate(QStyledItemDelegate):
         at the row height the header was set to, so ``resizeColumnsToContents`` agrees."""
         heading = bool(index.data(HEADING_ROLE))
         # Measured in the weight it will be *painted* in — a bold milestone is wider than
-        # the same words plain — and by the width the text lays *out* to rather than its
-        # advance, which a glyph's right side bearing can exceed by a pixel. Either slip
-        # makes ``elided`` cut a cell the column was supposed to fit: "10" became "…".
-        metrics = QFontMetrics(self.font_for(option, index))
-        small = QFontMetrics(detail_font(option.font))
+        # the same words plain — and by ``text_width``, which is what keeps ``elided`` from
+        # cutting a cell the column was supposed to fit: "10" became "…" twice, on two
+        # fonts, for two different reasons.
         text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         detail = str(index.data(DETAIL_ROLE) or "")
-        widest = max(metrics.boundingRect(text).width(), small.boundingRect(detail).width())
+        widest = max(
+            text_width(self.font_for(option, index), text),
+            text_width(detail_font(option.font), detail),
+        )
         column = index.column()
         slot = GLYPH_SLOT + ICON_GAP if self._table.columns()[column].glyph else 0
         height = row_height(option.font, rich=self._table.rich() and not heading)
