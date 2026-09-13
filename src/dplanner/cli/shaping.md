@@ -27,14 +27,10 @@ collect, and `dplanner scope show`, `progress show` and `test-run start --scope`
 a release exactly. Leave a step hanging off two releases at once and all three count it
 twice.
 
-The start step is one command, and it carries what lint asks of every step:
-
-```
-dplanner step add <project> 'Project start' --days 0 --describe-file -
-```
-
-`--days 0` and a description, or `estimate.missing` and `description.missing` report it for
-the life of the plan — a marker is still a step.
+The start step is one command — `dplanner step add <project> 'Project start' --days 0
+--describe-file -` — and those two flags are not optional: `--days 0` and a description, or
+`estimate.missing` and `description.missing` report it for the life of the plan. A marker
+is still a step.
 
 ## Ask, then propose
 

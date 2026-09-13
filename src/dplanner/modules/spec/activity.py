@@ -134,7 +134,6 @@ type Cite = Callable[[NodeId, str, str, int | None], None]
 # "spec_document" (so Remove and Open Externally stay greyed on it).
 TOPOLOGY_ROW = "\x00topology"
 TOPOLOGY_TITLE = "Topology"
-DEFAULT_TITLE = "The default shape"
 TOPOLOGY_PLACEHOLDER = (
     "How this project's graph is shaped: what counts as a feature here, what follows one "
     "(a check? a review?), where the milestones fall. An agent reads this before it "
@@ -554,15 +553,18 @@ class SpecsActivity(EntityActivity):
         standard_layout = QVBoxLayout(standard)
         standard_layout.setContentsMargins(0, BLOCK_GAP, 0, 0)
         standard_layout.setSpacing(CAPTION_GAP)
-        standard_layout.addWidget(caption(DEFAULT_TITLE, standard))
-        standard_layout.addWidget(note("What applies wherever the text above is silent.", standard))
+        # No caption over it: the document opens with its own title and says in its first
+        # sentence what a caption would have — two titles a line apart is the thing
+        # DESIGN.md's *Hierarchy* is against.
         self.default_shape = MarkdownView(standard)
         self.default_shape.setFrameShape(MarkdownView.Shape.NoFrame)
         self.default_shape.show_markdown(guide())
         standard_layout.addWidget(self.default_shape, 1)
         split.addWidget(standard)
 
-        split.setStretchFactor(0, 2)
+        # Even, not weighted to the editor: a topology is a dozen lines and the default is
+        # a document, so two thirds to the shorter one would be room nobody asked for.
+        split.setStretchFactor(0, 1)
         split.setStretchFactor(1, 1)
         return page
 
