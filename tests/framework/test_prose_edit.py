@@ -136,7 +136,9 @@ def test_an_editor_with_nowhere_to_put_files_pastes_the_text_instead(app, tmp_pa
     path = tmp_path / "diagram.png"
     path.write_bytes(png_bytes())
     widget.insertFromMimeData(url_mime(path))
-    assert str(path) in widget.toPlainText()
+    # Qt inserts the file *URL*, and on Linux `file:///tmp/x` happens to contain `/tmp/x`.
+    # On Windows it is `file:///C:/…` against `C:\…`, so compare the URL to the URL.
+    assert path.as_uri() in widget.toPlainText()
     widget.deleteLater()
 
 

@@ -283,9 +283,8 @@ def test_herdr_is_a_row_whose_template_is_two_calls(tmp_path):
     another; the row writes both as one template and spawn stages them."""
     row = next(p for p in launcher.terminals_for("linux") if p.id == "herdr")
     assert row.multiplexer and row.probe == "herdr"
-    command = launcher.resolve_command(
-        row.command, fake_files(tmp_path), Path("/work"), platform="linux"
-    )
+    work = Path("/work")
+    command = launcher.resolve_command(row.command, fake_files(tmp_path), work, platform="linux")
     assert command is not None
     assert launcher.stages(command) == [
         [
@@ -293,7 +292,7 @@ def test_herdr_is_a_row_whose_template_is_two_calls(tmp_path):
             "workspace",
             "create",
             "--cwd",
-            "/work",
+            str(work),
             "--label",
             "dplanner: S7 Deploy",
             "--no-focus",
@@ -736,8 +735,13 @@ def test_run_agent_with_lists_the_profiles_and_launches_through_the_picked_one(
 
     runs = next(m for m in services.modules if m.id == RUN_ID).runs()
     assert [(run.harness, run.session) for run in runs] == [("codex", "")]  # Found afterwards.
-    script = Path(runs[0].shell_file).parent.joinpath("run.sh").read_text()
-    assert "\ncodex 'Read your briefing" in script
+    # The wrapper the real launcher wrote for *this* host — run.sh here, run.cmd on Windows —
+    # and the assertion is that the picked harness is the one in it, not how a shell quotes.
+    run_dir = Path(runs[0].shell_file).parent
+    (script,) = [path for path in run_dir.iterdir() if path.stem == "run"]
+    assert "codex" in script.read_text(encoding="utf-8") and "Read your briefing" in (
+        script.read_text(encoding="utf-8")
+    )
 
 
 def test_run_agent_records_the_harness_and_the_session_it_named(services, step, monkeypatch):

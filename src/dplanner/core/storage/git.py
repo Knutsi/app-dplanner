@@ -210,7 +210,9 @@ class GitStorage(LocalStorage):
         # directories; scoping is what keeps a Save from sweeping up the user's own source.
         if scopes is None:
             relative = self._root.relative_to(self.repo_root)
-            scopes = (str(relative) if relative.parts else ".",)
+            # as_posix: a scope is handed to git as a pathspec, and git takes "/" on every
+            # platform. str() would have spelled it "plans\\alpha" on Windows.
+            scopes = (relative.as_posix() if relative.parts else ".",)
         self._scopes: tuple[str, ...] = tuple(scopes)
         self._dirty = False
         self._dirty_count = 0

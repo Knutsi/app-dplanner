@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtWidgets import QSpinBox
-from tests.platforms import POSIX_MODE_BITS, SYMLINKS
+from tests.platforms import POSIX_MODE_BITS, SH, SYMLINKS
 
 from dplanner.modules import agent_harnesses
 from dplanner.modules.step_agent_instruction import launcher
@@ -30,6 +30,7 @@ def prepare(*args, **kwargs):
 # -- assembly ----------------------------------------------------------------------------------
 
 
+@SH
 def test_the_prompt_carries_instruction_context_and_epilogue():
     assembled = assemble(
         step_title="Deploy",
@@ -364,6 +365,7 @@ def test_the_script_puts_the_agent_in_its_worktree_on_its_branch(pointed_repo, t
     assert "/.dplanner-worktrees/" in (pointed_repo / ".git" / "info" / "exclude").read_text()
 
 
+@SH
 def test_a_worktree_that_cannot_be_prepared_stops_the_run(pointed_repo, tmp_path):
     """Never the main checkout by accident: git's refusal ends the run with a failed
     exit, which the window reports, instead of carrying on where the plan is."""
@@ -668,15 +670,16 @@ def fake_files(tmp_path) -> LaunchFiles:
 
 
 def test_a_settings_template_wins_outright(tmp_path):
+    work = Path("/work")
     command = resolve_command(
         "myterm --run {script} --cd {workdir}",
         fake_files(tmp_path),
-        Path("/work"),
+        work,
         platform="linux",
         which=lambda _name: None,
         env={},
     )
-    assert command == ["myterm", "--run", str(tmp_path / "run.sh"), "--cd", "/work"]
+    assert command == ["myterm", "--run", str(tmp_path / "run.sh"), "--cd", str(work)]
 
 
 def test_inside_tmux_a_desktop_terminal_still_wins(tmp_path):

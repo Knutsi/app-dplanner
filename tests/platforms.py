@@ -17,6 +17,7 @@ never would.
 """
 
 import os
+import shutil
 import tempfile
 from pathlib import Path
 
@@ -41,6 +42,23 @@ SYMLINKS = pytest.mark.skipif(
     not _can_symlink(),
     reason="making a symlink needs Developer Mode or an elevated shell on Windows",
 )
+
+
+SH = pytest.mark.skipif(
+    shutil.which("sh") is None,
+    reason="the test runs the generated POSIX wrapper through sh, which Windows does not ship",
+)
+
+
+def executable_name(stem: str) -> str:
+    """What the platform calls a program: ``dpw`` here, ``dpw.exe`` on Windows.
+
+    A test that plants a fake executable for the code to find has to name it the way the
+    code looks for it — ``cli/desktop.window_executable`` asks for ``dpw.exe`` on Windows,
+    and a fake called ``dpw`` there is a file nothing will ever pick up, after which the
+    search falls through to the real one beside the interpreter.
+    """
+    return f"{stem}.exe" if os.name == "nt" else stem
 
 
 def set_home(monkeypatch, home: Path) -> Path:

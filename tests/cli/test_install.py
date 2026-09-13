@@ -11,6 +11,7 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
+from tests.platforms import executable_name
 
 from dplanner.cli import install as installer
 from dplanner.cli.desktop import DesktopEntry
@@ -124,7 +125,7 @@ def test_a_current_skill_says_so(launcher, skill_dir):
 def test_installing_writes_all_three_in_order(launcher, skill_dir, tmp_path, main_checkout):
     uv_bin = tmp_path / "uv-bin"
     uv_bin.mkdir()
-    (uv_bin / "dpw").write_text("")
+    (uv_bin / executable_name("dpw")).write_text("")
     runner = Recorder(stdout=f"{uv_bin}\n")
 
     outcomes = apply(FILES, launcher=launcher, directory=skill_dir, run=runner, which=nothing)
@@ -134,7 +135,7 @@ def test_installing_writes_all_three_in_order(launcher, skill_dir, tmp_path, mai
     assert runner.calls == [tool_bin_command(), install_command()]
     assert [outcome.id for outcome in outcomes] == [COMMAND, LAUNCHER, SKILL]
     assert all(outcome.ok for outcome in outcomes)
-    assert launcher.target() == uv_bin / "dpw"
+    assert launcher.target() == uv_bin / executable_name("dpw")
     assert (skill_dir / SKILL_FILE).read_text() == FILES[SKILL_FILE]
 
 
@@ -162,7 +163,7 @@ def test_a_dplanner_uv_did_not_install_is_left_alone(launcher, skill_dir, tmp_pa
     beside it is a puzzle nobody asked for."""
     uv_bin = tmp_path / "uv-bin"
     uv_bin.mkdir()
-    (uv_bin / "dpw").write_text("")
+    (uv_bin / executable_name("dpw")).write_text("")
     runner = Recorder(stdout=f"{uv_bin}\n")
     elsewhere = tmp_path / "usr" / "bin" / PROG
 
@@ -177,13 +178,13 @@ def test_a_dplanner_uv_did_not_install_is_left_alone(launcher, skill_dir, tmp_pa
     assert runner.calls == [tool_bin_command()]
     command = next(outcome for outcome in outcomes if outcome.id == COMMAND)
     assert command.ok and str(elsewhere) in command.line
-    assert launcher.target() == uv_bin / "dpw"
+    assert launcher.target() == uv_bin / executable_name("dpw")
 
 
 def test_a_command_uv_installed_is_updated(launcher, skill_dir, tmp_path, main_checkout):
     uv_bin = tmp_path / "uv-bin"
     uv_bin.mkdir()
-    (uv_bin / "dpw").write_text("")
+    (uv_bin / executable_name("dpw")).write_text("")
     runner = Recorder(stdout=f"{uv_bin}\n")
 
     apply(
@@ -268,7 +269,7 @@ def machine(launcher, skill_dir, tmp_path, monkeypatch, main_checkout):
     """The three verbs over a machine under tmp_path, with uv answering where dpw went."""
     uv_bin = tmp_path / "uv-bin"
     uv_bin.mkdir()
-    (uv_bin / "dpw").write_text("")
+    (uv_bin / executable_name("dpw")).write_text("")
     fake = Machine(uv_bin)
     monkeypatch.setattr(installer, "launcher_for", lambda: launcher)
     monkeypatch.setattr(installer, "target_dir", lambda **_kwargs: skill_dir)

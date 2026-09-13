@@ -6,6 +6,7 @@ runner as arguments, so a Linux entry, a macOS bundle and a Windows shortcut are
 and read back on whatever machine runs the suite.
 """
 
+import json
 import plistlib
 import shlex
 import struct
@@ -14,7 +15,7 @@ from io import StringIO
 from pathlib import Path
 
 import pytest
-from tests.platforms import POSIX_MODE_BITS
+from tests.platforms import POSIX_MODE_BITS, executable_name
 
 from dplanner.assets import ICON_SIZES, icon_path
 from dplanner.cli import desktop
@@ -224,10 +225,10 @@ def test_status_reads_installed_stale_or_missing(tmp_path):
 def test_dpw_is_found_in_a_named_directory_then_beside_dplanner_then_on_path(tmp_path):
     beside = tmp_path / "bin"
     beside.mkdir()
-    (beside / "dpw").write_text("")
+    (beside / executable_name("dpw")).write_text("")
     elsewhere = str(tmp_path / "elsewhere" / "dplanner")
     assert window_executable(argv0=str(beside / "dplanner"), platform="linux", which=nothing) == (
-        beside / "dpw"
+        beside / executable_name("dpw")
     )
     on_path = window_executable(argv0=elsewhere, platform="linux", which=lambda _n: "/usr/bin/dpw")
     assert on_path == Path("/usr/bin/dpw")
@@ -274,7 +275,11 @@ def test_the_verbs_install_report_and_uninstall(registry, launcher, tmp_path):
 
     code, out, _err = invoke(registry, "desktop", "status", "--json")
     assert code == 0
-    assert '"status": "installed"' in out and f'"opens": "{tmp_path / "bin" / "dpw"}"' in out
+    # Read the JSON rather than retype the path into it: a Windows path is escaped there
+    # (`C:\\t\\...`) and an f-string of the raw path never matches it.
+    reported = json.loads(out)
+    assert reported["status"] == "installed"
+    assert reported["opens"] == str(tmp_path / "bin" / executable_name("dpw"))
 
     elsewhere = Path("/somewhere/else/dpw")
     launcher.write(elsewhere)  # Reinstalled elsewhere since.
