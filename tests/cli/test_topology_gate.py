@@ -185,3 +185,20 @@ def test_the_skill_marks_gated_verbs(gated_cli):
     # Moving cards about is presentation, not shape: never gated.
     assert not any(verb.endswith("†") for verb in verbs["layout"])
     assert "† reads the topology first" in skill
+
+
+def test_reading_the_default_is_not_reading_the_topology(gated_cli):
+    """`topology show` prints the house default on a project with none — and a project
+    with none still refuses, because the default is not that project's own claim."""
+    out = gated_cli("topology", "show", "Discovery")
+    assert "# How a graph is shaped" in out
+    refused = gated_cli("step", "add", "Discovery", "Deploy", expect=1)
+    assert "no topology yet" in refused
+    assert "topology show 'Discovery'" in refused and "topology set 'Discovery'" in refused
+
+
+def test_brief_records_the_read_like_any_other(gated_cli):
+    """The flag chooses what is printed, never what is recorded."""
+    gated_cli("topology", "set", "Discovery", "--file", "-", stdin="Views are features.")
+    gated_cli("topology", "show", "Discovery", "--brief")
+    gated_cli("step", "add", "Discovery", "Deploy")

@@ -541,8 +541,9 @@ root, stop and look for the registry or capability you have not found yet.
   refusal red at **full strength and `ORPHAN_RING_W`**, twice the agent ring's weight: it
   is the one mark that says *something is wrong here* rather than *this is where the graph
   ends*. It is measured into `PAINT_MARGIN` like every other decoration.
-  Which sockets a node has connected is `marks.ports()` over the drawn edges, derived every
-  sync. The toggles' `checked` reads the module and the module calls `context.refresh()` —
+  Which sockets a node has connected is `ordering.ports()` over the drawn edges, derived
+  every sync — in the domain rather than beside the marks because `graph.orphan` lint asks
+  the same question, and a module may not import another module's copy of an answer. The toggles' `checked` reads the module and the module calls `context.refresh()` —
   the theme-toggle pattern, deliberately not an edge on the activity node, because a
   preference outlives any tab. `ARCHITECTURE.md`'s *Marks are a way of looking* has the
   reasoning.
@@ -1434,8 +1435,18 @@ root, stop and look for the registry or capability you have not found yet.
   text's digest in the per-user `config_dir()/topology-read.json`, and refuses again when
   the text changes or when there is none. The skill marks those verbs; the window is never
   gated; the test suite's registry runs behind a gate with no record file. Declare it on a
-  verb that changes shape, never on one that changes content. `ARCHITECTURE.md`'s *The
-  topology is read before the graph is edited* has the reasoning.
+  verb that changes shape, never on one that changes content.
+  **And `topology show` prints the house default beside the project's text** — one start,
+  milestones in a chain, work branching out of one and collecting into the next
+  (`cli/shaping.md`, read by `cli/shaping.py`'s `guide()`). The gate made that verb the one
+  door every shaping agent goes through and no executing agent does, which is why the
+  default is delivered there rather than in the skill — the skill is Claude's alone, and
+  Codex and OpenCode shape graphs too. **It is printed, never stored**: a topology reaches
+  every briefing, so a house document seeded into one would be paid for again on every step
+  anybody ever executes. The project's own text wins wherever the two differ, `--brief`
+  prints it alone, and the recorded digest stays the project's text — hashing the default
+  would un-read every project on the day `shaping.md` gained a comma.
+  `ARCHITECTURE.md`'s *The topology is read before the graph is edited* has the reasoning.
 - **A drop on the canvas is the third caller of `StepVerbs.create`.** `GraphView` accepts
   the mime types the composition root lists as `CanvasDrop`s on `ProjectEditorDeps`
   (`project_editor/drops.py`), records the point like a click and hands the payload up;
@@ -1522,6 +1533,10 @@ root, stop and look for the registry or capability you have not found yet.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.
+  **The skill says what every agent must know; how to shape a graph is what the door to
+  shaping says** — the spec loop, cutting steps, linking, sizing and the spatial loop live
+  in `cli/shaping.md` and reach an agent through `topology show`, not through the skill.
+  What stays is an executing agent's, safety rules included.
   **Its command list is an index: one line per noun naming its verbs**, a `†` on the ones
   that read the topology first and one legend line — because a summary per verb was a third
   of a file loaded every session and said what `reference.md` and `--help` both already say.
