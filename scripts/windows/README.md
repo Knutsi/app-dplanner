@@ -56,8 +56,14 @@ uv run python scripts/windows_check.py --target box up     # ~25 min the first t
 uv run python scripts/windows_check.py --target box wait
 uv run python scripts/windows_check.py --target box all
 uv run python scripts/windows_check.py --target box down            # stop; cheap to restart
-uv run python scripts/windows_check.py --target box down --destroy --yes   # and the disk
+uv run python scripts/windows_check.py --target box down --destroy --yes   # the disk too
 ```
+
+`down --destroy` keeps the downloaded Windows ISO — 8 GB against a 25-minute install — so the
+next `up` reinstalls without fetching it; `--forget-iso` throws that away as well. And when
+provisioning itself is what failed, there is no sshd to re-run it with:
+`provision --print-bootstrap` stages the payload and prints the one line to type into the
+viewer at http://localhost:8007, once.
 
 Ports are `2222` (SSH), `8007` (web viewer) and `3390` (RDP) — 8006 and 3389 belong to the
 Omarchy VM. All three bind to the loopback: this box has an administrator account with a
@@ -98,6 +104,12 @@ too late for that image. It has not been measured here, and the install worked w
 console to watch and no way to retry without reinstalling Windows, so everything that can go
 wrong lives in `provision.ps1`, which `windows_check.py provision` re-runs as often as it
 takes.
+
+**The guest scripts are ASCII, and `tests/test_windows_harness.py` keeps them so.** Windows
+PowerShell 5.1 reads a `.ps1` with no byte-order mark as ANSI, and an em dash in a
+double-quoted string ends the string early — the whole file then fails to parse, with an
+error pointing thirty lines from the character that caused it. That is how the first
+provisioning run of the box died, and nothing on Linux shows it.
 
 ## Licences
 
