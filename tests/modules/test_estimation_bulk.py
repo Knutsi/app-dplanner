@@ -239,9 +239,10 @@ def test_the_summary_counts_and_totals_over_the_scope(services, project):
     run_estimate_open(services)
     tab = estimate_tab(services)
 
-    assert tab._summary.text() == "1 of 4 estimated · 3d"
+    # The volume sentence the order table and ``estimate rollup`` print, over this scope.
+    assert tab._summary.text() == "3 days over 4 steps, 3 unestimated"
     tab._filters.button(1).click()  # Hiding rows must not change the arithmetic.
-    assert tab._summary.text() == "1 of 4 estimated · 3d"
+    assert tab._summary.text() == "3 days over 4 steps, 3 unestimated"
 
 
 # -- the model moving under the tab --------------------------------------------------------

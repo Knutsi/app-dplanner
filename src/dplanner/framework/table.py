@@ -279,6 +279,22 @@ class TableDelegate(QStyledItemDelegate):
         # lingering on the last cell clicked is a second mark for what the row's edge says.
         option.state &= ~QStyle.StateFlag.State_HasFocus
 
+    def font_for(
+        self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+    ) -> QFont:
+        """A cell's weight: bold for a heading and for a fixed point among its rows.
+
+        One answer, so what ``sizeHint`` measures is what ``paint`` draws.
+        """
+        font = QFont(option.font)
+        if index.data(HEADING_ROLE) or index.data(EMPHASIS_ROLE):
+            font.setBold(True)
+        return font
+
+    def elided(self, font: QFont, text: str, width: int) -> str:
+        """``text`` as it will be drawn in ``font``, cut to ``width``."""
+        return QFontMetrics(font).elidedText(text, Qt.TextElideMode.ElideRight, width)
+
     def paint(
         self,
         painter: QPainter,
@@ -324,26 +340,23 @@ class TableDelegate(QStyledItemDelegate):
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             icon.paint(painter, slot, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
 
-        font = QFont(opt.font)
-        if heading or index.data(EMPHASIS_ROLE):
-            font.setBold(True)
+        font = self.font_for(opt, index)
         painter.setFont(font)
         painter.setPen(primary)
         text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         detail = str(index.data(DETAIL_ROLE) or "")
         align = opt.displayAlignment
-        elide = Qt.TextElideMode.ElideRight
         if detail:
             line = QRect(left, opt.rect.top() + ROW_PADDING_V, width, metrics.height())
-            painter.drawText(line, align, QFontMetrics(font).elidedText(text, elide, width))
+            painter.drawText(line, align, self.elided(font, text, width))
             small = QFontMetrics(detail_font(opt.font))
             painter.setFont(detail_font(opt.font))
             painter.setPen(secondary)
             line = QRect(left, line.top() + metrics.height() + ROW_LINE_GAP, width, small.height())
-            painter.drawText(line, align, small.elidedText(detail, elide, width))
+            painter.drawText(line, align, self.elided(detail_font(opt.font), detail, width))
         else:
             line = QRect(left, opt.rect.top(), width, opt.rect.height())
-            painter.drawText(line, align, QFontMetrics(font).elidedText(text, elide, width))
+            painter.drawText(line, align, self.elided(font, text, width))
         painter.restore()
 
     def sizeHint(  # noqa: N802 - Qt override
@@ -351,13 +364,17 @@ class TableDelegate(QStyledItemDelegate):
     ) -> QSize:
         """What the delegate draws, measured — the blanked option would size to nothing —
         at the row height the header was set to, so ``resizeColumnsToContents`` agrees."""
-        metrics = option.fontMetrics
+        heading = bool(index.data(HEADING_ROLE))
+        # Measured in the weight it will be *painted* in — a bold milestone is wider than
+        # the same words plain — and by the width the text lays *out* to rather than its
+        # advance, which a glyph's right side bearing can exceed by a pixel. Either slip
+        # makes ``elided`` cut a cell the column was supposed to fit: "10" became "…".
+        metrics = QFontMetrics(self.font_for(option, index))
         small = QFontMetrics(detail_font(option.font))
         text = str(index.data(Qt.ItemDataRole.DisplayRole) or "")
         detail = str(index.data(DETAIL_ROLE) or "")
-        widest = max(metrics.horizontalAdvance(text), small.horizontalAdvance(detail))
+        widest = max(metrics.boundingRect(text).width(), small.boundingRect(detail).width())
         column = index.column()
         slot = GLYPH_SLOT + ICON_GAP if self._table.columns()[column].glyph else 0
-        heading = bool(index.data(HEADING_ROLE))
         height = row_height(option.font, rich=self._table.rich() and not heading)
         return QSize(widest + slot + 2 * self._table.padding(), height)

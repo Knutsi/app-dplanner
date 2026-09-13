@@ -15,8 +15,6 @@ answers; they arrive as callbacks on the ``Deps``, wired by the composition root
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from PySide6.QtWidgets import QWidget
-
 from dplanner.domain.model import Library, ProjectId, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -38,7 +36,6 @@ from dplanner.modules.estimation.bulk import (
     BulkEstimateActivity,
 )
 from dplanner.modules.estimation.section import EstimateSection
-from dplanner.modules.estimation.start_bar import StartDateBar
 from dplanner.theme.icons import gauge_icon
 
 
@@ -67,12 +64,6 @@ class EstimationModule:
 
     def __init__(self, deps: EstimationDeps) -> None:
         self._deps = deps
-
-    def create_start_bar(
-        self, project_id: ProjectId, parent: QWidget | None = None
-    ) -> StartDateBar:
-        """One project's start date, for whichever surface wants to show the schedule."""
-        return StartDateBar(self._deps.library, self._deps.undo, project_id, parent)
 
     def open_for_steps(
         self,

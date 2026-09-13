@@ -67,7 +67,7 @@ def test_the_specs_entry_opens_the_specs_tab(services, project):
         "Specs",
         "Coverage",
         "Assets",
-        "Progression",
+        "Ready to start",
         "Time Estimates",
     ]
     panel.tree.itemActivated.emit(row.child(2), 0)

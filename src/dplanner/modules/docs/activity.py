@@ -43,6 +43,7 @@ from dplanner.framework.context import ContextNode, Uri, activity_uri, selection
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.list_rows import (
     DETAIL_ROLE,
+    HOST_ROLE,
     TRAILING_ROLE,
     TwoLineDelegate,
     rich_row_height,
@@ -87,7 +88,7 @@ INSTRUCTIONS_TAB = "Compilation instructions"
 # The lead sentence over the list: the page's one answer, a size up from its own detail.
 LEAD_POINTS = 2.0
 
-GROUP_ROLE = int(Qt.ItemDataRole.UserRole) + 20  # Past framework/list_rows.py's own roles.
+GROUP_ROLE = HOST_ROLE  # Where a host's own roles start; the delegates never read past it.
 
 # What the trailing slot says: the state, or — for a document nobody needs to act on — when
 # it landed. DESIGN.md's *Lists of rich items*: a date, a count, a fact about the row.

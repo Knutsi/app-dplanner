@@ -1288,7 +1288,7 @@ root, stop and look for the registry or capability you have not found yet.
   coming first-start checklist reuses. A profile's name
   follows its choices — *Claude Code in herdr* — until somebody types one, and a taken
   name is numbered rather than refused. Over a selection every chosen step goes through
-  the one profile — with a multiplexer, one pane each. The progression board's Ready
+  the one profile — with a multiplexer, one pane each. The Ready-to-start board's Ready
   lane is the same menu again: each ready card carries a tick, and the lane's *Run N
   Agents* button (top right, level with the caption) drops the child down over the
   ticked steps, publishing them as it opens.
@@ -1311,8 +1311,25 @@ root, stop and look for the registry or capability you have not found yet.
 - **Progression is derived, never stored** — `domain/progression.py` is the graph's
   readiness with a `status_for(step)` handed in like `days_for`; the board, `dplanner
   progression show` and `--json` are three readers of one function, and the frontier is a
-  per-step check, not `ordering.ready()`'s wave one. `ARCHITECTURE.md`'s *Progression is
-  the status-aware frontier* has the partition rules and why each was a decision.
+  per-step check, not `ordering.ready()`'s wave one. **The surface is named for the
+  question and the derivation for the answer**: the tab, its menu entries and its index
+  row say *Ready to start*, while the walk, the module id, the activity kind and the verb
+  stay `progression`, because the frontier is one of the six partitions it computes and a
+  renamed verb would move under every agent that has the skill. Its header is the percent
+  and the bar — the two lines under the bar said the same counts in words and then again
+  in estimated days, which the bar draws to scale; the terminal still prints both, where
+  there is no bar to read. `ARCHITECTURE.md`'s *Progression is the status-aware frontier*
+  has the partition rules and why each was a decision.
+- **The order says what order, and how much — never when.** The Order tab is the index,
+  the step, its wave and its estimate, under one line of volume (`domain/schedule.py`'s
+  `volume_words`: *62 days over 24 steps, 2 unestimated*, the sentence `order show`,
+  `estimate rollup` and the Estimates tab's strip all print). It ran a serial calendar
+  once — accumulated days, days since the last milestone, a landing date per row, from a
+  start date set on that page — and nobody schedules that way: `time_estimates` simulates
+  two pools of workers and owns the start date, so the columns and the bar are gone and
+  **wave 1 is called *Wave 1***, the words *Ready to start* now naming the board alone.
+  The CSV export and the published report keep the day counts and the dates, because a
+  spreadsheet is opened to sort and sum.
 - **Staffing what-ifs are derived; only the assumptions are stored.** The time estimates
   tab and `dplanner schedule matrix` are one derivation — `domain/schedule.py`'s
   `phases` over `parallel_finish`, a deterministic two-pool greedy simulation (longest
@@ -1411,8 +1428,8 @@ root, stop and look for the registry or capability you have not found yet.
   deal — `ordering.placed`'s sequence, a milestone's own chosen colour over its dealt
   shade — walked once per project by the composition root's `_milestone_colors` and handed
   down as a typed callback, so no module learns where a colour map is stored. Ten surfaces
-  read it: the canvas card, its badge and its tag medallion, the order table's row, rule
-  and **key badge**, the progression board's card, the Tests tab's grouping heading, the
+  read it: the canvas card, its badge and its tag medallion, the order table's row wash
+  and **key badge**, the Ready-to-start board's card, the Tests tab's grouping heading, the
   Docs tab's medallion, the coverage lane, the Milestone tab's swatch, the calendar's
   bands and the report's graph. `theme/tones.py`'s `toned(name, hex)` is the one place a
   shade takes a tone's alphas — never re-derive them — and the maps live in
