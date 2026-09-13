@@ -79,10 +79,11 @@ def compile_body(
     )
     blocks.append(
         "## When you are done\n\n"
-        f"Hand the document to the plan:\n\n```\ndplanner compiled set {key} --file -\n```\n\n"
-        "Read it back with `dplanner compiled show " + key + "` if you want to check it"
-        " landed. That verb stamps what the document was compiled from, so it reads as up to"
-        " date until somebody edits a fragment behind it — do not write the document"
-        " anywhere else, and do not change the step's status."
+        "Hand the document to the plan — from a file, or straight in:\n\n"
+        f"```\ndplanner compiled set {key} --file - <<'EOF'\n"
+        "…the document…\nEOF\n```\n\n"
+        "That stamps what it was compiled from, so it reads as up to date until somebody"
+        f" edits a fragment behind it; `dplanner compiled show {key}` reads it back. Write the"
+        " document nowhere else, and do not change the step's status."
     )
     return "\n\n".join(blocks)

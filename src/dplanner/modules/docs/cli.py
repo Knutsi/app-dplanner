@@ -320,7 +320,7 @@ def _collect(context: CliContext, args: Namespace, kinds: Sequence[ScopeKind]) -
             ],
             "markdown": body,
         },
-        body or f"{step.title}: nothing behind it carries documentation",
+        body or f"{step.title}: nothing behind it carries a documentation fragment",
     )
     return 0
 
