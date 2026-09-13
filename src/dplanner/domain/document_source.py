@@ -79,6 +79,12 @@ class SourceStatus:
 
     ready: bool
     message: str = ""
+    # Whether the kind's ``connect`` can close *this* gap: a site not yet connected, a
+    # token that expired. A malformed locator, a missing git, a kind this build does not
+    # have are all not-ready and none of them is connectable — so the strip says the
+    # message and offers no button, because a dialog about the wrong thing is worse than
+    # no dialog. A status must claim it, which is why the default is False.
+    connectable: bool = False
 
 
 @dataclass(frozen=True)

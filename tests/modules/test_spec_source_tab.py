@@ -50,6 +50,7 @@ class FakeKind:
     name: str = "Fake"
     label: str = "Fake Source…"
     ready: bool = False
+    connectable: bool = True
     located: tuple[str, dict[str, str]] | None = ("Auth", {"site": "https://f", "id": "1"})
     snapshot: Snapshot = field(
         default_factory=lambda: Snapshot(
@@ -74,7 +75,11 @@ class FakeKind:
         return self.located
 
     def status(self, _locator):
-        return SourceStatus(True) if self.ready else SourceStatus(False, "Not connected to f")
+        if self.ready:
+            return SourceStatus(True)
+        # `connectable` is the kind's claim that its own Connect closes this gap; a
+        # malformed locator would say False and get the sentence and no button.
+        return SourceStatus(False, "Not connected to f", connectable=self.connectable)
 
     def connect(self, _parent, _locator):
         self.connects += 1
@@ -205,7 +210,10 @@ def test_the_strip_offers_connect_until_the_kind_is_ready_then_fetches(
     assert (
         activity.connect_button.isVisible() and activity.connect_button.text() == "Connect to Fake…"
     )
-    assert activity.source_note.text() == "Not connected to f"
+    assert (activity.source_state.words(), activity.source_state.tone()) == (
+        "Not connected to f",
+        "error",
+    )
     state = services.actions.spec("spec.refresh_source").state(services.context.current())
     assert not state.enabled and state.label == "Refresh Source — Not connected to f"
 
@@ -248,7 +256,7 @@ def test_a_fetch_nests_its_pages_read_only_under_the_source(fetched, services, p
     assert services.context.current().selected_entity("spec_source") == "src1"
     facts = activity.source_facts.text()
     assert "from Fake" in facts and "2 documents" in facts
-    assert activity.source_note.text() == "2 added"
+    assert activity.source_state.words() == "2 added"
 
 
 def test_the_add_and_the_fetch_are_two_undo_entries(fetched, services, project):
@@ -273,7 +281,7 @@ def test_a_refresh_replaces_changed_pages_keeps_previous_and_is_its_own_entry(
     assert fake_kind.fetches[-1] == {"1": "3", "2": "1"}
     index = index_of(services, project)
     assert index.documents[0].previous is not None and index.documents[1].version == "1"
-    assert fetched.source_note.text() == "1 updated"
+    assert fetched.source_state.words() == "1 updated"
     services.undo.undo()
     assert index_of(services, project).documents[0].version == "3"
     assert len(index_of(services, project).documents) == 2  # The fetch before it stands.
@@ -331,12 +339,13 @@ def test_a_check_says_what_changed_and_writes_nothing(app, fetched, fake_kind, s
     assert fake_kind.checks[-1] == {"1": "3", "2": "1"}
     assert index_of(services, project) == before
     assert (
-        fetched.source_note.text() == "2 documents changed at the source — Refresh to take them in"
+        fetched.source_state.words()
+        == "2 documents changed at the source — Refresh to take them in"
     )
     services.actions.run("spec.refresh_source", services.context.current())
     wait_for(app, lambda: refresher.freshness(project.id, "src1") is None)
     wait_for(app, settled(services, project))
-    assert fetched.source_note.text() == "up to date"
+    assert fetched.source_state.words() == "up to date"
 
 
 def test_a_check_is_not_started_for_a_source_that_is_not_ready(app, fake_kind, services, project):
@@ -354,7 +363,10 @@ def test_a_refused_credential_flips_the_button_to_reconnect(
     services.actions.run("spec.refresh_source", services.context.current())
     wait_for(app, lambda: fetched.connect_button.isVisible())
     wait_for(app, settled(services, project))
-    assert fetched.source_note.text() == "f rejected the token"
+    assert (fetched.source_state.words(), fetched.source_state.tone()) == (
+        "f rejected the token",
+        "error",
+    )
     assert fetched.connect_button.text() == "Reconnect to Fake…"
     state = services.actions.spec("spec.refresh_source").state(services.context.current())
     assert not state.enabled and "rejected" in (state.label or "")
@@ -374,7 +386,7 @@ def test_a_source_with_no_kind_in_this_build_is_shown_but_not_fetchable(services
     SetModuleDataCommand(project.id, MODULE_ID, write_index(index)).redo(services.document)
     activity = opened(services, project)
     activity.select_source("src1")
-    assert "no sharepoint support" in activity.source_note.text()
+    assert "no sharepoint support" in activity.source_state.words()
     assert activity.connect_button.isHidden()
 
 
@@ -483,3 +495,81 @@ def test_the_freshness_of_each_project_is_its_own(app, two_kinds, services, pair
     wait_for(app, lambda: refresher.freshness(pair.id, "src1") is not None)
     assert refresher.freshness(other.id, "src1") is None
     assert len(refresher.stale(pair.id)) == 1 and refresher.stale(other.id) == []
+
+
+# -- what the tab says before you open it -------------------------------------------------------
+
+
+def specs_row(services):
+    from dplanner.framework.builder import INDEX_PANEL_ID
+
+    panel = services.window.dock.widget_for(INDEX_PANEL_ID)
+    project_row = panel.tree.topLevelItem(0).child(0)
+    return next(
+        project_row.child(i)
+        for i in range(project_row.childCount())
+        if project_row.child(i).text(0).startswith("Specs")
+    )
+
+
+def test_a_stale_source_marks_the_tab_title_the_index_row_and_the_line_over_the_tree(
+    app, fetched, fake_kind, services, project
+):
+    """One derivation, three readings: the mark says *there is something here* without
+    opening the tab, and the line over the tree says what it is."""
+    assert services.tabs.tab_title(fetched) == "Discovery — Specs"
+    assert specs_row(services).text(0) == "Specs"
+    assert fetched.updates.words() == ""
+
+    fake_kind.freshness = Freshness(changed=("2",), added=("9",))
+    refresher = fetched._refresher
+    refresher.check_all(project.id)
+    wait_for(app, lambda: refresher.freshness(project.id, "src1") is not None)
+    services.debounce.flush_all()
+
+    assert services.tabs.tab_title(fetched) == "Discovery — Specs •"
+    assert specs_row(services).text(0) == "Specs •"
+    assert fetched.updates.words() == (
+        "2 documents changed in 1 source — Refresh All to take them in"
+    )
+
+    services.actions.run("spec.refresh_source", services.context.current())
+    wait_for(app, lambda: refresher.freshness(project.id, "src1") is None)
+    wait_for(app, settled(services, project))
+    services.debounce.flush_all()
+    assert services.tabs.tab_title(fetched) == "Discovery — Specs"
+    assert specs_row(services).text(0) == "Specs"
+    assert fetched.updates.words() == ""
+
+
+def test_checking_goes_on_while_the_tab_is_not_the_pane_in_front(
+    app, fetched, fake_kind, services, project
+):
+    """A badge that only lit while you were already looking at the tab would say nothing.
+    The watch follows whether a Specs tab is open, and `close` is what ends it."""
+    before = len(fake_kind.checks)
+    fetched.on_deactivated()
+    fetched._refresher.check_all(project.id)
+    wait_for(app, lambda: len(fake_kind.checks) > before)
+    services.tabs.close_activity(fetched)
+    closed = len(fake_kind.checks)
+    fetched._refresher.check_all(project.id)
+    app.processEvents()
+    assert len(fake_kind.checks) == closed
+
+
+def test_connect_is_not_offered_where_connecting_cannot_help(app, fake_kind, services, project):
+    """A malformed locator and a missing git are refusals no dialog lifts. The kind says
+    so, and the strip gives the sentence its reason rather than a button about it."""
+    tab = added(services, project)
+    fake_kind.connectable = False
+    fake_kind.ready = False
+    tab._refresh_source_strip()
+    assert tab.connect_button.isHidden()
+    assert (tab.source_state.words(), tab.source_state.tone()) == (
+        "Not connected to f",
+        "error",
+    )
+    fake_kind.connectable = True
+    tab._refresh_source_strip()
+    assert not tab.connect_button.isHidden()

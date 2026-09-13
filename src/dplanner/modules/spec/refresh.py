@@ -132,7 +132,8 @@ class SourceRefresher(QObject):
             return SourceStatus(False, f"no {source.kind} support in this build")
         refused = self._reconnect.get((project_id, source.id))
         if refused:
-            return SourceStatus(False, refused)
+            # A refusal the credential caused is exactly what reconnecting fixes.
+            return SourceStatus(False, refused, connectable=True)
         return kind.status(source.locator)
 
     def needs_reconnect(self, project_id: NodeId, source_id: str) -> bool:

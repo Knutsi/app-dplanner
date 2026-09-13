@@ -14,7 +14,7 @@ from dataclasses import replace
 from datetime import UTC, datetime
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor, QIcon, QTextCharFormat, QTextCursor
+from PySide6.QtGui import QColor, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -35,6 +35,7 @@ from dplanner.cli.shaping import guide
 from dplanner.core.anchors import locate_many
 from dplanner.domain.assets import asset_references
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.document_source import Freshness, SourceStatus
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, NodeId, Project, TextEdit
 from dplanner.domain.store import ModuleFileArea
@@ -58,13 +59,14 @@ from dplanner.framework.markdown_toolbar import MarkdownToolbar
 from dplanner.framework.markdown_view import MarkdownView
 from dplanner.framework.prose_edit import ProseEdit
 from dplanner.framework.prose_section import ProseSection
-from dplanner.framework.signalling import UpdatingIndicator
+from dplanner.framework.signalling import StatusLine, Tone, UpdatingIndicator
 from dplanner.framework.text_dialog import ExpandedTextDialog, attach_expand
 from dplanner.framework.theme_service import ThemeService
-from dplanner.framework.toolbar import ActionToolbar
+from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import (
     EDITOR_MEASURE,
+    EmptyState,
     caption,
     centered_column,
     make_text_well,
@@ -87,23 +89,23 @@ from dplanner.modules.spec.documents import (
 from dplanner.modules.spec.refresh import SourceRefresher
 from dplanner.modules.spec.source_kind import DocumentSourceKind
 from dplanner.modules.spec.sourced import (
+    UPDATES_MARK,
     Applied,
     Row,
     documents_of,
     freshness_words,
     source_of,
     tree,
+    updates_words,
 )
 from dplanner.modules.spec.viewer import PdfPageView
 from dplanner.theme.icons import (
-    external_icon,
     folder_icon,
     graph_icon,
-    plus_icon,
     read_icon,
     spec_icon,
-    trash_icon,
 )
+from dplanner.theme.tokens import CONTROL_GAP
 
 SPECS_KIND = "specs"
 
@@ -115,19 +117,18 @@ SOURCE_ENTITY = "spec_source"
 # The child menu the + button drops down: every way to add a spec, built-ins and kinds.
 ADD_SUBMENU = "Add Spec"
 
-TOOLBAR_ACTIONS = ("spec.new", "spec.remove", "spec.open_external")
-BUTTON_TEXT = dict.fromkeys(TOOLBAR_ACTIONS, "")  # Glyph-only; label → tooltip.
-ICONS: dict[str, Callable[[str], QIcon]] = {
-    "spec.new": plus_icon,
-    "spec.remove": trash_icon,
-    "spec.open_external": external_icon,
-}
+# The verbs over the document tree. Every glyph is the spec's own — the module keeps no
+# icon table — and `spec.new`'s arrow drops the whole *Add Spec* child menu, which is where
+# Import and every source kind live: one seat for every way of adding a document, rather
+# than a glyph each for ways that differ only in where the bytes come from.
+TOOLBAR_ACTIONS = (
+    "spec.new",
+    "spec.rename",
+    "spec.remove",
+    "spec.open_external",
+    "spec.refresh_sources",
+)
 SOURCE_ACTIONS = ("spec.refresh_source", "spec.open_source", "spec.remove_source")
-SOURCE_BUTTON_TEXT = {
-    "spec.refresh_source": "Refresh",
-    "spec.open_source": "Open",
-    "spec.remove_source": "Remove",
-}
 
 PANEL_MARGIN = 16
 CAPTION_GAP = 6
@@ -218,6 +219,8 @@ class SpecsActivity(EntityActivity):
         self._session_last: SpecDocument | None = None
         self._session_blobs: set[str] = set()
         self._edit_origin = object()
+        # Filled as the surfaces are built and again at the end; `close` runs the lot.
+        self._unsubscribes: list[Callable[[], None]] = []
 
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -232,25 +235,34 @@ class SpecsActivity(EntityActivity):
         side_layout = QVBoxLayout(side)
         side_layout.setContentsMargins(0, 0, 0, 0)
         side_layout.setSpacing(BLOCK_GAP)
-        self.toolbar = ActionToolbar(
-            actions,
-            context,
-            TOOLBAR_ACTIONS,
-            BUTTON_TEXT,
-            side,
-            menus={"spec.new": ("Project", ADD_SUBMENU)},
-        )
-        # A trailing stretch keeps the buttons left — without it the row's spare width
-        # spreads the fixed-size buttons apart (same move as CanvasToolbar's row).
-        toolbar_row = QHBoxLayout()
-        toolbar_row.setContentsMargins(0, 0, 0, 0)
-        toolbar_row.addWidget(self.toolbar)
-        toolbar_row.addStretch(1)
-        side_layout.addLayout(toolbar_row)
+        self.toolbar = Toolbar(side)
+        for action_id in TOOLBAR_ACTIONS:
+            self.toolbar.add_action(
+                actions,
+                context,
+                action_id,
+                menu=(("Project", ADD_SUBMENU) if action_id == "spec.new" else None),
+            )
+        # Outside the strip, so the … can never swallow it, and keeping its room while
+        # hidden so the row never reflows (DESIGN.md's *Signalling*).
+        self.rebuilding = UpdatingIndicator(side)
+        strip_row = QHBoxLayout()
+        strip_row.setContentsMargins(0, 0, 0, 0)
+        strip_row.setSpacing(CONTROL_GAP)
+        strip_row.addWidget(self.toolbar, 1)
+        strip_row.addWidget(self.rebuilding)
+        side_layout.addLayout(strip_row)
+        # What every source of this project has waiting, over the whole list rather than
+        # in the source strip — it is true whatever row is picked, and it is the sentence
+        # the badge on the tab title is the short form of.
+        self.updates = StatusLine(side)
+        side_layout.addWidget(self.updates)
         self.list = QTreeWidget(side)
         self.list.setObjectName("SpecTree")
         self.list.setHeaderHidden(True)
-        self.list.setUniformRowHeights(True)
+        # Two-line rows are not one height: the pinned header carries a rule under it and
+        # a row with no second line is shorter than one with it.
+        self.list.setUniformRowHeights(False)
         self.list.setIndentation(16)
         self.list.setItemDelegate(TwoLineDelegate(self.list))
         self.list.currentItemChanged.connect(lambda *_a: self._on_selection())
@@ -261,11 +273,7 @@ class SpecsActivity(EntityActivity):
         reader_layout.setContentsMargins(0, 0, 0, 0)
         reader_layout.setSpacing(0)
         self._views = QStackedWidget(reader)
-        self._notice = QLabel(self._views)
-        self._notice.setObjectName("InspectorNote")
-        self._notice.setWordWrap(True)
-        self._notice.setAlignment(Qt.AlignmentFlag.AlignHCenter | Qt.AlignmentFlag.AlignTop)
-        self._notice.setContentsMargins(BLOCK_GAP, BLOCK_GAP, BLOCK_GAP, BLOCK_GAP)
+        self._notice = EmptyState(parent=self._views)
         self._text = MarkdownView(self._views)
         self._pdf = PdfPageView(self._views)
         # The prose stack's editor, like every other document in the application: the
@@ -288,14 +296,17 @@ class SpecsActivity(EntityActivity):
         self._flush_timer = QTimer(self._editor, interval=FLUSH_DELAY_MS, singleShot=True)
         self._flush_timer.timeout.connect(self._flush_edit)
         self._editor.textChanged.connect(self._on_typed)
-        # Filled as the surfaces are built and again below; `close` runs the lot.
-        self._unsubscribes: list[Callable[[], None]] = []
         # Everything derived from the document's *text* — where each cited passage now
         # sits, and the wash over the lit ones — walks the whole document once per
         # passage. That is 15 ms a keystroke on a 24 KB spec with eight citations, so it
         # waits for a pause in typing like every other coalesced view, and the strip's
         # indicator says one is owed. Never a worker thread: it is pure Python.
         self._settled = Debounced(self._resettle, parent=self._editor, service=debounce)
+        # The tree is rebuilt whole — cleared, re-read from the index, re-expanded — so a
+        # burst of writes (a refresh landing five documents, a paste's own echo) pays for
+        # it once, and the indicator over it says one is owed.
+        self._rebuilding = Debounced(self._refresh, parent=self._editor, service=debounce)
+        self._unsubscribes.append(self.rebuilding.follow(self._rebuilding))
         self._editor_page = self._build_editor_page()
         self._topology_page = self._build_topology_page(library, undo, project_id)
         self._views.addWidget(self._notice)
@@ -325,9 +336,8 @@ class SpecsActivity(EntityActivity):
         self._unsubscribes += [
             library.module_data_changed.connect(self._on_module_data),
             library.text_edited.connect(self._on_text_edited),
-            theme.changed.connect(lambda _theme: self._paint_toolbar(theme)),
             # The rows carry ink-coloured icons, which a copied colour would leave stale.
-            theme.changed.connect(lambda _theme: self._refresh()),
+            theme.changed.connect(lambda _theme: self._rebuilding.trigger()),
         ]
         if refresher is not None:
             self._unsubscribes += [
@@ -338,7 +348,6 @@ class SpecsActivity(EntityActivity):
         self._unsubscribes += [
             kind.config_changed.connect(self._refresh_source_strip) for kind in self._kinds.values()
         ]
-        self._paint_toolbar(theme)
         self._refresh()
 
     # -- the activity contract -----------------------------------------------------------------
@@ -349,7 +358,17 @@ class SpecsActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — Specs"
+        """The project and the tab, and a mark while a source has updates waiting.
+
+        The mark is the short form of the line over the tree, so a person sees there is
+        something to take in without opening the tab — and reads what it is by doing so.
+        """
+        mark = UPDATES_MARK if self._stale() else ""
+        return f"{self._project().title or 'Untitled project'} — Specs{mark}"
+
+    def _stale(self) -> list[Freshness]:
+        """Every source of this project the last check found something at."""
+        return self._refresher.stale(self.project_id) if self._refresher is not None else []
 
     @property
     def widget(self) -> QWidget:
@@ -369,9 +388,14 @@ class SpecsActivity(EntityActivity):
             self._refresher.watch(self.project_id)  # Check the sources now and on the interval.
 
     def on_deactivated(self) -> None:
-        self._flush_edit()  # The session survives a pane switch; unsaved typing does not wait.
-        if self._refresher is not None:
-            self._refresher.unwatch(self.project_id)
+        """The session survives a pane switch; unsaved typing does not wait.
+
+        The *watch* survives it too — `close` is what ends it. Checking follows whether a
+        Specs tab is open on this project, not whether it happens to be the pane in front:
+        a badge that only lit while you were already looking at it would say nothing. The
+        rule about the active pane is about publishing a selection, which is above.
+        """
+        self._flush_edit()
         super().on_deactivated()
 
     def close(self) -> None:
@@ -695,21 +719,20 @@ class SpecsActivity(EntityActivity):
     def _project(self) -> Project:
         return self._product.project(self.project_id)
 
-    def _paint_toolbar(self, theme: ThemeService) -> None:
-        colour = theme.current.text_secondary
-        self.toolbar.set_button_icons({a: paint(colour) for a, paint in ICONS.items()})
-
     def _on_module_data(self, node_id: str, module_id: str, origin: object) -> None:
+        """Only the *rebuild* is coalesced. Whether a foreign write landed on the open
+        document is answered now, because the session has to end before the next keystroke
+        reaches a document the model has already replaced."""
         if node_id != self.project_id or module_id != MODULE_ID:
             return
         if origin is self._edit_origin:
-            self._refresh()  # Our own flush: the list re-reads, the editor is not touched.
+            self._rebuilding.trigger()  # Our own flush: the list re-reads, the editor does not.
             return
         if self.is_editing and self._current_document() != self._session_last:
             # Somebody else — undo, the CLI after a reload, another verb — changed the
             # document under the session. The model is the authority; the session ends.
             self._abort_edit()
-        self._refresh()
+        self._rebuilding.trigger()
 
     def _on_text_edited(self, edit: TextEdit, _origin: object) -> None:
         # The topology row's second line says whether one has been written; the prose
@@ -905,8 +928,9 @@ class SpecsActivity(EntityActivity):
             self._shown = (root.name, root.file)
 
     def _say(self, message: str) -> None:
+        """A page with nothing to show says one short line and nothing else."""
         self._shown = None
-        self._notice.setText(message)
+        self._notice.say(message)
         self._views.setCurrentWidget(self._notice)
 
     # -- cited passages: the wash, the strip, and the two jumps ------------------------------
@@ -942,6 +966,9 @@ class SpecsActivity(EntityActivity):
     def _build_source_strip(
         self, parent: QWidget, actions: ActionRegistry, context: ContextService
     ) -> QWidget:
+        """Where the selected source stands: what it is, what it has waiting, and what
+        can be done about it. The facts are a `note` — a remark about the source, not a
+        state — and the state is one `StatusLine` in one of the four tones."""
         strip = QWidget(parent)
         strip.setObjectName("SpecSourceStrip")
         column = QVBoxLayout(strip)
@@ -949,10 +976,9 @@ class SpecsActivity(EntityActivity):
         column.setSpacing(CAPTION_GAP)
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(6)
+        row.setSpacing(CONTROL_GAP)
         column.addLayout(row)
-        self.source_facts = QLabel(strip)
-        self.source_facts.setObjectName("InspectorNote")
+        self.source_facts = note("", strip)
         self.source_facts.setTextFormat(Qt.TextFormat.PlainText)
         row.addWidget(self.source_facts)
         row.addStretch(1)
@@ -960,17 +986,15 @@ class SpecsActivity(EntityActivity):
         self.connect_button.setObjectName("PrimaryButton")
         self.connect_button.clicked.connect(self._connect_source)
         row.addWidget(self.connect_button)
-        self.source_toolbar = ActionToolbar(
-            actions, context, SOURCE_ACTIONS, SOURCE_BUTTON_TEXT, strip
-        )
+        self.source_toolbar = Toolbar(strip)
+        for action_id in SOURCE_ACTIONS:
+            self.source_toolbar.add_action(actions, context, action_id)
         row.addWidget(self.source_toolbar)
-        # What changes with the data: the last check's answer, a fetch's outcome, a refusal.
         # Plain text always — every word of it may have come from the source.
-        self.source_note = QLabel(strip)
-        self.source_note.setObjectName("InspectorNote")
-        self.source_note.setTextFormat(Qt.TextFormat.PlainText)
-        self.source_note.setWordWrap(True)
-        column.addWidget(self.source_note)
+        self.source_state = StatusLine(strip)
+        self.source_state.setTextFormat(Qt.TextFormat.PlainText)
+        self.source_state.setWordWrap(True)
+        column.addWidget(self.source_state)
         self._source_strip = strip
         strip.setVisible(False)
         return strip
@@ -980,6 +1004,7 @@ class SpecsActivity(EntityActivity):
         index = read_index(self._project()) if self._product.has(self.project_id) else None
         source = source_of(index, source_id) if index is not None and source_id else None
         self._source_strip.setVisible(source is not None)
+        self._refresh_updates()
         if source is None or index is None:
             return
         kind = self._kinds.get(source.kind)
@@ -993,29 +1018,42 @@ class SpecsActivity(EntityActivity):
         status = (
             self._refresher.status(self.project_id, source) if self._refresher is not None else None
         )
-        ready = status is None or status.ready
-        can_connect = kind is not None and self._connect is not None and self._refresher is not None
-        self.connect_button.setVisible(not ready and can_connect)
-        if not ready and can_connect and self._refresher is not None:
+        # Connect only where connecting is the answer: a malformed locator and a missing
+        # git are refusals no dialog can lift, and a button that opens one about the wrong
+        # thing is worse than the sentence beside it.
+        offer = status is not None and not status.ready and status.connectable
+        self.connect_button.setVisible(offer and self._connect is not None)
+        if offer and self._connect is not None and self._refresher is not None:
             again = self._refresher.needs_reconnect(self.project_id, source.id)
             self.connect_button.setText(f"{'Reconnect' if again else 'Connect'} to {name}…")
-        self.source_note.setText(self._source_words(source, status.message if status else ""))
-        self.source_note.setVisible(bool(self.source_note.text()))
+        words, tone = self._source_state(source, status)
+        self.source_state.say(words, tone)
 
-    def _source_words(self, source: SpecSource, message: str) -> str:
-        if message:
-            return message
-        if self._refresher is not None and self._refresher.is_fetching():
-            kind = self._kinds.get(source.kind)
-            return f"Fetching from {kind.name if kind is not None else source.kind}…"
-        fresh = (
-            self._refresher.freshness(self.project_id, source.id)
-            if self._refresher is not None
-            else None
-        )
-        if fresh is not None and freshness_words(fresh):
-            return freshness_words(fresh)
-        return self._applied_words.get(source.id, "")
+    def _refresh_updates(self) -> None:
+        """The line over the whole tree: every source of this project, counted."""
+        self.updates.say(updates_words(self._stale()))
+
+    def _source_state(self, source: SpecSource, status: SourceStatus | None) -> tuple[str, Tone]:
+        """Where this source stands, and in which of the four tones. In order, because
+        each answer outranks the ones under it: a refusal is what you must act on, a fetch
+        in flight is what is happening now, and *up to date* is worth saying out loud."""
+        if status is not None and not status.ready:
+            return status.message, "error"
+        if self._refresher is None:
+            return "", "info"
+        kind = self._kinds.get(source.kind)
+        if self._refresher.is_fetching():
+            return f"Fetching from {kind.name if kind is not None else source.kind}…", "busy"
+        fresh = self._refresher.freshness(self.project_id, source.id)
+        if fresh is not None and fresh.stale:
+            return freshness_words(fresh), "info"
+        if applied := self._applied_words.get(source.id):
+            return applied, "ok"
+        if not source.fetched:
+            return "Not fetched yet — Refresh to take its documents in", "info"
+        if fresh is not None:
+            return "Up to date", "ok"
+        return "", "info"
 
     def _connect_source(self) -> None:
         source_id = self._current_source()

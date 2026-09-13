@@ -177,11 +177,11 @@ def test_the_toolbar_replaced_the_add_button(services, project):
     """The + button is the one way in: its arrow drops the Add Spec child menu, so
     Import is a menu entry rather than a second glyph, and the strip's Connect button
     stays off screen while no source is shown."""
-    from dplanner.framework.toolbar import ActionToolbar
+    from dplanner.framework.toolbar import Toolbar
 
     activity = opened(services, project)
-    assert activity.toolbar in activity.widget.findChildren(ActionToolbar)
-    assert "spec.add" not in activity.toolbar._buttons
+    assert activity.toolbar in activity.widget.findChildren(Toolbar)
+    assert activity.toolbar.button_for("spec.add") is None
     popup = activity.toolbar.menu_for("spec.new")
     assert popup is not None
     entries = [

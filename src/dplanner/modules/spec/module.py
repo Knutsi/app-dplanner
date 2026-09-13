@@ -17,6 +17,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from dplanner.core.fsio import slugify
+from dplanner.core.signals import Signal
 from dplanner.domain.commands import CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId
 from dplanner.domain.store import ModuleFileArea
@@ -66,7 +67,13 @@ from dplanner.modules.spec.documents import (
 from dplanner.modules.spec.figures_section import FiguresSection
 from dplanner.modules.spec.refresh import SourceRefresher
 from dplanner.modules.spec.source_kind import DocumentSourceKind
-from dplanner.modules.spec.sourced import add_source, owned_by_source, remove_source, source_of
+from dplanner.modules.spec.sourced import (
+    UPDATES_MARK,
+    add_source,
+    owned_by_source,
+    remove_source,
+    source_of,
+)
 from dplanner.theme.icons import edit_icon
 
 FILE_FILTER = "Spec documents (*.pdf *.md *.markdown *.txt);;All files (*)"
@@ -123,6 +130,28 @@ class SpecModule:
         )
         for kind in deps.kinds:
             kind.config_changed.connect(deps.context.refresh)
+        # Which projects have updates waiting, and a signal that fires only when that set
+        # *changes*. Not `refresher.changed`, which also fires on every busy flip: the
+        # index folder rebuilds on this, and a folder redrawn on every spinner tick is a
+        # folder that flickers while a fetch runs.
+        self._badged: frozenset[str] = frozenset()
+        self.updates_changed: Signal[()] = Signal("spec.updates.changed")
+        self.refresher.changed.connect(self._on_sources_changed)
+
+    def updates_mark(self, project_id: NodeId) -> str:
+        """The mark a row or a tab title wears while this project has updates waiting —
+        "" when it has none, and "" for a project whose sources nobody has checked."""
+        return UPDATES_MARK if self.refresher.stale(project_id) else ""
+
+    def _on_sources_changed(self) -> None:
+        found = frozenset(
+            project.id
+            for project in self._deps.library.projects
+            if self.refresher.stale(project.id)
+        )
+        if found != self._badged:
+            self._badged = found
+            self.updates_changed.emit()
 
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         self._deps.tabs.open(SPECS_KIND, project_id, preview=preview)
@@ -321,7 +350,9 @@ class SpecModule:
             SpecsActivity,
             deps.library.has,
             closes_on=deps.library.structure_changed,
-            retitles_on=deps.library.field_changed,
+            # The title says the project's name *and* whether a source has updates
+            # waiting, so it has two things to hear.
+            retitles_on=(deps.library.field_changed, self.updates_changed),
         )
 
     # -- actions -------------------------------------------------------------------------------

@@ -1358,6 +1358,12 @@ def default_modules(services: "AppServices") -> list["Module"]:
                         icon=spec_icon,
                         menu="Project",
                         order=20,
+                        # A mark while a source of that project has updates waiting, so it
+                        # is visible without opening the tab. What the window has found,
+                        # not a claim about the source now: checking runs while a Specs tab
+                        # is open, and a project nobody has opened is not being checked.
+                        badge=spec.updates_mark,
+                        changed=spec.updates_changed,
                     ),
                     ProjectEntry(
                         id="coverage",

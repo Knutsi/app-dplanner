@@ -201,6 +201,13 @@ def freshness_words(found: Freshness) -> str:
     return ", ".join(parts) + " at the source — Refresh to take them in"
 
 
+# The mark a tab title and an index row wear while a source has updates waiting: the short
+# form of :func:`updates_words`, which is the sentence behind it one click away. A mark and
+# not a count — the question a title answers is *is there anything here*, and a number that
+# shifts under you as checks land is one more thing to read on a row full of them.
+UPDATES_MARK = " •"
+
+
 def updates_words(stale: Sequence[Freshness]) -> str:
     """Every source with updates, counted, for the line over the whole list — "" when
     nothing has changed anywhere."""
