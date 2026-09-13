@@ -247,6 +247,49 @@ def test_a_glyph_is_the_same_picture_at_every_device_pixel_ratio(app, monkeypatc
     assert max(lit) / ratio > 3 * ICON_SIZE / 4
 
 
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
+@pytest.mark.parametrize("drops_a_menu", (False, True), ids=("plain", "with an arrow"))
+@pytest.mark.parametrize("checked", (False, True), ids=("off", "on"))
+def test_a_toolbar_button_is_bordered_on_all_four_sides(app, theme, drops_a_menu, checked):
+    """Rendered, not read — because what broke this was a rule that names no border at all.
+
+    A ``#ToolbarButton:checked::menu-button`` rule, in *any* form, made Qt drop the
+    **button's own left border** — on every toolbar button in the application, checked or
+    not, menu or no menu. Nothing in the rule says "left border of the widget", and nothing
+    short of looking at the pixels could have caught it.
+    """
+    strip = QWidget()
+    strip.setObjectName("ControlBar")
+    strip.setProperty("dense", True)
+    button = _glyph_button(strip)
+    button.setCheckable(True)
+    button.setChecked(checked)
+    if drops_a_menu:
+        button.setMenu(QMenu(button))
+        button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+        button.setProperty("hasMenu", True)
+    button.setFixedHeight(tokens.CONTROL_HEIGHT)
+    button.resize(button.sizeHint())
+    strip.resize(button.size())
+    strip.setStyleSheet(load_stylesheet(theme))
+    strip.show()
+    app.processEvents()
+
+    image = button.grab().toImage()
+    middle_x, middle_y = button.width() // 2, button.height() // 2
+    edges = {
+        "left": (0, middle_y),
+        "right": (button.width() - 1, middle_y),
+        "top": (middle_x, 0),
+        "bottom": (middle_x, button.height() - 1),
+    }
+    drawn = {side: QColor(image.pixel(x, y)).name() for side, (x, y) in edges.items()}
+    # One colour on all four, whatever it is: a checked button's border is the accent it is
+    # filled with, and an unchecked one's is the hairline. A side that differs from the
+    # other three is a side that is not drawn.
+    assert len(set(drawn.values())) == 1, drawn
+
+
 def _glyph_button(parent):
     button = QToolButton(parent)
     button.setObjectName("ToolbarButton")

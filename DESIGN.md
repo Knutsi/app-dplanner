@@ -470,7 +470,10 @@ Example Table wears one.
 - **A control that drops a menu asks for its arrow's room** (`ARROW_ROOM` for a split
   button, `INDICATOR_ROOM` for a face). A styled subcontrol is outside Qt's size hint, so
   nothing widens the button by itself: without the padding the arrow is painted over the
-  glyph, and a clipped icon is the only sign.
+  glyph, and a clipped icon is the only sign. **And the divider between the halves is one
+  colour for every state** (`$BORDER_STRONG`, which reads on the quiet ground and on a
+  checked button's accent fill alike): a second rule for the checked state — a pseudo-state
+  on a subcontrol — makes Qt drop the button's own left border everywhere.
 - **What no longer fits folds into a `…` menu at the strip's end**, as glyph *and* words,
   taken from the right — never a second row, and never Qt's own overflow, which pops the
   hidden buttons up as glyphs again. A widget among the verbs (a filter) never enters the

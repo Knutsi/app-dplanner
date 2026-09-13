@@ -3054,3 +3054,29 @@ too loud.
 
 **Upstream?** The mechanism, yes — a template that paints its own glyphs wants this loader.
 The set is an application's choice, and its licence notice travels with it.
+
+### A `:checked::menu-button` rule drops the button's own left border
+
+**What.** `#ToolbarButton:checked::menu-button { border-left-color: … }` existed so the
+divider between a split button's halves would not vanish into the accent fill a checked
+mode button wears. Declaring it — in *any* form, `border-left-color` or a full
+`border-left` — makes Qt drop the **widget's own left border**, on every `#ToolbarButton`
+in the application, checked or not, menu or no menu. It is gone; the unconditional
+`::menu-button` divider is `$BORDER_STRONG` instead, one colour that reads on the quiet
+ground and on the accent fill alike.
+
+**Why it took a user to find it.** Nothing in the rule mentions the widget's border, the
+symptom is one missing hairline, and every theme test we had read the stylesheet's *text*
+or measured a subcontrol's geometry. `tests/test_theme.py` now renders a `#ToolbarButton`
+in both themes, checked and not, with and without a menu, and asserts the four edge pixels
+are **one colour** — a checked button's border is the accent it is filled with, an
+unchecked one's is the hairline, and a side that differs from the other three is a side
+that is not drawn. It fails eight ways with the rule put back.
+
+**Watch.** The general shape: a pseudo-state on a subcontrol (`:checked::menu-button`) is
+not a scoped override in Qt's stylesheet engine — it can change how the *whole* widget's
+box is rendered. Prefer one unconditional subcontrol rule whose colour works in every
+state over a second rule for one state.
+
+**Upstream?** The finding, yes. Any template with a split toolbar button will write this
+rule sooner or later.

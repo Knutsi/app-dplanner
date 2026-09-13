@@ -785,15 +785,15 @@ QComboBox QAbstractItemView::item:selected {
     subcontrol-origin: padding;
     subcontrol-position: right center;
     width: ${ARROW_W}px;
-    border-left: 1px solid $BORDER;
+    /* $BORDER_STRONG, not $BORDER, because this one line has to read on two grounds: the
+       button's quiet ground, and the accent fill a checked mode button wears. A second rule
+       for the checked case is what this file used to have, and a
+       `#ToolbarButton:checked::menu-button` rule — in *any* form — makes Qt drop the
+       button's own left border, on every toolbar button in the application, checked or
+       not. One colour, one rule, no subcontrol pseudo-state. */
+    border-left: 1px solid $BORDER_STRONG;
     border-top-right-radius: ${RADIUS_SM}px;
     border-bottom-right-radius: ${RADIUS_SM}px;
-}
-
-/* Checked, the button is filled with the accent and a $BORDER divider would vanish into it.
-   The arrow's own ink is what parts the halves there. */
-#ToolbarButton:checked::menu-button {
-    border-left-color: $ON_ACCENT;
 }
 
 #ToolbarButton::menu-arrow {
