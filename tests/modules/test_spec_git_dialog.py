@@ -98,7 +98,7 @@ def test_an_oversized_folder_is_refused_with_the_folder_named(app, dialog, monke
     dialog.list_button.click()
     wait_for(app, lambda: dialog.passed)
     dialog.table.selectRow(0)  # The whole repository: two documents, cap of one.
-    assert refused(dialog) and "Pick a folder inside it" in dialog.status.words()
+    assert refused(dialog) and "pick a folder inside it" in dialog.status.words()
     dialog.table.selectRow(1)
     assert not refused(dialog)
 

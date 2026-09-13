@@ -589,16 +589,16 @@ def _folders(rows: list[tuple[str, str]]) -> tuple[Folder, ...]:
 
 
 def _too_big(label: str, files: int, documents: int) -> str:
+    """Why this folder is more than one source takes in, or "".
+
+    Short on purpose: it stands in a dialog's footer status slot beside two buttons, and a
+    reason that does not fit widens the dialog. What the person can act on is which folder
+    and how much is in it — the cap itself is the application's and teaches nothing.
+    """
     if files > MAX_FILES:
-        return (
-            f"{label} holds {files:,} files — more than the {MAX_FILES:,} one source takes "
-            "in. Pick a folder inside it."
-        )
+        return f"{label} holds {files:,} files — pick a folder inside it"
     if documents > MAX_DOCUMENTS:
-        return (
-            f"{label} holds {documents:,} documents — more than the {MAX_DOCUMENTS:,} one "
-            "source takes in. Pick a folder inside it."
-        )
+        return f"{label} holds {documents:,} documents — pick a folder inside it"
     return ""
 
 

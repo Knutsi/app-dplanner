@@ -105,7 +105,7 @@ def test_a_tag_and_a_commit_id_are_both_fetchable(remote, cache):
 
 def test_a_folder_over_the_cap_is_refused_before_a_blob_is_downloaded(remote, cache, monkeypatch):
     monkeypatch.setattr(source, "MAX_DOCUMENTS", 2)
-    with pytest.raises(SourceUnavailableError, match="Pick a folder inside it"):
+    with pytest.raises(SourceUnavailableError, match="pick a folder inside it"):
         taken(remote, cache)
     directory = cache_dir(cache, locator(remote))
     assert not (directory / "docs").exists()  # Nothing was checked out.
@@ -123,11 +123,14 @@ def test_the_listing_says_what_each_folder_would_cost(remote, cache):
 def test_a_folder_that_would_be_refused_says_so_while_it_is_being_chosen(
     remote, cache, monkeypatch
 ):
-    monkeypatch.setattr(source, "MAX_DOCUMENTS", 2)
+    """A person meets the guard beside the folder, while choosing — not as a failed fetch."""
+    monkeypatch.setattr(source, "MAX_DOCUMENTS", 3)
     found = probe(cache, remote.url, "main")
     whole = next(folder for folder in found.folders if folder.path == "")
-    assert f"more than the {2:,}" in whole.refusal and "Pick a folder inside it" in whole.refusal
-    assert MAX_DOCUMENTS  # The real cap is a module constant, not a magic number in a call.
+    assert whole.refusal == "the whole repository holds 5 documents — pick a folder inside it"
+    spec = next(folder for folder in found.folders if folder.path == "docs/spec")
+    assert spec.documents == 3 and not spec.refusal
+    assert MAX_DOCUMENTS  # The real cap is a module constant, not a number in a call.
 
 
 # -- the check -----------------------------------------------------------------------------------

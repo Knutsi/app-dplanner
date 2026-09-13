@@ -730,7 +730,8 @@ class SpecsActivity(EntityActivity):
         item.setIcon(0, page(ink))
         detail = f"{doc.kind} · imported {doc.imported}"
         if doc.sourced:
-            detail = f"page · fetched {doc.imported}"
+            # What it is, still: three of the four kinds fetch files, not pages.
+            detail = f"{doc.kind} · fetched {doc.imported}"
         if doc.previous:
             detail += " · previous kept"
         item.setData(0, DETAIL_ROLE, detail)
