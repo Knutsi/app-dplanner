@@ -158,7 +158,7 @@ footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted
   <div>
     <span class="eyebrow">Architecture report · measured, not recalled</span>
     <h1>DPlanner Architecture State</h1>
-    <p class="lede">Two questions, answered from the tree as it stands: are the modules still fully separate, and what do they do to integrate or share what they know? Then where the entropy has collected, and what it would cost to take it back out.</p>
+    <p class="lede">Two questions, answered from the tree as it stands: are the modules still fully separate, and what do they do to integrate or share what they know? Then how the application starts and scales, where the entropy has collected, and what it would cost to take it back out.</p>
   </div>
   <dl class="facts">
     <dt>Measured</dt><dd>13 September 2026</dd>
@@ -178,8 +178,9 @@ footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted
     <li><a href="#modules">2 · The modules</a></li>
     <li><a href="#integration">3 · How modules integrate</a></li>
     <li><a href="#entropy">4 · Where the entropy sits</a></li>
-    <li><a href="#health">5 · Health checks</a></li>
-    <li><a href="#recommendations">6 · What to do about it</a></li>
+    <li><a href="#startup">5 · Startup and scalability</a></li>
+    <li><a href="#health">6 · Health checks</a></li>
+    <li><a href="#recommendations">7 · What to do about it</a></li>
     <li><a href="#method">Appendix · Method</a></li>
   </ol>
 </nav>
@@ -200,7 +201,7 @@ footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted
       <p>Framework registries, typed callbacks on each module's <code>Deps</code>, Qt-free exports collected into tuples, derivations in <code>domain/</code> handed functions instead of schemas, and a shared on-disk vocabulary. Every one of those channels is wired in one file — <code>modules/__init__.py</code>, now 2,838 lines — and that file has quietly become the largest module in the application.</p>
     </div>
   </div>
-  <p>The short version: the boundary the architecture promised is intact, and the cost of keeping it has been paid in a single place. The entropy is concentrated, which is the good kind — it is findable, and most of it comes out with one refactor of the composition root and one deletion.</p>
+  <p>The short version: the boundary the architecture promised is intact, and the cost of keeping it has been paid in a single place. The entropy is concentrated, which is the good kind — it is findable, and most of it comes out with one refactor of the composition root and one deletion. The one urgent item is not entropy at all: a change landed today makes every keystroke re-walk the graph (§5).</p>
 </section>
 
 <section id="glance">
@@ -481,8 +482,113 @@ footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted
   </article>
 </section>
 
-<section id="health">
+<section id="startup">
   <span class="eyebrow">Section 5</span>
+  <h2>Startup and scalability</h2>
+  <aside class="summary"><span class="eyebrow">Summary</span>
+    <p>The application is constructed in one fixed sequence on the GUI thread, behind a splash: dispatch on the first command word (the CLI path never imports Qt), then <code>QApplication</code> and the theme, then the builder reads every plan file of every listed project, constructs the framework services, calls <code>default_modules()</code>, migrates formats, and runs 41 <code>register()</code> calls — one of which reopens last session's tabs. Only then is the window shown and the watchdog started. The CLI starts in about 0.3 s; a window opens in under a second up to a few hundred steps, and the first open of a process pays 2 to 3 s of imports. What scales badly is not the graph maths, which is linear and cheap, but the reactions to a gesture and the plan on disk: a two-second poll that stats every plan file, a git subprocess per repository every two seconds, a day-by-day calendar walk inside every canvas sync, and three tabs whose cold open grows faster than the project. Of the ten fixes the architecture document listed on 8 September, one has landed in full and two in part.</p>
+  </aside>
+
+  <h3>How the application is started and constructed</h3>
+  <p>Two doors, one sequence. <code>dplanner &lt;verb&gt;</code> and <code>dplanner window</code> enter through <code>entry.main</code>, which decides on the first command word before any Qt module is imported and refuses the window inside an agent's shell. Everything below the first row runs synchronously on the GUI thread; the splash's status line is the only sign of progress, and the stall watchdog is deliberately not running yet.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Stage</th><th>Where</th><th>What happens</th><th>Cost, measured here</th></tr></thead>
+    <tbody>
+      <tr><td>1 · Dispatch</td><td><code>entry.py</code></td><td>Reads the first word; installs the telemetry journal; for the CLI, builds the command registry by importing 32 modules' <code>cli.py</code>; for the window, imports <code>app.py</code> and with it PySide6.</td><td class="num">CLI ≈ 300 ms wall for <code>--help</code> (35 ms of it the interpreter); Qt import ≈ 260 ms on top of the CLI's ≈ 100 ms</td></tr>
+      <tr><td>2 · Application</td><td><code>app.build_application</code></td><td><code>AA_DontUseNativeMenuBar</code> before any menu bar; <code>QApplication</code>; identity, icon; the saved theme applied through the machine's providers; the gc policy installed (automatic collection off, a 200 ms timer collects at safe points).</td><td class="num">tens of ms</td></tr>
+      <tr><td>3 · Diagnostics</td><td><code>app.main</code></td><td>Crash log opened, exception hooks chained into the journal, the 100 ms heartbeat created but <em>not started</em>, a <code>session</code> record written.</td><td class="num">negligible</td></tr>
+      <tr><td>4 · Load</td><td><code>AppBuilder.build</code> → <code>LibraryStore.load</code></td><td>Seeds an empty library if none; reads <code>library.json</code>; for each listed project checks the directory is inside a git repository, reads <code>project.dproj</code> and every step's <code>step.json</code>, module JSON and prose file, records a stamp per file, and writes back any project whose format migrated.</td><td class="num">proportional to files: about 5.5 plan files per step (a 220-step synthetic library is 1,203 files)</td></tr>
+      <tr><td>5 · Services</td><td><code>AppBuilder.build</code></td><td>Context, actions, undo, autosave (1.5 s), debounce, tabs, panels, dock, the window, the index panel, theme, zoom, tasks, LLM, telemetry — the <code>AppServices</code> record every module's <code>Deps</code> is cut from.</td><td class="num">tens of ms</td></tr>
+      <tr><td>6 · Modules</td><td><code>default_modules(services)</code></td><td>The 1,529-line function: 41 <code>Deps</code> records built, every cross-module callback closed over another module's headless half. No Qt work yet — that is <code>register()</code>'s.</td><td class="num">import-bound: the 256 module imports are paid here on a cold process</td></tr>
+      <tr><td>7 · Migrate</td><td><code>migrate_module_data</code>, <code>migrate_shelved</code></td><td>Every module format's converter runs over every node, then over the shelf; a changed node is flushed to disk before any view exists.</td><td class="num">zero on a current plan; one write per migrated node otherwise</td></tr>
+      <tr><td>8 · Register</td><td><code>module.register()</code> ×41, in list order</td><td>Actions, tabs, index folders, panels, sections, settings pages, status-bar widgets. Order carries meaning at six documented positions. <code>reopen_tabs</code> is last and <em>restores the previous session's tabs synchronously here</em>, so a tab that is expensive to open cold is paid at startup if it was open.</td><td class="num">build 221 ms at 25 steps, 622 ms at 100, 2.6 s at 400 (stages 4–8 together)</td></tr>
+      <tr><td>9 · Show</td><td><code>AppSession._open</code></td><td><code>window.show()</code>; on a reload the new window takes the old one's geometry and the old build is discarded after the new one is on screen.</td><td class="num">opened 333 ms at 100 steps, 756 ms at 400; 3.6 s for the first open of a process</td></tr>
+      <tr><td>10 · First turn</td><td>zero-delay timers</td><td>Watchdog starts; the checklist probes its required rows off the GUI thread and greets a new machine; the GitHub refresher's first tick fetches PR state on a worker; the sync module baselines every repository's branch with one <code>git branch --show-current</code> each; the four two-second pollers start.</td><td class="num">one git subprocess per repository, ≈ 5 ms each, on the GUI thread</td></tr>
+    </tbody>
+  </table></div>
+  <p>Two properties of this sequence matter for scale. Nothing is lazy: every project in the library is read whole before the window exists, and a library of many projects pays for all of them at every start. And nothing leaves the GUI thread until stage 10: the load, the migrations and the tab restore all run inside one <code>session open</code> span behind the splash, which is honest — the journal records it as the largest single stall the application has — but it also means a slow disk or a large plan is felt as a frozen splash rather than a window that fills in.</p>
+
+  <h3>What keeps running</h3>
+  <p>A window at rest runs eleven timers. Four of them fire every two seconds, and two of those touch the disk or spawn a process on the GUI thread.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Cadence</th><th>Owner</th><th>Per tick</th><th>Scales with</th></tr></thead>
+    <tbody>
+      <tr><td class="num">100 ms</td><td><code>framework/diagnostics.py</code></td><td>heartbeat; a daemon thread samples the GUI stack when the beat is 250 ms late</td><td>—</td></tr>
+      <tr><td class="num">200 ms</td><td><code>framework/gc_policy.py</code></td><td>the interpreter's own generational policy, run at a safe point; a generation-2 pass is 240–360 ms over 240k–326k live objects</td><td>the application more than the plan</td></tr>
+      <tr><td class="num">2 s</td><td><code>framework/window_watch.py</code></td><td><code>LibraryStore.changed_underneath()</code>: a <code>stat</code> of every plan file of every project, then adoption of anything foreign</td><td>projects × steps × module files</td></tr>
+      <tr><td class="num">2 s</td><td><code>modules/sync</code></td><td>one <code>git branch --show-current</code> subprocess per repository, synchronously, to notice a switch made underneath</td><td>repositories in the library</td></tr>
+      <tr><td class="num">2 s</td><td><code>modules/step_agent_run</code></td><td>a handful of stats per live run; the plan is asked about only once a run has ended</td><td>live agent runs</td></tr>
+      <tr><td class="num">2 s</td><td><code>framework/theme_service.py</code></td><td>asks the serving theme provider for its current theme, applies on change</td><td>—</td></tr>
+      <tr><td class="num">1.5 s after last edit</td><td><code>framework/autosave.py</code></td><td>flush: walks each dirty project's tree once to check for a foreign change and once more to re-stamp what it wrote</td><td>files of the dirty project</td></tr>
+      <tr><td class="num">0 / 300 / 500 ms</td><td><code>framework/debounce.py</code></td><td>coalesced rebuilds: the canvas once per turn, tables after 300 ms, the Time tab after 500 ms; the recorder simulates every project after 300 ms</td><td>steps, and the plan's length in days</td></tr>
+      <tr><td class="num">5 min</td><td><code>modules/github/refresh.py</code></td><td>PR state per step with a PR, on a worker, applied off the undo stack</td><td>PR-bearing steps</td></tr>
+      <tr><td class="num">10 min</td><td><code>modules/spec/refresh.py</code></td><td>each spec source's <code>check</code>; writes nothing</td><td>sourced documents</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>What scales, and what does not</h3>
+  <p>The tree has its own harness — <code>scripts/measure_scaling.py</code> builds the application headless over a synthetic library and journals every gesture — and <code>ARCHITECTURE.md</code>'s <em>How the application scales</em> records a full sweep from 8 September. It was re-run for this report at 25, 100 and 400 steps with the graph, order and time tabs open. The rows below are the ones that decide how the application feels; the 8 September figures are beside them so movement is visible.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Per gesture, ms</th><th class="num">25</th><th class="num">100</th><th class="num">400</th><th class="num">8 Sep at 25 / 100 / 400</th><th>Reads as</th></tr></thead>
+    <tbody>
+      <tr><td>session build + open (stages 4–9)</td><td class="num">221 + 3,601*</td><td class="num">622 + 333</td><td class="num">2,632 + 756</td><td class="num">1,784* / 311 / 710</td><td>linear in files; the first open pays imports</td></tr>
+      <tr><td><strong>context refresh</strong>, one announce</td><td class="num">3</td><td class="num">10</td><td class="num">198</td><td class="num">4 / 4 / 6</td><td><span class="chip bad">regressed today</span></td></tr>
+      <tr><td>title keystroke, whole reaction</td><td class="num">10</td><td class="num">25</td><td class="num">327</td><td class="num">≈7 / 15 / 64</td><td>the row above plus the canvas sync</td></tr>
+      <tr><td>canvas sync per keystroke</td><td class="num">—</td><td class="num">—</td><td class="num">65</td><td class="num">3 / 11 / 58</td><td>superlinear: the calendar walk</td></tr>
+      <tr><td>click on a step, the dock</td><td class="num">27</td><td class="num">42</td><td class="num">52</td><td class="num">42 / 51 / 80</td><td>flat: nine sections shown per click</td></tr>
+      <tr><td>after a burst — Order table</td><td class="num">—</td><td class="num">—</td><td class="num">233</td><td class="num">11 / 20 / 126</td><td>linear in rows, a table rebuilt whole</td></tr>
+      <tr><td>after a burst — Time tab</td><td class="num">—</td><td class="num">—</td><td class="num">222</td><td class="num">11 / 21 / 206</td><td>the simulation, calendar walk included</td></tr>
+      <tr><td>after a burst — Problems panel</td><td class="num">—</td><td class="num">—</td><td class="num">240</td><td class="num">not measured</td><td>as costly as the Order table; new in the top list</td></tr>
+      <tr><td><strong>disk poll</strong>, every 2 s</td><td class="num">17</td><td class="num">45</td><td class="num">173</td><td class="num">18 / 43 / 151</td><td>a stat per plan file, on the GUI thread</td></tr>
+      <tr><td>autosave flush after one edit</td><td class="num">14</td><td class="num">44</td><td class="num">149</td><td class="num">17 / 49 / 159</td><td>the same walk, twice</td></tr>
+      <tr><td>paste of 20 steps — the command</td><td class="num">22</td><td class="num">19</td><td class="num">22</td><td class="num">122 / 137 / 188</td><td><span class="chip good">fixed</span> the membership guard</td></tr>
+      <tr><td>details dialog — construct + first show</td><td class="num">105</td><td class="num">106</td><td class="num">144</td><td class="num">108 / 113 / 157</td><td>a second full panel, flat</td></tr>
+      <tr><td>full garbage collection (gen 2)</td><td class="num">145</td><td class="num">127</td><td class="num">166</td><td class="num">239 / 250 / 360</td><td>251k–306k live objects; mostly the application</td></tr>
+      <tr><td>cold open: Tests tab</td><td class="num">72</td><td class="num">202</td><td class="num">990</td><td class="num">146 / 278 / 1,637</td><td>≈ N<sup>1.2</sup></td></tr>
+      <tr><td>cold open: Coverage tab</td><td class="num">83</td><td class="num">222</td><td class="num">2,371</td><td class="num">113 / 335 / 2,672</td><td>≈ N<sup>1.4</sup></td></tr>
+      <tr><td>cold open: Estimates tab</td><td class="num">318</td><td class="num">720</td><td class="num">3,290</td><td class="num">315 / 707 / 2,358</td><td>an editor widget per row</td></tr>
+      <tr><td>cold open: Docs tab</td><td class="num">40</td><td class="num">60</td><td class="num">967</td><td class="num">not measured</td><td>16× from 100 to 400: the same cone walk</td></tr>
+    </tbody>
+  </table></div>
+  <figure><figcaption>*the first open of the process. Measured here on 13 September in a two-core container (Python 3.13, offscreen platform), so absolute numbers run a little slower than the developer's desktop on the 8 September rows; the shape across sizes is what to compare. Harness: <code>scripts/measure_scaling.py --sizes 25,100,400</code>.</figcaption></figure>
+
+  <article class="finding">
+    <header><span class="chip bad">regression, today</span><h4>A menu-bar state walks every collector's cone on every keystroke</h4></header>
+    <div class="where">modules/docs/module.py::_stale_state → _stale → collect.sources_for → domain/scope.cone · introduced in 252b51d (13 Sep)</div>
+    <p>The context refresh went from a flat 4–6 ms to 198 ms at 400 steps in one day. The profile names it: the <em>Compile Out of Date…</em> action's state callback asks <code>_stale(project)</code>, which runs <code>sources_for</code> for every collector in the project — 96 of them on the synthetic plan, 20,786 <code>cone</code> walks and 537,000 node visits per ten keystrokes — and hashes their fragments, to decide what the menu entry's label should say. The menu bar re-evaluates every action's state on every announce, so this runs on every keystroke, click and selection. It is the rule <code>CLAUDE.md</code> already states for the keychain and for subprocesses (no heavy work in a state callback), broken by a derivation instead. The fix is the architecture document's item 3 — memoise the stale set per library revision — or, cheaper today, compute it once per project change in a <code>Debounced</code> and have the state read the last answer, the way the Problems count is read rather than probed.</p>
+  </article>
+  <p>Two smaller things the same profile shows. The disk poll spends most of its time in <code>pathlib.Path.relative_to</code> — 35,000 calls, three quarters of the walk — so the 173 ms hitch is largely string handling that a precomputed prefix would remove without moving the walk off the thread. And <code>working_days_after</code> was called 4,852 times for ten keystrokes, from <code>step_accents</code> inside the canvas sync, which is item 4 on the list.</p>
+
+  <p>The shape has not changed in five days. Every domain derivation stays linear and small; the cost is in reactions and in disk, and most of the reaction cost is a constant paid per gesture rather than a function of the plan. Three things grow faster than the project and are the scalability ceiling as it stands:</p>
+  <ul>
+    <li><strong>The plan on disk, twice a second.</strong> The poll and the flush walk every plan file — about 5.5 per step — on the GUI thread. At 400 steps that is a 150 ms hitch every two seconds whether or not anybody is typing.</li>
+    <li><strong>A calendar walked a day at a time.</strong> <code>domain/schedule.py</code>'s <code>working_days_after</code> loops from the project's start for every step, so the canvas sync, the Time tab and the recorder are quadratic in the plan's length in days. It is still a loop on the current tree.</li>
+    <li><strong>Cold tab opens.</strong> Tests and Coverage walk every collector's cone and build a widget per row (about N<sup>1.2</sup> and N<sup>1.4</sup>); Estimates builds a <code>QWidget</code> editor per step. All three are seconds at 400 steps, and <code>reopen_tabs</code> puts them into startup.</li>
+  </ul>
+  <p>Two smaller facts are structural rather than sized: a paste of twenty steps used to spawn twenty git subprocesses because every structure signal reached the sync module's membership handler — that guard has since landed — and a full garbage collection is a quarter of a second at any size, on the GUI thread, because the live object graph is mostly the application itself.</p>
+
+  <h3>The ten fixes, five days on</h3>
+  <p><code>ARCHITECTURE.md</code> closed its measurement with an ordered list of ten framework-level changes. This is where each stands on the current tree.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>#</th><th>Fix</th><th>Status</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td>A section shows on demand, not on every selection</td><td><span class="chip warn">open</span></td><td>no <code>stale</code> mechanism in <code>framework/inspector.py</code> or <code>step_properties/panel.py</code>; all nine sections still show on every click</td></tr>
+      <tr><td class="num">2</td><td>The recorder reads the settled state and never re-emits into it</td><td><span class="chip info">partial</span></td><td>writes with its own <code>RECORD_ORIGIN</code> and only on a day something changed, but the write is still a <code>module_data_changed</code> every following view rebuilds on</td></tr>
+      <tr><td class="num">3</td><td>A derived fact is cached per library revision</td><td><span class="chip warn">open</span></td><td>no revision counter on <code>Library</code> or the store</td></tr>
+      <tr><td class="num">4</td><td><code>working_days_after</code> is arithmetic, not a loop</td><td><span class="chip warn">open</span></td><td>still <code>for _ in range(…)</code> over <code>next_working_day</code></td></tr>
+      <tr><td class="num">5</td><td>A structure signal under a project is not a membership change</td><td><span class="chip good">done</span></td><td><code>sync/module.py</code> rewires only when <code>parent_id == library.id</code></td></tr>
+      <tr><td class="num">6</td><td>An action state never leaves the process (LLM status cached)</td><td><span class="chip info">moot</span></td><td>nothing calls the LLM service any more (§4); the keyring round trip went with the caller</td></tr>
+      <tr><td class="num">7</td><td>Every subscriber follows a project and coalesces</td><td><span class="chip warn">open</span></td><td><code>estimation/bulk.py</code>, <code>AllTestsActivity</code> and <code>project_list_segment.py</code> still connect to the library's raw signals; no architecture-test rule</td></tr>
+      <tr><td class="num">8</td><td>Full collections run when the window is idle</td><td><span class="chip warn">open</span></td><td><code>gc_policy.py</code> has no idle gate</td></tr>
+      <tr><td class="num">9</td><td>The poll and the flush walk the tree once, off the GUI thread</td><td><span class="chip warn">open</span></td><td><code>window_watch.py</code> still walks on the GUI thread; the flush still snapshots twice</td></tr>
+      <tr><td class="num">10</td><td>The smaller ones</td><td><span class="chip info">partial</span></td><td>the scene now announces a multi-selection once; lazy rows, one toggle evaluation and a cached ground are open</td></tr>
+    </tbody>
+  </table></div>
+  <p>Read as a whole: the measurement was good and the list is right, but it has not been worked. The one fix that landed is the one that was a two-line guard. The three that would change the ceiling — the poll off the GUI thread, the calendar as arithmetic, sections shown on demand — are each a morning's work and are still open.</p>
+</section>
+
+<section id="health">
+  <span class="eyebrow">Section 6</span>
   <h2>Health checks</h2>
   <aside class="summary"><span class="eyebrow">Summary</span>
     <p>All four checks from <code>CLAUDE.md</code> were run on this tree. Lint is clean, strict typing is clean on Linux and as Windows sees it, and the suite is green except one table test whose assertion depends on font metrics this container does not have. The architecture test passes, and it is the one that answers question one.</p>
@@ -499,17 +605,19 @@ footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted
 </section>
 
 <section id="recommendations">
-  <span class="eyebrow">Section 6</span>
+  <span class="eyebrow">Section 7</span>
   <h2>What to do about it</h2>
   <aside class="summary"><span class="eyebrow">Summary</span>
-    <p>Ranked by entropy removed per hour. The first two are the ones that matter; the rest are an afternoon each and mostly renames.</p>
+    <p>Ranked by what they remove per hour. The first is a same-day regression and comes before everything; the next two are the structural ones; the rest are an afternoon each and mostly renames.</p>
   </aside>
   <ol class="reco">
+    <li><strong>Take the cone walk out of the menu bar today.</strong> Move <code>docs</code>'s stale set behind a <code>Debounced</code> keyed on the project (or a per-revision memo) and let <code>_stale_state</code> read the last answer. One file; it returns the context refresh to single-digit milliseconds at every size, and it is the difference between a 400-step project being usable and not (§5).</li>
     <li><strong>Make the composition root a package.</strong> Keep <code>modules/__init__.py</code> as the one importer of everything, but let it be a thin façade over <code>modules/_root/</code>: <code>wiring.py</code> (<code>default_modules</code>), <code>collectors.py</code> (aspects, CLI, report, lint, checks, assets, paste, sources, harnesses, themes), <code>briefing.py</code> and <code>identity.py</code> (step key, kind, icons, stats). Extend rule 4 in <code>tests/test_architecture.py</code> so that package is the only other place allowed to import modules, and give <code>identity.py</code> and <code>briefing.py</code> tests of their own. No module changes; the seams stay exactly where they are.</li>
     <li><strong>Retire the LLM service, or give it a caller.</strong> If no feature is coming back to it, delete <code>llm</code>, <code>llm_anthropic</code>, <code>llm_openai</code>, <code>framework/llm.py</code>, <code>framework/llm_service.py</code>, the <code>LLMProviderRegistry</code> field on <code>AppServices</code> and Debug's call log, and record the removal in <code>NOTES-FOR-APPFRAME.md</code>. About a thousand lines and one keychain entry go, and the Settings dialog loses three pages that configure nothing.</li>
     <li><strong>One name per seam.</strong> Rename <code>ReportingDeps.key_of</code> → <code>step_key</code> and <code>kind_of</code> → <code>step_kind</code>; hand <code>docs</code> the <code>step_icons</code> callback and delete <code>_glyph_for</code>'s dictionary.</li>
     <li><strong>Rename <code>step_agent_instruction</code> to what it is</strong> — <code>agent_launch</code>, keeping the aspect id on disk through the existing <code>Takeover</code> mechanism so no project changes — and refresh the four stale docstrings (<code>debug</code>, <code>feature</code>, <code>step_order</code>, and the renamed package).</li>
     <li><strong>Settle the start date.</strong> Move it into <code>time_estimates</code> with a <code>Takeover</code> converter, or add one sentence to the rule in <code>CLAUDE.md</code> saying it lives in <code>estimation</code> and why.</li>
+    <li><strong>Work the scaling list, in the order it was written.</strong> The poll off the GUI thread (and <code>relative_to</code> out of its inner loop), <code>working_days_after</code> as arithmetic, sections shown on demand. Each is a morning, and together they move the ceiling from about a hundred steps per project to several hundred (§5).</li>
     <li><strong>Make the layout map a test.</strong> A ten-line test that every directory under <code>modules/</code> appears in README's <em>Layout</em> section; then consider moving the <em>Mechanical facts</em> bullets that are about one module into that module's docstring, with <code>CLAUDE.md</code> keeping the cross-cutting rules only.</li>
   </ol>
 </section>
