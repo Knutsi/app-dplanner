@@ -69,7 +69,14 @@ from dplanner.modules.spec.documents import (
 from dplanner.modules.spec.editor import SpecMarkdownEditor
 from dplanner.modules.spec.refresh import SourceRefresher
 from dplanner.modules.spec.source_kind import DocumentSourceKind
-from dplanner.modules.spec.sourced import Applied, Row, documents_of, source_of, tree
+from dplanner.modules.spec.sourced import (
+    Applied,
+    Row,
+    documents_of,
+    freshness_words,
+    source_of,
+    tree,
+)
 from dplanner.modules.spec.viewer import PdfPageView
 from dplanner.theme.icons import (
     external_icon,
@@ -167,7 +174,9 @@ class SpecsActivity(EntityActivity):
         self._kinds = dict(kinds or {})
         self._refresher = refresher
         self._connect = connect
-        self._last_applied: tuple[str, str] | None = None  # (source id, what a fetch did)
+        # source id → what its last fetch did. A dict, not one pair: a refresh-all
+        # lands N of them and the strip must have the right one for the row shown.
+        self._applied_words: dict[str, str] = {}
         # What is lit: the document, its quotes, the focused one — and whether the wash is
         # every citation of the document (the Cited toggle) or a jump's few.
         self._lit: tuple[str, tuple[str, ...], str] | None = None
@@ -888,18 +897,20 @@ class SpecsActivity(EntityActivity):
             return
         kind = self._kinds.get(source.kind)
         name = kind.name if kind is not None else source.kind
-        pages = len(documents_of(index, source.id))
+        documents = len(documents_of(index, source.id))
         facts = [f"from {name}"]
         facts.append(f"fetched {source.fetched}" if source.fetched else "not fetched yet")
-        if pages:
-            facts.append(f"{pages} page{'' if pages == 1 else 's'}")
+        if documents:
+            facts.append(f"{documents} document{'' if documents == 1 else 's'}")
         self.source_facts.setText(" · ".join(facts))
-        status = self._refresher.status(source) if self._refresher is not None else None
+        status = (
+            self._refresher.status(self.project_id, source) if self._refresher is not None else None
+        )
         ready = status is None or status.ready
         can_connect = kind is not None and self._connect is not None and self._refresher is not None
         self.connect_button.setVisible(not ready and can_connect)
         if not ready and can_connect and self._refresher is not None:
-            again = self._refresher.needs_reconnect(source.id)
+            again = self._refresher.needs_reconnect(self.project_id, source.id)
             self.connect_button.setText(f"{'Reconnect' if again else 'Connect'} to {name}…")
         self.source_note.setText(self._source_words(source, status.message if status else ""))
         self.source_note.setVisible(bool(self.source_note.text()))
@@ -910,18 +921,14 @@ class SpecsActivity(EntityActivity):
         if self._refresher is not None and self._refresher.is_fetching():
             kind = self._kinds.get(source.kind)
             return f"Fetching from {kind.name if kind is not None else source.kind}…"
-        fresh = self._refresher.freshness(source.id) if self._refresher is not None else None
-        if fresh is not None and fresh.stale:
-            changed = len(fresh.changed) + len(fresh.added)
-            parts = []
-            if changed:
-                parts.append(f"{changed} page{'' if changed == 1 else 's'} changed")
-            if fresh.removed:
-                parts.append(f"{len(fresh.removed)} gone")
-            return ", ".join(parts) + " at the source — Refresh to take them in"
-        if self._last_applied is not None and self._last_applied[0] == source.id:
-            return self._last_applied[1]
-        return ""
+        fresh = (
+            self._refresher.freshness(self.project_id, source.id)
+            if self._refresher is not None
+            else None
+        )
+        if fresh is not None and freshness_words(fresh):
+            return freshness_words(fresh)
+        return self._applied_words.get(source.id, "")
 
     def _connect_source(self) -> None:
         source_id = self._current_source()
@@ -936,12 +943,12 @@ class SpecsActivity(EntityActivity):
         if applied.notes:
             words += f" · {len(applied.notes)} note{'' if len(applied.notes) == 1 else 's'}: "
             words += "; ".join(applied.notes[:3])
-        self._last_applied = (source_id, words)
+        self._applied_words[source_id] = words
         self._refresh_source_strip()
 
     def _on_failed(self, project_id: str, source_id: str, message: str) -> None:
         if project_id == self.project_id:
-            self._last_applied = (source_id, message)
+            self._applied_words[source_id] = message
             self._refresh_source_strip()
 
     def _build_document_strip(self, parent: QWidget) -> QWidget:

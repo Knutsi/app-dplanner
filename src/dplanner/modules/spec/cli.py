@@ -59,7 +59,7 @@ from dplanner.modules.spec.documents import (
 )
 from dplanner.modules.spec.documents import anchor_sources as anchor_sources
 from dplanner.modules.spec.pdf import render_page, split_pages
-from dplanner.modules.spec.sourced import owned_by_source, tree
+from dplanner.modules.spec.sourced import locator_line, owned_by_source, tree
 
 
 def step_author() -> StepAuthor:
@@ -346,8 +346,8 @@ def _refuse_sourced(index: SpecIndex, name: str) -> None:
     owner = owned_by_source(index, name)
     if owner is not None:
         raise CliError(
-            f"{name!r} is part of {owner.kind} source {owner.title!r} — refresh or remove "
-            "the source from the Specs tab"
+            f"{name!r} belongs to the source {owner.title!r} — refresh or remove the "
+            "source from the Specs tab"
         )
 
 
@@ -426,7 +426,10 @@ def _list(context: CliContext, args: Namespace) -> int:
         if row.document is None and row.source is not None:
             source = row.source
             fetched = f"fetched {source.fetched}" if source.fetched else "never fetched"
-            lines.append(f"{indent}[{source.kind}] {source.title}  ({source.id}, {fetched})")
+            where = locator_line(source.locator)
+            lines.append(
+                f"{indent}[{source.kind}] {source.title}  ({source.id}, {fetched})  {where}"
+            )
             continue
         doc = row.document
         assert doc is not None

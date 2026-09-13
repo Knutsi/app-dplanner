@@ -10,7 +10,12 @@ from tests.cli.spec_helpers import source
 
 from dplanner.core.module_data import migrated
 from dplanner.core.storage.local import LocalStorage
-from dplanner.domain.document_source import FetchedDocument, FetchedImage, Snapshot
+from dplanner.domain.document_source import (
+    FetchedDocument,
+    FetchedImage,
+    Freshness,
+    Snapshot,
+)
 from dplanner.domain.model import Project
 from dplanner.domain.store import ModuleFileArea
 from dplanner.modules.spec.aspect import DATA_FORMAT
@@ -18,10 +23,13 @@ from dplanner.modules.spec.documents import SpecIndex, read_index, write_index
 from dplanner.modules.spec.sourced import (
     add_source,
     apply_snapshot,
+    freshness_words,
     known_versions,
+    locator_line,
     owned_by_source,
     remove_source,
     tree,
+    updates_words,
 )
 
 SITE = "https://acme.atlassian.net"
@@ -233,7 +241,9 @@ def sourced(cli, tmp_path, workspace):
     index_path = next(workspace.glob("*/modules/spec.json"))
     index = read_index(_holding(json.loads(index_path.read_text())))
     area = ModuleFileArea(LocalStorage(index_path.parent.parent), "modules/spec", lambda _p: None)
-    index, src = add_source(index, "confluence", "Auth", {"site": SITE, "id": "1", "type": "page"})
+    index, src = add_source(
+        index, "confluence_page", "Auth", {"site": SITE, "id": "1", "type": "page"}
+    )
     snapshot = Snapshot(
         documents=(page("1", "Auth Overview", "# Auth\n"), page("2", "Tokens", "# T\n", parent="1"))
     )
@@ -245,13 +255,14 @@ def sourced(cli, tmp_path, workspace):
 def test_list_prints_the_tree_and_json_carries_the_source_facts(cli, sourced):
     text = cli("spec", "list", sourced)
     assert text.splitlines()[0].startswith("own")
-    assert "[confluence] Auth  (src1, fetched 2026-09-07)" in text
+    # The kind id and the locator: the terminal cannot reach a kind to word one.
+    assert f"[confluence_page] Auth  (src1, fetched 2026-09-07)  site={SITE} id=1 type=page" in text
     assert "\n  auth-overview — Auth Overview" in text and "\n    tokens" in text
     listed = data(cli("spec", "list", sourced, "--json"))
     assert listed["sources"] == [
         {
             "id": "src1",
-            "kind": "confluence",
+            "kind": "confluence_page",
             "title": "Auth",
             "locator": {"site": SITE, "id": "1", "type": "page"},
             "fetched": "2026-09-07",
@@ -277,9 +288,9 @@ def test_a_sourced_document_refuses_import_and_remove_with_a_pointer(cli, source
     out = cli(
         "spec", "import", sourced, source(tmp_path, "x.md", "# X"), "--name", "tokens", expect=1
     )
-    assert "part of confluence source 'Auth'" in out and "Specs tab" in out
+    assert "belongs to the source 'Auth'" in out and "Specs tab" in out
     out = cli("spec", "remove", sourced, "tokens", expect=1)
-    assert "part of confluence source 'Auth'" in out
+    assert "belongs to the source 'Auth'" in out
     assert "tokens" in cli("spec", "list", sourced)
 
 
@@ -296,3 +307,39 @@ def test_lint_names_a_source_never_fetched(cli, tmp_path, workspace):
     index_path.write_text(json.dumps(write_index(index)))
     out = cli("project", "lint", "Search rewrite", expect=1)
     assert "source 'Auth' (confluence) has never been fetched" in out
+
+
+# -- what a surface says ------------------------------------------------------------------------
+
+
+def test_freshness_is_worded_once_in_documents_not_pages():
+    """Three of the four kinds have no pages; this is the one place the word is chosen."""
+    assert freshness_words(Freshness()) == ""
+    assert freshness_words(Freshness(changed=("a",))) == (
+        "1 document changed at the source — Refresh to take them in"
+    )
+    assert freshness_words(Freshness(changed=("a",), added=("b",), removed=("c",))) == (
+        "2 documents changed, 1 gone at the source — Refresh to take them in"
+    )
+    assert freshness_words(Freshness(removed=("c",))) == (
+        "1 gone at the source — Refresh to take them in"
+    )
+
+
+def test_updates_are_counted_across_the_sources_that_have_them():
+    assert updates_words([]) == "" and updates_words([Freshness()]) == ""
+    assert updates_words([Freshness(changed=("a",)), Freshness()]) == (
+        "1 document changed in 1 source — Refresh All to take them in"
+    )
+    assert updates_words([Freshness(added=("a", "b")), Freshness(removed=("c",))]) == (
+        "2 documents changed, 1 gone in 2 sources — Refresh All to take them in"
+    )
+
+
+def test_a_locator_prints_as_one_greppable_line():
+    assert locator_line({"id": "1", "site": SITE, "type": "page"}) == (
+        f"site={SITE} id=1 type=page"
+    )
+    assert locator_line({"path": "/home/knut/specs"}) == "path=/home/knut/specs"
+    assert locator_line({"zebra": "z", "url": "u", "alpha": "a"}) == "url=u alpha=a zebra=z"
+    assert locator_line({}) == ""
