@@ -63,6 +63,7 @@ from dplanner.framework.widgets import EmptyState, captioned, note
 from dplanner.modules.step_order.cli import wave_label
 from dplanner.modules.step_order.export import order_rows
 from dplanner.modules.step_order.view import OrderTable
+from dplanner.theme.icons import list_icon
 
 MODULE_ID = "step_order"
 ORDER_KIND = "order"
@@ -319,6 +320,7 @@ class StepOrderModule:
                 menu="Step",
                 group="open",
                 order=20,
+                icon=list_icon,
                 tip="What can be started now, and what waits for what",
                 state=self._on_a_project,
                 run=self._open,

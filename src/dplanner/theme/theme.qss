@@ -109,6 +109,49 @@ QMenu::right-arrow {
     margin-right: 8px;
 }
 
+/* The picker (framework/picker.py): the command palette, and Jump to on the graph. It is
+   an overlay a keystroke raises over the window, not a dialog with a question and a way
+   out — so it wears the menu's own frame rather than a dialog's, and its field and list
+   sit inside it with no ground of their own. */
+#Picker {
+    background-color: $BG_OVERLAY;
+    border: 1px solid $BORDER_STRONG;
+    border-radius: ${RADIUS_MD}px;
+}
+
+#PickerInput {
+    background-color: $BG_BASE;
+    color: $TEXT_PRIMARY;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_SM}px;
+    padding: 6px 12px;
+}
+
+#PickerInput:focus {
+    border-color: $ACCENT;
+}
+
+/* The rows are the delegate's; the list is a hole in the overlay, not a well inside it.
+   A picked row is the table's: the accent on its left edge over a quiet ground, never a
+   band of colour across it. */
+#PickerList {
+    background: transparent;
+    border: none;
+}
+
+#PickerList::item {
+    border-left: 2px solid transparent;
+}
+
+#PickerList::item:hover {
+    background-color: $BG_ELEVATED;
+}
+
+#PickerList::item:selected {
+    background-color: $ACCENT_WASH;
+    border-left: 2px solid $ACCENT;
+}
+
 /* ---- Status bar -------------------------------------------------------------------- */
 
 QStatusBar {
@@ -461,6 +504,35 @@ QSplitter::handle:vertical:pressed {
     background-color: $BG_ELEVATED;
 }
 
+/* A panel inside a tab, beside the canvas (project_editor/side_panel.py): a panel area's
+   ground and, like one, no edge of its own — the seam beside it is the splitter's. */
+#SidePanel {
+    background-color: $BG_ELEVATED;
+}
+
+/* A list of rich rows inside a panel: a well on the panel's elevated ground, the same
+   contrast a plain field has, so a panel of lists and a panel of fields read alike. The
+   rows themselves are the two-line delegate's. */
+#PanelList {
+    background-color: $BG_BASE;
+    border: 1px solid $BORDER;
+    border-radius: ${RADIUS_MD}px;
+}
+
+/* Its way out. A panel in the window's dock is hidden from its header's right-click; one
+   inside a tab has no such menu, so it carries the verb — flat, because a bordered box in
+   a header reads as a second caption. */
+#SidePanelClose {
+    background: transparent;
+    border: none;
+    padding: 2px;
+}
+
+#SidePanelClose:hover {
+    background-color: $BG_OVERLAY;
+    border-radius: ${RADIUS_SM}px;
+}
+
 #InspectorTitle {
     background-color: $BG_BASE;
     color: $TEXT_PRIMARY;
@@ -606,11 +678,42 @@ QProgressBar::chunk {
 /* A dense strip: glyphs read as one set rather than aimed at one at a time, so they pack.
    The aspect bar seats ten toggles in a dock a third of the window wide, and at the verb
    strip's sides two of them fit before the rest fold into the … menu — which for a row
-   that answers "what does this step carry" is the row not answering. Height is untouched:
-   every control on a strip is still CONTROL_HEIGHT. A property, not a name, because this
-   is a mode the primitive offers and not one surface styled by hand. */
+   that answers "what does this step carry" is the row not answering. A property, not a
+   name, because this is a mode the primitive offers and not one surface styled by hand.
+
+*/
 #ControlBar[dense="true"] #ToolbarButton {
     padding: 6px ${DENSE_GAP}px;
+}
+
+/* **A banded strip's glyph button is a square** — the same 6 px all round a content box the
+   glyph's own height, which makes it CONTROL_HEIGHT each way. A tool palette is a grid of
+   targets of one size, and a square is also what puts the glyph in the middle of its button
+   rather than a few pixels left of centre. The width is derived from the height and the
+   padding, never typed.
+
+   Banded and not merely dense, because the two strips want opposite things: a palette wants
+   room to aim, and the aspect bar wants ten toggles in a 360 px dock — squaring those costs
+   it two of them, which for a row that answers "what does this step carry" is the row not
+   answering. `add_group` sets the property. */
+#ControlBar[banded="true"] #ToolbarButton {
+    padding: 6px;
+    min-width: 18px;
+    max-width: 18px;
+}
+
+/* …except where a dropdown arrow needs its room. Both shorthands above are as specific as
+   these (two names and an attribute either way), so these come **after** them on purpose —
+   the same ordering the accent primary relies on at the end of the button rules. Without
+   them a strip takes the arrow's padding back and Qt paints a 20 px subcontrol straight
+   over a 16 px glyph: a styled subcontrol is outside Qt's size hint, nothing widens the
+   button, and the only sign is a clipped glyph. */
+#ControlBar #ToolbarButton[hasMenu="true"] {
+    padding-right: ${ARROW_ROOM}px;
+}
+
+#ControlBar #ToolbarButton[face="true"] {
+    padding-right: ${INDICATOR_ROOM}px;
 }
 
 #ControlBar::separator {
@@ -712,15 +815,15 @@ QComboBox QAbstractItemView::item:selected {
     subcontrol-origin: padding;
     subcontrol-position: right center;
     width: ${ARROW_W}px;
-    border-left: 1px solid $BORDER;
+    /* $BORDER_STRONG, not $BORDER, because this one line has to read on two grounds: the
+       button's quiet ground, and the accent fill a checked mode button wears. A second rule
+       for the checked case is what this file used to have, and a
+       `#ToolbarButton:checked::menu-button` rule — in *any* form — makes Qt drop the
+       button's own left border, on every toolbar button in the application, checked or
+       not. One colour, one rule, no subcontrol pseudo-state. */
+    border-left: 1px solid $BORDER_STRONG;
     border-top-right-radius: ${RADIUS_SM}px;
     border-bottom-right-radius: ${RADIUS_SM}px;
-}
-
-/* Checked, the button is filled with the accent and a $BORDER divider would vanish into it.
-   The arrow's own ink is what parts the halves there. */
-#ToolbarButton:checked::menu-button {
-    border-left-color: $ON_ACCENT;
 }
 
 #ToolbarButton::menu-arrow {
@@ -736,14 +839,21 @@ QComboBox QAbstractItemView::item:selected {
 }
 
 /* A face that names the current choice and drops the choices down: the layout picker on
-   the canvas, the template on the aspect bar. Both leave the indicator its room — a
-   styled subcontrol is outside Qt's size hint, so without this the arrow is painted over
-   the last letter. */
-#LayoutButton, #TemplateButton {
-    padding-right: 20px;
+   the canvas, the template on the aspect bar, a strip's glyph face standing for a whole
+   band of the menus. All three leave the indicator its room — a styled subcontrol is
+   outside Qt's size hint, so without this the arrow is painted over the last letter. */
+#LayoutButton, #TemplateButton, #ToolbarButton[face="true"] {
+    padding-right: ${INDICATOR_ROOM}px;
 }
 
 #ToolbarLabel {
+    color: $TEXT_SECONDARY;
+}
+
+/* The name under a band of a grouped strip (framework/toolbar.py's Toolbar): quiet words
+   a point smaller, set in code, saying what the glyphs above them are for. It is chrome
+   over a row of controls, never a caption over a block, so it takes no weight. */
+#ToolbarGroupLabel {
     color: $TEXT_SECONDARY;
 }
 

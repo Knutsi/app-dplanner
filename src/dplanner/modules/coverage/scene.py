@@ -62,7 +62,7 @@ from dplanner.theme.cards import (
     title_font,
     title_lines,
 )
-from dplanner.theme.icons import paint_beaker_glyph, paint_layers_glyph, paint_tag_glyph
+from dplanner.theme.icons import paint_glyph
 from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import GOOD_BORDER, toned
 
@@ -83,7 +83,8 @@ WHEEL_STEP = 48.0  # Scene units per wheel notch.
 # The medallion a kind wears, like the canvas's, and the mark a state wears.
 MEDALLION_D = 20.0
 MARK_D = 8.0
-GLYPHS = {"feature": paint_layers_glyph, "milestone": paint_tag_glyph, "test": paint_beaker_glyph}
+# This view's kinds, as the medallion vocabulary names them on the canvas.
+GLYPHS = {"feature": "layers", "milestone": "tag", "test": "beaker"}
 
 # What is not on the path fades to ``DIM_OPACITY`` (theme/cards.py, shared with the canvas's
 # spotlight); a lit link thickens like a selected edge.
@@ -238,7 +239,7 @@ class CardItem(QGraphicsObject):
         painter.drawRoundedRect(body, RADIUS, RADIUS)
 
     def _paint_medallion(
-        self, painter: QPainter, palette: QPalette, centre: QPointF, glyph: object
+        self, painter: QPainter, palette: QPalette, centre: QPointF, glyph: str
     ) -> None:
         ring = QColor(palette.text().color())
         ring.setAlpha(90)
@@ -249,7 +250,7 @@ class CardItem(QGraphicsObject):
         rect = QRectF(centre.x() - size / 2, centre.y() - size / 2, size, size)
         ink = QColor(palette.text().color())
         ink.setAlpha(SECONDARY_ALPHA)
-        glyph(painter, rect, ink)  # type: ignore[operator]
+        paint_glyph(painter, rect, glyph, ink)
 
     def _paint_mark(self, painter: QPainter, palette: QPalette, centre: QPointF) -> None:
         """One mark for one state: the accent hollow for *behind* and *never*, the accent

@@ -261,3 +261,23 @@ def test_a_verb_seated_in_a_data_menu_is_left_out_of_the_popup(app, registry):
     flat = build_menu(registry, ContextService(), "View", parent, "Tabs")
     assert "seated" not in str(entries(nested)) and "seated" not in str(entries(flat))
     parent.deleteLater()
+
+
+def test_a_group_filter_renders_one_band_of_a_menu(app):
+    """A toolbar face that stands for a band — the graph strip's Options — renders the band
+    rather than keeping a copy of it, so a verb added to the menus appears under it."""
+    registry = ActionRegistry(MenuStructure({"Graph": ("arrange", "look"), "Step": ("edit",)}))
+    registry.register(ActionSpec(id="canvas.sort", label="&Sort", menu="Graph", group="arrange"))
+    registry.register(ActionSpec(id="canvas.frame", label="&Frame", menu="Graph", group="look"))
+    registry.register(
+        ActionSpec(id="canvas.starts", label="&Starts", menu="Graph", group="look", submenu="Mark")
+    )
+    registry.register(ActionSpec(id="steps.new", label="&New", menu="Step", group="edit"))
+
+    parent = QWidget()
+    menu = build_menu(registry, ContextService(), "Graph", parent, group="look")
+    listed = [entry.text().replace("&", "") for entry in menu.actions() if not entry.isSeparator()]
+    assert listed == ["Frame", "Mark"]  # The band, its child menu nested, and nothing else.
+    (child,) = [entry.menu() for entry in menu.actions() if entry.menu() is not None]
+    assert isinstance(child, QMenu)
+    assert [a.text().replace("&", "") for a in child.actions()] == ["Starts"]

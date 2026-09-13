@@ -61,7 +61,14 @@ from dplanner.framework.undo import UndoService
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.positions import write_position
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef, parse_edge_id
-from dplanner.theme.icons import plus_icon
+from dplanner.theme.icons import (
+    edit_icon,
+    isolate_icon,
+    link_icon,
+    plus_icon,
+    trash_icon,
+    unlink_icon,
+)
 
 # What a step is called until somebody types over it in the details dialog.
 NEW_STEP_TITLE = "New step"
@@ -145,6 +152,7 @@ class StepVerbs:
                 menu="Step",
                 group="edit",
                 order=20,
+                icon=edit_icon,
                 tip="Change what this step is called",
                 state=self._on_a_step,
                 run=self._rename,
@@ -155,6 +163,7 @@ class StepVerbs:
                 menu="Step",
                 group="link",
                 order=10,
+                icon=link_icon,
                 tip="The second selected step waits on the first",
                 state=self._can_link,
                 run=self._link,
@@ -165,6 +174,7 @@ class StepVerbs:
                 menu="Step",
                 group="link",
                 order=20,
+                icon=unlink_icon,
                 tip="Remove the picked links, or the link between the two selected steps",
                 state=self._can_unlink,
                 run=self._unlink,
@@ -175,6 +185,7 @@ class StepVerbs:
                 menu="Step",
                 group="link",
                 order=30,
+                icon=isolate_icon,
                 tip="Remove every link into or out of the selected steps; links among them stay",
                 state=self._can_isolate,
                 run=self._isolate,
@@ -185,6 +196,7 @@ class StepVerbs:
                 menu="Step",
                 group="edit",
                 order=30,
+                icon=trash_icon,
                 tip="Remove these steps. Links naming them are left alone, so undo stays exact",
                 state=self._can_delete,
                 run=self._delete,

@@ -212,3 +212,31 @@ def test_the_strip_words_delete_with_the_count_and_add_appends(services):
     assert table.rowCount() == before - 2 and not delete.isEnabled()
     activity.add_action.trigger()
     assert table.rowCount() == before - 1
+
+
+def test_the_toolbars_example_shows_every_shape_a_strip_comes_in(services):
+    """DESIGN.md's *Toolbars*, built rather than described: a developer bringing a surface
+    up opens this beside their own."""
+    from dplanner.framework.toolbar import _Group
+    from dplanner.modules.debug.design_example import NO_ROOM, DesignExampleToolbars
+
+    services.actions.run("debug.design_toolbars", services.context.current())
+    (tab,) = [a for a in services.tabs.activities() if isinstance(a, DesignExampleToolbars)]
+
+    # The flat strip has no bands; the palette has four, each named.
+    assert tab.verbs.findChildren(_Group) == []
+    named = [g.caption.text() for g in tab.palette.findChildren(_Group) if g.caption]
+    assert named == ["Go", "Step", "Link", "Options"]
+
+    # And the third strip is the same palette with no room, so a band can be seen folding.
+    tab.folded._reflow()
+    assert tab.folded.width() == NO_ROOM
+    assert tab.folded.hidden_items() != []
+    tab.folded._fill_more()
+    listed = [a.text() for a in tab.folded._menu.actions() if not a.isSeparator()]
+    assert "Isolate" in listed and all(
+        not a.icon().isNull() for a in tab.folded._menu.actions() if not a.isSeparator()
+    )
+
+    # The dense strip answers a question rather than offering verbs: two of six are on.
+    assert [v.text() for v in tab.dense.verbs() if v.isChecked()] == ["Milestone", "Agent"]

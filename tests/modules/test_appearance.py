@@ -103,7 +103,7 @@ def test_a_picked_theme_is_checked_and_the_palette_says_where_it_lives(services)
     parent = QWidget()  # Kept alive: the palette is parented to it and dies with it.
     palette = CommandPalette(services.actions, services.context, parent)
     palette._refilter("tokyo")
-    row = palette._list.item(0)
+    row = palette.list.item(0)
     assert row.text() == "Tokyo Night" and row.data(DETAIL_ROLE) == "View ▸ Theme ▸ Omarchy"
 
 

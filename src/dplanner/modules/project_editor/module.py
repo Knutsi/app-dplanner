@@ -29,7 +29,8 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QMimeData, QPointF, Qt
-from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
+from PySide6.QtGui import QPalette
+from PySide6.QtWidgets import QMenu, QSplitter, QVBoxLayout, QWidget
 
 from dplanner.cli.command import CliError
 from dplanner.domain.commands import (
@@ -68,6 +69,7 @@ from dplanner.framework.context import (
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
+from dplanner.framework.picker import PickerDialog
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
@@ -78,6 +80,7 @@ from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.clipboard import PastePolicy
 from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
 from dplanner.modules.project_editor.drops import CanvasDrop
+from dplanner.modules.project_editor.find import find_rows
 from dplanner.modules.project_editor.geometry import divide_command
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.items import StepNodeItem
@@ -124,6 +127,11 @@ from dplanner.modules.project_editor.selection import (
     REGION_KIND,
     CanvasSelection,
     EdgeRef,
+)
+from dplanner.modules.project_editor.side_panel import (
+    SIDE_PANEL_WIDTH,
+    SidePanel,
+    SidePanelFrame,
 )
 from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
 
@@ -187,6 +195,9 @@ class ProjectEditorDeps:
     paste_policies: tuple[PastePolicy, ...] = ()
     # What the canvas takes by drop, named by the composition root — see drops.py.
     drops: tuple[CanvasDrop, ...] = ()
+    # What the project tab hosts beside the canvas — see side_panel.py. None means this
+    # build has nothing to put there, and the toggle is hidden rather than greyed.
+    side_panel: SidePanel | None = None
 
 
 class ProjectActivity(EntityActivity):
@@ -219,10 +230,14 @@ class ProjectActivity(EntityActivity):
             accepts=self._accepts_drop,
             dropped=self._on_drop,
         )
-        self.set_look(look or Look())  # Before the first sync: a node born dresses for it.
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
+        self._panel_frame: SidePanelFrame | None = None
+        self._split: QSplitter | None = None
         self._page, self._toolbar = self._build_page()
+        # After the page, because the side panel is part of the look now; still before the
+        # first sync, so a node born dresses for it.
+        self.set_look(look or Look())
 
         self._scene.selection_changed.connect(self._on_selection)
         self._scene.nodes_moved.connect(self._on_nodes_moved)
@@ -270,9 +285,15 @@ class ProjectActivity(EntityActivity):
         self._view.setFocus()
 
     def select_step(self, step_id: StepId) -> None:
-        """Select one step on the canvas — how another view reveals something here."""
+        """Select one step on the canvas and put the viewport on it.
+
+        How another view reveals something here, and where *Jump to* lands. Selecting
+        without centring selects something that may be a screen away, which is no reveal
+        at all; the zoom stays as the user left it.
+        """
         self._sync_soon.flush()  # A step born this turn has its node only once synced.
         self._scene.select_step(step_id)
+        self._view.centre_on_step(step_id)
 
     def select_steps(self, step_ids: list[StepId]) -> None:
         """Replace the selection with these steps — Select All's way in."""
@@ -289,11 +310,16 @@ class ProjectActivity(EntityActivity):
 
     def set_look(self, look: Look) -> None:
         """The user changed how graphs look; every canvas hears it, this one here. The
-        marks, the spotlight and the snapping are the scene's, the background the view's."""
+        marks, the spotlight and the snapping are the scene's, the background the view's,
+        and whether the panel beside the canvas stands is the page's."""
         self._scene.set_marks(look.marks)
         self._scene.set_spotlight(look.spotlight)
         self._scene.set_snap(look.snap)
         self._view.set_background(look.background)
+        if self._panel_frame is not None:
+            self._panel_frame.setVisible(look.side_panel)
+            if look.side_panel:
+                self._give_the_panel_its_width()
 
     def frame(self) -> None:
         self._view.frame_content()
@@ -327,6 +353,8 @@ class ProjectActivity(EntityActivity):
         self._unsubscribes.clear()
         self._layout_button.dispose()
         self._toolbar.dispose()
+        if self._panel_frame is not None:
+            self._panel_frame.dispose()
         self._view.modes.dispose()
 
     # -- the page ------------------------------------------------------------------------------
@@ -346,13 +374,55 @@ class ProjectActivity(EntityActivity):
         toolbar = CanvasToolbar(
             self._deps.actions,
             self._deps.context,
-            self._deps.theme,
             page,
-            trailing=self._layout_button,
+            picker=self._layout_button,
         )
         column.addWidget(toolbar)
-        column.addWidget(self._view, 1)
+        column.addWidget(self._beside_the_canvas(page), 1)
         return page, toolbar
+
+    def _beside_the_canvas(self, page: QWidget) -> QWidget:
+        """The canvas, and whatever this build stands beside it.
+
+        A splitter, so the seam between them is the one every splitter in the application
+        wears and the panel's width is the user's while the tab is open. The panel is told
+        which project to show by a context naming **this** tab's — a tab in the background
+        must not follow the tab in front.
+        """
+        spec = self._deps.side_panel
+        if spec is None:
+            return self._view
+        self._panel_frame = SidePanelFrame(spec.title, spec.build(), self._toggle_side_panel)
+        self._panel_frame.show_context(Context({SCOPE_ACTIVITY: self.activity_nodes()}))
+        split = QSplitter(Qt.Orientation.Horizontal, page)
+        split.addWidget(self._view)
+        split.addWidget(self._panel_frame)
+        split.setStretchFactor(0, 1)
+        split.setStretchFactor(1, 0)
+        split.setCollapsible(1, False)
+        self._split = split
+        self._panel_frame.hide()  # set_look, a line later, is what decides.
+        return split
+
+    def _give_the_panel_its_width(self) -> None:
+        """Open the seam where the splitter has closed it.
+
+        A splitter hands out the width it had when its children were added, and a tab is
+        built before it is on screen — so a panel switched on later would arrive at nought
+        pixels wide and read as nothing having happened.
+        """
+        split = self._split
+        if split is None:
+            return
+        canvas, panel = split.sizes()
+        if panel >= SIDE_PANEL_WIDTH:
+            return
+        room = canvas + panel
+        split.setSizes([max(room - SIDE_PANEL_WIDTH, SIDE_PANEL_WIDTH), SIDE_PANEL_WIDTH])
+
+    def _toggle_side_panel(self) -> None:
+        """The panel's own way out, through the verb — so the preference is written once."""
+        self.run_action("canvas.side_panel")
 
     # -- the graph -----------------------------------------------------------------------------
 
@@ -721,8 +791,10 @@ class ProjectEditorModule:
             select_steps=self._select_steps,
             set_mode=self._set_mode,
             frame=self._frame,
+            find=self._find,
             look=lambda: self._look,
             set_look=self._set_look,
+            side_panel=deps.side_panel,
         )
         self._region_verbs = RegionVerbs(
             library=deps.library,
@@ -847,3 +919,24 @@ class ProjectEditorModule:
         current = self._current_activity()
         if current is not None:
             current.frame()
+
+    def find_picker(self) -> PickerDialog | None:
+        """The Find picker over the current canvas's project — built, not shown.
+
+        Separate from :meth:`_find` so a test can read what the picker offers without a
+        modal loop, the way ``menu_for`` opens a toolbar's dropdown without a click.
+        """
+        current = self._current_activity()
+        if current is None or not self._deps.library.has(current.project_id):
+            return None
+        project = self._deps.library.project(current.project_id)
+        ink = self._deps.parent.palette().color(QPalette.ColorRole.Text)
+        rows = find_rows(project, self._deps.step_accents(project.id), ink)
+        return PickerDialog(
+            rows, self.reveal, self._deps.parent, placeholder="Find a step by name or key…"
+        )
+
+    def _find(self) -> None:
+        picker = self.find_picker()
+        if picker is not None:
+            picker.exec()

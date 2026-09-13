@@ -245,7 +245,9 @@ src/dplanner/
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
-├── scripts/render_design_example.py  Debug ▸ Design Example in both themes, to PNG — committed under docs/screenshots/f1-design-example/
+├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
+├── scripts/render_design_example.py  Debug ▸ Design Example — the modal, the table and the toolbars — both themes, to PNG
+├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Features panel — docs/screenshots/s7-graph-editor/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
@@ -319,7 +321,8 @@ src/dplanner/
 │   ├── window_watch.py      noticing, and taking in, another writer's changes to the library
 │   ├── debounce.py          a coalesced refresh: a burst runs once, and tests run it inline
 │   ├── dialog.py            the dialog frame — title in the body, footer slots in one order — and the one-line prompt
-│   ├── toolbar.py           a strip of verbs as glyphs with their words in tooltips, folding into a … menu; the filter control
+│   ├── toolbar.py           a strip of verbs as glyphs with their words in tooltips, in named bands folding whole into a … menu; the filter control
+│   ├── picker.py            the fuzzy picker over rich rows — the command palette, and the graph's Find
 │   ├── table.py             the table: columns declared, the rules applied once, a delegate painting what a row wears
 │   ├── signalling.py        Updating… over one Debounced, a spinner in a working button's glyph, a status line in a tone
 │   ├── widgets.py           the empty state that trades places with its content, the caption, the note, confirm()
@@ -334,8 +337,10 @@ src/dplanner/
 │   │                        Projects…, the Project dialog (a column per repository: log, facts, ⋯ menu),
 │   │                        the Repositories card, Move Plan, and the repositories folder clones land in
 │   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, regions, resize) and renderers,
-│   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid;
-│   │                        ground.py paints the background)
+│   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid,
+│   │                        the side panel; ground.py paints the background)
+│   │                        (canvas_toolbar.py is the strip in named bands; find.py the rows Find offers;
+│   │                        side_panel.py what the tab stands beside the canvas — the Features list)
 │   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's
 │   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone)
 │   │                        (its panel also hosts the modules' project-level cards)
