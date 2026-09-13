@@ -3,27 +3,32 @@ clone from GitHub — or, where a new one may be made, a fresh local repository 
 publish on GitHub.
 
 Open Projects, Move Plan and New Project all ask this question, so it is one widget: a
-dropdown of the known plan repositories, last used first, and a row of glyph buttons for
-the other ways in. What it answers is a :class:`PlanTarget` — a root, whether it still
-has to be initialised, and the GitHub name to publish it under afterwards — and it never
-touches the model. A clone runs off the GUI thread and lands in the repositories folder.
+dropdown of the known plan repositories, last used first, and one ⋯ menu of the other
+ways in — built when it opens, an entry greyed with its reason where it cannot run right
+now, the same list to learn in every dialog that asks (DESIGN.md's *Buttons*). What it
+answers is a :class:`PlanTarget` — a root, whether it still has to be initialised, and
+the GitHub name to publish it under afterwards — and it never touches the model. A clone
+runs off the GUI thread and lands in the repositories folder.
+
+:class:`RepoAction`, :func:`menu_of` and :func:`menu_button` are the ⋯ vocabulary the
+Project dialog's repository columns share with the picker.
 """
 
+import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QSize
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtCore import Signal as QtSignal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QComboBox,
-    QDialog,
     QFileDialog,
     QHBoxLayout,
-    QInputDialog,
-    QLabel,
     QLineEdit,
     QListWidget,
-    QPushButton,
+    QMenu,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -31,19 +36,27 @@ from PySide6.QtWidgets import (
 
 from dplanner.core.storage.locations import find_repo_root, origin_url, remote_label
 from dplanner.core.storage.provider import StorageError
+from dplanner.framework.dialog import DialogFrame, LinePrompt
+from dplanner.framework.signalling import StatusLine, Tone
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.user_config import get_global, set_global
+from dplanner.framework.widgets import caption, ink_of
 from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices, shown_path
 from dplanner.modules.projects.repositories_folder import (
     ensure_repositories_folder,
     repositories_folder,
 )
 from dplanner.theme.icons import ICON_SIZE, clone_icon, external_icon, folder_icon, plus_icon
-from dplanner.theme.themes import Theme
+from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP
 
 LAST_ROOT_KEY = "last_plan_root"
+GH_LIST_SIZE = (440, 380)
+
+# The ⋯ button's glyph. A character rather than a painted icon: it names no verb, and every
+# platform's font has it.
+ELLIPSIS = "⋯"
 
 
 @dataclass(frozen=True)
@@ -62,6 +75,52 @@ class PlanTarget:
         return remote_label(origin) if origin else self.root.name
 
 
+@dataclass(frozen=True)
+class RepoAction:
+    """One entry of a ⋯ menu.
+
+    ``reason`` is what the entry cannot be run for right now, and an entry that has one is
+    greyed and carries it — the registry's *disabled, never hidden* rule, applied to a
+    pop-up these verbs are too local to reach the registry through. The menu's shape is
+    therefore the same whatever the state, which is what makes it learnable.
+    """
+
+    label: str
+    icon: Callable[[str], QIcon]
+    run: Callable[[], None]
+    reason: str = ""
+
+    @property
+    def text(self) -> str:
+        return f"{self.label} — {self.reason}" if self.reason else self.label
+
+
+# A None entry parts two groups of verbs inside one menu.
+Entry = RepoAction | None
+
+
+def menu_of(entries: Sequence[Entry], ink: str, parent: QWidget) -> QMenu:
+    """A ⋯ menu as it stands: an entry per verb, greyed with its reason where it cannot
+    be run. Built afresh every time it opens — a glyph carries the colour it was painted
+    in, so a menu kept across a theme change would go stale."""
+    menu = QMenu(parent)
+    for entry in entries:
+        if entry is None:
+            menu.addSeparator()
+            continue
+        action = menu.addAction(entry.icon(ink), entry.text)
+        action.setEnabled(not entry.reason)
+        action.triggered.connect(lambda _checked=False, run=entry.run: run())
+    return menu
+
+
+def github_name_problem(name: str) -> str | None:
+    """Why ``name`` cannot name a repository on GitHub, or None when it can."""
+    if re.fullmatch(r"(?:[\w.-]+/)?[\w.-]+", name):
+        return None
+    return "Letters, digits, dots, dashes and underscores — owner/name picks the owner"
+
+
 def tool_button(tip: str, name: str, parent: QWidget) -> QToolButton:
     """A glyph button beside a field: the quiet bordered look, the verb in its tooltip."""
     button = QToolButton(parent)
@@ -69,6 +128,14 @@ def tool_button(tip: str, name: str, parent: QWidget) -> QToolButton:
     button.setProperty("repoTool", True)
     button.setToolTip(tip)
     button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+    return button
+
+
+def menu_button(tip: str, parent: QWidget) -> QToolButton:
+    """The ⋯ beside a thing, dropping its verbs as a menu of glyph and words."""
+    button = tool_button(tip, "RepoMenuButton", parent)
+    button.setText(ELLIPSIS)
+    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
     return button
 
 
@@ -89,6 +156,9 @@ class RepoPicker(QWidget):
         self.setObjectName("RepoPicker")
         self._services = services
         self._tasks = tasks
+        self._theme = theme
+        self._allow_new = allow_new
+        self._cloning = False
         self._runner = TaskRunner(tasks, parent=self)
         self._cloned.connect(self._on_cloned)
         self._targets: dict[str, PlanTarget] = {}
@@ -96,37 +166,18 @@ class RepoPicker(QWidget):
         self.combo = QComboBox(self)
         self.combo.setObjectName("RepoPickerCombo")
         self.combo.currentIndexChanged.connect(lambda _index: self.changed.emit())
-        self.browse_button = tool_button("Another folder…", "RepoPickerBrowse", self)
-        self.browse_button.clicked.connect(self._browse)
-        self.clone_button = tool_button("Clone from GitHub…", "RepoPickerClone", self)
-        self.clone_button.clicked.connect(self._clone)
-        self.new_local_button = tool_button("New repository here…", "RepoPickerNewLocal", self)
-        self.new_local_button.clicked.connect(self._new_local)
-        self.new_github_button = tool_button(
-            "New repository on GitHub…", "RepoPickerNewGitHub", self
-        )
-        self.new_github_button.clicked.connect(self._new_github)
-        self.new_local_button.setVisible(allow_new)
-        self.new_github_button.setVisible(allow_new)
-        self.note = QLabel(self)
-        self.note.setObjectName("RepoPickerNote")
-        self.note.setWordWrap(True)
-        self.note.hide()
+        self.menu_button = menu_button("Other ways to pick a plan repository", self)
+        self.menu_button.clicked.connect(self.popup)
+        self.note = StatusLine(self)
 
-        row = QHBoxLayout()
-        row.setSpacing(8)
-        row.addWidget(self.combo, 1)
-        for button in (
-            self.browse_button,
-            self.clone_button,
-            self.new_local_button,
-            self.new_github_button,
-        ):
-            row.addWidget(button)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(CAPTION_GAP)
+        row = QHBoxLayout()
         layout.addLayout(row)
+        row.setSpacing(FIELD_GAP)
+        row.addWidget(self.combo, 1)
+        row.addWidget(self.menu_button)
         layout.addWidget(self.note)
 
         # The repository last picked leads, and is offered even when no library project
@@ -137,9 +188,6 @@ class RepoPicker(QWidget):
             roots.insert(0, Path(last))
         for root in sorted(roots, key=lambda root: str(root) != last):
             self._add(PlanTarget(root))
-        if theme is not None:
-            self._paint(theme.current)
-            self._unsubscribe = theme.changed.connect(self._paint)
 
     # -- the answer ------------------------------------------------------------------------
 
@@ -165,7 +213,36 @@ class RepoPicker(QWidget):
             self.combo.setCurrentIndex(self.combo.findData(key))
             self.changed.emit()
 
-    # -- the other ways in -------------------------------------------------------------------
+    # -- the ⋯ menu: the other ways in -------------------------------------------------------
+
+    def entries(self) -> list[Entry]:
+        """What the menu would offer right now — asked afresh, and what a test reads."""
+        busy = "a clone is still running" if self._cloning else ""
+        found: list[Entry] = [
+            RepoAction("Another folder…", folder_icon, self._browse),
+            RepoAction("Clone from GitHub…", clone_icon, self._clone, busy),
+        ]
+        if self._allow_new:
+            found += [
+                None,
+                RepoAction("New repository here…", plus_icon, self._new_local),
+                RepoAction("New repository on GitHub…", external_icon, self._new_github),
+            ]
+        return found
+
+    def menu(self) -> QMenu:
+        return menu_of(self.entries(), self._ink(), self)
+
+    def popup(self) -> None:
+        menu = self.menu()
+        menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
+        menu.deleteLater()
+
+    def _ink(self) -> str:
+        """Read when the menu opens, never stored: a pop-up cannot go stale."""
+        if self._theme is not None:
+            return self._theme.current.text_secondary
+        return ink_of(self).name()
 
     def _browse(self) -> None:
         start = repositories_folder() or Path.home()
@@ -208,11 +285,11 @@ class RepoPicker(QWidget):
         if not self._runner.run(f"Cloning {repo}", body, key="projects.clone"):
             self.say("Another clone is still running")
             return
-        self.clone_button.setEnabled(False)
-        self.say(f"Cloning {repo} into {shown_path(dest)}…")
+        self._cloning = True
+        self.say(f"Cloning {repo} into {shown_path(dest)}…", "busy")
 
     def _on_cloned(self, root: str, error: str) -> None:
-        self.clone_button.setEnabled(True)
+        self._cloning = False
         if error:
             self.say(error)
             return
@@ -237,11 +314,15 @@ class RepoPicker(QWidget):
         self._add(PlanTarget(path, init=True), select=True)
 
     def _new_github(self) -> None:
-        name, ok = QInputDialog.getText(
-            self, "New Plan Repository on GitHub", "Repository name:", text="plans"
+        name = LinePrompt.ask(
+            self,
+            "New Plan Repository on GitHub",
+            "Repository name on GitHub",
+            "Create",
+            text="plans",
+            validate=github_name_problem,
         )
-        name = name.strip()
-        if not ok or not name:
+        if name is None:
             return
         folder = ensure_repositories_folder(self)
         if folder is None:
@@ -253,67 +334,51 @@ class RepoPicker(QWidget):
         self.say("")
         self._add(PlanTarget(path, init=True, publish=name), select=True)
 
-    def say(self, text: str) -> None:
-        self.note.setText(text)
-        self.note.setVisible(bool(text))
-
-    def _paint(self, theme: Theme) -> None:
-        color = theme.text_secondary
-        self.browse_button.setIcon(folder_icon(color))
-        self.clone_button.setIcon(clone_icon(color))
-        self.new_local_button.setIcon(plus_icon(color))
-        self.new_github_button.setIcon(external_icon(color))
+    def say(self, text: str, tone: Tone = "error") -> None:
+        """The line under the picker: a refusal in the error tone, a clone in the busy."""
+        self.note.say(text, tone)
 
 
-class GhRepoListDialog(QDialog):
-    """The person's GitHub repositories, filtered as they type; one is cloned."""
+class GhRepoListDialog(DialogFrame):
+    """The person's GitHub repositories, filtered as they type; one is cloned.
+
+    *Clone* is the primary, greyed directly rather than through ``refuse()`` — the
+    footer's status slot is the listing's: busy while gh answers, the count or the
+    error afterwards.
+    """
 
     _listed = QtSignal(object, str)  # (repos, error) — queued from the listing body.
 
     def __init__(
         self, services: RepositoryServices, tasks: TaskService, parent: QWidget | None = None
     ) -> None:
-        super().__init__(parent)
-        self.setObjectName("GhRepoListDialog")
-        self.setWindowTitle("Clone from GitHub")
-        self.setMinimumSize(440, 380)
+        super().__init__("Clone from GitHub", parent, size=GH_LIST_SIZE)
         self._repos: list[str] = []
         self._runner = TaskRunner(tasks, parent=self)
         self._listed.connect(self._on_listed)
+        body, layout = self.body, self.body_layout
 
-        self.filter_edit = QLineEdit(self)
+        form = QVBoxLayout()
+        layout.addLayout(form)
+        form.setSpacing(CAPTION_GAP)
+        form.addWidget(caption("Your repositories", body))
+        self.filter_edit = QLineEdit(body)
         self.filter_edit.setObjectName("GhRepoFilter")
         self.filter_edit.setPlaceholderText("Filter…")
         self.filter_edit.textChanged.connect(lambda _text: self._fill())
-        self.list = QListWidget(self)
+        form.addWidget(self.filter_edit)
+        self.list = QListWidget(body)
         self.list.setObjectName("GhRepoList")
         self.list.itemActivated.connect(lambda _item: self.accept())
-        self.status = QLabel("Listing your repositories…", self)
-        self.status.setObjectName("InspectorNote")
-        self.status.setWordWrap(True)
-
-        cancel = QPushButton("Cancel", self)
-        cancel.clicked.connect(self.reject)
-        self.clone_button = QPushButton("Clone", self)
-        self.clone_button.setObjectName("PrimaryButton")
-        self.clone_button.setDefault(True)
-        self.clone_button.setEnabled(False)
-        self.clone_button.clicked.connect(self.accept)
-        self.list.currentRowChanged.connect(lambda row: self.clone_button.setEnabled(row >= 0))
-
-        footer = QHBoxLayout()
-        footer.setSpacing(8)
-        footer.addWidget(self.status, 1)
-        footer.addWidget(cancel)
-        footer.addWidget(self.clone_button)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
-        layout.addWidget(self.filter_edit)
         layout.addWidget(self.list, 1)
-        layout.addLayout(footer)
 
-        def body() -> None:
+        self.add_dismiss()
+        self.clone_button = self.set_primary("Clone", self.accept)
+        self.clone_button.setEnabled(False)
+        self.list.currentRowChanged.connect(lambda row: self.clone_button.setEnabled(row >= 0))
+        self.status.say("Listing your repositories…", "busy")
+
+        def body_() -> None:
             refusal = services.gh_refusal()
             if refusal is not None:
                 self._listed.emit([], refusal)
@@ -323,11 +388,14 @@ class GhRepoListDialog(QDialog):
             except (StorageError, OSError) as error:
                 self._listed.emit([], str(error))
 
-        self._runner.run("Listing GitHub repositories", body, key="projects.gh_list")
+        self._runner.run("Listing GitHub repositories", body_, key="projects.gh_list")
 
     def _on_listed(self, repos: object, error: str) -> None:
         self._repos = [str(repo) for repo in repos] if isinstance(repos, list) else []
-        self.status.setText(error or f"{len(self._repos)} repositories")
+        if error:
+            self.status.say(error, "error")
+        else:
+            self.status.say(f"{len(self._repos)} repositories")
         self._fill()
 
     def _fill(self) -> None:

@@ -10,9 +10,10 @@ columns are what says these are two repositories and not three fields.
 
 Every edit is live and undoable (the name and summary, the code repository and the
 colocation go through the undo stack; the checkout is written straight into the library
-file, a per-machine fact), so the dialog carries no buttons of its own — DESIGN.md's rule,
-the step details dialog the precedent — and one instance serves the window, re-aimed by
-``show_project``.
+file, a per-machine fact), so the dialog carries Close and nothing else — DESIGN.md's
+rule, the step details dialog the precedent — and one instance serves the window,
+re-aimed by ``show_project``. What the last request came to is said in the footer's
+status slot.
 
 The logs are read off the GUI thread: one task body reads both histories and the code
 repository's open pull requests and hands back one :class:`_Logs`, stamped with the
@@ -25,10 +26,11 @@ say they were apart. Cloning, publishing and creating on GitHub run in a second 
 and their outcome lands in the model on the GUI thread through one ``_done`` signal.
 
 *File ▸ New Project…* is the same dialog in **create mode**: a form, because nothing
-exists yet to have a menu about — the name, the summary, the plan repository as a picker
-with a folder name under it, the code repository and its checkout as fields, and a Create
-button. It answers a :class:`NewProjectSpec`; the module seeds the project and connects
-it, so the dialog writes nothing anywhere.
+exists yet to have a menu about — the name, the summary, then the plan repository, the
+folder inside it, the code repository and its checkout as captioned blocks, and Create as
+the primary, refused in words until the plan has a home. It answers a
+:class:`NewProjectSpec`; the module seeds the project and connects it, so the dialog
+writes nothing anywhere.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -41,11 +43,9 @@ from PySide6.QtGui import QDesktopServices, QIcon, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
-    QDialog,
     QFileDialog,
     QGridLayout,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -53,7 +53,6 @@ from PySide6.QtWidgets import (
     QMenu,
     QPushButton,
     QSizePolicy,
-    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -71,18 +70,29 @@ from dplanner.domain.model import Library, NodeId, Project
 from dplanner.domain.plan_repo import ago
 from dplanner.domain.repositories import ACCEPTED, LEGACY, SEPARATED, RepositoryFacts
 from dplanner.framework.cards import card_rule
+from dplanner.framework.dialog import DialogFrame, LinePrompt
 from dplanner.framework.list_rows import (
     DETAIL_ROLE,
     EMPHASIS_ROLE,
     RULE_ROLE,
     TwoLineDelegate,
 )
+from dplanner.framework.signalling import Tone
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import confirm
-from dplanner.modules.projects.repo_picker import PlanTarget, RepoPicker, tool_button
+from dplanner.framework.widgets import EmptyState, block, caption, confirm, note
+from dplanner.modules.projects.repo_picker import (
+    Entry,
+    PlanTarget,
+    RepoAction,
+    RepoPicker,
+    github_name_problem,
+    menu_button,
+    menu_of,
+    tool_button,
+)
 from dplanner.modules.projects.repos import (
     LOG_LIMIT,
     MOVE_PLAN,
@@ -104,7 +114,6 @@ from dplanner.theme.icons import (
     branch_icon,
     clone_icon,
     code_icon,
-    container_icon,
     external_icon,
     folder_icon,
     move_icon,
@@ -113,18 +122,16 @@ from dplanner.theme.icons import (
     pull_request_icon,
 )
 from dplanner.theme.themes import Theme
+from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, ROW_LINE_GAP, SECTION_GAP
 
-DIALOG_MARGIN = 20
-SECTION_GAP = 12
-FIELD_GAP = 8
 URL_ROLE = int(Qt.ItemDataRole.UserRole) + 10
 
 SETTINGS = "settings"
 CREATE = "create"
-
-# The ⋯ button's glyph. A character rather than a painted icon: it names no verb, and every
-# platform's font has it.
-ELLIPSIS = "\u22ef"
+SETTINGS_SIZE = (780, 640)
+CREATE_SIZE = (640, 520)
+# What the plan column says where the plan has no history of its own to show.
+SETUP_WORDS = "The plan's history is the code's — it has no repository of its own."
 
 
 @dataclass(frozen=True)
@@ -141,30 +148,6 @@ class NewProjectSpec:
     @property
     def target(self) -> Path:
         return self.plan.root / self.folder
-
-
-@dataclass(frozen=True)
-class RepoAction:
-    """One entry of a column's ⋯ menu.
-
-    ``reason`` is what the entry cannot be run for right now, and an entry that has one is
-    greyed and carries it — the registry's *disabled, never hidden* rule, applied to a
-    pop-up these verbs are too local to reach the registry through. The menu's shape is
-    therefore the same whatever the project's state, which is what makes it learnable.
-    """
-
-    label: str
-    icon: Callable[[str], QIcon]
-    run: Callable[[], None]
-    reason: str = ""
-
-    @property
-    def text(self) -> str:
-        return f"{self.label} — {self.reason}" if self.reason else self.label
-
-
-# A None entry parts two groups of verbs inside one menu.
-Entry = RepoAction | None
 
 
 def restyle(widget: QWidget, name: str) -> None:
@@ -243,30 +226,32 @@ class RepositoryColumn(QWidget):
     """
 
     activated = QtSignal(str)  # A pull request row's URL.
+    setup_requested = QtSignal()  # The empty state's verb, where the column carries one.
 
     def __init__(
         self,
-        caption: str,
+        caption_text: str,
         entries: Callable[[], Sequence[Entry]],
         parent: QWidget | None = None,
+        *,
+        verb: str = "",
     ) -> None:
         super().__init__(parent)
         self._color = ""
         self._entries = entries
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
+        layout.setSpacing(CAPTION_GAP)
 
         # A child layout joins its parent before it is filled: a parentless one leaves the
         # item wrappers it was given alive on the Python side (CLAUDE.md's layout rules).
         header = QHBoxLayout()
         layout.addLayout(header)
         self.glyph = glyph_label(self)
-        self.caption = QLabel(caption, self)
-        self.caption.setObjectName("InspectorCaption")
+        self.caption = caption(caption_text, self)
         self.branch = QLabel(self)
         self.branch.setObjectName("LogBranch")
-        header.setSpacing(6)
+        header.setSpacing(CAPTION_GAP)
         header.addWidget(self.glyph)
         header.addWidget(self.caption)
         header.addStretch(1)
@@ -279,28 +264,20 @@ class RepositoryColumn(QWidget):
         self.well.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.well.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.well.itemActivated.connect(self._activate)
-        self.empty = QLabel(self)
-        self.empty.setObjectName("LogEmpty")
-        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty.setWordWrap(True)
-        self.setup_button = QPushButton(SET_UP_PLAN, self)
-        self.setup_button.setObjectName("PlanSetupButton")
-        setup = QWidget(self)
-        setup.setObjectName("PlanSetup")
-        column = QVBoxLayout(setup)
-        row = QHBoxLayout()
-        column.addStretch(1)
-        column.addLayout(row)
-        column.addStretch(1)
-        row.addStretch(1)
-        row.addWidget(self.setup_button)
-        row.addStretch(1)
-        self.pages = QStackedWidget(self)
-        self.pages.addWidget(self.well)
-        self.pages.addWidget(self.empty)
-        self.pages.addWidget(setup)
-        self.setup = setup
-        layout.addWidget(self.pages, 1)
+        # What stands where the rows would be — a message, or the one verb that puts a
+        # history here (DESIGN.md's *Empty states*): the plan column's *Set up a plan
+        # repository…*, whose button is the same plain button every empty state offers.
+        self.empty = EmptyState(
+            "",
+            self,
+            stands_in_for=self.well,
+            action=(verb, self.setup_requested.emit) if verb else None,
+        )
+        self.setup_button = self.empty.button
+        if self.setup_button is not None:
+            self.setup_button.setObjectName("PlanSetupButton")
+        layout.addWidget(self.well, 1)
+        layout.addWidget(self.empty, 1)
 
         # The footer: what this repository is, where it is here, and everything you can do
         # to either — small, because it states facts under the thing they are about.
@@ -314,15 +291,13 @@ class RepositoryColumn(QWidget):
             label.setObjectName(name)
             label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             smaller(label)
-        self.menu_button = tool_button(
-            f"What you can do with the {caption.lower()} repository", "RepoMenuButton", self
+        self.menu_button = menu_button(
+            f"What you can do with the {caption_text.lower()} repository", self
         )
-        self.menu_button.setText(ELLIPSIS)
-        self.menu_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.menu_button.clicked.connect(self.popup)
         footer.setContentsMargins(0, 0, 0, 0)
         footer.setHorizontalSpacing(FIELD_GAP)
-        footer.setVerticalSpacing(2)
+        footer.setVerticalSpacing(ROW_LINE_GAP)
         footer.addWidget(self.identity, 0, 0)
         footer.addWidget(self.location, 1, 0)
         footer.addWidget(self.menu_button, 0, 1, 2, 1, Qt.AlignmentFlag.AlignVCenter)
@@ -374,18 +349,24 @@ class RepositoryColumn(QWidget):
             item.setData(DETAIL_ROLE, f"{entry.author} · {ago(entry.when)}")
             self.well.addItem(item)
         if self.well.count():
-            self.pages.setCurrentWidget(self.well)
+            self.empty.say("")
         else:
             self.show_message(empty_text)
 
     def show_message(self, text: str) -> None:
-        self.empty.setText(text)
-        self.pages.setCurrentWidget(self.empty)
+        """Words where the rows would be, and no verb under them."""
+        if self.setup_button is not None:
+            self.setup_button.hide()
+        self.empty.say(text)
 
     def show_setup(self, *, primary: bool) -> None:
+        """The plan column's offer where the plan has no history of its own: the verb
+        under the words, the accent on it while the shape is the one that drifts."""
+        assert self.setup_button is not None  # Only the column built with a verb.
         restyle(self.setup_button, "PrimaryButton" if primary else "PlanSetupButton")
         self.branch.setText("")
-        self.pages.setCurrentWidget(self.setup)
+        self.setup_button.show()
+        self.empty.say(SETUP_WORDS)
 
     def rows(self) -> list[tuple[str, str]]:
         """What the well shows, line one and line two per row."""
@@ -402,18 +383,8 @@ class RepositoryColumn(QWidget):
         return list(self._entries())
 
     def menu(self) -> QMenu:
-        """The ⋯ menu as it stands: an entry per verb, greyed with its reason where it
-        cannot be run. Built afresh every time — a glyph carries the colour it was painted
-        in, so a menu kept across a theme change would go stale."""
-        menu = QMenu(self)
-        for entry in self.entries():
-            if entry is None:
-                menu.addSeparator()
-                continue
-            action = menu.addAction(entry.icon(self._color), entry.text)
-            action.setEnabled(not entry.reason)
-            action.triggered.connect(lambda _checked=False, run=entry.run: run())
-        return menu
+        """The ⋯ menu as it stands, built afresh every time it opens."""
+        return menu_of(self.entries(), self._color, self)
 
     def popup(self) -> None:
         menu = self.menu()
@@ -426,7 +397,7 @@ class RepositoryColumn(QWidget):
             self.activated.emit(str(url))
 
 
-class ProjectDialog(QDialog):
+class ProjectDialog(DialogFrame):
     _fetched = QtSignal(object)  # _Logs, from the reading body.
     _done = QtSignal(str, object, str)  # (what, result, error), from a writing body.
 
@@ -442,11 +413,14 @@ class ProjectDialog(QDialog):
         mode: str = SETTINGS,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
+        create = mode == CREATE
+        super().__init__(
+            "New Project" if create else "Project",
+            parent,
+            size=CREATE_SIZE if create else SETTINGS_SIZE,
+        )
         self.setObjectName("ProjectDialog")
-        self.setWindowTitle("Project")
-        self.setMinimumSize(560, 460)
-        self.resize(780, 640)
+        self.setMinimumSize(520, 420) if create else self.setMinimumSize(560, 460)
         self.mode = mode
         self._library = library
         self._undo = undo
@@ -466,22 +440,21 @@ class ProjectDialog(QDialog):
         self._done.connect(self._on_done)
 
         # -- what the project is ---------------------------------------------------------
+        body, layout = self.body, self.body_layout
+        # The first field the frame finds is the first thing to type: the name.
+        self.name_edit = QLineEdit(body)
         self.project_glyph = self._glyph(project_icon)
-        self.name_edit = QLineEdit(self)
         self.name_edit.setObjectName("ProjectNameEdit")
         self.name_edit.setPlaceholderText("What this project is called")
         font = self.name_edit.font()
         font.setPointSize(font.pointSize() + 2)
         self.name_edit.setFont(font)
         self.name_edit.editingFinished.connect(self._commit_name)
-        self.summary_edit = QLineEdit(self)
+        self.summary_edit = QLineEdit(body)
         self.summary_edit.setObjectName("ProjectSummaryEdit")
-        self.summary_edit.setPlaceholderText("What it delivers, in one line")
+        self.summary_edit.setPlaceholderText("What it delivers, in one line (optional)")
         self.summary_edit.editingFinished.connect(self._commit_summary)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
-        layout.setSpacing(SECTION_GAP)
         grid = QGridLayout()
         layout.addLayout(grid)
         grid.setContentsMargins(0, 0, 0, 0)
@@ -495,16 +468,16 @@ class ProjectDialog(QDialog):
             grid.setRowMinimumHeight(row, ICON_SIZE)
 
         # -- one column per repository, parted by the divide that says they are two -------
-        self.code_column = RepositoryColumn("Code", self._code_entries, self)
+        self.code_column = RepositoryColumn("Code", self._code_entries, body)
         self.code_column.setObjectName("CodeLogColumn")
-        self.plan_column = RepositoryColumn("Plan", self._plan_entries, self)
+        self.plan_column = RepositoryColumn("Plan", self._plan_entries, body, verb=SET_UP_PLAN)
         self.plan_column.setObjectName("PlanLogColumn")
         self._painters.append(lambda ink: self.code_column.paint(code_icon, ink))
         self._painters.append(lambda ink: self.plan_column.paint(branch_icon, ink))
-        self.plan_column.setup_button.clicked.connect(self._on_move)
+        self.plan_column.setup_requested.connect(self._on_move)
         for log_column in (self.code_column, self.plan_column):
             log_column.activated.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
-        logs = QWidget(self)
+        logs = QWidget(body)
         logs.setObjectName("ProjectLogs")
         columns = QHBoxLayout(logs)
         columns.setContentsMargins(0, 0, 0, 0)
@@ -513,36 +486,21 @@ class ProjectDialog(QDialog):
         columns.addWidget(card_rule(logs, vertical=True))
         columns.addWidget(self.plan_column, 1)
 
-        # -- what is wrong, and what the last request did ---------------------------------
-        self.warning = QLabel(self)
-        self.warning.setObjectName("ColocationWarningText")
-        self.warning.setWordWrap(True)
-        self.keep_button = QPushButton("Keep it here", self)
+        # -- what is wrong; what the last request did goes in the footer's status slot ----
+        self.warning = note("", body)
+        self.keep_button = QPushButton("Keep it here", body)
         self.keep_button.setObjectName("KeepColocationButton")
         self.keep_button.setToolTip("The plan stays inside its code on purpose; stop warning")
         self.keep_button.clicked.connect(self._keep_here)
-        self.warning_row = QWidget(self)
+        self.warning_row = QWidget(body)
         self.warning_row.setObjectName("ColocationWarning")
         warning_layout = QHBoxLayout(self.warning_row)
         warning_layout.setContentsMargins(0, 0, 0, 0)
         warning_layout.setSpacing(FIELD_GAP)
         warning_layout.addWidget(self.warning, 1)
         warning_layout.addWidget(self.keep_button)
-        self.gh_note = QLabel(self)
-        self.gh_note.setObjectName("GhNote")
-        self.gh_note.setWordWrap(True)
+        self.gh_note = note("", body)
         self.gh_note.hide()
-        self.note = QLabel(self)
-        self.note.setObjectName("ProjectNote")
-        self.note.setWordWrap(True)
-        self.note.hide()
-
-        rule = card_rule(self)
-        layout.addWidget(rule)
-        layout.addWidget(logs, 1)
-        layout.addWidget(self.warning_row)
-        layout.addWidget(self.gh_note)
-        layout.addWidget(self.note)
 
         # -- create mode: a form, because there is nothing yet to have a menu about -------
         self.plan_picker: RepoPicker | None = None
@@ -558,88 +516,72 @@ class ProjectDialog(QDialog):
             theme.changed.connect(self._paint),
         ]
         self._paint(theme.current)
-        if mode == CREATE:
-            self._build_create_form(grid, layout, rule, logs, services, tasks, theme)
+        if create:
+            for unused in (logs, self.warning_row, self.gh_note):
+                unused.hide()  # Nothing exists yet to read a log of or act on.
+            self._build_create_form(services, tasks, theme)
+        else:
+            layout.addWidget(card_rule(body))
+            layout.addWidget(logs, 1)
+            layout.addWidget(self.warning_row)
+            layout.addWidget(self.gh_note)
+            self.add_dismiss("Close")  # Every edit is live: Close, and nothing else.
 
     def _build_create_form(
-        self,
-        grid: QGridLayout,
-        layout: QVBoxLayout,
-        rule: QWidget,
-        logs: QWidget,
-        services: RepositoryServices,
-        tasks: TaskService,
-        theme: ThemeService,
+        self, services: RepositoryServices, tasks: TaskService, theme: ThemeService
     ) -> None:
         """New Project…: the same name and summary, then the fields that decide where the
-        plan and the code will live. No logs and no menus — nothing exists to read or act
-        on yet — so the answer is a :class:`NewProjectSpec` and a Create button."""
-        self.setWindowTitle("New Project")
-        self.setMinimumSize(520, 360)
-        self.resize(640, 420)
-        for hidden in (rule, logs, self.warning_row):
-            hidden.hide()
+        plan and the code will live, each under its caption (DESIGN.md's *Forms*). No
+        logs and no menus — nothing exists to read or act on yet — so the answer is a
+        :class:`NewProjectSpec` and Create is the primary."""
+        body, layout = self.body, self.body_layout
 
-        self.plan_picker = RepoPicker(services, tasks, allow_new=True, theme=theme, parent=self)
+        self.plan_picker = RepoPicker(services, tasks, allow_new=True, theme=theme, parent=body)
         self.plan_picker.setObjectName("PlanRepoPicker")
         self.plan_picker.changed.connect(self._revalidate_create)
-        self.plan_glyph = self._glyph(branch_icon)
-        self.folder_glyph = self._glyph(container_icon)
-        self.folder_edit = QLineEdit(self)
+        block(layout, caption("Plan repository", body), self.plan_picker)
+
+        self.folder_edit = QLineEdit(body)
         self.folder_edit.setObjectName("ProjectFolderEdit")
         self.folder_edit.setPlaceholderText("folder name inside the plan repository")
         self.folder_edit.textEdited.connect(self._folder_typed)
         self.folder_edit.textChanged.connect(lambda _text: self._revalidate_create())
         self.name_edit.textChanged.connect(self._suggest_folder)
+        self.target_label = note("", body)  # The path the two make, and only the path.
+        block(layout, caption("Folder", body), self.folder_edit, self.target_label)
 
-        self.code_glyph = self._glyph(code_icon)
-        self.repository_combo = QComboBox(self)
+        self.repository_combo = QComboBox(body)
         self.repository_combo.setObjectName("CodeRepositoryCombo")
         self.repository_combo.setEditable(True)
         self.repository_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         line = self.repository_combo.lineEdit()
         assert line is not None  # An editable combo always has one.
-        line.setPlaceholderText("https://github.com/acme/widget — the code this plan is about")
-        self.checkout_glyph = self._glyph(folder_icon)
-        self.checkout_edit = QLineEdit(self)
+        line.setPlaceholderText(
+            "https://github.com/acme/widget — the code this plan is about (optional)"
+        )
+        block(layout, caption("Code repository", body), self.repository_combo)
+
+        self.checkout_edit = QLineEdit(body)
         self.checkout_edit.setObjectName("CodeCheckoutEdit")
-        self.checkout_edit.setPlaceholderText("Where the code is checked out on this machine")
-        self.browse_button = tool_button("Choose the checkout…", "BrowseCheckoutButton", self)
+        self.checkout_edit.setPlaceholderText(
+            "Where the code is checked out on this machine (optional)"
+        )
+        self.browse_button = tool_button("Choose the checkout…", "BrowseCheckoutButton", body)
         self.browse_button.clicked.connect(self._browse_for_create)
         self._painters.append(lambda ink: self.browse_button.setIcon(folder_icon(ink)))
-
-        grid.addWidget(self.plan_glyph, 2, 0)
-        grid.addWidget(self.plan_picker, 2, 1, 1, 2)
-        grid.addWidget(self.folder_glyph, 3, 0)
-        grid.addWidget(self.folder_edit, 3, 1, 1, 2)
-        grid.addWidget(self.code_glyph, 4, 0)
-        grid.addWidget(self.repository_combo, 4, 1, 1, 2)
-        grid.addWidget(self.checkout_glyph, 5, 0)
-        grid.addWidget(self.checkout_edit, 5, 1)
-        grid.addWidget(self.browse_button, 5, 2)
-        for row in range(2, 6):
-            grid.setRowMinimumHeight(row, ICON_SIZE)
-
-        self.target_label = QLabel(self)
-        self.target_label.setObjectName("ProjectFolderPath")
-        self.target_label.setWordWrap(True)
-        footer = QHBoxLayout()
-        layout.addWidget(self.target_label)
+        checkout_row = QWidget(body)
+        row = QHBoxLayout(checkout_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(FIELD_GAP)
+        row.addWidget(self.checkout_edit, 1)
+        row.addWidget(self.browse_button)
+        block(layout, caption("Checkout", body), checkout_row)
         layout.addStretch(1)
-        layout.addLayout(footer)
-        cancel = QPushButton("Cancel", self)
-        cancel.clicked.connect(self.reject)
-        self.create_button = QPushButton("Create", self)
-        self.create_button.setObjectName("PrimaryButton")
-        self.create_button.setDefault(True)
-        self.create_button.clicked.connect(self.accept)
-        footer.setSpacing(FIELD_GAP)
-        footer.addStretch(1)
-        footer.addWidget(cancel)
-        footer.addWidget(self.create_button)
+
+        self.add_dismiss()
+        self.create_button = self.set_primary("Create", self.accept)
         self._paint(theme.current)
         self._revalidate_create()
-        self.name_edit.setFocus()
 
     # -- create mode ---------------------------------------------------------------------------
 
@@ -672,16 +614,27 @@ class ProjectDialog(QDialog):
             self.folder_edit.setText(slugify(title, fallback="project") if title.strip() else "")
 
     def _revalidate_create(self) -> None:
+        """Create is refused with its reason, field by field, until the plan has a home."""
         if self.mode != CREATE:
             return
-        spec = self.spec()
-        if spec is None:
+        assert self.plan_picker is not None and self.folder_edit is not None
+        missing = (
+            "Name the project first"
+            if not self.name_edit.text().strip()
+            else "Pick a plan repository"
+            if self.plan_picker.current() is None
+            else "Name the folder inside it"
+            if not self.folder_edit.text().strip()
+            else None
+        )
+        if missing is not None:
             self.target_label.setText("")
-            self.create_button.setEnabled(False)
+            self.refuse(missing)
             return
-        exists = spec.target.exists()
-        self.target_label.setText(shown_path(spec.target) + (" — already exists" if exists else ""))
-        self.create_button.setEnabled(not exists)
+        spec = self.spec()
+        assert spec is not None
+        self.target_label.setText(shown_path(spec.target))
+        self.refuse("A project already exists at that folder" if spec.target.exists() else None)
 
     def accept(self) -> None:
         if self.plan_picker is not None:
@@ -898,14 +851,16 @@ class ProjectDialog(QDialog):
         facts = self._facts
         if facts is None:
             return
-        text, ok = QInputDialog.getText(
+        text = LinePrompt.ask(
             self,
             "Code Repository",
-            "The code this plan is about, as git names it:",
+            "The code this plan is about, as git names it",
+            "Set",
             text=facts.repository,
+            placeholder="https://github.com/acme/widget",
         )
-        if ok:
-            self._set_repository(text.strip())
+        if text is not None:
+            self._set_repository(text)
 
     def _browse_checkout(self) -> None:
         """Where the code is on this machine — a per-machine fact, so it goes straight
@@ -927,6 +882,7 @@ class ProjectDialog(QDialog):
             "Code Repository",
             f"This checkout's origin is {origin}, not {project.repository}.\n\n"
             f"Record {origin} as the code repository?",
+            verb="Record",
         ):
             return
         self._set_repository(origin)
@@ -984,10 +940,10 @@ class ProjectDialog(QDialog):
         dest = folder / (label.rsplit("/", 1)[-1] or "code")
         if (dest / ".git").exists():
             self._services.set_checkout(project.id, dest)
-            self._say(f"Using the checkout already at {shown_path(dest)}")
+            self._say(f"Using the checkout already at {shown_path(dest)}", "ok")
             return
         if dest.exists():
-            self._say(f"{shown_path(dest)} exists and is not a repository")
+            self._say(f"{shown_path(dest)} exists and is not a repository", "error")
             return
         services = self._services
 
@@ -1001,21 +957,23 @@ class ProjectDialog(QDialog):
         project = self._project()
         if project is None:
             return
-        name, ok = QInputDialog.getText(
+        name = LinePrompt.ask(
             self,
             "New Code Repository",
-            "Repository name on GitHub:",
+            "Repository name on GitHub",
+            "Create",
             text=slugify(project.title, fallback="code"),
+            placeholder="widget, or acme/widget",
+            validate=github_name_problem,
         )
-        name = name.strip()
-        if not ok or not name:
+        if name is None:
             return
         folder = ensure_repositories_folder(self)
         if folder is None:
             return
         dest = folder / name.rsplit("/", 1)[-1]
         if dest.exists():
-            self._say(f"{shown_path(dest)} already exists")
+            self._say(f"{shown_path(dest)} already exists", "error")
             return
         services = self._services
         self._work(
@@ -1030,11 +988,16 @@ class ProjectDialog(QDialog):
         root = facts.plan_root if facts is not None else None
         if root is None:
             return
-        name, ok = QInputDialog.getText(
-            self, "Publish Plan Repository", "Repository name on GitHub:", text=root.name
+        name = LinePrompt.ask(
+            self,
+            "Publish Plan Repository",
+            "Repository name on GitHub",
+            "Publish",
+            text=root.name,
+            placeholder="plans, or acme/plans",
+            validate=github_name_problem,
         )
-        name = name.strip()
-        if not ok or not name:
+        if name is None:
             return
         services = self._services
         self._work(
@@ -1055,37 +1018,37 @@ class ProjectDialog(QDialog):
         # runner) must find its outcome the last word, not this. Nothing is pushed at a
         # menu — every entry's reason is computed when the ⋯ opens.
         self._working = True
-        self._say(saying)
+        self._say(saying, "busy")
         if not self._worker.run(label, body, key=f"projects.{what}"):
             self._working = False
-            self._say("Still busy with the last request — try again in a moment")
+            self._say("Still busy with the last request — try again in a moment", "error")
 
     def _on_done(self, what: str, result: object, error: str) -> None:
         self._working = False
         project = self._project()
         if error:
-            self._say(error)
+            self._say(error, "error")
             return
         if project is None:
             return
         if what == "clone":
             landed = Path(str(result))
-            self._say(f"Cloned into {shown_path(landed)}")
+            self._say(f"Cloned into {shown_path(landed)}", "ok")
             self._services.set_checkout(project.id, landed)  # Refreshes through the store.
         elif what == "create":
             assert isinstance(result, tuple)
             url, dest = str(result[0]), Path(str(result[1]))
-            self._say(f"Created {remote_label(url)} and cloned it into {shown_path(dest)}")
+            self._say(f"Created {remote_label(url)} and cloned it into {shown_path(dest)}", "ok")
             self._undo.push(SetFieldCommand(project.id, "repository", url, view_origin=self))
             self._services.set_checkout(project.id, dest)
         elif what == "publish":
-            self._say(f"Published as {remote_label(str(result))}")
+            self._say(f"Published as {remote_label(str(result))}", "ok")
             self._refresh()
             self._request_logs()
 
-    def _say(self, text: str) -> None:
-        self.note.setText(text)
-        self.note.setVisible(bool(text))
+    def _say(self, text: str, tone: Tone = "info") -> None:
+        """What the last request came to, in the footer's status slot."""
+        self.status.say(text, tone)
 
     # -- following the model, the store and the theme ----------------------------------------------
 

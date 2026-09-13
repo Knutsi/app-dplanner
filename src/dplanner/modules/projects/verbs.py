@@ -126,7 +126,8 @@ class ProjectVerbs:
         if confirm(
             self.parent,
             "Remove from Library",
-            f"Remove {project.title!r} from this library? Its files stay on disk.",
+            f"Remove “{project.title}” from this library? Its files stay on disk.",
+            verb="Remove",
         ):
             self.library.remove_child(project.id, origin=_MEMBERSHIP_ORIGIN)
             self.detach(project.id)

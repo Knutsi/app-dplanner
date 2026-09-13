@@ -9,7 +9,6 @@ project, so a plan already in a repository of its own moves on from the same wiz
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QMessageBox
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.library_file import read_library_file
@@ -54,12 +53,11 @@ def _wizard(monkeypatch):
 
 @pytest.fixture
 def boxes(monkeypatch):
+    """Every notice the module shows — a refusal, or what the move left to know —
+    recorded instead of shown."""
     shown = []
     monkeypatch.setattr(
-        QMessageBox, "warning", lambda _parent, title, text: shown.append((title, text))
-    )
-    monkeypatch.setattr(
-        QMessageBox, "information", lambda _parent, title, text: shown.append((title, text))
+        projects_module, "notice", lambda _parent, title, text: shown.append((title, text))
     )
     return shown
 

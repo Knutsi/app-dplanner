@@ -11,27 +11,21 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QDialog,
-    QFileDialog,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QFileDialog, QListWidget, QListWidgetItem, QWidget
 
+from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.list_rows import DETAIL_ROLE, TwoLineDelegate
 from dplanner.framework.user_config import get_global, set_global
+from dplanner.framework.widgets import caption
 from dplanner.modules.projects.repos import (
     MODULE_ID,
     candidate_repositories_folders,
     shown_path,
 )
+from dplanner.theme.tokens import CAPTION_GAP
 
 FOLDER_KEY = "repositories_folder"
+MIN_WIDTH = 460  # A folder is named by its path, and a path wants the room.
 PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 
 
@@ -69,18 +63,21 @@ def describe_folder(folder: Path) -> str:
     return f"{count} repositor{'y' if count == 1 else 'ies'}"
 
 
-class RepositoriesFolderDialog(QDialog):
-    """The likely folders as rows, the first picked; Browse… for any other."""
+class RepositoriesFolderDialog(DialogFrame):
+    """The likely folders as rows, the first picked; Browse… for any other.
+
+    A fit dialog: the caption over the list, *Use this folder* the primary — refused
+    while no row is picked — and Browse… a quiet secondary beside Cancel, never in the
+    far-left slot that is a destructive verb's.
+    """
 
     def __init__(self, candidates: Sequence[Path], parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("RepositoriesFolderDialog")
-        self.setWindowTitle("Repositories Folder")
-        self.setMinimumWidth(460)
-
-        caption = QLabel("Where do you keep your repositories?", self)
-        caption.setObjectName("InspectorCaption")
-        self.list = QListWidget(self)
+        super().__init__("Repositories Folder", parent)
+        self.setMinimumWidth(MIN_WIDTH)
+        body, layout = self.body, self.body_layout
+        layout.setSpacing(CAPTION_GAP)  # One caption over one list.
+        layout.addWidget(caption("Where do you keep your repositories?", body))
+        self.list = QListWidget(body)
         self.list.setObjectName("RepositoriesFolderList")
         self.list.setItemDelegate(TwoLineDelegate(self.list))
         for folder in candidates:
@@ -88,31 +85,13 @@ class RepositoriesFolderDialog(QDialog):
         if self.list.count():
             self.list.setCurrentRow(0)
         self.list.itemActivated.connect(lambda _item: self.accept())
-
-        self.browse_button = QPushButton("Browse…", self)
-        self.browse_button.clicked.connect(self._browse)
-        cancel = QPushButton("Cancel", self)
-        cancel.clicked.connect(self.reject)
-        self.use_button = QPushButton("Use this folder", self)
-        self.use_button.setObjectName("PrimaryButton")
-        self.use_button.setDefault(True)
-        self.use_button.setEnabled(self.list.currentRow() >= 0)
-        self.use_button.clicked.connect(self.accept)
-        self.list.currentRowChanged.connect(lambda row: self.use_button.setEnabled(row >= 0))
-
-        footer = QHBoxLayout()
-        footer.setSpacing(8)
-        footer.addWidget(self.browse_button)
-        footer.addStretch(1)
-        footer.addWidget(cancel)
-        footer.addWidget(self.use_button)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
-        layout.addWidget(caption)
         layout.addWidget(self.list, 1)
-        layout.addLayout(footer)
+
+        self.browse_button = self.add_button("Browse…", self._browse)
+        self.add_dismiss()
+        self.use_button = self.set_primary("Use this folder", self.accept)
+        self.list.currentRowChanged.connect(lambda row: self.refuse(None if row >= 0 else ""))
+        self.refuse(None if self.list.currentRow() >= 0 else "")
 
     def _add(self, folder: Path) -> QListWidgetItem:
         item = QListWidgetItem(shown_path(folder))

@@ -185,7 +185,9 @@ def test_open_projects_lists_what_the_repository_holds_with_who_and_when(
     services, plans, monkeypatch
 ):
     dialog = open_dialog(services, monkeypatch)
-    assert dialog.pages.currentWidget() is dialog.empty  # Nothing picked yet.
+    assert dialog.empty.isVisibleTo(dialog) and not dialog.list.isVisibleTo(
+        dialog
+    )  # Nothing picked.
     dialog.picker.set_current(plans)
     assert dialog.rows() == [
         ("Search · 0 steps", "Anna, just now"),
@@ -244,8 +246,12 @@ def test_browsing_to_a_folder_outside_git_is_refused_in_the_note(services, tmp_p
     loose.mkdir()
     dialog = open_dialog(services, monkeypatch)
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(loose))
-    dialog.picker.browse_button.click()
-    assert "not inside a git repository" in dialog.picker.note.text()
+    browse = next(
+        e for e in dialog.picker.entries() if e is not None and e.label == "Another folder…"
+    )
+    browse.run()
+    assert "not inside a git repository" in dialog.picker.note.words()
+    assert dialog.picker.note.tone() == "error"
     assert dialog.picker.current() is None
     dialog.deleteLater()
 
@@ -257,7 +263,7 @@ def test_an_empty_repository_says_so_and_a_dangling_index_line_is_named(
     (root / ".dplanner").write_text("gone\n")
     dialog = open_dialog(services, monkeypatch)
     dialog.picker.set_current(root)
-    assert dialog.pages.currentWidget() is dialog.empty and "No projects" in dialog.empty.text()
+    assert dialog.empty.isVisibleTo(dialog) and "No projects" in dialog.empty.text()
     assert dialog.note.isVisibleTo(dialog) and "gone" in dialog.note.text()
     assert not dialog.add_button.isEnabled()
     dialog.deleteLater()

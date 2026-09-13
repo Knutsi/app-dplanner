@@ -25,7 +25,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
-from PySide6.QtWidgets import QMessageBox, QTreeWidgetItem, QWidget
+from PySide6.QtWidgets import QTreeWidgetItem, QWidget
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.core.storage.provider import StorageError
@@ -44,6 +44,7 @@ from dplanner.framework.settings_registry import SettingsSection, SettingsSectio
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import notice
 from dplanner.framework.window import StatusHost
 from dplanner.modules.projects.card import RepositoriesCard
 
@@ -205,7 +206,7 @@ class ProjectsModule:
                 spec.target, spec.title, summary=spec.summary, repository=spec.repository
             )
         except (StorageError, OSError) as error:
-            QMessageBox.warning(deps.parent, "New Project", str(error))
+            notice(deps.parent, "New Project", f"Nothing was created — {error}")
             return
         project = deps.connect_project(directory, spec.checkout)
         deps.status.show_status(f"“{project.title or project.folder_name}” created", 4000)
@@ -241,7 +242,7 @@ class ProjectsModule:
         try:
             origin = deps.repos.publish(root, name)
         except (StorageError, OSError) as error:
-            QMessageBox.warning(deps.parent, "Publish to GitHub", str(error))
+            notice(deps.parent, "Publish to GitHub", f"{root.name} was not published — {error}")
             return
         finally:
             QGuiApplication.restoreOverrideCursor()
@@ -312,18 +313,20 @@ class ProjectsModule:
             finally:
                 QGuiApplication.restoreOverrideCursor()
         where = shown_path(Path(target))
+        # The move itself is recorded once, in the status bar; a notice only where the
+        # move left something to know (DESIGN.md's fifth principle).
         if notes:
-            QMessageBox.information(
+            notice(
                 deps.parent,
                 "Move Plan",
-                f"The plan of “{title}” is now at {where}.\n\n"
+                f"The plan of “{title}” is now at {where}, but:\n\n"
                 + "\n".join(f"• {note}" for note in notes),
             )
         deps.status.show_status(f"Moved the plan of “{title}” to {where}", 6000)
         deps.switcher.reload()
 
     def _refuse(self, reason: str) -> None:
-        QMessageBox.warning(self._deps.parent, "Move Plan", reason)
+        notice(self._deps.parent, "Move Plan", reason)
 
     # -- opening ---------------------------------------------------------------------------------
 
