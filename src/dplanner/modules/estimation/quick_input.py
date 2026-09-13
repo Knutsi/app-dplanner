@@ -47,6 +47,7 @@ UNESTIMATED = -QUARTER
 
 FREE_LABEL = "Does not add time"
 FREE_TIP = "0 days — counted as estimated, and adds no time to the plan"
+QUARTER_TIP = "0.25 days — one agent task, about two hours with a human in the loop"
 
 # The sizes a step usually is. A quarter day is one agent task (about two hours with a
 # human in the loop), half a day is where most small human work sits, and the top of the
@@ -61,6 +62,11 @@ QUICK_DAYS = (
     (10.0, "10"),
     (20.0, "20"),
 )
+
+
+def size_tip(days: float) -> str:
+    """What a quick size means, in the words its chip's tooltip says wherever it is offered."""
+    return QUARTER_TIP if days == QUARTER else f"{days:g} days"
 
 
 class EstimateInput(QWidget):
@@ -91,16 +97,7 @@ class EstimateInput(QWidget):
         self.chips = QButtonGroup(self)
         self.chips.setExclusive(True)
         for value, label in QUICK_DAYS:
-            chip_row.addWidget(
-                self._chip(
-                    chips,
-                    value,
-                    label,
-                    "0.25 days — one agent task, about two hours with a human in the loop"
-                    if value == QUARTER
-                    else f"{value:g} days",
-                )
-            )
+            chip_row.addWidget(self._chip(chips, value, label, size_tip(value)))
         # Zero is not a size: it stands past a rule, worded as the claim it makes.
         chip_row.addWidget(card_rule(chips, vertical=True))
         self.free = self._chip(chips, 0.0, FREE_LABEL, FREE_TIP)

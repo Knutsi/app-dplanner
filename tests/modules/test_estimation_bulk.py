@@ -6,7 +6,9 @@ the canvas without either module knowing the other's name.
 """
 
 import pytest
-from PySide6.QtWidgets import QDoubleSpinBox
+from PySide6.QtCore import Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QAbstractItemView, QDoubleSpinBox
 
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -65,6 +67,19 @@ def editor_at(tab, row):
     box = tab.table.indexWidget(index)
     assert isinstance(box, QDoubleSpinBox)
     return box
+
+
+def click_size(tab, row, words):
+    """Click the chip reading ``words`` on ``row``'s estimate, as the pointer would."""
+    tab.widget.resize(1000, 600)
+    tab.table.horizontalHeader().resizeSection(ESTIMATE_COLUMN, 600)
+    (laid,) = [laid for laid in tab.table.chips_at(row, ESTIMATE_COLUMN) if laid.chip.text == words]
+    QTest.mouseClick(tab.table.viewport(), Qt.MouseButton.LeftButton, pos=laid.rect.center())
+
+
+def lit(tab, row):
+    """The words on the chips ``row`` has lit."""
+    return [laid.chip.text for laid in tab.table.chips_at(row, ESTIMATE_COLUMN) if laid.checked]
 
 
 def titles_on_screen(tab):
@@ -151,7 +166,8 @@ def test_the_scope_can_widen_to_the_whole_project(services, project):
 # -- what a row shows ----------------------------------------------------------------------
 
 
-def test_a_row_shows_title_and_first_description_line(services, project):
+def test_a_rows_title_carries_its_description_as_the_tooltip(services, project):
+    """Two columns: the step, and its sizes — the description is a tooltip on the name."""
     a = project.steps[0]
     services.document.set_text(
         a.id, "step_description", "# A\nSkim the spec before anything else.\nMore prose."
@@ -160,18 +176,38 @@ def test_a_row_shows_title_and_first_description_line(services, project):
     run_estimate_open(services)
 
     tab = estimate_tab(services)
-    description = tab.table.item(0, 2)
-    assert description.text() == "Skim the spec before anything else."
-    assert "More prose." in description.toolTip()
+    assert tab.table.columnCount() == 2
+    assert "Skim the spec" in tab.table.item(0, 0).toolTip()
+    assert "More prose." in tab.table.item(0, 0).toolTip()
 
 
-def test_a_description_written_later_reaches_the_row(services, project):
+def test_a_description_written_later_reaches_the_tooltip(services, project):
     select(services, project.steps[0])
     run_estimate_open(services)
     tab = estimate_tab(services)
 
     services.document.set_text(project.steps[0].id, "step_description", "Now described.")
-    assert tab.table.item(0, 2).text() == "Now described."
+    assert "Now described." in tab.table.item(0, 0).toolTip()
+
+
+def test_every_row_lights_the_size_it_has_so_the_column_reads_as_a_grid(services, project):
+    a, b, c, _d = project.steps
+    services.undo.push(SetModuleDataCommand(a.id, "estimation", {"days": 2.0, "format": 1}))
+    services.undo.push(SetModuleDataCommand(b.id, "estimation", {"days": 0.0, "format": 1}))
+    services.undo.push(SetModuleDataCommand(c.id, "estimation", {"days": 4.0, "format": 1}))
+    select(services, *project.steps)
+    run_estimate_open(services)
+    tab = estimate_tab(services)
+
+    words = [laid.chip.text for laid in tab.table.chips_at(3, ESTIMATE_COLUMN)]
+    assert words == ["¼", "½", "1", "2", "3", "5", "10", "20", "0", "…"]
+    assert tab.table.chips_at(0, ESTIMATE_COLUMN)[8].chip.apart  # Zero stands past a rule.
+    assert lit(tab, 0) == ["2"]
+    assert lit(tab, 1) == ["0"]  # Adds no time: counted, and not the same as unsized.
+    assert lit(tab, 2) == ["4 d"]  # Off the scale, the last chip says the number.
+    assert lit(tab, 3) == []  # Not sized at all.
+    lefts = {laid.rect.left() for row in range(4) for laid in tab.table.chips_at(row, 1)[:9]}
+    assert len(lefts) == 9  # One left edge per size, whatever the row: a grid.
 
 
 def test_a_rename_reaches_the_row(services, project):
@@ -204,7 +240,37 @@ def test_a_number_typed_in_the_cell_writes_an_undoable_estimate(services, projec
     assert tab.table.item(0, ESTIMATE_COLUMN).text() == "—"
 
 
-def test_sizing_several_picked_rows_from_the_strip_is_one_undo_step(services, project):
+def test_a_size_clicked_on_a_row_writes_an_undoable_estimate(services, project):
+    a = project.steps[0]
+    select(services, a)
+    run_estimate_open(services)
+    tab = estimate_tab(services)
+
+    click_size(tab, 0, "½")
+    assert read_estimate(services.document.step(a.id)) == 0.5
+    assert lit(tab, 0) == ["½"] and tab.table.item(0, ESTIMATE_COLUMN).text() == "0.5 d"
+    click_size(tab, 0, "0")
+    assert read_estimate(services.document.step(a.id)) == 0.0 and lit(tab, 0) == ["0"]
+    services.undo.undo()  # Two clicks on one row are one burst, as typing in the panel is.
+    assert read_estimate(services.document.step(a.id)) is None and lit(tab, 0) == []
+
+
+def test_the_last_chip_opens_the_number_typed_in_the_cell(services, project):
+    a = project.steps[0]
+    services.undo.push(SetModuleDataCommand(a.id, "estimation", {"days": 4.0, "format": 1}))
+    select(services, a)
+    run_estimate_open(services)
+    tab = estimate_tab(services)
+
+    click_size(tab, 0, "4 d")
+    assert tab.table.state() == QAbstractItemView.State.EditingState
+    box = tab.table.findChild(QDoubleSpinBox)
+    assert box is not None and box.value() == 4.0
+    sizes = tab.table.chips_at(0, ESTIMATE_COLUMN)[:-1]
+    assert all(box.geometry().left() > laid.rect.right() for laid in sizes)  # The scale stays.
+
+
+def test_sizing_several_picked_rows_from_the_estimate_verbs_is_one_undo_step(services, project):
     select(services, *project.steps)
     run_estimate_open(services)
     tab = estimate_tab(services)
@@ -261,11 +327,13 @@ def test_the_unestimated_filter_hides_what_is_sized(services, project):
     tab = estimate_tab(services)
     tab.set_filter("unestimated")
 
-    box = editor_at(tab, 0)
-    box.setValue(1.0)
-    tab.table.commitData(box)  # From the row itself, inside the editor's own commit.
+    click_size(tab, 0, "1")  # From the row itself, inside the chip's own click.
     assert titles_on_screen(tab) == ["B", "C", "D"]
     assert tab.table.isRowHidden(0)
+    box = editor_at(tab, 1)
+    box.setValue(1.0)
+    tab.table.commitData(box)  # And inside the editor's own commit.
+    assert titles_on_screen(tab) == ["C", "D"]
 
 
 def test_the_estimated_filter_is_the_review_mode(services, project):

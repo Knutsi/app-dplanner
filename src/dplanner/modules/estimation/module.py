@@ -57,7 +57,6 @@ class EstimationDeps:
     debounce: DebounceService
     # A step's description: one line for a row, the full prose for its tooltip. Wired by the
     # composition root; this module never learns where a description lives.
-    step_summary: Callable[[StepId], str] = field(default=_no_text)
     describe_step: Callable[[StepId], str] = field(default=_no_text)
 
 

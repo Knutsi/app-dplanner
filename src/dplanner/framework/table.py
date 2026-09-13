@@ -1,4 +1,4 @@
-"""A table on the design system: one configuration and one delegate, every rule at once.
+r"""A table on the design system: one configuration and one delegate, every rule at once.
 
 DESIGN.md's *Tables* is the standard this implements. A :class:`Table` is a ``QTableWidget``
 whose columns are declared (:class:`Column`: numeric, glyph, two-line, how it resizes) and
@@ -19,6 +19,13 @@ committed value lands in the cell and is announced once through ``edited``, whic
 turns into a command. The editor is the table's rather than a widget planted in each cell,
 so the row stays the unit of hover and selection and keeps the height the font gives it.
 
+A column may also offer its usual values as :class:`Chip`\ s — painted in the cell, one
+accent-filled for the value the row holds, committed with a click through the same
+``edited``. Down a column of rows the chips line up into a grid, so the values are read by
+position before a word of them is: which steps are small, which are large, which are not
+sized at all. With an editor beside them a last chip opens it, and wears the row's value
+when that is none of the chips, so a value off the scale is never shown as no value.
+
 Three tables were written by hand before this one and disagreed on nine settings; the
 ``#OrderTable`` rules four widgets borrowed by name are what this replaces, one migration
 at a time. ``modules/debug/design_example.py`` is the reference to copy from.
@@ -38,11 +45,24 @@ from PySide6.QtCore import (
     QLocale,
     QModelIndex,
     QPersistentModelIndex,
+    QPoint,
     QRect,
+    QRectF,
     QSize,
     Qt,
 )
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QFontMetricsF, QIcon, QPainter, QPalette
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QFontMetricsF,
+    QHelpEvent,
+    QIcon,
+    QMouseEvent,
+    QPainter,
+    QPalette,
+    QPen,
+)
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QAbstractSpinBox,
@@ -54,6 +74,7 @@ from PySide6.QtWidgets import (
     QStyleOptionViewItem,
     QTableWidget,
     QTableWidgetItem,
+    QToolTip,
     QWidget,
 )
 
@@ -75,7 +96,10 @@ from dplanner.theme.icons import ICON_SIZE, KEY_BADGE_W
 from dplanner.theme.tokens import (
     CELL_PADDING_H,
     CELL_PADDING_V,
+    DENSE_GAP,
     EDGE_W,
+    FIELD_GAP,
+    RADIUS_SM,
     ROW_LINE_GAP,
     ROW_PADDING_H,
     ROW_PADDING_V,
@@ -101,6 +125,12 @@ _SELECTION = {
 _LEFT = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
 _RIGHT = Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
 DATE_FORMAT = "d MMM yyyy"  # A day as a date field prints one, in the application's English.
+MORE_TEXT = "…"  # The last chip of a column with an editor, while the value is on the scale.
+MORE_TIP = "Another value: type it in"
+# Round a chip's words: a cell's side padding, so a one-digit size is still a fair target, and
+# a dense gap above and below, so the chip sits inside the row the font sized.
+CHIP_PAD_H = CELL_PADDING_H
+CHIP_PAD_V = DENSE_GAP
 
 
 class CellEditor(Protocol):
@@ -192,6 +222,34 @@ class DateEditor:
 
 
 @dataclass(frozen=True)
+class Chip:
+    """A value a column offers as one click: its words, what it means, and whether a hairline
+    parts it from the chips before it — a value that is a claim of its own, not one more
+    step along the scale."""
+
+    value: object
+    text: str
+    tip: str = ""
+    apart: bool = False
+
+
+class _More:
+    """What the last chip carries instead of a value: *open the editor*."""
+
+
+MORE = _More()
+
+
+@dataclass(frozen=True)
+class LaidChip:
+    """A chip where one row paints it, and whether it is that row's value."""
+
+    chip: Chip
+    rect: QRect
+    checked: bool
+
+
+@dataclass(frozen=True)
 class Column:
     """What a column holds, so the table can apply the rule for it."""
 
@@ -203,6 +261,9 @@ class Column:
     # Edited in place: a double-click, F2 or a typed key opens it over the cell, and a picked
     # row aims its keys at the first column that has one.
     editor: CellEditor | None = None
+    # The usual values, painted in the cell as chips and picked with a click; with an editor
+    # a last chip opens it.
+    chips: tuple[Chip, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -261,6 +322,8 @@ class Table(QTableWidget):
         self._columns = tuple(columns)
         self._rich = any(column.detail for column in columns)
         self._hovered: int | None = None
+        self._chip: tuple[int, int, int] | None = None  # (row, column, position) under the pointer.
+        self._edit_on_release: QPersistentModelIndex | None = None
         # A committed edit, as (row, column, value): the host's cue to push its command.
         self.edited: Signal[int, int, object] = Signal("table.edited")
         self._editable = next(
@@ -316,6 +379,24 @@ class Table(QTableWidget):
 
     def hovered_row(self) -> int | None:
         return self._hovered
+
+    def hovered_chip(self) -> tuple[int, int, int] | None:
+        """The chip under the pointer, as (row, column, position along the cell)."""
+        return self._chip
+
+    def chips_at(self, row: int, column: int) -> list[LaidChip]:
+        """The chips one cell paints, where it paints them, in viewport coordinates."""
+        index = self.model().index(row, column)
+        return self.delegate.chip_layout(index, self.visualRect(index))
+
+    def chip_under(self, point: QPoint) -> tuple[int, int, int] | None:
+        index = self.indexAt(point)
+        if not index.isValid() or not self._columns[index.column()].chips:
+            return None
+        for position, laid in enumerate(self.chips_at(index.row(), index.column())):
+            if laid.rect.contains(point):
+                return index.row(), index.column(), position
+        return None
 
     # -- filling it --------------------------------------------------------------------
 
@@ -387,6 +468,7 @@ class Table(QTableWidget):
         self.clearSpans()
         self.setRowCount(0)
         self._hover(None)
+        self._hover_chip(None)
 
     def fit_columns(self) -> None:
         """Open every ``interactive`` column at its content's width; call after filling.
@@ -410,7 +492,34 @@ class Table(QTableWidget):
 
     def leaveEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
         self._hover(None)
+        self._hover_chip(None)
         super().leaveEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        super().mouseMoveEvent(event)
+        self._hover_chip(self.chip_under(event.position().toPoint()))
+
+    def edit_after_release(self, index: QModelIndex | QPersistentModelIndex) -> None:
+        """Open the editor once the click that asked for it is over: Qt ends a release by
+        setting the view back to no state, which would strand an editor opened inside it."""
+        self._edit_on_release = QPersistentModelIndex(index)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        super().mouseReleaseEvent(event)
+        pending, self._edit_on_release = self._edit_on_release, None
+        if pending is not None and pending.isValid():
+            self.edit(self.model().index(pending.row(), pending.column()))
+
+    def _hover_chip(self, chip: tuple[int, int, int] | None) -> None:
+        """A chip is a target of its own inside the row: it brightens, and the pointer says so."""
+        if chip == self._chip:
+            return
+        self._chip = chip
+        if chip is None:
+            self.viewport().unsetCursor()
+        else:
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+        self.viewport().update()
 
     def _hover(self, row: int | None) -> None:
         if row != self._hovered:
@@ -495,6 +604,9 @@ class TableDelegate(QStyledItemDelegate):
         if selected and not heading and index.column() == 0:
             edge = QRect(opt.rect.left(), opt.rect.top(), EDGE_W, opt.rect.height())
             painter.fillRect(edge, palette.color(QPalette.ColorRole.Accent))
+        if self._table.columns()[index.column()].chips and not heading:
+            self._paint_chips(painter, opt, index)
+            return
 
         # Ink from the palette's text, never HighlightedText: the picked ground is the quiet
         # overlay, and on some themes the highlighted text is that very colour.
@@ -556,7 +668,136 @@ class TableDelegate(QStyledItemDelegate):
         column = index.column()
         slot = GLYPH_SLOT + ICON_GAP if self._table.columns()[column].glyph else 0
         height = row_height(option.font, rich=self._table.rich() and not heading)
+        laid = self.chip_layout(index, QRect(0, 0, 0, height)) if not heading else []
+        if laid:
+            return QSize(laid[-1].rect.right() + 1 + self._table.padding(), height)
         return QSize(widest + slot + 2 * self._table.padding(), height)
+
+    # -- chips -------------------------------------------------------------------------
+    # Painted and hit-tested from one layout, so what is clicked is what was drawn. The
+    # colours are the palette's — a chip's quiet ground is the buttons', its border the
+    # hairline, the picked one the accent with its own ink — so a theme change needs nothing.
+
+    def chip_layout(
+        self, index: QModelIndex | QPersistentModelIndex, rect: QRect
+    ) -> list[LaidChip]:
+        column = self._table.columns()[index.column()]
+        if not column.chips:
+            return []
+        value = index.data(VALUE_ROLE)
+        offered = list(column.chips)
+        if column.editor is not None:
+            off_scale = value is not None and all(chip.value != value for chip in offered)
+            words = column.editor.text(value) if off_scale else MORE_TEXT
+            offered.append(Chip(MORE, words, MORE_TIP))
+        font = self._table.font()
+        # One width for every chip on the scale, so the columns of chips are a grid; the last
+        # grows to what it has to say.
+        unit = max(text_width(font, chip.text) for chip in column.chips) + 2 * CHIP_PAD_H
+        height = min(rect.height() - 2 * DENSE_GAP, QFontMetrics(font).height() + 2 * CHIP_PAD_V)
+        top = rect.top() + (rect.height() - height) // 2
+        left = rect.left() + self._table.padding()
+        laid: list[LaidChip] = []
+        for position, chip in enumerate(offered):
+            if position:
+                left += 2 * FIELD_GAP + 1 if chip.apart else DENSE_GAP
+            more = chip.value is MORE
+            width = max(unit, text_width(font, chip.text) + 2 * CHIP_PAD_H) if more else unit
+            checked = (words != MORE_TEXT) if more else chip.value == value
+            laid.append(LaidChip(chip, QRect(left, top, width, height), checked))
+            left += width
+        return laid
+
+    def _paint_chips(
+        self,
+        painter: QPainter,
+        opt: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> None:
+        palette = opt.palette
+        editable = bool(index.flags() & Qt.ItemFlag.ItemIsEditable)
+        text = palette.color(QPalette.ColorRole.Text)
+        quiet = QColor(text)
+        quiet.setAlpha(SECONDARY_ALPHA)
+        if not editable:
+            text = quiet = palette.color(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text)
+        hairline = palette.color(QPalette.ColorRole.Mid)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setFont(self._table.font())
+        for position, laid in enumerate(self.chip_layout(index, opt.rect)):
+            box = laid.rect
+            if position and laid.chip.apart:
+                x = box.left() - FIELD_GAP - 1
+                painter.fillRect(
+                    QRect(x, box.top() + DENSE_GAP, 1, box.height() - 2 * DENSE_GAP), hairline
+                )
+            over = editable and self._table.hovered_chip() == (
+                index.row(),
+                index.column(),
+                position,
+            )
+            if laid.checked:
+                ground = border = palette.color(QPalette.ColorRole.Accent)
+                ink = palette.color(QPalette.ColorRole.BrightText)
+            else:
+                ground = palette.color(QPalette.ColorRole.Button)
+                border = palette.color(QPalette.ColorRole.Light if over else QPalette.ColorRole.Mid)
+                ink = text if over else quiet
+            painter.setPen(QPen(border, 1))
+            painter.setBrush(ground)
+            painter.drawRoundedRect(
+                QRectF(box).adjusted(0.5, 0.5, -0.5, -0.5), RADIUS_SM, RADIUS_SM
+            )
+            painter.setPen(ink)
+            painter.drawText(box, Qt.AlignmentFlag.AlignCenter, laid.chip.text)
+        painter.restore()
+
+    def _chip_hit(
+        self, index: QModelIndex | QPersistentModelIndex, rect: QRect, point: QPoint
+    ) -> LaidChip | None:
+        return next(
+            (laid for laid in self.chip_layout(index, rect) if laid.rect.contains(point)), None
+        )
+
+    def editorEvent(  # noqa: N802 - Qt override
+        self,
+        event: QEvent,
+        model: QAbstractItemModel,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> bool:
+        """A click on a chip commits its value, or opens the editor from the last one. The
+        press has already picked the row by then, so the panel follows the step being set."""
+        if (
+            isinstance(event, QMouseEvent)
+            and event.button() == Qt.MouseButton.LeftButton
+            and event.type() in (QEvent.Type.MouseButtonRelease, QEvent.Type.MouseButtonDblClick)
+        ):
+            hit = self._chip_hit(index, option.rect, event.position().toPoint())
+            if hit is not None:
+                editable = bool(index.flags() & Qt.ItemFlag.ItemIsEditable)
+                if event.type() == QEvent.Type.MouseButtonRelease and editable:
+                    if hit.chip.value is MORE:
+                        self._table.edit_after_release(index)
+                    else:
+                        self._commit(model, index, hit.chip.value)
+                return True  # A double-click on a chip is two clicks on it, never the editor.
+        return super().editorEvent(event, model, option, index)
+
+    def helpEvent(  # noqa: N802 - Qt override
+        self,
+        event: QHelpEvent,
+        view: QAbstractItemView,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> bool:
+        if event.type() == QEvent.Type.ToolTip:
+            hit = self._chip_hit(index, option.rect, event.pos())
+            if hit is not None and hit.chip.tip:
+                QToolTip.showText(event.globalPos(), hit.chip.tip, view)
+                return True
+        return super().helpEvent(event, view, option, index)
 
     # -- editing -----------------------------------------------------------------------
     # The column's editor makes, loads and reads the widget; the table owns the rest. A
@@ -601,11 +842,24 @@ class TableDelegate(QStyledItemDelegate):
         if spec is None:
             super().setModelData(editor, model, index)
             return
-        value = spec.read(editor)
+        self._commit(model, index, spec.read(editor))
+
+    def _commit(
+        self,
+        model: QAbstractItemModel,
+        index: QModelIndex | QPersistentModelIndex,
+        value: object,
+    ) -> None:
+        """A value into the cell, and announced — once, and only when it changed."""
         if value == index.data(VALUE_ROLE):
             return
+        column = self._table.columns()[index.column()]
+        if column.editor is not None:
+            words = column.editor.text(value)
+        else:
+            words = next((chip.text for chip in column.chips if chip.value == value), "")
         model.setData(index, value, VALUE_ROLE)
-        model.setData(index, spec.text(value), Qt.ItemDataRole.DisplayRole)
+        model.setData(index, words, Qt.ItemDataRole.DisplayRole)
         self._table.edited.emit(index.row(), index.column(), value)
 
     def updateEditorGeometry(  # noqa: N802 - Qt override
@@ -615,7 +869,12 @@ class TableDelegate(QStyledItemDelegate):
         index: QModelIndex | QPersistentModelIndex,
     ) -> None:
         # Over the cell, and never narrower than the editor needs: a column sized to "3 d"
-        # is narrower than a spin box with its arrows.
+        # is narrower than a spin box with its arrows. Beside the chips it opens over the
+        # last one, the chip it was opened from, and leaves the scale in sight.
         rect = QRect(option.rect)
+        laid = self.chip_layout(index, option.rect)
+        if laid:
+            rect.setLeft(laid[-1].rect.left())
+            rect.setWidth(editor.sizeHint().width())
         rect.setWidth(max(rect.width(), editor.sizeHint().width()))
         editor.setGeometry(rect)

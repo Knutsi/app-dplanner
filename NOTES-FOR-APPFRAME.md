@@ -3654,3 +3654,21 @@ thing the `QToolBar`'s per-widget action was held for. `#ControlBar` stays: it i
 name `Toolbar` itself sets.
 
 **Upstream?** Only if the template never adopted `control_bar` for a surface of its own.
+
+### `framework/table.py` — a column of chips
+
+**What.** `Column(chips=…)` paints a column's usual values as chips in the cell — one filled
+in the accent for the row's value — and a click commits a chip through the same `edited` the
+editor uses. With an editor on the column a last chip opens it over itself, and wears the
+editor's words for the value when that value is none of the chips. `Chip(apart=True)` parts a
+chip from the scale with a hairline. `Table.chips_at`, `chip_under` and `hovered_chip` are
+the read-backs; the delegate's `editorEvent` and `helpEvent` do the click and the tooltip.
+
+**Why.** The bulk Estimates tab lost its most valuable feature when the sizes became a
+number: nine chips down every row read as a grid, where the small, the large and the unsized
+steps are seen before a number is. The old tab got it by planting a spin box and nine buttons
+in every row with `setCellWidget`, which cost a widget tree per step, hid the row's hover and
+selection under the widgets and needed a taller row. Painting from one layout keeps the row
+the unit, the height the font's, and the chips aligned whatever a row holds.
+
+**Upstream?** Yes, with the table.

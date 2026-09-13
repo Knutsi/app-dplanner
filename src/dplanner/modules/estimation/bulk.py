@@ -1,11 +1,14 @@
 """The Estimates tab: many steps sized in one sitting.
 
 The step detail panel answers "how big is this one"; this activity answers "how big is all of
-it". One row per step — its title, its estimate and a line of its description — on the table
-primitive, the estimate edited in place: pick a row and type, or double-click the number, and
-Enter commits it as the same undoable command the panel writes. The quick sizes are the Step
-▸ Estimate verbs, dropped from the strip's *Size* face over every picked row at once — one
-undo entry however many — and offered by the canvas's right-click and the menu bar too.
+it". One row per step — its title, its description in the title's tooltip, and its estimate
+as the panel's quick sizes, painted in the cell on the table primitive. **The sizes are the
+point of the page as much as the input**: one chip lit per row, down every row, is a grid in
+which the small steps, the large ones and the unsized ones are seen before a number is read.
+A click sets the size; zero stands past a rule, because adding no time is a claim and not a
+size; the last chip opens the number typed in the cell, and wears that number when it is
+none of the sizes. A picked row takes a typed number too, and several picked rows are sized
+at once from the right-click's Step ▸ Estimate — one undo entry however many.
 
 **Scope and filter are different questions.** The scope is *which steps this sitting is
 about* — the canvas selection that opened the tab, or the whole project — and the volume line
@@ -14,10 +17,10 @@ how you run down what is left, showing only them is how you review. Both are sel
 strip, in words.
 
 **A committed estimate hides its row; it never rebuilds the table.** The echo of an edit
-arrives inside the editor's own commit, and a rebuild there would take the index away from
-under the open editor — so an estimate writes its cell and re-applies the filter, and only a
-change of shape (a step born or gone, a link, a rename, a description) rebuilds, after a
-quiet spell.
+arrives inside the click or the editor's commit that made it, and a rebuild there would take
+the index away from under both — so an estimate writes its cell and re-applies the filter,
+and only a change of shape (a step born or gone, a link, a rename, a description) rebuilds,
+after a quiet spell.
 
 There is one Estimates tab per project, keyed by :func:`activity_uri`, and re-running the
 action rescopes it rather than opening a second one.
@@ -44,12 +47,20 @@ from dplanner.framework.context import (
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.signalling import UpdatingIndicator
-from dplanner.framework.table import Cell, Column, NumberEditor, Table
+from dplanner.framework.table import Cell, Chip, Column, NumberEditor, Table
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import EmptyState, captioned, note
 from dplanner.modules.estimation.aspect import MODULE_ID, read
-from dplanner.modules.estimation.quick_input import MAX_DAYS, QUARTER, UNESTIMATED, push_estimate
-from dplanner.theme.icons import gauge_icon
+from dplanner.modules.estimation.quick_input import (
+    FREE_LABEL,
+    FREE_TIP,
+    MAX_DAYS,
+    QUARTER,
+    QUICK_DAYS,
+    UNESTIMATED,
+    push_estimate,
+    size_tip,
+)
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 if TYPE_CHECKING:
@@ -60,12 +71,16 @@ ESTIMATE_KIND = "estimate"
 
 # One step under zero is "no estimate", printed as a dash; zero is a claim of its own.
 DAYS = NumberEditor(UNESTIMATED, MAX_DAYS, QUARTER, decimals=2, suffix=" d", blank_text="—")
+# The panel's quick sizes, then zero past a rule: adding no time is a claim, not a size.
+SIZES = (
+    *(Chip(days, label, size_tip(days)) for days, label in QUICK_DAYS),
+    Chip(0.0, "0", f"{FREE_LABEL}: {FREE_TIP}", apart=True),
+)
 COLUMNS = (
     Column("Step", resize="interactive"),
-    Column("Estimate", numeric=True, editor=DAYS),
-    Column("Description", resize="stretch"),
+    Column("Estimate", editor=DAYS, chips=SIZES),
 )
-STEP_COLUMN, ESTIMATE_COLUMN, DESCRIPTION_COLUMN = range(3)
+STEP_COLUMN, ESTIMATE_COLUMN = range(2)
 STEP_ROLE = HOST_ROLE
 
 SCOPE_PICKED = "selection"
@@ -80,7 +95,10 @@ FILTERS = (
     (FILTER_ESTIMATED, "Estimated"),
 )
 
-HINT = "Working days. Pick a row and type its size, or size several picked rows at once from Size."
+HINT = (
+    "Working days. Click a size, or pick a row and type one; right-click several picked rows "
+    "to size them all at once."
+)
 NO_STEPS = "No steps here yet — add some on the graph."
 ALL_SIZED = "Every step here is estimated."
 NONE_SIZED = "Nothing here is estimated yet."
@@ -128,10 +146,6 @@ class BulkEstimateActivity(EntityActivity):
         layout.addLayout(strip)
         strip.setSpacing(FIELD_GAP)
         self.controls = Toolbar(page)
-        self.size_face = self.controls.add_menu_face(
-            "Size", gauge_icon, deps.actions, deps.context, "Step", submenu="Estimate"
-        )
-        self.controls.add_divider()
         self.scope_box = _selector(
             page,
             "Which steps this sitting is about",
@@ -212,13 +226,13 @@ class BulkEstimateActivity(EntityActivity):
         self._selection = tuple(s for s in step_ids if self._product.has(s)) or None
         self._show_scope()
         self._refresh()
-        self._edit_first_row()
+        self._aim_first_row()
 
     def set_filter(self, key: str) -> None:
         """Which of the scope's rows to look at: one of ``FILTERS``' keys."""
         self.filter_box.setCurrentIndex(self.filter_box.findData(key))
         self._apply_filter()
-        self._edit_first_row()
+        self._aim_first_row()
 
     @property
     def filter_key(self) -> str:
@@ -267,13 +281,10 @@ class BulkEstimateActivity(EntityActivity):
             for step in self._steps():
                 self.table.add_row(
                     (
-                        Cell(step.title or "Untitled step"),
-                        Cell(value=read(step)),
                         Cell(
-                            self._deps.step_summary(step.id),
-                            secondary=True,
-                            tooltip=self._deps.describe_step(step.id),
+                            step.title or "Untitled step", tooltip=self._deps.describe_step(step.id)
                         ),
+                        Cell(value=read(step)),
                     ),
                     data={STEP_ROLE: step.id},
                 )
@@ -317,12 +328,13 @@ class BulkEstimateActivity(EntityActivity):
             volume_words(sum(sized), len(days), len(days) - len(sized)) if days else ""
         )
 
-    def _edit_first_row(self) -> None:
-        """Land in the first shown row's estimate, editing it: sizing is what comes next."""
+    def _aim_first_row(self) -> None:
+        """Land on the first shown row's estimate: sizing is what comes next, by a click on its
+        sizes or a number typed straight away."""
         for row in range(self.table.rowCount()):
             if not self.table.isRowHidden(row):
                 self.table.setCurrentCell(row, ESTIMATE_COLUMN)
-                self.table.edit(self.table.model().index(row, ESTIMATE_COLUMN))
+                self.table.setFocus()
                 return
 
     # -- rows ----------------------------------------------------------------------------------
