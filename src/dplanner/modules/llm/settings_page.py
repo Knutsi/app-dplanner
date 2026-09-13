@@ -5,18 +5,19 @@ register after this page's factory is defined but always before a user can open 
 there is no ordering dependency to get right (see the module's docstring)."""
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QFormLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QWidget
 
 from dplanner.framework.llm import LLMProviderRegistry
 from dplanner.framework.llm_service import LLMService
+from dplanner.framework.settings_registry import settings_page
+from dplanner.framework.widgets import block, caption
 
 _NONE_LABEL = "— none —"
 
 
 def build_page(registry: LLMProviderRegistry, llm: LLMService, parent: QWidget | None) -> QWidget:
-    page = QWidget(parent)
+    page, layout = settings_page(parent)
     page.setObjectName("LlmSettingsPage")
-    layout = QFormLayout(page)
 
     combo = QComboBox(page)
     combo.setObjectName("LlmPreferredProviderCombo")
@@ -32,6 +33,6 @@ def build_page(registry: LLMProviderRegistry, llm: LLMService, parent: QWidget |
         llm.set_preferred_provider_id(combo.itemData(index, Qt.ItemDataRole.UserRole))
 
     combo.currentIndexChanged.connect(on_changed)
-    layout.addRow("Preferred provider", combo)
-
+    block(layout, caption("Preferred provider", page), combo)
+    layout.addStretch(1)
     return page

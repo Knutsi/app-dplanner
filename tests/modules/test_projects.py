@@ -349,7 +349,7 @@ def test_remove_takes_the_project_out_of_model_and_store_but_leaves_its_files(
 
     asked = []
 
-    def fake_confirm(_parent, title, question):
+    def fake_confirm(_parent, title, question, **_kwargs):
         asked.append((title, question))
         return True
 

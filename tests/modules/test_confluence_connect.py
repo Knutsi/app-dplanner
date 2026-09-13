@@ -282,23 +282,38 @@ def test_each_kind_opens_its_own_address(confluence):
     )
 
 
-def test_the_settings_page_lists_sites_and_forgets_one(confluence, services, secrets):
-    from PySide6.QtWidgets import QPushButton
-
-    from dplanner.modules.spec_confluence.settings_page import build_page
+def test_the_settings_page_lists_sites_and_forgets_one(confluence, services, secrets, monkeypatch):
+    """A table with its verbs on a strip above it: Forget greyed until a site is picked,
+    asked about because it deletes a token, and the table traded for the empty state
+    once nothing is left."""
+    from dplanner.framework.table import Table
+    from dplanner.framework.toolbar import Toolbar
+    from dplanner.modules.spec_confluence import settings_page
 
     set_global(MODULE_ID, module_mod.SITES_KEY, {SITE: "me@acme.example"})
     secrets.stored[(MODULE_ID, "token:acme.atlassian.net")] = "tok"
-    page = build_page(
+    asked = []
+
+    def confirm(*_args, verb="", **_kwargs):
+        asked.append(verb)
+        return True
+
+    monkeypatch.setattr(settings_page, "confirm", confirm)
+    page = settings_page.build_page(
         None, sites=confluence.sites, reconnect=lambda *_a: False, forget=confluence.forget
     )
     try:
-        forget = next(b for b in page.findChildren(QPushButton) if b.objectName() == "forgetSite")
-        forget.click()
+        table = page.findChild(Table)
+        strip = page.findChild(Toolbar)
+        assert table is not None and strip is not None
+        _reconnect, forget = strip.verbs()
+        assert table.rowCount() == 1 and not forget.isEnabled()
+        table.selectRow(0)
+        assert forget.isEnabled()
+        forget.trigger()
+        assert asked == ["Forget"]
         assert confluence.sites() == {} and secrets.stored == {}
-        assert not any(
-            b.objectName() == "forgetSite" for b in page.findChildren(QPushButton) if b.isVisible()
-        )
+        assert table.isHidden() and not forget.isEnabled()
     finally:
         page.deleteLater()
 
@@ -307,3 +322,25 @@ def test_the_real_build_registers_both_kinds_and_the_settings(services):
     assert any(section.id == MODULE_ID for section in services.settings_sections.sections())
     assert services.actions.spec("spec.add_source.confluence_page").label == "&Confluence Page…"
     assert services.actions.spec("spec.add_source.confluence_folder").label == "Confluence F&older…"
+
+
+def test_the_connect_dialog_opens_with_the_email_focused(app, dialog):
+    """The frame focuses the first field; the site is a fact (click to copy, never a
+    Tab stop) and the link to the tokens page comes after the fields in the chain."""
+    from PySide6.QtCore import Qt
+
+    made, _probes = dialog
+    made.show()
+    app.processEvents()
+    assert made.focusWidget() is made.email
+
+    def next_stop(widget):
+        """The next Tab stop: the raw chain also passes through what Tab skips."""
+        following = widget.nextInFocusChain()
+        while not (following.focusPolicy() & Qt.FocusPolicy.TabFocus and following.isVisible()):
+            following = following.nextInFocusChain()
+        return following
+
+    assert next_stop(made.email) is made.token
+    assert next_stop(made.site) is not made.site  # Click to copy, never a Tab stop.
+    made.hide()

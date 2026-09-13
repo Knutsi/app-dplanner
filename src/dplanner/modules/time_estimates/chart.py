@@ -87,7 +87,6 @@ from PySide6.QtGui import (
     QColor,
     QFont,
     QFontMetricsF,
-    QGuiApplication,
     QHelpEvent,
     QPainter,
     QPainterPath,
@@ -96,13 +95,10 @@ from PySide6.QtGui import (
     QPolygonF,
 )
 from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
     QFrame,
     QScrollArea,
     QSizePolicy,
     QToolTip,
-    QVBoxLayout,
     QWidget,
 )
 
@@ -115,6 +111,7 @@ from dplanner.domain.schedule import (
     share_at,
     short_date,
 )
+from dplanner.framework.dialog import DialogFrame
 from dplanner.modules.time_estimates.progress import (
     scope_words,
     shift_words,
@@ -1259,49 +1256,30 @@ class ProgressChart(QWidget):
         return super().event(found)
 
 
-# DESIGN.md: dialogs get 20 px outer margins and 12 px between sections, and a big one
-# claims the same slice of the screen the image preview and the text dialog claim.
-DIALOG_MARGIN = 20
-DIALOG_GAP = 12
-SCREEN_SHARE = 0.8
-
-
-class ChartDialog(QDialog):
+class ChartDialog(DialogFrame):
     """Every plot, briefly in a window of their own.
 
     The same widget with the same data and more room — never a second rendering, so
     there is nothing that can drift: the host feeds it whatever it feeds the inline
     chart, and a plan that changes while the window is open redraws in both. Where the
     tab shows a page at a time, the window has the room for every page at once. It holds
-    no state, so closing it loses nothing and there is nothing to confirm.
+    no state, so closing it loses nothing and there is nothing to confirm — an *editor*
+    dialog on the frame, Close alone in the footer.
     """
 
     def __init__(self, data: ChartData | None, *, title: str, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.setWindowTitle(title)
-        self.chart = ProgressChart(self, page=ALL_PAGES)
+        super().__init__(title, parent, editor=True)
+        self.chart = ProgressChart(self.body, page=ALL_PAGES)
         # The plots stop growing at their ceiling; with many milestones the rows can
         # still outrun a short screen, and then this scrolls rather than squeezing them.
-        scroller = QScrollArea(self)
+        scroller = QScrollArea(self.body)
         scroller.setWidget(self.chart)
         scroller.setWidgetResizable(True)
         scroller.setFrameShape(QFrame.Shape.NoFrame)
         scroller.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
-        buttons.rejected.connect(self.reject)
-        column = QVBoxLayout(self)
-        column.setContentsMargins(DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN, DIALOG_MARGIN)
-        column.setSpacing(DIALOG_GAP)
-        column.addWidget(scroller, 1)
-        column.addWidget(buttons)
+        self.body_layout.addWidget(scroller, 1)
+        self.add_dismiss("Close")
         self.show_data(data)
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen is not None:
-            available = screen.availableGeometry()
-            self.resize(
-                round(available.width() * SCREEN_SHARE),
-                round(available.height() * SCREEN_SHARE),
-            )
 
     def show_data(self, data: ChartData | None) -> None:
         self.chart.show_data(data)

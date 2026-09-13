@@ -15,25 +15,16 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtCore import Signal as QtSignal
-from PySide6.QtWidgets import (
-    QAbstractItemView,
-    QDialog,
-    QHBoxLayout,
-    QLabel,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
-    QStackedWidget,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem, QWidget
 
 from dplanner.core.storage.provider import StorageError
 from dplanner.domain.plan_repo import ago, list_projects
+from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.list_rows import DETAIL_ROLE, MUTED_ROLE, TwoLineDelegate
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
+from dplanner.framework.widgets import EmptyState, block, caption, note
 from dplanner.modules.projects.repo_picker import RepoPicker
 from dplanner.modules.projects.repos import RepoLog, RepositoryServices, shown_path
 
@@ -41,6 +32,7 @@ from dplanner.modules.projects.repos import RepoLog, RepositoryServices, shown_p
 PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 10
 RELATIVE_ROLE = int(Qt.ItemDataRole.UserRole) + 11
 ACTIVITY_LIMIT = 30
+DIALOG_SIZE = (680, 520)
 
 
 def activity_line(log: RepoLog) -> str:
@@ -58,7 +50,11 @@ def activity_line(log: RepoLog) -> str:
     return line
 
 
-class OpenProjectsDialog(QDialog):
+class OpenProjectsDialog(DialogFrame):
+    """A framed dialog: the plan repository as a captioned block, the projects it holds
+    as rows — or an empty state saying what to pick — and *Add to Library* worded with
+    the count and refused while nothing is chosen."""
+
     _activity = QtSignal(str, object, str)  # (root, {relative: RepoLog}, error)
 
     def __init__(
@@ -71,11 +67,7 @@ class OpenProjectsDialog(QDialog):
         listed_ids: Collection[str],
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
-        self.setObjectName("OpenProjectsDialog")
-        self.setWindowTitle("Open Projects")
-        self.setMinimumSize(560, 440)
-        self.resize(680, 520)
+        super().__init__("Open Projects", parent, size=DIALOG_SIZE)
         self._services = services
         self._listed_dirs = {directory.resolve() for directory in listed_dirs}
         self._listed_ids = set(listed_ids)
@@ -83,46 +75,27 @@ class OpenProjectsDialog(QDialog):
         self._refetch = False
         self._runner = TaskRunner(tasks, parent=self)
         self._activity.connect(self._on_activity)
+        body, layout = self.body, self.body_layout
 
-        self.picker = RepoPicker(services, tasks, theme=theme, parent=self)
+        self.picker = RepoPicker(services, tasks, theme=theme, parent=body)
         self.picker.setObjectName("OpenRepoPicker")
-        self.list = QListWidget(self)
+        block(layout, caption("Plan repository", body), self.picker)
+        self.list = QListWidget(body)
         self.list.setObjectName("OpenProjectsList")
         self.list.setItemDelegate(TwoLineDelegate(self.list))
         self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.list.itemSelectionChanged.connect(self._revalidate)
-        self.empty = QLabel(self)
-        self.empty.setObjectName("OpenProjectsEmpty")
-        self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.empty.setWordWrap(True)
-        self.pages = QStackedWidget(self)
-        self.pages.addWidget(self.list)
-        self.pages.addWidget(self.empty)
-        self.note = QLabel(self)
-        self.note.setObjectName("OpenProjectsNote")
-        self.note.setWordWrap(True)
+        layout.addWidget(self.list, 1)
+        self.empty = EmptyState("", body, stands_in_for=self.list)
+        layout.addWidget(self.empty, 1)
+        # A remark about the data — lines in .dplanner that lead nowhere — is a body
+        # note; the footer's status slot is the refusal's.
+        self.note = note("", body)
         self.note.hide()
-
-        cancel = QPushButton("Cancel", self)
-        cancel.clicked.connect(self.reject)
-        self.add_button = QPushButton("Add to Library", self)
-        self.add_button.setObjectName("PrimaryButton")
-        self.add_button.setDefault(True)
-        self.add_button.clicked.connect(self.accept)
-        footer = QHBoxLayout()
-        footer.setSpacing(8)
-        footer.addStretch(1)
-        footer.addWidget(cancel)
-        footer.addWidget(self.add_button)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
-        layout.addWidget(self.picker)
-        layout.addWidget(self.pages, 1)
         layout.addWidget(self.note)
-        layout.addLayout(footer)
 
+        self.add_dismiss()
+        self.add_projects_button = self.set_primary("Add to Library", self.accept)
         self.picker.changed.connect(self._load)
         self._load()
 
@@ -134,8 +107,7 @@ class OpenProjectsDialog(QDialog):
         self.note.hide()
         if target is None:
             self._root = None
-            self.empty.setText("Pick a plan repository — or clone one.")
-            self.pages.setCurrentWidget(self.empty)
+            self.empty.say("Pick a plan repository — or clone one.")
             self._revalidate()
             return
         root = target.root
@@ -165,11 +137,7 @@ class OpenProjectsDialog(QDialog):
             verb = "leads" if count == 1 else "lead"
             self.note.setText(f"{lines} in .dplanner {verb} nowhere: {', '.join(listing.dangling)}")
             self.note.show()
-        if self.list.count():
-            self.pages.setCurrentWidget(self.list)
-        else:
-            self.empty.setText(f"No projects in {shown_path(root)}.")
-            self.pages.setCurrentWidget(self.empty)
+        self.empty.say("" if self.list.count() else f"No projects in {shown_path(root)}.")
         self._revalidate()
         self._request_activity(root, [found.relative for found in listing.projects])
 
@@ -228,8 +196,10 @@ class OpenProjectsDialog(QDialog):
 
     def _revalidate(self) -> None:
         count = len(self.list.selectedItems())
-        self.add_button.setText(f"Add {count} to Library" if count > 1 else "Add to Library")
-        self.add_button.setEnabled(count > 0)
+        self.add_projects_button.setText(
+            f"Add {count} to Library" if count > 1 else "Add to Library"
+        )
+        self.refuse(None if count else "")
 
     def accept(self) -> None:
         self.picker.remember()

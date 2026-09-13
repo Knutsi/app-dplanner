@@ -1,17 +1,20 @@
 """The "LLM Providers → Anthropic" settings page: API key (OS keychain) + model."""
 
-from PySide6.QtWidgets import QFormLayout, QLineEdit, QWidget
+from PySide6.QtWidgets import QLineEdit, QWidget
 
 from dplanner.core.secrets import get_secret, set_secret
 from dplanner.framework.llm_service import LLMService
+from dplanner.framework.settings_registry import settings_page
 from dplanner.framework.user_config import get_global, set_global
+from dplanner.framework.widgets import block, caption, captioned
 from dplanner.modules.llm_anthropic.provider import DEFAULT_MODEL, MODULE_ID
+
+KEY_HINT = "Kept in this computer's keychain, never in the plan and never in a file."
 
 
 def build_page(llm: LLMService, parent: QWidget | None) -> QWidget:
-    page = QWidget(parent)
+    page, layout = settings_page(parent)
     page.setObjectName("AnthropicSettingsPage")
-    layout = QFormLayout(page)
 
     api_key_edit = QLineEdit(page)
     api_key_edit.setObjectName("AnthropicApiKeyEdit")
@@ -24,7 +27,7 @@ def build_page(llm: LLMService, parent: QWidget | None) -> QWidget:
         llm.config_changed.emit()
 
     api_key_edit.editingFinished.connect(commit_api_key)
-    layout.addRow("API key", api_key_edit)
+    block(layout, captioned("API key", page, KEY_HINT), api_key_edit)
 
     model_edit = QLineEdit(page)
     model_edit.setObjectName("AnthropicModelEdit")
@@ -35,6 +38,6 @@ def build_page(llm: LLMService, parent: QWidget | None) -> QWidget:
         llm.config_changed.emit()
 
     model_edit.editingFinished.connect(commit_model)
-    layout.addRow("Model", model_edit)
-
+    block(layout, caption("Model", page), model_edit)
+    layout.addStretch(1)
     return page

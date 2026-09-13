@@ -8,8 +8,11 @@ off is a control that teaches nothing (DESIGN.md's *Words*).
 
 from PySide6.QtWidgets import QCheckBox, QLabel, QVBoxLayout, QWidget
 
+from dplanner.framework.settings_registry import settings_page
 from dplanner.framework.theme_service import ThemeService
+from dplanner.framework.widgets import block, caption, note
 from dplanner.theme.providers import BUILTIN, ThemeProvider
+from dplanner.theme.tokens import ROW_LINE_GAP, SECTION_GAP
 
 
 def provider_words(provider: ThemeProvider, theme: ThemeService) -> str:
@@ -22,26 +25,25 @@ def provider_words(provider: ThemeProvider, theme: ThemeService) -> str:
 
 
 def build_page(parent: QWidget | None, *, theme: ThemeService) -> QWidget:
-    page = QWidget(parent)
+    page, layout = settings_page(parent)
     page.setObjectName("AppearanceSettingsPage")
-    layout = QVBoxLayout(page)
-    layout.setContentsMargins(20, 20, 20, 20)
-    layout.setSpacing(12)
 
-    caption = QLabel("Theme providers", page)
-    caption.setObjectName("InspectorCaption")
-    layout.addWidget(caption)
-
+    # One block: the caption over the providers, each a box (or a line) over what it can
+    # do here — a two-line row, the second line a note because it changes with the machine.
+    providers = QWidget(page)
+    rows = QVBoxLayout(providers)
+    rows.setContentsMargins(0, 0, 0, 0)
+    rows.setSpacing(SECTION_GAP)
     for provider in theme.providers:
-        block = QWidget(page)
-        block.setObjectName(f"ThemeProvider_{provider.id}")
-        column = QVBoxLayout(block)
+        row = QWidget(providers)
+        row.setObjectName(f"ThemeProvider_{provider.id}")
+        column = QVBoxLayout(row)
         column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(4)
+        column.setSpacing(ROW_LINE_GAP)
         if provider is BUILTIN:
-            column.addWidget(QLabel(provider.label, block))
+            column.addWidget(QLabel(provider.label, row))
         else:
-            box = QCheckBox(provider.label, block)
+            box = QCheckBox(provider.label, row)
             box.setObjectName(f"ThemeProviderBox_{provider.id}")
             refused = theme.refusal(provider) is not None
             box.setChecked(theme.enabled(provider) and not refused)
@@ -50,10 +52,8 @@ def build_page(parent: QWidget | None, *, theme: ThemeService) -> QWidget:
                 lambda on, provider_id=provider.id: theme.set_enabled(provider_id, bool(on))
             )
             column.addWidget(box)
-        note = QLabel(provider_words(provider, theme), block)
-        note.setObjectName("InspectorNote")
-        note.setWordWrap(True)
-        column.addWidget(note)
-        layout.addWidget(block)
+        column.addWidget(note(provider_words(provider, theme), row))
+        rows.addWidget(row)
+    block(layout, caption("Theme providers", page), providers)
     layout.addStretch(1)
     return page

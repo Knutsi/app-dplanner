@@ -9,27 +9,25 @@ synchronous*), and every view that cached a directory is rebuilt rather than pat
 
 from pathlib import Path
 
-from PySide6.QtWidgets import (
-    QDialog,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QLineEdit, QWidget
 
 from dplanner.domain.relocate import target_in
 from dplanner.domain.repositories import RepositoryFacts
+from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
-from dplanner.modules.projects.project_dialog import glyph_label
+from dplanner.framework.widgets import block, caption, note
 from dplanner.modules.projects.repo_picker import PlanTarget, RepoPicker
 from dplanner.modules.projects.repos import RepositoryServices, shown_path
-from dplanner.theme.icons import ICON_SIZE, folder_icon
+
+MIN_WIDTH = 560  # The path the plan moves to is shown in full, and a path wants the room.
 
 
-class MovePlanDialog(QDialog):
+class MovePlanDialog(DialogFrame):
+    """A fit dialog: the plan repository and the folder inside it as two captioned blocks,
+    the path they make as the line under the folder, and *Move Plan* refused in words
+    until both are answered."""
+
     def __init__(
         self,
         *,
@@ -41,63 +39,32 @@ class MovePlanDialog(QDialog):
         theme: ThemeService,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(parent)
-        self.setObjectName("MovePlanDialog")
-        self.setWindowTitle("Move Plan")
-        self.setMinimumWidth(560)
+        super().__init__("Move Plan", parent)
+        self.setMinimumWidth(MIN_WIDTH)
+        body, layout = self.body, self.body_layout
 
-        caption = QLabel("Where should the plan live?", self)
-        caption.setObjectName("InspectorCaption")
-        self.picker = RepoPicker(services, tasks, allow_new=True, theme=theme, parent=self)
+        self.picker = RepoPicker(services, tasks, allow_new=True, theme=theme, parent=body)
         self.picker.setObjectName("MovePlanPicker")
         self.picker.changed.connect(self._revalidate)
+        block(layout, caption("Plan repository", body), self.picker)
 
-        self.folder_glyph = glyph_label(self)
-        self.folder_glyph.setPixmap(
-            folder_icon(theme.current.text_secondary).pixmap(ICON_SIZE, ICON_SIZE)
-        )
-        self.folder_edit = QLineEdit(folder_name, self)
+        self.folder_edit = QLineEdit(folder_name, body)
         self.folder_edit.setObjectName("MoveFolderEdit")
         self.folder_edit.setPlaceholderText("folder name inside the repository")
         self.folder_edit.textChanged.connect(lambda _text: self._revalidate())
-        folder_row = QHBoxLayout()
-        folder_row.setSpacing(8)
-        folder_row.addWidget(self.folder_glyph)
-        folder_row.addWidget(self.folder_edit, 1)
-        self.target_label = QLabel(self)
-        self.target_label.setObjectName("MoveTargetPath")
-        self.target_label.setWordWrap(True)
+        self.target_label = note("", body)
+        block(layout, caption("Folder", body), self.folder_edit, self.target_label)
 
-        self.summary = QLabel(self)
-        self.summary.setObjectName("MovePlanSummary")
-        self.summary.setWordWrap(True)
         origin = facts.plan_label or "its current folder"
-        self.summary.setText(
+        self.summary = note(
             f"“{title}” leaves {origin} — one commit there records the move, one in the new"
-            " repository adds it — and the library follows. Finish running agents first."
+            " repository adds it — and the library follows. Finish running agents first.",
+            body,
         )
-
-        cancel = QPushButton("Cancel", self)
-        cancel.clicked.connect(self.reject)
-        self.move_button = QPushButton("Move Plan", self)
-        self.move_button.setObjectName("PrimaryButton")
-        self.move_button.setDefault(True)
-        self.move_button.clicked.connect(self.accept)
-        footer = QHBoxLayout()
-        footer.setSpacing(8)
-        footer.addStretch(1)
-        footer.addWidget(cancel)
-        footer.addWidget(self.move_button)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(12)
-        layout.addWidget(caption)
-        layout.addWidget(self.picker)
-        layout.addLayout(folder_row)
-        layout.addWidget(self.target_label)
         layout.addWidget(self.summary)
-        layout.addLayout(footer)
+
+        self.add_dismiss()
+        self.move_button = self.set_primary("Move Plan", self.accept)
         self._revalidate()
 
     def plan_target(self) -> PlanTarget | None:
@@ -113,14 +80,19 @@ class MovePlanDialog(QDialog):
         return target_in(chosen.root, name)
 
     def _revalidate(self) -> None:
-        target = self.target()
-        if target is None:
+        """The primary is refused with its reason until the move is fully named."""
+        if self.picker.current() is None:
             self.target_label.setText("")
-            self.move_button.setEnabled(False)
+            self.refuse("Pick a plan repository")
             return
-        exists = target.exists()
-        self.target_label.setText(shown_path(target) + (" — already exists" if exists else ""))
-        self.move_button.setEnabled(not exists)
+        if not self.folder_edit.text().strip():
+            self.target_label.setText("")
+            self.refuse("Name the folder inside it")
+            return
+        target = self.target()
+        assert target is not None
+        self.target_label.setText(shown_path(target))
+        self.refuse("That folder already exists" if target.exists() else None)
 
     def accept(self) -> None:
         self.picker.remember()

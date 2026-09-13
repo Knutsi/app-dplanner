@@ -2,12 +2,10 @@
 
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QFont, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextDocument
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor, QIcon, QSyntaxHighlighter, QTextCharFormat, QTextDocument
 from PySide6.QtWidgets import (
     QComboBox,
-    QDialog,
-    QDialogButtonBox,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
@@ -16,7 +14,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dplanner.framework.dialog import DialogFrame
+from dplanner.framework.widgets import caption, make_text_well
+from dplanner.theme.fonts import mono_font
 from dplanner.theme.icons import ICON_SIZE
+from dplanner.theme.tokens import CAPTION_GAP
+
+DIFF_DIALOG_SIZE = (720, 560)
 
 
 class IconLabel(QWidget):
@@ -88,43 +92,46 @@ class _DiffHighlighter(QSyntaxHighlighter):
             self.setFormat(0, len(text), self._removed)
 
 
-class DiffDialog(QDialog):
+class DiffDialog(DialogFrame):
     """A compact, read-only view of what has changed since the last Save.
 
     A library spans repositories, so the dialog carries a picker; it stays hidden while
-    there is only one repository with changes to show.
+    there is only one repository with changes to show. *Save Now* is the primary — the
+    flow's next step after reading what would be committed — and the dialog only asks
+    for it (``save_requested``): the module runs the registered verb, so the button
+    honours exactly the gate File ▸ Save does. Non-modal, built once and shown again.
     """
 
+    save_requested = Signal()
+
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self.setObjectName("DiffDialog")
-        self.setWindowTitle("Changes Since Last Save")
-        self.resize(720, 560)
+        super().__init__("Changes Since Last Save", parent, size=DIFF_DIALOG_SIZE)
         self._sources: list[tuple[str, Callable[[], str]]] = []
+        body, layout = self.body, self.body_layout
 
-        self._picker = QComboBox(self)
-        self._picker.setObjectName("DiffRepoPicker")
+        # One block to show or hide: the caption goes with the picker it is over.
+        self._picker_block = QWidget(body)
+        block = QVBoxLayout(self._picker_block)
+        block.setContentsMargins(0, 0, 0, 0)
+        block.setSpacing(CAPTION_GAP)
+        block.addWidget(caption("Repository", self._picker_block))
+        self._picker = QComboBox(self._picker_block)
         self._picker.currentIndexChanged.connect(self._show_current)
-        self._picker.hide()
+        block.addWidget(self._picker)
+        self._picker_block.hide()
+        layout.addWidget(self._picker_block)
 
-        self._text = QPlainTextEdit(self)
-        self._text.setObjectName("DiffText")
+        self._text = QPlainTextEdit(body)
         self._text.setReadOnly(True)
         self._text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        font = QFont()
-        font.setStyleHint(QFont.StyleHint.Monospace)
-        font.setFamily("monospace")
-        self._text.setFont(font)
+        self._text.setFont(mono_font())
+        make_text_well(self._text)
+        self._text.setFocusPolicy(Qt.FocusPolicy.ClickFocus)  # Enter stays the primary's.
         self._highlighter = _DiffHighlighter(self._text.document())
+        layout.addWidget(self._text, 1)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close, self)
-        buttons.rejected.connect(self.reject)
-        self.save_button = buttons.addButton("&Save Now", QDialogButtonBox.ButtonRole.ActionRole)
-
-        layout = QVBoxLayout(self)
-        layout.addWidget(self._picker)
-        layout.addWidget(self._text)
-        layout.addWidget(buttons)
+        self.add_dismiss("Close")
+        self.save_button = self.set_primary("Save Now", self.save_requested.emit)
 
     def set_sources(self, sources: list[tuple[str, Callable[[], str]]]) -> None:
         """One (label, read-the-diff) pair per repository; the diff is read on demand."""
@@ -134,7 +141,7 @@ class DiffDialog(QDialog):
         for label, _read in self._sources:
             self._picker.addItem(label)
         self._picker.blockSignals(False)
-        self._picker.setVisible(len(self._sources) > 1)
+        self._picker_block.setVisible(len(self._sources) > 1)
         self._show_current()
 
     def _show_current(self) -> None:

@@ -1055,21 +1055,20 @@ def _silence_fallback(monkeypatch):
 
 
 def _record_boxes(monkeypatch, *, click):
-    """Every QMessageBox shown, recorded instead of blocking; ``click`` names the role of
-    the button the person presses, or None for Escape."""
-    from PySide6.QtWidgets import QMessageBox
+    """Every Run Anyway dialog shown, recorded instead of blocking, as (title, lead,
+    words); ``click`` is True for Run Anyway, None for Escape."""
+    from PySide6.QtWidgets import QDialog
+
+    from dplanner.modules.step_agent_instruction.run_dialog import RunAnywayDialog
 
     shown = []
 
     def fake_exec(self):
-        shown.append((self.windowTitle(), self.text(), self.informativeText()))
-        return 0
+        shown.append((self.windowTitle(), self.lead.text(), self.words()))
+        code = QDialog.DialogCode.Accepted if click else QDialog.DialogCode.Rejected
+        return int(code)
 
-    def clicked(self):
-        return next((b for b in self.buttons() if self.buttonRole(b) == click), None)
-
-    monkeypatch.setattr(QMessageBox, "exec", fake_exec)
-    monkeypatch.setattr(QMessageBox, "clickedButton", clicked)
+    monkeypatch.setattr(RunAnywayDialog, "exec", fake_exec)
     return shown
 
 
@@ -1092,10 +1091,8 @@ def test_running_on_an_unfinished_prerequisite_asks_first_and_cancel_launches_no
 def test_run_anyway_launches_over_an_unfinished_prerequisite(
     services, step, prerequisite, monkeypatch
 ):
-    from PySide6.QtWidgets import QMessageBox
-
     calls = _fake_terminal(monkeypatch)
-    boxes = _record_boxes(monkeypatch, click=QMessageBox.ButtonRole.AcceptRole)
+    boxes = _record_boxes(monkeypatch, click=True)
     select(services, step)
     services.actions.run("agent.run", services.context.current())
     assert len(boxes) == 1
@@ -1463,7 +1460,8 @@ def test_one_box_asks_about_every_chosen_step_that_waits(services, step, monkeyp
     boxes = _record_boxes(monkeypatch, click=None)
     services.actions.run("agent.run", services.context.current())
     assert calls == []
-    ((_title, text, detail),) = boxes
+    ((title, text, detail),) = boxes
+    assert title == "Run 2 Agents"  # The launches the gesture makes, not the waiters.
     assert text == "2 of the chosen steps wait on work not done yet."
     assert "Deploy waits on:\n• Prepare — pending" in detail
     assert "Migrate waits on:\n• Review — pending" in detail
@@ -1730,3 +1728,50 @@ def test_the_posix_wrapper_is_made_executable(tmp_path):
     """A terminal row runs the script by path, so it needs the bit. Its own test: chmod is
     a no-op on Windows and this assertion would be testing the host's filesystem."""
     assert prepare("p", tmp_path, platform="linux").script.stat().st_mode & 0o100
+
+
+def test_the_run_anyway_dialog_is_a_frame_with_run_anyway_as_the_primary(app):
+    """DESIGN.md's first flow: the count in the title, the step and what it waits on in
+    the body, Run Anyway the accent — it discards nothing — and Cancel Escape's."""
+    from dplanner.framework.dialog import DialogFrame
+    from dplanner.modules.step_agent_instruction.run_dialog import RunAnywayDialog
+
+    dialog = RunAnywayDialog(
+        3,
+        "2 of the chosen steps wait on work not done yet.",
+        [
+            ("Deploy waits on", ["• Prepare — pending"]),
+            ("Migrate waits on", ["• Review — pending"]),
+        ],
+        "The agents would start without what those steps produce. Run them anyway?",
+        None,
+    )
+    try:
+        assert isinstance(dialog, DialogFrame) and dialog.windowTitle() == "Run 3 Agents"
+        assert [b.text() for b in dialog.footer_buttons()] == ["Run Anyway", "Cancel"]
+        primary = dialog.primary()
+        assert primary is not None and primary.isDefault()
+        assert dialog.words() == (
+            "Deploy waits on:\n• Prepare — pending\n\nMigrate waits on:\n• Review — pending"
+            "\n\nThe agents would start without what those steps produce. Run them anyway?"
+        )
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_prompt_fallback_is_a_frame_that_says_when_the_prompt_was_copied(app):
+    from PySide6.QtGui import QGuiApplication
+
+    from dplanner.framework.dialog import DialogFrame
+    from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog
+
+    dialog = PromptFallbackDialog("# Step\n\nDo the thing.", "/tmp/run/prompt.md", None)
+    try:
+        assert isinstance(dialog, DialogFrame) and dialog.primary() is None
+        assert [b.text() for b in dialog.footer_buttons()] == ["Copy Prompt", "Close"]
+        assert dialog.footer_buttons()[-1].isDefault()
+        dialog.copy_button.click()
+        assert QGuiApplication.clipboard().text() == "# Step\n\nDo the thing."
+        assert dialog.status.words() == "Prompt copied" and dialog.status.tone() == "ok"
+    finally:
+        dialog.deleteLater()

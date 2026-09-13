@@ -26,7 +26,7 @@ re-rendering — never styling one surface by name.
 
 | You are building | Use | In | See it |
 |---|---|---|---|
-| a dialog, a confirmation, a one-line prompt | `DialogFrame`, `confirm()`, `LinePrompt` | `framework/dialog.py`, `framework/widgets.py` | the modal: `dialog-*`, `dialog-refused-*` |
+| a dialog, a confirmation, a one-line prompt, what a gesture came to | `DialogFrame`, `confirm()`, `LinePrompt`, `notice()` | `framework/dialog.py`, `framework/widgets.py` | the modal: `dialog-*`, `dialog-refused-*`; every dialog on it: `s16-dialogs/` |
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
 | a strip that is a tool palette | `Toolbar.add_group` | `framework/toolbar.py` | the toolbars tab: `toolbars-*`, `toolbars-folded-*` |
@@ -39,7 +39,9 @@ re-rendering — never styling one surface by name.
 | busy, ok, error or plain information in words | `StatusLine` | `framework/signalling.py` | the modal's *Signalling* block |
 | a list of facts about this machine | one `StatusLine` per row, grouped | `modules/checklist/dialog.py` | `docs/screenshots/f13-checklist/` |
 | a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
-| a caption over a block, a remark under it | `caption()`, `note()` | `framework/widgets.py` | the modal's form |
+| a caption over a block, a remark under it | `caption()`, `captioned()`, `note()`, `block()` | `framework/widgets.py` | the modal's form |
+| a settings page | `settings_page()`, then `block()`s — no margin of its own | `framework/settings_registry.py` | `s16-dialogs/settings-*` |
+| a verb in a dialog's or a page's body | `quiet()`; `GlyphButton` when it carries a glyph | `framework/widgets.py` | `s16-dialogs/settings-openai-*`, `project-colocated-*` |
 | a two-line list row | `TwoLineDelegate` | `framework/list_rows.py` | the palette, the notes tab |
 | when a rebuild is owed | `Debounced.pending_changed` | `framework/debounce.py` | — |
 | a margin, a gap, a height | a token | `theme/tokens.py` (*Tokens*) | — |
@@ -710,38 +712,44 @@ Dialogs:
 
 - *(done)* `StepDetailsDialog` — live edits and one Close, on the frame; its title is the
   window's alone.
-- `SettingsDialog` — 12 px margins, an unstyled tree with no seam against the page, a lone
-  Close.
-- `ProjectDialog` — the most designed; create mode's footer at 8 px against the 12 px
-  sections, and its two modes disagree about buttons.
-- `OpenProjectsDialog`, `MovePlanDialog`, `RepositoriesFolderDialog`, `GhRepoListDialog` —
-  hand-rolled footers with the right shape; no title in the body; the GitHub list's filter
-  is uncaptioned and unfocused, and its status line sits in the button row.
-- `ExpandedTextDialog`, `ChartDialog`, `ImagePreviewDialog` — right metrics, a
-  `QDialogButtonBox(Close)`.
-- `AssetPickerDialog` — Ok/Cancel box for the main insert gesture, a hand-rolled empty
-  label.
+- *(done — S16)* `SettingsDialog` — Close alone; the tree and the page parted by a
+  splitter's seam, a folder a heading the arrow keys step over, every page in a scroller of
+  its own and built from `settings_page` and `block` — captions over fields, the standing
+  explanations behind the caption's glyph.
+- *(done — S16)* `ProjectDialog` — Close alone in settings mode; create mode a form of
+  captioned blocks whose Create is refused in words; what a request came to in the footer's
+  status slot, and the plan column's set-up offer the verb of an `EmptyState`.
+- *(done — S16)* `OpenProjectsDialog`, `MovePlanDialog`, `RepositoriesFolderDialog`,
+  `GhRepoListDialog` — on the frame; the repository picker's four glyph buttons one ⋯
+  menu and its note a `StatusLine`; the GitHub list captioned, its listing in the status
+  slot; the prompts `LinePrompt`s and the result boxes `notice()`s.
+- *(done — S16)* `ExpandedTextDialog`, `ChartDialog`, `ImagePreviewDialog` — two editor
+  dialogs and a fit one, Close alone; the preview's two verbs quiet secondaries that say
+  what they did in the status slot rather than in a box.
+- *(done — S16)* `AssetPickerDialog` — *Insert* the primary, refused until something is
+  picked; the empty page an `EmptyState` standing in for the grid.
 - `TaskBrowserDialog` / `AgentBrowserDialog` — a well of rows, styled once and copied
   whole with no stylesheet for the copy; one row-well primitive would absorb both.
-- Confluence `ConnectDialog` — the one `QFormLayout`, system labels unlike every caption,
-  three button clusters, no size.
-- `PromptFallbackDialog` — 16 px margins, default spacing, a prompt pane that is not a
-  text well.
-- `ConflictDialog` — four peers in a `QDialogButtonBox`, no object name (its primary got
-  no accent until the primary rule stopped needing one).
-- `InstallDialog` (Tools ▸ Install DPlanner…, which replaced the command and skill
-  dialogs) — built to this document as it stood: a well of rows modelled on the task
-  centre, one primary, Close as the default; its state is a word, not a glyph, and it is
-  the readiest candidate for the frame.
+- *(done — F5, focus in S16)* Confluence `ConnectDialog` — on the frame with captions
+  over its fields; it opens on the email, the read-only site a click-to-copy fact.
+- *(done — S16)* `PromptFallbackDialog` — a text well under the note; *Copy Prompt* a
+  secondary that says so in the status slot.
+- *(done — S16)* `ConflictDialog` — the agent the primary, refused with its reason in the
+  status slot and its name kept; *Take Theirs* and *Keep Mine* quiet; *Later* is Escape's.
+- *(done — S16)* `InstallDialog` — its rows read as the checklist's, ☐/☑ in the same
+  tones; *Remove* at the far left; *Install*/*Update* the primary and Enter's.
 - `SaveSnapshotDialog` — the panel's 6 px idiom hand-simulated with `addSpacing`; the box's
   Save.
-- `DiffDialog` — no margins, no spacing, an uncaptioned picker over an unstyled pane.
+- *(done — S16)* `DiffDialog` — a captioned picker, shown only for several repositories,
+  over a monospaced text well; *Save Now* the primary.
 - *(done — the graph editor pass)* `CommandPalette` is a `PickerDialog`
   (`framework/picker.py`) and the frame is styled: the menu's own ground and hairline, a
   focused field, and a picked row wearing the accent on its edge rather than a band of
   colour. *Find Step…* is the same picker over a project's steps.
-- The Run Agent confirmation — the application's most consequential question, as a
-  `QMessageBox` with a bulleted list; and fourteen `QInputDialog.getText` prompts.
+- *(done — S16)* The Run Agent confirmation — a `RunAnywayDialog` on the frame: the launch
+  count in its title, what each chosen step waits on in its body, *Run Anyway* the primary.
+  Of the fourteen `QInputDialog.getText` prompts, the Project family's four are
+  `LinePrompt`s; feature, project_editor, testing and sync still have theirs.
 - *(done — the graph editor pass)* Help ▸ About was a `QMessageBox.about` still naming the
   template's product. It is a `DialogFrame` over a `Table` now: the name and version, then
   what DPlanner is built on, a row per component with its licence.
@@ -768,8 +776,10 @@ Tables and lists:
   the second line, one worded face dropping the launch profiles, and an `EmptyState`
   where the list would be. It stands inside the project tab, beside the canvas. (It
   replaced the Features panel, which went with the feature catalogue.)
-- Agent profiles — plain strings with *(default)* appended and three stock buttons.
-- Settings tree, Index tree, palette list — unstyled or ink-only hover.
+- *(done — S16)* Agent profiles — a strip over a two-line table: the name over the two
+  commands, the default the one bold row, its verbs greyed with the reason in their words.
+- Index tree, palette list — unstyled or ink-only hover. *(The Settings tree is done —
+  S16: the picker list's wash and edge, folders as headings.)*
 - Task and Agents browsers, Milestones list — widget rows laid out by hand, one of them by
   measuring strings.
 - *(done — the signalling pass)* Every debounced view now carries the indicator, and the

@@ -51,17 +51,18 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
-    QListWidget,
-    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from dplanner.domain.agents import AgentHarness
+from dplanner.framework.settings_registry import settings_page
+from dplanner.framework.table import Cell, Column, Table
+from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.user_config import get_global, set_global
+from dplanner.framework.widgets import block, caption, captioned
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 from dplanner.modules.step_agent_instruction.detect_dialog import DetectedProfilesDialog
 from dplanner.modules.step_agent_instruction.launcher import (
@@ -80,11 +81,16 @@ from dplanner.modules.step_agent_instruction.profiles import (
     update_profile,
     write_profiles,
 )
+from dplanner.theme.icons import find_icon, plus_icon, star_icon, trash_icon
+from dplanner.theme.tokens import FIELD_GAP, SECTION_GAP
 
 MAX_AGENTS_KEY = "max_agents"
 START_IN_PROGRESS_KEY = "start_in_progress"
 
 CUSTOM_LABEL = "Custom"
+# What a preset dropdown asks room for: a harness row reads long, and a dropdown sized to its
+# longest row would make the page wider than the dialog it scrolls in.
+PRESET_CHARS = 16
 AUTOMATIC_LABEL = "Automatic"
 
 DEFAULT_MAX_AGENTS = 4
@@ -133,11 +139,36 @@ def harness_label(harness: AgentHarness) -> str:
     return f"{harness.label} — {abilities}" if abilities else harness.label
 
 
-def _note(text: str, parent: QWidget) -> QLabel:
-    note = QLabel(text, parent)
-    note.setObjectName("InspectorNote")
-    note.setWordWrap(True)
-    return note
+# What used to be prose under each field: standing conventions, so behind the caption's
+# glyph (DESIGN.md's *Words*), read once rather than on every visit.
+PROFILES_HINT = (
+    "Run Agent… runs the default profile — the first, set in bold; Step ▸ Run Agent lists them all."
+)
+AGENT_HINT = (
+    "What the terminal runs. {prompt} is the opening line — one sentence pointing the agent"
+    " at the briefing file, never the briefing itself (appended when omitted); {session} is"
+    " the run's session id, for an agent that can resume one; {run_dir} is the directory"
+    " holding the briefing and its staged files, for an agent that must be allowed to read"
+    " there. Picking an agent fills this in."
+)
+TERMINAL_HINT = (
+    "How the terminal opens on the run script. Automatic takes the first installed terminal,"
+    " always a new window — a multiplexer only when nothing else is installed; picking one"
+    " fills in its command, which can be edited. A multiplexer adds a pane per agent to what"
+    " is already running, so several selected steps land side by side. Placeholders:"
+    " {script}, {workdir}, {title}; two calls joined by && run in turn, {pane} in the second"
+    " being what the first printed."
+)
+LIMIT_HINT = (
+    "How many agents Run Agent may launch from one selection. Each is a terminal, a worktree"
+    " and a session of its own; select more than this and the verb says so instead of"
+    " filling the desk."
+)
+LAUNCH_HINT = (
+    "Run Agent sets the step's status to in progress as the terminal opens, so the board"
+    " shows the work has started without waiting for the agent to say so. It is not undone"
+    " when the agent stops: finishing is the agent's own claim, or yours from Step ▸ Status."
+)
 
 
 class PresetField:
@@ -162,6 +193,8 @@ class PresetField:
         for label, command in rows:
             combo.addItem(label, command)
         combo.addItem(blank_label, "")
+        combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        combo.setMinimumContentsLength(PRESET_CHARS)
         combo.activated.connect(self._pick)
         edit.editingFinished.connect(self._commit)
 
@@ -188,7 +221,10 @@ class PresetField:
 
 
 class ProfileList(QWidget):
-    """The profiles as a list with Add, Remove and Make Default beside it."""
+    """The profiles as a table with its verbs on a strip above it (DESIGN.md's *Tables*):
+    Add, Remove and Make Default — greyed, with the reason in their words, when they
+    cannot run — then Add Detected…. A row is the name over the two commands; the default
+    is the first row and the one bold row, the fixed point among them."""
 
     def __init__(
         self,
@@ -200,56 +236,68 @@ class ProfileList(QWidget):
         super().__init__(parent)
         self._on_pick = on_pick
         self._harnesses, self._platform = harnesses, platform
-        self.list = QListWidget(self)
-        self.list.setObjectName("AgentProfileList")
-        self.list.currentRowChanged.connect(self._picked)
-        self.add_button = QPushButton("Add", self)
-        self.add_button.setObjectName("AgentProfileAdd")
-        self.add_button.clicked.connect(self._add)
-        self.remove_button = QPushButton("Remove", self)
-        self.remove_button.setObjectName("AgentProfileRemove")
-        self.remove_button.clicked.connect(self._remove)
-        self.default_button = QPushButton("Make Default", self)
-        self.default_button.setObjectName("AgentProfileDefault")
-        self.default_button.clicked.connect(self._make_default)
-        self.detect_button = QPushButton("Add Detected…", self)
-        self.detect_button.setObjectName("AgentProfileDetect")
-        self.detect_button.setToolTip(
-            "Find the agent CLIs and terminals installed here and add their pairings"
-        )
-        self.detect_button.clicked.connect(self._detect)
-
         column = QVBoxLayout(self)
         column.setContentsMargins(0, 0, 0, 0)
-        column.addWidget(self.list, 1)
-        buttons = QHBoxLayout()
-        column.addLayout(buttons)  # Parented before it is filled — CLAUDE.md's layout rule.
-        buttons.addWidget(self.add_button)
-        buttons.addWidget(self.remove_button)
-        buttons.addWidget(self.default_button)
-        buttons.addWidget(self.detect_button)
-        buttons.addStretch(1)
+        column.setSpacing(FIELD_GAP)
+
+        self.strip = Toolbar(self)
+        self.add_action = self.strip.add_verb(
+            "Add", plus_icon, self._add, tip="A copy of the picked profile, named by its choices"
+        )
+        self.remove_action = self.strip.add_verb("Remove", trash_icon, self._remove)
+        self.default_action = self.strip.add_verb(
+            "Make Default", star_icon, self._make_default, tip="What a plain Run Agent… runs"
+        )
+        self.strip.add_divider()
+        self.detect_action = self.strip.add_verb(
+            "Add Detected…",
+            find_icon,
+            self._detect,
+            tip="Find the agent CLIs and terminals installed here and add their pairings",
+        )
+        column.addWidget(self.strip)
+
+        self.table = Table((Column("Profile", detail=True, resize="stretch"),), parent=self)
+        self.table.horizontalHeader().hide()  # The caption over the block already names it.
+        self.table.currentCellChanged.connect(lambda *_cells: self._picked())
+        column.addWidget(self.table, 1)
         self.reload(0)
 
     def reload(self, row: int) -> None:
         profiles = read_profiles()
-        self.list.blockSignals(True)
-        self.list.clear()
+        chosen = min(max(row, 0), len(profiles) - 1)
+        self.table.blockSignals(True)
+        self.table.clear_rows()
         for index, profile in enumerate(profiles):
-            self.list.addItem(f"{profile.name} (default)" if index == 0 else profile.name)
-        self.list.setCurrentRow(min(max(row, 0), len(profiles) - 1))
-        self.list.blockSignals(False)
-        self.remove_button.setEnabled(len(profiles) > 1)
-        self.default_button.setEnabled(self.list.currentRow() > 0)
-        self._on_pick(self.list.currentRow())
+            detail = f"{agent_command(self._harnesses, profile)} · "
+            detail += launch_command(profile) or AUTOMATIC_LABEL
+            self.table.add_row([Cell(profile.name, detail=detail, emphasis=index == 0)])
+        self.table.setCurrentCell(chosen, 0)
+        self.table.blockSignals(False)
+        self._reword()
+        self._on_pick(chosen)
 
-    def _picked(self, row: int) -> None:
-        self.default_button.setEnabled(row > 0)
-        self._on_pick(row)
+    def _picked(self) -> None:
+        self._reword()
+        row = self.table.currentRow()
+        if row >= 0:
+            self._on_pick(row)
+
+    def _reword(self) -> None:
+        """Disabled, never hidden — and the reason in the verb's own words."""
+        count, row = self.table.rowCount(), self.table.currentRow()
+        only = count <= 1
+        self.remove_action.setText("Remove — the only profile" if only else "Remove")
+        self.remove_action.setEnabled(not only and row >= 0)
+        already = row == 0
+        self.default_action.setText(
+            "Make Default — already the default" if already else "Make Default"
+        )
+        self.default_action.setEnabled(row > 0)
 
     def _add(self) -> None:
         profiles = read_profiles()
-        picked = profiles[max(self.list.currentRow(), 0)]
+        picked = profiles[max(self.table.currentRow(), 0)]
         # A new profile starts as a copy of the picked one: the usual reason for a second
         # profile is one thing changed — the terminal, or the agent. It is named by its
         # choices, so the name follows that change until somebody types one.
@@ -261,7 +309,7 @@ class ProfileList(QWidget):
 
     def _remove(self) -> None:
         profiles = read_profiles()
-        row = self.list.currentRow()
+        row = self.table.currentRow()
         if len(profiles) > 1 and 0 <= row < len(profiles):
             del profiles[row]
             write_profiles(profiles)
@@ -269,7 +317,7 @@ class ProfileList(QWidget):
 
     def _make_default(self) -> None:
         profiles = read_profiles()
-        row = self.list.currentRow()
+        row = self.table.currentRow()
         if row > 0:
             profiles.insert(0, profiles.pop(row))
             write_profiles(profiles)
@@ -291,7 +339,7 @@ def build_page(
     platform: str = sys.platform,
     harnesses: tuple[AgentHarness, ...] = (),
 ) -> QWidget:
-    page = QWidget(parent)
+    page, layout = settings_page(parent)
     page.setObjectName("AgentSettingsPage")
     current = {"row": 0}
 
@@ -365,77 +413,34 @@ def build_page(
     started_box.setChecked(start_in_progress())
     started_box.toggled.connect(lambda on: set_global(MODULE_ID, START_IN_PROGRESS_KEY, bool(on)))
 
-    layout = QVBoxLayout(page)
-    layout.addWidget(QLabel("Profiles", page))
-    layout.addWidget(
-        _note(
-            "Run Agent… runs the default profile; Step ▸ Run Agent lists them all.",
-            page,
-        )
-    )
-    # Each child layout is parented before it is filled — CLAUDE.md's layout rule.
-    columns = QHBoxLayout()
-    layout.addLayout(columns)
+    # The profiles beside the editor for the picked one, as one block under one caption.
+    columns_host = QWidget(page)
+    columns = QHBoxLayout(columns_host)
+    columns.setContentsMargins(0, 0, 0, 0)
+    columns.setSpacing(SECTION_GAP)
     columns.addWidget(profiles, 1)
-    editor = QVBoxLayout()
-    columns.addLayout(editor, 2)
-    editor.addWidget(QLabel("Profile name", page))
-    editor.addWidget(name_edit)
-    editor.addWidget(QLabel("Agent", page))
-    editor.addWidget(agent_combo)
-    editor.addWidget(QLabel("Command", page))
-    editor.addWidget(command_edit)
-    editor.addWidget(
-        _note(
-            "What the terminal runs. {prompt} is the opening line — one sentence pointing"
-            " the agent at the briefing file, never the briefing itself (appended when"
-            " omitted); {session} is the run's session id, for an agent that can resume"
-            " one; {run_dir} is the directory holding the briefing and its staged files,"
-            " for an agent that must be allowed to read there. Picking an agent above"
-            " fills this in.",
-            page,
-        )
-    )
-    editor.addWidget(QLabel("Terminal or multiplexer", page))
-    editor.addWidget(terminal_combo)
-    editor.addWidget(terminal_edit)
-    editor.addWidget(
-        _note(
-            "How the terminal opens on the run script. Automatic takes the first installed"
-            " terminal above, always a new window — a multiplexer only when nothing else"
-            " is installed; picking one fills in its command, which can be edited."
-            " A multiplexer adds a pane per agent to what is already running, so several"
-            " selected steps land side by side. Placeholders: {script}, {workdir},"
-            " {title}; two calls joined by && run in turn, {pane} in the second being"
-            " what the first printed.",
-            page,
-        )
+    editor_host = QWidget(columns_host)
+    editor = QVBoxLayout(editor_host)
+    editor.setContentsMargins(0, 0, 0, 0)
+    editor.setSpacing(SECTION_GAP)
+    columns.addWidget(editor_host, 1)
+    block(editor, caption("Profile name", editor_host), name_edit)
+    block(editor, captioned("Agent", editor_host, AGENT_HINT), agent_combo, command_edit)
+    block(
+        editor,
+        captioned("Terminal or multiplexer", editor_host, TERMINAL_HINT),
+        terminal_combo,
+        terminal_edit,
     )
     editor.addStretch(1)
+    block(layout, captioned("Profiles", page, PROFILES_HINT), columns_host)
 
-    layout.addWidget(QLabel("Max agents launched at once", page))
-    limit_row = QHBoxLayout()
-    layout.addLayout(limit_row)
-    limit_row.addWidget(limit)
-    limit_row.addStretch(1)
-    layout.addWidget(
-        _note(
-            "How many agents Run Agent may launch from one selection. Each is a terminal,"
-            " a worktree and a session of its own; select more than this and the verb says"
-            " so instead of filling the desk.",
-            page,
-        )
-    )
-    layout.addWidget(QLabel("On launch", page))
-    layout.addWidget(started_box)
-    layout.addWidget(
-        _note(
-            "Run Agent sets the step's status to in progress as the terminal opens, so"
-            " the board shows the work has started without waiting for the agent to say"
-            " so. It is not undone when the agent stops: finishing is the agent's own"
-            " claim, or yours from Step ▸ Status.",
-            page,
-        )
-    )
+    limit_row = QWidget(page)
+    limit_layout = QHBoxLayout(limit_row)
+    limit_layout.setContentsMargins(0, 0, 0, 0)
+    limit_layout.addWidget(limit)
+    limit_layout.addStretch(1)
+    block(layout, captioned("Max agents launched at once", page, LIMIT_HINT), limit_row)
+    block(layout, captioned("On launch", page, LAUNCH_HINT), started_box)
     layout.addStretch(1)
     return page

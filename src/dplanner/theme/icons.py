@@ -277,6 +277,11 @@ def find_icon(color: str | QColor) -> QIcon:
     return glyph_icon("find", color)
 
 
+def star_icon(color: str | QColor) -> QIcon:
+    """A star: the default — what a plain Run Agent… runs."""
+    return glyph_icon("star", color)
+
+
 def options_icon(color: str | QColor) -> QIcon:
     """Sliders: how the graph is drawn, rather than what is drawn."""
     return glyph_icon("options", color)

@@ -47,5 +47,36 @@ def test_copy_path_exists_only_when_a_path_is_given(app):
     copy = next(b for b in with_path.findChildren(QPushButton) if "Copy Path" in b.text())
     copy.click()
     assert QGuiApplication.clipboard().text() == "/tmp/dot.png"
+    assert with_path.status.words() == "Path copied" and with_path.status.tone() == "ok"
     bare.deleteLater()
     with_path.deleteLater()
+
+
+def test_the_preview_is_a_frame_with_close_alone_as_the_way_out(app):
+    from dplanner.framework.dialog import DialogFrame
+
+    dialog = ImagePreviewDialog(image(4, 4), "dot.png", path="/tmp/dot.png")
+    try:
+        assert isinstance(dialog, DialogFrame) and dialog.primary() is None
+        assert [b.text() for b in dialog.footer_buttons()] == [
+            "Open Externally",
+            "Copy Path",
+            "Close",
+        ]
+        assert dialog.footer_buttons()[-1].isDefault()
+    finally:
+        dialog.deleteLater()
+
+
+def test_opening_a_file_that_is_gone_says_so_in_the_footer_not_a_box(app, monkeypatch):
+    from PySide6.QtGui import QDesktopServices
+
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url))
+    dialog = ImagePreviewDialog(image(4, 4), "dot.png", path="/nowhere/dot.png")
+    try:
+        dialog._open_externally("/nowhere/dot.png")
+        assert opened == []
+        assert dialog.status.tone() == "error" and "no longer on disk" in dialog.status.words()
+    finally:
+        dialog.deleteLater()

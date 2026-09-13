@@ -27,7 +27,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PySide6.QtWidgets import QMenu, QMessageBox, QWidget
+from PySide6.QtWidgets import QDialog, QMenu, QWidget
 
 from dplanner.core.telemetry import current
 from dplanner.domain.agents import AgentHarness
@@ -86,7 +86,7 @@ from dplanner.modules.step_agent_instruction.prompt import (
     handover_prompt,
     problems_prompt,
 )
-from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog
+from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog, RunAnywayDialog
 from dplanner.modules.step_agent_instruction.section import (
     AgentSection,
     ProjectInstructionCard,
@@ -540,7 +540,7 @@ class StepAgentInstructionModule:
         if not chosen or len(chosen) > max_agents():
             return  # The state gate already prevents this; stay honest.
         waiting = [(step, unfinished) for step in chosen if (unfinished := self._unfinished(step))]
-        if waiting and not self._confirm_unfinished(waiting):
+        if waiting and not self._confirm_unfinished(waiting, count=len(chosen)):
             return
         profile = profile or default_profile()
         claim = start_in_progress()
@@ -637,39 +637,37 @@ class StepAgentInstructionModule:
             SetModuleDataCommand(step_id, MODULE_ID, with_worktree(step, worktree), label=label)
         )
 
-    def _confirm_unfinished(self, waiting: Sequence[tuple[Step, Sequence[Step]]]) -> bool:
+    def _confirm_unfinished(
+        self, waiting: Sequence[tuple[Step, Sequence[Step]]], *, count: int
+    ) -> bool:
         """The graph gates launching: an agent briefed on a step whose prerequisites are
         not done works without what they were to produce. Say which, and ask — the
         person may know the work landed without the status being recorded.
 
-        One box for the whole gesture, so several chosen steps name their own unfinished
-        work under their own heading and Cancel means *none of them*."""
+        One dialog for the whole gesture, so several chosen steps name their own
+        unfinished work under their own heading and Cancel means *none of them*;
+        ``count`` is every step the gesture would launch, which is what its title says."""
         deps = self._deps
-        box = QMessageBox(deps.parent)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setWindowTitle("Run Agent")
 
-        def listed(unfinished: Sequence[Step]) -> str:
-            return "\n".join(f"• {_titled(r)} — {deps.status_for(r)}" for r in unfinished)
+        def listed(unfinished: Sequence[Step]) -> list[str]:
+            return [f"• {_titled(r)} — {deps.status_for(r)}" for r in unfinished]
 
         if len(waiting) == 1:
             step, unfinished = waiting[0]
-            count = f"{len(unfinished)} step{'s' if len(unfinished) != 1 else ''}"
-            box.setText(f"“{_titled(step)}” waits on {count} not done yet.")
-            detail = listed(unfinished)
+            how_many = f"{len(unfinished)} step{'s' if len(unfinished) != 1 else ''}"
+            lead = f"“{_titled(step)}” waits on {how_many} not done yet."
+            groups = [("", listed(unfinished))]
             closing = "The agent would start without what those steps produce. Run it anyway?"
         else:
-            box.setText(f"{len(waiting)} of the chosen steps wait on work not done yet.")
-            detail = "\n\n".join(
-                f"{_titled(step)} waits on:\n{listed(unfinished)}" for step, unfinished in waiting
-            )
+            lead = f"{len(waiting)} of the chosen steps wait on work not done yet."
+            groups = [
+                (f"{_titled(step)} waits on", listed(unfinished)) for step, unfinished in waiting
+            ]
             closing = "The agents would start without what those steps produce. Run them anyway?"
-        box.setInformativeText(f"{detail}\n\n{closing}")
-        run_anyway = box.addButton("Run Anyway", QMessageBox.ButtonRole.AcceptRole)
-        box.addButton(QMessageBox.StandardButton.Cancel)
-        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
-        box.exec()
-        return box.clickedButton() is run_anyway
+        dialog = RunAnywayDialog(count, lead, groups, closing, deps.parent)
+        accepted = dialog.exec() == QDialog.DialogCode.Accepted
+        dialog.deleteLater()
+        return accepted
 
     def _launch(
         self,
