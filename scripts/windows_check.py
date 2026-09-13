@@ -57,6 +57,10 @@ $ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new()
 $env:PYTHONUTF8 = '1'; $env:PYTHONIOENCODING = 'utf-8'
 $env:QT_QPA_PLATFORM = 'offscreen'
+# The offscreen platform on Windows loads no system fonts by itself: every glyph in the
+# first seventy-eight screenshots was a tofu box, with the layout, the tones and the icons
+# all correct around it. Pointing it at the system font directory is the documented fix.
+$env:QT_QPA_FONTDIR = 'C:\Windows\Fonts'
 $env:TEMP = 'C:\t'; $env:TMP = 'C:\t'
 $env:UV_PYTHON_INSTALL_DIR = 'C:\tools\uv\python'; $env:UV_CACHE_DIR = 'C:\tools\uv\cache'
 $env:Path = 'C:\tools\uv;C:\Program Files\Git\cmd;' + $env:Path

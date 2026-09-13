@@ -39,3 +39,23 @@ def test_a_backend_that_cannot_even_be_asked_is_a_problem(monkeypatch):
     monkeypatch.setattr(keyring, "get_keyring", boom)
     problem = secrets.backend_problem()
     assert problem is not None and "RuntimeError" in problem
+
+
+def test_a_vault_this_session_cannot_reach_reads_as_no_secret(monkeypatch):
+    """The Windows Credential Manager backend raises OSError, not KeyringError, when the
+    logon session has no vault — a network logon such as SSH, WinError 1312. Every
+    surface that asks for a secret has to get "none" rather than a traceback, because the
+    checklist is the surface that reports exactly this."""
+    import keyring
+
+    from dplanner.core import secrets
+
+    def no_vault(*_args, **_kwargs):
+        raise OSError(1312, "A specified logon session does not exist")
+
+    monkeypatch.setattr(keyring, "get_password", no_vault)
+    monkeypatch.setattr(keyring, "set_password", no_vault)
+    monkeypatch.setattr(keyring, "delete_password", no_vault)
+    assert secrets.get_secret("llm", "openai") is None
+    secrets.set_secret("llm", "openai", "sk-x")  # Kept nowhere, and says nothing.
+    secrets.delete_secret("llm", "openai")

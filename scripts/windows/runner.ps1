@@ -39,6 +39,10 @@ $env:PYTHONUTF8 = '1'
 $env:PYTHONIOENCODING = 'utf-8'
 # Short, because pytest's tmp_path plus this repository's test names passes 260 characters.
 $env:TEMP = 'C:\t'; $env:TMP = 'C:\t'
+# The offscreen platform on Windows loads no system fonts by itself; without this every
+# rendered glyph is a tofu box. Set here rather than machine-wide: a user's own Windows
+# will not have it, and a real window does not need it.
+$env:QT_QPA_FONTDIR = 'C:\Windows\Fonts'
 
 # Where the host's shared folder turns up depends on how the container was built: dockur
 # maps it as drive Z: for an interactive logon and serves the same folder over SMB at

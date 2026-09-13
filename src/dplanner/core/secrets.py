@@ -38,20 +38,29 @@ def _username(module_id: str, key: str) -> str:
     return f"{module_id}.{key}"
 
 
+# What a backend raises when the vault is not there for *this* session. keyring wraps most
+# of its failures in KeyringError, but the Windows Credential Manager backend lets the
+# OSError through: a network logon — an SSH session, a service — has no credential vault,
+# and CredRead answers WinError 1312 "a specified logon session does not exist". The
+# checklist's job is to report a keychain that cannot be reached, and it crashed reporting
+# it on the first Windows run. An unreachable vault reads as no secret, and nothing kept.
+_UNAVAILABLE = (keyring.errors.KeyringError, OSError)
+
+
 def get_secret(module_id: str, key: str) -> str | None:
     try:
         return keyring.get_password(_SERVICE, _username(module_id, key))
-    except keyring.errors.KeyringError:
+    except _UNAVAILABLE:
         return None
 
 
 def set_secret(module_id: str, key: str, value: str) -> None:
-    with contextlib.suppress(keyring.errors.KeyringError):
+    with contextlib.suppress(*_UNAVAILABLE):
         keyring.set_password(_SERVICE, _username(module_id, key), value)
 
 
 def delete_secret(module_id: str, key: str) -> None:
-    with contextlib.suppress(keyring.errors.KeyringError):
+    with contextlib.suppress(*_UNAVAILABLE):
         keyring.delete_password(_SERVICE, _username(module_id, key))
 
 
