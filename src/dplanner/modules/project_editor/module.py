@@ -50,6 +50,7 @@ from dplanner.domain.model import (
     Step,
     StepId,
 )
+from dplanner.domain.ordering import ports
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
@@ -86,7 +87,6 @@ from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.look import Look
-from dplanner.modules.project_editor.marks import ports
 from dplanner.modules.project_editor.modes import (
     CONNECT,
     DIVIDE_HORIZONTAL,

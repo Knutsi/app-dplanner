@@ -47,8 +47,8 @@ between them, what actually landed, and how much work the plan came to on each r
 day; `dplanner progress show` prints the same, with the steps and estimates that moved it.
 What a project learns along the way — decisions, handoffs, spec changes, what was
 deferred — is one labelled log beside it (`dplanner note add`, the project panel's Notes
-card), and every agent's briefing carries an index of the notes that reach its step, with
-the ones addressed to it in full.
+card), and every agent's briefing carries an index of the notes that reach its step — the
+ones made on the work it builds on, capped per label — with the ones addressed to it in full.
 
 ## Running
 
@@ -68,6 +68,22 @@ a Start Menu shortcut on Windows) and the agent skill — installing is **one ac
 uv run dplanner install all       # or Tools ▸ Install DPlanner… in the window
 uv run dplanner install status    # what this machine has: current, stale or missing
 ```
+
+To see what else this machine needs — git, the GitHub CLI and a session on it, an agent CLI,
+a terminal to open one in, the keychain, the network — and what to do about each:
+
+```bash
+uv run dplanner checklist show    # or Tools ▸ Setup Checklist… in the window
+```
+
+It exits 1 while something **required** is missing (git, the command, the skill) and 0 while
+the rest is only advice, so an agent can gate on it; `--json` for the rows as data. Where
+there is an install line to give, it is **this machine's** — `yay -S github-cli` on Arch or
+Omarchy, `sudo apt install gh` on Ubuntu, `brew install gh` on a Mac — and where there is
+not, the row links to the page that knows. The window opens the same list once on a machine
+it has never greeted, and after that only while you leave its switch on and something
+required is missing; a row's `⋮` can tell it to stop warning about that one for good, which
+changes what nags and never what `checklist show` reports.
 
 `desktop install`/`status`/`uninstall` and `skill install`/`status`/`uninstall` are the
 pieces it is made of, for when one of them is what you mean. The command is left alone when
@@ -260,6 +276,9 @@ src/dplanner/
 │   ├── shelf.py             where a turned-off aspect's data waits: turn_off / turn_on, and the migration into it
 │   ├── fields.py            bindable prose, keyed by the module that owns it
 │   ├── assets.py            attaching files to a module's file area, and listing them
+│   ├── document_source.py   what a spec source kind hands back: a snapshot, its documents, freshness
+│   ├── document_folder.py   a directory read as one of those snapshots — the walk the folder and
+│   │                        git kinds share, with the nesting, the digests and the caps
 │   ├── migrations.py        the format's version history — append only
 │   └── seed.py              what a brand-new library, and a brand-new project, contain
 │
@@ -273,6 +292,7 @@ src/dplanner/
 │   ├── install.py           `install all`/`status`/`remove`: the command, the launcher and the skill as one act, read and written together
 │   ├── assets.py            `<noun> attach`/`assets` — the per-aspect pair — and `asset list`/`uses`/`prune` over every module's areas
 │   ├── lint.py              `lint` — every module's checks over the library, one report
+│   ├── checklist.py         `checklist show` — every module's checks over this *machine*, one report
 │   ├── scopes.py            `scope show` — what a check, feature or milestone gathers
 │   ├── authoring.py         `step add` — one verb, each module contributing its flags
 │   ├── telemetry.py         `telemetry show|path|clear` — the journal, read back
@@ -379,16 +399,22 @@ src/dplanner/
 │   │                        Settings ▸ Reports
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
 │   │                        deferrals — one labelled log (log.py), what reaches a step and the briefing's
-│   │                        index (reach.py), how the two retired modules reach it (migrate.py),
+│   │                        capped index (reach.py), how the two retired modules reach it (migrate.py),
 │   │                        `dplanner note`, and the Implementation notes tab (activity.py, view.py)
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor); and the
 │   │                        documents a *source* fetched (source_kind.py: the kind contract,
 │   │                        sourced.py: applying a snapshot, refresh.py: fetch and check)
-│   ├── spec_confluence/     Confluence Cloud as a spec source: a GET-only client (client.py),
-│   │                        storage XHTML to markdown (convert.py), the walk and its caps
-│   │                        (source.py), the guided Connect dialog, Settings ▸ Confluence
+│   ├── spec_confluence/     Confluence Cloud as *two* spec source kinds — a page and a folder —
+│   │                        over one client (client.py), storage XHTML to markdown (convert.py),
+│   │                        the walk, its caps and the two content types (source.py), the guided
+│   │                        Connect dialog, Settings ▸ Confluence
+│   ├── spec_folder/         a folder on this computer as a spec source: the locator over the
+│   │                        shared walk in domain/document_folder.py
+│   ├── spec_git/            a git repository as a spec source: the subprocess door (client.py),
+│   │                        the locator, the blobless shallow sparse fetch and the size guard
+│   │                        (source.py), and the dialog that lists the remote's folders
 │   ├── coverage/            the spec and what became of it: passages → features → milestones →
 │   │                        tests and docs (trace.py, one derived picture), the Coverage tab's
 │   │                        four lanes (scene.py), and `dplanner coverage show|spec|review`
@@ -396,6 +422,7 @@ src/dplanner/
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
 │   ├── install/             getting DPlanner onto this machine from the window: one dialog over `cli/install.py`, three rows and one button
+│   ├── checklist/           what this machine has of what DPlanner needs: the rows no feature owns, and the modal every module's rows are shown in
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
 │   ├── appearance/          View ▸ Theme (System theme, then what every provider offers) and Settings ▸ Appearance
 │   ├── theme_omarchy/       ── one module per theme provider, each a Qt-free `themes.py`: Omarchy's

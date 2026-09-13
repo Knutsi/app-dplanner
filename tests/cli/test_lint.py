@@ -163,3 +163,41 @@ def test_lint_without_a_project_covers_them_all(cli):
     projects = {row["project"] for row in report["findings"]}
     assert len(projects) == 1  # only Two has steps to complain about
     assert report["count"] == 3
+
+
+# -- the shape of the graph ---------------------------------------------------------------
+
+
+def plan(cli, cli_stdin, *titles):
+    """A project with a topology read and a step per title, so only shape is left to fail."""
+    cli("project", "create", "Discovery")
+    cli("project", "set", "Discovery", "--accept-colocation")
+    cli_stdin("topology", "set", "Discovery", "--file", "-", stdin="Flat.")
+    for title in titles:
+        cli("step", "add", "Discovery", title, "--days", "1")
+        cli_stdin("describe", "set", title, "--file", "-", stdin=f"{title}.")
+    cli("schedule", "start", "Discovery", "--date", "2026-09-01")
+
+
+def test_a_step_on_no_graph_is_reported(cli, cli_stdin):
+    """The canvas rings an orphan in the refusal red; this is the same derivation, read by
+    the terminal. A step joined either way is on the graph and says nothing."""
+    plan(cli, cli_stdin, "Start", "Build", "Adrift")
+    cli("step", "link", "Build", "Start")
+    report = data(cli("project", "lint", "Discovery", "--json", expect=1))
+    orphans = [row for row in report["findings"] if row["check"] == "graph.orphan"]
+    assert [row["title"] for row in orphans] == ["Adrift"]
+    assert "step link 'Adrift'" in orphans[0]["message"]
+
+
+def test_a_relates_link_is_enough_to_be_on_the_graph(cli, cli_stdin):
+    """A remark is not an order, but it is still a line between two steps."""
+    plan(cli, cli_stdin, "Start", "Aside")
+    cli("step", "link", "Aside", "Start", "--kind", "relates")
+    report = data(cli("project", "lint", "Discovery", "--json"))
+    assert "graph.orphan" not in checks_in(report)
+
+
+def test_a_lone_step_is_nobodys_orphan(cli, cli_stdin):
+    plan(cli, cli_stdin, "Deploy")
+    assert "graph.orphan" not in checks_in(data(cli("project", "lint", "Discovery", "--json")))

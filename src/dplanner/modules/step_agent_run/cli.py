@@ -30,7 +30,14 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Step, now_stamp
 from dplanner.modules.step_agent_run.aspect import MODULE_ID, STATES, launched, read, write
 from dplanner.modules.step_agent_run.usage import MODULE_ID as USAGE_ID
-from dplanner.modules.step_agent_run.usage import row_for, rows, totals, with_row, words
+from dplanner.modules.step_agent_run.usage import (
+    row_for,
+    row_words,
+    rows,
+    totals,
+    with_row,
+    words,
+)
 
 
 def commands(*, harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
@@ -146,7 +153,8 @@ def _usage_commands(harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
 
 def _row_json(row: dict[str, object]) -> dict[str, object]:
     return {
-        key: row.get(key) for key in ("harness", "session", "input", "output", "details", "ended")
+        key: row.get(key)
+        for key in ("harness", "session", "input", "output", "details", "ended", "prompt_chars")
     }
 
 
@@ -163,11 +171,8 @@ def _usage_show(context: CliContext, args: Namespace) -> int:
     if total is None:
         context.report(data, f"{step.title}: no agent run recorded")
         return 0
-    lines = [
-        f"{row.get('ended', '')[:10]}  {row.get('harness', '?'):9}"
-        f" {words(Usage(int(row['input']), int(row['output'])))}"
-        for row in recorded
-    ]
+    lines = [row_words(row) for row in recorded]
+    # The total is tokens only: two briefings summed is not a quantity anybody spends.
     lines.append(
         f"total: {words(total)} over {len(recorded)} run{'s' if len(recorded) != 1 else ''}"
     )

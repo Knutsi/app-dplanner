@@ -1015,6 +1015,13 @@ QToolButton[repoTool="true"]:hover {
     color: $TEXT_PRIMARY;
 }
 
+/* A heading over the body, for the one dialog that opens itself rather than being asked
+   for (DialogFrame.set_heading). Colour only: its face is title_font, set in Python, so a
+   heading and a card's title step up from the same base by the same amount. */
+#DialogHeading {
+    color: $TEXT_PRIMARY;
+}
+
 /* The footer is a band under the page, edge to edge: the elevated ground under a faint
    hairline, the one place a dialog has a second ground, so the eye finds the way out
    without reading. Background only — a colour here would cascade onto the buttons. */

@@ -26,6 +26,7 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.gate import digest
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, project_arg, step_arg
+from dplanner.cli.shaping import guide
 from dplanner.core.text_diff import diff_hunks
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
@@ -59,7 +60,7 @@ from dplanner.modules.spec.documents import (
 )
 from dplanner.modules.spec.documents import anchor_sources as anchor_sources
 from dplanner.modules.spec.pdf import render_page, split_pages
-from dplanner.modules.spec.sourced import owned_by_source, tree
+from dplanner.modules.spec.sourced import locator_line, owned_by_source, tree
 
 
 def step_author() -> StepAuthor:
@@ -147,21 +148,34 @@ def commands(*, note_read: Callable[[str, str], None]) -> list[CliCommand]:
         text = read_topology(project)
         if text.strip():
             note_read(project.id, text)
-        context.report(
-            {"project": project.id, "topology": text, "digest": digest(text) if text else ""},
+        # The read that is recorded is the project's own text, never what was printed: the
+        # default travels with the build, and hashing it would un-read every project on
+        # the day `shaping.md` gained a comma.
+        default = "" if args.brief else guide()
+        own = (
             text.rstrip("\n")
             if text.strip()
-            else f"{project.title}: no topology yet — write one with "
-            f"`dplanner topology set {project.title!r} --file -`",
+            else f"{project.title}: no topology yet — read the default shape below, then "
+            f"write this project's own with `dplanner topology set {project.title!r} --file -`"
+        )
+        context.report(
+            {
+                "project": project.id,
+                "topology": text,
+                "digest": digest(text) if text else "",
+                "default": default,
+            },
+            f"{own}\n\n---\n\n{default.rstrip()}" if default else own,
         )
         return 0
 
     return [
         CliCommand(
             path=("topology", "show"),
-            summary="Print how a project's graph is shaped, and record that you read it "
-            "— the graph-editing verbs refuse until the current text has been read.",
-            configure=project_arg,
+            summary="Print how a project's graph is shaped, and the default shape beside "
+            "it, and record that you read it — the graph-editing verbs refuse until the "
+            "current text has been read.",
+            configure=_configure_topology_show,
             run=_topology_show,
             examples=("dplanner topology show 'Search rewrite'",),
         ),
@@ -306,6 +320,15 @@ def _configure_attach(parser: ArgumentParser) -> None:
     parser.add_argument("image", help="the file to copy in beside the specs")
 
 
+def _configure_topology_show(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument(
+        "--brief",
+        action="store_true",
+        help="the project's own text alone, without the default shape",
+    )
+
+
 def _configure_topology_set(parser: ArgumentParser) -> None:
     project_arg(parser)
     parser.add_argument("--file", required=True, help="a markdown file, or - for stdin")
@@ -346,8 +369,8 @@ def _refuse_sourced(index: SpecIndex, name: str) -> None:
     owner = owned_by_source(index, name)
     if owner is not None:
         raise CliError(
-            f"{name!r} is part of {owner.kind} source {owner.title!r} — refresh or remove "
-            "the source from the Specs tab"
+            f"{name!r} belongs to the source {owner.title!r} — refresh or remove the "
+            "source from the Specs tab"
         )
 
 
@@ -426,7 +449,10 @@ def _list(context: CliContext, args: Namespace) -> int:
         if row.document is None and row.source is not None:
             source = row.source
             fetched = f"fetched {source.fetched}" if source.fetched else "never fetched"
-            lines.append(f"{indent}[{source.kind}] {source.title}  ({source.id}, {fetched})")
+            where = locator_line(source.locator)
+            lines.append(
+                f"{indent}[{source.kind}] {source.title}  ({source.id}, {fetched})  {where}"
+            )
             continue
         doc = row.document
         assert doc is not None

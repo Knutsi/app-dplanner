@@ -22,8 +22,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dplanner.core.secrets import get_secret, set_secret
 from dplanner.framework.llm_service import LLMService
-from dplanner.framework.secrets_store import get_secret, set_secret
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.llm_openai.provider import (
     DEFAULT_MODEL,

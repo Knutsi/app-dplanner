@@ -26,11 +26,12 @@ from typing import TYPE_CHECKING
 from dplanner.core.module_data import ModuleDataFormat
 
 if TYPE_CHECKING:
-    from collections.abc import Container, Sequence
+    from collections.abc import Callable, Container, Sequence
 
     from PySide6.QtGui import QIcon
 
     from dplanner.cli import CliCommand
+    from dplanner.cli.checklist import MachineCheck
     from dplanner.cli.gate import TopologyGate
     from dplanner.cli.report.parts import ReportSource
     from dplanner.domain.agents import AgentHarness
@@ -67,6 +68,7 @@ __all__ = [
 def default_modules(services: "AppServices") -> list["Module"]:
     from pathlib import Path
 
+    from dplanner.core.config_dir import config_dir
     from dplanner.core.storage.git import GitStorage
     from dplanner.core.storage.github import GitHubStorage
     from dplanner.core.storage.locations import find_repo_root, origin_url, repo_storage
@@ -87,6 +89,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
     from dplanner.modules.appearance.module import AppearanceDeps, AppearanceModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
+    from dplanner.modules.checklist.module import ChecklistDeps, ChecklistModule
     from dplanner.modules.coverage.activity import CoverageDeps
     from dplanner.modules.coverage.module import CoverageModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
@@ -144,6 +147,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.spec.module import SpecDeps, SpecModule
     from dplanner.modules.spec.module import open_url as open_in_browser
     from dplanner.modules.spec_confluence.module import SpecConfluenceDeps, SpecConfluenceModule
+    from dplanner.modules.spec_folder.module import SpecFolderKind
+    from dplanner.modules.spec_git.module import SPEC_GIT_CACHE, SpecGitDeps, SpecGitKind
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_agent_instruction.aspect import read as agent_instruction_read
@@ -794,9 +799,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
-    # Constructed before spec: it is the Confluence document source kind the Specs tab
-    # runs, and the credential's four doors are the keychain's, handed over as callables
-    # so a test can hand in a dict instead.
+    # Constructed before spec: it owns the two Confluence document source kinds the Specs
+    # tab runs, and the credential's four doors are the keychain's, handed over as
+    # callables so a test can hand in a dict instead.
     confluence = SpecConfluenceModule(
         SpecConfluenceDeps(
             parent=services.window,
@@ -810,6 +815,14 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # same seam as open_project, one level down. The document source kinds it runs are
     # named here — ``_source_kinds`` — and nowhere else; a test hands in a fake through
     # the same function.
+    # Kinds, not modules: they register nothing (the spec module mints the + menu's
+    # entries from the kinds it is handed), so there is no `register()` for the list to
+    # call. The git cache is named here and nowhere deeper — no feature module reaches
+    # `config_dir`, the same rule the topology gate's record path follows.
+    spec_folder = SpecFolderKind()
+    spec_git = SpecGitKind(
+        SpecGitDeps(tasks=services.tasks, cache_root=config_dir() / SPEC_GIT_CACHE)
+    )
     spec = SpecModule(
         SpecDeps(
             library=library,
@@ -822,7 +835,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
             files=lambda node_id: store.files(node_id, SPEC_ID),
             details=services.step_details,
             tasks=services.tasks,
-            kinds=_source_kinds(confluence),
+            kinds=_source_kinds(spec_folder, spec_git, confluence.page, confluence.folder),
             passages_of=lambda project_id, document: [
                 source.quote
                 for record in read_catalogue(library.project(project_id))
@@ -1128,6 +1141,8 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # The session the command named, for a harness that names one; a harness
                 # that mints its own is found by its record once the run ends.
                 files.session if _names_session(harness) else "",
+                # What the briefing came to: measured where prompt.md was written.
+                files.prompt_chars,
             ),
             harnesses=agent_harnesses(),
             # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.
@@ -1380,7 +1395,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 ),
             )
         ),
-        # Before spec: the Specs tab's + menu lists this kind, and its settings section
+        # Before spec: the Specs tab's + menu lists its kinds, and its settings section
         # must exist before the settings dialog is built.
         confluence,
         spec,
@@ -1537,6 +1552,19 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 # The window writes exactly what `dplanner skill install` writes, from the
                 # same generator over the same registry.
                 skill_files=skill_files,
+            )
+        ),
+        # After the installer, whose three rows it shows: its action is the remedy the
+        # DPlanner rows offer, and an action must be registered before one is run.
+        ChecklistModule(
+            ChecklistDeps(
+                actions=services.actions,
+                context=services.context,
+                tasks=services.tasks,
+                parent=services.window,
+                # Every module's rows, over the same skill files the installer compares
+                # against — the tuple `dplanner checklist show` reads.
+                checks=lambda: _machine_checks(files=skill_files),
             )
         ),
         # After every module that registers an activity factory: it reopens the tabs the
@@ -2106,8 +2134,10 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
         " approval\n"
         f"- `dplanner agent-state set {ref} needs-input` when you have a question the"
         " developer must answer before you can go on\n"
-        "As you go, leave notes — the project's record, indexed into every later"
-        " briefing; `dplanner note add --help` lists the labels:\n"
+        "As you go, leave notes — the project's record, indexed into the briefing of every"
+        " step that comes after the one you made them on. That is the reach: add"
+        " `--reach project` when what you settled belongs to the whole plan rather than"
+        " this branch. `dplanner note add --help` lists the labels:\n"
         f"- `dplanner note add {project} decision '<what you chose>' --step {ref}"
         " --text '<why>'` for each choice the plan should remember (`--supersedes N3`"
         " when it reverses an earlier one)\n"
@@ -2121,7 +2151,7 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
         f" --step {ref} --file -` with what whoever picks up after you must know —"
         " where things are, what is half done, what bit you. Title it as the fact it"
         " is; the body carries the detail. Add `--for S12` for a step that must read it"
-        " in full, `--reach project` if every step should see it;"
+        " in full, `--reach project` if every step should see it regardless;"
         f" `dplanner note attach {project} <id> <file>` for files.\n"
         f"If you cannot finish, `dplanner status set {ref} blocked` and say why in the"
         " handoff note."
@@ -2319,25 +2349,74 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     return (remint_for_paste, forget_for_paste, forget_usage, drop_marker_for_paste)
 
 
-def _source_kinds(confluence: "DocumentSourceKind") -> tuple["DocumentSourceKind", ...]:
-    """The document source kinds the Specs tab offers, in the + menu's order. One seam:
-    a test patches this to hand in a fake, so the whole tab is proven without Confluence."""
-    return (confluence,)
+def _source_kinds(
+    folder: "DocumentSourceKind",
+    git: "DocumentSourceKind",
+    confluence_page: "DocumentSourceKind",
+    confluence_folder: "DocumentSourceKind",
+) -> tuple["DocumentSourceKind", ...]:
+    """The document source kinds the Specs tab offers, in the + menu's order: what is on
+    this computer first, then what is fetched. One seam: a test patches this to hand in a
+    fake, so the whole tab is proven without Confluence.
+
+    Named parameters rather than ``*kinds``: the order is the menu's, and a decision
+    belongs in the function that owns it."""
+    return (folder, git, confluence_page, confluence_folder)
 
 
 def _keychain() -> "SecretStore":
     """The OS keychain as the Confluence module's four doors — the only place the
-    framework's secret store is named for it."""
-    from dplanner.framework import secrets_store
+    secret store is named for it."""
+    from dplanner.core import secrets
     from dplanner.modules.spec_confluence.module import SecretStore
 
     class Keychain(SecretStore):
-        get = staticmethod(secrets_store.get_secret)
-        set = staticmethod(secrets_store.set_secret)
-        delete = staticmethod(secrets_store.delete_secret)
-        problem = staticmethod(secrets_store.backend_problem)
+        get = staticmethod(secrets.get_secret)
+        set = staticmethod(secrets.set_secret)
+        delete = staticmethod(secrets.delete_secret)
+        problem = staticmethod(secrets.backend_problem)
 
     return Keychain()
+
+
+def _machine_checks(*, files: "Callable[[], dict[str, str]]") -> tuple["MachineCheck", ...]:
+    """What this machine has of what DPlanner needs, from every module that owns a row.
+
+    The tuple both surfaces read — ``dplanner checklist show`` and *Tools ▸ Setup
+    Checklist…* — assembled here for ``_asset_sources``' reason: each ``checks()`` lives in
+    its owner's Qt-free half and no module may import another's. Order inside a group is
+    the order they are listed; the group itself is ``cli/checklist.py``'s ``GROUPS``.
+
+    ``files`` is the generated skill the installer's rows compare against — the same
+    closure the Install dialog is handed.
+    """
+    from dplanner.modules.checklist import checks as generic
+    from dplanner.modules.github import checks as github_checks
+    from dplanner.modules.install import checks as install_checks
+    from dplanner.modules.llm import checks as llm_checks
+    from dplanner.modules.spec_confluence import checks as confluence_checks
+    from dplanner.modules.step_agent_instruction import checks as agent_checks
+
+    return (
+        *install_checks.checks(files=files),
+        *generic.checks(),
+        *github_checks.checks(),
+        *agent_checks.checks(harnesses=agent_harnesses()),
+        *confluence_checks.checks(),
+        # The provider modules' ids and labels: the keychain is asked under each module's
+        # own id, and the llm module never learns which providers exist by importing them.
+        *llm_checks.checks(providers=_llm_providers()),
+    )
+
+
+def _llm_providers() -> tuple[tuple[str, str], ...]:
+    """``(module id, label)`` per AI provider module, in the order the settings page lists
+    them — written literally, as ``_scope_kinds`` writes its predicates.
+
+    Not imported from each provider: a provider module's ``MODULE_ID`` sits beside its SDK
+    adapter, and reaching for it would load Qt in a CLI run. A test asserts the two agree.
+    """
+    return (("llm_openai", "OpenAI"), ("llm_anthropic", "Anthropic"))
 
 
 def _asset_sources() -> tuple["AssetSource", ...]:
@@ -2383,6 +2462,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     """
     from dplanner.cli.aspects import commands as aspect_commands
     from dplanner.cli.assets import catalog_commands
+    from dplanner.cli.checklist import commands as checklist_commands
     from dplanner.cli.command import CliRegistry
     from dplanner.cli.desktop import commands as desktop_commands
     from dplanner.cli.gate import RECORD_FILE, TopologyGate, gated
@@ -2392,6 +2472,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.cli.scopes import commands as scope_commands
     from dplanner.cli.scopes import lint_checks as scope_lint
     from dplanner.cli.skill import commands as skill_commands
+    from dplanner.cli.skill import generate
     from dplanner.cli.telemetry import commands as telemetry_commands
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
@@ -2558,7 +2639,12 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     # the same registry, and is registered into it so the skill it writes lists it too.
     installer = install_commands(specs, described)
     described.register_all(installer)
-    return [*commands, *skill, *installer]
+    # What this machine has, from every module that owns a row. The installer's rows read
+    # the generated skill, so the checks are built over the registry the skill describes —
+    # ``files`` is lazy, which is why registering the verb afterwards still lists it.
+    checklist = checklist_commands(_machine_checks(files=lambda: generate(described, specs)))
+    described.register_all(checklist)
+    return [*commands, *skill, *installer, *checklist]
 
 
 def _names_session(harness_id: str) -> bool:

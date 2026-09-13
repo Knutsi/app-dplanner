@@ -601,12 +601,15 @@ def test_a_remembered_duration_fills_the_bar_between_the_repositories_that_lande
     """The count is a fact and leads; a previous run's duration only fills between steps."""
     dialog = SaveProgressDialog(["~/Code/widget", "~/Code/billing"], expected_seconds=10.0)
     try:
-        dialog._started -= 2.0  # Two seconds into a save the last one took ten.
+        # Two seconds into a save the last one took ten — dated from *now*, not from the
+        # construction: whatever the build cost would otherwise be added to the elapsed time,
+        # and a cold import made a tenth read as 0.204.
+        dialog._started = time.monotonic() - 2.0
         dialog._redraw()
         assert dialog.bar.value() == round(0.2 * BAR_STEPS)
         dialog.step(0, SAVED)  # A repository landing outruns the estimate: the fact leads.
         assert dialog.bar.value() == BAR_STEPS // 2
-        dialog._started -= 100.0  # Long past what the last run took.
+        dialog._started = time.monotonic() - 100.0  # Long past what the last run took.
         dialog._redraw()
         assert dialog.bar.value() == round(ESTIMATE_CAP * BAR_STEPS)  # Never falsely full.
     finally:

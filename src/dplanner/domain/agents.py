@@ -99,7 +99,8 @@ class AgentHarness:
     # Reads the CLI's own record of one run back — its session and what it consumed —
     # or None when there is none; absent for a CLI whose records this build cannot read.
     report: RunReader | None = None
-    # The binary the command runs, for the settings page's "not found" note.
+    # The binary the command runs: what the checklist asks PATH for, and what the
+    # settings page's detection and "not found" note name.
     binary: str = ""
 
     def marks(self, name: str) -> bool:

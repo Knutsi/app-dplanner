@@ -60,7 +60,7 @@ from dplanner.domain.model import (
     StepId,
     TextEdit,
 )
-from dplanner.domain.ordering import placed
+from dplanner.domain.ordering import placed, ports
 from dplanner.domain.relocate import RelocateError, move_project, target_in
 from dplanner.domain.repositories import ACCEPTED, RepositoryFacts, repository_facts
 from dplanner.domain.seed import seed_project
@@ -93,7 +93,26 @@ def lint_checks() -> list[LintCheck]:
             if target not in ids
         ]
 
-    return [dangling_requires]
+    def orphan(_product: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
+        # The canvas already rings one in the refusal red — the one mark that says
+        # *something is wrong here* rather than *this is where the graph ends*. This is the
+        # same derivation, read by the terminal. A lone step is nobody's orphan.
+        if len(project.steps) < 2:
+            return []
+        connected = ports(project.steps)
+        return [
+            LintFinding(
+                check="graph.orphan",
+                subject_id=step.id,
+                subject=step.title,
+                message="is on no graph — nothing waits on it and it waits on nothing; "
+                f"link it with `dplanner step link '{step.title}' <step>`, or remove it",
+            )
+            for step in project.steps
+            if connected[step.id] == (False, False)
+        ]
+
+    return [dangling_requires, orphan]
 
 
 def commands(

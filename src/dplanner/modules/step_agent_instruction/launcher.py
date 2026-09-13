@@ -337,6 +337,9 @@ class LaunchFiles:
     exit_file: Path
     title: str  # The terminal window's title, as the script sets it.
     session: str = ""  # The run's session id, as the agent command names it.
+    # What the briefing came to, measured where it was written: the run tracker keeps it, so
+    # the Agents browser and the step's usage row can say what this run was handed.
+    prompt_chars: int = 0
 
 
 def new_run_dir() -> Path:
@@ -439,6 +442,7 @@ def prepare(
         exit_file=directory / EXIT_FILE,
         title=window_title(step_title),
         session=session or new_session(),
+        prompt_chars=len(prompt_text),
     )
     if platform.startswith("win"):
         files.script.write_text(

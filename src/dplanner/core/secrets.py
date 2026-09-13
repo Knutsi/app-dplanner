@@ -12,6 +12,11 @@ raising, so a missing backend behaves like an unconfigured provider, not a broke
 A surface that is about to *store* a secret asks :func:`backend_problem` first, so it can
 refuse with the remedy instead of storing nowhere silently; a plaintext backend
 (``keyrings.alt``) counts as a problem, never as a fallback.
+
+This lives in ``core/`` rather than ``framework/`` for :mod:`~dplanner.core.config_dir`'s
+reason: nothing here touches Qt, and the headless surfaces must be able to ask. ``cli/``
+may not import ``framework/`` at all, and neither may a module's Qt-free half — so the
+checklist could not otherwise say whether this machine can keep a credential.
 """
 
 import contextlib

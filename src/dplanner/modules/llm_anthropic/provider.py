@@ -9,8 +9,8 @@ from typing import cast
 import anthropic
 from anthropic.types import MessageParam, TextBlock
 
+from dplanner.core.secrets import get_secret
 from dplanner.framework.llm import LLMMessage, LLMResult, LLMTimeoutError
-from dplanner.framework.secrets_store import get_secret
 from dplanner.framework.user_config import get_global
 
 MODULE_ID = "llm_anthropic"

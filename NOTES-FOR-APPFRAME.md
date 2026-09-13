@@ -2894,7 +2894,101 @@ renders the menu and never a copy.
 **Upstream?** Yes, both. Any template whose child menus are data will meet a verb whose
 seat is that menu's entries. The `palette: bool` flag already set the shape.
 
-## 33. From the graph-editor pass
+## 33. From the spec-sources pass (F5)
+
+### `framework/widgets.py` — `ink_of(widget)` and `captioned(title, parent, hint)`
+
+**What.** Two helpers moved up from `modules/debug/design_example.py`, which now imports
+them. `ink_of` is the palette's Text colour for the widget a glyph sits beside;
+`captioned` is DESIGN.md's *Forms* rule made a primitive — a caption over a block with the
+standing convention behind an `info_icon()` tooltip, and nothing under the field, which
+would read as an error.
+
+**Why.** The design example was the only implementation of a rule the design standard
+states for every form, so the second and third form to be built (the Confluence Connect
+dialog brought onto the frame, and the Git source dialog) would each have copied eight
+lines and a colour lookup. A primitive carries the rule; the example renders it. `ink_of`
+carries its own warning in the docstring: a colour taken out of the palette goes stale, so
+it is for something built fresh each time it is shown — a dialog, a menu, a popup — never
+for a long-lived widget, which re-reads on `QEvent.PaletteChange`.
+
+**Upstream?** Yes. `caption` and `note` are already there; this is the third of the same
+family, and the colour helper is what stops every feature writing
+`widget.palette().color(QPalette.ColorRole.Text)` slightly differently.
+
+## 34. From the checklist pass (F13)
+
+### `framework/secrets_store.py` → `core/secrets.py` — moved, unchanged
+
+**What.** The keychain wrapper — `get_secret`, `set_secret`, `delete_secret` and
+`backend_problem()` (§24) — moved from `framework/` to `core/secrets.py`. Not one line of it
+changed; the `APP_ID` service name is kept, so nothing stored is orphaned. Its old §24 entry
+still describes what it does.
+
+**Why.** The layering rules say `cli/` may not import `framework/`, and a module's Qt-free
+half (a file named in `HEADLESS_FILES`) may not either. So a headless surface could not ask
+whether this machine can keep a credential — and the checklist needed exactly that, both as
+a row in `dplanner checklist show` and as the spec-source module's own `checks()`. The file
+imports `keyring`, `contextlib`, `sys` and one constant; there was never anything Qt about
+it, and `core/config_dir.py`'s own docstring had already made the argument for its twin:
+"The GUI keeps its preferences in QSettings, but anything the CLI must also read cannot."
+
+The general shape is worth carrying up: **a per-user fact the headless surface must also
+read belongs in `core/`, not in `framework/`** — QSettings-backed preferences stay in
+`framework/user_config.py` precisely because the CLI is not meant to read them, and the two
+files now say which is which by where they live.
+
+**Upstream?** Yes. A template whose CLI is a first-class surface will hit this the first time
+a verb wants to say "no API key configured".
+
+### A shape worth naming: settle on the runner's completion, not the worker's last signal
+
+**What.** Not a framework change — a trap that cost an afternoon and belongs beside
+`framework/task_runner.py`. A dialog that runs N probes in one `TaskRunner` body and emits a
+per-item signal from inside it must **not** treat its own last worker-side signal as "the
+work is done". Both are queued from the worker, but `busy_changed(False)` is emitted by the
+runner *after* the body returns, so the body's own last emit is delivered first. A surface
+that re-enabled its button on that signal would hand the user a button whose next press finds
+`run()` still busy and returns False, doing nothing at all — silently, and only sometimes.
+
+**Why it reads as a race and is not.** `TaskRunner.run` returning False on a busy runner is
+the documented contract ("the caller keeps its own refusal message"), and it is right. The
+fix is one connection: fill rows from the worker's signals, and settle — spinner off, primary
+enabled, summary said — from `busy_changed(False)`.
+
+**Upstream?** The rule, as a paragraph in `task_runner.py`'s docstring. It is the second
+thing every multi-item body will get wrong, after the last-reference rule the file already
+warns about.
+
+### `framework/dialog.py` — `DialogFrame.set_heading(text)`
+
+**What.** Prints a heading over the body, in `title_font` under `#DialogHeading`. Off by
+default and documented as the exception, not the option: §28 took the title and the lead out
+of the body and that stands.
+
+**Why.** A dialog that **opens itself** is the one case the reasoning behind §28 does not
+cover. That reasoning is "the title bar already says it, and the gesture that opened this
+said it too" — but a surface nobody asked for had no gesture, and a person looking at a
+window they did not summon is owed its name. DPlanner's Setup Checklist can arrive at a
+first start; every other dialog here still prints nothing.
+
+**Upstream?** Yes, with the sentence that makes it an exception. A template that ships the
+no-heading rule alone will grow a hand-rolled heading label the first time something opens
+unbidden, and then a second one that is styled differently.
+
+### `framework/signalling.py` — `StatusLine.say(..., glyph=…)`
+
+**What.** The mark beside the words may be given per call; `●` stays the default.
+
+**Why.** A surface whose rows *are* a list of things that should be true reads as a list of
+ticks — ☑ when it is, ☐ when it is not — and the **tone** still carries the mood, which is
+what the vocabulary actually is. The glyph was a module constant, so the alternative was a
+second widget that reimplemented the tone mapping to change one character.
+
+**Upstream?** Yes, with the constraint in the docstring: the tone is the vocabulary, the
+glyph is the surface's, and a second *mood* glyph is what the tones exist to prevent.
+
+## 35. From the graph-editor pass
 
 ### `framework/toolbar.py` — bands, a registry feed, a menu face, and a checked glyph's ink
 

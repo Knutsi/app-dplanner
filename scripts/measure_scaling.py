@@ -61,6 +61,7 @@ from PySide6.QtWidgets import QApplication
 from scripts.synthetic_library import build_library
 
 from dplanner.app import configure_application, new_session, set_early_attributes
+from dplanner.core.secrets import get_secret
 from dplanner.core.telemetry import Span, Telemetry, current, install
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -78,7 +79,6 @@ from dplanner.domain.progression import progression
 from dplanner.domain.scope import cone
 from dplanner.domain.store import LibraryStore
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
-from dplanner.framework.secrets_store import get_secret
 from dplanner.framework.session import AppSession
 from dplanner.modules.estimation.aspect import read as estimated_days
 from dplanner.modules.estimation.aspect import write as estimate

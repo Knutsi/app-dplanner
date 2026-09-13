@@ -2,15 +2,15 @@
 
 Nothing here is a framework concept — these are the handful of things every second feature
 would otherwise reimplement slightly differently: a confirmation whose default is "no", a
-centred column at a readable measure, what an empty page says, the caption over a block and
-the remark under it, and Ctrl+wheel zoom. Add to it sparingly; a helper that only one
-feature uses belongs in that feature.
+centred column at a readable measure, what an empty page says, the caption over a block
+(with its help glyph) and the remark under it, and Ctrl+wheel zoom. Add to it sparingly;
+a helper that only one feature uses belongs in that feature.
 """
 
 from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QObject, Qt
-from PySide6.QtGui import QTextBlockFormat, QTextCursor, QWheelEvent
+from PySide6.QtGui import QColor, QPalette, QTextBlockFormat, QTextCursor, QWheelEvent
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QDialog,
@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.theme.cards import detail_font
+from dplanner.theme.icons import ICON_SIZE, info_icon
+from dplanner.theme.tokens import FIELD_GAP
 
 # DESIGN.md's text-well metrics: the text never touches the frame.
 DOCUMENT_MARGIN = 12
@@ -82,6 +84,36 @@ def note(text: str, parent: QWidget | None = None) -> QLabel:
     label.setObjectName("InspectorNote")
     label.setWordWrap(True)
     return label
+
+
+def ink_of(widget: QWidget) -> QColor:
+    """The ink a glyph beside ``widget``'s words is painted in.
+
+    A colour taken out of the palette goes stale when the theme changes, so this is for
+    something built fresh each time it is shown — a dialog, a menu, a popup — never for a
+    long-lived widget, which re-reads on ``QEvent.PaletteChange`` instead.
+    """
+    return widget.palette().color(QPalette.ColorRole.Text)
+
+
+def captioned(title: str, parent: QWidget, hint: str = "") -> QWidget:
+    """A caption over a block, with a standing convention behind an info glyph.
+
+    DESIGN.md's *Forms*: help is an ``info_icon()`` beside the caption with the sentence as
+    its tooltip — never a line of prose under the field, which reads as an error.
+    """
+    row = QWidget(parent)
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(FIELD_GAP)
+    layout.addWidget(caption(title, row))
+    if hint:
+        glyph = QLabel(row)
+        glyph.setPixmap(info_icon(ink_of(parent)).pixmap(ICON_SIZE, ICON_SIZE))
+        glyph.setToolTip(hint)
+        layout.addWidget(glyph)
+    layout.addStretch(1)
+    return row
 
 
 def centered_column(content: QWidget, max_width: int) -> QWidget:

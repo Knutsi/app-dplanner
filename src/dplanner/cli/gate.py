@@ -69,8 +69,11 @@ class TopologyGate:
         text = self.topology_of(project)
         title = project.title or project.id
         if not text.strip():
+            # Both verbs, in the order to run them: `topology show` prints the house
+            # default, which is what a topology written before reading it gets wrong.
             return (
-                f"{title!r} has no topology yet — say how its graph is shaped first: "
+                f"{title!r} has no topology yet — read the default shape, then say how "
+                f"this graph is shaped: `dplanner topology show {title!r}`, then "
                 f"`dplanner topology set {title!r} --file -`"
             )
         recorded = self._read().get(project.id)

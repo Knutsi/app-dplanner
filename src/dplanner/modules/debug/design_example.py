@@ -23,12 +23,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QPalette
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
-    QLabel,
     QLineEdit,
     QProgressBar,
     QToolButton,
@@ -44,7 +43,7 @@ from dplanner.framework.signalling import Spinner, StatusLine, UpdatingIndicator
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import FilterButton, Toolbar
-from dplanner.framework.widgets import EmptyState, caption, note
+from dplanner.framework.widgets import EmptyState, caption, captioned, ink_of, note
 from dplanner.theme.icons import (
     ICON_SIZE,
     beaker_icon,
@@ -52,7 +51,6 @@ from dplanner.theme.icons import (
     edit_icon,
     find_icon,
     frame_icon,
-    info_icon,
     isolate_icon,
     key_badge_icon,
     layers_icon,
@@ -226,26 +224,6 @@ def fill_sample(
             )
             table.add_row(sample_cells(row, ink), tint=tint, data={KEY_ROLE: row.key})
     table.fit_columns()
-
-
-def ink_of(widget: QWidget) -> QColor:
-    return widget.palette().color(QPalette.ColorRole.Text)
-
-
-def captioned(title: str, parent: QWidget, hint: str = "") -> QWidget:
-    """A caption over a block, with the standing convention behind an info glyph."""
-    row = QWidget(parent)
-    layout = QHBoxLayout(row)
-    layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(FIELD_GAP)
-    layout.addWidget(caption(title, row))
-    if hint:
-        glyph = QLabel(row)
-        glyph.setPixmap(info_icon(ink_of(parent)).pixmap(ICON_SIZE, ICON_SIZE))
-        glyph.setToolTip(hint)
-        layout.addWidget(glyph)
-    layout.addStretch(1)
-    return row
 
 
 class DesignExampleDialog(DialogFrame):
