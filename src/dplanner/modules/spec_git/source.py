@@ -102,9 +102,8 @@ class Folder:
 
 @dataclass(frozen=True)
 class Probe:
-    """What one look at a remote found: where its head is, and what it holds."""
+    """What one look at a remote found."""
 
-    commit: str
     ref: str  # The ref that was read — the resolved branch name when none was typed.
     folders: tuple[Folder, ...]
 
@@ -197,7 +196,7 @@ def valid_locator(locator: Mapping[str, object]) -> Locator | None:
     return {"url": url, "ref": ref, "path": path}
 
 
-def open_url(locator: Locator) -> str:
+def browse_url(locator: Locator) -> str:
     """Where a person opens it — an https browse address, when the host has one."""
     split = urlsplit(locator["url"])
     host = split.netloc.rpartition("@")[2].partition(":")[0]
@@ -211,12 +210,6 @@ def open_url(locator: Locator) -> str:
     repository = repository.strip("/").removesuffix(".git")
     inside = f"/tree/{locator['ref']}/{locator['path']}".rstrip("/")
     return f"https://{host}/{repository}{inside}"
-
-
-def summary(locator: Locator) -> str:
-    """The source as one line — what a strip with no room for a URL says."""
-    where = f" · {locator['path']}" if locator["path"] else ""
-    return f"{remote_label(locator['url'])} @ {locator['ref']}{where}"
 
 
 def cache_dir(cache_root: Path, locator: Locator) -> Path:
@@ -242,7 +235,7 @@ def probe(cache_root: Path, url: str, ref: str) -> Probe:
     with _refusing(checked):
         commit, _warnings = _bring_trees(directory, checked)
         rows = _tree(directory, checked, commit)
-    return Probe(commit=commit, ref=checked["ref"], folders=_folders(rows))
+    return Probe(ref=checked["ref"], folders=_folders(rows))
 
 
 def fetch(

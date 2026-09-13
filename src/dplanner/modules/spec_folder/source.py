@@ -11,7 +11,7 @@ of a folder is a Git repository, which is its own kind.
 """
 
 from collections.abc import Callable, Mapping
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
 from dplanner.domain.document_folder import FolderScan, freshness
 from dplanner.domain.document_folder import snapshot as walk
@@ -40,14 +40,9 @@ def folder_scan(locator: Locator) -> FolderScan:
     return FolderScan(root=Path(locator["path"]))
 
 
-def open_url(locator: Locator) -> str:
+def browse_url(locator: Locator) -> str:
     """Where a person opens it: the folder itself, in whatever opens folders here."""
     return Path(locator["path"]).as_uri()
-
-
-def summary(locator: Locator) -> str:
-    """The folder as one line, for a surface with no room for a path."""
-    return PurePosixPath(locator["path"]).as_posix()
 
 
 def fetch(

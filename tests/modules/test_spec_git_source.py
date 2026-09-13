@@ -9,10 +9,10 @@ from dplanner.domain.document_source import SourceUnavailableError
 from dplanner.modules.spec_git import client, source
 from dplanner.modules.spec_git.source import (
     MAX_DOCUMENTS,
+    browse_url,
     cache_dir,
     check,
     fetch,
-    open_url,
     parse_url,
     probe,
     valid_locator,
@@ -207,12 +207,12 @@ def test_a_locator_from_a_colleagues_plan_is_re_validated():
         assert valid_locator(bad) is None
 
 
-def test_open_url_is_a_browse_address_when_the_host_has_one():
+def test_the_browse_address_is_https_when_the_host_has_one():
     assert (
-        open_url({"url": "git@github.com:acme/handbook.git", "ref": "main", "path": "docs/spec"})
+        browse_url({"url": "git@github.com:acme/handbook.git", "ref": "main", "path": "docs/spec"})
         == "https://github.com/acme/handbook/tree/main/docs/spec"
     )
-    assert open_url({"url": "file:///srv/x.git", "ref": "main", "path": ""}) == ""
+    assert browse_url({"url": "file:///srv/x.git", "ref": "main", "path": ""}) == ""
 
 
 # -- the shell it runs in ------------------------------------------------------------------------

@@ -22,9 +22,9 @@ from dplanner.domain.document_source import (
 )
 from dplanner.modules.spec_folder.source import (
     KIND,
+    browse_url,
     check,
     fetch,
-    open_url,
     title_for,
     valid_locator,
 )
@@ -70,7 +70,7 @@ class SpecFolderKind:
 
     def open_url(self, locator: Locator) -> str:
         valid = valid_locator(locator)
-        return open_url(valid) if valid else ""
+        return browse_url(valid) if valid else ""
 
     def fetch(
         self,

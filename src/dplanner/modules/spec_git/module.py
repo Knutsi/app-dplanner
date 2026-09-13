@@ -31,9 +31,9 @@ from dplanner.modules.spec_git.connect import GitSourceDialog
 from dplanner.modules.spec_git.source import (
     KIND,
     Probe,
+    browse_url,
     check,
     fetch,
-    open_url,
     probe,
     valid_locator,
 )
@@ -107,7 +107,7 @@ class SpecGitKind:
 
     def open_url(self, locator: Locator) -> str:
         valid = valid_locator(locator)
-        return open_url(valid) if valid else ""
+        return browse_url(valid) if valid else ""
 
     def fetch(
         self,

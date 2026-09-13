@@ -40,7 +40,6 @@ DIALOG_SIZE = (620, 640)
 CONNECT_SIZE = (560, 520)
 
 FOUND = Probe(
-    commit="c0ffee" + "0" * 34,
     ref="main",
     folders=(
         Folder(path="", files=4182, documents=918),

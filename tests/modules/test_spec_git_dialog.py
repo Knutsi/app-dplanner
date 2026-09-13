@@ -14,7 +14,6 @@ from dplanner.modules.spec_git.source import Folder, Probe
 TREE = {"README.md": "# Handbook\n", "docs/spec/auth.md": "# Auth\n"}
 
 FOUND = Probe(
-    commit="a" * 40,
     ref="main",
     folders=(
         Folder(path="", files=2, documents=2),
