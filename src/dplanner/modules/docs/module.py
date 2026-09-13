@@ -39,6 +39,7 @@ from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
@@ -139,6 +140,8 @@ class DocsDeps:
     # Rows other modules put under each project in the index's Docs folder, beside
     # *Documentation* — the notes module's *Implementation notes*, opening its own tab.
     more_rows: tuple[ChildRow, ...] = ()
+    # Dictation into the editors; None is a build without a microphone.
+    dictation: DictationService | None = None
 
 
 class DocsCompiledModule:
@@ -210,7 +213,7 @@ class DocsModule:
                     label="Compilation instructions",
                     order=30,
                     factory=lambda: InstructionsCard(
-                        deps.library, deps.undo, deps.files, deps.pick_assets
+                        deps.library, deps.undo, deps.files, deps.pick_assets, deps.dictation
                     ),
                     icon=read_icon,
                     hint="Prepended to every document an agent compiles in this project.",
@@ -268,7 +271,9 @@ class DocsModule:
 
     def _section(self) -> DocsSection:
         deps = self._deps
-        return DocsSection(deps.library, deps.undo, deps.files, self._link(), deps.pick_assets)
+        return DocsSection(
+            deps.library, deps.undo, deps.files, self._link(), deps.pick_assets, deps.dictation
+        )
 
     def _link(self) -> CompileLink:
         """Where a collector's document stands, in the vocabulary a view uses, so no surface

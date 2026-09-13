@@ -1606,6 +1606,35 @@ root, stop and look for the registry or capability you have not found yet.
   its provider through QSettings and its key through the keychain, so **`cli/` cannot call
   it** — the agent loop above is the headless answer. `ARCHITECTURE.md`'s *An LLM call is a
   task* has the rest.
+- **Dictation is a provider, and capture is a peer process.** Every markdown strip carries
+  a microphone (`framework/dictation_verb.py`, `Ctrl+Shift+D` on the editor), and what it
+  runs on is a `DictationProvider` record from a module's Qt-free `dictation.py`
+  (`domain/dictation.py` is the contract, the `AgentHarness` shape; `dictation_providers()`
+  in the root is the tuple). **A provider is batch or live, derived never declared**: one
+  with `transcribe` gets the WAV once the microphone is off and the transcript lands
+  through `ProseEdit.insert_at_caret` as one sealed insert; one with `listen` is fed the
+  samples as they come and its deltas land at a session cursor while the person speaks —
+  the whole session **one undo step**, because the verb holds `UndoService.begin_gesture`
+  open from the first word to the stop and nothing can be undone under it. The whisper
+  commands (`modules/dictation_whisper/`) are batch; OpenAI's Realtime session
+  (`modules/openai/dictation.py`) is live, on the key the vendor module already keeps.
+  **PySide6-Essentials ships no QtMultimedia**, so the microphone is read by a recorder
+  row — `pw-record`, `parecord`, `arecord`, `ffmpeg`, `sox` — streaming raw 16-bit mono
+  samples to a `QProcess` on the GUI thread (`framework/recording.py`; *Automatic* is the
+  first installed, the rate is the provider's, and the stop is one sequence everywhere:
+  `q`, terminate, kill after a grace). `DictationService` (`framework/dictation.py`) is on
+  the bundle, owns the **one** task runner (a closed tab must never strand a task) and
+  memoises `status()` between `config_changed`s; `Dictation` is the one state machine the
+  strip's verb and the settings page's *Try it* both run. A host that re-binds or tears
+  down its editor calls `abandon_dictation()` first — a dictation belongs to the document
+  it was started over. The verb is **greyed with its reason in its words**; the editor
+  wears an accent edge (`dictating`) while the microphone is on; nothing meters the level
+  — the clip's RMS is read once after a batch stop and silence is refused before a
+  provider is paid. Settings ▸ Dictation is two preset fields (`modules/dictation/`), the
+  checklist's two *Services* rows name `dictation.settings` as their mend, and a
+  provider's `setup_action` (`openai.key`, the `ApiKeyDialog` wizard on
+  `framework/key_dialog.py`) is the button beside its refusal. `ARCHITECTURE.md`'s
+  *Dictation is a provider, and capture is a peer process* has the reasoning.
 - **A collector is a cone truncated at the next collector.** `domain/scope.py`'s `cone()`
   walks `requires` backwards and refuses to pass through a step the `stops_at` predicate
   claims — so a **check** stops at nothing and stands for everything behind it, a

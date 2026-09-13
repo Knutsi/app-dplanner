@@ -43,6 +43,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor
 from PySide6.QtWidgets import QWidget
 
+from dplanner.framework.dictation import DictationService
+from dplanner.framework.dictation_verb import DictationVerb
 from dplanner.framework.prose_edit import ProseEdit
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.undo import UndoService
@@ -202,11 +204,22 @@ class MarkdownToolbar(Toolbar):
         edit: ProseEdit,
         *,
         undo: UndoService[Any] | None = None,
+        dictation: DictationService | None = None,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent, dense=True)
         self._edit = edit
         self._undo = undo
+        # Dictate leads the strip — speech in place of typing is the one verb here that is
+        # not a mark — and it arrives with the strip the way the strip arrives with the
+        # editor: a host hands the service over and every prose editor has a microphone.
+        # None (a build with no service, a test) leaves the strip as it was. Seated first
+        # so that a dock too narrow for every verb folds the picture, which the editor's
+        # own menu also offers, before the one verb nothing else offers.
+        self.dictation: DictationVerb | None = None
+        if dictation is not None:
+            self.dictation = DictationVerb(self, edit, dictation, undo=undo)
+            self.add_divider()
         for words, icon, keys, transform in _verbs():
             if transform is None:
                 self.add_divider()
@@ -221,6 +234,11 @@ class MarkdownToolbar(Toolbar):
         # Insert Image… is the editor's own — it attaches the file and types the link —
         # so the strip offers the gesture rather than a transform of its own.
         self.image = self.add_verb("Insert image…", image_icon, edit.insert_image_from_file)
+
+    def abandon_dictation(self) -> None:
+        """Forget a dictation in progress: the editor is about to show another document."""
+        if self.dictation is not None:
+            self.dictation.abandon()
 
     def apply(self, transform: Transform) -> None:
         """Run one verb over the editor's selection as a single splice."""

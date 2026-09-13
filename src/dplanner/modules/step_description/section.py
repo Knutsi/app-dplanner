@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QCheckBox
 
 from dplanner.domain.model import Library
 from dplanner.framework.asset_gallery import AreaFor
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.prose_edit import Pick
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.text_binding import TextField
@@ -50,6 +51,7 @@ class DescriptionSection(ProseSection):
         agent_link: SeparateInstructionLink | None = None,
         library: Library | None = None,
         pick_for_target: Callable[[str], Pick | None] | None = None,
+        dictation: DictationService | None = None,
     ) -> None:
         # margin 0: the Details tab hosts this as a block and owns the outer spacing.
         super().__init__(
@@ -59,6 +61,7 @@ class DescriptionSection(ProseSection):
             margin=0,
             expand_title="Description",
             attach_title="Attach to Description",
+            dictation=dictation,
         )
         self._area_for_target = area_for_target
         self._pick_for_target = pick_for_target

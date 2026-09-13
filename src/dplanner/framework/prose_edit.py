@@ -133,6 +133,19 @@ class ProseEdit(QPlainTextEdit):
         menu.exec(event.globalPos())
         menu.deleteLater()
 
+    def insert_at_caret(self, text: str) -> None:
+        """Type ``text`` at the caret as one edit and one undo step.
+
+        What a dropped file's link and a dictated transcript have in common: neither is a
+        keystroke. Without sealing, EditTextCommand merges the insert into the sentence
+        being typed and one Ctrl+Z takes both; sealed after as well, so the next keystroke
+        starts its own step rather than growing this one. One ``insertText``, so a
+        multi-file drop or a paragraph of speech is one edit.
+        """
+        self._break_coalescing()
+        self.textCursor().insertText(text)
+        self._break_coalescing()
+
     # -- internals -----------------------------------------------------------------------------
 
     def _embed(self, items: list[Payload]) -> bool:
@@ -148,13 +161,7 @@ class ProseEdit(QPlainTextEdit):
                 links.append(_link(name, item))
         if not links:
             return True  # The host has already said why — do not paste a file path instead.
-        # A link is not a keystroke: without sealing, EditTextCommand merges it into the
-        # sentence being typed and one Ctrl+Z takes both. Seal after as well, so the next
-        # keystroke starts its own step rather than growing this one.
-        self._break_coalescing()
-        # One insert, so a multi-file drop is one edit and one undo step.
-        self.textCursor().insertText("\n".join(links))
-        self._break_coalescing()
+        self.insert_at_caret("\n".join(links))
         return True
 
     def _break_coalescing(self) -> None:

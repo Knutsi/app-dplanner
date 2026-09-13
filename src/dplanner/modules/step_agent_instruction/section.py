@@ -42,6 +42,9 @@ from dplanner.framework.action_registry import ActionState
 from dplanner.framework.activity import follow_target
 from dplanner.framework.asset_gallery import AssetGallery
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.dictation import DictationService
+from dplanner.framework.markdown_highlight import MarkdownHighlighter
+from dplanner.framework.markdown_toolbar import MarkdownToolbar
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.prose_edit import ProseEdit
 from dplanner.framework.prose_section import ProseSection
@@ -165,10 +168,12 @@ class AgentSection(QWidget):
         worktree: Callable[[StepId], bool] = lambda _sid: True,
         set_worktree: Callable[[StepId, bool], None] = lambda _sid, _on: None,
         usage: Callable[[StepId], str] = lambda _sid: "",
+        dictation: DictationService | None = None,
     ) -> None:
         super().__init__()
         self._product = library
         self._undo = undo
+        self._dictation = dictation
         self._pick_assets = pick_assets
         self._worktree = worktree
         self._set_worktree = set_worktree
@@ -193,6 +198,13 @@ class AgentSection(QWidget):
         self.project_edit.setObjectName("InspectorNotes")
         self.project_edit.setPlaceholderText(PROJECT_PLACEHOLDER)
         self.project_edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        # The prose stack's strip and highlighter, as every prose editor here wears them.
+        self._project_highlighter = MarkdownHighlighter(
+            self.project_edit.document(), self.project_edit
+        )
+        self.project_tools = MarkdownToolbar(
+            self.project_edit, undo=undo, dictation=dictation, parent=self
+        )
         self.project_expand = attach_expand(self.project_edit)
         self.project_expand.clicked.connect(
             lambda: self._expand(self._project_id, "Project Agent Instruction", PROJECT_PLACEHOLDER)
@@ -200,7 +212,7 @@ class AgentSection(QWidget):
         self.project_assets = AssetGallery(
             self, editable=True, attach_title="Attach to Instruction"
         )
-        project_body = _body(self.project_edit, self.project_assets)
+        project_body = _body(self.project_tools, self.project_edit, self.project_assets)
         self.project_part = PartRow("Project", project_icon, project_body)
 
         # -- Step context: the step's own facts, exactly as the briefing carries them —
@@ -237,12 +249,14 @@ class AgentSection(QWidget):
         self.edit.setObjectName("InspectorNotes")
         self.edit.setPlaceholderText(placeholder)
         self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
+        self._step_highlighter = MarkdownHighlighter(self.edit.document(), self.edit)
+        self.tools = MarkdownToolbar(self.edit, undo=undo, dictation=dictation, parent=self)
         self.step_expand = attach_expand(self.edit)
         self.step_expand.clicked.connect(
             lambda: self._expand(self._step_id, "Agent Instruction", placeholder)
         )
         self.step_assets = AssetGallery(self, editable=True, attach_title="Attach to Instruction")
-        step_body = _body(self.edit, self.step_assets)
+        step_body = _body(self.tools, self.edit, self.step_assets)
         self.step_part = PartRow("This step", leaf_icon, step_body, expanded=True)
         # Shown in the editor's place while the description is the instructions — most
         # agent steps carry no separate text, and an empty editor would invite writing
@@ -421,6 +435,7 @@ class AgentSection(QWidget):
             placeholder=placeholder,
             attach=gallery.attach_bytes if self._files is not None else None,
             pick=(lambda: pick(node_id)) if pick is not None else None,
+            dictation=self._dictation,
             parent=self.window(),
         )
         dialog.exec()
@@ -640,6 +655,10 @@ class AgentSection(QWidget):
             self._parts_column.setStretchFactor(part, 1 if part.expanded() else 0)
 
     def _close_bindings(self) -> None:
+        # A dictation belongs to the document it was started over: dropped before either
+        # editor shows another step's or project's instruction.
+        self.tools.abandon_dictation()
+        self.project_tools.abandon_dictation()
         for binding in (self._step_binding, self._project_binding):
             if binding is not None:
                 binding.close()
@@ -666,6 +685,7 @@ class ProjectInstructionCard(ProseSection):
         undo: UndoService[Library],
         files: FilesFor | None,
         pick_assets: Callable[[str], list[Payload]] | None = None,
+        dictation: DictationService | None = None,
     ) -> None:
         def field_for(target_id: str) -> ModuleTextField | None:
             if not library.has(target_id):
@@ -678,6 +698,7 @@ class ProjectInstructionCard(ProseSection):
             PROJECT_PLACEHOLDER,
             expand_title="Project Agent Instruction",
             attach_title="Attach to Instruction",
+            dictation=dictation,
         )
         self._files = files
         self._pick_assets = pick_assets
@@ -696,12 +717,13 @@ class ProjectInstructionCard(ProseSection):
                 self.set_picker(lambda: pick(target_id))
 
 
-def _body(edit: QPlainTextEdit, assets: AssetGallery) -> QWidget:
-    """An editor with its asset gallery under it, as one collapsible body."""
+def _body(tools: QWidget, edit: QPlainTextEdit, assets: AssetGallery) -> QWidget:
+    """The strip, the editor and its asset gallery under it, as one collapsible body."""
     body = QWidget()
     column = QVBoxLayout(body)
     column.setContentsMargins(0, 0, 0, 0)
     column.setSpacing(FIELD_GAP)
+    column.addWidget(tools)
     column.addWidget(edit, stretch=1)
     column.addWidget(assets)
     return body

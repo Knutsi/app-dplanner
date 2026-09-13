@@ -449,7 +449,7 @@ class _DocsPage(QWidget):
         compiled_layout = QVBoxLayout(compiled_page)
         compiled_layout.setContentsMargins(0, CONTROL_GAP, 0, 0)
         compiled_layout.setSpacing(CONTROL_GAP)
-        self.compiled = CompiledSection(deps.library, deps.undo)
+        self.compiled = CompiledSection(deps.library, deps.undo, dictation=deps.dictation)
         compiled_layout.addWidget(self.compiled, 1)
         self.uncompilable = QLabel(NOT_A_COLLECTOR, compiled_page)
         self.uncompilable.setObjectName("InspectorNote")
@@ -467,7 +467,9 @@ class _DocsPage(QWidget):
         instructions_layout.setSpacing(CAPTION_GAP)
         # No caption: the tab names it and the editor's placeholder says what it is for, so a
         # heading here would be the same words a third time.
-        self.instructions = InstructionsCard(deps.library, deps.undo, deps.files, deps.pick_assets)
+        self.instructions = InstructionsCard(
+            deps.library, deps.undo, deps.files, deps.pick_assets, deps.dictation
+        )
         # The card's height is a card's; here it has the page, so it takes what is left.
         self.instructions.edit.setMaximumHeight(16_777_215)
         instructions_layout.addWidget(self.instructions, 1)

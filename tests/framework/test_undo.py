@@ -197,3 +197,38 @@ def test_every_application_is_a_command_span(document):
         ("Append", "undo"),
         ("Append", "redo"),
     ]
+
+
+def test_a_gesture_held_open_across_calls_lands_as_one_step(document):
+    """A live dictation pushes over many turns of the event loop; the opener ends it."""
+    undo = UndoService(document)
+    assert undo.begin_gesture()
+    undo.push(Append(1, mergeable=False))
+    undo.push(Append(2, mergeable=False))
+    assert undo.gesture_open()
+    undo.end_gesture("Dictation")
+    assert not undo.gesture_open()
+    assert undo.undo_text() == "Dictation"
+    undo.undo()
+    assert document == []
+
+
+def test_nothing_can_be_undone_while_a_gesture_is_open(document):
+    undo = UndoService(document)
+    undo.push(Append(1))
+    assert undo.can_undo()
+    assert undo.begin_gesture()
+    assert not undo.can_undo() and not undo.can_redo()
+    undo.undo()  # Refused: the step before the gesture stays applied.
+    assert document == [1]
+    assert not undo.begin_gesture()  # A second opener belongs to the first.
+    undo.end_gesture("Held")
+    assert undo.can_undo()
+
+
+def test_ending_an_empty_gesture_places_nothing_and_ending_none_is_harmless(document):
+    undo = UndoService(document)
+    undo.end_gesture("Nothing open")
+    assert undo.begin_gesture()
+    undo.end_gesture("Empty")
+    assert not undo.can_undo()

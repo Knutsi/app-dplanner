@@ -24,6 +24,7 @@ from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import ContextService
 from dplanner.framework.debounce import DebounceService
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.index_panel import IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
@@ -87,6 +88,9 @@ class AppServices:
     tasks: TaskService
     llm_providers: LLMProviderRegistry
     llm: LLMService
+    # Dictation into any prose editor: the providers the root assembled, the recorder
+    # this machine has, and the one task runner every microphone's work goes through.
+    dictation: DictationService
     switcher: SessionControl
     # The process's journal (``core/telemetry.py``): what ran and how long it took. One
     # per process rather than per build, because the signals that feed it belong to no

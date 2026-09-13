@@ -7,7 +7,7 @@ from dplanner.framework.llm_service import LLMService
 from dplanner.framework.settings_registry import settings_page
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.widgets import block, caption, captioned
-from dplanner.modules.llm_anthropic.provider import DEFAULT_MODEL, MODULE_ID
+from dplanner.modules.anthropic.provider import DEFAULT_MODEL, MODULE_ID
 
 KEY_HINT = "Kept in this computer's keychain, never in the plan and never in a file."
 

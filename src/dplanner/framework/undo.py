@@ -94,18 +94,39 @@ class UndoService[DocT]:
         pushed, so the verbs in the block see each other's effects; the stack only hears
         about the whole at the end. A gesture inside a gesture belongs to the outer one.
         """
-        if self._gesture is not None:
-            yield
-            return
-        self._gesture = []
+        opened = self.begin_gesture()
         try:
             yield
         finally:
-            commands, self._gesture = self._gesture, None
-            if len(commands) == 1:
-                self._place(commands[0])
-            elif commands:
-                self._place(_Gesture(label, commands))
+            if opened:
+                self.end_gesture(label)
+
+    def begin_gesture(self) -> bool:
+        """Open a gesture that outlives one call — a live dictation, where the words of
+        one session arrive over many turns of the event loop and are still one step.
+        False when a gesture is already open: this one belongs to it, and only the
+        opener ends it. While one is open nothing can be undone or redone, so a Ctrl+Z
+        cannot pull the step before it out from under commands not yet placed."""
+        if self._gesture is not None:
+            return False
+        self._gesture = []
+        self.changed.emit()
+        return True
+
+    def end_gesture(self, label: str) -> None:
+        """Place everything pushed since :meth:`begin_gesture` as one step named ``label``."""
+        if self._gesture is None:
+            return
+        commands, self._gesture = self._gesture, None
+        if len(commands) == 1:
+            self._place(commands[0])
+        elif commands:
+            self._place(_Gesture(label, commands))
+        else:
+            self.changed.emit()
+
+    def gesture_open(self) -> bool:
+        return self._gesture is not None
 
     def _place(self, command: Command[DocT]) -> None:
         del self._stack[self._applied :]  # A new edit invalidates the redo tail.
@@ -127,10 +148,10 @@ class UndoService[DocT]:
         self._top_sealed = True
 
     def can_undo(self) -> bool:
-        return self._applied > 0
+        return self._applied > 0 and self._gesture is None
 
     def can_redo(self) -> bool:
-        return self._applied < len(self._stack)
+        return self._applied < len(self._stack) and self._gesture is None
 
     def undo_text(self) -> str:
         return self._stack[self._applied - 1].text() if self.can_undo() else ""

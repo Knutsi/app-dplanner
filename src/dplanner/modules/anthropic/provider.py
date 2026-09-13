@@ -29,6 +29,25 @@ def _split_system(messages: list[LLMMessage]) -> tuple[str, list[LLMMessage]]:
     return system, rest
 
 
+PROBE_TIMEOUT_SECONDS = 30.0
+KEYS_URL = "https://console.anthropic.com/settings/keys"
+KEY_GUIDE = (
+    "1. Open the Anthropic console's API keys page (the button below) and create a key "
+    "for this computer. It is shown once; copy it then.\n"
+    "2. Paste it here and test it — the test lists the models the key can reach, and "
+    "nothing is billed.\n"
+    "3. Save. The key is kept in this computer's keychain — never in the plan, never in "
+    "a file."
+)
+
+
+def probe_key(api_key: str) -> str:
+    """What ``api_key`` can reach, in words — or the SDK's own refusal, raised. BLOCKING."""
+    client = anthropic.Anthropic(api_key=api_key, timeout=PROBE_TIMEOUT_SECONDS)
+    count = sum(1 for _model in client.models.list())
+    return f"{count} models on the account"
+
+
 class AnthropicProvider:
     id = "anthropic"
     label = "Anthropic"

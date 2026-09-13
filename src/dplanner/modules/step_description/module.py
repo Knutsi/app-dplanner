@@ -17,6 +17,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.asset_gallery import AreaFor
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.prose_edit import Pick
@@ -57,6 +58,8 @@ class StepDescriptionDeps:
     # Insert from Assets…: a modal picker over the step's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], list[Payload]] | None = None
+    # Dictation into the editors; None is a build without a microphone.
+    dictation: DictationService | None = None
 
 
 class StepDescriptionModule:
@@ -100,6 +103,7 @@ class StepDescriptionModule:
                     agent_link=deps.agent_link,
                     library=deps.library,
                     pick_for_target=pick_for_target,
+                    dictation=deps.dictation,
                 ),
                 shown_for=lambda step_id: (
                     step_id is not None

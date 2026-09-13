@@ -33,6 +33,7 @@ from PySide6.QtWidgets import QApplication
 from dplanner.core.module_data import migrate_module_data
 from dplanner.core.repository import RepositoryFactory
 from dplanner.core.telemetry import current as current_telemetry
+from dplanner.domain.dictation import DictationProvider
 from dplanner.domain.shelf import DATA_FORMAT as SHELF_FORMAT
 from dplanner.domain.shelf import migrate_shelved
 from dplanner.framework.action_registry import ActionRegistry, MenuStructure
@@ -44,6 +45,7 @@ from dplanner.framework.context import (
     ContextService,
 )
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.index_panel import IndexPanel, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.llm import LLMProviderRegistry
@@ -93,6 +95,7 @@ class AppBuilder:
         self._seed: SeedFactory | None = None
         self._progress: Callable[[str], None] | None = None
         self._theme_providers: tuple[ThemeProvider, ...] = (BUILTIN,)
+        self._dictation_providers: tuple[DictationProvider, ...] = ()
 
     def with_source(self, source: Path) -> Self:
         """The path the repository is built over — for DPlanner, the library file."""
@@ -131,6 +134,13 @@ class AppBuilder:
         """Where themes come from; the built-in provider alone without this — the test
         suite's default, so a headless run never reads the desktop."""
         self._theme_providers = tuple(providers)
+        return self
+
+    def with_dictation(self, providers: Sequence[DictationProvider]) -> Self:
+        """Where transcripts come from; none without this — the test suite's default, so
+        every microphone in a headless build is greyed with the build's own reason and no
+        test ever reaches a recorder or a provider."""
+        self._dictation_providers = tuple(providers)
         return self
 
     def build(self) -> tuple[AppWindow, AppServices]:
@@ -208,7 +218,13 @@ class AppBuilder:
 
         # 4 — the bundle ------------------------------------------------------------------
         llm_providers = LLMProviderRegistry()
+        llm = LLMService(llm_providers)
         theme = ThemeService(qt_app, self._theme_providers, parent=window)
+        tasks = TaskService(remember=True)  # Estimates survive the session.
+        dictation = DictationService(self._dictation_providers, tasks, parent=window)
+        # The OpenAI dictation providers run on the key the OpenAI LLM provider keeps, so
+        # a key added under Settings ▸ Providers is a change every microphone re-asks about.
+        llm.config_changed.connect(dictation.config_changed.emit)
         services = AppServices(
             repo=repo,
             document=document,
@@ -228,9 +244,10 @@ class AppBuilder:
             settings_sections=SettingsSectionRegistry(),
             theme=theme,
             zoom=ZoomService(),
-            tasks=TaskService(remember=True),  # Estimates survive the session.
+            tasks=tasks,
             llm_providers=llm_providers,
-            llm=LLMService(llm_providers),
+            llm=llm,
+            dictation=dictation,
             switcher=session,
             telemetry=current_telemetry(),
         )

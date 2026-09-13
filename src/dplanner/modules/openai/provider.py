@@ -69,6 +69,25 @@ def list_chat_models() -> list[str]:
     )
 
 
+PROBE_TIMEOUT_SECONDS = 30.0
+KEYS_URL = "https://platform.openai.com/api-keys"
+KEY_GUIDE = (
+    "1. Open OpenAI's API keys page (the button below) and create a secret key for this "
+    "computer. It is shown once; copy it then.\n"
+    "2. Paste it here and test it — the test lists the models the key can reach, and "
+    "nothing is billed.\n"
+    "3. Save. The key is kept in this computer's keychain — never in the plan, never in "
+    "a file — and both the LLM and the dictation providers run on it."
+)
+
+
+def probe_key(api_key: str) -> str:
+    """What ``api_key`` can reach, in words — or the SDK's own refusal, raised. BLOCKING."""
+    client = OpenAI(api_key=api_key, timeout=PROBE_TIMEOUT_SECONDS, max_retries=0)
+    count = sum(1 for _model in client.models.list())
+    return f"{count} models on the account"
+
+
 class OpenAIProvider:
     id = "openai"
     label = "OpenAI"
