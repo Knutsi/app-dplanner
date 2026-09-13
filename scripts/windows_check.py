@@ -85,6 +85,14 @@ class Target:
         """Empty when a job would run right now, otherwise why not."""
         raise NotImplementedError
 
+    def put_tree(self, local: Path, guest: str) -> int:
+        """Replace the guest directory's contents with this host tree (keeping ``.venv``)."""
+        raise NotImplementedError
+
+    def get_tree(self, guest: str, local: Path) -> int:
+        """Copy a guest directory back into a host one."""
+        raise NotImplementedError
+
 
 class OmarchyTarget(Target):
     """Omarchy's VM, reached through the shared folder its container already binds.
@@ -129,6 +137,44 @@ class OmarchyTarget(Target):
             leftover.unlink(missing_ok=True)
         return int(result.get("code", 1))
 
+    def put_tree(self, local: Path, guest: str) -> int:
+        staging = self.share / "dplanner" / "worktree"
+        staging.mkdir(parents=True, exist_ok=True)
+        argv = ["rsync", "-a", "--delete", *[f"--exclude={pattern}" for pattern in EXCLUDES],
+                f"{local}/", f"{staging}/"]
+        say(f"rsync -> {staging}")
+        code = stream(argv, "sync-host", quiet=True)
+        if code != 0:
+            return code
+        # A local disk, not the share: uv hardlinks out of its cache, and PyInstaller on a UNC
+        # path produces some of the least legible errors in the ecosystem. /XD matters as
+        # much: /MIR deletes anything not in the source, and the guest's own .venv is exactly
+        # that. robocopy's exit code is a bitmask where 0-7 all mean success.
+        return self.run(
+            rf"""
+robocopy {self.guest_share}\dplanner\worktree {guest} /MIR /NFL /NDL /NJH /NJS /R:1 /W:1 `
+    /XD .venv .git __pycache__ .pytest_cache .ruff_cache .mypy_cache build dist
+if ($LASTEXITCODE -lt 8) {{ Write-Host "sync ok ($LASTEXITCODE)"; exit 0 }}
+else {{ exit $LASTEXITCODE }}
+""",
+            "sync",
+        )
+
+    def get_tree(self, guest: str, local: Path) -> int:
+        code = self.run(
+            rf"""
+$dest = '{self.guest_share}\dplanner\out'
+New-Item -ItemType Directory -Force -Path $dest | Out-Null
+robocopy {guest} $dest /MIR /NFL /NDL /NJH /NJS /R:1 /W:1
+if ($LASTEXITCODE -lt 8) {{ exit 0 }} else {{ exit $LASTEXITCODE }}
+""",
+            "collect",
+        )
+        landed = self.share / "dplanner" / "out"
+        if landed.is_dir():
+            shutil.copytree(landed, local, dirs_exist_ok=True)
+        return code
+
 
 class BoxTarget(Target):
     """The throwaway container, over SSH."""
@@ -164,6 +210,48 @@ class BoxTarget(Target):
         argv = [*self._ssh(), "powershell", "-NoProfile", "-NonInteractive",
                 "-ExecutionPolicy", "Bypass", "-EncodedCommand", payload]
         return stream(argv, label, quiet=quiet)
+
+    # Files go over the same SSH session as everything else, as a tar stream: Windows has
+    # shipped tar.exe since 10, and it takes a path with a drive letter. The share is not
+    # used here on purpose. The first version robocopied from \\host.lan\Data and spent an
+    # afternoon on Windows 11 24H2's SMB policies — required signing, blocked guest logons,
+    # and a redirector that stopped even trying after one session; the log said the share
+    # had been reached once and never again. One transport, with nothing to wedge.
+    def put_tree(self, local: Path, guest: str) -> int:
+        say(f"tar over ssh -> {guest}")
+        wipe = (
+            f"$d = '{guest}'; New-Item -ItemType Directory -Force -Path $d | Out-Null; "
+            "Get-ChildItem -Force $d | Where-Object Name -ne '.venv' | "
+            "Remove-Item -Recurse -Force -EA SilentlyContinue; exit 0"
+        )
+        if (code := self.run(wipe, "sync-wipe", quiet=True)) != 0:
+            return code
+        packer = subprocess.Popen(
+            ["tar", "-C", str(local), *[f"--exclude={pattern}" for pattern in EXCLUDES],
+             "-cf", "-", "."],
+            stdout=subprocess.PIPE,
+        )
+        unpack = subprocess.run(
+            [*self._ssh(), f'tar.exe -xf - -C "{guest}"'],
+            stdin=packer.stdout, capture_output=True, text=True, check=False,
+        )
+        packer.wait()
+        if unpack.returncode != 0 or packer.returncode != 0:
+            say(unpack.stderr.strip()[-600:])
+            return unpack.returncode or packer.returncode
+        say("sync ok")
+        return 0
+
+    def get_tree(self, guest: str, local: Path) -> int:
+        local.mkdir(parents=True, exist_ok=True)
+        puller = subprocess.Popen(
+            [*self._ssh(), f'if (Test-Path "{guest}") {{ tar.exe -cf - -C "{guest}" . }}'],
+            stdout=subprocess.PIPE,
+        )
+        unpack = subprocess.run(["tar", "-xf", "-", "-C", str(local)],
+                                stdin=puller.stdout, capture_output=True, check=False)
+        puller.wait()
+        return unpack.returncode or puller.returncode
 
 
 def start_hint(target: Target) -> str:
@@ -278,28 +366,8 @@ def docker(argv: Sequence[str]) -> list[str]:
 
 
 def do_sync(target: Target) -> int:
-    """Host tree into the share, then the share into a local disk in the guest."""
-    staging = target.share / "dplanner" / "worktree"
-    staging.mkdir(parents=True, exist_ok=True)
-    argv = ["rsync", "-a", "--delete", *[f"--exclude={pattern}" for pattern in EXCLUDES],
-            f"{REPO}/", f"{staging}/"]
-    say(f"rsync -> {staging}")
-    code = stream(argv, "sync-host", quiet=True)
-    if code != 0:
-        return code
-    # A local disk, not the share: uv hardlinks out of its cache, and PyInstaller on a UNC path
-    # produces some of the least legible errors in the ecosystem. /XD matters as much — /MIR
-    # deletes anything not in the source, and the guest's own .venv is exactly that.
-    return target.run(
-        rf"""
-robocopy {target.guest_share}\dplanner\worktree {GUEST_TREE} /MIR /NFL /NDL /NJH /NJS /R:1 /W:1 `
-    /XD .venv .git __pycache__ .pytest_cache .ruff_cache .mypy_cache build dist
-# robocopy's exit code is a bitmask: 0-7 all mean success, and only 8+ is a failure.
-if ($LASTEXITCODE -lt 8) {{ Write-Host "sync ok ($LASTEXITCODE)"; exit 0 }}
-else {{ exit $LASTEXITCODE }}
-""",
-        "sync",
-    )
+    """This worktree into the guest's local disk, the way this target moves files."""
+    return target.put_tree(REPO, GUEST_TREE)
 
 
 def bootstrap_line(target: Target, *, with_ssh: bool) -> str:
@@ -313,7 +381,7 @@ def bootstrap_line(target: Target, *, with_ssh: bool) -> str:
     flag = " -WithSsh" if with_ssh else ""
     return (
         "powershell -NoProfile -ExecutionPolicy Bypass -File "
-        rf"{target.guest_share}\dplanner\provision.ps1 -UserName {user}{flag}"
+        rf"{target.guest_share}\\dplanner\\provision.ps1 -UserName {user}{flag}"
     )
 
 
@@ -412,19 +480,8 @@ if (-not $app.HasExited) {{ Stop-Process -Id $app.Id -Force }}
 
 
 def do_collect(target: Target, out: Path) -> int:
-    out.mkdir(parents=True, exist_ok=True)
-    code = target.run(
-        rf"""
-$dest = '{target.guest_share}\dplanner\out'
-New-Item -ItemType Directory -Force -Path $dest | Out-Null
-robocopy {GUEST_TREE}\docs\screenshots\windows $dest\screenshots /MIR /NFL /NDL /NJH /NJS /R:1 /W:1
-if ($LASTEXITCODE -lt 8) {{ exit 0 }} else {{ exit $LASTEXITCODE }}
-""",
-        "collect",
-    )
-    landed = target.share / "dplanner" / "out"
-    if landed.is_dir():
-        shutil.copytree(landed, out, dirs_exist_ok=True)
+    code = target.get_tree(rf"{GUEST_TREE}\docs\screenshots\windows", out / "screenshots")
+    if code == 0:
         say(f"collected into {out}")
     return code
 

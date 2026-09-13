@@ -66,7 +66,10 @@ provisioning itself is what failed, there is no sshd to re-run it with:
 viewer at http://localhost:8007, once.
 
 Ports are `2222` (SSH), `8007` (web viewer) and `3390` (RDP) — 8006 and 3389 belong to the
-Omarchy VM. All three bind to the loopback: this box has an administrator account with a
+Omarchy VM. **Files move over that same SSH session, as a tar stream** — Windows ships
+`tar.exe`, and it takes a path with a drive letter — never over the share. The share is the
+Omarchy target's transport because it has nothing else; the box has SSH, and one transport
+with nothing to wedge beats two. All three bind to the loopback: this box has an administrator account with a
 throwaway password and no updates, and it must not be on the LAN.
 
 **Publishing a Docker port does not reach the guest.** qemu-docker's `getUserPorts()` forwards
