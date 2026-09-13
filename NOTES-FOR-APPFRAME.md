@@ -2894,7 +2894,29 @@ renders the menu and never a copy.
 **Upstream?** Yes, both. Any template whose child menus are data will meet a verb whose
 seat is that menu's entries. The `palette: bool` flag already set the shape.
 
-## 33. From the checklist pass (F13)
+## 33. From the spec-sources pass (F5)
+
+### `framework/widgets.py` — `ink_of(widget)` and `captioned(title, parent, hint)`
+
+**What.** Two helpers moved up from `modules/debug/design_example.py`, which now imports
+them. `ink_of` is the palette's Text colour for the widget a glyph sits beside;
+`captioned` is DESIGN.md's *Forms* rule made a primitive — a caption over a block with the
+standing convention behind an `info_icon()` tooltip, and nothing under the field, which
+would read as an error.
+
+**Why.** The design example was the only implementation of a rule the design standard
+states for every form, so the second and third form to be built (the Confluence Connect
+dialog brought onto the frame, and the Git source dialog) would each have copied eight
+lines and a colour lookup. A primitive carries the rule; the example renders it. `ink_of`
+carries its own warning in the docstring: a colour taken out of the palette goes stale, so
+it is for something built fresh each time it is shown — a dialog, a menu, a popup — never
+for a long-lived widget, which re-reads on `QEvent.PaletteChange`.
+
+**Upstream?** Yes. `caption` and `note` are already there; this is the third of the same
+family, and the colour helper is what stops every feature writing
+`widget.palette().color(QPalette.ColorRole.Text)` slightly differently.
+
+## 34. From the checklist pass (F13)
 
 ### `framework/secrets_store.py` → `core/secrets.py` — moved, unchanged
 

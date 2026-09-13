@@ -542,8 +542,9 @@ root, stop and look for the registry or capability you have not found yet.
   refusal red at **full strength and `ORPHAN_RING_W`**, twice the agent ring's weight: it
   is the one mark that says *something is wrong here* rather than *this is where the graph
   ends*. It is measured into `PAINT_MARGIN` like every other decoration.
-  Which sockets a node has connected is `marks.ports()` over the drawn edges, derived every
-  sync. The toggles' `checked` reads the module and the module calls `context.refresh()` —
+  Which sockets a node has connected is `ordering.ports()` over the drawn edges, derived
+  every sync — in the domain rather than beside the marks because `graph.orphan` lint asks
+  the same question, and a module may not import another module's copy of an answer. The toggles' `checked` reads the module and the module calls `context.refresh()` —
   the theme-toggle pattern, deliberately not an edge on the activity node, because a
   preference outlives any tab. `ARCHITECTURE.md`'s *Marks are a way of looking* has the
   reasoning.
@@ -985,24 +986,58 @@ root, stop and look for the registry or capability you have not found yet.
   the session. Markdown only — PDFs and plain text stay view-only — and the editor prunes
   only blobs its own session superseded. `ARCHITECTURE.md`'s *Editing a spec in-app is a
   replace* has the reasoning.
-- **A spec source is a kind the spec module runs.** A document may come from outside —
-  a Confluence page or folder first — and *where it came from* is a source record in the
-  spec index (format 4: `sources`, and `source`/`key`/`version`/`parent`/`title` on a
-  document; absence still means project-owned and editable). A **document source kind**
-  is the Protocol in `modules/spec/source_kind.py`: it locates, says whether it is
-  connected, connects, fetches and checks; the spec module owns the records, the nested
-  tree, the write (`sourced.apply_snapshot`, through `import_document`, so a refreshed
-  page keeps `previous` and `spec diff` answers per page), the task (`spec/refresh.py`),
-  the undo entry and the freshness note. The + button's arrow renders the Project ▸ *Add
-  Spec* child menu, so a kind contributes one `ActionSpec` and nothing else; the root
-  names the kinds in `_source_kinds`, which is also the test seam. **Refresh is a
-  person's gesture and lands on the undo stack** (`break_coalescing` first, so two
-  refreshes are two entries); **a check writes nothing** — it compares versions on the
-  interval and the strip says "N pages changed — Refresh". A sourced page is shown
-  read-only, `spec import`/`spec remove` refuse it, and fetching is **window-only**:
-  the CLI reads the snapshot and never the credential. `ARCHITECTURE.md`'s *A spec
-  source is a kind the spec module runs* has the reasoning.
-- **An external source's credential is the person's, never the plan's.** The Confluence
+- **A spec source is a kind the spec module runs, and there are four.** A document may
+  come from outside — a **folder** on this computer, a **git repository**, a **Confluence
+  page**, a **Confluence folder** — and *where it came from* is a source record in the
+  spec index (format 5: `sources` with the kind's own id and locator, and
+  `source`/`key`/`version`/`parent`/`title` on a document; absence still means
+  project-owned and editable). A **document source kind** is the Protocol in
+  `modules/spec/source_kind.py`: it locates, says whether it is connected, connects,
+  fetches and checks; the spec module owns the records, the nested tree, the write
+  (`sourced.apply_snapshot`, through `import_document`, so a refreshed document keeps
+  `previous` and `spec diff` answers per document), the task (`spec/refresh.py`), the
+  undo entry and the freshness note. A fetched document is **bytes and a filename** —
+  markdown, text or a PDF — and the spec module keeps its own minted name as the stem and
+  takes only the suffix, so no kind can rename every row of an existing plan. The + button's
+  arrow renders the Project ▸ *Add Spec* child menu, so a kind contributes one `ActionSpec`
+  and nothing else; the root names the kinds in `_source_kinds`, which is also the test
+  seam and where the menu's order is decided. **Two kinds may be one module**:
+  `spec_confluence` is one client, one credential and one Connect dialog under a
+  `ContentType` record constructed twice — the walk stays one function, and `expected` on
+  `parse_url`/`valid_locator` is what refuses a folder address pasted into the page kind.
+  **Refresh is a person's gesture and lands on the undo stack** — one gesture is **one
+  undo entry**, so `refresh` is `refresh_all` over a list of one (`break_coalescing`
+  first, so two refreshes are two entries); **a check writes nothing** — `check_all`
+  compares versions on the interval and the strip says "N documents changed — Refresh".
+  **`locate` may reach the network, off the GUI thread**: the rule is never block it, and
+  the git kind's *which folder?* cannot be answered without asking. A sourced document is
+  shown read-only, `spec import`/`spec remove` refuse it, and fetching is **window-only**
+  — a fetch pulls bytes from outside the plan into it, and that is a person's act.
+  `ARCHITECTURE.md`'s *A spec source is a kind the spec module runs* has the reasoning.
+- **A folder of documents is one walk, in `domain/document_folder.py`.** The folder kind
+  and the git kind both read it and may not import each other. A **key is the path**
+  relative to what was scanned; documents **nest under their directory's index document**
+  (`README.md`/`index.md`), and a directory with none is transparent — so a tree with no
+  index documents lands exactly flat; a **version is a digest over the body *and* the
+  pictures it links**, because a diagram redrawn beside untouched text would otherwise
+  leave the row kept and the page showing a blob that is gone. `is_document` is exported
+  because the git kind's `check` derives the same key set from a git tree: two rules for
+  what a document is would make a check lie about every file in the gap.
+- **A git spec source is a cache, never the plan.** A blobless, shallow, sparse clone
+  under `config_dir()/spec-git/<digest of url + ref + path>` — one directory per source,
+  so two sources can never cross sparse patterns. The **size guard runs before one blob
+  exists**: `--filter=blob:none` brings the trees, the listing counts what a fetch would
+  take in, and an oversized folder is refused *while it is being chosen*, naming the
+  folder. A **version is the file's blob oid**, which is what lets `check` name changed,
+  added and gone documents from the trees alone — a commit id moves for every file in the
+  repository and would report the whole source changed. **Nothing can hang a worker
+  thread**: prompts are off four ways, one transport is allowed and it is the validated
+  address's, every call has a timeout, and a kill reaches the process group. The person's
+  own git credentials do the auth and **an address carrying one is refused at the door**.
+- **An external source's credential is the person's, never the plan's.** A kind may have
+  none at all — a folder has nothing to connect to, and a git repository uses the git
+  credentials already on the machine, which is why an address carrying a user name and
+  password is refused rather than stored. The Confluence
   token lives only in the OS keychain (`secrets_store`, keyed by site — macOS Keychain,
   Linux Secret Service, Windows Credential Manager; `backend_problem()` refuses with the
   remedy when none can keep it, never a plaintext fallback); the site → email row in
@@ -1463,8 +1498,18 @@ root, stop and look for the registry or capability you have not found yet.
   text's digest in the per-user `config_dir()/topology-read.json`, and refuses again when
   the text changes or when there is none. The skill marks those verbs; the window is never
   gated; the test suite's registry runs behind a gate with no record file. Declare it on a
-  verb that changes shape, never on one that changes content. `ARCHITECTURE.md`'s *The
-  topology is read before the graph is edited* has the reasoning.
+  verb that changes shape, never on one that changes content.
+  **And `topology show` prints the house default beside the project's text** — one start,
+  milestones in a chain, work branching out of one and collecting into the next
+  (`cli/shaping.md`, read by `cli/shaping.py`'s `guide()`). The gate made that verb the one
+  door every shaping agent goes through and no executing agent does, which is why the
+  default is delivered there rather than in the skill — the skill is Claude's alone, and
+  Codex and OpenCode shape graphs too. **It is printed, never stored**: a topology reaches
+  every briefing, so a house document seeded into one would be paid for again on every step
+  anybody ever executes. The project's own text wins wherever the two differ, `--brief`
+  prints it alone, and the recorded digest stays the project's text — hashing the default
+  would un-read every project on the day `shaping.md` gained a comma.
+  `ARCHITECTURE.md`'s *The topology is read before the graph is edited* has the reasoning.
 - **A drop on the canvas is the third caller of `StepVerbs.create`.** `GraphView` accepts
   the mime types the composition root lists as `CanvasDrop`s on `ProjectEditorDeps`
   (`project_editor/drops.py`), records the point like a click and hands the payload up;
@@ -1551,6 +1596,10 @@ root, stop and look for the registry or capability you have not found yet.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.
+  **The skill says what every agent must know; how to shape a graph is what the door to
+  shaping says** — the spec loop, cutting steps, linking, sizing and the spatial loop live
+  in `cli/shaping.md` and reach an agent through `topology show`, not through the skill.
+  What stays is an executing agent's, safety rules included.
   **Its command list is an index: one line per noun naming its verbs**, a `†` on the ones
   that read the topology first and one legend line — because a summary per verb was a third
   of a file loaded every session and said what `reference.md` and `--help` both already say.

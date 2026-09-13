@@ -1,10 +1,11 @@
 """What a *document source kind* is to the spec module: the contract a module such as
-``spec_confluence`` satisfies, structurally, without either importing the other.
+``spec_folder`` or ``spec_confluence`` satisfies, structurally, without either importing
+the other.
 
 The spec module runs a kind. It owns the source records, the nested list, the write, the
 task, the undo entry and the freshness note; the kind knows only how to ask a person for
 a location, whether it is connected, how to connect, and how to fetch and check. So a
-second kind — a wiki, a shared drive — is a fetcher and a dialog, nothing else. The
+fifth kind — a wiki, a shared drive — is a fetcher and a dialog, nothing else. The
 composition root hands the kinds in as ``SpecDeps.kinds``; the Qt-free shapes they
 exchange are :mod:`dplanner.domain.document_source`'s. Consumer-owned, like
 ``project_editor/drops.py``'s ``CanvasDrop``, and promoted to ``framework/`` only when a
@@ -27,9 +28,9 @@ __all__ = ["DocumentSourceKind", "Progress", "SourceStatus"]
 
 
 class DocumentSourceKind(Protocol):
-    id: str  # "confluence" — also the index's ``kind`` on a source record.
+    id: str  # "confluence_page" — also the index's ``kind`` on a source record.
     name: str  # "Confluence" — how prose names it: "from Confluence", "Refresh Confluence".
-    label: str  # "Confluence Page or Folder…" — the + menu's entry.
+    label: str  # "&Confluence Page…" — the + menu's entry.
     config_changed: Signal[()]  # After connect or forget: hosts re-ask status.
 
     def icon(self, color: str | QColor) -> QIcon:
@@ -37,7 +38,14 @@ class DocumentSourceKind(Protocol):
         ...
 
     def locate(self, parent: QWidget) -> tuple[str, Locator] | None:
-        """Ask the person where the source is: (title, locator), or None. No network."""
+        """Ask the person where the source is: (title, locator), or None.
+
+        On the GUI thread, and it **must never block it** — which is the rule, not "no
+        network". A kind whose question cannot be answered without asking the source (the
+        git kind's *which folder?*) probes on a ``TaskRunner`` from inside its dialog, the
+        way ``connect`` does. ``ARCHITECTURE.md``'s *A spec source is a kind the spec
+        module runs* has the reasoning.
+        """
         ...
 
     def status(self, locator: Locator) -> SourceStatus:

@@ -4,7 +4,7 @@ is ready, a fetch lands as one undo entry and nests its pages read-only, a check
 nothing, and a refusal flips the button to Reconnect."""
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import pytest
 from PySide6.QtGui import QColor, QIcon
@@ -21,18 +21,20 @@ from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_u
 from dplanner.modules.spec.activity import SpecsActivity
 from dplanner.modules.spec.aspect import MODULE_ID
 from dplanner.modules.spec.documents import read_index
+from dplanner.modules.spec.refresh import REFRESH_ALL_LABEL
 from dplanner.modules.spec.source_kind import SourceStatus
 from dplanner.theme.icons import spec_icon
 
 PNG = b"\x89PNG\r\n\x1a\n" + b"pixels"
 
 
-def page(key, title, body, parent="", version="1"):
+def page(key, title, body, parent="", version="1", filename="page.md"):
     return FetchedDocument(
         key=key,
         parent_key=parent,
         title=title,
-        markdown=body,
+        data=body.encode() if isinstance(body, str) else body,
+        filename=filename,
         version=version,
         url=f"https://x/{key}",
     )
@@ -244,7 +246,8 @@ def test_a_fetch_nests_its_pages_read_only_under_the_source(fetched, services, p
     assert "T" in activity._text.toPlainText()
     assert services.context.current().selected_entity("spec_document") == "tokens"
     assert services.context.current().selected_entity("spec_source") == "src1"
-    assert "from Fake" in activity.source_facts.text() and "2 pages" in activity.source_facts.text()
+    facts = activity.source_facts.text()
+    assert "from Fake" in facts and "2 documents" in facts
     assert activity.source_note.text() == "2 added"
 
 
@@ -323,13 +326,15 @@ def test_a_check_says_what_changed_and_writes_nothing(app, fetched, fake_kind, s
     before = index_of(services, project)
     fake_kind.freshness = Freshness(changed=("2",), added=("9",), removed=())
     refresher = services.tabs.activities()[0]._refresher
-    refresher.check(project.id)
-    wait_for(app, lambda: refresher.freshness("src1") is not None)
+    refresher.check_all(project.id)
+    wait_for(app, lambda: refresher.freshness(project.id, "src1") is not None)
     assert fake_kind.checks[-1] == {"1": "3", "2": "1"}
     assert index_of(services, project) == before
-    assert fetched.source_note.text() == "2 pages changed at the source — Refresh to take them in"
+    assert (
+        fetched.source_note.text() == "2 documents changed at the source — Refresh to take them in"
+    )
     services.actions.run("spec.refresh_source", services.context.current())
-    wait_for(app, lambda: refresher.freshness("src1") is None)
+    wait_for(app, lambda: refresher.freshness(project.id, "src1") is None)
     wait_for(app, settled(services, project))
     assert fetched.source_note.text() == "up to date"
 
@@ -337,7 +342,7 @@ def test_a_check_says_what_changed_and_writes_nothing(app, fetched, fake_kind, s
 def test_a_check_is_not_started_for_a_source_that_is_not_ready(app, fake_kind, services, project):
     activity = added(services, project)
     assert activity._refresher is not None
-    activity._refresher.check(project.id)
+    activity._refresher.check_all(project.id)
     app.processEvents()
     assert fake_kind.checks == []
 
@@ -371,3 +376,110 @@ def test_a_source_with_no_kind_in_this_build_is_shown_but_not_fetchable(services
     activity.select_source("src1")
     assert "no sharepoint support" in activity.source_note.text()
     assert activity.connect_button.isHidden()
+
+
+# -- refreshing every source at once ------------------------------------------------------------
+
+
+@pytest.fixture
+def two_kinds(monkeypatch):
+    """Two kinds, so a project can hold two sources the refresher fetches together."""
+    import dplanner.modules as root
+
+    first = FakeKind(id="one", name="One", label="One Source…", ready=True)
+    second = FakeKind(
+        id="two",
+        name="Two",
+        label="Two Source…",
+        ready=True,
+        located=("Guide", {"site": "https://g", "id": "9"}),
+        snapshot=Snapshot(documents=(page("9", "Guide", "# Guide\n"),), order=("9",)),
+    )
+    monkeypatch.setattr(root, "_source_kinds", lambda *_real: (first, second))
+    return first, second
+
+
+@pytest.fixture
+def pair(app, two_kinds, services, make_project):
+    """A project with one source of each kind, both fetched.
+
+    The adds are settled one at a time: a fetch is single-flight, so adding the second
+    source while the first is still out would leave it unfetched.
+    """
+    project = make_project("Discovery")
+    for kind in ("one", "two"):
+        services.actions.run(f"spec.add_source.{kind}", select(services, project))
+        wait_for(app, settled(services, project))
+    return project
+
+
+def test_refresh_all_lands_every_source_as_one_undo_entry(app, two_kinds, services, pair):
+    refresher = services.tabs.activities()[0]._refresher
+    wait_for(app, settled(services, pair))
+    assert len(index_of(services, pair).documents) == 3
+    depth = len(services.undo._stack)
+
+    for kind in two_kinds:
+        kind.snapshot = replace(
+            kind.snapshot,
+            documents=(*kind.snapshot.documents, page("x", f"New in {kind.name}", "# New\n")),
+        )
+    assert refresher.refresh_all(pair.id)
+    wait_for(app, settled(services, pair))
+    assert len(index_of(services, pair).documents) == 5
+    # One gesture, one entry — and one Ctrl+Z puts both sources back where they were.
+    assert len(services.undo._stack) == depth + 1
+    assert services.undo.undo_text() == REFRESH_ALL_LABEL
+    services.undo.undo()
+    assert len(index_of(services, pair).documents) == 3
+
+
+def test_refreshing_one_source_still_writes_its_own_entry(app, two_kinds, services, pair):
+    """The one-source path is the same machinery: a gesture holding one push places that
+    push itself, so nothing about it changed."""
+    refresher = services.tabs.activities()[0]._refresher
+    wait_for(app, settled(services, pair))
+    assert refresher.refresh(pair.id, "src1")
+    wait_for(app, settled(services, pair))
+    # A gesture holding one push places that push itself, with its own label.
+    assert services.undo.undo_text() == "Refresh One"
+
+
+def test_one_source_refusing_never_stops_the_others(app, two_kinds, services, pair):
+    first, second = two_kinds
+    refresher = services.tabs.activities()[0]._refresher
+    wait_for(app, settled(services, pair))
+    failures: list[tuple[str, str]] = []
+    refresher.failed.connect(lambda _p, source, message: failures.append((source, message)))
+    first.raises = SourceUnavailableError("the site is down")
+    second.snapshot = replace(
+        second.snapshot, documents=(page("9", "Guide", "# Guide\n\nmore\n", version="2"),)
+    )
+    assert refresher.refresh_all(pair.id)
+    wait_for(app, settled(services, pair))
+    assert failures == [("src1", "the site is down")]
+    landed = next(d for d in index_of(services, pair).documents if d.key == "9")
+    assert landed.version == "2"  # The other source landed all the same.
+
+
+def test_the_verb_is_greyed_with_its_reason(app, two_kinds, services, pair):
+    wait_for(app, settled(services, pair))
+    spec = services.actions.spec("spec.refresh_sources")
+    assert spec.state(select(services, pair)).enabled
+    for kind in two_kinds:
+        kind.ready = False
+    state = spec.state(select(services, pair))
+    assert not state.enabled and "no source is ready" in (state.label or "")
+
+
+def test_the_freshness_of_each_project_is_its_own(app, two_kinds, services, pair, make_project):
+    """Source ids are minted per project: two projects both have a src1."""
+    other = make_project("Second")
+    services.actions.run("spec.add_source.one", select(services, other))
+    wait_for(app, settled(services, other))
+    refresher = services.tabs.activities()[0]._refresher
+    two_kinds[0].freshness = Freshness(changed=("1",))
+    refresher.check_all(pair.id)
+    wait_for(app, lambda: refresher.freshness(pair.id, "src1") is not None)
+    assert refresher.freshness(other.id, "src1") is None
+    assert len(refresher.stale(pair.id)) == 1 and refresher.stale(other.id) == []

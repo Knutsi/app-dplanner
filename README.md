@@ -274,6 +274,9 @@ src/dplanner/
 │   ├── shelf.py             where a turned-off aspect's data waits: turn_off / turn_on, and the migration into it
 │   ├── fields.py            bindable prose, keyed by the module that owns it
 │   ├── assets.py            attaching files to a module's file area, and listing them
+│   ├── document_source.py   what a spec source kind hands back: a snapshot, its documents, freshness
+│   ├── document_folder.py   a directory read as one of those snapshots — the walk the folder and
+│   │                        git kinds share, with the nesting, the digests and the caps
 │   ├── migrations.py        the format's version history — append only
 │   └── seed.py              what a brand-new library, and a brand-new project, contain
 │
@@ -398,9 +401,15 @@ src/dplanner/
 │   │                        and page rendering; editor.py: the in-app markdown editor); and the
 │   │                        documents a *source* fetched (source_kind.py: the kind contract,
 │   │                        sourced.py: applying a snapshot, refresh.py: fetch and check)
-│   ├── spec_confluence/     Confluence Cloud as a spec source: a GET-only client (client.py),
-│   │                        storage XHTML to markdown (convert.py), the walk and its caps
-│   │                        (source.py), the guided Connect dialog, Settings ▸ Confluence
+│   ├── spec_confluence/     Confluence Cloud as *two* spec source kinds — a page and a folder —
+│   │                        over one client (client.py), storage XHTML to markdown (convert.py),
+│   │                        the walk, its caps and the two content types (source.py), the guided
+│   │                        Connect dialog, Settings ▸ Confluence
+│   ├── spec_folder/         a folder on this computer as a spec source: the locator over the
+│   │                        shared walk in domain/document_folder.py
+│   ├── spec_git/            a git repository as a spec source: the subprocess door (client.py),
+│   │                        the locator, the blobless shallow sparse fetch and the size guard
+│   │                        (source.py), and the dialog that lists the remote's folders
 │   ├── coverage/            the spec and what became of it: passages → features → milestones →
 │   │                        tests and docs (trace.py, one derived picture), the Coverage tab's
 │   │                        four lanes (scene.py), and `dplanner coverage show|spec|review`

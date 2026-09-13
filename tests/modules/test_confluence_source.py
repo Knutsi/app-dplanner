@@ -9,7 +9,14 @@ from dplanner.domain.assets import asset_name
 from dplanner.domain.document_source import SourceUnavailableError
 from dplanner.modules.spec_confluence import source as source_mod
 from dplanner.modules.spec_confluence.client import Attachment, ChildRow, Page, TooLargeError
-from dplanner.modules.spec_confluence.source import check, fetch, parse_url, valid_locator
+from dplanner.modules.spec_confluence.source import (
+    FOLDER,
+    PAGE,
+    check,
+    fetch,
+    parse_url,
+    valid_locator,
+)
 
 SITE = "https://acme.atlassian.net"
 PNG = b"\x89PNG\r\n\x1a\n" + b"pixels"
@@ -95,23 +102,36 @@ def locator(content_id="1", kind="page"):
 
 
 def test_a_page_url_in_its_three_shapes_becomes_a_locator():
-    title, found = parse_url("https://acme.atlassian.net/wiki/spaces/ENG/pages/12345/Auth+Overview")
+    page_type = PAGE.type
+    title, found = parse_url(
+        "https://acme.atlassian.net/wiki/spaces/ENG/pages/12345/Auth+Overview", page_type
+    )
     assert (title, found) == (
         "Auth Overview",
         {"site": SITE, "id": "12345", "type": "page", "space": "ENG"},
     )
-    assert parse_url("https://acme.atlassian.net/wiki/spaces/ENG/pages/12345")[1]["id"] == "12345"
-    assert parse_url("https://acme.atlassian.net/wiki/pages/viewpage.action?pageId=77")[1] == {
-        "site": SITE,
-        "id": "77",
-        "type": "page",
-    }
-    assert parse_url(" https://Acme.atlassian.net/wiki/spaces/ENG/folder/5 ")[1] == {
+    plain = parse_url("https://acme.atlassian.net/wiki/spaces/ENG/pages/12345", page_type)
+    assert plain == ("Page 12345", {"site": SITE, "id": "12345", "type": "page", "space": "ENG"})
+    assert parse_url("https://acme.atlassian.net/wiki/pages/viewpage.action?pageId=77", page_type)[
+        1
+    ] == {"site": SITE, "id": "77", "type": "page"}
+
+
+def test_a_folder_url_becomes_a_locator_for_the_folder_kind():
+    assert parse_url(" https://Acme.atlassian.net/wiki/spaces/ENG/folder/5 ", FOLDER.type)[1] == {
         "site": SITE,
         "id": "5",
         "type": "folder",
         "space": "ENG",
     }
+
+
+def test_each_kind_refuses_the_others_address_and_names_the_one_to_use():
+    """The refusal the split exists to make possible: one kind, one address."""
+    with pytest.raises(ValueError, match=r"folder address.*Confluence Folder"):
+        parse_url("https://acme.atlassian.net/wiki/spaces/ENG/folder/5", PAGE.type)
+    with pytest.raises(ValueError, match=r"page address.*Confluence Page"):
+        parse_url("https://acme.atlassian.net/wiki/spaces/ENG/pages/1/x", FOLDER.type)
 
 
 @pytest.mark.parametrize(
@@ -126,18 +146,33 @@ def test_a_page_url_in_its_three_shapes_becomes_a_locator():
 )
 def test_other_addresses_are_refused_with_a_sentence(text):
     with pytest.raises(ValueError):
-        parse_url(text)
+        parse_url(text, PAGE.type)
 
 
 def test_a_locator_read_off_disk_is_validated_again():
-    assert valid_locator({"site": SITE, "id": "1", "type": "page"}) == locator()
-    assert valid_locator({"site": SITE, "id": "1", "type": "page", "space": "../x"}) == locator()
-    keyed = valid_locator({**locator(), "space": "ENG"})
+    page_type = PAGE.type
+    assert valid_locator({"site": SITE, "id": "1", "type": "page"}, page_type) == locator()
+    assert (
+        valid_locator({"site": SITE, "id": "1", "type": "page", "space": "../x"}, page_type)
+        == locator()
+    )
+    keyed = valid_locator({**locator(), "space": "ENG"}, page_type)
     assert keyed is not None and keyed["space"] == "ENG"
-    assert valid_locator({"site": "https://evil.example", "id": "1", "type": "page"}) is None
-    assert valid_locator({"site": SITE, "id": "../x", "type": "page"}) is None
-    assert valid_locator({"site": SITE, "id": "1", "type": "space"}) is None
-    assert valid_locator({"site": 3, "id": "1"}) is None
+    assert (
+        valid_locator({"site": "https://evil.example", "id": "1", "type": "page"}, page_type)
+        is None
+    )
+    assert valid_locator({"site": SITE, "id": "../x", "type": "page"}, page_type) is None
+    assert valid_locator({"site": SITE, "id": "1", "type": "space"}, page_type) is None
+    assert valid_locator({"site": 3, "id": "1"}, page_type) is None
+
+
+def test_a_locator_naming_the_other_content_type_is_not_this_kinds_to_fetch():
+    """A hand-edited plan cannot aim the page kind at a folder, or the other way."""
+    folder = {"site": SITE, "id": "5", "type": "folder"}
+    assert valid_locator(folder, PAGE.type) is None
+    assert valid_locator(folder, FOLDER.type) == folder
+    assert valid_locator(locator(), FOLDER.type) is None
 
 
 # -- the fetch ----------------------------------------------------------------------------------
@@ -152,7 +187,7 @@ def test_a_fetch_walks_the_tree_skips_drafts_and_other_kinds_and_names_images(tr
     )
     assert docs["1"].version == "3" and docs["1"].url.endswith("pageId=1")
     name = asset_name(PNG, "image.png")
-    assert f"![image]({name})" in docs["1"].markdown
+    assert f"![image]({name})" in docs["1"].data.decode()
     assert [(image.filename, image.data) for image in snapshot.images] == [("image.png", PNG)]
     assert any("Board" in note and "whiteboard" in note for note in snapshot.notes)
     assert "9" not in docs
@@ -186,7 +221,7 @@ def test_images_are_filtered_by_reference_type_and_size(tree):
     snapshot = fetch(tree, locator(), {})
     root = next(doc for doc in snapshot.documents if doc.key == "1")
     assert "not a raster image" in " ".join(snapshot.notes)
-    assert "*[image flow.png — not exported]*" in root.markdown
+    assert "*[image flow.png — not exported]*" in root.data.decode()
     assert tree.downloads == ["a1"]  # other.png is attached but never shown: not fetched.
     tree.blobs["a1"] = TooLargeError()
     snapshot = fetch(tree, locator(), {})
@@ -249,10 +284,5 @@ def test_probe_access_names_what_the_credentials_can_read(tree):
     assert tree.bodies_fetched == []
 
 
-def test_sniffing_knows_the_four_raster_formats():
-    assert source_mod._sniff(PNG) == ".png"
-    assert source_mod._sniff(b"\xff\xd8\xff\xe0") == ".jpg"
-    assert source_mod._sniff(b"GIF89a...") == ".gif"
-    assert source_mod._sniff(b"RIFF\x00\x00\x00\x00WEBPVP8 ") == ".webp"
-    assert source_mod._sniff(b"<svg/>") is None
+def test_an_image_is_linked_under_its_content_address():
     assert hashlib.sha256(PNG).hexdigest()[:16] in asset_name(PNG, "image.png")
