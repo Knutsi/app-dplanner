@@ -610,7 +610,6 @@ def _sweep(cache_root: Path, keep: Path) -> None:
             _remove_tree(found)
 
 
-
 def _remove_tree(directory: Path) -> None:
     """Delete a cache directory, git objects included.
 
@@ -628,6 +627,7 @@ def _remove_tree(directory: Path) -> None:
 
     if directory.exists():
         shutil.rmtree(directory, onexc=unlock_and_retry)
+
 
 def _cached(cache_root: Path) -> list[Path]:
     try:

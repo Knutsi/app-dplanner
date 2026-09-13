@@ -19,15 +19,15 @@ from freeze.datas import PACKAGE, package_datas, shipped_files
 # Where the application reads a non-Python file, one entry per call site, so a move fails here
 # rather than at somebody's first launch. The comment is the reader.
 READ_SITES = (
-    "dplanner/theme/theme.qss",                # theme/__init__.py:35    resources.files
-    "dplanner/theme/glyphs/spec.svg",          # theme/icons.py:94       GLYPH_DIR.joinpath
-    "dplanner/theme/glyphs/LICENSE",           # Help ▸ About names the set; the MIT notice
+    "dplanner/theme/theme.qss",  # theme/__init__.py:35    resources.files
+    "dplanner/theme/glyphs/spec.svg",  # theme/icons.py:94       GLYPH_DIR.joinpath
+    "dplanner/theme/glyphs/LICENSE",  # Help ▸ About names the set; the MIT notice
     "dplanner/assets/icons/dplanner-256.png",  # assets/__init__.py:17   files("dplanner.assets")
-    "dplanner/cli/skill_preamble.md",          # cli/skill.py:45         Path(__file__).parent
-    "dplanner/cli/shaping.md",                 # cli/shaping.py:24       Path(__file__).parent
-    "dplanner/cli/report/report.css",          # cli/report/website.py:141
-    "dplanner/cli/report/report.js",           # cli/report/page.py:308
-    "dplanner/cli/report/about.md",            # cli/report/page.py:308
+    "dplanner/cli/skill_preamble.md",  # cli/skill.py:45         Path(__file__).parent
+    "dplanner/cli/shaping.md",  # cli/shaping.py:24       Path(__file__).parent
+    "dplanner/cli/report/report.css",  # cli/report/website.py:141
+    "dplanner/cli/report/report.js",  # cli/report/page.py:308
+    "dplanner/cli/report/about.md",  # cli/report/page.py:308
 )
 
 
