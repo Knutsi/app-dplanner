@@ -201,5 +201,3 @@ def test_a_relates_link_is_enough_to_be_on_the_graph(cli, cli_stdin):
 def test_a_lone_step_is_nobodys_orphan(cli, cli_stdin):
     plan(cli, cli_stdin, "Deploy")
     assert "graph.orphan" not in checks_in(data(cli("project", "lint", "Discovery", "--json")))
-
-

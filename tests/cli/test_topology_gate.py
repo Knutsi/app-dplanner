@@ -202,4 +202,3 @@ def test_brief_records_the_read_like_any_other(gated_cli):
     gated_cli("topology", "set", "Discovery", "--file", "-", stdin="Views are features.")
     gated_cli("topology", "show", "Discovery", "--brief")
     gated_cli("step", "add", "Discovery", "Deploy")
-

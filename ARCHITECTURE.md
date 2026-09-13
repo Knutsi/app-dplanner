@@ -4261,6 +4261,84 @@ The test suite's shared registry runs behind a gate with no record file — one 
 nothing and writes nothing — so no test ever writes the real per-user file and every CLI test
 adds steps freely; the gate itself is exercised over a record under `tmp_path`.
 
+### The default shape rides through the same door
+
+A project's topology says how *its* graph is shaped. Nothing said how a graph is shaped at
+all — no template, no seed, no notion of a morphology anywhere in the tree — so every project
+invented one, and an agent handed a spec produced whatever DAG it felt like. That is now
+`cli/shaping.md`: one start, milestones in a chain, each release's work branching out of the
+milestone before it and collecting into its own, sequential milestones and parallel steps.
+The project's own text wins wherever the two differ; where it is silent, the default applies.
+
+**The gate had already built the door.** `topology show` is the verb the graph-editing verbs
+refuse until, so it is run by every agent about to shape a graph and by no agent that is not
+— which is exactly the audience a shaping document has. Printing the default there costs an
+executing agent nothing and needs no new mechanism, no new verb and no new flag on the ones
+that shape. `--brief` is the opt-out, for a person or a script that wants the project's text
+alone; the flag chooses what is printed, never what is recorded.
+
+Three alternatives were considered and each is worth knowing about, because each looks
+right until you follow it through.
+
+**A third file bundled with the skill**, pointed at from `SKILL.md` the way `reference.md`
+is. It fails on reach: the skill installs to `~/.claude/skills/dplanner`, and this build
+runs Codex and OpenCode as readily as Claude. A shaping rule those two never see is a rule
+half the harnesses do not have. It also puts the same bytes on two channels, and
+`generate()`'s contract — two files, because they are read differently — stops being true.
+
+**Seeding a starter topology at `project create`.** The obvious move, and the trap: the
+topology reaches *every agent briefing* as a project section, so a 17 KB house document
+written into `module_text["spec"]` would be paid for again on every step anybody ever
+executes, forever. `domain/seed.py` already argues against seeding anything; this is the
+sharpest instance of why. The default is read beside the project's text, never written into
+it, and the guide's own last section tells an agent the same thing in the same words.
+
+**Hashing what was printed.** The gate records the digest of the topology it read. It would
+be natural to record what `topology show` *printed*, and it would mean the day `shaping.md`
+gained a comma, every project on the machine became unread and every agent's next graph edit
+was refused. What is recorded is the project's own text, and `--brief` records it too.
+
+**The premise's one soft edge**, stated here rather than discovered later: `spec import`,
+`spec show`, `spec diff` and the `coverage` verbs are not gated, so an agent asked only to
+import and cite a spec never passes the door and never reads *From a spec to a graph*. That
+is the right call — citing is not shaping, and the verbs that turn citations into steps are
+all gated — but it is the assumption the whole delivery rests on, and if a future verb makes
+a graph without declaring `edits_graph`, this is what breaks.
+
+The window reads the same asset under the Specs tab's topology editor, so the person writing
+the topology and the agent reading it can never be looking at two different documents.
+
+### Two shape checks, and only one of them earned lint
+
+The default says a graph has one beginning and that releases are a chain, and the obvious
+next move is to have `project lint` enforce it. Two candidates were built and measured
+against DPlanner's own plan and a real 74-step one, because lint exits 1 and gates a
+handover: a check that fires on a shape somebody meant is worse than no check.
+
+`scope.crosses-milestones` kept its place. It is `scope.shared` asked of what *partitions*
+the graph rather than what *groups* it — one walk, two stopping rules, one report shape —
+and because a release's cone stops at releases, two gatherers can only mean two of them
+reach the step without passing a third. On the 74-step plan, whose milestones are a chain,
+it said nothing. On DPlanner's own plan it found four steps each counted whole by two
+releases at once, which `progress show` was double-counting in days. It is guarded on the
+project having chained its releases at all — `scope.ungathered`'s rule, that a project
+which never made the claim cannot fall short of it — so two releases run side by side on
+purpose are never nagged.
+
+`graph.unrooted` did not. It fired seven times on a plan its author is content with, and
+the half of it that was worth having — work of a later release starting from nothing
+instead of from the release before it — is what `scope.crosses-milestones` already reports.
+The bare fact, which steps wait on nothing, is `order show`'s first wave. So the rule lives
+in the guide, where a recommendation belongs, and lint says nothing about it: the same
+judgement CLAUDE.md records for uncovered spec text, which is a report and never a lint.
+
+`graph.orphan` is not part of that bet and was never in doubt. A step with no edge in
+either direction is on no graph, the canvas already rings it in the refusal red — the one
+mark that says *something is wrong here* — and lint saying so is the two surfaces agreeing.
+It is silent on both real plans. Its derivation, `ports()`, moved from the canvas's
+`marks.py` into `domain/ordering.py` for it: `modules/projects/cli.py` may not import
+another module, and a second copy of a derivation is the thing that goes stale.
+
 ## A view refresh is coalesced, and hears one project
 
 The window was choppy on edits, and the reason was structural rather than any one slow

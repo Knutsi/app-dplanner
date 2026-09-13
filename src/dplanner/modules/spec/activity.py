@@ -555,9 +555,7 @@ class SpecsActivity(EntityActivity):
         standard_layout.setContentsMargins(0, BLOCK_GAP, 0, 0)
         standard_layout.setSpacing(CAPTION_GAP)
         standard_layout.addWidget(caption(DEFAULT_TITLE, standard))
-        standard_layout.addWidget(
-            note("What applies wherever the text above is silent.", standard)
-        )
+        standard_layout.addWidget(note("What applies wherever the text above is silent.", standard))
         self.default_shape = MarkdownView(standard)
         self.default_shape.setFrameShape(MarkdownView.Shape.NoFrame)
         self.default_shape.show_markdown(guide())

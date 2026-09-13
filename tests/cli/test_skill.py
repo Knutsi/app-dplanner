@@ -130,15 +130,12 @@ def test_the_skill_teaches_two_part_descriptions(files):
     assert "agent set <step> --clear" in skill
 
 
-
-
 def test_the_skill_states_the_argument_shape_and_idempotency_rules(files):
     """The two shape rules agents guessed wrong at: which noun is the positional, and
     that clearing what is already clear succeeds."""
     skill = files[SKILL_FILE]
     assert "The positional names the thing the verb acts on" in skill
     assert "Already clear is success" in skill
-
 
 
 def test_the_skill_says_how_the_current_project_is_found(files):
