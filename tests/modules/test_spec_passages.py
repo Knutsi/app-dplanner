@@ -5,6 +5,7 @@ import pytest
 from tests.cli.spec_helpers import tiny_pdf
 from tests.modules.test_spec import imported
 
+from dplanner.core import anchors
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.catalogue import FeatureRecord, FeatureSource, write_catalogue
@@ -168,7 +169,7 @@ def test_typing_walks_the_document_once_for_a_burst_and_the_indicator_turns(
     tab.select_document("guide")
     assert tab.is_editing
     walks: list[int] = []
-    real = activity_module.locate_many
+    real = anchors.locate_many
 
     def counted(text, quotes):
         walks.append(1)

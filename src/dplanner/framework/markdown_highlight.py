@@ -7,9 +7,10 @@ break that binding: it edits a *document tree* and writes back a normalised seri
 so a keystroke is no longer one small splice. A syntax highlighter is the middle way — the
 text is exactly what is on disk, headings and lists just *look* like what they are.
 
-Deliberately calm: weight and the palette's own ink at two strengths, no rainbow. A heading
-is bold, structure markers (``#``, ``-``, ``1.``, ``>``) are the secondary ink so the eye
-reads the content past them, and inline code is monospace. Colours are read from the
+Deliberately calm: weight, slant and the palette's own ink at two strengths, no rainbow. A
+heading is bold, structure markers (``#``, ``-``, ``1.``, ``>``) are the secondary ink so
+the eye reads the content past them, emphasis leans, and code — inline or fenced — is
+monospace. Colours are read from the
 widget's palette at highlight time, so a theme change only needs :meth:`rehighlight` —
 the hook every stored colour owes (`CLAUDE.md`'s palette rule).
 """
@@ -27,11 +28,18 @@ _HEADING = re.compile(r"^(#{1,6})\s+\S")
 _LIST_MARKER = re.compile(r"^(\s*)([-*+]|\d{1,3}[.)])\s+\S")
 _QUOTE = re.compile(r"^(\s*>+)\s?")
 _BOLD = re.compile(r"\*\*(?=\S)(.+?)(?<=\S)\*\*")
+# One star, and not one of a pair — `**bold**` is the rule above's. A single star opens
+# emphasis mid-word in CommonMark (which is what separates it from `_`), so `a*b*c` leans
+# here because that is what a renderer will do with it; a highlighter that disagreed with
+# the renderer would be worse than one that says nothing.
+_ITALIC = re.compile(r"(?<!\*)\*(?!\*)(?=\S)([^*\n]+?)(?<=\S)\*(?!\*)")
 _CODE = re.compile(r"`([^`\n]+)`")
+_FENCE = re.compile(r"^\s*(```|~~~)")
+IN_FENCE = 1  # The block state a fenced run carries, so the next line knows it is inside.
 
 
 class MarkdownHighlighter(QSyntaxHighlighter):
-    """Headings, list markers, quotes, bold and inline code, in the palette's own ink."""
+    """Headings, list markers, quotes, emphasis and code, in the palette's own ink."""
 
     def __init__(self, document: QTextDocument, palette_of: QWidget) -> None:
         super().__init__(document)
@@ -48,6 +56,20 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         bold = QTextCharFormat()
         bold.setFontWeight(QFont.Weight.Bold)
 
+        code = QTextCharFormat()
+        code.setFontFamilies(["monospace"])
+        code.setForeground(faded)
+
+        # A fenced run is monospace to its closing fence, so the state a block leaves
+        # behind is what the next one reads — the one thing a per-block highlighter
+        # cannot answer from its own line.
+        was_inside = self.previousBlockState() == IN_FENCE
+        fence = _FENCE.match(text)
+        self.setCurrentBlockState(IN_FENCE if was_inside == bool(fence) else 0)
+        if was_inside or fence:
+            self.setFormat(0, len(text), code)
+            return
+
         if match := _HEADING.match(text):
             self.setFormat(0, len(text), bold)
             self.setFormat(0, len(match.group(1)), secondary)
@@ -57,10 +79,12 @@ class MarkdownHighlighter(QSyntaxHighlighter):
         elif match := _QUOTE.match(text):
             self.setFormat(0, len(match.group(1)), secondary)
 
+        italic = QTextCharFormat()
+        italic.setFontItalic(True)
+
         for match in _BOLD.finditer(text):
             self.setFormat(match.start(), match.end() - match.start(), bold)
+        for match in _ITALIC.finditer(text):
+            self.setFormat(match.start(), match.end() - match.start(), italic)
         for match in _CODE.finditer(text):
-            code = QTextCharFormat()
-            code.setFontFamilies(["monospace"])
-            code.setForeground(faded)
             self.setFormat(match.start(), match.end() - match.start(), code)

@@ -414,7 +414,7 @@ class AgentSection(QWidget):
         # gives the dialog none, exactly as _retarget_assets gives the inline editors none.
         gallery = self.step_assets if node_id == self._step_id else self.project_assets
         pick = self._pick_assets
-        dialog = ExpandedTextDialog(
+        dialog = ExpandedTextDialog.over_field(
             ModuleTextField(self._product, node_id, MODULE_ID),
             self._undo,
             title=title,
