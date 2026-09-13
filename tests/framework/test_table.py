@@ -449,3 +449,11 @@ def test_a_day_is_picked_in_the_cell_and_printed_as_the_host_prints_it(app):
         assert heard == [date(2026, 10, 5)] and cell(made, 0, 1).text() == "5 Oct"
     finally:
         made.deleteLater()
+
+
+def test_a_stretch_column_takes_the_slack_alone(app):
+    made = Table((Column("Asset", resize="stretch"), Column("Uses", numeric=True)))
+    try:
+        assert not made.horizontalHeader().stretchLastSection()
+    finally:
+        made.deleteLater()

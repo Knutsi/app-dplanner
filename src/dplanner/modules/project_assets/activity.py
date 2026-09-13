@@ -1,42 +1,38 @@
 """The Assets tab: everything a project's areas hold, and what still uses each file.
 
 A master-detail over :func:`dplanner.domain.assets.catalog` — the same derivation
-``dplanner asset list`` prints, computed on every refresh and never stored. The left list
-groups by content name (one row however many areas carry the bytes); the right pane shows
-the picture, its display name, every place it lives, and the verbs that act on it.
+``dplanner asset list`` prints, computed on every refresh and never stored. The table on the
+left has a row per content name, however many areas carry the bytes: its thumbnail, its
+name over where it is used, and how many uses it has. The right pane shows the picture, its
+display name, and a table of every place it lives. The strip over both carries the verbs —
+attaching a file to the project's own pool and cleaning up what nothing uses, then, on the
+picked asset, opening it, copying its path and deleting it — and a filter by source and by
+being unused.
 
-The tab is a *browser*: opening it writes nothing. Its two writes are explicit gestures —
-renaming (a command, undoable) and deleting (straight through the file areas, not
-undoable, confirmed in those words).
+The tab is a *browser*: opening it writes nothing. Its writes are explicit gestures —
+renaming (a command, undoable) and deleting (straight through the file areas, not undoable,
+confirmed in those words).
 """
 
 from pathlib import Path, PurePosixPath
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QModelIndex, QRect, QSize, Qt, QUrl
+from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import (
+    QAction,
     QDesktopServices,
     QGuiApplication,
     QIcon,
     QImage,
     QMouseEvent,
-    QPainter,
     QPixmap,
 )
 from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
-    QPushButton,
     QSplitter,
-    QStyle,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
     QVBoxLayout,
     QWidget,
 )
@@ -55,9 +51,22 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.image_preview import ImagePreviewDialog
+from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.signalling import UpdatingIndicator
-from dplanner.framework.widgets import EmptyState, confirm
+from dplanner.framework.table import Cell, Column, Table
+from dplanner.framework.toolbar import FilterButton, Toolbar
+from dplanner.framework.widgets import EmptyState, caption, confirm
 from dplanner.modules.project_assets.cli import MODULE_ID, read_titles, write_titles
+from dplanner.theme.cards import title_font
+from dplanner.theme.icons import (
+    ICON_SIZE,
+    attach_icon,
+    clipboard_icon,
+    external_icon,
+    sweep_icon,
+    trash_icon,
+)
+from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
     from dplanner.modules.project_assets.module import ProjectAssetsDeps
@@ -67,93 +76,23 @@ NO_ASSETS = (
     "No assets yet. Paste an image into a step's description, or"
     " `dplanner describe attach <step> <file>`."
 )
-
-PANEL_MARGIN = 16
-CAPTION_GAP = 6
-BLOCK_GAP = 12
-
-ROW_PADDING_V = 10
-ROW_PADDING_H = 12
-ROW_LINE_GAP = 4
-ROW_THUMB = 40  # A recognisable glance in a list row; the pane and lightbox show more.
-SECONDARY_ALPHA = 160  # ~63 % — DESIGN.md's opacity-derived secondary text.
+NO_MATCH = "Nothing matches the filter."
 
 PREVIEW_MAX = 260  # The detail pane's picture, bounded; click for the real lightbox.
 
-# `text_edited` fires per keystroke and a catalog rescan per keystroke is waste; one
-# single-shot timer coalesces every model signal into one refresh per pause.
+UNUSED = "unused"  # The filter key for the assets nothing uses.
+SOURCE = "source:"  # The prefix of a filter key naming one source by its label.
 
-NAME_ROLE = int(Qt.ItemDataRole.UserRole) + 1  # The entry's content name.
-DETAIL_ROLE = int(Qt.ItemDataRole.UserRole) + 2  # The row's second line.
-THUMB_ROLE = int(Qt.ItemDataRole.UserRole) + 3  # QPixmap | None.
-KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 4  # A use row's subject kind ("" = no target).
-SUBJECT_ROLE = int(Qt.ItemDataRole.UserRole) + 5  # A use row's subject id.
-MODULE_ROLE = int(Qt.ItemDataRole.UserRole) + 6  # A use row's owning module id.
+ASSET_COLUMNS = (
+    Column("Asset", glyph=True, detail=True, resize="stretch"),
+    Column("Uses", numeric=True),
+)
+USE_COLUMNS = (Column("Used by", detail=True, resize="stretch"), Column("Source"))
 
-
-class _AssetRowDelegate(QStyledItemDelegate):
-    """A thumbnail beside two lines: the name, then who uses it — or that nobody does."""
-
-    def paint(
-        self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | Any
-    ) -> None:
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-        opt.text = ""
-        opt.icon = QIcon()
-        style = opt.widget.style() if opt.widget else None
-        if style is not None:
-            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
-
-        palette = opt.palette
-        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
-        role = palette.ColorRole.HighlightedText if selected else palette.ColorRole.Text
-        primary = palette.color(role)
-        secondary = palette.color(role)
-        secondary.setAlpha(SECONDARY_ALPHA)
-
-        rect = opt.rect.adjusted(ROW_PADDING_H, ROW_PADDING_V, -ROW_PADDING_H, -ROW_PADDING_V)
-        pixmap = index.data(THUMB_ROLE)
-        text_left = rect.left()
-        if isinstance(pixmap, QPixmap) and not pixmap.isNull():
-            drawn = pixmap.deviceIndependentSize()
-            painter.drawPixmap(
-                QRect(
-                    rect.left(),
-                    rect.top() + (rect.height() - round(drawn.height())) // 2,
-                    round(drawn.width()),
-                    round(drawn.height()),
-                ),
-                pixmap,
-            )
-        text_left += ROW_THUMB + BLOCK_GAP  # Align text whether or not a thumbnail drew.
-
-        metrics = opt.fontMetrics
-        elide = Qt.TextElideMode.ElideRight
-        align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        width = rect.right() - text_left
-        lines_top = rect.top() + (rect.height() - 2 * metrics.height() - ROW_LINE_GAP) // 2
-        painter.save()
-        painter.setPen(primary)
-        painter.drawText(
-            QRect(text_left, lines_top, width, metrics.height()),
-            align,
-            metrics.elidedText(index.data(Qt.ItemDataRole.DisplayRole), elide, width),
-        )
-        painter.setPen(secondary)
-        painter.drawText(
-            QRect(text_left, lines_top + metrics.height() + ROW_LINE_GAP, width, metrics.height()),
-            align,
-            metrics.elidedText(index.data(DETAIL_ROLE) or "", elide, width),
-        )
-        painter.restore()
-
-    def sizeHint(  # noqa: N802 - Qt override
-        self, option: QStyleOptionViewItem, index: QModelIndex | Any
-    ) -> QSize:
-        metrics = option.fontMetrics
-        lines = 2 * metrics.height() + ROW_LINE_GAP
-        return QSize(0, 2 * ROW_PADDING_V + max(lines, ROW_THUMB))
+ASSET_ROLE = HOST_ROLE  # The entry's content name.
+KIND_ROLE = HOST_ROLE + 1  # A use row's subject kind ("" = no target).
+SUBJECT_ROLE = HOST_ROLE + 2  # A use row's subject id.
+MODULE_ROLE = HOST_ROLE + 3  # A use row's owning module id.
 
 
 class _PreviewLabel(QLabel):
@@ -179,78 +118,90 @@ class AssetsActivity(EntityActivity):
         self.project_id = project_id
         self._entries: list[AssetEntry] = []
         self._shown: AssetEntry | None = None
-        self._thumbs: dict[str, tuple[float, QPixmap | None]] = {}
+        self._thumbs: dict[str, tuple[float, QIcon | None]] = {}
+        self._sources: dict[str, QAction] = {}
 
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
-        layout.setSpacing(CAPTION_GAP)
+        layout.setSpacing(SECTION_GAP)
 
-        caption = QLabel("Assets", page)
-        caption.setObjectName("InspectorCaption")
-        layout.addWidget(caption)
-
+        head = QVBoxLayout()
+        layout.addLayout(head)  # Before it is filled: a parentless layout leaks its items.
+        head.setSpacing(CAPTION_GAP)
+        head.addWidget(caption("Assets", page))
         self.lead = QLabel(page)
-        font = self.lead.font()
-        font.setPointSize(font.pointSize() + 2)  # Emphasis by size, never bold (DESIGN.md).
-        self.lead.setFont(font)
-        layout.addWidget(self.lead)
-        layout.addSpacing(BLOCK_GAP - CAPTION_GAP)
+        self.lead.setFont(title_font(self.lead.font()))  # Emphasis by size, never bold.
+        head.addWidget(self.lead)
 
-        controls = QHBoxLayout()
-        controls.setSpacing(BLOCK_GAP)
-        self.source_filter = QComboBox(page)
-        self.source_filter.currentIndexChanged.connect(lambda _i: self._rebuild_list())
-        controls.addWidget(self.source_filter)
-        self.unused_only = QCheckBox("Unused only", page)
-        self.unused_only.toggled.connect(lambda _on: self._rebuild_list())
-        controls.addWidget(self.unused_only)
-        controls.addStretch(1)
-        self.attach_button = QPushButton("Attach to Pool…", page)
-        self.attach_button.clicked.connect(self._attach_to_pool)
-        controls.addWidget(self.attach_button)
-        self.sweep_button = QPushButton("Clean Up Unused…", page)
-        self.sweep_button.clicked.connect(self._sweep)
-        controls.addWidget(self.sweep_button)
+        # Creation first, then what acts on the picked asset, then the view (DESIGN.md's
+        # *Tables*); the indicator outside the strip, so folding never takes it.
+        strip = QHBoxLayout()
+        layout.addLayout(strip)
+        strip.setSpacing(FIELD_GAP)
+        self.controls = Toolbar(page)
+        self.attach_action = self.controls.add_verb(
+            "Attach to Pool…",
+            attach_icon,
+            self._attach_to_pool,
+            tip="Copy a file into this project's own pool of assets",
+        )
+        self.sweep_action = self.controls.add_verb(
+            "Clean Up Unused…",
+            sweep_icon,
+            self._sweep,
+            tip="Remove every file nothing in the plan uses — not undoable",
+        )
+        self.open_action = self.controls.add_verb(
+            "Open Externally",
+            external_icon,
+            self._open_externally,
+            tip="Open the picked asset in the program the desktop opens it with",
+        )
+        self.copy_action = self.controls.add_verb(
+            "Copy Path",
+            clipboard_icon,
+            self._copy_path,
+            tip="Copy where the picked asset lives on this machine",
+        )
+        self.delete_action = self.controls.add_verb(
+            "Delete",
+            trash_icon,
+            self._delete,
+            tip="Remove every copy of the picked asset — not undoable",
+        )
+        self.controls.add_divider()
+        self.filter = FilterButton(label="Filter")
+        self.filter.add_filter(UNUSED, "Unused only")
+        self.controls.add_widget(self.filter)
+        strip.addWidget(self.controls, 1)
         self.updating = UpdatingIndicator(page)
-        controls.addWidget(self.updating)
-        layout.addLayout(controls)
+        strip.addWidget(self.updating)
 
         self.splitter = QSplitter(Qt.Orientation.Horizontal, page)
-        self.list = QListWidget(self.splitter)
-        self.list.setItemDelegate(_AssetRowDelegate(self.list))
-        self.list.currentItemChanged.connect(lambda *_a: self._on_selection())
+        self.table = Table(ASSET_COLUMNS, parent=self.splitter)
+        self.table.itemSelectionChanged.connect(self._on_selection)
 
         detail = QWidget(self.splitter)
         detail_layout = QVBoxLayout(detail)
-        detail_layout.setContentsMargins(BLOCK_GAP, 0, 0, 0)
-        detail_layout.setSpacing(BLOCK_GAP)
+        detail_layout.setContentsMargins(SECTION_GAP, 0, 0, 0)
+        detail_layout.setSpacing(SECTION_GAP)
         self.preview = _PreviewLabel(detail)
         self.preview.view = self._view_shown
         detail_layout.addWidget(self.preview)
+        name_block = QVBoxLayout()
+        detail_layout.addLayout(name_block)
+        name_block.setSpacing(CAPTION_GAP)
+        name_block.addWidget(caption("Display name", detail))
         self.name_edit = QLineEdit(detail)
-        self.name_edit.setPlaceholderText("Display name")
+        self.name_edit.setPlaceholderText("What it is called here (optional)")
         self.name_edit.editingFinished.connect(self._rename)
-        detail_layout.addWidget(self.name_edit)
-        self.uses = QListWidget(detail)
-        self.uses.setItemDelegate(_AssetRowDelegate(self.uses))
-        self.uses.itemActivated.connect(self._navigate)
+        name_block.addWidget(self.name_edit)
+        self.uses = Table(USE_COLUMNS, parent=detail)
+        self.uses.cellActivated.connect(self._navigate)
         detail_layout.addWidget(self.uses, 1)
-        buttons = QHBoxLayout()
-        buttons.setSpacing(BLOCK_GAP)
-        self.open_button = QPushButton("Open Externally", detail)
-        self.open_button.clicked.connect(self._open_externally)
-        buttons.addWidget(self.open_button)
-        self.copy_button = QPushButton("Copy Path", detail)
-        self.copy_button.clicked.connect(self._copy_path)
-        buttons.addWidget(self.copy_button)
-        self.delete_button = QPushButton("Delete", detail)
-        self.delete_button.clicked.connect(self._delete)
-        buttons.addWidget(self.delete_button)
-        buttons.addStretch(1)
-        detail_layout.addLayout(buttons)
 
-        self.splitter.addWidget(self.list)
+        self.splitter.addWidget(self.table)
         self.splitter.addWidget(detail)
         self.splitter.setStretchFactor(0, 1)
         self.splitter.setStretchFactor(1, 2)
@@ -280,6 +231,7 @@ class AssetsActivity(EntityActivity):
                     library.field_changed,
                 ),
             ),
+            self.filter.changed.connect(self._rebuild_list),
         ]
         self._refresh()
 
@@ -307,11 +259,11 @@ class AssetsActivity(EntityActivity):
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
+        self.controls.dispose()
 
     # -- the catalog, rendered -----------------------------------------------------------------
 
     def _refresh(self) -> None:
-
         library = self._deps.library
         if not library.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
@@ -324,35 +276,46 @@ class AssetsActivity(EntityActivity):
             if count
             else "No assets yet"
         )
-        self._sync_filter()
+        # Disabled, never hidden: its words say why there is nothing to do.
+        sweepable = bool(prunable(self._entries))
+        self.sweep_action.setEnabled(sweepable)
+        self.sweep_action.setText(
+            "Clean Up Unused…" if sweepable else "Clean Up Unused — nothing unused"
+        )
+        self._sync_sources()
         self._rebuild_list()
 
-    def _sync_filter(self) -> None:
-        """The selector offers only sources that hold anything, and hides itself when
-        there is nothing to choose between — a selector with one entry teaches nothing."""
+    def _sync_sources(self) -> None:
+        """The filter offers a source only while two or more hold anything — one source to
+        choose between teaches nothing — and a source that stopped being offered stops
+        narrowing the list."""
         labels = list(
             dict.fromkeys(source.label for entry in self._entries for source, _l in entry.locations)
         )
-        current = self.source_filter.currentText()
-        self.source_filter.blockSignals(True)
-        self.source_filter.clear()
-        self.source_filter.addItem("All sources")
-        self.source_filter.addItems(labels)
-        index = self.source_filter.findText(current)
-        self.source_filter.setCurrentIndex(index if index > 0 else 0)
-        self.source_filter.blockSignals(False)
-        self.source_filter.setVisible(len(labels) > 1)
+        for label in labels:
+            if label not in self._sources:
+                self._sources[label] = self.filter.add_filter(SOURCE + label, label)
+        offered = len(labels) > 1
+        withdrawn = set()
+        for label, action in self._sources.items():
+            action.setVisible(offered and label in labels)
+            if not action.isVisible():
+                withdrawn.add(SOURCE + label)
+        active = set(self.filter.active())
+        if active & withdrawn:
+            self.filter.set_active(active - withdrawn)
 
     def _filtered(self) -> list[AssetEntry]:
+        active = set(self.filter.active())
+        sources = {key.removeprefix(SOURCE) for key in active if key.startswith(SOURCE)}
         entries = self._entries
-        label = self.source_filter.currentText()
-        if self.source_filter.currentIndex() > 0:
+        if sources:
             entries = [
                 entry
                 for entry in entries
-                if any(source.label == label for source, _l in entry.locations)
+                if any(source.label in sources for source, _l in entry.locations)
             ]
-        if self.unused_only.isChecked():
+        if UNUSED in active:
             entries = [entry for entry in entries if entry.unused]
         return entries
 
@@ -360,34 +323,39 @@ class AssetsActivity(EntityActivity):
         entries = self._filtered()
         titles = read_titles(self._deps.library.project(self.project_id))
         keep = self._shown.name if self._shown is not None else None
-        self.list.blockSignals(True)
-        self.list.clear()
-        for entry in entries:
-            uses = entry.uses
-            wheres = ", ".join(dict.fromkeys(use.where for use in uses))
-            count = len(uses)
-            detail = f"{count} use{'s' if count != 1 else ''} — {wheres}" if count else "unused"
-            item = QListWidgetItem(titles.get(entry.name) or PurePosixPath(entry.name).name)
-            item.setData(NAME_ROLE, entry.name)
-            item.setData(DETAIL_ROLE, detail)
-            item.setData(THUMB_ROLE, self._thumbnail(entry))
-            self.list.addItem(item)
-            if entry.name == keep:
-                self.list.setCurrentItem(item)
-        self.list.blockSignals(False)
-        has_rows = bool(entries)
-        self.empty.say("" if self._entries else NO_ASSETS)
-        if has_rows and self.list.currentRow() < 0:
-            self.list.setCurrentRow(0)
-        else:
-            self._on_selection()
+        # Quiet while the rows are replaced; the selection is announced once, below.
+        self.table.blockSignals(True)
+        try:
+            self.table.clear_rows()
+            for entry in entries:
+                wheres = ", ".join(dict.fromkeys(use.where for use in entry.uses))
+                row = self.table.add_row(
+                    (
+                        Cell(
+                            titles.get(entry.name) or PurePosixPath(entry.name).name,
+                            detail=wheres or "unused",
+                            glyph=self._thumbnail(entry),
+                        ),
+                        Cell(str(len(entry.uses)), secondary=entry.unused),
+                    ),
+                    data={ASSET_ROLE: entry.name},
+                )
+                if entry.name == keep:
+                    self.table.selectRow(row)
+            if entries and not self.table.selectedIndexes():
+                self.table.selectRow(0)
+        finally:
+            self.table.blockSignals(False)
+        self.empty.say("" if entries else NO_MATCH if self._entries else NO_ASSETS)
+        self._on_selection()
 
-    def _entry_named(self, name: str | None) -> AssetEntry | None:
+    def _entry_named(self, name: object) -> AssetEntry | None:
         return next((entry for entry in self._entries if entry.name == name), None)
 
     def _on_selection(self) -> None:
-        item = self.list.currentItem()
-        self._shown = self._entry_named(item.data(NAME_ROLE) if item else None)
+        rows = sorted({index.row() for index in self.table.selectedIndexes()})
+        item = self.table.item(rows[0], 0) if rows else None
+        self._shown = self._entry_named(item.data(ASSET_ROLE) if item is not None else None)
         self._show_entry()
         nodes = (
             (ContextNode(selection_uri("asset", self._shown.name)),)
@@ -400,17 +368,18 @@ class AssetsActivity(EntityActivity):
 
     def _show_entry(self) -> None:
         entry = self._shown
-        enabled = entry is not None
-        for widget in (self.name_edit, self.open_button, self.copy_button):
-            widget.setEnabled(enabled)
+        picked = entry is not None
+        for action in (self.open_action, self.copy_action):
+            action.setEnabled(picked)
+        self.name_edit.setEnabled(picked)
+        self.uses.clear_rows()
         if entry is None:
             self.preview.setPixmap(QPixmap())
             self.preview.setText("")
             if not self.name_edit.hasFocus():
                 self.name_edit.setText("")
-            self.uses.clear()
-            self.delete_button.setEnabled(False)
-            self.delete_button.setToolTip("")
+            self.delete_action.setEnabled(False)
+            self.delete_action.setText("Delete — pick an asset")
             return
 
         image = self._image(entry)
@@ -425,31 +394,35 @@ class AssetsActivity(EntityActivity):
             titles = read_titles(self._deps.library.project(self.project_id))
             self.name_edit.setText(titles.get(entry.name, ""))
 
-        self.uses.clear()
         for source, location in entry.locations:
             if location.uses:
                 for use in location.uses:
-                    row = QListWidgetItem(use.subject)
-                    row.setData(DETAIL_ROLE, f"{use.where} · {source.label}")
-                    row.setData(KIND_ROLE, use.subject_kind)
-                    row.setData(SUBJECT_ROLE, use.subject_id)
-                    row.setData(MODULE_ROLE, location.module_id)
-                    self.uses.addItem(row)
+                    self.uses.add_row(
+                        (Cell(use.subject, detail=use.where), Cell(source.label, secondary=True)),
+                        data={
+                            KIND_ROLE: use.subject_kind,
+                            SUBJECT_ROLE: use.subject_id,
+                            MODULE_ROLE: location.module_id,
+                        },
+                    )
             else:
                 beside = self._subject_of(location.node_id)
-                row = QListWidgetItem(f"Unused copy beside {beside}")
-                row.setData(DETAIL_ROLE, source.label)
-                row.setData(KIND_ROLE, "")
-                self.uses.addItem(row)
+                self.uses.add_row(
+                    (
+                        Cell(f"Unused copy beside {beside}", detail="nothing links it"),
+                        Cell(source.label, secondary=True),
+                    ),
+                    data={KIND_ROLE: ""},
+                )
 
         if entry.unused:
-            self.delete_button.setEnabled(True)
-            self.delete_button.setToolTip("Remove every copy — not undoable")
+            self.delete_action.setEnabled(True)
+            self.delete_action.setText("Delete")
         else:
             use = entry.uses[0]
-            self.delete_button.setEnabled(False)
-            # Disabled, never hidden — and the tooltip teaches the precondition.
-            self.delete_button.setToolTip(f"Used by {use.subject} — {use.where}")
+            # Disabled, never hidden — and its words teach the precondition.
+            self.delete_action.setEnabled(False)
+            self.delete_action.setText(f"Delete — used by {use.subject}, {use.where}")
 
     def _subject_of(self, node_id: NodeId) -> str:
         library = self._deps.library
@@ -457,7 +430,10 @@ class AssetsActivity(EntityActivity):
             return node_id[:8]
         return getattr(library.node(node_id), "title", "") or node_id[:8]
 
-    def _navigate(self, item: QListWidgetItem) -> None:
+    def _navigate(self, row: int, _column: int) -> None:
+        item = self.uses.item(row, 0)
+        if item is None:
+            return
         kind = item.data(KIND_ROLE)
         if kind == "step":
             self._deps.actions.run(
@@ -510,24 +486,27 @@ class AssetsActivity(EntityActivity):
             return ""
         return str(area.absolute(location.name))
 
-    def _thumbnail(self, entry: AssetEntry) -> QPixmap | None:
+    def _thumbnail(self, entry: AssetEntry) -> QIcon | None:
+        """The picture at glyph size, painted at the screen's ratio, in the row's glyph slot."""
         ratio = self._widget.devicePixelRatioF()
         cached = self._thumbs.get(entry.name)
         if cached is not None and cached[0] == ratio:
             return cached[1]  # Content-addressed: same name, same bytes — never stale.
         image = self._image(entry)
-        pixmap = None
+        icon = None
         if image is not None:
+            side = round(ICON_SIZE * ratio)
             scaled = image.scaled(
-                round(ROW_THUMB * ratio),
-                round(ROW_THUMB * ratio),
+                side,
+                side,
                 Qt.AspectRatioMode.KeepAspectRatio,
                 Qt.TransformationMode.SmoothTransformation,
             )
             pixmap = QPixmap.fromImage(scaled)
             pixmap.setDevicePixelRatio(ratio)
-        self._thumbs[entry.name] = (ratio, pixmap)
-        return pixmap
+            icon = QIcon(pixmap)
+        self._thumbs[entry.name] = (ratio, icon)
+        return icon
 
     def _fitted(self, image: QImage) -> QPixmap:
         ratio = self._widget.devicePixelRatioF()
@@ -617,6 +596,7 @@ class AssetsActivity(EntityActivity):
             "Delete Asset",
             f"Remove {PurePosixPath(entry.name).name} ({copies})?"
             " This is not undoable — version control still has the bytes.",
+            verb="Delete",
         ):
             return
         self._remove([location for _source, location in entry.locations])
@@ -624,14 +604,14 @@ class AssetsActivity(EntityActivity):
     def _sweep(self) -> None:
         swept = prunable(self._entries)
         if not swept:
-            self.lead.setText(f"{self.lead.text()} — nothing to sweep")
-            return
+            return  # The verb is greyed and says why; nothing reaches here but a stale click.
         count = len(swept)
         if not confirm(
             self._widget,
             "Clean Up Unused",
             f"Remove {count} unused file{'s' if count != 1 else ''}?"
             " This is not undoable — version control still has the bytes.",
+            verb="Remove",
         ):
             return
         self._remove([location for _source, location in swept])

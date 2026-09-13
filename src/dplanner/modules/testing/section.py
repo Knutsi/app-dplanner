@@ -238,8 +238,6 @@ class TestsSection(QWidget):
         roster_layout.setContentsMargins(0, 0, 0, 0)
         roster_layout.setSpacing(FIELD_GAP)
         self.roster = Table(ROSTER_COLUMNS, parent=roster)
-        # The result keeps to the right edge and the name takes the slack between.
-        self.roster.horizontalHeader().setStretchLastSection(False)
         # One row under its header, so a step with one test still shows there is a list.
         self.roster.setMinimumHeight(self._rows_height(1))
         self.roster.itemSelectionChanged.connect(self._on_pick)

@@ -3627,3 +3627,16 @@ reserved for it and the lazily built widget were machinery on every row for a ca
 
 **Upstream?** Check `template/` first: carry the removal back only if the template's own tasks
 never use it either.
+
+### `framework/table.py` — the last column stretches only when no column asks to
+
+**What.** A `Table` turns `setStretchLastSection` on only when none of its columns is
+`resize="stretch"`.
+
+**Why.** Two tables in this pass put a short fact after the column that should take the slack
+— the step panel's test roster (a result after the name), the Assets tab (a use count after
+the asset) — and a last section stretching as well split the slack between the two, leaving
+a wide gap before a two-letter word. The roster overrode it by hand, which is the one-off
+the primitive exists to spare.
+
+**Upstream?** Yes.

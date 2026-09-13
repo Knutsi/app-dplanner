@@ -10,7 +10,8 @@ import pytest
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
-from dplanner.modules.project_assets.activity import ASSETS_KIND, DETAIL_ROLE
+from dplanner.framework.list_rows import DETAIL_ROLE
+from dplanner.modules.project_assets.activity import ASSETS_KIND, NO_MATCH
 from dplanner.modules.project_assets.cli import MODULE_ID, read_titles
 from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
 
@@ -47,10 +48,14 @@ def test_the_tab_shows_one_row_per_content_with_its_uses(services, project, step
     activity = open_tab(services, project)
 
     assert activity.lead.text() == "1 asset"
-    assert activity.list.count() == 1
-    row = activity.list.item(0)
+    assert activity.table.rowCount() == 1
+    row = activity.table.item(0, 0)
     assert row.text() == name.removeprefix("assets/")
     assert "description" in row.data(DETAIL_ROLE)
+    assert activity.table.item(0, 1).text() == "1"  # The copy in the testing area links nowhere.
+    # Two sources hold something, so the filter offers each beside Unused only.
+    offered = [action.text() for action in activity.filter.menu.actions() if action.isVisible()]
+    assert len(offered) == 3 and offered[0] == "Unused only"
 
 
 def test_the_unused_filter_narrows_the_list(services, project, step):
@@ -58,11 +63,11 @@ def test_the_unused_filter_narrows_the_list(services, project, step):
     attach(services.repo.files(step.id, DESCRIPTION_ID), b"\x89PNG-other", "stray.png")
 
     activity = open_tab(services, project)
-    assert activity.list.count() == 2
+    assert activity.table.rowCount() == 2
     assert "1 unused" in activity.lead.text()
 
-    activity.unused_only.setChecked(True)
-    assert activity.list.count() == 1
+    activity.filter.set_active({"unused"})
+    assert activity.table.rowCount() == 1
 
 
 def test_renaming_pushes_an_undoable_command(services, project, step):
@@ -81,15 +86,15 @@ def test_delete_is_disabled_with_the_using_surface_as_the_reason(services, proje
     described_image(services, step, referenced=True)
     activity = open_tab(services, project)
 
-    assert not activity.delete_button.isEnabled()
-    assert "Fix list flicker" in activity.delete_button.toolTip()
-    assert "description" in activity.delete_button.toolTip()
+    assert not activity.delete_action.isEnabled()
+    assert "Fix list flicker" in activity.delete_action.text()
+    assert "description" in activity.delete_action.text()
 
 
 def test_the_sweep_removes_only_the_unused_copies(services, project, step, monkeypatch):
     kept = described_image(services, step, referenced=True)
     stray = attach(services.repo.files(step.id, DESCRIPTION_ID), b"\x89PNG-other", "stray.png")
-    monkeypatch.setattr("dplanner.modules.project_assets.activity.confirm", lambda *_a: True)
+    monkeypatch.setattr("dplanner.modules.project_assets.activity.confirm", lambda *_a, **_k: True)
 
     activity = open_tab(services, project)
     activity._sweep()
@@ -97,7 +102,7 @@ def test_the_sweep_removes_only_the_unused_copies(services, project, step, monke
     area = services.repo.files(step.id, DESCRIPTION_ID)
     assert area.read_bytes(kept) is not None
     assert area.read_bytes(stray) is None
-    assert activity.list.count() == 1
+    assert activity.table.rowCount() == 1
 
 
 def test_double_clicking_a_use_runs_steps_details(services, project, step, monkeypatch):
@@ -111,7 +116,7 @@ def test_double_clicking_a_use_runs_steps_details(services, project, step, monke
     )
 
     activity = open_tab(services, project)
-    activity.uses.itemActivated.emit(activity.uses.item(0))
+    activity.uses.cellActivated.emit(0, 0)
 
     assert opened == [f"steps.details:{step.id}"]
 
@@ -141,4 +146,22 @@ def test_attach_to_pool_lands_in_the_project_area(services, project, step, monke
     area = services.repo.files(project.id, MODULE_ID)
     (name,) = [f"assets/{found}" for found in area.names("assets")]
     assert area.read_bytes(name) == PNG
-    assert activity.list.count() == 1
+    assert activity.table.rowCount() == 1
+
+
+def test_a_filter_that_leaves_nothing_says_so_where_the_list_would_be(services, project, step):
+    described_image(services, step, referenced=True)
+    activity = open_tab(services, project)
+
+    activity.filter.set_active({"unused"})
+    assert activity.table.rowCount() == 0
+    assert activity.empty.isVisibleTo(activity.widget) and activity.empty.text() == NO_MATCH
+    assert not activity.delete_action.isEnabled()
+
+
+def test_clean_up_is_greyed_with_its_reason_while_nothing_is_unused(services, project, step):
+    described_image(services, step, referenced=True)
+    activity = open_tab(services, project)
+
+    assert not activity.sweep_action.isEnabled()
+    assert activity.sweep_action.text() == "Clean Up Unused — nothing unused"

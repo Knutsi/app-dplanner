@@ -271,7 +271,9 @@ class Table(QTableWidget):
         header = self.horizontalHeader()
         header.setDefaultAlignment(_LEFT)
         header.setHighlightSections(False)
-        header.setStretchLastSection(True)
+        # The last column takes the slack unless a column asks for it: a short fact after a
+        # stretching name would otherwise split that slack with it.
+        header.setStretchLastSection(not any(column.resize == "stretch" for column in columns))
         for position, column in enumerate(columns):
             header.setSectionResizeMode(position, _RESIZE[column.resize])
         self.verticalHeader().setVisible(False)
