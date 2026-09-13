@@ -88,6 +88,7 @@ HEADLESS_FILES = (
     "pdf.py",
     "report.py",
     "themes.py",
+    "dictation.py",
 )
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",

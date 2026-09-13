@@ -35,6 +35,7 @@ from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from dplanner.framework.asset_gallery import AreaFor, AssetGallery
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.markdown_highlight import MarkdownHighlighter
 from dplanner.framework.markdown_toolbar import MarkdownToolbar
 from dplanner.framework.prose_edit import Pick, ProseEdit
@@ -59,10 +60,12 @@ class ProseSection(QWidget):
         expand_title: str = "Editor",
         attach_title: str | None = None,
         hide_gallery_when_empty: bool = False,
+        dictation: DictationService | None = None,
     ) -> None:
         super().__init__()
         self._field_for = field_for
         self._undo = undo
+        self._dictation = dictation
         self._binding: TextBinding[Any] | None = None
         self._field: TextField[Any] | None = None
         self._pick: Pick | None = None
@@ -76,7 +79,7 @@ class ProseSection(QWidget):
         # Every document this section edits is markdown; show its structure while the
         # text stays exactly what is on disk. Re-inked on theme change below.
         self._highlighter = MarkdownHighlighter(self.edit.document(), self.edit)
-        self.tools = MarkdownToolbar(self.edit, undo=undo, parent=self)
+        self.tools = MarkdownToolbar(self.edit, undo=undo, dictation=dictation, parent=self)
         self.expand_button = attach_expand(self.edit)
         self.expand_button.clicked.connect(self._open_expanded)
         self.expand_button.setEnabled(False)
@@ -111,6 +114,9 @@ class ProseSection(QWidget):
         return self
 
     def show_target(self, target_id: str | None) -> None:
+        # A dictation belongs to the document it was started over: drop it before the
+        # editor shows another, or a late transcript would land in the wrong step.
+        self.tools.abandon_dictation()
         self._close_binding()
         # Always clear first: a section re-pointed at another node must never keep writing
         # files beside the last one — nor picking for it — and a host that has neither
@@ -145,6 +151,7 @@ class ProseSection(QWidget):
         self.edit.set_pick(pick)
 
     def dispose(self) -> None:
+        self.tools.abandon_dictation()
         self._field = None
         self._close_binding()
 
@@ -160,6 +167,7 @@ class ProseSection(QWidget):
             placeholder=self._placeholder,
             attach=self.gallery.attach_bytes if self.gallery is not None else None,
             pick=self._pick,
+            dictation=self._dictation,
             parent=self.window(),
         )
         dialog.exec()

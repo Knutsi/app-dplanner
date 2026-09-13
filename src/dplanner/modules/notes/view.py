@@ -32,6 +32,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step
 from dplanner.framework.activity import follow_target
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.list_rows import DETAIL_ROLE, MUTED_ROLE, TwoLineDelegate
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.undo import UndoService
@@ -82,6 +83,8 @@ class NotesView(QWidget):
         project_id: NodeId,
         debounce: DebounceService,
         parent: QWidget | None = None,
+        *,
+        dictation: DictationService | None = None,
     ) -> None:
         super().__init__(parent)
         self._library = library
@@ -139,7 +142,7 @@ class NotesView(QWidget):
         self.more.clicked.connect(self._open_menu)
         header.addWidget(self.more)
         detail_layout.addLayout(header)
-        self.editor = NoteEditor(library, undo, step_key, self.detail)
+        self.editor = NoteEditor(library, undo, step_key, self.detail, dictation=dictation)
         detail_layout.addWidget(self.editor, 1)
         self.split.addWidget(self.detail)
         self.split.setStretchFactor(1, 1)

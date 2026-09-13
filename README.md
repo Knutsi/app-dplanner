@@ -278,6 +278,7 @@ src/dplanner/
 │   ├── formats.py           the format-migration engine
 │   ├── module_data.py       per-module JSON, its versions and takeovers
 │   ├── png.py               RGB buffer → PNG bytes, stdlib only, deterministic
+│   ├── wav.py               raw 16-bit samples → a WAV, and how loud a clip was, stdlib only
 │   ├── telemetry.py         the journal both surfaces write: spans, a ring, a JSON-lines file
 
 │   ├── anchors.py           where a quoted passage sits in a document: exact, fuzzy or lost, and behind when the text moved on
@@ -337,6 +338,11 @@ src/dplanner/
 │   ├── prose_edit.py        that section's editor: a pasted file becomes a markdown link
 │   ├── mime_files.py        the files a paste or a drop carries — both editors' one answer
 │   ├── text_dialog.py       the same document in a big modal editor — a second binding
+│   ├── dictation.py         DictationService (the chosen provider and recorder, the one task
+│   │                        runner) and Dictation, the state machine every microphone runs
+│   ├── dictation_verb.py    the microphone on a markdown strip: where the words land, one undo step
+│   ├── recording.py         the microphone through a recorder command's stdout, on a QProcess
+│   ├── key_dialog.py        the API key wizard a vendor module opens: guided, tested, then kept
 │   ├── asset_gallery.py     a module's attached files as thumbnails; click to view
 │   ├── asset_picker.py      a modal picker over named files — Insert from Assets…'s dialog
 │   ├── image_preview.py     the modal lightbox the gallery (and anyone) opens
@@ -457,7 +463,12 @@ src/dplanner/
 │   ├── appshell/  sync/  settings/  taskcenter/
 │   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Example,
 │   │                        the design system built from the primitives, to be looked at and copied from
-│   └── llm/  llm_openai/  llm_anthropic/
+│   ├── llm/  llm_openai/  llm_anthropic/  — the LLM picker, and the two vendor modules: each an LLM
+│   │                        provider, a settings page and the *Add API key…* wizard; llm_openai's
+│   │                        dictation.py is also two dictation providers on the same key
+│   ├── dictation/           Settings ▸ Dictation (a provider and a recorder from presets, Try it),
+│   │                        the Set Up Dictation… action and the checklist's two rows
+│   └── dictation_whisper/   the whisper family as batch dictation providers, one Qt-free dictation.py
 │
 └── theme/                 the Theme record and the house themes, the provider contract and the built-in
                            provider — every Omarchy default, generated from its colors.toml through one

@@ -1310,7 +1310,8 @@ before any of this.
 `ProseSection` builds one unconditionally rather than behind a flag. It is what a prose
 editor *is* here, the same way the highlighter and the expand button are; a flag would be
 a decision every host had to make again, and none of them has a reason to answer it
-differently.
+differently. The microphone arrives the same way — with the strip, wherever a host hands
+the strip a `DictationService` (*Dictation is a provider, and capture is a peer process*).
 
 ## Expanding an editor is a second binding, not a copy
 
@@ -4616,6 +4617,93 @@ driving the CLI *is* a model, so the loop is `docs status` → `docs collect` �
 → `compiled set`, which re-stamps the digest so what it just wrote reads as current — and the
 window's part is to *launch* that loop rather than to reimplement it. Same reasoning as
 *Running an agent launches a peer, not a task*, which is where that argument ended up.
+
+## Dictation is a provider, and capture is a peer process
+
+Descriptions, notes, tests, fragments, instructions and specs are prose, and most people
+speak faster than they type. The step that added dictation asked for it as a *provider
+kind* — the way agent CLIs are harnesses and themes are provided — so the application
+never depends on one engine. Five decisions fell out of building it.
+
+**The contract is a Qt-free record in `domain/`, not a Protocol in `framework/`.** The
+checklist reaches the providers at CLI time (*is any engine ready on this machine*), and a
+module's Qt-free half may import `core` and `domain` and never `framework`; so
+`domain/dictation.py` holds `DictationProvider` — id, label, the caption of its one
+editable text, the default, a `refusal(text)`, and either `transcribe` or `listen` — with
+the recorder table beside it, exactly where `domain/agents.py` holds `AgentHarness`. The
+capabilities are derived: a provider that carries `listen` is live, one that names a
+`setup_action` can be mended from where its refusal is shown. `LLMProvider` stayed a
+Protocol in `framework/llm.py` because nothing headless reads it; the two shapes are the
+same lineage one layer apart.
+
+**Capture is a peer process, because there is no QtMultimedia.** PySide6-Essentials ships
+the stub and not the binary; the Addons package that has it is the hundreds-of-megabyte
+choice `pyproject.toml` already refused for QtPdf. Every command-line recorder this
+application could meet — PipeWire's `pw-record`, PulseAudio's `parecord`, ALSA's
+`arecord`, `ffmpeg`, `sox` — streams raw signed 16-bit mono samples to a pipe, and a
+`QProcess` on the GUI thread reads that pipe as it fills: no worker, no lock, every signal
+delivered by the event loop. Raw output is what makes stopping simple — a WAV would need
+its header patched by a process that may be dead, raw samples have no trailer — so the
+stop is one sequence for every row: `q` on stdin (ffmpeg on POSIX takes it), then
+`terminate()`, then `kill()` after a grace, which on Windows is the only one that reaches a
+console process; the bytes already read survive it, and the ffmpeg rows carry
+`-flush_packets 1` so at most a packet is lost. A recorder is a row with a probe, like a
+terminal; *Automatic* is the first installed; the rate is the provider's (`{rate}`),
+because the whisper family wants 16 kHz and the Realtime API 24 kHz. The alternatives —
+a `sounddevice` wheel, a hand-rolled `ctypes` binding per platform — were weighed with the
+developer and declined: a table of commands adds no dependency, matches the launcher's
+doctrine, and on the two platforms where the table is thin the OS has dictation of its own,
+which the page and the checklist say.
+
+**Batch and live are two shapes of one state machine, and live is one undo step.** A
+batch provider gets the WAV once the microphone is off and its transcript lands through
+`ProseEdit.insert_at_caret` — the dropped-file insert, sealed on both sides. A live
+provider is fed the samples as the recorder emits them and its deltas land at a cursor the
+verb took where the caret stood when the session began, so the person can read on while
+speaking; an utterance's completed transcript replaces the deltas that led to it. Typing
+merges within a one-second window and a spoken pause is longer than that, so coalescing
+could not make a session one step; `UndoService` grew `begin_gesture`/`end_gesture`, the
+context manager's halves as calls, and the verb holds one open from the first word to
+the stop. While a gesture is open nothing can be undone or redone — a Ctrl+Z pulling the
+step before it out from under commands not yet placed is worse than a refused key.
+`Dictation` (`framework/dictation.py`) is the one machine — idle → recording →
+transcribing, or idle → listening → finishing — and the strip's verb and the settings
+page's *Try it* are two faces of it, so what the page hears is what an editor would get.
+
+**The service owns the one task runner, and a late transcript is dropped.** A
+transcription outlives the editor that asked for it — a tab closed mid-sentence must not
+strand a *Transcribing…* row in the task centre — so `DictationService` is on the bundle
+with a runner parented to the window, every body captures only plain values and a signal
+instance, and a delivery to a deleted receiver is suppressed. One microphone, one
+provider, one transcription at a time: a second editor's press while one runs is refused
+in words. And a dictation belongs to the document it was started over: `ProseSection`
+abandons on every re-bind and `ExpandedTextDialog` on dispose, a generation counter drops
+whatever the run still delivers, and the two agent-instruction fields that had no strip
+got one rather than a second corner button, because *every prose editor wears the strip*
+was already the rule and the exception was the entropy. `status()` is memoised between
+`config_changed`s — thirteen strips ask at every build, and one provider's refusal is a
+keychain round trip — and the builder bridges `llm.config_changed` into it, since the
+OpenAI providers run on the key the vendor module keeps.
+
+**Nothing meters the level, and silence is refused before anybody is paid.** DESIGN.md
+allows three motions — the agent ring, the Updating indicator, a working button's glyph —
+and a level meter at ten frames a second would be a fourth vocabulary. Recording is the
+verb checked and the editor's edge in the accent (`#InspectorNotes[dictating="true"]`);
+transcribing is the Spinner in the glyph. The check the meter was for happens once: the
+clip's RMS is read after a batch stop, and a silent clip is refused with *Nothing was
+heard* rather than sent to a provider that bills by the minute.
+
+**Setting it up is presets, and a refusal names its mend.** Settings ▸ Dictation is the
+Agent profiles page's shape twice — a dropdown of providers over the provider's one text,
+a dropdown of recorders over the command — with a status line under each saying what
+stands in the way and, beside it, what fixes it: a link to where the program comes from, or
+*Add API key…*, which runs the provider's `setup_action` through the registry. That action
+is the vendor module's: `ApiKeyDialog` (`framework/key_dialog.py`) walks through where a
+key is made, tests it on a task runner with the vendor's own probe, and stores it in the
+keychain only once it worked — the Confluence Connect dialog's shape with the site and the
+email taken away, so every vendor can offer the same act. The checklist's two rows name
+the same `dictation.settings` action, which is how *Set Up…* on a row lands on the page
+without the checklist importing anything.
 
 ## A test result is not a step status
 

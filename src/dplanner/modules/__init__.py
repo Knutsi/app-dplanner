@@ -39,6 +39,7 @@ if TYPE_CHECKING:
     from dplanner.domain.aspects import AspectSpec
     from dplanner.domain.assets import AssetSource
     from dplanner.domain.commands import Command
+    from dplanner.domain.dictation import DictationProvider
     from dplanner.domain.model import Library, Project, Step
     from dplanner.domain.ordering import Placed
     from dplanner.domain.repositories import RepositoryFacts
@@ -63,6 +64,7 @@ __all__ = [
     "default_cli_commands",
     "default_module_formats",
     "default_modules",
+    "dictation_providers",
     "theme_providers",
 ]
 
@@ -95,6 +97,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.coverage.activity import CoverageDeps
     from dplanner.modules.coverage.module import CoverageModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
+    from dplanner.modules.dictation.module import DictationDeps, DictationModule
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import read as estimated_days
@@ -840,6 +843,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     )
     spec = SpecModule(
         SpecDeps(
+            dictation=services.dictation,
             library=library,
             actions=services.actions,
             context=services.context,
@@ -904,6 +908,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # row; the key rule is the root's, handed over like every row's.
     notes = NotesModule(
         NotesDeps(
+            dictation=services.dictation,
             library=library,
             undo=services.undo,
             debounce=services.debounce,
@@ -1126,6 +1131,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     # at once to this module's launcher, and it is listed before this module.
     agent_instruction = StepAgentInstructionModule(
         StepAgentInstructionDeps(
+            dictation=services.dictation,
             library=library,
             debounce=services.debounce,
             undo=services.undo,
@@ -1278,6 +1284,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 llm_providers=services.llm_providers,
                 llm=services.llm,
                 settings_sections=services.settings_sections,
+                actions=services.actions,
+                tasks=services.tasks,
+                parent=services.window,
+                open_url=open_in_browser,
             )
         ),
         LlmAnthropicModule(
@@ -1285,6 +1295,10 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 llm_providers=services.llm_providers,
                 llm=services.llm,
                 settings_sections=services.settings_sections,
+                actions=services.actions,
+                tasks=services.tasks,
+                parent=services.window,
+                open_url=open_in_browser,
             )
         ),
         LlmModule(
@@ -1292,6 +1306,17 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 llm_providers=services.llm_providers,
                 llm=services.llm,
                 settings_sections=services.settings_sections,
+            )
+        ),
+        # After the providers it lists, before the checklist and Settings: its action is
+        # the remedy the dictation rows offer, and its page is a section the dialog shows.
+        DictationModule(
+            DictationDeps(
+                dictation=services.dictation,
+                settings_sections=services.settings_sections,
+                actions=services.actions,
+                context=services.context,
+                open_settings=settings.open,
             )
         ),
         DebugModule(
@@ -1439,6 +1464,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         ),
         StepDescriptionModule(
             StepDescriptionDeps(
+                dictation=services.dictation,
                 actions=services.actions,
                 library=library,
                 undo=services.undo,
@@ -1463,6 +1489,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         agent_runs,
         DocsModule(
             DocsDeps(
+                dictation=services.dictation,
                 library=library,
                 debounce=services.debounce,
                 undo=services.undo,
@@ -1538,6 +1565,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         problems,
         TestsModule(
             TestsDeps(
+                dictation=services.dictation,
                 library=library,
                 debounce=services.debounce,
                 undo=services.undo,
@@ -2411,6 +2439,7 @@ def _machine_checks(*, files: "Callable[[], dict[str, str]]") -> tuple["MachineC
     closure the Install dialog is handed.
     """
     from dplanner.modules.checklist import checks as generic
+    from dplanner.modules.dictation import checks as dictation_checks
     from dplanner.modules.github import checks as github_checks
     from dplanner.modules.install import checks as install_checks
     from dplanner.modules.llm import checks as llm_checks
@@ -2426,6 +2455,7 @@ def _machine_checks(*, files: "Callable[[], dict[str, str]]") -> tuple["MachineC
         # The provider modules' ids and labels: the keychain is asked under each module's
         # own id, and the llm module never learns which providers exist by importing them.
         *llm_checks.checks(providers=_llm_providers()),
+        *dictation_checks.checks(providers=dictation_providers()),
     )
 
 
@@ -2750,6 +2780,21 @@ def agent_harnesses() -> tuple["AgentHarness", ...]:
     from dplanner.modules.agent_opencode import harness as opencode
 
     return (claude.HARNESS, codex.HARNESS, opencode.HARNESS)
+
+
+def dictation_providers() -> tuple["DictationProvider", ...]:
+    """Every dictation engine this build can transcribe with, first is what a fresh
+    profile tries first.
+
+    The whisper commands lead — local and free — then OpenAI's live session and its batch
+    endpoint, on the key the OpenAI module keeps. Each is a Qt-free record from its own
+    module; the service, Settings ▸ Dictation and the checklist all read this tuple, and a
+    fourth engine is a fourth module listed here and nothing else.
+    """
+    from dplanner.modules.dictation_whisper import dictation as whisper
+    from dplanner.modules.llm_openai import dictation as openai_dictation
+
+    return (*whisper.providers(), openai_dictation.LIVE, openai_dictation.BATCH)
 
 
 def theme_providers() -> tuple["ThemeProvider", ...]:

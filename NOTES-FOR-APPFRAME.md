@@ -3526,3 +3526,124 @@ and give a scroll area that is only a frame `NoFocus`; the same order decided th
 Confluence dialog focused its *Open tokens page* button before its email field.
 
 **Upstream?** As a sentence in the frame's docstring, yes.
+
+## 42. From the dictation pass (F14)
+
+### `framework/recording.py` — the microphone through a recorder command, on a `QProcess`
+
+**What.** `Recording(QObject)`: one long-lived, parented `QProcess` restarted per clip;
+`start(command)` reads the command's stdout as raw signed 16-bit mono samples, emitting
+`chunk(bytes)` per read and `finished(bytes)` with the whole clip once the process has
+exited, or `failed(str)` with its stderr; `stop()` is one sequence everywhere — `q` on
+stdin, `closeWriteChannel`, `terminate()`, `kill()` after `GRACE_MS`; `discard()` kills
+and emits nothing; `MAX_SECONDS` stops a forgotten microphone.
+
+**Why.** PySide6-Essentials ships no QtMultimedia, and Addons is refused for its weight.
+Every command-line recorder streams raw PCM to a pipe, and raw has no trailer, so whatever
+reached the pipe before the process died is the clip — which is what lets one stop sequence
+serve pw-record, parecord, arecord, ffmpeg and sox, and lets `kill()` be the only stop
+Windows needs.
+
+**Watch.** A `QProcess` made in Python and dropped mid-run is deleted from its destructor
+and kills the child with a warning; keep one and restart it. `QProcess.terminate()` posts
+`WM_CLOSE` on Windows and a console process ignores it; and ffmpeg on Windows reads its
+`q` from the console, not the stdin pipe — hence the grace `kill()` and `-flush_packets 1`
+on the ffmpeg rows.
+
+**Upstream?** Yes, as a framework primitive: any application that wants a microphone on
+Essentials needs exactly this.
+
+### `framework/dictation.py`, `framework/dictation_verb.py` — the service, the state machine, the verb
+
+**What.** `DictationService(providers, tasks, *, recorders, platform, which, parent)`: the
+chosen provider and its text, the recorder command (`""` = Automatic), a memoised
+`status()` cleared on `config_changed`, and the **one** `TaskRunner`, parented to the
+window, that `run_transcription` (batch) and `run_live` (a session fed from a
+`queue.Queue`) go through. `Dictation(QObject)` is the state machine — idle → recording →
+transcribing, or idle → listening → finishing — with `toggle`, `abandon`, `heard(text,
+final)`, `refused`, `state_changed`, and a generation counter dropping late deliveries.
+`DictationVerb` is the strip's face: a checkable verb, the key on the editor at
+`WidgetShortcut`, the Spinner while working, the `dictating` property on the editor, and
+where the words land — `insert_at_caret` for batch, a session `QTextCursor` under a held
+undo gesture for live.
+
+**Why.** A transcription outlives the editor that asked for it, so the runner cannot be
+the strip's (a closed tab would strand a task); every body captures only plain values and
+a signal instance (`task_runner.py`'s rule) and suppresses `RuntimeError` on delivery.
+The state machine is one class because the settings page's *Try it* and the strip's verb
+must be the same gesture. `ARCHITECTURE.md`'s *Dictation is a provider, and capture is a
+peer process* has the rest.
+
+**Upstream?** The service and the state machine, yes, with `domain/dictation.py`'s
+contract; the verb is one file that only needs `Toolbar.add_verb(checkable=True)`.
+
+### `framework/undo.py` — `begin_gesture` / `end_gesture`
+
+**What.** The context manager's two halves as calls, so a gesture can outlive one call;
+`gesture()` is sugar over them; `gesture_open()`; `can_undo`/`can_redo` answer False while
+one is open.
+
+**Why.** A live dictation's words arrive over many turns of the event loop and are still one
+step; typing's merge window is one second and a spoken pause is longer. Refusing undo under
+an open gesture is what stops Ctrl+Z pulling the step before it out from under commands
+not yet placed.
+
+**Upstream?** Yes; the context manager's behaviour is unchanged and the tests say so.
+
+### `framework/prose_edit.py` — `insert_at_caret`
+
+**What.** The sealed one-insert that `_embed` did inline, as a public method: seal, one
+`insertText`, seal.
+
+**Why.** A dropped file's link and a dictated transcript are the same shape of edit.
+
+**Upstream?** Yes.
+
+### `framework/markdown_toolbar.py`, `prose_section.py`, `text_dialog.py` — `dictation=`
+
+**What.** `MarkdownToolbar(edit, *, undo, dictation, parent)` seats the microphone first
+when a service is given, and `abandon_dictation()`; `ProseSection(..., dictation=None)`
+passes it on and abandons in `show_target` and `dispose`; `ExpandedTextDialog` and its two
+constructors take `dictation=` and abandon in `dispose`.
+
+**Why.** Constructor plumbing is the least magic: the service travels the way `undo` does,
+and a build without one (every test) has a strip exactly as before. Seated first so a
+narrow dock folds the picture verb — the editor's own menu also offers it — before the one
+verb nothing else offers.
+
+**Upstream?** With the service.
+
+### `framework/key_dialog.py` — `ApiKeyDialog`
+
+**What.** A `DialogFrame` that walks through adding one service's API key: a guide, a
+button to the keys page, a password field, *Test* on a `TaskRunner` with the service's own
+probe and a Spinner, the primary refused until the test passed or when the keychain cannot
+keep the key. Knows no service: words, address, probe and what saving means are the
+caller's.
+
+**Why.** A bare password field is a lookup pushed onto the person; the Confluence Connect
+dialog already had the right shape, minus the site and the email.
+
+**Upstream?** Yes, beside `dialog.py`.
+
+### `framework/services.py`, `builder.py`, `session.py` — `dictation` on the bundle
+
+**What.** `AppServices.dictation`; `AppBuilder.with_dictation(providers)` (empty by
+default, so a headless build greys every microphone with the build's reason);
+`AppSession(dictation_providers=…)`; the builder bridges `llm.config_changed` into
+`dictation.config_changed`.
+
+**Why.** The theme providers' path, one more time; the bridge because the OpenAI dictation
+providers run on the key the OpenAI LLM provider keeps.
+
+**Upstream?** With the service.
+
+### `core/wav.py` — raw samples to a WAV, and a clip's level
+
+**What.** `wav_bytes(pcm, *, rate, channels, width)` over `wave`; `rms(pcm)` over an
+`array("h")` at a stride (no `audioop` on 3.13).
+
+**Why.** A recorder hands over raw samples, a provider wants a file, and the control
+between them wants to know whether anything was said before it pays to find out.
+
+**Upstream?** Yes, beside `png.py`.

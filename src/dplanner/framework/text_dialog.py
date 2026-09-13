@@ -34,6 +34,7 @@ from PySide6.QtGui import QTextDocument
 from PySide6.QtWidgets import QPlainTextEdit, QToolButton, QWidget
 
 from dplanner.framework.dialog import DialogFrame
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.markdown_highlight import MarkdownHighlighter
 from dplanner.framework.markdown_toolbar import MarkdownToolbar
 from dplanner.framework.prose_edit import Attach, Pick, ProseEdit
@@ -65,6 +66,7 @@ class ExpandedTextDialog(DialogFrame):
         placeholder: str = "",
         attach: Attach | None = None,
         pick: Pick | None = None,
+        dictation: DictationService | None = None,
         parent: QWidget | None = None,
     ) -> None:
         """The chrome only — one of the two constructors below says where the text is."""
@@ -80,7 +82,7 @@ class ExpandedTextDialog(DialogFrame):
         self.edit.setObjectName("InspectorNotes")
         self.edit.setFrameShape(QPlainTextEdit.Shape.NoFrame)
         self.edit.setPlaceholderText(placeholder)
-        self.tools = MarkdownToolbar(self.edit, undo=undo, parent=self)
+        self.tools = MarkdownToolbar(self.edit, undo=undo, dictation=dictation, parent=self)
 
         self.body_layout.addWidget(self.tools)
         self.body_layout.addWidget(centered_column(self.edit, EDITOR_MEASURE), stretch=1)
@@ -97,12 +99,19 @@ class ExpandedTextDialog(DialogFrame):
         placeholder: str = "",
         attach: Attach | None = None,
         pick: Pick | None = None,
+        dictation: DictationService | None = None,
         parent: QWidget | None = None,
     ) -> "ExpandedTextDialog":
         """The model is the authority: its own document, its own highlighter, and a second
         binding over the same field, so each view sees the other's edits as foreign."""
         dialog = cls(
-            undo, title=title, placeholder=placeholder, attach=attach, pick=pick, parent=parent
+            undo,
+            title=title,
+            placeholder=placeholder,
+            attach=attach,
+            pick=pick,
+            dictation=dictation,
+            parent=parent,
         )
         dialog._highlighter = MarkdownHighlighter(dialog.edit.document(), dialog.edit)
         make_text_well(dialog.edit)
@@ -120,6 +129,7 @@ class ExpandedTextDialog(DialogFrame):
         placeholder: str = "",
         attach: Attach | None = None,
         pick: Pick | None = None,
+        dictation: DictationService | None = None,
         parent: QWidget | None = None,
     ) -> "ExpandedTextDialog":
         """The buffer is the authority: the *same* document, so the two views are one.
@@ -129,7 +139,13 @@ class ExpandedTextDialog(DialogFrame):
         buffer, which the owner would hear as the person typing.
         """
         dialog = cls(
-            undo, title=title, placeholder=placeholder, attach=attach, pick=pick, parent=parent
+            undo,
+            title=title,
+            placeholder=placeholder,
+            attach=attach,
+            pick=pick,
+            dictation=dictation,
+            parent=parent,
         )
         dialog.edit.setDocument(document)
         return dialog
@@ -140,6 +156,7 @@ class ExpandedTextDialog(DialogFrame):
         Nothing is handed back on the shared-document path: the document belongs to the
         editor that made it, and this view only ever borrowed it.
         """
+        self.tools.abandon_dictation()
         if self._binding is not None:
             self._binding.close()
             self._binding.setParent(None)

@@ -32,6 +32,7 @@ from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.dialog import LinePrompt
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.tasks import TaskService
@@ -123,6 +124,8 @@ class SpecDeps:
     passages_of: PassagesOf | None = None
     open_coverage: OpenCoverage | None = None
     cite: Cite | None = None
+    # Dictation into the editors; None is a build without a microphone.
+    dictation: DictationService | None = None
 
 
 class SpecModule:
@@ -192,6 +195,7 @@ class SpecModule:
                 kinds=self._kinds,
                 refresher=self.refresher,
                 connect=self._connect,
+                dictation=deps.dictation,
             )
 
         deps.tabs.register_factory(SPECS_KIND, factory)

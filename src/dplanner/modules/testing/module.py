@@ -39,6 +39,7 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.debounce import DebounceService
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
@@ -106,6 +107,8 @@ class TestsDeps:
     # *Group by ▸ Milestone* heading is written in. Wired by the composition root; this
     # module never learns which map a project uses.
     milestone_color: Callable[[str], str] = field(default=_no_color)
+    # Dictation into the editors; None is a build without a microphone.
+    dictation: DictationService | None = None
 
 
 class TestsModule:
@@ -152,7 +155,9 @@ class TestsModule:
                 id=f"{MODULE_ID}.tab",
                 label="Tests",
                 order=30,  # Between Ticket (20) and Agent (40).
-                factory=lambda: TestsSection(deps.library, deps.undo, deps.files, deps.pick_assets),
+                factory=lambda: TestsSection(
+                    deps.library, deps.undo, deps.files, deps.pick_assets, deps.dictation
+                ),
                 shown_for=lambda step_id: (
                     self._step(step_id) is not None and enabled(deps.library.step(step_id or ""))
                 ),

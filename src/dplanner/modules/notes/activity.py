@@ -46,7 +46,13 @@ class NotesActivity(EntityActivity):
         layout.addWidget(self.subtitle)
         layout.addSpacing(BLOCK_GAP)
         self.view = NotesView(
-            deps.library, deps.undo, deps.step_key, project_id, deps.debounce, self.page
+            deps.library,
+            deps.undo,
+            deps.step_key,
+            project_id,
+            deps.debounce,
+            self.page,
+            dictation=deps.dictation,
         )
         layout.addWidget(self.view, 1)
 

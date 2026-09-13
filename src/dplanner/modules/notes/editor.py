@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.commands import Command, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.prose_section import ProseSection
 from dplanner.framework.undo import UndoService
 from dplanner.modules.notes.log import (
@@ -107,6 +108,8 @@ class NoteEditor(QWidget):
         undo: UndoService[Library],
         step_key: Callable[[Step], str],
         parent: QWidget | None = None,
+        *,
+        dictation: DictationService | None = None,
     ) -> None:
         super().__init__(parent)
         self._library = library
@@ -155,7 +158,12 @@ class NoteEditor(QWidget):
         form.addRow("Supersedes", self.supersedes)
 
         self.body = ProseSection(
-            self._field_for, undo, placeholder=BODY_PLACEHOLDER, margin=0, expand_title="Note"
+            self._field_for,
+            undo,
+            placeholder=BODY_PLACEHOLDER,
+            margin=0,
+            expand_title="Note",
+            dictation=dictation,
         )
 
         layout = QVBoxLayout(self)

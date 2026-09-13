@@ -48,6 +48,7 @@ from dplanner.domain.store import FilesFor
 from dplanner.framework.activity import follow_target
 from dplanner.framework.cards import CARD_PADDING, STACK_SPACING
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.module_data_section import FIELD_GAP, PANEL_MARGIN
 from dplanner.framework.prose_section import ProseSection
@@ -214,6 +215,7 @@ class TestsSection(QWidget):
         undo: UndoService[Library],
         files: FilesFor | None = None,
         pick_assets: Callable[[str], list[Payload]] | None = None,
+        dictation: DictationService | None = None,
     ) -> None:
         super().__init__()
         self._library = library
@@ -263,7 +265,13 @@ class TestsSection(QWidget):
         self.more.setToolTip("What to do with this test")
         self.more.clicked.connect(self._open_menu)
         self.detail = _TestDetail(
-            library, undo, self.split, corner=self.more, files=files, pick_assets=pick_assets
+            library,
+            undo,
+            self.split,
+            corner=self.more,
+            files=files,
+            pick_assets=pick_assets,
+            dictation=dictation,
         )
         self.detail.setMinimumHeight(DETAIL_MIN_HEIGHT)
         self.split.addWidget(self.detail)
@@ -448,6 +456,7 @@ class _TestDetail(QWidget):
         corner: QWidget | None = None,
         files: FilesFor | None = None,
         pick_assets: Callable[[str], list[Payload]] | None = None,
+        dictation: DictationService | None = None,
     ) -> None:
         super().__init__(parent)
         self._library = library
@@ -490,6 +499,7 @@ class _TestDetail(QWidget):
             expand_title="Test",
             attach_title="Attach to Tests",
             hide_gallery_when_empty=True,
+            dictation=dictation,
         )
         layout.addWidget(self.body, 1)
         # Enter in the title lands in the body, so naming and writing a test is one flow.
