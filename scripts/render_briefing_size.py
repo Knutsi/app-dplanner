@@ -84,12 +84,27 @@ def write_notes(library: Library, project: Project) -> None:
         for n in range(1, DECISIONS + 1)
     ]
     notes += [
-        Note("N101", "handoff", "The importer is stubbed past the second page", made="2026-09-11",
-             step=made_on),
-        Note("N102", "spec-change", "The spec's retry budget was three, not one", made="2026-09-11",
-             step=made_on),
-        Note("N103", "later", "Fifteen modules still spell the gap by hand", made="2026-09-12",
-             step=made_on),
+        Note(
+            "N101",
+            "handoff",
+            "The importer is stubbed past the second page",
+            made="2026-09-11",
+            step=made_on,
+        ),
+        Note(
+            "N102",
+            "spec-change",
+            "The spec's retry budget was three, not one",
+            made="2026-09-11",
+            step=made_on,
+        ),
+        Note(
+            "N103",
+            "later",
+            "Fifteen modules still spell the gap by hand",
+            made="2026-09-12",
+            step=made_on,
+        ),
     ]
     SetModuleDataCommand(project.id, NOTES_ID, write_log(notes)).redo(library)
 
@@ -133,9 +148,7 @@ def render(app: QApplication, theme: Theme, out: Path, root: Path) -> None:
     step = project.steps[-1]
     write_notes(services.document, project)
     services.document.set_module_data(step.id, AGENT_ID, write_state(True))
-    services.context.set_scope(
-        SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),)
-    )
+    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
     settle(app)
 
     section = agent_section(services, step.id)
