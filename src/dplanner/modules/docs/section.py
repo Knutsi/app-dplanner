@@ -22,6 +22,7 @@ from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.activity import follow_target
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.prose_section import FIELD_GAP, ProseSection
 from dplanner.framework.signalling import StatusLine
@@ -125,6 +126,7 @@ class DocsSection(ProseSection):
         files: FilesFor | None = None,
         compile_link: CompileLink | None = None,
         pick_assets: Callable[[str], list[Payload]] | None = None,
+        dictation: DictationService | None = None,
     ) -> None:
         def field_for(target_id: str) -> ModuleTextField | None:
             if not library.has(target_id):
@@ -137,6 +139,7 @@ class DocsSection(ProseSection):
             STEP_PLACEHOLDER,
             expand_title="Documentation Fragment",
             attach_title="Attach to Documentation Fragment",
+            dictation=dictation,
         )
         self._library = library
         self._files = files
@@ -205,6 +208,7 @@ class CompiledSection(ProseSection):
         library: Library,
         undo: UndoService[Library],
         margin: int = 0,
+        dictation: DictationService | None = None,
     ) -> None:
         def field_for(target_id: str) -> ModuleTextField | None:
             if not library.has(target_id):
@@ -217,6 +221,7 @@ class CompiledSection(ProseSection):
             COMPILED_PLACEHOLDER,
             margin=margin,
             expand_title="Documentation",
+            dictation=dictation,
         )
 
 
@@ -234,6 +239,7 @@ class InstructionsCard(ProseSection):
         undo: UndoService[Library],
         files: FilesFor | None,
         pick_assets: Callable[[str], list[Payload]] | None = None,
+        dictation: DictationService | None = None,
     ) -> None:
         def field_for(target_id: str) -> ModuleTextField | None:
             if not library.has(target_id):
@@ -246,6 +252,7 @@ class InstructionsCard(ProseSection):
             PROJECT_PLACEHOLDER,
             expand_title="Compilation Instructions",
             attach_title="Attach to Compilation Instructions",
+            dictation=dictation,
         )
         self._files = files
         self._pick_assets = pick_assets

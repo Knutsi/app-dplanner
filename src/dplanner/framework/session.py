@@ -33,6 +33,7 @@ from dplanner.core.formats import UnsupportedFormatError
 from dplanner.core.repository import RepositoryFactory
 from dplanner.core.storage.provider import StorageError
 from dplanner.core.telemetry import current
+from dplanner.domain.dictation import DictationProvider
 from dplanner.domain.store import Adoption
 from dplanner.framework.action_registry import MenuStructure
 from dplanner.framework.builder import AppBuilder, ModuleFactory, SeedFactory
@@ -148,12 +149,14 @@ class AppSession:
         menus: MenuStructure,
         seed: SeedFactory | None = None,
         theme_providers: Sequence[ThemeProvider] = (BUILTIN,),
+        dictation_providers: Sequence[DictationProvider] = (),
     ) -> None:
         self._module_factory = module_factory
         self._repository = repository
         self._menus = menus
         self._seed = seed
         self._theme_providers = tuple(theme_providers)
+        self._dictation_providers = tuple(dictation_providers)
         self.window: AppWindow | None = None
         self.services: AppServices | None = None
         self.library_path: Path | None = None
@@ -226,6 +229,7 @@ class AppSession:
                 .with_modules(self._module_factory)
                 .with_progress(progress)
                 .with_theme_providers(self._theme_providers)
+                .with_dictation(self._dictation_providers)
             )
             if self._seed is not None:
                 builder = builder.with_seed(self._seed)

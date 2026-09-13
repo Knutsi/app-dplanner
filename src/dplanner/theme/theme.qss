@@ -481,6 +481,12 @@ QSplitter::handle:vertical:pressed {
     padding: 4px;
 }
 
+/* The microphone is on for this field: the edge takes the accent, as a checked verb's
+   glyph does, and nothing moves. */
+#InspectorNotes[dictating="true"] {
+    border-color: $ACCENT;
+}
+
 /* Status-bar buttons (framework/widgets.py's StatusBarButton): quiet text that brightens
    on hover, no button chrome. */
 #StatusBarButton {

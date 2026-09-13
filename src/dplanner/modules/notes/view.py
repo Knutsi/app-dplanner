@@ -21,6 +21,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step
 from dplanner.framework.activity import follow_target
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.list_rows import DETAIL_ROLE, HOST_ROLE, MUTED_ROLE, RichList
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.toolbar import FilterButton, Toolbar
@@ -74,6 +75,8 @@ class NotesView(QWidget):
         project_id: NodeId,
         debounce: DebounceService,
         parent: QWidget | None = None,
+        *,
+        dictation: DictationService | None = None,
     ) -> None:
         super().__init__(parent)
         self._library = library
@@ -119,7 +122,7 @@ class NotesView(QWidget):
         self.split.setChildrenCollapsible(False)
         self.list = RichList(self.split)
         self.list.currentItemChanged.connect(lambda *_args: self._on_pick())
-        self.editor = NoteEditor(library, undo, step_key, self.split)
+        self.editor = NoteEditor(library, undo, step_key, self.split, dictation=dictation)
         self.split.setStretchFactor(1, 1)
         self.split.setSizes([LIST_WIDTH, LIST_WIDTH * 2])
         layout.addWidget(self.split, 1)

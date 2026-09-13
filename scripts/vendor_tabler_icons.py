@@ -94,6 +94,7 @@ GLYPHS: dict[str, str] = {
     "bullet-list": "list",  # Dots and lines; `list` below is the numbered one.
     "quote": "blockquote",
     "table": "table",
+    "microphone": "microphone",  # Dictate: speak into the editor instead of typing.
     # -- what a step *is*: the medallion vocabulary the canvas paints -------------------
     "tag": "tag",  # A milestone.
     "layers": "stack-2",  # A feature: it collects the work behind it.

@@ -317,6 +317,11 @@ def image_icon(color: str | QColor) -> QIcon:
     return glyph_icon("image", color)
 
 
+def microphone_icon(color: str | QColor) -> QIcon:
+    """A microphone: dictate into the editor."""
+    return glyph_icon("microphone", color)
+
+
 # -- the markdown toolbar ---------------------------------------------------------------
 # What a mark does to the text it wraps. Four more of these — inline code, a link, a
 # picture and a numbered list — are the painters above, because the glyph for "this is

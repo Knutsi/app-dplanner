@@ -21,6 +21,7 @@ from PySide6.QtWidgets import QApplication
 
 from dplanner.assets import ICON_SIZES, icon_path
 from dplanner.core.telemetry import crash_log_path, current
+from dplanner.domain.dictation import DictationProvider
 from dplanner.domain.library_file import resolve_library_path
 from dplanner.domain.seed import create_library
 from dplanner.domain.store import LibraryStore
@@ -38,7 +39,7 @@ from dplanner.framework.splash import StartupSplash
 from dplanner.framework.theme_service import apply_saved_theme
 from dplanner.identity import APP_DOMAIN, APP_ID, APP_NAME, APP_VERSION
 from dplanner.menus import MENU_STRUCTURE
-from dplanner.modules import default_modules, theme_providers
+from dplanner.modules import default_modules, dictation_providers, theme_providers
 from dplanner.theme.providers import BUILTIN, ThemeProvider
 
 
@@ -135,7 +136,7 @@ def main(argv: list[str] | None = None) -> int:
     session_started(telemetry, library=library_path, version=APP_VERSION)
     code = 1
     try:
-        session = new_session(providers)
+        session = new_session(providers, dictation_providers())
         if open_at_startup(session, library_path):
             # Only once the window is up: the build itself blocks the GUI thread behind the
             # splash for as long as it takes, and the session's "open" span already says so.
@@ -154,7 +155,10 @@ def main(argv: list[str] | None = None) -> int:
     return code
 
 
-def new_session(theme_providers: Sequence[ThemeProvider] = (BUILTIN,)) -> AppSession:
+def new_session(
+    theme_providers: Sequence[ThemeProvider] = (BUILTIN,),
+    dictation_providers: Sequence[DictationProvider] = (),
+) -> AppSession:
     """The session, wired to this application's model, menus and modules.
 
     Everything application-specific the framework needs is handed over here: how to build a
@@ -162,6 +166,7 @@ def new_session(theme_providers: Sequence[ThemeProvider] = (BUILTIN,)) -> AppSes
     are called and which modules exist. Swap the first two and the same framework runs a
     different application. ``theme_providers`` is the machine's tuple from ``main``; the
     built-in alone by default, so a session built by a test never reads the desktop.
+    ``dictation_providers`` likewise: none by default, so no test reaches a microphone.
     """
     return AppSession(
         module_factory=default_modules,
@@ -169,6 +174,7 @@ def new_session(theme_providers: Sequence[ThemeProvider] = (BUILTIN,)) -> AppSes
         menus=MenuStructure(MENU_STRUCTURE),
         seed=create_library,
         theme_providers=theme_providers,
+        dictation_providers=dictation_providers,
     )
 
 

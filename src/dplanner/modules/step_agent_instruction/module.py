@@ -48,6 +48,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.settings_registry import (
@@ -265,6 +266,8 @@ class StepAgentInstructionDeps:
     # of the Run Agent child menu lands on this module's own page. The settings module
     # owns the dialog; the root closes over it.
     open_settings: Callable[[str], None] = field(default=lambda _section_id: None)
+    # Dictation into the editors; None is a build without a microphone.
+    dictation: DictationService | None = None
 
 
 class StepAgentInstructionModule:
@@ -310,6 +313,7 @@ class StepAgentInstructionModule:
                 worktree=lambda step_id: uses_worktree(deps.library.step(step_id)),
                 set_worktree=self._set_worktree,
                 usage=deps.usage_words,
+                dictation=deps.dictation,
             )
 
         deps.sections.register(
@@ -332,7 +336,7 @@ class StepAgentInstructionModule:
                     label="Agent",
                     order=20,
                     factory=lambda: ProjectInstructionCard(
-                        deps.library, deps.undo, deps.files, deps.pick_assets
+                        deps.library, deps.undo, deps.files, deps.pick_assets, deps.dictation
                     ),
                     icon=typewriter_icon,
                 )

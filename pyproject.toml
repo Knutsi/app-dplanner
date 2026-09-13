@@ -6,7 +6,7 @@ requires-python = ">=3.13,<3.15"
 dependencies = [
     "PySide6-Essentials>=6.9,<7",
     "keyring>=25.0",
-    "openai>=1.50",
+    "openai[realtime]>=1.50",
     "anthropic>=0.40",
     # In-app PDF rendering for spec documents. Deliberately not the full PySide6 (QtPdf
     # lives in the hundreds-of-MB Addons package); pdfium is one small native wheel.

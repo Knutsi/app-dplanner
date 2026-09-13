@@ -50,6 +50,7 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.list_rows import DETAIL_ROLE, EMPHASIS_ROLE, RULE_ROLE, TwoLineDelegate
 from dplanner.framework.markdown_highlight import MarkdownHighlighter
 from dplanner.framework.markdown_toolbar import MarkdownToolbar
@@ -184,9 +185,11 @@ class SpecsActivity(EntityActivity):
         kinds: Mapping[str, DocumentSourceKind] | None = None,
         refresher: SourceRefresher | None = None,
         connect: Callable[[NodeId, str], None] | None = None,
+        dictation: DictationService | None = None,
     ) -> None:
         super().__init__(context, "project", project_id)
         self._product = library
+        self._dictation = dictation
         self._passages_of = passages_of
         self._open_coverage = open_coverage
         self._cite = cite
@@ -285,7 +288,7 @@ class SpecsActivity(EntityActivity):
         self._editor.setFrameShape(ProseEdit.Shape.NoFrame)
         self._highlighter = MarkdownHighlighter(self._editor.document(), self._editor)
         make_text_well(self._editor)
-        self._tools = MarkdownToolbar(self._editor, undo=undo)
+        self._tools = MarkdownToolbar(self._editor, undo=undo, dictation=dictation)
         self._figures = AssetGallery(hide_when_empty=True)
         self._editor.set_attach(self._attach)
         self._expand = attach_expand(self._editor)
@@ -545,6 +548,7 @@ class SpecsActivity(EntityActivity):
             self._undo,
             title=self._current_name() or "Spec",
             attach=self._attach,
+            dictation=self._dictation,
             parent=self._widget.window(),
         )
         dialog.exec()
@@ -665,6 +669,7 @@ class SpecsActivity(EntityActivity):
             placeholder=TOPOLOGY_PLACEHOLDER,
             margin=0,
             expand_title=TOPOLOGY_TITLE,
+            dictation=self._dictation,
         )
         self.topology.show_target(project_id)
         own_layout.addWidget(self.topology, 1)

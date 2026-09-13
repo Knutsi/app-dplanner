@@ -626,6 +626,10 @@ and one stylesheet rule for the progress bar:
   one that reads slow. With nothing remembered the bar is the count alone, which is the
   honest picture on a machine's first run.
 - **Never a modal for a background fact.** A modal asks; a fact is said where it bites.
+- **A field being dictated into wears the accent edge.** The microphone verb is checked
+  while it listens and its glyph turns while the words are on their way; the editor says
+  the same thing on its own border (`dictating`), the way a checked verb's glyph takes the
+  accent, and nothing meters the level — a live meter would be a fourth motion.
 
 ## Focus and motion
 

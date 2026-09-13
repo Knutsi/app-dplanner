@@ -222,8 +222,8 @@ def test_the_root_names_each_provider_by_its_own_module_id():
     """The composition root writes the provider ids literally — reaching for each module's
     MODULE_ID would load its SDK adapter, and Qt with it, in a CLI run. This is the guard."""
     from dplanner.modules import _llm_providers
-    from dplanner.modules.llm_anthropic.provider import MODULE_ID as ANTHROPIC
-    from dplanner.modules.llm_openai.provider import MODULE_ID as OPENAI
+    from dplanner.modules.anthropic.provider import MODULE_ID as ANTHROPIC
+    from dplanner.modules.openai.provider import MODULE_ID as OPENAI
 
     assert {module_id for module_id, _label in _llm_providers()} == {OPENAI, ANTHROPIC}
 

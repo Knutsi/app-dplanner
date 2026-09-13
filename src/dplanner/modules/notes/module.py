@@ -16,6 +16,7 @@ from dplanner.domain.model import Library, NodeId, Step
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.context import ContextService
 from dplanner.framework.debounce import DebounceService
+from dplanner.framework.dictation import DictationService
 from dplanner.framework.project_list_segment import ChildRow
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
@@ -34,6 +35,8 @@ class NotesDeps:
     tabs: TabHost
     # A step's key, the way every row prints one; the rule is the composition root's.
     step_key: Callable[[Step], str]
+    # Dictation into the editors; None is a build without a microphone.
+    dictation: DictationService | None = None
 
 
 class NotesModule:
