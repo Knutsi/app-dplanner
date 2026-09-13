@@ -42,16 +42,20 @@ def test_a_backend_that_cannot_even_be_asked_is_a_problem(monkeypatch):
 
 
 def test_a_vault_this_session_cannot_reach_reads_as_no_secret(monkeypatch):
-    """The Windows Credential Manager backend raises OSError, not KeyringError, when the
-    logon session has no vault — a network logon such as SSH, WinError 1312. Every
-    surface that asks for a secret has to get "none" rather than a traceback, because the
-    checklist is the surface that reports exactly this."""
+    """The Windows Credential Manager backend raises its own pywintypes.error — neither an
+    OSError nor a KeyringError — when the logon session has no vault: a network logon
+    such as SSH, WinError 1312. Every surface that asks for a secret has to get "none"
+    rather than a traceback, because the checklist is the surface that reports exactly
+    this."""
     import keyring
 
     from dplanner.core import secrets
 
+    class BackendError(Exception):
+        """pywintypes.error: neither an OSError nor a KeyringError."""
+
     def no_vault(*_args, **_kwargs):
-        raise OSError(1312, "A specified logon session does not exist")
+        raise BackendError(1312, "CredRead", "A specified logon session does not exist")
 
     monkeypatch.setattr(keyring, "get_password", no_vault)
     monkeypatch.setattr(keyring, "set_password", no_vault)

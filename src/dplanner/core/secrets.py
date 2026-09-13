@@ -38,13 +38,16 @@ def _username(module_id: str, key: str) -> str:
     return f"{module_id}.{key}"
 
 
-# What a backend raises when the vault is not there for *this* session. keyring wraps most
-# of its failures in KeyringError, but the Windows Credential Manager backend lets the
-# OSError through: a network logon — an SSH session, a service — has no credential vault,
-# and CredRead answers WinError 1312 "a specified logon session does not exist". The
-# checklist's job is to report a keychain that cannot be reached, and it crashed reporting
-# it on the first Windows run. An unreachable vault reads as no secret, and nothing kept.
-_UNAVAILABLE = (keyring.errors.KeyringError, OSError)
+# What a backend raises when the vault is not there for *this* session — and it is not one
+# type. keyring wraps most failures in KeyringError, but the Windows Credential Manager
+# backend lets its own through: a network logon (an SSH session, a service) has no
+# credential vault, CredRead answers WinError 1312 "a specified logon session does not
+# exist", and pywin32-ctypes raises that as pywintypes.error, which is not an OSError and
+# not a KeyringError. Naming every backend's type here would mean importing every backend.
+# This is the one seam the application asks a vault through, and its contract is that an
+# unreachable vault reads as no secret and nothing kept — so any failure is unavailable.
+# The checklist, whose job is to report exactly this, crashed reporting it on Windows.
+_UNAVAILABLE = (keyring.errors.KeyringError, Exception)
 
 
 def get_secret(module_id: str, key: str) -> str | None:
