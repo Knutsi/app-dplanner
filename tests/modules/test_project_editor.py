@@ -8,6 +8,8 @@ The detail panels are the window's, not the tab's, so they are reached through t
 which is the point: however many projects are open, there is one of each.
 """
 
+from dataclasses import replace
+
 import pytest
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter
@@ -963,7 +965,12 @@ def test_a_node_is_painted_in_the_theme_that_is_current(themed, services, projec
 
 
 def painted_under(tab, step_id, background: str) -> QColor:
-    """The ground just below a node's seat: empty canvas, or the shadow of a lifted node."""
+    """The ground just below a node's seat: empty canvas, or the shadow of a lifted node.
+
+    Sampled at the left end, before ``LEFT_INSET``: the problem squiggle hangs in the same
+    band and runs from there to the right edge, and a red arc is not what this is asking
+    about.
+    """
     node = scene(tab)._nodes[step_id]
     margin = 12
     width, height = int(NODE_W + 2 * margin), int(NODE_H + 2 * margin)
@@ -976,7 +983,7 @@ def painted_under(tab, step_id, background: str) -> QColor:
         QRectF(node.scenePos() - QPointF(margin, margin), QSizeF(width, height)),
     )
     painter.end()
-    return image.pixelColor(int(margin + NODE_W / 2), int(margin + NODE_H + 3))
+    return image.pixelColor(int(margin + 2), int(margin + NODE_H + 3))
 
 
 @pytest.mark.parametrize("theme", (DARK, LIGHT), ids=lambda t: t.name)
@@ -2263,26 +2270,43 @@ def test_the_bare_sockets_are_coloured_from_the_start_and_switch_off(services, p
     assert close_to(painted_at(tab, third.id, NODE_W, NODE_H / 2), END_MARK)  # Its own switch.
 
 
-def test_an_orphan_wears_a_red_ring_until_something_links_it(services, project, tab):
-    """The one mark that says *something is wrong here* rather than *this is an edge of the
-    graph*, so it is on from the start and painted at full strength."""
-    from dplanner.modules.project_editor.renderers import RING_GAP
+def test_a_step_something_is_wrong_about_wears_a_squiggle(services, project, tab):
+    """The editor's underline, for the one thing a canvas can say about a plan's own
+    health: *look here*. What is wrong is the Problems panel's to say — the canvas only
+    ever knows *that*, so one mark stands for every check there is."""
+    from dplanner.modules.project_editor.renderers import PROBLEM_DROP
 
-    lonely = Step(title="Alone")
-    services.undo.push(AddNodeCommand(project.id, lonely))
-    # Sampled over the top edge, not the sides: the socket discs are on by default too, and
-    # a start disc at the left edge reaches past the ring's gap.
-    ring = lambda: painted_at(tab, lonely.id, NODE_W / 2, -RING_GAP)  # noqa: E731
-    assert ring().red() > ring().green() + 40
+    flagged = lambda step: painted_at(tab, step.id, NODE_W / 2, NODE_H + PROBLEM_DROP)  # noqa: E731
+    step = project.steps[0]
+    # A bare step is exactly what lint has things to say about (no description, no
+    # estimate), so the fixture's own steps are flagged once the reading settles.
+    services.debounce.flush_all()
+    tab._sync()
+    assert flagged(step).red() > flagged(step).green() + 40
 
-    first = project.steps[0]
-    services.undo.push(SetEdgesCommand(lonely.id, "relates", [first.id]))  # Any link will do.
-    assert ring().red() <= ring().green() + 20
+    # Nothing to say about it, nothing drawn: the accent is what the canvas paints from.
+    node = scene(tab)._nodes[step.id]
+    node.set_accent(replace(node._accent, flagged=False))
+    assert flagged(step).red() <= flagged(step).green() + 20
 
-    services.undo.undo()
-    assert ring().red() > ring().green() + 40
-    services.actions.run("canvas.mark_orphans", services.context.current())  # Switched off.
-    assert ring().red() <= ring().green() + 20
+
+def test_the_squiggle_starts_past_the_spine_and_stops_inside_the_card():
+    """It underlines the card's content, not its key — and stays within the body's width,
+    so two cards side by side do not appear joined."""
+    from dplanner.modules.project_editor.renderers import (
+        LEFT_INSET,
+        PROBLEM_DROP,
+        problem_path,
+    )
+
+    body = QRectF(0.0, 0.0, NODE_W, NODE_H)
+    path = problem_path(body)
+    bounds = path.boundingRect()
+    assert bounds.left() >= body.left() + LEFT_INSET - 0.01
+    assert bounds.right() <= body.right()
+    assert bounds.center().y() == pytest.approx(body.bottom() + PROBLEM_DROP, abs=1.0)
+    # A card too narrow for one arc draws nothing rather than a stub.
+    assert problem_path(QRectF(0.0, 0.0, LEFT_INSET + 1.0, NODE_H)).isEmpty()
 
 
 def look_entry(tab, label):
@@ -2323,15 +2347,17 @@ def test_a_mark_is_remembered_and_every_canvas_wears_it(services, project, tab, 
 def test_a_mark_reaches_out_no_further_than_the_item_paints():
     from dplanner.modules.project_editor.renderers import (
         MARK_R,
-        ORPHAN_RING_W,
+        PROBLEM_DROP,
+        PROBLEM_RISE,
+        PROBLEM_W,
         RING_GAP,
         RING_W,
     )
 
     assert MARK_R + 1.0 <= PAINT_MARGIN
     assert RING_GAP + RING_W + 1.0 <= PAINT_MARGIN
-    # The orphan's ring is the heavier of the two that share the gap.
-    assert RING_GAP + ORPHAN_RING_W + 1.0 <= PAINT_MARGIN
+    # The squiggle hangs below the body, which is the furthest anything reaches downward.
+    assert PROBLEM_DROP + PROBLEM_RISE + PROBLEM_W / 2 + 1.0 <= PAINT_MARGIN
 
 
 # -- the node's top edge, which two decorations share -------------------------------------------

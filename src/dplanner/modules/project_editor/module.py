@@ -32,6 +32,7 @@ from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QMenu, QSplitter, QVBoxLayout, QWidget
 
+from dplanner.core.signals import Signal as CoreSignal
 from dplanner.domain.commands import (
     Command,
     CompositeCommand,
@@ -182,6 +183,11 @@ class ProjectEditorDeps:
     # per sync: the answer for a milestone comes from a schedule walk, and the walk is the
     # same for every step in the project.
     step_accents: Callable[[str], dict[StepId, NodeAccent]] = field(default=_no_accents)
+    # Says an accent has changed for a reason the model cannot name. `step_accents` is
+    # otherwise re-read whenever the project changes, which covers everything the plan
+    # holds; what is wrong with a plan is *derived* from it, on a settle of its own, so it
+    # lands after the change that caused it and has to say so itself.
+    accents_changed: "CoreSignal[str] | None" = None
 
     # How long a step takes, from whichever module owns estimates — the timeline sort reads
     # time through this, the same seam domain/schedule.py uses one level down.
@@ -258,6 +264,11 @@ class ProjectActivity(EntityActivity):
             # node too — the spark glyph reads module_text — and sync diffs before
             # repainting, so a keystroke that changes nothing it shows is free.
             follow_project(self._product, self.project_id, self._sync_soon.trigger),
+            *(
+                [deps.accents_changed.connect(self._on_accents_changed)]
+                if deps.accents_changed is not None
+                else []
+            ),
         ]
         self._sync()
 
@@ -451,6 +462,12 @@ class ProjectActivity(EntityActivity):
         library — the same seam ``_link_refusal`` is.
         """
         return self._product.redirection([edge.as_edge() for edge in edges], anchor, end)
+
+    def _on_accents_changed(self, project_id: str, *_rest: object) -> None:
+        """A derived fact about *this* project moved. It names the project because a view
+        of one project hears its own changes and no others."""
+        if project_id == self.project_id:
+            self._sync_soon.trigger()
 
     def _sync(self) -> None:
         if not self._product.has(self.project_id):

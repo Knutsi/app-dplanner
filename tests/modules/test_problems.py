@@ -7,7 +7,7 @@ finding is: that is ``tests/cli``'s.
 
 import pytest
 
-from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand
+from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetFieldCommand
 from dplanner.domain.model import Step
 from dplanner.modules.problems.panel import NOTHING_WRONG, ProblemsPanel
 
@@ -155,3 +155,68 @@ def test_a_clean_plan_offers_nothing_to_fix(services, make_project):
     if not view.findings():
         assert not button.isEnabled()
         assert button.text() == "Fix Problems"
+
+
+# -- one reading, two readers --------------------------------------------------------------------
+
+
+def findings_of(services):
+    module = next(m for m in services.modules if type(m).__name__ == "ProblemsModule")
+    return module.findings
+
+
+def test_the_panel_and_the_canvas_read_one_settled_answer(services, project, tab, monkeypatch):
+    """Lint is super-linear in the size of a plan, so it runs on a settle and never on a
+    canvas sync. Both surfaces read the one reading rather than taking their own."""
+    shared = findings_of(services)
+    reads: list[str] = []
+    real = shared._read
+
+    def counted(project_id):
+        reads.append(project_id)
+        return real(project_id)
+
+    monkeypatch.setattr(shared, "_read", counted)
+
+    services.debounce.set_immediate(False)
+    try:
+        for title in ("one", "two", "three"):
+            services.undo.push(SetFieldCommand(project.steps[0].id, "title", title))
+        assert reads == []  # A burst of edits asks nothing of lint.
+        services.debounce.flush_all()
+    finally:
+        services.debounce.set_immediate(True)
+    assert reads == [project.id]  # One reading for the burst, for the one project shown.
+
+    # And the canvas paints from it without asking again.
+    before = len(reads)
+    tab._sync()
+    assert len(reads) == before
+
+
+def test_a_step_a_finding_is_about_is_flagged_on_the_canvas(services, project, tab):
+    """`flagged` is the canvas's whole knowledge of a problem: which steps, never which."""
+    shared = findings_of(services)
+    services.debounce.flush_all()
+    orphan = next(step for step in project.steps if step.title == "Orphan")
+    assert orphan.id in shared.flagged(project.id)
+    tab._sync()
+    assert tab._scene._nodes[orphan.id]._accent.flagged
+
+
+def test_a_project_nobody_has_asked_about_costs_nothing(services, project):
+    """The first ask answers nothing and arrives on the next settle — which is what keeps
+    the first canvas sync of a big plan off the expensive path.
+
+    Asserted with immediate mode off, because that is the window's regime: run immediate,
+    the settle lands inside the ask and the first answer is already the real one.
+    """
+    shared = findings_of(services)
+    shared._found.clear()
+    services.debounce.set_immediate(False)
+    try:
+        assert shared.flagged(project.id) == frozenset()
+        services.debounce.flush_all()
+    finally:
+        services.debounce.set_immediate(True)
+    assert shared.flagged(project.id)

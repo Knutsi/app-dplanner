@@ -35,7 +35,9 @@ def node(tab, step):
 
 
 def test_a_plain_step_has_no_accent_beyond_its_key(project, tab):
-    assert node(tab, project.steps[0])._accent == NodeAccent(key_text="S1")
+    # Flagged, because a bare step is exactly what lint has things to say about — no
+    # description, no estimate. Everything else about it is the default.
+    assert node(tab, project.steps[0])._accent == NodeAccent(key_text="S1", flagged=True)
 
 
 def test_the_key_letter_follows_the_kind_and_the_number_stays(services, project, tab):

@@ -588,24 +588,36 @@ root, stop and look for the registry or capability you have not found yet.
   the status line says what did not. The verb is enabled exactly while links are picked,
   greyed with the reason otherwise. `ARCHITECTURE.md`'s *Redirecting a link moves one end*
   has the reasoning.
-- **Marks are a way of looking, remembered per user — and all three are on.** Starts, Ends
-  and Orphans (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one
+- **Marks are a way of looking, remembered per user — and both are on.** Starts and Ends
+  (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one
   `Look` (`look.py`, with the spotlight, the background and Snap to Grid beside them),
   written to `user_config` and fanned to every scene like `RenderHints`; a tab opened later
-  wears them. **On by default**: a socket with nothing on it and a node with nothing at all
-  are the two things a graph can be wrong about, and a preference that has to be found
-  before it can help is one that helps nobody — so switching one *off* is the deliberate
-  act, and `Marks.from_json` gives an absent name the default rather than False, which lets
-  a default change reach somebody who never touched that switch. The orphan's ring is the
-  refusal red at **full strength and `ORPHAN_RING_W`**, twice the agent ring's weight: it
-  is the one mark that says *something is wrong here* rather than *this is where the graph
-  ends*. It is measured into `PAINT_MARGIN` like every other decoration.
+  wears them. **On by default**: a socket with nothing on it is what a graph can be wrong
+  about, and a preference that has to be found before it can help is one that helps nobody
+  — so switching one *off* is the deliberate act, and `Marks.from_json` gives an absent
+  name the default rather than False, which lets a default change reach somebody who never
+  touched that switch. There was a third, Orphans, a refusal-red ring round a node with no
+  links; the squiggle below covers it, and a stored `orphans` is now ignored.
   Which sockets a node has connected is `ordering.ports()` over the drawn edges, derived
   every sync — in the domain rather than beside the marks because `graph.orphan` lint asks
   the same question, and a module may not import another module's copy of an answer. The toggles' `checked` reads the module and the module calls `context.refresh()` —
   the theme-toggle pattern, deliberately not an edge on the activity node, because a
   preference outlives any tab. `ARCHITECTURE.md`'s *Marks are a way of looking* has the
   reasoning.
+- **A step something is wrong about wears a squiggle, and the reading is settled.** The
+  editor's underline, 3 px of refusal red hanging `PROBLEM_DROP` below the body and
+  starting past the spine — *look here*, where the Problems panel is the asking. It stands
+  for **every** lint check there is, which is why it replaced the orphan ring: `graph.orphan`
+  is one such check, so a ring and a squiggle would have been two red vocabularies for one
+  fact, and a *preference* that could hide a problem is not a way of looking. The canvas
+  never learns what a problem is — `NodeAccent.flagged` is the composition root's
+  translation, like every other accent. **Nothing runs lint on a sync**:
+  `modules/problems/findings.py` is one settled reading with two readers, the panel and the
+  canvas, because the checks are super-linear in the size of a plan (1 ms at 40 steps,
+  9 ms at 120, 66 ms at 300). It names the project on both its signals — `changed` for the
+  panel, which lists messages, and `flagged_changed` for the canvas, which draws one mark
+  per step and must not repaint because a title moved. `ARCHITECTURE.md`'s *A problem is a
+  squiggle, and the reading is shared* has the reasoning.
 - **A picked step lights its arrows, and the spotlight fades the rest.** One derivation —
   `selection.neighbourhood(edges, picked)`, the arrows with an end among the picked steps and
   the steps at their far ends, re-derived every selection change and every sync — read twice.
