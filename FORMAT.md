@@ -148,6 +148,24 @@ Four conventions, and each one is a lesson about diffs:
   reader the shape of the model at a glance. It also means children never sit beside
   `modules/`, so there are no reserved folder names to trip over.
 
+### Bytes on disk
+
+Every file in a project directory is **UTF-8, LF, and ends with a newline**, on every
+platform that writes one. JSON goes out with a two-space indent and sorted keys
+(`domain/store.py`); prose goes out as the person typed it. `core/fsio.py`'s `write_atomic`
+is the one door all of it passes through, and it states each of these explicitly rather than
+taking the platform's default — because the platform's defaults are not the same platform's
+defaults. Python translates `\n` to `\r\n` on Windows and decodes text as the console code
+page, so a plan saved on a laptop and the same plan saved on a Windows box came back as a
+whole-file diff against each other with nothing changed. A format whose whole purpose is to
+be shared and merged cannot have one platform quietly rewriting every line of it.
+
+This repository's own tree follows the same rule and pins it with a `.gitattributes`, so a
+Windows checkout of DPlanner cannot hand the suite CRLF copies of the files it compares byte
+for byte. A *user's* plan repository gets no such file: `write_atomic` writing LF is already
+enough there (git's `autocrlf` leaves LF alone on the way in), and writing into somebody
+else's `.gitattributes` is a bigger intrusion than this needs.
+
 **Two keys on the project say where it stands with its code.** `"repository"` is the code
 repository the plan is about, as git names its remote (a resolved path for a remote-less
 one); absent, the project reads as planning the repository it sits in — the older shape,
@@ -337,16 +355,19 @@ over ids, so nothing in the model has to know. The cost is on whoever writes the
 migration for that format: it sees both shapes and owes both a thought.
 
 **Two ids are how one package gives a node two documents.** `modules/docs/` writes a
-step's documentation fragment as `docs.md` and a *collector's* compiled document as
+step's documentation fragment as `docs.md` and a *collector's* documentation as
 `docs_compiled.md`, because a node holds exactly one prose document per module id and a
-feature legitimately has both — its own note, and what was made of the four steps behind it.
-The alternative, a markdown string inside `docs.json`, is the trade the prose row above
+feature legitimately has both — its own fragment, and what was made of the four steps behind
+it. The alternative, a markdown string inside `docs.json`, is the trade the prose row above
 already refuses. `docs_compiled.json` carries what the compile recorded, and the key that
 matters is `"digest"`: the fingerprint of the sources it read. Whether a document is out of
 date is then a comparison rather than a stored flag, so relinking the graph cannot leave one
-claiming to be current. `docs` also spans node kinds — beside the *project* it is the
-standing documentation style, prepended to every compile, which is `step_agent_instruction`'s
-shape for the same reason.
+claiming to be current. **Format 2 dropped `provider` and `model`**: they named the model
+that wrote the document while the window compiled with an LLM call, and with `dplanner
+compiled set` as the only writer they would hold one value each forever — which agent a
+window launched is that window's own record, per user, never the plan's. `docs` also spans
+node kinds — beside the *project* it is the **compilation instructions**, which open every
+compile briefing, which is `step_agent_instruction`'s shape for the same reason.
 
 **A record list is the shape for a fact a step has several of.** `testing` writes
 `{"tests": [{"id": "T100", "title": "…", "body": "…"}]}` beside a step: a *test* belongs to

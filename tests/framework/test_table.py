@@ -222,6 +222,56 @@ def test_a_rich_row_is_two_lines_of_two_sizes(app):
         table.deleteLater()
 
 
+def test_a_column_sized_to_its_contents_shows_them_whole(app):
+    """Two rules meet here, and each of them clipped a real table before it was written.
+
+    A cell is *measured* in the weight it is painted in, so a bold milestone does not
+    elide in a column its plain neighbours sized; and it is measured by the width the
+    text lays out to rather than by its advance, which a glyph's right side bearing can
+    exceed by a pixel — enough to render "10" as an ellipsis.
+    """
+    from PySide6.QtWidgets import QStyleOptionViewItem
+
+    made = Table((Column("#", numeric=True), Column("Wave")))
+    made.add_row(("10", "Wave 15"))
+    made.add_row((Cell("15", emphasis=True), Cell("Wave 15", emphasis=True)))
+    option = QStyleOptionViewItem()
+    made.initViewItemOption(option)
+
+    for column in (0, 1):
+        plain = made.delegate.sizeHint(option, made.model().index(0, column))
+        bold = made.delegate.sizeHint(option, made.model().index(1, column))
+        assert bold.width() >= plain.width()
+        for row in (0, 1):
+            index = made.model().index(row, column)
+            drawn = made.delegate.sizeHint(option, index).width() - 2 * made.padding()
+            cell = made.item(row, column)
+            assert cell is not None
+            text = cell.text()
+            font = made.delegate.font_for(option, index)
+            assert made.delegate.elided(font, text, drawn) == text
+    made.deleteLater()
+
+
+def test_a_host_numbers_its_own_roles_from_one_the_delegate_never_reads(table):
+    """``HOST_ROLE`` is the promise: what a view stamps on its rows is its own business.
+
+    The order table numbered its roles from ``UserRole + 1`` and collided with
+    ``DETAIL_ROLE``, so every milestone row printed its label as a second line and greyed
+    itself through ``MUTED_ROLE``. A host that starts here cannot, and neither can it
+    collide with a role the framework adds later.
+    """
+    from dplanner.framework.list_rows import HOST_ROLE
+
+    framework_roles = {DETAIL_ROLE, MUTED_ROLE, EMPHASIS_ROLE, HEADING_ROLE, TINT_ROLE}
+    assert all(role < HOST_ROLE for role in framework_roles)
+
+    table.add_row(("A", "1", "ok"), data={HOST_ROLE: "step-7"})
+    item = table.item(0, 0)
+    assert item.data(HOST_ROLE) == "step-7"
+    assert not item.data(DETAIL_ROLE) and not item.data(MUTED_ROLE)
+
+
 def test_the_current_cell_wears_no_focus_frame(table):
     """Qt draws a focus rectangle round the current cell; the row's edge is the one mark."""
     from PySide6.QtWidgets import QStyle, QStyleOptionViewItem

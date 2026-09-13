@@ -38,14 +38,20 @@ from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.framework.debounce import Debounced, DebounceService
-from dplanner.framework.list_rows import DETAIL_ROLE, TRAILING_ROLE, TwoLineDelegate
+from dplanner.framework.list_rows import (
+    DETAIL_ROLE,
+    HOST_ROLE,
+    TRAILING_ROLE,
+    TwoLineDelegate,
+)
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.widgets import EmptyState
 from dplanner.theme.icons import ICON_SIZE, problem_icon
 from dplanner.theme.tokens import CONTROL_HEIGHT, PANEL_MARGIN, SECTION_GAP
 
-# The step a row is about, when it is about one.
-SUBJECT_ROLE = int(Qt.ItemDataRole.UserRole) + 20
+# The step a row is about, when it is about one — numbered from ``HOST_ROLE``, where a
+# host's own roles start and nothing the framework's delegates read can collide with it.
+SUBJECT_ROLE = HOST_ROLE
 
 NOTHING_WRONG = "No problems found."
 NO_AGENT_YET = "Nothing to fix"

@@ -1,0 +1,55 @@
+# The Windows target: a disposable Windows 11 guest for the rare manual check.
+#
+#   uv run python scripts/windows_check.py up
+#
+# Driven by scripts/windows_check.py, which sets DPLANNER_WIN_HOME and is the supported
+# way in. Running `docker compose` here by hand works too, as long as that variable names
+# an absolute directory — the `:?` below is what stops an unset one from silently binding
+# the host's own /storage into the VM.
+#
+# dockurr/windows is MIT (github.com/dockur/windows). It downloads a Microsoft ISO and
+# installs it unattended with Microsoft's generic *trial* keys: the guest is an evaluation
+# install that expires after 180 days, and nothing here redistributes Windows.
+
+name: dplanner-windows
+
+services:
+  windows:
+    image: dockurr/windows:6.05
+    container_name: dplanner-windows
+
+    environment:
+      VERSION: "11"
+      RAM_SIZE: "8G"
+      CPU_CORES: "6"
+      DISK_SIZE: "64G"
+      USERNAME: "dplanner"
+      PASSWORD: "dplanner"
+      # Publishing a Docker port reaches the *container*, not the guest. qemu-docker's
+      # getUserPorts() forwards only 3389 by default in Windows boot mode and takes every
+      # other guest port from here, turning each into a QEMU hostfwd at the same number.
+      # 2222 rather than 22 because the same function silently drops any port under 1024
+      # the container process cannot bind.
+      USER_PORTS: "2222"
+
+    devices:
+      - /dev/kvm
+      - /dev/net/tun
+    cap_add:
+      - NET_ADMIN
+
+    # Bound to the loopback on purpose: this guest has a throwaway password and RDP open.
+    ports:
+      - "127.0.0.1:8007:8006"        # the web viewer (8006 is Omarchy's VM)
+      - "127.0.0.1:3390:3389/tcp"    # RDP (3389 is Omarchy's VM)
+      - "127.0.0.1:3390:3389/udp"
+      - "127.0.0.1:2222:2222"        # OpenSSH in the guest
+
+    volumes:
+      - ${DPLANNER_WIN_HOME:?set DPLANNER_WIN_HOME, or drive this with scripts/windows_check.py}/storage:/storage
+      - ${DPLANNER_WIN_HOME:?}/shared:/shared
+      - ${DPLANNER_WIN_HOME:?}/oem:/oem
+
+    # Long enough for Windows to shut down rather than be cut off mid-write.
+    stop_grace_period: 2m
+    restart: "no"

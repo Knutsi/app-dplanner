@@ -202,6 +202,23 @@ def assemble(
     return AssembledPrompt(text=text, files=files, segments=segments)
 
 
+def handover_prompt(heading: str, project_title: str, preamble: str, body: str) -> str:
+    """A briefing for a run that is not carrying out the step: the header, this module's
+    own preflight, then whatever the asking module wrote.
+
+    The two hand-overs — reconciling a conflict, compiling a collector's documentation —
+    differ only in ``body``, and the body is the asking module's vocabulary: what "compile"
+    means and which verb finishes it belong to the docs module, not here. So this wraps
+    rather than composes, and the preamble is the one thing every run gets whatever it was
+    opened for.
+    """
+    lines = [heading, f"Project: {project_title}", ""]
+    if preamble:
+        lines += ["## Before you start", "", preamble, ""]
+    lines += [body.strip(), ""]
+    return "\n".join(lines)
+
+
 def conflict_prompt(
     step_title: str,
     project_title: str,
@@ -216,10 +233,7 @@ def conflict_prompt(
     result back with the verb that owns the entry. No status change and no handoff: this run
     does not carry out the step, it settles what two writers meant.
     """
-    lines = [f"# Conflict on step: {step_title}", f"Project: {project_title}", ""]
-    if preamble:
-        lines += ["## Before you start", "", preamble, ""]
-    lines += [
+    lines = [
         "## What happened",
         "",
         "The DPlanner window and a `dplanner` run changed the same entries of this plan"
@@ -245,9 +259,10 @@ def conflict_prompt(
         "",
         f"Run `dplanner agent-state clear '{step_title}'` so the window stops showing this"
         " run as live. Do not change the step's status.",
-        "",
     ]
-    return "\n".join(lines)
+    return handover_prompt(
+        f"# Conflict on step: {step_title}", project_title, preamble, "\n".join(lines)
+    )
 
 
 def problems_prompt(
@@ -261,23 +276,22 @@ def problems_prompt(
     ``dplanner project lint`` reports them — every message already names the verb that
     closes its gap, which is the whole reason this prompt can be short.
 
-    It has no step, so it has no worktree and no ``## Instructions`` of its own: what it
-    carries is the plan's own repository, the list, and the order to read the topology
-    first — the verbs that reshape a graph are behind that gate, and an agent that has not
-    been through it will be refused by the first one it tries.
+    The third hand-over, and the one with no step at all: no worktree, no briefing of a
+    step's own, and a preamble written here rather than by the briefing, since that one is
+    per step and says step-specific things. What it carries is the plan's own repository,
+    the list, and the order to read the topology first — the verbs that reshape a graph are
+    behind that gate, and an agent that has not been through it will be refused by the
+    first one it tries.
     """
-    lines = [f"# Problems in the plan: {project_title}", ""]
+    preamble = ""
     if plan_root:
-        lines += [
-            "## Before you start",
-            "",
+        preamble = (
             f"You are in the plan's own repository, `{plan_root}`. This run changes the"
             " **plan** and nothing else: do not edit code, and do not switch branches."
             " Never kill a process by name or pattern — other agents may be running with"
-            " the same names.",
-            "",
-        ]
-    lines += [
+            " the same names."
+        )
+    lines = [
         "## What `dplanner project lint` reports",
         "",
         "Every line names the verb that closes it.",
@@ -299,6 +313,7 @@ def problems_prompt(
         "## When you are done",
         "",
         f"Run `dplanner project lint '{project_title}'` again and report what is left.",
-        "",
     ]
-    return "\n".join(lines)
+    return handover_prompt(
+        f"# Problems in the plan: {project_title}", project_title, preamble, "\n".join(lines)
+    )

@@ -1,40 +1,36 @@
-"""The Docs tab: a project's collectors down the side, their Fragments and Compiled beside.
+"""The Documentation tab: a project's collectors down the side, their documents beside.
 
 **A group is a collector, and grouping is the existing walk.** ``domain/scope.gatherers()``
 answers which features (or milestones) gather each step, and ``collect.sources_for`` answers
 what one would read. Nothing is stored, so ``dplanner step link`` cannot leave a document
 filed under a feature that no longer waits on it.
 
-**Two tabs, because they are two documents, not two halves of one.** *Fragments* is what the
-work wrote — read-only, each contribution under its step's heading. *Compiled* is the
-document made of them, edited in place. A reader wants one or the other, never both at once,
-which is what makes a tab right where a stacked pair would not be.
+**Three tabs, because they are three documents.** *Fragments* is what the work wrote —
+read-only, each contribution under its step's heading. *Documentation* is what a collector
+makes of them, edited in place. *Compilation instructions* is the project's, a second binding
+over the field the project panel's card edits, because this is the page where somebody decides
+how every document here should read.
 
-**The mark on a row is the third state of the same fact the banner states.** A filled accent
-dot for a document its fragments have outgrown, a hollow ring for one nobody has written yet,
-and nothing at all when it is current — because the common case should be quiet.
+**The row says where a document stands in words, and the strip carries the verb.** The state
+sits in the row's trailing slot — nothing at all when it is current, because the common case
+should be quiet — and what a compile *was* is on the second line: how much it read, when it
+landed and which agent this desk handed it to.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from PySide6.QtCore import QModelIndex, QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
-    QButtonGroup,
     QComboBox,
     QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
     QSplitter,
-    QStackedWidget,
-    QStyle,
-    QStyledItemDelegate,
-    QStyleOptionViewItem,
     QTabWidget,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -45,11 +41,18 @@ from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.activity import EntityActivity, follow_project
 from dplanner.framework.context import ContextNode, Uri, activity_uri, selection_uri
 from dplanner.framework.debounce import Debounced
-from dplanner.framework.signalling import UpdatingIndicator
+from dplanner.framework.list_rows import (
+    DETAIL_ROLE,
+    HOST_ROLE,
+    TRAILING_ROLE,
+    TwoLineDelegate,
+    rich_row_height,
+)
 from dplanner.framework.markdown_view import MarkdownView
 from dplanner.framework.module_data_section import PANEL_MARGIN
-from dplanner.framework.toolbar import control_bar
-from dplanner.framework.widgets import EmptyState
+from dplanner.framework.signalling import UpdatingIndicator
+from dplanner.framework.toolbar import Toolbar
+from dplanner.framework.widgets import EmptyState, caption, note
 from dplanner.modules.docs.aspect import MODULE_ID, read
 from dplanner.modules.docs.collect import (
     Source,
@@ -57,43 +60,49 @@ from dplanner.modules.docs.collect import (
     sources_for,
     word_count,
 )
-from dplanner.modules.docs.section import CompileBanner, CompiledSection, CompileLink
-from dplanner.theme.icons import ICON_SIZE, glyph_painter
+from dplanner.modules.docs.section import (
+    CompiledSection,
+    CompileLink,
+    DocumentStanding,
+    InstructionsCard,
+    Standing,
+    ago,
+)
+from dplanner.theme.icons import glyph_painter, read_icon
+from dplanner.theme.tokens import CAPTION_GAP, CONTROL_GAP, SECTION_GAP
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
     from dplanner.modules.docs.module import DocsDeps
 
 DOCS_KIND = "docs"
 
-CAPTION_GAP = 6
-BLOCK_GAP = 12
-CONTROL_GAP = 8
 SELECTOR_WIDTH = 180
-LIST_WIDTH = 260
+LIST_WIDTH = 300  # Three facts a row, on two lines.
 
 DOCS_CAPTION = "Documentation"
-DOCS_SUBTITLE = "What this project's work adds up to, for whoever reads it."
 
-ROW_PADDING_V = 10
-ROW_PADDING_H = 12
-ROW_LINE_GAP = 4
-SECONDARY_ALPHA = 160  # ~63 % — DESIGN.md's opacity-derived secondary text.
-MARK_DIAMETER = 8.0
-MARK_GAP = 10
+FRAGMENTS_TAB = "Fragments"
+DOCUMENT_TAB = "Documentation"
+INSTRUCTIONS_TAB = "Compilation instructions"
 
-DETAIL_ROLE = int(Qt.ItemDataRole.UserRole) + 1
-GROUP_ROLE = int(Qt.ItemDataRole.UserRole) + 2
-MARK_ROLE = int(Qt.ItemDataRole.UserRole) + 3
+# The lead sentence over the list: the page's one answer, a size up from its own detail.
+LEAD_POINTS = 2.0
+
+GROUP_ROLE = HOST_ROLE  # Where a host's own roles start; the delegates never read past it.
+
+# What the trailing slot says: the state, or — for a document nobody needs to act on — when
+# it landed. DESIGN.md's *Lists of rich items*: a date, a count, a fact about the row.
+MARKS = {"stale": "out of date", "never": "not compiled yet"}
 
 UNGROUPED = "Every documented step"
 # Under the headline, which already says "Nothing documented yet".
 NOTHING_YET = (
-    "Turn on Step ▸ Type ▸ Docs and write what a step adds to the product's "
-    "documentation — or `dplanner docs set '<step>' --file notes.md`."
+    "Turn on Step ▸ Type ▸ Documentation fragment and write what a step adds to the"
+    " product's documentation — or `dplanner docs set '<step>' --file notes.md`."
 )
 NOT_A_COLLECTOR = (
-    "These steps reach no feature, so there is nothing for their documentation to be "
-    "compiled into. `dplanner project lint` reports them as scope.ungathered."
+    "These steps reach no feature, so there is nothing for their fragments to be compiled"
+    " into. `dplanner project lint` reports them as scope.ungathered."
 )
 
 
@@ -105,11 +114,13 @@ class Group:
     title: str
     detail: str
     sources: tuple[Source, ...]
-    icon: str = ""  # A medallion name; "" draws none.
+    icon: str = ""  # A medallion name; "" draws the list's own.
     # A milestone collector's own shade of the project's colour map; "" paints the
     # glyph in the list's ink, which is what a feature and a check take.
     color: str = ""
-    mark: str = ""  # "stale" | "never" | "" — what the delegate paints at the right edge.
+    state: str = ""  # "current" | "stale" | "never" — what the headline counts.
+    mark: str = ""  # The trailing slot: the state in words, or when a current one landed.
+    tip: str = ""  # The row's tooltip: the session of the run that compiled it.
     collector: Step | None = None
     areas: tuple[str, ...] = field(default_factory=tuple)
 
@@ -148,7 +159,7 @@ class DocsActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — Docs"
+        return f"{self._project().title or 'Untitled project'} — {DOCS_CAPTION}"
 
     @property
     def widget(self) -> QWidget:
@@ -162,6 +173,7 @@ class DocsActivity(EntityActivity):
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes = []
+        self.page.controls.dispose()
 
     def show_collector(self, step_id: StepId) -> None:
         """Select the group that is ``step_id``'s — its own, when it collects, else the
@@ -187,11 +199,16 @@ class DocsActivity(EntityActivity):
             return  # The tab is on its way out; follow_entity_tabs closes it.
         project = self._project()
         self._sync_grouping(project)
+        self.page.instructions.show_target(self.project_id)
         self._groups = self._build_groups(project)
         self.page.show_groups(self._groups, keep=self._selected)
         self.page.lead(*_headline(self._groups))
         self.page.say("" if self._groups else NOTHING_YET)
         self._show_selected()
+        # What a compile *can* read has just changed, and a strip restates on the context
+        # rather than on the model — the theme toggles' path, and coalesced like theirs, so
+        # deleting the last fragment greys the verb where it stands.
+        self._deps.context.refresh()
 
     def _sync_grouping(self, project: Project) -> None:
         """Only kinds this project actually has: a selector offering nothing teaches nothing."""
@@ -224,9 +241,14 @@ class DocsActivity(EntityActivity):
             return [
                 Group(
                     step.id,
-                    step.title or "Untitled step",
+                    " ".join(
+                        part
+                        for part in (self._deps.step_key(step), step.title or "Untitled step")
+                        if part
+                    ),
                     _words(word_count(read(step))),
                     (Source(step, read(step)),),
+                    icon="loose",
                     areas=(step.id,),
                 )
                 for step in project.steps
@@ -241,15 +263,20 @@ class DocsActivity(EntityActivity):
             if not found:
                 continue
             standing = self._link.standing(step.id)
+            key = self._deps.step_key(step)
             groups.append(
                 Group(
                     step.id,
-                    f"{kind.label}: {step.title or 'Untitled step'}",
-                    _group_detail(found),
+                    # The key leads, and the kind is the medallion's to say: a row that
+                    # spelled "Feature:" said twice what the glyph beside it already showed.
+                    " · ".join(part for part in (key, step.title or "Untitled step") if part),
+                    _group_detail(found, standing),
                     tuple(found),
                     icon=_glyph_for(self._deps.scopes, step),
                     color=self._deps.milestone_color(step.id),
-                    mark="" if standing.state == "current" else standing.state,
+                    state=standing.state,
+                    mark=MARKS.get(standing.state) or _when(standing),
+                    tip=standing.by,
                     collector=step,
                     areas=tuple(source.step.id for source in found),
                 )
@@ -263,6 +290,10 @@ class DocsActivity(EntityActivity):
                     f"Not in any {kind.label.lower()}",
                     _group_detail(loose),
                     tuple(loose),
+                    # A glyph of its own, because ``TwoLineDelegate`` reserves the icon
+                    # column per row: without one this heading would start where the
+                    # collectors' titles do not.
+                    icon="loose",
                     areas=tuple(source.step.id for source in loose),
                 )
             )
@@ -338,66 +369,81 @@ class _DocsPage(QWidget):
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
         layout.setSpacing(CAPTION_GAP)
 
-        self.caption = QLabel(DOCS_CAPTION, self)
-        self.caption.setObjectName("InspectorCaption")
+        # No sentence under the caption saying what documentation is: DESIGN.md's *Words* —
+        # a standing definition is chrome that never stops being read, and the answer under
+        # it changes with the plan, which is what a reader came for.
+        self.caption = caption(DOCS_CAPTION, self)
         layout.addWidget(self.caption)
-
-        self.subtitle = QLabel(DOCS_SUBTITLE, self)
-        self.subtitle.setObjectName("InspectorNote")
-        self.subtitle.setWordWrap(True)
-        layout.addWidget(self.subtitle)
-        layout.addSpacing(BLOCK_GAP)
+        layout.addSpacing(SECTION_GAP)
 
         self.answer = QLabel(self)
         answer_font = self.answer.font()
-        answer_font.setPointSizeF(answer_font.pointSizeF() + 2.0)
+        answer_font.setPointSizeF(answer_font.pointSizeF() + LEAD_POINTS)
         self.answer.setFont(answer_font)
         layout.addWidget(self.answer)
 
-        self.detail = QLabel(self)
-        self.detail.setObjectName("InspectorNote")
+        self.detail = note("", self)
         layout.addWidget(self.detail)
-        layout.addSpacing(BLOCK_GAP)
+        layout.addSpacing(SECTION_GAP)
 
-        # A toolbar rather than a row of widgets: too narrow for its contents it grows the
-        # » overflow button, where a plain row simply overlaps.
+        # The strip carries the page's verbs and its one selector: a `Toolbar`, so a narrow
+        # dock folds what does not fit into its … menu instead of squeezing every button.
         strip = QHBoxLayout()
         strip.setSpacing(CONTROL_GAP)
-        self.controls = control_bar(self)
+        self.controls = Toolbar(self)
+        # Creation before the verbs on the selection — DESIGN.md's strip order — and the
+        # arrow drops the profiles, which is the *same* child menu the Step menu offers.
+        # Registry-fed: the glyph, the words and the reason are the spec's and its state's,
+        # restated on every context change, so this strip cannot disagree with the menu about
+        # whether a compile can run. The arrow drops the launch profiles — the Step menu's own
+        # child menu, never a copy of its list.
+        dropped, menu_id = link.profile_menu
+        self.verbs = {
+            action_id: self.controls.add_action(
+                deps.actions,
+                deps.context,
+                action_id,
+                data_menu=menu_id if action_id == dropped else None,
+            )
+            for action_id in link.verbs
+        }
+        self.controls.add_divider()
         self.group_box = QComboBox(self.controls)
         self.group_box.setMinimumWidth(SELECTOR_WIDTH)
-        # A toolbar wraps a widget in an action, and it is the *action* that carries
-        # visibility — hiding the combo alone would leave its slot behind.
-        self.group_action = self.controls.addWidget(self.group_box)
+        self.group_action = self.controls.add_widget(self.group_box)
         strip.addWidget(self.controls, 1)
         self.updating = UpdatingIndicator(self)
         strip.addWidget(self.updating)
         layout.addLayout(strip)
         layout.addSpacing(CONTROL_GAP)
 
+        self._collector: StepId = ""
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.list = QListWidget(self.splitter)
         self.list.setObjectName("DocsGroups")
-        self.rows = _GroupDelegate(self.list)
-        self.rows.set_accent(deps.theme.current.accent)
-        deps.theme.changed.connect(lambda theme: self._reink(theme.accent))
+        self.rows = TwoLineDelegate(self.list)
         self.list.setItemDelegate(self.rows)
         self.list.setFrameShape(QListWidget.Shape.NoFrame)
+        self._ink = deps.theme.current.text_secondary
+        deps.theme.changed.connect(lambda theme: self._reink(theme.text_secondary))
 
         right = QWidget(self.splitter)
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(CONTROL_GAP)
-        self.banner = CompileBanner(link, right)
-        right_layout.addWidget(self.banner)
+        self.standing = DocumentStanding(link, right)
+        right_layout.addWidget(self.standing)
 
         self.tabs = QTabWidget(right)
         self.tabs.setDocumentMode(True)
+        # Where the picked collector's document stands is nothing to say over the *project's*
+        # instructions, so the line steps aside for that tab rather than contradicting it.
+        self.tabs.currentChanged.connect(lambda _index: self._show_standing())
         right_layout.addWidget(self.tabs, 1)
 
         self.fragments = MarkdownView(self.tabs)
         self.fragments.setFrameShape(MarkdownView.Shape.NoFrame)
-        self.tabs.addTab(self.fragments, "Fragments")
+        self.tabs.addTab(self.fragments, FRAGMENTS_TAB)
 
         compiled_page = QWidget(self.tabs)
         compiled_layout = QVBoxLayout(compiled_page)
@@ -410,7 +456,22 @@ class _DocsPage(QWidget):
         self.uncompilable.setWordWrap(True)
         self.uncompilable.hide()
         compiled_layout.addWidget(self.uncompilable)
-        self.tabs.addTab(compiled_page, "Compiled")
+        self.tabs.addTab(compiled_page, DOCUMENT_TAB)
+
+        # The project's own document, in the page where somebody decides how every document
+        # here should read: a second binding over the field the project panel's card edits,
+        # which is the standing agent instruction's shape for the same reason.
+        instructions_page = QWidget(self.tabs)
+        instructions_layout = QVBoxLayout(instructions_page)
+        instructions_layout.setContentsMargins(0, CONTROL_GAP, 0, 0)
+        instructions_layout.setSpacing(CAPTION_GAP)
+        # No caption: the tab names it and the editor's placeholder says what it is for, so a
+        # heading here would be the same words a third time.
+        self.instructions = InstructionsCard(deps.library, deps.undo, deps.files, deps.pick_assets)
+        # The card's height is a card's; here it has the page, so it takes what is left.
+        self.instructions.edit.setMaximumHeight(16_777_215)
+        instructions_layout.addWidget(self.instructions, 1)
+        self.tabs.addTab(instructions_page, INSTRUCTIONS_TAB)
 
         self.splitter.addWidget(self.list)
         self.splitter.addWidget(right)
@@ -425,8 +486,10 @@ class _DocsPage(QWidget):
         """Whether Group by has a choice to offer."""
         self.group_action.setVisible(offered)
 
-    def _reink(self, accent: str) -> None:
-        self.rows.set_accent(accent)
+    def _reink(self, ink: str) -> None:
+        """A colour copied out of the palette onto a widget goes stale, so the rows' glyphs
+        are repainted on a theme change — the same hook `TabHost` owes its titles."""
+        self._ink = ink
         self.list.viewport().update()
 
     def say(self, message: str) -> None:
@@ -440,16 +503,21 @@ class _DocsPage(QWidget):
     def show_groups(self, groups: Sequence[Group], *, keep: StepId | None) -> None:
         self.list.blockSignals(True)
         self.list.clear()
+        ink = QColor(self._ink)
         for group in groups:
             item = QListWidgetItem(group.title)
             item.setData(DETAIL_ROLE, group.detail)
             item.setData(GROUP_ROLE, group.key)
-            item.setData(MARK_ROLE, group.mark)
-            painter = glyph_painter(group.icon) if group.icon else None
-            if painter is not None:
-                ink = QColor(self.list.palette().text().color())
-                item.setIcon(painter(QColor(group.color) if group.color else ink))
+            item.setData(TRAILING_ROLE, group.mark)
+            item.setIcon(_row_icon(group.icon, ink, group.color))
+            if group.tip:
+                item.setToolTip(group.tip)
             self.list.addItem(item)
+        # The row's height is the font's, not a pixel: a two-line row and a two-line table
+        # cell take it from the one formula (DESIGN.md's *Lists of rich items*).
+        for index in range(self.list.count()):
+            item = self.list.item(index)
+            item.setSizeHint(QSize(0, rich_row_height(self.list.font())))
         rows = [index for index, group in enumerate(groups) if group.key == keep]
         self.list.setCurrentRow(rows[0] if rows else (0 if groups else -1))
         self.list.blockSignals(False)
@@ -461,110 +529,19 @@ class _DocsPage(QWidget):
             return
         self.fragments.show_markdown(as_markdown(group.sources), areas)
         # A pile nothing gathers has no step to hold a document, and says so rather than
-        # offering a button that could not write anywhere.
+        # offering an editor that could not write anywhere.
         collector = group.collector
-        self.banner.setVisible(collector is not None)
+        self._collector = collector.id if collector is not None else ""
         self.compiled.setVisible(collector is not None)
         self.uncompilable.setVisible(collector is None)
-        self.compiled.show_target(collector.id if collector is not None else None)
+        self.compiled.show_target(self._collector or None)
         if collector is not None:
-            self.banner.show_target(collector.id)
+            self.standing.show_target(collector.id)
+        self._show_standing()
 
-
-class _GroupDelegate(QStyledItemDelegate):
-    """Two lines and a mark: what the group is, how much it holds, and whether it is due."""
-
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        # Not the palette's Highlight, which is the *selection* blue in every theme. The
-        # accent is the warm "this wants you" colour, and it is set from the theme rather
-        # than read off a widget, because a colour copied onto one goes stale.
-        self._accent = QColor("#c98a3a")
-
-    def set_accent(self, colour: str) -> None:
-        self._accent = QColor(colour)
-
-    def paint(
-        self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | Any
-    ) -> None:
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-        opt.text = ""
-        opt.icon = QIcon()  # Drawn below, so the two lines start from one left edge.
-        style = opt.widget.style() if opt.widget else None
-        if style is not None:
-            style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, painter, opt.widget)
-
-        palette = opt.palette
-        selected = bool(opt.state & QStyle.StateFlag.State_Selected)
-        role = palette.ColorRole.HighlightedText if selected else palette.ColorRole.Text
-        primary = palette.color(role)
-        secondary = QColor(primary)
-        secondary.setAlpha(SECONDARY_ALPHA)
-
-        rect = opt.rect.adjusted(ROW_PADDING_H, ROW_PADDING_V, -ROW_PADDING_H, -ROW_PADDING_V)
-        metrics = opt.fontMetrics
-        painter.save()
-
-        # The icon column is reserved whether or not this row has one, so a heading with no
-        # glyph — the pile nothing gathers — still lines up with the collectors above it.
-        icon = index.data(Qt.ItemDataRole.DecorationRole)
-        left = rect.left()
-        if isinstance(icon, QIcon) and not icon.isNull():
-            icon.paint(painter, QRect(left, rect.top(), ICON_SIZE, metrics.height()))
-        left += ICON_SIZE + MARK_GAP
-
-        mark = index.data(MARK_ROLE) or ""
-        width = rect.right() - left - (MARK_GAP + int(MARK_DIAMETER) if mark else 0)
-        elide = Qt.TextElideMode.ElideRight
-        align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-
-        painter.setPen(primary)
-        painter.drawText(
-            QRect(left, rect.top(), width, metrics.height()),
-            align,
-            metrics.elidedText(index.data(Qt.ItemDataRole.DisplayRole), elide, width),
-        )
-        painter.setPen(secondary)
-        painter.drawText(
-            QRect(left, rect.top() + metrics.height() + ROW_LINE_GAP, width, metrics.height()),
-            align,
-            metrics.elidedText(index.data(DETAIL_ROLE) or "", elide, width),
-        )
-        if mark:
-            self._mark(painter, opt, rect, metrics.height(), str(mark))
-        painter.restore()
-
-    def _mark(
-        self, painter: QPainter, opt: QStyleOptionViewItem, rect: QRect, line: int, mark: str
-    ) -> None:
-        """Filled accent for out of date, a hollow ring for never written.
-
-        The accent is DESIGN.md's "the action the user came to perform" colour, so it needs
-        no new token and follows the theme with everything else.
-        """
-        centre = QRectF(
-            rect.right() - MARK_DIAMETER,
-            rect.top() + (line - MARK_DIAMETER) / 2,
-            MARK_DIAMETER,
-            MARK_DIAMETER,
-        )
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        if mark == "stale":
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(self._accent)
-        else:
-            ring = QColor(opt.palette.color(opt.palette.ColorRole.Text))
-            ring.setAlpha(SECONDARY_ALPHA)
-            painter.setPen(ring)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawEllipse(centre)
-
-    def sizeHint(  # noqa: N802 - Qt override
-        self, option: QStyleOptionViewItem, index: QModelIndex | Any
-    ) -> QSize:
-        metrics = option.fontMetrics
-        return QSize(0, 2 * ROW_PADDING_V + 2 * metrics.height() + ROW_LINE_GAP)
+    def _show_standing(self) -> None:
+        on_instructions = self.tabs.currentIndex() == self.tabs.count() - 1
+        self.standing.setVisible(bool(self._collector) and not on_instructions)
 
 
 def _glyph_for(kinds: Sequence[Any], step: Step) -> str:
@@ -575,27 +552,49 @@ def _glyph_for(kinds: Sequence[Any], step: Step) -> str:
     )
 
 
+def _row_icon(name: str, ink: QColor, tone: str) -> QIcon:
+    """A row's glyph: the collector's medallion in its own shade, or the page's own mark for
+    a row that is not a collector — so every row's text starts at one left edge."""
+    if name == "loose":
+        return read_icon(ink)
+    painter = glyph_painter(name)
+    return painter(QColor(tone) if tone else ink) if painter is not None else read_icon(ink)
+
+
 def _headline(groups: Sequence[Group]) -> tuple[str, str]:
     """Lead with the answer: the staffing matrix taught that a list with no sentence over
     it makes every reader do the arithmetic."""
     if not groups:
         return "Nothing documented yet", ""
-    marks = [group.mark for group in groups if group.collector is not None]
+    states = [group.state for group in groups if group.collector is not None]
     words = sum(word_count(source.body) for group in groups for source in group.sources)
     answer = f"{len(groups)} {_word('group', len(groups))}, {words:,} words"
-    stale = sum(1 for mark in marks if mark == "stale")
-    never = sum(1 for mark in marks if mark == "never")
-    parts = [f"{len(marks) - stale - never} up to date"] if marks else []
-    if stale:
-        parts.append(f"{stale} out of date")
-    if never:
-        parts.append(f"{never} not written yet")
-    return answer, " · ".join(parts)
+    counted = [
+        (sum(1 for state in states if state == "current"), "up to date"),
+        (sum(1 for state in states if state == "stale"), "out of date"),
+        (sum(1 for state in states if state == "never"), "not compiled yet"),
+    ]
+    return answer, " · ".join(f"{count} {words}" for count, words in counted if count)
 
 
-def _group_detail(sources: Sequence[Source]) -> str:
+def _when(standing: Standing) -> str:
+    """When a document that is up to date landed — the trailing slot's quiet fact."""
+    return ago(float(standing.stamp.get("at", 0.0) or 0.0))
+
+
+def _group_detail(sources: Sequence[Source], standing: Standing | None = None) -> str:
+    """A row's second line: what there is to read, and who last compiled it.
+
+    *When* is the trailing slot's, and *who* is here, because a row answers "is this due" at
+    a glance and "who has been at it" on the line under.
+    """
     words = sum(word_count(source.body) for source in sources)
-    return f"{len(sources)} {_word('source', len(sources))} · {_words(words)}"
+    parts = [f"{len(sources)} {_word('fragment', len(sources))}", _words(words)]
+    if standing is not None and standing.working:
+        parts.append("an agent is working here")
+    elif standing is not None and standing.by and standing.state != "never":
+        parts.append(standing.by.partition(" · ")[0])  # The session is the row's tooltip.
+    return " · ".join(parts)
 
 
 def _words(count: int) -> str:

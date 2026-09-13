@@ -3,7 +3,7 @@
 A development planner: your **projects**, each one a folder of plain files inside its own
 git repository, so every plan lives in version control next to the code it plans. Built on
 [app-framework](https://github.com/Knutsi/app-framework) — PySide6 (Qt 6, LGPL), managed
-with uv, running on Linux and macOS.
+with uv, running on Linux, macOS and Windows.
 
 It has two front doors, and they are equals: a desktop window, and a `dplanner` command that
 any coding agent can drive.
@@ -31,10 +31,10 @@ Early, and honest about it. The model, the storage layer, the index tree, the wh
 graph editor and the order view are in place and tested. Fourteen aspects ship — estimate,
 ticket, description, agent instruction, agent run, status, milestone, feature, GitHub refs,
 spec figures, tests, checks and the two documentation ones — each with verbs in the CLI and most with an editor in the step panel
-(`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: a project start date and
-the estimates give every step a running total and a date, in the order table and in
-`dplanner schedule show`. Progression reads the same graph with the statuses in hand:
-the execution board and `dplanner progression show` say what can be launched right now.
+(`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: the order table says what order the
+work goes in and how much of it there is, and `dplanner schedule show` dates it. *Ready to
+start* reads the same graph with the statuses in hand: the execution board and `dplanner
+progression show` say what can be launched right now.
 Tests are what a step must keep passing once it is done: a step carries several, a *check*
 step gathers every test it waits on, and a *test run* records what each one did. Every
 image and file a project carries is browsable in one place — the Assets tab and
@@ -132,9 +132,9 @@ dplanner test add "Draft the model" "Rejects an empty query" --text "1. POST /q 
 dplanner check set "Ship the beta"       # gathers every test behind it
 dplanner test-run start --scope "Ship the beta" --label "Pre-ship 3"
 dplanner test-run mark T100 failed --note "still 500s"
-dplanner docs set "Draft the model" --file notes.md   # what this step documents
-dplanner docs status                     # which features and releases need writing up
-dplanner docs collect "Ship the beta"    # everything it documents, as one document
+dplanner docs set "Draft the model" --file notes.md   # this step's documentation fragment
+dplanner docs status                     # which features and releases need compiling
+dplanner docs collect "Ship the beta"    # every fragment it gathers, as one document
 dplanner order show search               # every step, numbered, in dependency order
 dplanner order show search --ready       # just what can be started right now
 dplanner schedule start search --date 2026-09-01
@@ -154,7 +154,7 @@ the default first (what the Agent tab's button and the palette run), then *Manag
 Profiles…*; every agent in Ghostty, herdr and the platform's own terminal is there from
 the first start, and *Add Detected…* on the settings page pairs whatever agents and
 terminals are installed here. Select several ready steps — on the canvas, or by ticking them in the
-progression board and dropping its *Run N Agents* button down — and one gesture launches
+*Ready to start* board and dropping its *Run N Agents* button down — and one gesture launches
 one agent per step, all through the profile you pick. The step wears a chip and a marching ring while the shell runs, the
 chip follows what the agent reports (`dplanner agent-state set … needs-input` when it has
 a question), and the ring goes when the shell ends — finished, failed or closed, which
@@ -203,7 +203,7 @@ uv run dplanner report csv search --table order         # one table, to stdout
                 ├── estimation.json         a module's data
                 ├── testing.json            the tests this step keeps
                 ├── step_description.md     a module's prose
-                ├── docs.md                 what this step documents
+                ├── docs.md                 this step's documentation fragment
                 └── step_description/       a module's files
 ```
 
@@ -220,12 +220,29 @@ absent means default — so a diff shows exactly the steps whose plan actually c
 QT_QPA_PLATFORM=offscreen uv run pytest -q   # tests (always prefix the platform)
 uv run ruff check                            # lint
 uv run mypy                                  # strict type checking, whole tree
+uv run mypy --platform win32                 # the same tree as Windows sees it
 ```
 
 The suite runs on every core, so the whole thing takes about two minutes; run the whole thing.
 `-n0` gives a single-threaded run when a failure needs readable output or a debugger, and
 `pytest tests/core tests/domain tests/cli` is the Qt-free layers on their own in under twenty
 seconds.
+
+### Windows
+
+Windows is checked rarely and by hand — there is no CI. `uv run mypy --platform win32` above
+is the guard that runs everywhere in between; the real thing is a VM:
+
+```bash
+uv run python scripts/windows_check.py status   # what the target has, and what it is using
+uv run python scripts/windows_check.py all      # sync, the three checks, build, screenshots
+uv run python scripts/windows_check.py clean    # give the disk back
+```
+
+It targets the developer's own Omarchy VM by default and a throwaway container with
+`--target box`. `scripts/windows/README.md` is the recipe, including the one line that starts
+the runner in the VM. A frozen build — `uv run pyinstaller dplanner.spec` — works on every
+platform and is how the spec stays correct between Windows runs.
 
 Layering rules are enforced by `tests/test_architecture.py`; the module recipe and the rules
 live in `CLAUDE.md`. `ARCHITECTURE.md` explains the shape and why. `DESIGN.md` is the UI
@@ -249,6 +266,11 @@ src/dplanner/
 ├── scripts/render_design_example.py  Debug ▸ Design Example — the modal, the table and the toolbars — both themes, to PNG
 ├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
+├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
+├── scripts/render_windows_check.py  Debug ▸ Windows Check, live and greyed with its reason — docs/screenshots/s17-windows/
+├── scripts/windows/              what it drives — the throwaway box, the guest provisioning, and its README
+├── dplanner.spec                 the frozen build: onedir, two executables, one analysis (LGPL — see the docstring)
+├── freeze/                       what PyInstaller is handed: the entry point, and the manifest of shipped files
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub
@@ -387,7 +409,7 @@ src/dplanner/
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
-│   ├── progression/         the execution board — what can be launched now — and `dplanner progression show`
+│   ├── progression/         the *Ready to start* board and `dplanner progression show`
 │   ├── time_estimates/      the staffing matrix, the start dates and milestones in sequence and the calendar
 │   │                        they date — `dplanner schedule matrix`, `schedule palette`, `schedule team`,
 │   │                        `schedule milestone`; and progress against the plan (progress.py derives it,

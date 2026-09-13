@@ -1,5 +1,7 @@
 """The asset gallery: thumbnails from a file area or an explicit file list, click to view."""
 
+from pathlib import Path
+
 import pytest
 
 from dplanner.domain.assets import assets, attach
@@ -106,7 +108,7 @@ def test_clicking_a_thumbnail_opens_the_preview(make_gallery, services, step, mo
     width, shown_name, path = shown[0]
     assert width == 2  # the full image, not the thumbnail
     assert shown_name == name.split("/")[-1]
-    assert path.endswith(name.split("/")[-1]) and path.startswith("/")
+    assert path.endswith(name.split("/")[-1]) and Path(path).is_absolute()
 
 
 def test_thumbnails_stay_thumbnail_sized(make_gallery, services, step):

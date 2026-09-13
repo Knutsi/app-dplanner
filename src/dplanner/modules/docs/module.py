@@ -1,45 +1,39 @@
-"""The docs aspects in the running application: the fragment tab, the Docs view, and Compile.
+"""The docs aspects in the running application: the fragment tab, the Documentation view,
+and *Compile with Agent…*.
 
-**Compile is the first consumer of ``framework/llm_service.py``.** Three rules the service's
-docstring lays down and this module obeys:
+**Compiling launches a peer, and this module writes no document.** The briefing is built here
+(:mod:`dplanner.modules.docs.prompt`) and handed to Run Agent's launcher through two typed
+callbacks on :class:`DocsDeps`; the agent reads the fragments and lands the document with
+``dplanner compiled set``, which arrives in the window as any other outside change. Three
+things follow, and each is a rule rather than an accident:
 
-- ``complete()`` is blocking network I/O, so it runs inside a ``TaskRunner`` body and the
-  result comes back on this module's own Qt signal. The runner has no result seam of its
-  own, which is why the signal is here rather than there.
-- an AI-gated control is **disabled, never hidden**, and carries ``status().message`` as its
-  reason. The service re-reads its provider on every call, so the view re-asks on
-  ``config_changed`` and configuring one in Settings ungreys the button where it stands.
-- nothing logs the call: every one is already in the service's ring buffer, which is what
-  *Debug ▸ LLM Calls* reads.
+- **nothing lands on the undo stack.** The write comes from another process minutes later, so
+  Ctrl+Z cannot put back a document the agent replaced — which is why the one gesture that
+  would overwrite an existing document asks first.
+- **the launch is one act with no result seam.** No ``TaskRunner``, no signal home, no
+  cancellation: a terminal the person owns promises none of those honestly.
+- **who compiled it is remembered here**, per user, because only this module knows which of
+  the runs on a collector was *its* launch.
 
 **Any collector compiles.** There is no step kind for it: a feature and a milestone already
-are the collectors the graph defines, so Compile is a verb on them and nothing has to be
+are the collectors the graph defines, so compiling is a verb on them and nothing has to be
 created. What one reads is :mod:`dplanner.modules.docs.collect`, never stored.
-
-The compiled document lands **on the undo stack**, unlike ``github/refresh.py``'s background
-sync: a person pressed a button, and undoing has to put back what was there.
 """
 
-import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Protocol
 
-from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import QTreeWidgetItem, QWidget
+from PySide6.QtWidgets import QMenu, QTreeWidgetItem, QWidget
 
-from dplanner.domain.commands import (
-    CompositeCommand,
-    EditTextCommand,
-    SetModuleDataCommand,
-)
-from dplanner.domain.model import Library, NodeId, Step, StepId, TextEdit
+from dplanner.domain.model import Library, NodeId, Step, StepId
 from dplanner.domain.scope import ScopeKind, kind_of
 from dplanner.domain.store import FilesFor
+from dplanner.framework.action_menu import append_action
 from dplanner.framework.action_registry import (
     ActionRegistry,
     ActionSpec,
     ActionState,
+    DataMenuSpec,
 )
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
@@ -47,15 +41,12 @@ from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
-from dplanner.framework.llm import LLMMessage, LLMTimeoutError
-from dplanner.framework.llm_service import LLMService
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.project_list_segment import ChildRow, ProjectListSegment
 from dplanner.framework.tabs import TabHost
-from dplanner.framework.task_runner import TaskRunner, TaskTimeoutError
-from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.widgets import confirm
 from dplanner.modules.docs.activity import DOCS_CAPTION, DOCS_KIND, DocsActivity
 from dplanner.modules.docs.aspect import (
@@ -68,32 +59,35 @@ from dplanner.modules.docs.aspect import (
     read,
     read_compiled,
     read_stamp,
-    write_stamp,
     write_state,
 )
-from dplanner.modules.docs.collect import (
-    SYSTEM_PROMPT,
-    Source,
-    as_markdown,
-    digest,
-    sources_for,
-    state_of,
-    user_prompt,
-)
+from dplanner.modules.docs.collect import Source, sources_for, state_of, sub_collectors
+from dplanner.modules.docs.prompt import compile_body
 from dplanner.modules.docs.section import (
     CompileLink,
     DocsSection,
-    ProjectDocsCard,
+    InstructionsCard,
     Standing,
 )
-from dplanner.theme.icons import read_icon
+from dplanner.theme.icons import read_icon, refresh_icon, spark_icon
 
 COMPILE_ACTION = "docs.compile"
-BUSY_REASON = "Another job is running — wait for it to finish"
-NOTHING_REASON = "Nothing to compile — no step behind this one carries documentation"
-NOT_COLLECTOR_REASON = "Compile Docs — only a feature, milestone or check compiles one"
+COMPILE_MENU_ID = "docs.compile_with"
+COMPILE_MENU_TITLE = "Compile with Agent"
+STALE_ACTION = "docs.compile_stale"
+NOTHING_REASON = "Nothing to compile — no step behind this one carries a documentation fragment"
+NOT_COLLECTOR_REASON = "Compile with Agent — only a feature, milestone or check compiles one"
+NOTHING_STALE_REASON = "Compile Out of Date — every document in this project is up to date"
+WAITING_REASON = "waiting for a feature's document to be compiled first"
 OPEN_STEP_ACTION = "docs.open_step"
-NO_DOCS_REASON = "Show Docs — this step carries no documentation and gathers none"
+NO_DOCS_REASON = "Show Documentation — this step has no documentation and gathers none"
+# Which agent this module launched on a collector, per user and per machine: a fact about
+# one desk's runs, never the plan (*Attribution comes from the run*). Keyed by step id.
+LAUNCHES_KEY = "compiled_by"
+# The step panel's tab. SPEC.label is the aspect's full name — what `aspect list` and the
+# skill print — and that strip has no room for it: nine tabs already, and a tab bar that
+# elides every label is worse than a short name. *Docs* is the one this tab has always had.
+TAB_LABEL = "Docs"
 
 
 @dataclass(frozen=True)
@@ -107,8 +101,6 @@ class DocsDeps:
     tabs: TabHost
     segments: IndexSegmentRegistry
     theme: ThemeService
-    llm: LLMService
-    tasks: TaskService
     # Every collector this build knows — read, never added to: what a feature or a milestone
     # gathers is the same walk the Tests surfaces make.
     scopes: tuple[ScopeKind, ...] = ()
@@ -117,13 +109,29 @@ class DocsDeps:
     files: FilesFor | None = None
     # The project panel's card stack. None in a build without a project panel.
     cards: InspectorSectionRegistry | None = None
-    # A collector's own note, used as the brief for its document. Which prose briefs a
-    # compile is a cross-module fact, so the root decides it.
+    # What a collector says about itself — its description. Context in the briefing, not a
+    # writing brief: which prose that is is a cross-module fact, so the root decides it.
     instructions: Callable[[Step], str] = lambda _step: ""
+    # The step's key (F5, M21) — what the briefing's verbs and the list's rows name it by.
+    step_key: Callable[[Step], str] = lambda _step: ""
+    # Every launch profile this machine offers, with why it cannot compile *these*
+    # collectors right now ("" when it can); the default is first. Run Agent's module
+    # answers, through the root — this one never learns what a terminal is.
+    compile_profiles: Callable[[Sequence[StepId]], Sequence[tuple[str, str]]] = lambda _ids: ()
+    # Launch one agent per (collector, briefing body) through the named profile; the
+    # launches that opened a shell, each with the words naming what is working on it.
+    # None in a build with no launcher, where compiling is simply not offered.
+    compile_with_agent: (
+        Callable[[Sequence[tuple[StepId, str]], str], Sequence[tuple[StepId, str]]] | None
+    ) = None
+    # Whether an agent run is live on this step, in the agent-run aspect's own words. Not
+    # "is a compile running" — the window cannot tell one run on a step from another — but
+    # enough to stop a second launch.
+    run_state: Callable[[StepId], str] = lambda _step_id: ""
     # A milestone collector's own shade of the project's colour map, "" for anything else —
     # what its group's medallion is painted in. Wired by the composition root.
     milestone_color: Callable[[str], str] = lambda _step_id: ""
-    parent: QWidget | None = None  # The compiler's QObject parent and confirm()'s.
+    parent: QWidget | None = None  # What confirm() and the launcher's fallback open over.
     # Insert from Assets…: a modal picker over the node's project's catalog, composed by
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
@@ -147,41 +155,12 @@ class DocsCompiledModule:
         return None
 
 
-class _Compiler(QObject):
-    """The worker thread's way back to the GUI thread, and the runner that owns it.
-
-    A separate QObject rather than a QObject module, and **parented to the window**: a
-    parentless QObject holding a self-connected signal is a reference cycle that Python
-    frees whenever the collector next runs, which may be in the middle of somebody else's
-    event loop. Parented, it dies with the build like everything else ``discard_build()``
-    reaches, and every other module in this application stays a plain object.
-    """
-
-    # (step id, the compiled markdown, provider label, model). Queued: emitted off-thread.
-    compiled = Signal(str, str, str, str)
-    # What an open Docs view re-reads: a compile starting or finishing, and a provider being
-    # configured in Settings while the view is open. **A Qt signal, not a core one**, because
-    # its subscribers are QWidgets: Qt drops the connection when the widget is destroyed,
-    # where a plain Python signal would hold the widget's bound method and hand its wrapper
-    # to the garbage collector long after Qt had freed the C++ object underneath it.
-    changed = Signal()
-
-    def __init__(self, tasks: TaskService, parent: QWidget | None) -> None:
-        super().__init__(parent)
-        self.runner = TaskRunner(tasks, parent=self)
-
-
 class DocsModule:
     id = MODULE_ID
     data_format = DATA_FORMAT
 
     def __init__(self, deps: DocsDeps) -> None:
         self._deps = deps
-        self._compiler = _Compiler(deps.tasks, deps.parent)
-        self._runner = self._compiler.runner
-        self._compiler.compiled.connect(self._on_compiled)
-        self._runner.busy_changed.connect(lambda _busy: self._compiler.changed.emit())
-        deps.llm.config_changed.connect(self._compiler.changed.emit)
 
     # -- registration ----------------------------------------------------------------------
 
@@ -190,7 +169,9 @@ class DocsModule:
         deps.sections.register(
             InspectorSection(
                 id=f"{MODULE_ID}.tab",
-                label=SPEC.label,
+                # Short, where SPEC.label is the full "Documentation fragment": the panel's
+                # strip already holds nine tabs and elides. `testing` differs the same way.
+                label=TAB_LABEL,
                 order=25,
                 factory=self._section,
                 shown_for=lambda step_id: (
@@ -204,13 +185,13 @@ class DocsModule:
             deps.cards.register(
                 InspectorSection(
                     id=f"{MODULE_ID}.card",
-                    label="Docs",
+                    label="Compilation instructions",
                     order=30,
-                    factory=lambda: ProjectDocsCard(
+                    factory=lambda: InstructionsCard(
                         deps.library, deps.undo, deps.files, deps.pick_assets
                     ),
                     icon=read_icon,
-                    hint="Prepended to every document compiled in this project.",
+                    hint="Prepended to every document an agent compiles in this project.",
                 )
             )
         deps.tabs.register_factory(DOCS_KIND, self._activity)
@@ -226,6 +207,18 @@ class DocsModule:
         )
         for spec in self._action_specs():
             deps.actions.register(spec)
+        # Compiling's seat: the profiles, as Run Agent's child menu does it, so picking one
+        # is the same gesture in both places and neither is a copy of the other's list.
+        deps.actions.register_data_menu(
+            DataMenuSpec(
+                id=COMPILE_MENU_ID,
+                menu="Step",
+                group="agent",
+                title=COMPILE_MENU_TITLE,
+                order=20,  # After Run Agent's child menu (10), in the same band.
+                fill=self._fill_profiles,
+            )
+        )
 
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         self._deps.tabs.open(DOCS_KIND, project_id, preview=preview)
@@ -256,13 +249,16 @@ class DocsModule:
         return DocsSection(deps.library, deps.undo, deps.files, self._link(), deps.pick_assets)
 
     def _link(self) -> CompileLink:
-        """The compile verb in the vocabulary a view uses, so no surface re-derives it."""
+        """Where a collector's document stands, in the vocabulary a view uses, so no surface
+        re-derives it. No ``run``: a view asks for the *verb* through the registry, where its
+        state and its profile menu already live."""
         return CompileLink(
             collects=self._collects,
-            state=self.compile_state,
             standing=self.standing_of,
-            run=self.compile_step,
-            changed=self._compiler.changed,
+            # The project-wide verb first, then the one on the picked collector — DESIGN.md's
+            # strip order — and the profiles under the second one's arrow.
+            verbs=(STALE_ACTION, COMPILE_ACTION),
+            profile_menu=(COMPILE_ACTION, COMPILE_MENU_ID),
         )
 
     def _segment(self, root: QTreeWidgetItem) -> ProjectListSegment:
@@ -300,25 +296,42 @@ class DocsModule:
                 enabled=enabled,
                 fresh=lambda _step, _project: write_state(True),
                 icon=read_icon,
-                tip="Give this step prose saying what it adds to the documentation",
+                tip="Give this step prose saying what it adds to the product's documentation",
             ),
             ActionSpec(
                 id=COMPILE_ACTION,
-                label="Compile Docs",
+                label="Compile with &Agent…",
                 menu="Step",
+                group="agent",
+                order=20,
+                submenu=COMPILE_MENU_TITLE,
+                in_menus=False,  # Its seat is the child menu of profiles, as Run Agent's is.
+                icon=spark_icon,
+                tip="Launch an agent to write this collector's document from what it gathers",
+                state=self._action_state,
+                run=lambda context: self.compile(self._focused_id(context)),
+            ),
+            ActionSpec(
+                id=STALE_ACTION,
+                label="Compile &Out of Date…",
+                menu="Project",
                 group="docs",
                 order=10,
-                tip="Write this collector's document from the documentation it gathers",
-                state=self._action_state,
-                run=lambda context: self.compile_step(self._focused_id(context)),
+                # Not the launch glyph: two verbs a strip shows side by side need two
+                # glyphs, and what this one does is bring a set back up to date.
+                icon=refresh_icon,
+                tip="Launch an agent for every document in this project that is out of date",
+                state=self._stale_state,
+                run=self._compile_stale,
             ),
             ActionSpec(
                 id=OPEN_STEP_ACTION,
-                label="Show &Docs",
+                label="Show &Documentation",
                 menu="Step",
                 group="open",
                 order=80,
-                tip="Open the Docs tab on this step's document, or the one gathering its note",
+                tip="Open the Documentation tab on this step's document, or the one"
+                " gathering its fragment",
                 state=self._open_step_state,
                 run=self._open_step,
             ),
@@ -350,27 +363,31 @@ class DocsModule:
             # Not hidden: the verb exists, it just does not apply to a step that gathers
             # nothing. Step ▸ Type ▸ Feature is how it comes to.
             return ActionState(enabled=False, label=NOT_COLLECTOR_REASON)
-        runnable, reason = self.compile_state(step_id)
-        return ActionState() if runnable else ActionState(enabled=False, label=reason)
+        reason = self.compile_refusal([step_id])
+        return ActionState() if not reason else ActionState(enabled=False, label=reason)
 
-    def compile_state(self, step_id: StepId) -> tuple[bool, str]:
-        """Whether Compile can run, and the sentence a greyed control shows when it cannot.
+    def compile_refusal(self, step_ids: Sequence[StepId]) -> str:
+        """Why these collectors cannot be compiled right now, in the words a greyed control
+        shows; "" when they can.
 
-        One function, two presenters — the menu entry's label and the view's banner — so the
-        two can never disagree about why the button is off. Note that *up to date* is not a
-        refusal: recompiling on purpose is legitimate.
+        One function, every presenter — the menu entry, the child menu's default and the
+        activity's strip — so the two can never disagree about why the verb is off. What this
+        module owns is *is there anything to read*; whether a terminal can open is the
+        launcher's answer, asked through ``compile_profiles``. **Up to date is not a
+        refusal**: recompiling on purpose is legitimate.
         """
-        if self._runner.is_busy():
-            return False, BUSY_REASON
-        status = self._deps.llm.status()
-        if not status.configured:
-            return False, status.message
-        if not self._sources(step_id):
-            return False, NOTHING_REASON
-        return True, ""
+        deps = self._deps
+        if deps.compile_with_agent is None:
+            return "Compile with Agent — this build has no agent launcher"
+        for step_id in step_ids:
+            if not self._sources(step_id):
+                return NOTHING_REASON
+        offers = list(deps.compile_profiles(step_ids))
+        return offers[0][1] if offers else "Compile with Agent — no launch profile"
 
     def standing_of(self, step_id: StepId) -> Standing:
-        """Where this collector's document stands, what it would read, and what it read."""
+        """Where this collector's document stands, what it would read, what it read, who
+        this desk last launched on it and whether an agent is working there now."""
         library = self._deps.library
         if not library.has(step_id):
             return Standing("never", 0, {})
@@ -379,6 +396,8 @@ class DocsModule:
             state_of(self._deps.scopes, library, project, step_id),
             len(self._sources(step_id)),
             read_stamp(library.step(step_id)),
+            by=self._launched_by(step_id),
+            working=bool(self._deps.run_state(step_id)),
         )
 
     def _sources(self, step_id: StepId) -> list[Source]:
@@ -388,92 +407,174 @@ class DocsModule:
         project = library.project_of(step_id)
         return list(sources_for(self._deps.scopes, library, project, step_id))
 
-    def compile_step(self, step_id: StepId) -> None:
+    # -- launching a compile -------------------------------------------------------------------
+
+    def compile(self, step_id: StepId, profile: str = "") -> None:
+        """Launch an agent to compile one collector's documentation."""
+        if step_id and self._collects(step_id):
+            self._launch([step_id], profile)
+
+    def _stale_state(self, context: Context) -> ActionState:
+        project_id = context.focus_entity("project")
+        if not project_id or not self._deps.library.has(project_id):
+            return ActionState(enabled=False, label="Compile Out of Date — no project is open")
+        ready, waiting = self._stale(project_id)
+        count = len(ready)
+        verb = "Compile Out of Date" if count <= 1 else f"Compile {count} Out of Date"
+        if not ready:
+            reason = WAITING_REASON if waiting else NOTHING_STALE_REASON
+            return ActionState(enabled=False, label=f"{verb} — {reason}")
+        if refusal := self.compile_refusal(ready):
+            # The count past the desk's limit refuses here, exactly as it does for a
+            # selection of agent steps: the way past it is the setting, not a confirmation.
+            named = refusal.partition(" — ")[2] or refusal
+            return ActionState(enabled=False, label=f"{verb} — {named}")
+        # What waits is on the label, not hidden: the next gesture takes it, and a person
+        # who sees "2 waiting" knows why one press did not compile everything.
+        waited = f" ({len(waiting)} waiting)" if waiting else ""
+        return ActionState(label=f"{verb.replace('Out of', '&Out of')}…{waited}")
+
+    def _compile_stale(self, context: Context) -> None:
+        project_id = context.focus_entity("project")
+        if project_id and self._deps.library.has(project_id):
+            ready, _waiting = self._stale(project_id)
+            self._launch(ready, "")
+
+    def _stale(self, project_id: NodeId) -> tuple[list[StepId], list[StepId]]:
+        """Which of this project's documents want compiling, and which must wait.
+
+        **A collector whose own sub-collectors are out of date waits**, because a milestone
+        reads its features' *compiled* documents: launching both at once would have the
+        milestone read a document that is about to change, and ``docs status``'s advice says
+        as much to an agent. So one gesture takes the frontier and the next takes what it
+        unblocked — which is also why the verb says how many are waiting.
+        """
         deps = self._deps
-        if not step_id or not deps.library.has(step_id) or not self._collects(step_id):
+        library = deps.library
+        project = library.project(project_id)
+        due = {
+            step.id
+            for step in project.steps
+            if self._collects(step.id)
+            and state_of(deps.scopes, library, project, step.id) != "current"
+            and self._sources(step.id)
+        }
+        ready: list[StepId] = []
+        waiting: list[StepId] = []
+        for step in project.steps:
+            if step.id not in due:
+                continue
+            behind = {sub.id for sub in sub_collectors(deps.scopes, library, project, step.id)}
+            (waiting if behind & due else ready).append(step.id)
+        return ready, waiting
+
+    def _launch(self, step_ids: Sequence[StepId], profile: str) -> None:
+        """Hand one briefing per collector to the launcher, after asking about the documents
+        this would replace.
+
+        The question is asked **once for the whole gesture** and only about documents that
+        already have text: the agent's write arrives from another process, so Ctrl+Z is not
+        the safety net it is everywhere else in this application.
+        """
+        deps = self._deps
+        launch = deps.compile_with_agent
+        if launch is None or not step_ids or self.compile_refusal(step_ids):
             return
-        step = deps.library.step(step_id)
-        runnable, _reason = self.compile_state(step_id)
-        if not runnable:
-            return
-        if read_compiled(step) and not confirm(
+        written = [
+            deps.library.step(step_id)
+            for step_id in step_ids
+            if deps.library.has(step_id) and read_compiled(deps.library.step(step_id))
+        ]
+        if written and not confirm(
             deps.parent,
-            "Compile Docs",
-            f"Replace the document on {step.title or 'this step'!r}? Any edits are not kept.",
+            "Compile with Agent",
+            self._replacing(written),
+            verb="Compile",
         ):
             return
+        requests = [(step_id, self._briefing(step_id)) for step_id in step_ids]
+        for step_id, words in launch(requests, profile):
+            self._remember(step_id, words)
 
+    def _replacing(self, written: Sequence[Step]) -> str:
+        """The question, naming what the agent will replace."""
+        if len(written) == 1:
+            return (
+                f"The agent will replace the document on “{written[0].title or 'this step'}”"
+                " when it reports back. There is no undo for that — it is written by another"
+                " process, minutes from now. Compile anyway?"
+            )
+        names = "\n".join(f"• {step.title or 'Untitled step'}" for step in written)
+        return (
+            f"The agents will replace {len(written)} documents that already have text, and"
+            " there is no undo for that — each is written by another process, minutes from"
+            f" now:\n\n{names}\n\nCompile anyway?"
+        )
+
+    def _briefing(self, step_id: StepId) -> str:
+        """What the agent is handed for one collector: this module's words, wrapped by the
+        launcher's own header and preflight."""
+        deps = self._deps
+        step = deps.library.step(step_id)
         project = deps.library.project_of(step_id)
-        # Everything the worker needs is read here, on the GUI thread, and travels as plain
-        # strings: a body that reached into the model would be reading from a thread that
-        # may not.
-        sources = sources_for(deps.scopes, deps.library, project, step_id)
-        prompt = user_prompt(
-            standing=read(project),
-            instructions=deps.instructions(step),
-            sources=as_markdown(sources),
+        kind = kind_of(deps.scopes, step)
+        return compile_body(
+            key=deps.step_key(step) or (step.title or "this step"),
+            kind=kind.label.lower() if kind is not None else "",
+            instructions=read(project),
+            about=deps.instructions(step),
+            sources=self._sources(step_id),
         )
-        messages = [
-            LLMMessage(role="system", content=SYSTEM_PROMPT),
-            LLMMessage(role="user", content=prompt),
-        ]
 
-        def body() -> None:
-            if self._runner.cancel_requested():
-                return
-            try:
-                result = deps.llm.complete(messages)
-            except LLMTimeoutError as error:
-                # A distinct terminal state in the task centre, not a generic failure.
-                raise TaskTimeoutError(str(error)) from error
-            if self._runner.cancel_requested():
-                # A blocking SDK call cannot be torn down, so dropping the answer is the
-                # honest cancellation — the runner's docstring says as much.
-                return
-            status = deps.llm.status()
-            self._compiler.compiled.emit(
-                step_id, result.text, status.provider_label or "", status.model or ""
-            )
+    # -- who compiled it -----------------------------------------------------------------------
 
-        self._runner.run(
-            "Compiling documentation",
-            body,
-            key=COMPILE_ACTION,
-            cancellable=True,
-            cancel_prompt="Stop compiling? The answer will be discarded.",
-            keep_finished=True,
-        )
-        self._compiler.changed.emit()
+    def _remember(self, step_id: StepId, words: str) -> None:
+        """Record which agent this desk launched on a collector.
 
-    def _on_compiled(self, step_id: str, text: str, provider: str, model: str) -> None:
-        """Back on the GUI thread: land the document and its stamp as one undo entry."""
-        library = self._deps.library
-        # A delivery for a step that has gone, or has stopped collecting while the model was
-        # thinking, is dropped — github/section.py's guard, for the same reason.
-        if not library.has(step_id) or not self._collects(step_id):
+        Per user and per machine, because that is what it is: the plan's stamp says *when* a
+        document was compiled and from what, and only the window that launched the run knows
+        *which* of the runs on that step was the compile. Reading the step's newest run back
+        instead would credit a feature's document to whoever happened to be working on that
+        feature.
+        """
+        if not words:
             return
-        step = library.step(step_id)
-        project = library.project_of(step_id)
-        sources = sources_for(self._deps.scopes, library, project, step_id)
-        body = text.strip() + "\n" if text.strip() else ""
-        self._deps.undo.push(
-            CompositeCommand(
-                "Compile Docs",
-                [
-                    EditTextCommand(
-                        TextEdit(step.id, COMPILED_ID, 0, read_compiled(step), body),
-                        label="Compile Docs",
-                    ),
-                    SetModuleDataCommand(
-                        step.id,
-                        COMPILED_ID,
-                        write_stamp(digest(sources), time.time(), provider, model, len(sources)),
-                        label="Compile Docs",
-                    ),
-                ],
+        launches = dict(self._launches())
+        launches[step_id] = words
+        set_global(MODULE_ID, LAUNCHES_KEY, launches)
+
+    def _launches(self) -> dict[str, str]:
+        stored = get_global(MODULE_ID, LAUNCHES_KEY, {})
+        if not isinstance(stored, dict):
+            return {}
+        return {str(key): str(value) for key, value in stored.items()}
+
+    def _launched_by(self, step_id: StepId) -> str:
+        return self._launches().get(step_id, "")
+
+    def _fill_profiles(self, menu: QMenu) -> None:
+        """Step ▸ Compile with Agent: one entry per profile, the default first and marked,
+        each greyed with its own reason — Run Agent's child menu, over this verb.
+        """
+        deps = self._deps
+        step_id = self._focused_id(deps.context.current())
+        if not step_id or not self._collects(step_id):
+            entry = menu.addAction(NOT_COLLECTOR_REASON)
+            entry.setEnabled(False)
+            return
+        shared = self.compile_refusal([step_id])
+        for index, (name, refusal) in enumerate(deps.compile_profiles([step_id])):
+            reason = refusal or (shared if shared != refusal else "")
+            titled = f"{name} (default)" if index == 0 else name
+            entry = menu.addAction(f"{titled} — {reason}" if reason else titled)
+            entry.setEnabled(not reason)
+            entry.triggered.connect(
+                lambda _checked=False, picked=name: self.compile(
+                    self._focused_id(deps.context.current()), picked
+                )
             )
-        )
-        self._compiler.changed.emit()
+        menu.addSeparator()
+        append_action(menu, deps.actions, deps.context, "agent.profiles")
 
     # -- context ---------------------------------------------------------------------------
 

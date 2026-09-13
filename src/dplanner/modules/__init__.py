@@ -852,10 +852,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
-            # Statuses and estimates through the aspects' Qt-free readers — the board
-            # never learns what either is stored as.
+            # The statuses through the status aspect's Qt-free reader — the board never
+            # learns what one is stored as.
             status_for=step_status,
-            days_for=estimated_days,
             agent_state=lambda ctx: services.actions.spec("agent.run").state(ctx),
             # The Run Agents button drops the Step menu's own Run Agent child down — the
             # profiles, then Manage Agent Profiles… — filled as it opens, never a copy.
@@ -1051,7 +1050,6 @@ def default_modules(services: "AppServices") -> list["Module"]:
             # Days and dates, computed by the domain from what the estimation module
             # stores. Neither module knows the other's name.
             step_schedule=step_schedule,
-            start_bar=estimation.create_start_bar,
             # A milestone row wears a rule and a tint; the name itself stays in the
             # trailing aspects column, which is why the milestone is not skipped here.
             milestone_label=lambda step_id: milestone_read(library.step(step_id)),
@@ -1285,6 +1283,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 parent=services.window,
                 debounce=services.debounce,
                 theme=services.theme,
+                tasks=services.tasks,
             )
         ),
         # -- the planner ------------------------------------------------------------------
@@ -1372,7 +1371,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
                     ),
                     ProjectEntry(
                         id="progression",
-                        label="Progression",
+                        label="Ready to start",
                         open=progression.open,
                         open_preview=lambda pid: progression.open(pid, preview=True),
                         icon=gauge_icon,
@@ -1446,18 +1445,30 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 tabs=services.tabs,
                 segments=services.index_segments,
                 theme=services.theme,
-                llm=services.llm,
-                tasks=services.tasks,
-                # Read, never added to: grouping the Docs view by feature or milestone is
-                # the same walk the Tests tab makes. A fourth ScopeKind of its own would
-                # teach four tests surfaces about documentation to serve none of it.
+                # Read, never added to: grouping the Documentation view by feature or
+                # milestone is the same walk the Tests tab makes. A fourth ScopeKind of its
+                # own would teach four tests surfaces about documentation to serve none of it.
                 scopes=_scope_kinds(check_read, is_feature, milestone_read),
                 files=store.files,
-                # Its project-level card: the standing style every composed document follows.
+                # Its project-level card: the compilation instructions every document
+                # compiled in this project follows.
                 cards=services.detail_cards,
-                # The description *is* the instructions (ARCHITECTURE.md), and which prose
-                # briefs a compile is a cross-module fact, so it is decided here.
+                # The description *is* the instructions (ARCHITECTURE.md), so it is what a
+                # collector says about itself — context in the briefing, and a cross-module
+                # fact, so it is decided here.
                 instructions=description_read,
+                # Compiling is a launch: the briefing is the docs module's words, the
+                # terminal and the desk's limit are Run Agent's, and neither imports the
+                # other. The run is tracked on the collector like any other agent run.
+                compile_profiles=agent_instruction.compile_profiles,
+                compile_with_agent=agent_instruction.compile_documentation,
+                # Whether an agent is already at work on a collector — the run aspect's own
+                # reader, so the words are the status module's and not a second copy.
+                run_state=lambda step_id: (
+                    agent_run_state(library.step(step_id)) if library.has(step_id) else ""
+                ),
+                # How a step is named everywhere, for the briefing's verbs and the rows.
+                step_key=_step_key,
                 # A milestone group's medallion in the milestone's own shade — the same
                 # sequence the Tests tab's headings and the calendar show.
                 milestone_color=milestone_color,
@@ -2592,7 +2603,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         # module's own writes (attach, name) stay in its cli.py — the `scope` split.
         *catalog_commands(sources=sources, titles=read_titles),
         *assets_cli.commands(sources=sources),
-        *order_cli.commands(),
+        *order_cli.commands(days_for=estimated_days),
         # Progression reads statuses and estimates through the aspects' Qt-free readers —
         # handed over here so no cli.py imports another module's.
         *progression_cli.commands(status_for=step_status, days_for=estimated_days),

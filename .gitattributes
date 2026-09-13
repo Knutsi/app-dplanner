@@ -1,0 +1,14 @@
+# Every text file in this repository is LF, in the index and in the working tree, on every
+# platform. The application's own on-disk format is LF (FORMAT.md's *Bytes on disk*) and the
+# suite compares shipped files byte for byte, so a Windows checkout arriving as CRLF — which
+# is what Git for Windows' default `core.autocrlf=true` would do — would fail tests that have
+# nothing to do with line endings and ship CRLF assets in a frozen build.
+* text=auto eol=lf
+
+# The exception, and it is a real one: cmd.exe parses a batch file line by line as it runs,
+# and an LF-only one can misread a label or a multi-line block. A .bat is written for Windows
+# and only ever read there.
+*.bat text eol=crlf
+
+# Pictures: never examined, never translated.
+*.png binary

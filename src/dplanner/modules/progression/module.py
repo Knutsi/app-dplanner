@@ -1,4 +1,4 @@
-"""Progression mode: the execution surface for a project — as a tab beside its graph.
+"""Ready to start: the execution surface for a project — as a tab beside its graph.
 
 The graph plans the work; this board is for the weeks the work is *happening*: how far
 along the project is, what is running or stuck, what can be launched right now and what
@@ -6,11 +6,16 @@ one more finish would free. The walk itself is the domain's (``domain/progressio
 — this module renders it and adds nothing to the model, so the tab, ``dplanner
 progression show`` and ``--json`` can never disagree.
 
+**The surface is named for the question, the derivation for the answer.** A person opens
+this tab to find out what to start next, so it is called *Ready to start*; the walk stays
+``progression()`` and so does the verb, because the frontier is only one of the six
+partitions it computes. The module id, the activity kind and the action ids are the
+on-disk and in-registry contract and are untouched by the renaming.
+
 Four seams, all established elsewhere in this application:
 
-- **Statuses and estimates arrive as functions** (``status_for``, ``days_for``), wired by
-  the composition root from the aspects' Qt-free readers — this module never learns what
-  either is stored as.
+- **Statuses arrive as a function** (``status_for``), wired by the composition root from
+  the status aspect's Qt-free reader — this module never learns what one is stored as.
 - **Selecting a card publishes the selection scope**, so the Step menu's verbs target it.
 - **Activating one opens its details**, by running ``steps.details`` against a context
   naming exactly that card's step — the same seam the Run button already uses.
@@ -27,10 +32,10 @@ from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPoint
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QMenu, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QHBoxLayout, QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
-from dplanner.domain.progression import estimated_progress, progression
+from dplanner.domain.progression import progression
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -52,7 +57,7 @@ from dplanner.framework.context import (
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
-from dplanner.framework.widgets import centered_column
+from dplanner.framework.widgets import captioned, centered_column
 from dplanner.modules.progression.view import BOARD_MAX_WIDTH, ProgressionBoard, RunControl
 
 MODULE_ID = "progression"
@@ -65,10 +70,6 @@ BLOCK_GAP = 12
 
 def _pending(_step: Step) -> str:
     return "pending"
-
-
-def _no_days(_step: Step) -> float | None:
-    return None
 
 
 def _no_badge(_step_id: StepId) -> QIcon | None:
@@ -85,8 +86,6 @@ class ProgressionDeps:
     # The stored status claims, as answers. Wired by the composition root from the status
     # aspect's Qt-free reader; the honest default is a build where nothing is claimed.
     status_for: Callable[[Step], str] = field(default=_pending)
-    # A step's estimated days, for the weighted header line. Same seam, same owner rule.
-    days_for: Callable[[Step], float | None] = field(default=_no_days)
     # The Run Agent gate, closed over the real action, and the fill of the Step menu's
     # Run Agent child — the profiles, then Manage Agent Profiles… — which the Ready lane's
     # button drops down. None is a build without an agent: the button is absent from the
@@ -116,24 +115,23 @@ class ProgressionActivity(EntityActivity):
         layout.setSpacing(CAPTION_GAP)
 
         # The caption is a row so the indicator has a right end to stand at: a board has no
-        # control strip, and DESIGN.md's *Signalling* puts it at the strip's right.
+        # control strip, and DESIGN.md's *Signalling* puts it at the strip's right. How the
+        # lanes are filled stands behind the caption's info glyph rather than in a paragraph
+        # under it (DESIGN.md's *Words*): it is a convention, and a convention is read once.
         head = QHBoxLayout()
         layout.addLayout(head)
-        caption = QLabel("Progression", content)
-        caption.setObjectName("InspectorCaption")
-        head.addWidget(caption)
-        head.addStretch(1)
+        head.addWidget(
+            captioned(
+                "Ready to start",
+                content,
+                hint="What can be launched right now, from the graph and the stored "
+                "statuses. Ready steps rank by what finishing them unblocks; Up next is "
+                "one finish away.",
+            ),
+            1,
+        )
         self.updating = UpdatingIndicator(content)
         head.addWidget(self.updating)
-
-        note = QLabel(
-            "What can be launched right now, from the graph and the stored statuses. Ready "
-            "steps rank by what finishing them unblocks; Up next is one finish away.",
-            content,
-        )
-        note.setObjectName("InspectorNote")
-        note.setWordWrap(True)
-        layout.addWidget(note)
         layout.addSpacing(BLOCK_GAP)
 
         self.board = ProgressionBoard(
@@ -180,7 +178,7 @@ class ProgressionActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — Progression"
+        return f"{self._project().title or 'Untitled project'} — Ready to start"
 
     @property
     def widget(self) -> QWidget:
@@ -199,8 +197,7 @@ class ProgressionActivity(EntityActivity):
     def _refresh(self) -> None:
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
-        progress = progression(self._product, self._project(), self._deps.status_for)
-        self.board.show_progress(progress, estimated_progress(progress, self._deps.days_for))
+        self.board.show_progress(progression(self._product, self._project(), self._deps.status_for))
 
     def _publish(self, step_id: StepId | None) -> None:
         self._publish_all([] if step_id is None else [step_id])
@@ -280,7 +277,7 @@ class ProgressionModule:
         deps.actions.register(
             ActionSpec(
                 id="progression.open",
-                label="Show &Progression",
+                label="Show &Ready to Start",
                 menu="Project",
                 group="open",
                 order=30,
@@ -294,7 +291,7 @@ class ProgressionModule:
         deps.actions.register(
             ActionSpec(
                 id="progression.open_step",
-                label="Show &Progression",
+                label="Show &Ready to Start",
                 menu="Step",
                 group="open",
                 order=30,

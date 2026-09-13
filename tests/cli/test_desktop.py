@@ -6,13 +6,16 @@ runner as arguments, so a Linux entry, a macOS bundle and a Windows shortcut are
 and read back on whatever machine runs the suite.
 """
 
+import json
 import plistlib
+import shlex
 import struct
 import subprocess
 from io import StringIO
 from pathlib import Path
 
 import pytest
+from tests.platforms import POSIX_MODE_BITS
 
 from dplanner.assets import ICON_SIZES, icon_path
 from dplanner.cli import desktop
@@ -22,6 +25,7 @@ from dplanner.cli.desktop import (
     AppBundle,
     DesktopEntry,
     StartMenuShortcut,
+    _exec_quote,
     icns_bytes,
     ico_bytes,
     launcher_for,
@@ -79,15 +83,16 @@ def test_the_linux_entry_is_named_after_the_app_id_and_opens_by_absolute_path(tm
     `dplanner.desktop`; a menu has no PATH, so Exec is the absolute `dpw`."""
     entry = DesktopEntry(tmp_path / "applications" / "dplanner.desktop", Recorder(), nothing)
     assert entry.target() is None
-    entry.write(Path("/opt/tools/bin/dpw"))
+    dpw = Path("/opt/tools/bin/dpw")
+    entry.write(dpw)
     text = entry.path.read_text()
     assert text.startswith("[Desktop Entry]\nType=Application\nName=DPlanner\n")
-    assert "\nExec=/opt/tools/bin/dpw\n" in text
-    assert "\nTryExec=/opt/tools/bin/dpw\n" in text
+    assert f"\nExec={_exec_quote(str(dpw))}\n" in text
+    assert f"\nTryExec={dpw}\n" in text
     assert "\nIcon=dplanner\n" in text  # By name: the hicolor theme beside the entry has it.
     assert "\nTerminal=false\n" in text
     assert "\nStartupWMClass=dplanner\n" in text
-    assert entry.target() == Path("/opt/tools/bin/dpw")
+    assert entry.target() == dpw
     hicolor = tmp_path / "icons" / "hicolor"
     assert entry.icon_file(256) == hicolor / "256x256" / "apps" / "dplanner.png"
     assert all(entry.icon_file(size).is_file() for size in ICON_SIZES)
@@ -98,10 +103,16 @@ def test_the_linux_entry_is_named_after_the_app_id_and_opens_by_absolute_path(tm
 
 
 def test_a_path_the_spec_reserves_is_quoted_as_the_spec_says(tmp_path):
+    """The quoting is a string question, so it is asked of the string function:
+    a Path would carry the host's separators into an assertion about backslash
+    escapes and doubled percent signs, which have nothing to do with them."""
+    assert _exec_quote("/opt/bin/dpw") == "/opt/bin/dpw"  # Nothing reserved: left alone.
+    assert _exec_quote('/home/a b/100%/"q"/dpw') == '"/home/a b/100%%/\\"q\\"/dpw"'
+
     entry = DesktopEntry(tmp_path / "dplanner.desktop", Recorder(), nothing)
-    entry.write(Path('/home/a b/100%/"q"/dpw'))
-    assert 'Exec="/home/a b/100%%/\\"q\\"/dpw"\n' in entry.path.read_text()
-    assert entry.target() == Path('/home/a b/100%/"q"/dpw')
+    reserved = Path("/home/a b/100%/dpw")  # A space and a percent on every platform.
+    entry.write(reserved)
+    assert entry.target() == reserved  # Whatever it quoted, it reads back.
 
 
 def test_the_linux_entry_refreshes_the_menu_when_the_tool_is_there(tmp_path):
@@ -122,7 +133,8 @@ def test_the_linux_entry_refreshes_the_menu_when_the_tool_is_there(tmp_path):
 def test_the_mac_bundle_is_a_plist_and_a_script_handing_over(tmp_path):
     bundle = AppBundle(tmp_path / "Applications" / "DPlanner.app", Recorder())
     assert bundle.target() is None
-    bundle.write(Path("/Users/me/.local/bin/dpw"))
+    dpw = Path("/Users/me/.local/bin/dpw")
+    bundle.write(dpw)
     plist = plistlib.loads((bundle.path / "Contents" / "Info.plist").read_bytes())
     assert plist["CFBundleExecutable"] == "DPlanner"
     assert plist["CFBundleIconFile"] == "DPlanner"
@@ -131,15 +143,25 @@ def test_the_mac_bundle_is_a_plist_and_a_script_handing_over(tmp_path):
     assert plist["CFBundleIdentifier"] == "local.dplanner"
     assert plist["CFBundlePackageType"] == "APPL"
     assert bundle.script == bundle.path / "Contents" / "MacOS" / "DPlanner"
-    assert bundle.script.read_text() == '#!/bin/sh\nexec /Users/me/.local/bin/dpw "$@"\n'
-    assert bundle.script.stat().st_mode & 0o111
-    assert bundle.target() == Path("/Users/me/.local/bin/dpw")
+    assert bundle.script.read_text() == f'#!/bin/sh\nexec {shlex.quote(str(dpw))} "$@"\n'
+    assert bundle.target() == dpw
 
-    bundle.write(Path("/Users/a b/dpw"))  # Finder runs the script with no shell profile.
-    assert "exec '/Users/a b/dpw' \"$@\"" in bundle.script.read_text()
-    assert bundle.target() == Path("/Users/a b/dpw")
+    spaced = Path("/Users/a b/dpw")  # Finder runs the script with no shell profile.
+    bundle.write(spaced)
+    assert f'exec {shlex.quote(str(spaced))} "$@"' in bundle.script.read_text()
+    assert bundle.target() == spaced
     assert bundle.remove() and not bundle.path.exists()
     assert not bundle.remove()
+
+
+@POSIX_MODE_BITS
+def test_the_mac_bundle_script_is_executable(tmp_path):
+    """Finder runs the script directly, so it has to carry the bit. Its own test because
+    that is the one thing in the bundle Windows has no concept of — the plist, the icon
+    and the hand-over line are all checked on every platform above."""
+    bundle = AppBundle(tmp_path / "Applications" / "DPlanner.app", Recorder())
+    bundle.write(Path("/Users/me/.local/bin/dpw"))
+    assert bundle.script.stat().st_mode & 0o111
 
 
 # -- Windows ------------------------------------------------------------------------------------
@@ -203,7 +225,7 @@ def test_status_reads_installed_stale_or_missing(tmp_path):
 def test_dpw_is_found_in_a_named_directory_then_beside_dplanner_then_on_path(tmp_path):
     beside = tmp_path / "bin"
     beside.mkdir()
-    (beside / "dpw").write_text("")
+    (beside / "dpw").write_text("")  # The code is told platform="linux": it looks for `dpw`.
     elsewhere = str(tmp_path / "elsewhere" / "dplanner")
     assert window_executable(argv0=str(beside / "dplanner"), platform="linux", which=nothing) == (
         beside / "dpw"
@@ -253,12 +275,17 @@ def test_the_verbs_install_report_and_uninstall(registry, launcher, tmp_path):
 
     code, out, _err = invoke(registry, "desktop", "status", "--json")
     assert code == 0
-    assert '"status": "installed"' in out and f'"opens": "{tmp_path / "bin" / "dpw"}"' in out
+    # Read the JSON rather than retype the path into it: a Windows path is escaped there
+    # (`C:\\t\\...`) and an f-string of the raw path never matches it.
+    reported = json.loads(out)
+    assert reported["status"] == "installed"
+    assert reported["opens"] == str(tmp_path / "bin" / "dpw")  # What the fixture planted.
 
-    launcher.write(Path("/somewhere/else/dpw"))  # Reinstalled elsewhere since.
+    elsewhere = Path("/somewhere/else/dpw")
+    launcher.write(elsewhere)  # Reinstalled elsewhere since.
     code, out, _err = invoke(registry, "desktop", "status")
     assert out == (
-        f"stale  {launcher.path}\nopens /somewhere/else/dpw\n"
+        f"stale  {launcher.path}\nopens {elsewhere}\n"
         f"this build's is {tmp_path / 'bin' / 'dpw'}\n"
     )
 
