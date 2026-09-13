@@ -29,7 +29,7 @@ re-rendering — never styling one surface by name.
 | a dialog, a confirmation, a one-line prompt | `DialogFrame`, `confirm()`, `LinePrompt` | `framework/dialog.py`, `framework/widgets.py` | the modal: `dialog-*`, `dialog-refused-*` |
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
-| a strip that is a tool palette | `Toolbar.add_group` | `framework/toolbar.py` | the graph editor's strip: `s7-graph-editor/strip-*` |
+| a strip that is a tool palette | `Toolbar.add_group` | `framework/toolbar.py` | the toolbars tab: `toolbars-*`, `toolbars-folded-*` |
 | a fuzzy picker over a long list | `PickerDialog`, `PickerRow` | `framework/picker.py` | the palette, and Find: `s7-graph-editor/find-*` |
 | a filter on a strip | `FilterButton` | `framework/toolbar.py` | `table-filtered-*`, `filters-*` |
 | a combo box on a strip or in a dialog | a plain `QComboBox` — the stylesheet dresses it | `theme.qss` | `dropdown-*` |
@@ -500,10 +500,19 @@ Example Table wears one.
   named bands of three or four are something to learn once. The name is *structure*, not
   an explainer: it says what the glyphs above it are for, where a label on each button
   would say what the tooltip already says.
+- **A band's glyph buttons are squares** — `CONTROL_HEIGHT` each way, the padding derived
+  from the height rather than typed. A palette is a grid of targets of one size, and a
+  square is also what puts the glyph in the middle of its button. A *dense* strip that is
+  not banded stays narrow: the aspect bar wants ten toggles in a 360 px dock, and squaring
+  them costs it two.
 - **The band is then the unit that folds.** What no longer fits leaves the strip a whole
   band at a time and is listed in the `…` menu with a rule where each band begins — half a
-  band on the strip and half in a menu is worse than all of it in either. The graph
-  editor's strip is where to see it (`docs/screenshots/s7-graph-editor/`).
+  band on the strip and half in a menu is worse than all of it in either.
+- **A control that is not a verb goes in the band it is about**, as a widget: the graph's
+  layout picker names the arrangement the canvas is showing, so it sits at the end of
+  *Arrange*. A widget never enters the `…` menu — it hides when there is no room — which is
+  what keeps "not a verb" true without standing it outside the strip, where a lone worded
+  button past a row of named bands reads as something that fell off.
 - **A checked verb's glyph takes `$ON_ACCENT`.** A checked button is filled with the
   accent, and a glyph left in the quiet tone disappears into it — which is why the canvas's
   mode switches carried words for as long as they did. The primitive re-inks on the toggle,

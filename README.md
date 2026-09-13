@@ -230,7 +230,7 @@ src/dplanner/
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 ├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
-├── scripts/render_design_example.py  Debug ▸ Design Example in both themes, to PNG — committed under docs/screenshots/f1-design-example/
+├── scripts/render_design_example.py  Debug ▸ Design Example — the modal, the table and the toolbars — both themes, to PNG
 ├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Features panel — docs/screenshots/s7-graph-editor/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 │

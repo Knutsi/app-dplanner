@@ -375,7 +375,7 @@ class ProjectActivity(EntityActivity):
             self._deps.actions,
             self._deps.context,
             page,
-            trailing=(self._layout_button,),
+            picker=self._layout_button,
         )
         column.addWidget(toolbar)
         column.addWidget(self._beside_the_canvas(page), 1)

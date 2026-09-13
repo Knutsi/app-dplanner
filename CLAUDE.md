@@ -828,10 +828,14 @@ root, stop and look for the registry or capability you have not found yet.
   and the module keeps no icon table, so adding a button is adding a string to `GROUPS`.
   A canvas can always be dragged narrower than its own strip, and what no longer fits leaves
   **a whole band at a time** into the `…` menu, as glyph *and* words with a rule where each
-  band begins — never Qt's `»`, which pops the hidden buttons up as glyphs again. The layout
-  picker sits outside the strip and never folds: it names what the canvas is showing, and is
-  not a verb. **A checked verb's glyph takes `$ON_ACCENT`** (the palette's `BrightText`,
-  which is what carries the theme's `on_accent`), which is what retired the worded switches.
+  band begins — never Qt's `»`, which pops the hidden buttons up as glyphs again. **A band's
+  buttons are squares** (`CONTROL_HEIGHT` each way; a *dense* strip that is not banded stays
+  narrow, because the aspect bar wants ten toggles in a 360 px dock). A control that is not a
+  verb goes in the band it is *about*, as a widget — the layout picker names the arrangement,
+  so it sits at the end of Arrange and hides rather than folding. **A checked verb's glyph
+  takes `$ON_ACCENT`** (the palette's `BrightText`, which is what carries the theme's
+  `on_accent`), which is what retired the worded switches. Debug ▸ Design Example Toolbars is
+  every one of these shapes on one page.
 - **A family of verbs is one toolbar button and its arrow; a band of the menus is one
   face.** `CanvasToolbar.MENUS` names the `(menu, submenu)` a button drops down — Sort,
   Divide, Redirect — so the strip carries a family in one seat and the dropdown is the

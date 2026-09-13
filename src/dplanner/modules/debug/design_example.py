@@ -1,7 +1,7 @@
 """Debug ▸ Design Example: the design system built from its primitives, to be looked at
 and copied from.
 
-Two surfaces over sample data, nothing saved. The *modal* is a :class:`DialogFrame` —
+Three surfaces over sample data, nothing saved. The *modal* is a :class:`DialogFrame` —
 title in the body, a footer band — carrying a form (captions over fields, a hint glyph, a
 validation note), a :class:`Table` (a glyph column, a two-line cell, a numeric column, a
 heading, a milestone row wearing its key badge) and every signalling state: an *Updating…*
@@ -9,13 +9,17 @@ indicator and a :class:`Spinner` on a demo debouncer, a status line in each tone
 determinate progress bar and a refused primary. The *tab* is the same table under a
 :class:`Toolbar` — glyph verbs that fold into a … menu, a :class:`FilterButton`, a combo,
 the indicator at the strip's right — with verbs worded by the selection and an empty state
-that trades places with the table.
+that trades places with the table. The *toolbars* tab is every shape a strip of verbs
+comes in, one under the next: the flat strip, the tool palette's named bands of squares,
+the same palette with no room so the bands fold into the ``…`` menu, and the dense strip
+that answers a question rather than offering verbs.
 
 A developer bringing a surface up (DESIGN.md's *Bringing a surface up*) opens these beside
 their own and copies what differs; ``docs/screenshots/f1-design-example/`` holds them
 rendered in both themes. Neither reads the model, so neither follows a project.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtCore import QSize, Qt
@@ -44,16 +48,25 @@ from dplanner.framework.widgets import EmptyState, caption, note
 from dplanner.theme.icons import (
     ICON_SIZE,
     beaker_icon,
+    connect_icon,
+    edit_icon,
+    find_icon,
+    frame_icon,
     info_icon,
+    isolate_icon,
     key_badge_icon,
     layers_icon,
     list_icon,
+    options_icon,
     plus_icon,
     refresh_icon,
+    shield_icon,
     spark_icon,
     step_icon,
     tag_icon,
+    ticket_icon,
     trash_icon,
+    unlink_icon,
 )
 from dplanner.theme.palettes import PALETTES, shades
 from dplanner.theme.themes import Theme
@@ -61,6 +74,9 @@ from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_
 from dplanner.theme.tones import HIGHLIGHT_FILL, recoloured
 
 DESIGN_TABLE_KIND = "design_table"
+DESIGN_TOOLBARS_KIND = "design_toolbars"
+# What a palette is cut down to, to show a band folding rather than describe it.
+NO_ROOM = 300
 # The sample's milestones wear real shades of the default map, dealt by place in the
 # sequence, because that is what a milestone wears everywhere in the application now —
 # a reference that showed one constant purple would teach the rule that was replaced.
@@ -74,6 +90,26 @@ COLUMNS = (
 )
 FILTERS = (("agent", "Agent steps"), ("milestone", "Milestones"), ("done", "Done"))
 GROUPINGS = ("Grouped by milestone", "Flat")
+
+# A glyph painter: the colour in, the icon out.
+GlyphPainter = Callable[[QColor], QIcon]
+
+# The bands the palette example wears: three of two or three, so a fold has something to
+# take. Sample verbs, not registered ones — this page is about the shape.
+BANDS: tuple[tuple[str, tuple[tuple[str, GlyphPainter], ...]], ...] = (
+    ("Go", (("Find", find_icon), ("Frame", frame_icon))),
+    ("Step", (("New", plus_icon), ("Rename", edit_icon), ("Delete", trash_icon))),
+    ("Link", (("Connect", connect_icon), ("Unlink", unlink_icon), ("Isolate", isolate_icon))),
+)
+# And what a dense strip answers with: what the thing on screen carries, two of them on.
+TOGGLES: tuple[tuple[str, GlyphPainter], ...] = (
+    ("Milestone", tag_icon),
+    ("Feature", layers_icon),
+    ("Agent", spark_icon),
+    ("Test", beaker_icon),
+    ("Check", shield_icon),
+    ("Ticket", ticket_icon),
+)
 
 
 @dataclass(frozen=True)
@@ -432,6 +468,122 @@ class DesignExampleActivity(ActivityBase):
         self._reword_verbs()
 
 
+class DesignExampleToolbars(ActivityBase):
+    """The tab: every shape a strip of verbs comes in, one under the next.
+
+    DESIGN.md's *Toolbars*, built rather than described. Nothing here reaches a registry —
+    the verbs are plain slots, as the modal's are — because what this page is for is the
+    shape: what a glyph button looks like, what a band looks like, what happens when there
+    is no room for one, and how a strip that answers a question differs from a strip that
+    offers verbs.
+    """
+
+    def __init__(self, context: ContextService, theme: ThemeService) -> None:
+        self._context = context
+        self.uri = activity_uri(DESIGN_TOOLBARS_KIND)
+        self.title = "Design Example Toolbars"
+
+        self.widget = QWidget()
+        column = QVBoxLayout(self.widget)
+        column.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
+        column.setSpacing(SECTION_GAP)
+
+        self.verbs = self._verbs_strip()
+        self._block(
+            column,
+            "A strip of verbs",
+            self.verbs,
+            "Glyphs with their words in the tooltip, a divider between groups, a filter "
+            "among them. What no longer fits folds into the … menu from the right; a widget "
+            "never enters it — it hides when there is no room.",
+        )
+
+        self.palette = self._banded_strip()
+        self._block(
+            column,
+            "A tool palette",
+            self.palette,
+            "A strip cut into named bands: a band's glyphs sit close and read as one set, "
+            "the bands stand apart with a hairline between them, and each carries its name. "
+            "A band's buttons are squares — a palette is a grid of targets of one size. A "
+            "family of verbs is one button and its arrow; a band of the menus is one face, "
+            "which runs no verb of its own.",
+        )
+
+        self.folded = self._banded_strip()
+        self.folded.setFixedWidth(NO_ROOM)
+        self._block(
+            column,
+            "…and the same palette with no room",
+            self.folded,
+            "A band leaves the strip whole and is listed in the … menu as glyph and words, "
+            "with a rule where each band begins. Half a band on the strip and half in a "
+            "menu says less than either.",
+        )
+
+        self.dense = self._dense_strip()
+        self._block(
+            column,
+            "A dense strip",
+            self.dense,
+            "Not verbs but an answer — what the thing on screen carries. It is read as one "
+            "set rather than aimed at one at a time, so it keeps the height and takes the "
+            "width back from the sides: a strip that folds stops answering its question.",
+        )
+        column.addStretch(1)
+
+    def on_activated(self) -> None:
+        self._context.set_scope(SCOPE_ACTIVITY, (ContextNode(self.uri),))
+
+    def close(self) -> None:
+        for bar in (self.verbs, self.palette, self.folded, self.dense):
+            bar.dispose()
+
+    def _block(self, column: QVBoxLayout, title: str, bar: Toolbar, remark: str) -> None:
+        column.addWidget(caption(title, self.widget))
+        row = QHBoxLayout()
+        column.addLayout(row)  # Before it is filled: a parentless layout leaks its items.
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(FIELD_GAP)
+        # A strip cut short to show a fold keeps its own width and stays at the left; the
+        # rest take the page's, which is what puts them under one another.
+        cut_short = bar.maximumWidth() == bar.minimumWidth()
+        row.addWidget(bar, 0 if cut_short else 1)
+        if cut_short:
+            row.addStretch(1)
+        column.addWidget(note(remark, self.widget))
+
+    def _verbs_strip(self) -> Toolbar:
+        bar = Toolbar(self.widget)
+        bar.add_verb("Add Step", plus_icon, lambda: None, shortcut="Ctrl+N")
+        bar.add_verb("Delete", trash_icon, lambda: None)
+        bar.add_divider()
+        funnel = FilterButton()
+        for key, text in FILTERS:
+            funnel.add_filter(key, text)
+        bar.add_widget(funnel)
+        bar.add_divider()
+        bar.add_verb("Refresh", refresh_icon, lambda: None)
+        return bar
+
+    def _banded_strip(self) -> Toolbar:
+        bar = Toolbar(self.widget, dense=True)
+        for band, verbs in BANDS:
+            bar.add_group(band)
+            for label, glyph in verbs:
+                bar.add_verb(label, glyph, lambda: None)
+        bar.add_group("Options")
+        bar.add_verb("How the graph is drawn", options_icon, lambda: None)
+        return bar
+
+    def _dense_strip(self) -> Toolbar:
+        bar = Toolbar(self.widget, dense=True)
+        for label, glyph in TOGGLES:
+            toggle = bar.add_verb(label, glyph, lambda: None, checkable=True)
+            toggle.setChecked(label in ("Milestone", "Agent"))
+        return bar
+
+
 def glyph_for(kind: str, ink: QColor) -> QIcon:
     return _GLYPHS[kind](ink)
 
@@ -439,9 +591,11 @@ def glyph_for(kind: str, ink: QColor) -> QIcon:
 __all__ = [
     "COLUMNS",
     "DESIGN_TABLE_KIND",
+    "DESIGN_TOOLBARS_KIND",
     "FILTERS",
     "DesignExampleActivity",
     "DesignExampleDialog",
+    "DesignExampleToolbars",
     "fill_sample",
     "glyph_for",
 ]

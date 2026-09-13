@@ -666,23 +666,41 @@ QProgressBar::chunk {
 /* A dense strip: glyphs read as one set rather than aimed at one at a time, so they pack.
    The aspect bar seats ten toggles in a dock a third of the window wide, and at the verb
    strip's sides two of them fit before the rest fold into the … menu — which for a row
-   that answers "what does this step carry" is the row not answering. Height is untouched:
-   every control on a strip is still CONTROL_HEIGHT. A property, not a name, because this
-   is a mode the primitive offers and not one surface styled by hand. */
+   that answers "what does this step carry" is the row not answering. A property, not a
+   name, because this is a mode the primitive offers and not one surface styled by hand.
+
+*/
 #ControlBar[dense="true"] #ToolbarButton {
     padding: 6px ${DENSE_GAP}px;
 }
 
-/* …except where a dropdown arrow needs its room. The shorthand above is more specific than
-   the two rules that ask for it below (two names and an attribute against one), so a dense
-   strip took the arrow's padding away and Qt painted a 20 px subcontrol straight over a
-   16 px glyph. A styled subcontrol is outside Qt's size hint: nothing widens the button,
-   and the only sign is a clipped glyph. */
-#ControlBar[dense="true"] #ToolbarButton[hasMenu="true"] {
+/* **A banded strip's glyph button is a square** — the same 6 px all round a content box the
+   glyph's own height, which makes it CONTROL_HEIGHT each way. A tool palette is a grid of
+   targets of one size, and a square is also what puts the glyph in the middle of its button
+   rather than a few pixels left of centre. The width is derived from the height and the
+   padding, never typed.
+
+   Banded and not merely dense, because the two strips want opposite things: a palette wants
+   room to aim, and the aspect bar wants ten toggles in a 360 px dock — squaring those costs
+   it two of them, which for a row that answers "what does this step carry" is the row not
+   answering. `add_group` sets the property. */
+#ControlBar[banded="true"] #ToolbarButton {
+    padding: 6px;
+    min-width: 18px;
+    max-width: 18px;
+}
+
+/* …except where a dropdown arrow needs its room. Both shorthands above are as specific as
+   these (two names and an attribute either way), so these come **after** them on purpose —
+   the same ordering the accent primary relies on at the end of the button rules. Without
+   them a strip takes the arrow's padding back and Qt paints a 20 px subcontrol straight
+   over a 16 px glyph: a styled subcontrol is outside Qt's size hint, nothing widens the
+   button, and the only sign is a clipped glyph. */
+#ControlBar #ToolbarButton[hasMenu="true"] {
     padding-right: ${ARROW_ROOM}px;
 }
 
-#ControlBar[dense="true"] #ToolbarButton[face="true"] {
+#ControlBar #ToolbarButton[face="true"] {
     padding-right: ${INDICATOR_ROOM}px;
 }
 

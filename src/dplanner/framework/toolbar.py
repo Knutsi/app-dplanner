@@ -375,9 +375,16 @@ class Toolbar(QWidget):
         """Open a band: what follows lands in it, under ``label``, parted from the last.
 
         The bands stand ``CONTROL_GAP`` apart whatever the strip's own gap is — a dense
-        strip is dense *within* a band, and two bands four pixels apart would be one.
+        strip is dense *within* a band, and two bands four pixels apart would be one — and
+        a banded strip's glyph buttons are squares (``#ControlBar[banded="true"]``): a tool
+        palette is a grid of targets of one size, where a strip that answers a question
+        about the thing on screen would rather seat one more glyph.
         """
         self._layout.setSpacing(CONTROL_GAP)
+        if not self.property("banded"):
+            self.setProperty("banded", True)
+            self.style().unpolish(self)
+            self.style().polish(self)
         if self._items:
             self.add_divider()
         group = _Group(label, self)

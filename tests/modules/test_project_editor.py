@@ -1466,6 +1466,23 @@ def bands(tab):
     ]
 
 
+def test_the_layout_picker_sits_in_the_arrange_band(services, project, tab):
+    """It names the arrangement the canvas is showing, which is Arrange's business — and a
+    lone worded button past the end of a row of named bands reads as something that fell
+    off. It is a *widget* among the verbs, so it hides when there is no room rather than
+    folding into the … menu, the way a filter does."""
+    from dplanner.framework.toolbar import _Group
+
+    picker = tab._layout_button
+    band = picker.parentWidget()
+    while band is not None and not isinstance(band, _Group):
+        band = band.parentWidget()
+    assert band is not None and band.caption is not None
+    assert band.caption.text() == "Arrange"
+    # A widget is not a verb: it never enters the … menu.
+    assert picker not in [action.parent() for action in tab._toolbar.tools.verbs()]
+
+
 def test_the_strip_is_named_bands_of_glyphs(services, project, tab):
     """Nineteen glyphs in a row are nineteen riddles; six named bands are a tool palette.
     Where you are looking leads it — a graph is a place before it is a thing to edit."""

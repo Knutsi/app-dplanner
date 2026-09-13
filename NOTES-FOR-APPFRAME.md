@@ -2903,7 +2903,11 @@ seat is that menu's entries. The `palette: bool` flag already set the shape.
 - `add_group(label)` opens a **band**: what follows lands in it, `DENSE_GAP` apart, under a
   name in `#ToolbarGroupLabel`, and a divider is placed before every band but the first. A
   band is one `_Group` widget and therefore one item of the reflow, so what folds into the
-  `…` menu is a whole band, listed as glyph *and* words with a rule where each begins.
+  `…` menu is a whole band, listed as glyph *and* words with a rule where each begins. It
+  also sets a `banded` property, which is what makes the strip's glyph buttons **squares**
+  (`CONTROL_HEIGHT` each way) — a palette wants targets of one size, and a dense strip that
+  is *not* banded must stay narrow, because the aspect bar seats ten toggles in a 360 px
+  dock and squaring them costs it two.
 - `add_action(registry, context, action_id, *, menu=…)` fills a verb from the registry: the
   glyph is `ActionSpec.icon`, the words and the reason come from `action_words(spec, state)`
   (which `ActionToolbar._refresh` now shares, so there is one definition of what a button

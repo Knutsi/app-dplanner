@@ -18,8 +18,11 @@ a question asked rarely and answered in a menu, where each choice can say what i
 The panel toggle sits beside it for the same reason: it is about this tab, not about the
 plan.
 
-The layout picker is outside the strip and never folds — it names the arrangement the
-canvas is showing, which is a fact rather than a verb.
+The layout picker sits **in** the Arrange band, at its end. It is not a verb — it names
+the arrangement the canvas is showing — so it is added as a *widget*, which means it hides
+when there is no room rather than folding into the ``…`` menu, the way a filter does. It
+stood outside the strip while the strip was one undifferentiated row; beside named bands a
+lone worded button at the far right reads as something that fell off.
 """
 
 from collections.abc import Sequence
@@ -51,6 +54,9 @@ MENUS: dict[str, tuple[str, str]] = {
     "steps.redirect_to": ("Step", "Redirect"),
 }
 
+# Where the layout picker sits: it names the arrangement, which is this band's business.
+PICKER_BAND = "Arrange"
+
 # The last band: how the graph is drawn, and what stands beside it. Both are about this
 # tab rather than about the plan, which is what puts them together and at the end.
 OPTIONS = "Options"
@@ -68,7 +74,7 @@ class CanvasToolbar(QWidget):
         context: ContextService,
         parent: QWidget | None = None,
         groups: Sequence[tuple[str, Sequence[str]]] = GROUPS,
-        trailing: Sequence[QWidget] = (),
+        picker: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("CanvasToolbar")
@@ -83,17 +89,14 @@ class CanvasToolbar(QWidget):
             self.tools.add_group(label)
             for action_id in action_ids:
                 self.tools.add_action(actions, context, action_id, menu=MENUS.get(action_id))
+            if label == PICKER_BAND and picker is not None:
+                self.tools.add_widget(picker)
         self.tools.add_group(OPTIONS)
         self.look = self.tools.add_menu_face(
             LOOK_FACE, options_icon, actions, context, LOOK_MENU[0], group=LOOK_MENU[1]
         )
         self.tools.add_action(actions, context, PANEL_ACTION)
         row.addWidget(self.tools, 1)
-        for widget in trailing:
-            # The far end of the strip — the layout picker's seat, owned by whoever made
-            # it. Outside the toolbar, so it is the one thing that never overflows: it
-            # names the arrangement the canvas is showing, which is not a verb.
-            row.addWidget(widget)
 
     def button(self, action_id: str) -> QToolButton | None:
         """The button for one action id — how a test asks what the row is saying."""

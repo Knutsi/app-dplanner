@@ -568,6 +568,21 @@ a whole band off from the right and lists it in the `…` menu as glyph **and** 
 rule where each band begins: half a band on the strip and half in a menu says less than
 either, because the bands are how the strip is read.
 
+**A band's buttons are squares, and only a band's.** A palette is a grid of targets of one
+size, and a square is also what puts a glyph in the middle of its button rather than a few
+pixels left of centre. It is the *banded* strip that gets it, not every dense one: the
+aspect bar seats ten toggles in a 360 px dock, and squaring them costs it two — which for a
+row that answers "what does this step carry" is the row not answering. The two strips want
+opposite things from the same primitive, so the property says which.
+
+**And a control that is not a verb goes in the band it is about.** The layout picker names
+the arrangement the canvas is showing, so it sits at the end of *Arrange*, added as a
+widget — which never enters the `…` menu and hides when there is no room, the way a filter
+does. It stood *outside* the strip while the strip was one undifferentiated row and the
+rule was "it must survive every width"; beside a row of named bands a lone worded button
+past the end read as something that had fallen off, and the band it belongs to says what it
+is better than its own isolation did.
+
 **The glyphs come from the specs.** Every verb on the strip carries `ActionSpec.icon` now,
 which is what let the module's own `ICONS` table — and the `_WORDED` map beside it — be
 deleted rather than extended. A module that adds a verb to the strip adds its glyph where
