@@ -29,6 +29,7 @@ re-rendering — never styling one surface by name.
 | a dialog, a confirmation, a one-line prompt | `DialogFrame`, `confirm()`, `LinePrompt` | `framework/dialog.py`, `framework/widgets.py` | the modal: `dialog-*`, `dialog-refused-*` |
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
+| a verb with other ways to run it | `Toolbar.add_verb(fill=…)` — the arrow refills on open | `framework/toolbar.py` | the Documentation view's strip |
 | a filter on a strip | `FilterButton` | `framework/toolbar.py` | `table-filtered-*`, `filters-*` |
 | a combo box on a strip or in a dialog | a plain `QComboBox` — the stylesheet dresses it | `theme.qss` | `dropdown-*` |
 | "the view is rebuilding" | `UpdatingIndicator` — a `Spinner` on its own | `framework/signalling.py` | the strip's right end, `dialog-working-*` |
@@ -715,3 +716,9 @@ Tables and lists:
 - *(done — the signalling pass)* Every debounced view now carries the indicator, and the
   Time tab's hand-shown *Recalculating…* label is gone; `ExitDialog` is on the frame, and
   the quit-time save has a progress dialog over its repositories.
+- *(done — the documentation pass)* The Documentation view is on the primitives: its rows
+  are `TwoLineDelegate` with the state in the trailing slot (a date when there is nothing to
+  act on), its strip is a `Toolbar` whose verbs come from the registry and whose arrow drops
+  a data child menu, where a document stands is a `StatusLine`, and its own copies of
+  `CONTROL_GAP`, `SECONDARY_ALPHA` and the row paddings are gone. The explainer under its
+  caption went with them — `docs/screenshots/s11-documentation/`.

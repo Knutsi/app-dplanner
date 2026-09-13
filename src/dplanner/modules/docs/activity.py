@@ -67,7 +67,7 @@ from dplanner.modules.docs.section import (
     Standing,
     ago,
 )
-from dplanner.theme.icons import glyph_painter, read_icon, spark_icon
+from dplanner.theme.icons import glyph_painter, read_icon
 from dplanner.theme.tokens import CAPTION_GAP, CONTROL_GAP, SECTION_GAP
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
@@ -76,24 +76,22 @@ if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forwar
 DOCS_KIND = "docs"
 
 SELECTOR_WIDTH = 180
-LIST_WIDTH = 260
+LIST_WIDTH = 300  # Three facts a row, on two lines.
 
 DOCS_CAPTION = "Documentation"
-DOCS_SUBTITLE = "What this project's work adds up to, for whoever reads it."
 
 FRAGMENTS_TAB = "Fragments"
 DOCUMENT_TAB = "Documentation"
 INSTRUCTIONS_TAB = "Compilation instructions"
-INSTRUCTIONS_NOTE = (
-    "Prepended to every document an agent compiles in this project — voice, audience,"
-    " anything all of them should follow."
-)
+
+# The lead sentence over the list: the page's one answer, a size up from its own detail.
+LEAD_POINTS = 2.0
 
 GROUP_ROLE = int(Qt.ItemDataRole.UserRole) + 20  # Past framework/list_rows.py's own roles.
 
-# What the trailing slot says. Current says nothing: the quiet common case is what the
-# hollow ring and the filled dot bought before the row carried words.
-MARKS = {"stale": "out of date", "never": "not compiled yet", "current": ""}
+# What the trailing slot says: the state, or — for a document nobody needs to act on — when
+# it landed. DESIGN.md's *Lists of rich items*: a date, a count, a fact about the row.
+MARKS = {"stale": "out of date", "never": "not compiled yet"}
 
 UNGROUPED = "Every documented step"
 # Under the headline, which already says "Nothing documented yet".
@@ -119,7 +117,8 @@ class Group:
     # A milestone collector's own shade of the project's colour map; "" paints the
     # glyph in the list's ink, which is what a feature and a check take.
     color: str = ""
-    mark: str = ""  # "out of date" | "not compiled yet" | "" — the row's trailing word.
+    state: str = ""  # "current" | "stale" | "never" — what the headline counts.
+    mark: str = ""  # The trailing slot: the state in words, or when a current one landed.
     tip: str = ""  # The row's tooltip: the session of the run that compiled it.
     collector: Step | None = None
     areas: tuple[str, ...] = field(default_factory=tuple)
@@ -274,7 +273,8 @@ class DocsActivity(EntityActivity):
                     tuple(found),
                     icon=_glyph_for(self._deps.scopes, step),
                     color=self._deps.milestone_color(step.id),
-                    mark=MARKS.get(standing.state, ""),
+                    state=standing.state,
+                    mark=MARKS.get(standing.state) or _when(standing),
                     tip=standing.by,
                     collector=step,
                     areas=tuple(source.step.id for source in found),
@@ -382,24 +382,20 @@ class _DocsPage(QWidget):
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
         layout.setSpacing(CAPTION_GAP)
 
-        self.caption = QLabel(DOCS_CAPTION, self)
-        self.caption.setObjectName("InspectorCaption")
+        # No sentence under the caption saying what documentation is: DESIGN.md's *Words* —
+        # a standing definition is chrome that never stops being read, and the answer under
+        # it changes with the plan, which is what a reader came for.
+        self.caption = caption(DOCS_CAPTION, self)
         layout.addWidget(self.caption)
-
-        self.subtitle = QLabel(DOCS_SUBTITLE, self)
-        self.subtitle.setObjectName("InspectorNote")
-        self.subtitle.setWordWrap(True)
-        layout.addWidget(self.subtitle)
         layout.addSpacing(SECTION_GAP)
 
         self.answer = QLabel(self)
         answer_font = self.answer.font()
-        answer_font.setPointSizeF(answer_font.pointSizeF() + 2.0)
+        answer_font.setPointSizeF(answer_font.pointSizeF() + LEAD_POINTS)
         self.answer.setFont(answer_font)
         layout.addWidget(self.answer)
 
-        self.detail = QLabel(self)
-        self.detail.setObjectName("InspectorNote")
+        self.detail = note("", self)
         layout.addWidget(self.detail)
         layout.addSpacing(SECTION_GAP)
 
@@ -420,7 +416,7 @@ class _DocsPage(QWidget):
             spec = deps.actions.spec(action_id)
             self.verbs[action_id] = self.controls.add_verb(
                 spec.label.replace("&", ""),
-                spec.icon or spark_icon,
+                spec.icon or read_icon,
                 runner(action_id),
                 tip=spec.tip,
                 fill=deps.actions.data_menu(menu_id).fill if action_id == dropped else None,
@@ -435,6 +431,7 @@ class _DocsPage(QWidget):
         layout.addLayout(strip)
         layout.addSpacing(CONTROL_GAP)
 
+        self._collector: StepId = ""
         self.splitter = QSplitter(Qt.Orientation.Horizontal, self)
         self.list = QListWidget(self.splitter)
         self.list.setObjectName("DocsGroups")
@@ -453,6 +450,9 @@ class _DocsPage(QWidget):
 
         self.tabs = QTabWidget(right)
         self.tabs.setDocumentMode(True)
+        # Where the picked collector's document stands is nothing to say over the *project's*
+        # instructions, so the line steps aside for that tab rather than contradicting it.
+        self.tabs.currentChanged.connect(lambda _index: self._show_standing())
         right_layout.addWidget(self.tabs, 1)
 
         self.fragments = MarkdownView(self.tabs)
@@ -479,8 +479,8 @@ class _DocsPage(QWidget):
         instructions_layout = QVBoxLayout(instructions_page)
         instructions_layout.setContentsMargins(0, CONTROL_GAP, 0, 0)
         instructions_layout.setSpacing(CAPTION_GAP)
-        instructions_layout.addWidget(caption(INSTRUCTIONS_TAB, instructions_page))
-        instructions_layout.addWidget(note(INSTRUCTIONS_NOTE, instructions_page))
+        # No caption: the tab names it and the editor's placeholder says what it is for, so a
+        # heading here would be the same words a third time.
         self.instructions = InstructionsCard(deps.library, deps.undo, deps.files, deps.pick_assets)
         # The card's height is a card's; here it has the page, so it takes what is left.
         self.instructions.edit.setMaximumHeight(16_777_215)
@@ -556,12 +556,17 @@ class _DocsPage(QWidget):
         # A pile nothing gathers has no step to hold a document, and says so rather than
         # offering an editor that could not write anywhere.
         collector = group.collector
-        self.standing.setVisible(collector is not None)
+        self._collector = collector.id if collector is not None else ""
         self.compiled.setVisible(collector is not None)
         self.uncompilable.setVisible(collector is None)
-        self.compiled.show_target(collector.id if collector is not None else None)
+        self.compiled.show_target(self._collector or None)
         if collector is not None:
             self.standing.show_target(collector.id)
+        self._show_standing()
+
+    def _show_standing(self) -> None:
+        on_instructions = self.tabs.currentIndex() == self.tabs.count() - 1
+        self.standing.setVisible(bool(self._collector) and not on_instructions)
 
 
 def _glyph_for(kinds: Sequence[Any], step: Step) -> str:
@@ -586,34 +591,34 @@ def _headline(groups: Sequence[Group]) -> tuple[str, str]:
     it makes every reader do the arithmetic."""
     if not groups:
         return "Nothing documented yet", ""
-    marks = [group.mark for group in groups if group.collector is not None]
+    states = [group.state for group in groups if group.collector is not None]
     words = sum(word_count(source.body) for group in groups for source in group.sources)
     answer = f"{len(groups)} {_word('group', len(groups))}, {words:,} words"
-    stale = sum(1 for mark in marks if mark == "stale")
-    never = sum(1 for mark in marks if mark == "never")
-    parts = [f"{len(marks) - stale - never} up to date"] if marks else []
-    if stale:
-        parts.append(f"{stale} out of date")
-    if never:
-        parts.append(f"{never} not written yet")
-    return answer, " · ".join(parts)
+    counted = [
+        (sum(1 for state in states if state == "current"), "up to date"),
+        (sum(1 for state in states if state == "stale"), "out of date"),
+        (sum(1 for state in states if state == "never"), "not compiled yet"),
+    ]
+    return answer, " · ".join(f"{count} {words}" for count, words in counted if count)
+
+
+def _when(standing: Standing) -> str:
+    """When a document that is up to date landed — the trailing slot's quiet fact."""
+    return ago(float(standing.stamp.get("at", 0.0) or 0.0))
 
 
 def _group_detail(sources: Sequence[Source], standing: Standing | None = None) -> str:
-    """A row's second line: what there is to read, and what the last compile was.
+    """A row's second line: what there is to read, and who last compiled it.
 
-    The *when* and the *who* sit here rather than in the trailing slot, which the state has:
-    a row answers "is this due" at a glance and "what happened last time" on the line under
-    it.
+    *When* is the trailing slot's, and *who* is here, because a row answers "is this due" at
+    a glance and "who has been at it" on the line under.
     """
     words = sum(word_count(source.body) for source in sources)
     parts = [f"{len(sources)} {_word('fragment', len(sources))}", _words(words)]
-    if standing is not None and standing.state != "never":
-        at = float(standing.stamp.get("at", 0.0) or 0.0)
-        by = f" by {standing.by}" if standing.by else ""
-        parts.append(f"compiled {ago(at)}{by}")
     if standing is not None and standing.working:
         parts.append("an agent is working here")
+    elif standing is not None and standing.by and standing.state != "never":
+        parts.append(standing.by.partition(" · ")[0])  # The session is the row's tooltip.
     return " · ".join(parts)
 
 

@@ -69,7 +69,7 @@ from dplanner.modules.docs.section import (
     InstructionsCard,
     Standing,
 )
-from dplanner.theme.icons import read_icon, spark_icon
+from dplanner.theme.icons import read_icon, refresh_icon, spark_icon
 
 COMPILE_ACTION = "docs.compile"
 COMPILE_MENU_ID = "docs.compile_with"
@@ -316,7 +316,9 @@ class DocsModule:
                 menu="Project",
                 group="docs",
                 order=10,
-                icon=spark_icon,
+                # Not the launch glyph: two verbs a strip shows side by side need two
+                # glyphs, and what this one does is bring a set back up to date.
+                icon=refresh_icon,
                 tip="Launch an agent for every document in this project that is out of date",
                 state=self._stale_state,
                 run=self._compile_stale,

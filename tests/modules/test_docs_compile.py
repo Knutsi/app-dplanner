@@ -407,7 +407,10 @@ def test_the_view_lists_the_collectors_with_their_state_in_words(services, proje
     assert rows(view) == [("F2 · Auth", "not compiled yet")]
 
     landed(services, project, auth)
-    assert rows(view) == [("F2 · Auth", "")]  # Current says nothing: the quiet common case.
+    # A document nobody need act on says when it landed instead: the trailing slot is a
+    # fact about the row, and "up to date" is what the absence of a state word means.
+    [(_title, mark)] = rows(view)
+    assert "ago" in mark or mark == "just now"
 
     services.document.set_text(by_title(project, "Write the parser").id, MODULE_ID, "Changed.")
     assert rows(view) == [("F2 · Auth", "out of date")]
@@ -417,9 +420,10 @@ def test_a_row_says_when_it_was_compiled_and_by_whom(services, project, view, mo
     auth = by_title(project, "Auth")
     set_global(MODULE_ID, LAUNCHES_KEY, {auth.id: "Claude Code · session 3f2a"})
     landed(services, project, auth)
-    [(_title, _mark)] = rows(view)
     detail = view.page.list.item(0).data(DETAIL_ROLE)
-    assert "compiled" in detail and "Claude Code" in detail
+    assert "Claude Code" in detail
+    assert "3f2a" not in detail  # The session is the row's tooltip, not its second line.
+    assert "3f2a" in view.page.list.item(0).toolTip()
 
 
 def test_grouping_by_milestone_folds_the_feature_in(services, project, view):
