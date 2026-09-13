@@ -30,7 +30,7 @@ $ProgressPreference = 'SilentlyContinue'
 
 # windows_check.py compares this against C:\work\provisioned.json and re-provisions when they
 # differ. Bump it whenever this file changes.
-$PROVISION_VERSION = 2
+$PROVISION_VERSION = 3
 
 # How long to let Windows Update have before falling back to the pinned GitHub build.
 $CAPABILITY_TIMEOUT_S = 150
@@ -52,15 +52,17 @@ Step 'directories' { New-Item -ItemType Directory -Force -Path C:\work, C:\work\
 Step 'long paths' {
     Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' LongPathsEnabled 1 -Type DWord
 }
-# dockur's host share is unauthenticated guest SMB, which Windows 11 blocks by default -- the
-# share answers "your organization's security policies block unauthenticated guest access"
-# until this is set. A network drive belongs to a logon session, so Z: exists only for the
-# logged-in user; the UNC path is what a non-interactive run must use.
+# dockur's host share is unauthenticated guest SMB. Windows 11 blocks guest logons by default,
+# and from build 24H2 it also *requires SMB signing* -- which a guest session cannot do, so
+# the first switch alone is not enough there. Set-SmbClientConfiguration is the supported
+# cmdlet and takes effect live. The first version of this step wrote the registry key and
+# then Restart-Service'd LanmanWorkstation -Force: that wedged the redirector on two boots
+# running, and \\host.lan\Data was gone for every session until a reboot. Never force-restart
+# the workstation service on a machine you still need to reach.
+# A network drive belongs to a logon session, so Z: exists only for the logged-in user; the
+# UNC path is what a non-interactive run must use.
 Step 'SMB guest access' {
-    $k = 'HKLM:\SYSTEM\CurrentControlSet\Services\LanmanWorkstation\Parameters'
-    New-Item -Path $k -Force | Out-Null
-    Set-ItemProperty $k AllowInsecureGuestAuth 1 -Type DWord
-    Restart-Service LanmanWorkstation -Force -ErrorAction SilentlyContinue
+    Set-SmbClientConfiguration -EnableInsecureGuestLogons $true -RequireSecuritySignature $false -Force
 }
 
 # -- git: the one real prerequisite ----------------------------------------------------------

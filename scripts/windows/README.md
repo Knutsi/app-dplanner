@@ -105,6 +105,15 @@ console to watch and no way to retry without reinstalling Windows, so everything
 wrong lives in `provision.ps1`, which `windows_check.py provision` re-runs as often as it
 takes.
 
+**Never force-restart the Workstation service on a machine you still need to reach.** The
+first provisioner set the guest-SMB registry key and then `Restart-Service LanmanWorkstation
+-Force`. That wedged the SMB redirector on two boots running: `\\host.lan\Data` was gone for
+every session, interactive or SSH, until a reboot — while `smbd` in the container sat listening
+on the right address the whole time. `Set-SmbClientConfiguration` is the supported cmdlet, it
+takes effect live, and it also clears the second gate Windows 11 24H2 added: SMB signing is
+*required* there by default, and a guest session cannot sign, so allowing guest logons alone
+is not enough on a current build.
+
 **The guest scripts are ASCII, and `tests/test_windows_harness.py` keeps them so.** Windows
 PowerShell 5.1 reads a `.ps1` with no byte-order mark as ANSI, and an em dash in a
 double-quoted string ends the string early — the whole file then fails to parse, with an
