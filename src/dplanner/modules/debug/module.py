@@ -5,8 +5,6 @@ import subprocess
 import sys
 from dataclasses import dataclass
 
-from PySide6.QtCore import QUrl
-from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.telemetry import Telemetry
@@ -27,12 +25,18 @@ from dplanner.modules.debug.design_example import (
 )
 from dplanner.modules.debug.telemetry_view import TELEMETRY_KIND, TelemetryActivity
 from dplanner.modules.debug.view import LLM_CALLS_KIND, LLMCallsActivity
-from dplanner.modules.debug.windows_check import VIEWER_URL, command, probe
+from dplanner.modules.debug.windows_check import DESKTOP_COMMAND, command, probe
 
 
-def open_url(url: str) -> None:
-    """Hand a URL to the browser — one seam, so a test can watch instead."""
-    QDesktopServices.openUrl(QUrl(url))
+def launch_desktop(argv: tuple[str, ...]) -> None:
+    """Start Omarchy's RDP launcher, detached — one seam, so a test can watch instead.
+
+    Detached because the session is the developer's, not the application's: closing DPlanner
+    must not take the RDP window down with it.
+    """
+    subprocess.Popen(
+        list(argv), start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+    )
 
 
 @dataclass(frozen=True)
@@ -178,12 +182,12 @@ class DebugModule:
             )
         )
 
-        # Watching is its own verb, and a cheaper one: dockur serves the guest's screen as
-        # noVNC over HTTP, so the browser is the viewer and no RDP client is needed. It needs
-        # only the VM, not the harness — a build with no scripts/ can still watch one that is
-        # running, and refusing that would be refusing something that works.
+        # Watching is its own verb, and a cheaper one: it needs only the VM, not the harness
+        # — a build with no scripts/ can still open a session to one that is running, and
+        # refusing that would be refusing something that works. Omarchy's launcher does the
+        # RDP, with --keep-alive so the developer's VM outlives the window.
         def run_watch_windows(_context: Context) -> None:
-            open_url(VIEWER_URL)
+            launch_desktop(DESKTOP_COMMAND)
 
         def watch_state(_context: Context) -> ActionState:
             refusal = self._windows.watch_refusal
@@ -198,8 +202,8 @@ class DebugModule:
                 menu="Debug",
                 group="windows",
                 order=20,
-                tip="Open the Windows VM's screen in a browser — dockur serves it as noVNC, "
-                "so this is the RDP session without an RDP client",
+                tip="Open an RDP session to Omarchy's Windows VM (omarchy-windows-vm launch "
+                "--keep-alive: the VM stays up when the window closes)",
                 run=run_watch_windows,
                 state=watch_state,
             )

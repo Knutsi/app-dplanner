@@ -20,10 +20,11 @@ from pathlib import Path
 HARNESS = Path(__file__).resolve().parents[4] / "scripts" / "windows_check.py"
 VM_COMMAND = "omarchy-windows-vm"
 
-# dockur serves the guest's screen as noVNC over HTTP, which is why watching it needs no RDP
-# client and no extra port: any browser is the viewer. Omarchy's VM publishes 8006; the
-# throwaway box in scripts/windows/docker-compose.yml is on 8007 so the two never collide.
-VIEWER_URL = "http://127.0.0.1:8006/"
+# Watching the desktop is delegated to Omarchy's own launcher rather than done here: it knows
+# the private credentials file, the HiDPI scale, the Kerberos workaround FreeRDP 3 needs, and
+# which client to run (xfreerdp3). `--keep-alive` is not optional. Without it the launcher
+# stops the VM when the RDP window closes -- the developer's own VM, from a Debug menu entry.
+DESKTOP_COMMAND = (VM_COMMAND, "launch", "--keep-alive")
 
 
 @dataclass(frozen=True)
@@ -44,8 +45,8 @@ class WindowsCheck:
     def watch_refusal(self) -> str:
         """Why the desktop cannot be watched here — empty when it can.
 
-        Only the VM: a build with no ``scripts/`` can still open the viewer of a VM that is
-        running, and refusing that would be refusing something that works.
+        Only the VM: a build with no ``scripts/`` can still open an RDP session to a VM that
+        is running, and refusing that would be refusing something that works.
         """
         return "" if self.has_vm else f"needs Omarchy's Windows VM ({VM_COMMAND} is not on PATH)"
 

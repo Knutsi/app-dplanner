@@ -4,8 +4,8 @@ Rendered by `uv run python scripts/render_windows_check.py --out docs/screenshot
 
 | Image | What it shows |
 |---|---|
-| `debug-menu-*` | The Debug menu's Windows band on a machine that can run it — Omarchy, from a source checkout. **Windows Check** runs the suite, the lint, the types and the frozen build in the VM as a task, because it is minutes of blocking work. **Windows Desktop** opens the guest's screen in a browser: dockur serves it as noVNC over HTTP, so that is the RDP session without an RDP client. |
-| `debug-menu-refused-*` | The same two anywhere else: **disabled, never hidden, with the reason in each one's own label**. They derive different refusals from the same two facts — watching needs only the VM, running needs the harness as well — because refusing to open a viewer that would work is refusing something that works. |
+| `debug-menu-*` | The Debug menu's Windows band on a machine that can run it — Omarchy, from a source checkout. **Windows Check** runs the suite, the lint, the types and the frozen build in the VM as a task, because it is minutes of blocking work. **Windows Desktop** opens an RDP session through `omarchy-windows-vm launch --keep-alive` — Omarchy's own launcher, which knows the credentials file, the HiDPI scale and the client; `--keep-alive` is what stops it shutting the developer's VM down when the window closes. |
+| `debug-menu-refused-*` | The same two anywhere else: **disabled, never hidden, with the reason in each one's own label**. They derive different refusals from the same two facts — watching needs only the VM, running needs the harness as well — because refusing to open a session that would work is refusing something that works. |
 
 Dark and light (`-dark`, `-light`).
 

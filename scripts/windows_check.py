@@ -215,6 +215,14 @@ def tail(log: Path, seen: int, *, quiet: bool) -> int:
     return size
 
 
+def is_clixml(line: str) -> bool:
+    """PowerShell with no console serialises its information stream — every Write-Host — as
+    CLIXML on stderr, one <Objs> blob per call, each repeating the text stdout already has.
+    Over SSH that is every line twice, once readable and once as XML. Dropped, not parsed:
+    the plain line is always there."""
+    return line.startswith(("#< CLIXML", "<Objs "))
+
+
 def stream(argv: Sequence[str], label: str, *, quiet: bool = False) -> int:
     """Run, echo as it arrives, and tee to the step's own log."""
     log = logs_dir() / f"{label}.log"
@@ -225,6 +233,8 @@ def stream(argv: Sequence[str], label: str, *, quiet: bool = False) -> int:
         )
         assert process.stdout is not None
         for line in process.stdout:
+            if is_clixml(line):
+                continue
             sink.write(line)
             if not quiet:
                 sys.stdout.write(line)

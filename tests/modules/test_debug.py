@@ -306,14 +306,15 @@ def test_both_windows_entries_are_registered_in_the_debug_menu(services):
         assert state.enabled or (state.label and "—" in state.label)
 
 
-def test_watching_the_desktop_hands_the_viewer_to_the_browser(services, monkeypatch):
-    """noVNC over HTTP, so the browser is the viewer and no RDP client is involved."""
+def test_watching_the_desktop_runs_omarchys_launcher_and_keeps_the_vm_alive(services, monkeypatch):
+    """Delegated to omarchy-windows-vm, which knows the credentials, the scale and the client.
+    `--keep-alive` is the one flag that matters: without it the launcher stops the VM when
+    the RDP window closes, and it is the developer's own VM."""
     from dplanner.modules.debug import module as debug_module
-    from dplanner.modules.debug.windows_check import VIEWER_URL
 
-    opened: list[str] = []
-    monkeypatch.setattr(debug_module, "open_url", opened.append)
+    launched: list[tuple[str, ...]] = []
+    monkeypatch.setattr(debug_module, "launch_desktop", launched.append)
     # The spec's body directly rather than through `run`, which honours the state gate: what
     # is under test is what the verb does, on every machine, not whether this one has a VM.
     services.actions.spec("debug.windows_desktop").run(Context({}))
-    assert opened == [VIEWER_URL]
+    assert launched == [("omarchy-windows-vm", "launch", "--keep-alive")]
