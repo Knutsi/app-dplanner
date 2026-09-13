@@ -21,4 +21,4 @@ from pathlib import Path
 
 
 def guide() -> str:
-    return (Path(__file__).parent / "shaping.md").read_text()
+    return (Path(__file__).parent / "shaping.md").read_text(encoding="utf-8")

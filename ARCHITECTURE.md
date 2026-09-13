@@ -5417,3 +5417,73 @@ Settings ▸ Appearance, where every provider is a switch with its capabilities 
 and its reason, greyed, where it does not apply — except the built-in, which is a line,
 since a switch that cannot be turned off teaches nothing.
 
+
+## The Windows check is a disposable target, not a pipeline
+
+DPlanner has sixteen files with a platform branch and, until this step, no machine that ran
+them. Two of those branches — `_windows_process_alive` and the PowerShell `.lnk` writer —
+could not be reached by any test on Linux at all. The question was never *whether* to test
+Windows; it was what shape the answer takes.
+
+**It is a capability, not a pipeline.** Windows is checked rarely and on purpose: bringing a
+VM up costs RAM, disk and a person's attention, and a three-platform CI matrix would run it on
+every push to buy a signal nobody reads between releases. So `scripts/windows_check.py` is a
+thing you *run*, with every verb standing alone — the fix loop is `sync`, one check, read it,
+repeat, and a harness that re-boots or re-syncs each time round is one nobody uses twice.
+
+**The cheap guard runs everywhere, every time.** `uv run mypy --platform win32` is the fourth
+check in CLAUDE.md because it is the only reader of the Windows half that costs thirty seconds
+and needs no VM: mypy skips a `sys.platform == "win32"` branch entirely on the host platform,
+so that code is otherwise read by nobody. It found four real errors the first time it ran.
+That is the trade the missing CI is paying for — a fast, partial signal on every machine
+instead of a slow, complete one on a schedule.
+
+**The default target is the developer's own VM, and the harness never recreates it.** Omarchy
+ships `omarchy-windows-vm`: an installed, persistent Windows 11 with the developer's account
+and a 512 GB disk. Building a second box beside it would cost a 20–30 minute install, ~12 GB
+of RAM and tens of GB of disk to answer the same questions. What it lacks is an SSH port, and
+adding one means recreating a container that belongs to the developer rather than to this
+check — so the transport is the shared folder that container already binds. `runner.ps1`
+watches an inbox, runs each job, writes the log and exit code back. Crude, and it buys three
+things nothing else does: no new ports, no recreation, and **every job already inside the
+interactive session** — which is the whole interactive half, free. A process started over
+Windows OpenSSH lands in the SSH logon session, where a window it opens paints to a desktop
+nobody is looking at and `CopyFromScreen` returns black. The `--target box` transport is SSH
+against a throwaway container, and it exists because a check that can only run on one person's
+machine is not a check.
+
+### Bytes on disk are stated, never inherited
+
+`write_atomic` passed no `newline` and no platform ever complained, because every platform
+that had run it agreed. On Windows `write_text` translates `\n` to `\r\n`, so the same plan
+saved there came back as a whole-file diff against the same plan saved anywhere else — a
+format built to be shared and merged, quietly rewritten line by line by one platform. The
+same class of bug, opposite direction, had already shipped in the agent launcher: a CRLF-joined
+`run.cmd` written through a translating write produced `\r\r\n`, and the test that should have
+caught it could not, because `read_text` normalises every line ending it reads. **A test about
+bytes reads bytes.** FORMAT.md's *Bytes on disk* is the rule; `encoding="utf-8"` belongs beside
+every `newline` for the same reason — Windows decodes text as the console code page, and this
+project's prose is full of em dashes.
+
+### A frozen build is onedir because Qt is LGPL
+
+`dplanner.spec` builds a directory, never a single file, and that is a licence decision rather
+than a preference. Qt for Python is LGPL v3, whose section 4 permits conveying a combined work
+only if the user can relink it against a modified library. A onefile build unpacks into a
+private temporary directory that is deleted on exit, so somebody who builds their own Qt has
+nowhere to put it. onedir keeps the Qt libraries on disk where they can be swapped, and
+`upx=False`/`strip=False` serve the same clause — a packed or stripped library is not a
+drop-in replacement target. PyInstaller itself is GPL-2.0 *with an exception permitting closed
+and commercial builds*, so the frozen output carries whatever licence we choose.
+
+**Three things the import graph cannot see, and each fails silently.** Distribution metadata
+(Help ▸ About reads every component's licence from it, and the LGPL row is the one row an
+acknowledgement must never get wrong), keyring's entry-point backends (without them
+`backend_problem()` reports no keychain on a machine whose Credential Manager works perfectly
+well), and pdfium's native library, which is loaded by path from beside its own bindings
+module. None of them is a build error; all three are a working-looking build that is wrong at
+run time. So the proof is a run — `dplanner checklist show` from the frozen executable — and
+`pyinstaller` is a dev dependency on every platform precisely so a Linux developer validates
+the spec between the rare Windows builds. `tests/test_freeze.py` holds the manifest to one
+rule — *a data file lands at its own package path* — because that is the single thing that
+makes `importlib.resources.files` and `Path(__file__).parent` agree inside a bundle.

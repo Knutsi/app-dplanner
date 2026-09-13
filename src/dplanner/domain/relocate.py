@@ -109,7 +109,7 @@ def move_project(
             shutil.copytree(item, target / name)
         elif item.is_file():
             shutil.copy2(item, target / name)
-    meta = json.loads((target / PROJECT_META).read_text())
+    meta = json.loads((target / PROJECT_META).read_text(encoding="utf-8"))
     meta["repository"] = code
     meta.pop("colocation", None)
     write_atomic(

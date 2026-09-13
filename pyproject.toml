@@ -32,6 +32,13 @@ packages = ["src/dplanner"]
 [dependency-groups]
 dev = [
     "mypy>=1.16",
+    # Frozen builds: `uv run pyinstaller dplanner.spec`. GPL-2.0 **with an exception that
+    # permits closed and commercial builds**, plus Apache-2.0 parts — the frozen output
+    # carries whatever licence we choose, and only changes to PyInstaller's own source would
+    # fall under the GPL. Nothing here changes it. In `dev` rather than a group of its own
+    # because a Linux developer running the spec is how the spec stays correct between the
+    # rare Windows builds.
+    "pyinstaller>=6.11",
     "pytest>=8.4",
     "pytest-qt>=4.5",
     "pytest-xdist>=3.6",
@@ -59,7 +66,7 @@ qt_default_raising = true
 [tool.mypy]
 python_version = "3.13"
 mypy_path = ["src", "."]
-files = ["src/dplanner", "tests"]
+files = ["src/dplanner", "tests", "freeze"]
 explicit_package_bases = true
 strict = true
 warn_unreachable = true

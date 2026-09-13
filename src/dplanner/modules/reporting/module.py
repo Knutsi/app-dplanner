@@ -268,7 +268,9 @@ class ReportingModule:
         def body() -> None:
             if kind in ("html", "preview"):
                 path.write_text(
-                    page.render(report, about=page.about_text(report)), encoding="utf-8"
+                    page.render(report, about=page.about_text(report)),
+                    encoding="utf-8",
+                    newline="\n",
                 )
             elif kind == "pdf":
                 paper.write(report, path)

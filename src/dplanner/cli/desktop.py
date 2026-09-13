@@ -143,7 +143,7 @@ class DesktopEntry:
 
     def write(self, executable: Path) -> None:
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(desktop_entry(executable))
+        self.path.write_text(desktop_entry(executable), encoding="utf-8", newline="\n")
         for size in ICON_SIZES:
             target = self.icon_file(size)
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -153,7 +153,7 @@ class DesktopEntry:
 
     def target(self) -> Path | None:
         try:
-            text = self.path.read_text()
+            text = self.path.read_text(encoding="utf-8")
         except OSError:
             return None
         for line in text.splitlines():
@@ -237,14 +237,14 @@ class AppBundle:
         self.icon_file.parent.mkdir(parents=True, exist_ok=True)
         (self.path / "Contents" / "Info.plist").write_bytes(info_plist())
         self.icon_file.write_bytes(icns_bytes())
-        self.script.write_text(bundle_script(executable))
+        self.script.write_text(bundle_script(executable), encoding="utf-8", newline="\n")
         self.script.chmod(0o755)
         if LSREGISTER.is_file():  # Best effort: Spotlight and Launchpad see it now.
             self.run([str(LSREGISTER), "-f", str(self.path)])
 
     def target(self) -> Path | None:
         try:
-            text = self.script.read_text()
+            text = self.script.read_text(encoding="utf-8")
         except OSError:
             return None
         match = _BUNDLE_EXEC.search(text)

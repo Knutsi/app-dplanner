@@ -110,6 +110,6 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "Tools": ("runs", "install"),
     # "design" is the design system's living reference — Design Example… and its table
     # tab — what a developer bringing a surface up opens beside their own (DESIGN.md).
-    "Debug": ("llm", "telemetry", "design"),
+    "Debug": ("llm", "telemetry", "design", "windows"),
     "Help": ("about",),
 }

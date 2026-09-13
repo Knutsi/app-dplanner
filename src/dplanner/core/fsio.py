@@ -44,9 +44,16 @@ def write_atomic(path: Path, text: str) -> None:
     The temporary lives in the same directory as the target because the rename is only
     atomic within one filesystem. No fsync: git is the durability layer for this project,
     and the failure this guards against is a partial write, not a lost one.
+
+    ``newline="\n"`` because every file that comes through here is part of the on-disk
+    format, and that format is LF (FORMAT.md's *Bytes on disk*). Left to itself
+    ``write_text`` translates to ``os.linesep``, so the same plan saved on Windows came
+    back as a whole-file diff against the same plan saved anywhere else — one platform
+    quietly rewriting every line of a format whose whole purpose is to be shared and
+    merged.
     """
     tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(text, encoding="utf-8")
+    tmp.write_text(text, encoding="utf-8", newline="\n")
     tmp.replace(path)
 
 

@@ -971,7 +971,11 @@ class LibraryStore:
                 stack.extend(entry.iterdir())
             elif entry.is_file():
                 stat = entry.stat()
-                found[str(entry.relative_to(root))] = (stat.st_size, stat.st_mtime_ns)
+                # POSIX-style, whatever the host: the write path records a file under the
+                # storage layer's '/'-joined name, and a key that spelled the same file
+                # 'steps\\S1\\step.json' on Windows made every file this store had just
+                # written read as somebody else's — StaleWorkspaceError on every flush.
+                found[entry.relative_to(root).as_posix()] = (stat.st_size, stat.st_mtime_ns)
         return found
 
     def _remember_disk(self, record: _ProjectRecord) -> None:
