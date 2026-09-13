@@ -34,6 +34,7 @@ re-rendering — never styling one surface by name.
 | "the view is rebuilding" | `UpdatingIndicator` — a `Spinner` on its own | `framework/signalling.py` | the strip's right end, `dialog-working-*` |
 | "this button's work is running" | `Spinner` | `framework/signalling.py` | `dialog-working-*` |
 | busy, ok, error or plain information in words | `StatusLine` | `framework/signalling.py` | the modal's *Signalling* block |
+| a list of facts about this machine | one `StatusLine` per row, grouped | `modules/checklist/dialog.py` | `docs/screenshots/f13-checklist/` |
 | a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
 | a caption over a block, a remark under it | `caption()`, `note()` | `framework/widgets.py` | the modal's form |
 | a two-line list row | `TwoLineDelegate` | `framework/list_rows.py` | the palette, the notes tab |
@@ -70,6 +71,16 @@ flows, and what each surface on the way must make unmistakable:
   gh* in its words. The Checklist is where this machine's facts live, one status line each
   with its remedy. Never ambiguous: **this is about this machine, not the project**, and
   nothing typed is lost.
+- **A machine that is not set up.** *Tools ▸ Setup Checklist…* is a status line per check,
+  grouped, each with its remedy on a second line and — where DPlanner can run the fix — a
+  plain button on the row, whose room is kept when there is nothing to press. The primary is
+  *Re-check*, and the arc turns in its glyph. It opens by itself in exactly two cases: once,
+  on a machine DPlanner has never greeted, whatever that machine has; and afterwards only
+  while the person left *"open this at start"* ticked **and** something **required** is
+  missing. Nothing advisory ever raises it — that is principle 3 below, and it is why there
+  is still no modal at launch for gh. *Tools* carries the count of what is required and
+  missing in its own words. Never ambiguous: **what would stop DPlanner, and what is only
+  worth knowing**.
 
 Five principles fall out of them, and every rule below is one of these applied:
 
@@ -285,7 +296,12 @@ Every dialog is a `DialogFrame` (`framework/dialog.py`), and its anatomy is the 
   dialog's content is what the person opened it for, and it starts at the top. The title
   names the **window**, for the switcher, and nothing is drawn from it. What a dialog is
   about is said by its content — the question a confirmation asks, the caption over a
-  prompt's field — never by a heading over it. Then **the footer as a band**, edge to edge
+  prompt's field — never by a heading over it.
+- **The one exception is a dialog that opens itself** (`set_heading`). A surface nobody
+  asked for is the only one that has to name itself: the person clicked no entry, read no
+  title in passing, and has a window in front of them they did not summon. The Setup
+  Checklist is the case, and the rule is the test — **a dialog a gesture opened must not
+  call it**, because that gesture already said what this is. Then **the footer as a band**, edge to edge
   below the page: the elevated ground under a faint hairline, its buttons 12 px inside it.
   It is the one place a dialog has a second ground, so the eye finds the way out without
   reading.
@@ -393,6 +409,13 @@ text that re-lays out on resize, and a selection state that recolours both lines
   in secondary ink, measured first so the name elides against what is left.
 - **Hairlines only under a pinned row that heads the list**; between ordinary rows the
   padding is the separator.
+- **A row's own verbs sit at its right, and a row that has none keeps their room.** At most
+  two named or glyph buttons — the act, and a link where somebody else's page is the answer
+  — then a `⋮` for what the row can be *told*, built when it opens. Room kept while hidden
+  (the `UpdatingIndicator`'s rule), so a row that is fixed does not move the rows under it.
+- **A list of things that should be true is drawn as one**: the `StatusLine`'s mark becomes
+  ☑ when it is and ☐ when it is not, and the tone still carries the mood. Nothing else
+  changes that glyph — a second mood glyph would be a second vocabulary.
 
 ## Tables
 

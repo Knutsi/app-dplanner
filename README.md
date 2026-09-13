@@ -69,6 +69,22 @@ uv run dplanner install all       # or Tools ▸ Install DPlanner… in the wind
 uv run dplanner install status    # what this machine has: current, stale or missing
 ```
 
+To see what else this machine needs — git, the GitHub CLI and a session on it, an agent CLI,
+a terminal to open one in, the keychain, the network — and what to do about each:
+
+```bash
+uv run dplanner checklist show    # or Tools ▸ Setup Checklist… in the window
+```
+
+It exits 1 while something **required** is missing (git, the command, the skill) and 0 while
+the rest is only advice, so an agent can gate on it; `--json` for the rows as data. Where
+there is an install line to give, it is **this machine's** — `yay -S github-cli` on Arch or
+Omarchy, `sudo apt install gh` on Ubuntu, `brew install gh` on a Mac — and where there is
+not, the row links to the page that knows. The window opens the same list once on a machine
+it has never greeted, and after that only while you leave its switch on and something
+required is missing; a row's `⋮` can tell it to stop warning about that one for good, which
+changes what nags and never what `checklist show` reports.
+
 `desktop install`/`status`/`uninstall` and `skill install`/`status`/`uninstall` are the
 pieces it is made of, for when one of them is what you mean. The command is left alone when
 this build is a git worktree, or when the `dplanner` on PATH was not installed by uv — both
@@ -274,6 +290,7 @@ src/dplanner/
 │   ├── install.py           `install all`/`status`/`remove`: the command, the launcher and the skill as one act, read and written together
 │   ├── assets.py            `<noun> attach`/`assets` — the per-aspect pair — and `asset list`/`uses`/`prune` over every module's areas
 │   ├── lint.py              `lint` — every module's checks over the library, one report
+│   ├── checklist.py         `checklist show` — every module's checks over this *machine*, one report
 │   ├── scopes.py            `scope show` — what a check, feature or milestone gathers
 │   ├── authoring.py         `step add` — one verb, each module contributing its flags
 │   ├── telemetry.py         `telemetry show|path|clear` — the journal, read back
@@ -400,6 +417,7 @@ src/dplanner/
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
 │   ├── install/             getting DPlanner onto this machine from the window: one dialog over `cli/install.py`, three rows and one button
+│   ├── checklist/           what this machine has of what DPlanner needs: the rows no feature owns, and the modal every module's rows are shown in
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
 │   ├── appearance/          View ▸ Theme (System theme, then what every provider offers) and Settings ▸ Appearance
 │   ├── theme_omarchy/       ── one module per theme provider, each a Qt-free `themes.py`: Omarchy's

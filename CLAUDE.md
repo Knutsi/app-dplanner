@@ -248,6 +248,7 @@ modules/<name>/
 ├── aspect.py    for a step aspect: SPEC, DATA_FORMAT, read/write    ← imports no Qt
 ├── report.py    what it says in a report: report_source()           ← imports no Qt
 ├── harness.py   for an agent CLI provider: HARNESS, and nothing else  ← imports no Qt
+├── checks.py    what this machine needs for it: checks()              ← imports no Qt
 ├── themes.py    for a theme provider: the ThemeProvider it offers        ← imports no Qt
 └── section.py   the editor it puts in the step detail panel
 ```
@@ -759,6 +760,34 @@ root, stop and look for the registry or capability you have not found yet.
   `installed` or `missing` and never `stale`: whether the one on PATH came from this build
   cannot be told without running it. `ARCHITECTURE.md`'s *Installing is one act* has the
   reasoning.
+- **A checklist is a registry of probes, and every module owns its own.** Whether this
+  machine can run DPlanner is a fact about every feature at once, so `cli/checklist.py` owns
+  the shapes (`MachineCheck`, `Reading`, `Remedy`), the `GROUPS` order, the report and the
+  exit code; each owning module exports `checks()` from its own Qt-free `checks.py`; and
+  `_machine_checks()` in the root assembles the tuple *Tools ▸ Setup Checklist…* and
+  `dplanner checklist show` both read — `cli/lint.py`'s arrangement exactly. **A probe
+  answers two states and the tone is derived**: `Reading` is ok-or-not plus the words, and a
+  failure is the error tone when `required` and information otherwise, which is
+  `signalling`'s four tones with none added. **`required` means the verb exits 1 and the
+  check runs at every start** — the same thing said twice, which is why a required probe may
+  not touch the network or shell out for long, and why git, the command and the skill are
+  the only three. **A remedy names an action id**, never a widget: the modal runs it through
+  `ActionRegistry.run` and the terminal prints the command instead, so a module offers its
+  own fix without being imported. **The count in the menu label is read, never probed** —
+  a state callback may not shell out — and **the machine is greeted once**, then only while
+  the person left the switch on and something required is missing. **A remedy may name
+  `packages` instead of a `command`** and `install_line` makes the line *this* machine
+  would run — two tables (`MANAGERS`, `FAMILIES`), a manager offered only when it is on
+  PATH, and the family read from `/etc/os-release`'s `ID` then `ID_LIKE`, so **a
+  derivative needs no row of its own**: Omarchy is an Arch machine because it says so. A
+  check that cannot name a line it is sure of names none and carries a `url` instead.
+  **Muting a row changes what nags, never what is true** — the `⋮` keeps it per user, the
+  row still says what it found, and the CLI never reads it, because an agent gating on
+  `checklist show` must not inherit somebody's decision to live with a gap. And **it is
+  the one dialog that prints a heading** (`DialogFrame.set_heading`), because it is the
+  one that opens itself; a dialog a gesture opened must not call it.
+  `ARCHITECTURE.md`'s *A checklist is a registry of probes* has the reasoning, including
+  why `framework/secrets_store.py` had to become `core/secrets.py`.
 - **Discarding a build is `discard_build()`, and closing the window is not enough.** Qt keeps
   a closed `QWidget` in `topLevelWidgets()`, so without `deleteLater()` the whole build —
   services, model, every module — stays reachable forever. Nobody notices in the application;

@@ -214,3 +214,23 @@ def test_a_primary_inside_a_dialog_the_stylesheet_once_named_still_wears_the_acc
         assert image.pixelColor(inside(button, host)) == QColor(DARK.accent)
     finally:
         host.deleteLater()
+
+
+def test_only_a_dialog_that_opens_itself_prints_a_heading(qtbot):
+    """DESIGN.md: a dialog a gesture opened prints none — that gesture already named it.
+    The Setup Checklist opens itself, so it is the one that has to say what it is."""
+    frame = DialogFrame("Setup Checklist")
+    qtbot.addWidget(frame)
+
+    assert not [
+        label for label in frame.body.findChildren(QLabel) if label.objectName() == "DialogHeading"
+    ]
+
+    label = frame.set_heading("Setup Checklist")
+
+    assert label.text() == "Setup Checklist"
+    assert label.objectName() == "DialogHeading"
+    # It leads the body, over whatever the dialog is actually for.
+    assert frame.body_layout.indexOf(label) == 0
+    # And it is a step up from the body's own face, as a card's title is.
+    assert label.font().pointSizeF() > frame.body.font().pointSizeF()

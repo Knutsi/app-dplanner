@@ -261,7 +261,9 @@ def detect_pairings(
     rows = terminals_for(platform)
     found = {row.command: is_installed(row, which, env, app_exists) for row in rows}
     found[""] = True
-    agents = {h.command: which(_first_word(h.command)) is not None for h in harnesses}
+    # ``binary`` is the harness's own answer; its command's first word is the guess for
+    # one that does not say. The checklist's agent row reads the same field.
+    agents = {h.command: which(h.binary or _first_word(h.command)) is not None for h in harnesses}
     known = {_choices(profile, harnesses) for profile in read_profiles()}
     detected = [
         Detected(

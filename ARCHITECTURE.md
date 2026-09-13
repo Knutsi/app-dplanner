@@ -241,6 +241,95 @@ dplanner` uninstalls the program running the verb; that is a deliberate act of i
 the command's line names the one command instead of running it — composed from the same argv
 the installer would use, so the text cannot drift.
 
+### A checklist is a registry of probes, and every module owns its own
+
+The three pieces above are not all a machine needs. DPlanner also wants git, the GitHub CLI
+and a session on it, an agent CLI, a terminal to open one in, the OS keychain, a reachable
+internet — and each of those was discovered at the moment it failed, by whichever feature
+tripped over it first: a greyed verb here, a `QMessageBox` at launch there, and nothing
+anywhere that answered *is this machine set up*. An agent could not verify a machine at all.
+
+Whether a machine is ready is a fact about **every** feature at once, so it is `cli/lint.py`'s
+problem again and it gets `cli/lint.py`'s answer. `cli/checklist.py` owns the shapes
+(`MachineCheck`, `Reading`, `Remedy`), the group order, the report and the exit code; each
+owning module exports `checks()` from its own Qt-free `checks.py`; and the composition root's
+`_machine_checks()` assembles the tuple that *Tools ▸ Setup Checklist…* and `dplanner
+checklist show` both read. A module names the fact it owns and the words for it; nothing
+imports anything.
+
+Five decisions carry it.
+
+- **A probe answers two states, and the tone is derived.** `Reading` is `ok` and the words —
+  not a five-valued state of its own. What the row *looks* like falls out of `required`: a
+  failing required check is the error tone, a failing recommendation is information, an
+  unanswered one is busy, and a well one is ok. Those are exactly `framework/signalling`'s
+  four tones, so the checklist added none and DESIGN.md's *Signalling* did not change. It
+  also stops the vocabulary lying: a stale skill is not "missing", and only the probe's own
+  words know which it is.
+- **`required` means two things, and they are the same thing.** The verb exits 1 while a
+  required check fails — `install status` exits 0 whatever it finds, deliberately, so this is
+  the verb that fails a machine — and a required check is the only kind probed at start. That
+  is what keeps a launch honest: git's `which` and one `git --version`, plus the installer's
+  reader, which runs no subprocess at all. No network request, no `gh auth status`, no `az`.
+  Anything that cannot be afforded at every start is, by that fact, advice.
+- **A remedy names an action id, not a widget.** A `Remedy` is words, optionally a command to
+  type, optionally the id of a registered action. The modal runs that id through
+  `ActionRegistry.run` and the terminal prints the command — so the install module offers
+  *its own* dialog as the fix for its own three rows without the checklist importing it, and
+  a module that grows a fix later needs no change here. It is the aspect bar's seam, one
+  layer out.
+- **The count in the menu entry is read, never probed.** *Tools ▸ Setup Checklist (2)…* comes
+  from the last sweep the module kept; the module calls `context.refresh()` when a new one
+  lands. A state callback runs on every context change and may not shell out — the same rule
+  `origin_url`'s memoisation keeps.
+- **The machine is greeted once, and after that only when asked.** The modal opens on a
+  machine DPlanner has never met, whatever it has, because a setup surface nobody ever sees
+  working is one nobody trusts; afterwards it opens only while the person left *"open this at
+  start"* ticked **and** something required is missing. Everything else is said where it
+  bites. That is what retired `github/notice.py`: DESIGN.md had already ruled that box out
+  ("A machine without gh. No modal at launch"), and this is where those facts live now.
+
+Three things the surface itself settled, after the first pass was seen.
+
+**It is the one dialog that prints a heading.** Every other dialog in the application
+starts at its content, because a gesture opened it and that gesture already said what it
+is. This one can arrive unasked — at a first start, or when something required has gone
+missing since — and a window somebody did not summon is the only one whose name they were
+never told. `DialogFrame.set_heading` exists for that case and says so, and the rule is the
+test: a dialog a menu entry opened must not call it.
+
+**A remedy may name packages instead of a command**, and `install_line` turns them into the
+line *this* machine would actually run: `yay -S github-cli` on an Arch box, `sudo apt
+install gh` on Ubuntu, `brew install gh` on a Mac. Two small tables do it — `MANAGERS`, one
+line per package manager, and `FAMILIES`, one entry per distribution family naming the
+managers to try — and a manager is only offered when it is **on PATH**, because suggesting
+`brew install` on a Mac without Homebrew is a second thing to go and install, said as if it
+were the answer. The family comes from `/etc/os-release`'s `ID` and then its `ID_LIKE`,
+which is why **a derivative needs no row of its own and must not get one**: Omarchy says
+`ID_LIKE=arch` and is an Arch machine for this purpose, as every Ubuntu spin is a Debian
+one. (Omarchy's own `omarchy-pkg-install` is an interactive picker, not a line to paste, so
+it is deliberately absent from `MANAGERS`.) A check that cannot name a line it is *sure* of
+names none and carries a `url` instead — `azure-cli` is a Microsoft repository or an install
+script on most distributions, and `apt install azure-cli` on a stock machine simply fails. A
+wrong install command is worse than a link.
+
+**Muting changes what nags, never what is true.** A row's `⋮` carries *Don't warn me about
+this again*, kept per user by id. The row still shows and still says what it found; what
+muting takes away is the error tone, the footer's count, the count in the menu entry, and —
+since a start-up sweep exists only to decide whether to speak — the probe itself. The CLI
+never reads it: `dplanner checklist show` is the machine's truth, and an agent gating a
+handover on it must not inherit somebody's decision to live with a gap. That is the same
+split as *Where the user left off is remembered by key*: a preference is the person's, and
+the plan — here, the machine — is not.
+
+One thing had to move to make it possible. A file named in `HEADLESS_FILES` may import
+`core/`, `domain/` and `cli/` and **not** `framework/`, and `cli/` may not import `framework/`
+at all — so with the keychain wrapper under `framework/`, neither the verb nor any module's
+`checks.py` could ask whether this machine can keep a credential. `secrets_store.py` is pure
+stdlib and `keyring`; it is now `core/secrets.py`, for the reason `core/config_dir.py` gives
+in its own docstring — the GUI keeps preferences in QSettings, and anything the headless
+surfaces must also read cannot. `NOTES-FOR-APPFRAME.md` carries it as a divergence.
+
 ## The index tree
 
 The template's sidebar was a tab set: one page per module, one visible at a time. DPlanner

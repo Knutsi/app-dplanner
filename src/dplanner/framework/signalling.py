@@ -179,14 +179,20 @@ class StatusLine(QLabel):
         self._tone: Tone = "info"
         self.hide()
 
-    def say(self, text: str, tone: Tone = "info") -> None:
-        """Show ``text`` in ``tone``; an empty text hides the line."""
+    def say(self, text: str, tone: Tone = "info", *, glyph: str = GLYPH) -> None:
+        """Show ``text`` in ``tone``; an empty text hides the line.
+
+        ``glyph`` is the surface's: the **tone** is the vocabulary and the dot is its
+        default, but a surface whose rows are a list of things that should be true reads as
+        a list of ticks. Nothing else changes it — a second mood glyph would be a second
+        vocabulary, which is what the tones exist to prevent.
+        """
         self._words, self._tone = text, tone
         key = _TONE_KEYS.get(tone)
-        glyph = GLYPH
+        mark = html.escape(glyph)
         if key is not None:
-            glyph = f'<span style="color:{STATUS_TONES[key].name()}">{GLYPH}</span>'
-        self.setText(f"{glyph}&nbsp;{html.escape(text)}")
+            mark = f'<span style="color:{STATUS_TONES[key].name()}">{mark}</span>'
+        self.setText(f"{mark}&nbsp;{html.escape(text)}")
         self.setVisible(bool(text))
 
     def clear(self) -> None:

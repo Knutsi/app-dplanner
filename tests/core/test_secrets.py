@@ -4,7 +4,7 @@ this machine can keep one, and a plaintext backend is a problem, not a fallback.
 import keyring
 import keyring.backends.fail
 
-from dplanner.framework import secrets_store
+from dplanner.core import secrets
 
 
 class _Plaintext:
@@ -17,19 +17,19 @@ class _Native:
 
 def test_the_failing_backend_is_a_problem_with_a_remedy(monkeypatch):
     monkeypatch.setattr(keyring, "get_keyring", lambda: keyring.backends.fail.Keyring())
-    problem = secrets_store.backend_problem()
+    problem = secrets.backend_problem()
     assert problem is not None and "keychain" in problem
 
 
 def test_a_plaintext_backend_is_a_problem_too(monkeypatch):
     monkeypatch.setattr(keyring, "get_keyring", lambda: _Plaintext())
-    problem = secrets_store.backend_problem()
+    problem = secrets.backend_problem()
     assert problem is not None and "plain file" in problem
 
 
 def test_a_native_backend_is_fine(monkeypatch):
     monkeypatch.setattr(keyring, "get_keyring", lambda: _Native())
-    assert secrets_store.backend_problem() is None
+    assert secrets.backend_problem() is None
 
 
 def test_a_backend_that_cannot_even_be_asked_is_a_problem(monkeypatch):
@@ -37,5 +37,5 @@ def test_a_backend_that_cannot_even_be_asked_is_a_problem(monkeypatch):
         raise RuntimeError("no dbus")
 
     monkeypatch.setattr(keyring, "get_keyring", boom)
-    problem = secrets_store.backend_problem()
+    problem = secrets.backend_problem()
     assert problem is not None and "RuntimeError" in problem

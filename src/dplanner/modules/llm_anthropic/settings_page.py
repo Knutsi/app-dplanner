@@ -2,8 +2,8 @@
 
 from PySide6.QtWidgets import QFormLayout, QLineEdit, QWidget
 
+from dplanner.core.secrets import get_secret, set_secret
 from dplanner.framework.llm_service import LLMService
-from dplanner.framework.secrets_store import get_secret, set_secret
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.llm_anthropic.provider import DEFAULT_MODEL, MODULE_ID
 
