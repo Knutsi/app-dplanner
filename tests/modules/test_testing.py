@@ -9,7 +9,12 @@ import json
 import pytest
 from PySide6.QtWidgets import QLabel
 
-from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
+from dplanner.domain.commands import (
+    AddNodeCommand,
+    SetEdgesCommand,
+    SetFieldCommand,
+    SetModuleDataCommand,
+)
 from dplanner.domain.model import Step
 from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
 from dplanner.modules.step_check.aspect import read as check_read
@@ -316,12 +321,13 @@ def test_new_run_is_greyed_until_the_project_has_a_test(services, project, step)
 
 
 def rows(section):
-    """The list's rows as (id, title) — what the picker above the editor is showing."""
-    from dplanner.modules.testing.view import TEST_ID_ROLE
+    """The roster's rows as (id, title) — what the picker above the editor is showing."""
+    from dplanner.modules.testing.section import TEST_ID_ROLE
 
+    roster = section.roster
     return [
-        (section.list.item(i).data(TEST_ID_ROLE), section.list.item(i).text())
-        for i in range(section.list.count())
+        (roster.item(row, 0).data(TEST_ID_ROLE), roster.item(row, 1).text())
+        for row in range(roster.rowCount())
     ]
 
 
@@ -356,7 +362,7 @@ def test_picking_a_test_swaps_the_editor_under_it(services, step, section):
     )
     section.show_target(step.id)
     assert section.detail.body.edit.toPlainText() == "first"
-    section.list.setCurrentRow(1)
+    section.roster.selectRow(1)
     assert section.detail.identity.text() == "T101"
     assert section.detail.body.edit.toPlainText() == "second"
 
@@ -615,7 +621,7 @@ def test_the_tests_tab_can_be_read_by_feature(services, make_project):
 
     activity = services.tabs.open(TESTS_KIND, project.id)
     table = activity.page.table
-    assert activity.group_action.isVisible() is True
+    assert activity.page.controls.is_shown(activity.group_box)  # Offered: two kinds to group by.
     assert table.rowCount() == 4  # Flat by default: four tests, no headings.
 
     activity.group_box.setCurrentIndex(activity.group_box.findData(FEATURE_ID))
@@ -726,3 +732,103 @@ def test_the_gallery_is_out_of_the_way_until_the_step_has_a_file(services, step,
     attach(services.repo.files(step.id, MODULE_ID), b"png bytes", "figure.png")
     section.show_target(step.id)
     assert not gallery.isHidden()
+
+
+# -- the Tests tab's strip -----------------------------------------------------------------
+
+
+def test_the_strip_offers_the_run_verbs_greyed_with_their_reason(services, project, step):
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    controls = activity.page.controls
+    ok = controls.button_for("test.result_ok")
+    new_run = controls.button_for("tests.new_run")
+    assert ok is not None and new_run is not None
+    assert not ok.isEnabled() and ok.defaultAction().text() == "Mark Ok — pick a test"
+    assert new_run.isEnabled() and not new_run.icon().isNull()
+
+    started = runs.started([], ["T100", "T101"], label="P3")
+    services.undo.push(SetModuleDataCommand(project.id, MODULE_ID, runs.write(started)))
+    activity.page.table.selectAll()
+    # The count says the verb is about to act on more than the eye is on.
+    assert ok.isEnabled() and ok.defaultAction().text() == "Mark 2 Tests Ok"
+    ok.defaultAction().trigger()
+    results = open_run(services, project).results
+    assert {test_id: result.status for test_id, result in results.items()} == {
+        "T100": "ok",
+        "T101": "ok",
+    }
+
+
+def test_a_heading_is_one_plain_row_and_a_milestone_heading_wears_its_shade(services, make_project):
+    from dplanner.framework.list_rows import INK_ROLE
+    from dplanner.framework.table import row_height
+    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
+    from dplanner.modules.step_milestone.aspect import write as milestone_write
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    work, release = chain(services, project, "Work", "Release")
+    give(services, work, "TWo")
+    services.document.set_module_data(release.id, MILESTONE_ID, milestone_write("v1"))
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    activity.group_box.setCurrentIndex(activity.group_box.findText("By milestone"))
+    table = activity.page.table
+    assert table.test_at(0) is None and table.test_at(1) == "TWo"
+    # One line however rich the rows under it: a heading as tall as a test reads as a test.
+    assert table.rowHeight(0) == row_height(table.font(), rich=False) < table.rowHeight(1)
+    assert table.item(0, 0).data(INK_ROLE) is not None
+
+
+def test_the_roll_call_rebuilds_once_for_a_burst_of_edits(services, make_project, monkeypatch):
+    from dplanner.modules.testing.activity import ALL_TESTS_KIND, AllTestsActivity
+
+    project = make_project("Widget")
+    work = Step(title="Work")
+    AddNodeCommand(project.id, work).redo(services.document)
+    rebuilds: list[object] = []
+    original = AllTestsActivity._refresh
+
+    def counted(self):
+        rebuilds.append(self)
+        original(self)
+
+    monkeypatch.setattr(AllTestsActivity, "_refresh", counted)
+    services.debounce.set_immediate(False)
+    try:
+        services.tabs.open(ALL_TESTS_KIND)
+        before = len(rebuilds)
+        for title in ("one", "two", "three"):
+            services.undo.push(SetFieldCommand(work.id, "title", title))
+        assert len(rebuilds) == before
+        services.debounce.flush_all()
+        assert len(rebuilds) == before + 1
+    finally:
+        services.debounce.set_immediate(True)
+
+
+def test_a_run_opened_from_the_strip_covers_the_tabs_scope_and_is_shown(
+    services, make_project, monkeypatch
+):
+    from dplanner.framework.dialog import LinePrompt
+    from dplanner.modules.step_check.aspect import write as check_write
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    monkeypatch.setattr(LinePrompt, "ask", staticmethod(lambda *_a, **_k: "Smoke"))
+    project = make_project("Widget")
+    work, gate = chain(services, project, "Work", "Gate")
+    other = Step(title="Other")
+    AddNodeCommand(project.id, other).redo(services.document)
+    give(services, work, "TWo")
+    give(services, other, "TOt")
+    services.document.set_module_data(gate.id, CHECK_ID, check_write(True))
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    activity.scope_box.setCurrentIndex(activity.scope_box.findData(gate.id))
+    services.actions.run("tests.new_run", services.context.current())
+    run = open_run(services, project)
+    assert list(run.tests) == ["TWo"] and run.label == "Smoke"
+    assert activity.run_box.currentData() == run.id  # The run just opened is what shows.

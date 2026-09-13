@@ -17,7 +17,7 @@ these are.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from PySide6.QtWidgets import QInputDialog, QTreeWidgetItem, QWidget
+from PySide6.QtWidgets import QTreeWidgetItem, QWidget
 
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
@@ -39,6 +39,7 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.debounce import DebounceService
+from dplanner.framework.dialog import LinePrompt
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
@@ -66,10 +67,26 @@ from dplanner.modules.testing.aspect import (
     write,
 )
 from dplanner.modules.testing.section import CoversSection, TestsSection
-from dplanner.modules.testing.view import word
-from dplanner.theme.icons import beaker_icon, list_icon, project_icon
+from dplanner.modules.testing.view import RESULT_ORDER, word
+from dplanner.theme.icons import (
+    beaker_icon,
+    check_icon,
+    close_icon,
+    eraser_icon,
+    list_icon,
+    play_icon,
+    project_icon,
+    skip_icon,
+    stop_icon,
+)
 
-RESULT_ORDER = ("ok", "failed", "skipped", "pending")
+# What each result's verb wears on the strip and in the Step ▸ Test menu.
+RESULT_GLYPHS = {
+    "ok": check_icon,
+    "failed": close_icon,
+    "skipped": skip_icon,
+    "pending": eraser_icon,
+}
 NO_RUN = "start a test run first (Project ▸ New Test Run)"
 
 
@@ -177,13 +194,11 @@ class TestsModule:
 
     def _tests_factory(self, target: str | None) -> TestsActivity:
         assert target is not None
-        # The two verbs the tab hosts buttons for arrive as functions, not as a back
-        # reference: the module holds the Deps the activity is handed, so a field on them
-        # pointing here would be a cycle for no gain.
-        return TestsActivity(self._deps, target, mark=self.mark, start_run=self.start_run)
+        return TestsActivity(self._deps, target)
 
     def _all_factory(self, _target: str | None) -> AllTestsActivity:
-        return AllTestsActivity(self._deps.library, self._deps.context, self._open_details)
+        deps = self._deps
+        return AllTestsActivity(deps.library, deps.context, self._open_details, deps.debounce)
 
     def _segment(self, root: QTreeWidgetItem) -> ProjectListSegment:
         """A row per project, under an *All Projects* row: tests are the one surface that is
@@ -264,6 +279,7 @@ class TestsModule:
                     submenu="Test",
                     order=(index + 1) * 10,
                     tip=f"Record the selected tests as {word(status).lower()} in the open run",
+                    icon=RESULT_GLYPHS[status],
                     state=self._result_state_for(status),
                     run=self._marker(status),
                 )
@@ -275,7 +291,9 @@ class TestsModule:
                 menu="Project",
                 group="tests",
                 order=10,
-                tip="Open a run over this project's tests; every one starts unrecorded",
+                tip="Open a run over this project's tests — or over what its Tests tab is "
+                "narrowed to; every one starts unrecorded",
+                icon=play_icon,
                 state=self._new_run_state,
                 run=self._new_run,
             ),
@@ -286,6 +304,7 @@ class TestsModule:
                 group="tests",
                 order=20,
                 tip="Close the open run; anything unmarked stays unrecorded",
+                icon=stop_icon,
                 state=self._close_run_state,
                 run=self._close_run,
             ),
@@ -407,16 +426,25 @@ class TestsModule:
         label = f"Mark {word(status)}" if status != "pending" else "Clear Result"
         pairs = self._selected_tests(context)
         if not pairs:
-            return ActionState(enabled=False, label=None)
+            return ActionState(enabled=False, label=f"{label} — pick a test")
         found = self._open_run(context)
         if found is None:
             return ActionState(enabled=False, label=f"{label} — {NO_RUN}")
         _project, run = found
-        if not any(test.id in run.tests for _step, test in pairs):
+        count = sum(1 for _step, test in pairs if test.id in run.tests)
+        if not count:
             return ActionState(
                 enabled=False,
                 label=f"{label} — not in the open run, which holds what it was opened over",
             )
+        if count > 1:
+            # The count says the verb is about to act on more than the eye is on.
+            many = (
+                f"Mark {count} Tests {word(status)}"
+                if status != "pending"
+                else f"Clear {count} Results"
+            )
+            return ActionState(label=many)
         return ActionState()
 
     def _mark_from(self, context: Context, status: str) -> None:
@@ -458,7 +486,19 @@ class TestsModule:
     def _new_run(self, context: Context) -> None:
         project = self._focused_project(context)
         if project is not None:
-            self.start_run(project.id, "")
+            self.start_run(project.id, self._narrowed_to(project.id))
+
+    def _narrowed_to(self, project_id: NodeId) -> StepId:
+        """The collector the project's Tests tab is narrowed to, or "": a run opened from its
+        strip covers what the tab is showing."""
+        return next(
+            (
+                activity.scope
+                for activity in self._deps.tabs.activities()
+                if isinstance(activity, TestsActivity) and activity.project_id == project_id
+            ),
+            "",
+        )
 
     def start_run(self, project_id: NodeId, scope: StepId) -> None:
         """Ask for a name, then open a run over the scope. Closes whatever was open."""
@@ -475,14 +515,16 @@ class TestsModule:
         suggestion = f"Run {runs.next_run_id(records)[1:]}"
         scoped = project.step(scope) if scope else None
         where = (scoped.title or "that step") if scoped else "every test"
-        label, accepted = QInputDialog.getText(
+        count = f"{len(pairs)} test{'' if len(pairs) == 1 else 's'}"
+        label = LinePrompt.ask(
             deps.parent,
             "New Test Run",
-            f"A run over {where} — {len(pairs)} test{'' if len(pairs) == 1 else 's'}, all "
-            "starting unrecorded.\n\nWhat should it be called?",
+            f"Name — a run over {where}, {count}, every one unrecorded",
+            "Start",
             text=suggestion,
+            validate=lambda typed: None if typed.strip() else "A run needs a name",
         )
-        if not accepted:
+        if label is None:
             return
         started = runs.started(
             records, [test.id for _step, test in pairs], label=label.strip(), scope=scope

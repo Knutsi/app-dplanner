@@ -43,6 +43,7 @@ INDICATORS = [
     pytest.param(TIME_KIND, "updating", id="time"),
     pytest.param(PROGRESSION_KIND, "updating", id="progression"),
     pytest.param(testing.TESTS_KIND, "updating", id="tests"),
+    pytest.param(testing.ALL_TESTS_KIND, "updating", id="all_tests"),
     pytest.param(DOCS_KIND, "page.updating", id="docs"),
     pytest.param(ASSETS_KIND, "updating", id="assets"),
     pytest.param(COVERAGE_KIND, "updating", id="coverage"),

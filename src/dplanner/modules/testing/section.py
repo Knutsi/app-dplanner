@@ -30,8 +30,6 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMenu,
     QPushButton,
     QScrollArea,
@@ -48,9 +46,11 @@ from dplanner.domain.store import FilesFor
 from dplanner.framework.activity import follow_target
 from dplanner.framework.cards import CARD_PADDING, STACK_SPACING
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.module_data_section import FIELD_GAP, PANEL_MARGIN
 from dplanner.framework.prose_section import ProseSection
+from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 from dplanner.modules.testing import runs
@@ -64,23 +64,17 @@ from dplanner.modules.testing.aspect import (
     replace,
     write,
 )
-from dplanner.modules.testing.view import (
-    ARCHIVED_ROLE,
-    LIST_ROW_HEIGHT,
-    STATUS_ROLE,
-    TEST_ID_ROLE,
-    StatusChip,
-    TestListDelegate,
-    outcome_line,
-    word,
-)
+from dplanner.modules.testing.view import StatusChip, outcome_line, tint, word
 
 BLOCK_GAP = 12
 BUTTON_GAP = 8
 LANE_PADDING = 12
-LIST_MIN_HEIGHT = 56  # Two rows, so a step with one test still shows there is a list.
 LIST_MAX_HEIGHT = 220  # Stacked: past this the list scrolls rather than crowding the editor.
 LIST_PANE_WIDTH = 250  # Side by side: room for an id, a name and a result on one line.
+# The roster is three facts a reader compares down a column: which test, what it is called,
+# how it last did — a table, in the pane above or beside the editor.
+ROSTER_COLUMNS = (Column("Id"), Column("Test", resize="stretch"), Column("Result"))
+TEST_ID_ROLE = HOST_ROLE
 WIDE_THRESHOLD = 540  # Narrower than this and two columns would starve each other.
 DETAIL_MIN_HEIGHT = 140
 
@@ -243,14 +237,13 @@ class TestsSection(QWidget):
         roster_layout = QVBoxLayout(roster)
         roster_layout.setContentsMargins(0, 0, 0, 0)
         roster_layout.setSpacing(FIELD_GAP)
-        self.list = QListWidget(roster)
-        self.list.setObjectName("OrderTable")  # The one list-of-rows look.
-        self.list.setFrameShape(QFrame.Shape.NoFrame)
-        self.list.setItemDelegate(TestListDelegate(self.list))
-        self.list.setMinimumHeight(LIST_MIN_HEIGHT)
-        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.list.currentItemChanged.connect(lambda *_a: self._on_pick())
-        roster_layout.addWidget(self.list, 1)
+        self.roster = Table(ROSTER_COLUMNS, parent=roster)
+        # The result keeps to the right edge and the name takes the slack between.
+        self.roster.horizontalHeader().setStretchLastSection(False)
+        # One row under its header, so a step with one test still shows there is a list.
+        self.roster.setMinimumHeight(self._rows_height(1))
+        self.roster.itemSelectionChanged.connect(self._on_pick)
+        roster_layout.addWidget(self.roster, 1)
         self.add_button = QPushButton("+ Add test", roster)
         self.add_button.clicked.connect(self._add)
         roster_layout.addWidget(self.add_button, 0, Qt.AlignmentFlag.AlignLeft)
@@ -295,11 +288,15 @@ class TestsSection(QWidget):
         if self.split.orientation() == Qt.Orientation.Horizontal:
             self.split.setSizes([LIST_PANE_WIDTH, max(self.width() - LIST_PANE_WIDTH, 1)])
         else:
-            rows = self.list.count()
-            wanted = min(max(rows, 1) * LIST_ROW_HEIGHT + LANE_PADDING, LIST_MAX_HEIGHT)
+            wanted = min(self._rows_height(self.roster.rowCount()) + LANE_PADDING, LIST_MAX_HEIGHT)
             # The Add button rides under the list, so the pane needs its height too.
             wanted += self.add_button.sizeHint().height() + FIELD_GAP
             self.split.setSizes([wanted, max(self.split.height() - wanted, DETAIL_MIN_HEIGHT)])
+
+    def _rows_height(self, rows: int) -> int:
+        """What ``rows`` rows of the roster take, its header included — never less than one."""
+        header = self.roster.horizontalHeader().sizeHint().height()
+        return header + max(rows, 1) * self.roster.row_height()
 
     # -- the InspectorExtension contract -------------------------------------------------
 
@@ -359,20 +356,26 @@ class TestsSection(QWidget):
         )
 
     def _fill(self, tests: list[Test], outcomes: dict[str, runs.Outcome]) -> None:
-        # Rebuilt wholesale under blocked signals: a list of a step's tests is never long,
-        # and a diff is where list bugs live. Selection is restored by id, not by row.
-        self.list.blockSignals(True)
-        self.list.clear()
+        # Rebuilt wholesale under blocked signals: a step's tests are never many, and a diff
+        # is where list bugs live. Selection is restored by id, not by row.
+        self.roster.blockSignals(True)
+        self.roster.clear_rows()
         for test in tests:
-            item = QListWidgetItem(test.title or "Untitled test")
-            item.setData(TEST_ID_ROLE, test.id)
             outcome = outcomes.get(test.id)
-            item.setData(STATUS_ROLE, outcome.result.status if outcome else "pending")
-            item.setData(ARCHIVED_ROLE, test.archived)
-            self.list.addItem(item)
+            status = outcome.result.status if outcome else "pending"
+            row = self.roster.add_row(
+                (
+                    Cell(test.id, secondary=True),
+                    # An archived test stays legible but reads as retired, as a done step does.
+                    Cell(test.title or "Untitled test", secondary=test.archived),
+                    # The result keeps its colour on a picked row: the ground is quiet.
+                    Cell(word(status), ink=tint(status), secondary=status == "pending"),
+                ),
+                data={TEST_ID_ROLE: test.id},
+            )
             if test.id == self._selected:
-                self.list.setCurrentItem(item)
-        self.list.blockSignals(False)
+                self.roster.selectRow(row)
+        self.roster.blockSignals(False)
 
     def _outcomes(self) -> dict[str, runs.Outcome]:
         step = self._step()
@@ -381,7 +384,8 @@ class TestsSection(QWidget):
         return runs.latest_results(runs.read(self._library.project_of(step.id)))
 
     def _on_pick(self) -> None:
-        item = self.list.currentItem()
+        picked = sorted({index.row() for index in self.roster.selectedIndexes()})
+        item = self.roster.item(picked[0], 0) if picked else None
         self._selected = "" if item is None else str(item.data(TEST_ID_ROLE))
         self._refresh()
 

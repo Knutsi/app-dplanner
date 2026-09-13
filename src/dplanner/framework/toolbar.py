@@ -542,6 +542,11 @@ class Toolbar(QWidget):
                 return
         widget.setVisible(shown)
 
+    def is_shown(self, widget: QWidget) -> bool:
+        """What :meth:`set_shown` last said of a control — whether it belongs on the strip,
+        which a strip too narrow for it, or never laid out, cannot answer by hiding it."""
+        return next((item.shown for item in self._items if item.widget is widget), True)
+
     # -- the pieces a seat is made of ----------------------------------------------------
 
     def _verb(

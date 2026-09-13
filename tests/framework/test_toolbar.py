@@ -287,7 +287,7 @@ def test_a_face_drops_a_band_of_the_menus_and_folds_as_a_child_menu(host, app):
 def test_a_widget_the_host_takes_off_stays_off_through_every_reflow(host, app):
     bar, combo, _ran = strip(host, app)
     bar.set_shown(combo, False)
-    assert combo.isHidden()
+    assert combo.isHidden() and not bar.is_shown(combo)
     for width in (799, 120, 800):
         bar.resize(width, bar.height())
         app.processEvents()
@@ -297,7 +297,7 @@ def test_a_widget_the_host_takes_off_stays_off_through_every_reflow(host, app):
     # The combo stood between two dividers; with it gone they must not meet.
     assert not any(a.divider and b.divider for a, b in pairwise(shown))
     bar.set_shown(combo, True)
-    assert not combo.isHidden()
+    assert not combo.isHidden() and bar.is_shown(combo)
 
 
 def test_a_verb_a_state_hides_stays_hidden_through_a_reflow(host, app):

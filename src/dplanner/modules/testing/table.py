@@ -1,47 +1,49 @@
-"""The tests table: one widget, two scopes.
+"""The tests table: one widget, two scopes, on the table primitive.
 
-The project's Tests tab and the library-wide roster show the same rows with the same
+The project's Tests tab and the library-wide roll call show the same rows with the same
 columns; the only difference is where the rows came from and whether a project column is
 worth printing. Writing that once is the difference between a feature and two features that
 will drift — and the cross-project view is explicitly the half that grows later.
 
-Column conventions follow ``step_order``'s table verbatim, including the two that are easy
-to forget: **headers are left-aligned whatever the column holds**, and **a column of blanks
-is hidden rather than shown**.
+What a row wears is ``framework/table.py``'s: the test's title over the first line of its
+body, the result in its own tone, a failed row washed in the failure's, and a group as one
+spanned heading — written in a milestone's shade when the group is a milestone, so grouping
+by milestone reads as the same sequence the calendar and the graph show. **A column of
+blanks is hidden rather than shown.**
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from PySide6.QtCore import QItemSelectionModel, Qt
-from PySide6.QtWidgets import (
-    QAbstractItemView,
-    QHeaderView,
-    QTableWidget,
-    QTableWidgetItem,
-    QWidget,
-)
+from PySide6.QtCore import QItemSelectionModel
+from PySide6.QtGui import QColor
+from PySide6.QtWidgets import QTableWidgetItem, QWidget
 
 from dplanner.domain.model import Step, StepId
+from dplanner.framework.list_rows import HOST_ROLE
+from dplanner.framework.table import Cell, Column, Selection, Table
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.runs import Outcome
-from dplanner.modules.testing.view import (
-    ROW_HEIGHT,
-    SECONDARY_ALPHA,
-    TestRowDelegate,
-    tint,
-    word,
-)
-from dplanner.theme.tones import recoloured
+from dplanner.modules.testing.view import FAILED_ROW_TINT, tint, word
+from dplanner.theme.tokens import SECONDARY_ALPHA
 
-COLUMNS = ("Test", "Project", "Step", "Covered by", "Result", "When")
+COLUMNS = (
+    Column("Test", detail=True, resize="interactive"),
+    Column("Project"),
+    Column("Step"),
+    Column("Covered by"),
+    Column("Result"),
+    Column("When"),
+)
 TEST_COLUMN, PROJECT_COLUMN, STEP_COLUMN, COVERED_COLUMN, RESULT_COLUMN, WHEN_COLUMN = range(6)
 
 # A test's own line can be long; past this the column stops growing and elides.
 TEST_MAX_WIDTH = 340
 
-TEST_ROLE = int(Qt.ItemDataRole.UserRole) + 1
-STEP_ROLE = int(Qt.ItemDataRole.UserRole) + 2
+TEST_ROLE = HOST_ROLE
+STEP_ROLE = HOST_ROLE + 1
+
+ARCHIVED_TIP = "Archived — off the roster and out of new runs"
 
 
 @dataclass(frozen=True)
@@ -69,118 +71,53 @@ class Row:
     group_color: str = ""
 
 
-class TestsTable(QTableWidget):
+class TestsTable(Table):
     """Every test in scope: what it checks, whose step it is, and how it did."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(0, len(COLUMNS), parent)
-        self.setObjectName("OrderTable")  # The one table look in this application.
+    def __init__(self, parent: QWidget | None = None, *, selection: Selection = "extended") -> None:
+        # Extended on the project tab, because marking twelve tests at once is the gesture a
+        # run is made of.
+        super().__init__(COLUMNS, selection=selection, parent=parent)
         self._sized = False
-        self.setItemDelegate(TestRowDelegate(self))
-
-        self.setHorizontalHeaderLabels(list(COLUMNS))
-        self.verticalHeader().setVisible(False)
-        # A table takes its row height from the header, not from the delegate's hint;
-        # without this the second line prints over the row below it.
-        self.verticalHeader().setDefaultSectionSize(ROW_HEIGHT)
-        self.setShowGrid(False)
-        self.setAlternatingRowColors(False)
-        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        # Extended, because marking twelve tests at once is the gesture a run is made of.
-        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self.setWordWrap(False)
-
-        header = self.horizontalHeader()
-        header.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
-        for column in range(len(COLUMNS)):
-            mode = (
-                QHeaderView.ResizeMode.Interactive
-                if column == TEST_COLUMN
-                else QHeaderView.ResizeMode.ResizeToContents
-            )
-            header.setSectionResizeMode(column, mode)
-        header.setStretchLastSection(True)
-        header.setHighlightSections(False)
 
     def show_rows(self, rows: Sequence[Row], *, show_project: bool = False) -> None:
         keep = self.selected_tests()
-        laid = _with_headings(rows)
-        self.clearSpans()
-        self.setRowCount(len(laid))
-        for index, entry in enumerate(laid):
-            if isinstance(entry, tuple):
-                self._fill_heading(index, *entry)
+        self.clear_rows()
+        for entry in _with_headings(rows):
+            if isinstance(entry, Row):
+                self._add(entry)
             else:
-                self._fill(index, entry)
+                title, color = entry
+                self.add_heading(title, ink=_shade(color))
         # A column of blanks is noise: hide what this scope has nothing to say about.
         self.setColumnHidden(PROJECT_COLUMN, not show_project)
         self.setColumnHidden(COVERED_COLUMN, not any(row.covered_by for row in rows))
         self.setColumnHidden(WHEN_COLUMN, not any(row.outcome for row in rows))
         self._reselect(keep)
         if not self._sized:
-            # Once, on the first rows: the test column is Interactive so the user's own
+            # Once, on the first rows: the test column is interactive so the reader's own
             # width survives every refresh after this one.
-            self.resizeColumnToContents(TEST_COLUMN)
+            self.fit_columns()
             self.setColumnWidth(TEST_COLUMN, min(self.columnWidth(TEST_COLUMN), TEST_MAX_WIDTH))
             self._sized = bool(rows)
 
-    def _fill_heading(self, index: int, title: str, color: str = "") -> None:
-        """A group's name, spanning the table: not a row, and never selectable.
-
-        Left out of the delegate's two-line treatment on purpose — a heading is one line,
-        and a second line under it would read as a test that cannot be marked.
-
-        A milestone heading is written in the milestone's own shade of the project's colour
-        map rather than the secondary ink every other heading takes, so grouping by
-        milestone reads as the same sequence the calendar and the graph show. It stays the
-        heading's weight and size: colour is the only thing that changes.
-        """
-        item = QTableWidgetItem(title)
-        item.setFlags(Qt.ItemFlag.NoItemFlags)
-        font = item.font()
-        font.setBold(True)
-        item.setFont(font)
-        faded = self.palette().text().color()
-        faded.setAlpha(SECONDARY_ALPHA)
-        item.setForeground(recoloured(faded, color) if color else faded)
-        self.setItem(index, TEST_COLUMN, item)
-        for column in range(1, len(COLUMNS)):
-            blank = QTableWidgetItem("")
-            blank.setFlags(Qt.ItemFlag.NoItemFlags)
-            self.setItem(index, column, blank)
-        self.setSpan(index, TEST_COLUMN, 1, len(COLUMNS))
-
-    def _fill(self, index: int, row: Row) -> None:
-        first_line = _preview(row.test.body)
-        cells = (
-            row.test.title or "Untitled test",
-            row.project,
-            row.step.title or "Untitled step",
-            ", ".join(row.covered_by),
-            word(row.status),
-            _when(row),
+    def _add(self, row: Row) -> None:
+        tip = ARCHIVED_TIP if row.test.archived else ""
+        self.add_row(
+            (
+                Cell(
+                    row.test.title or "Untitled test", detail=_preview(row.test.body), tooltip=tip
+                ),
+                Cell(row.project, secondary=True, tooltip=tip),
+                Cell(row.step.title or "Untitled step", secondary=True, tooltip=tip),
+                Cell(", ".join(row.covered_by), secondary=True, tooltip=tip),
+                # The one place a colour is asserted: a status means the same on every theme.
+                Cell(word(row.status), ink=tint(row.status), tooltip=tip),
+                Cell(_when(row), secondary=True, tooltip=tip),
+            ),
+            tint=FAILED_ROW_TINT if row.status == "failed" else None,
+            data={TEST_ROLE: row.test.id, STEP_ROLE: row.step.id},
         )
-        for column, text in enumerate(cells):
-            item = QTableWidgetItem(text)
-            item.setData(TEST_ROLE, row.test.id)
-            item.setData(STEP_ROLE, row.step.id)
-            item.setData(TestRowDelegate.FAILED_ROLE, row.status == "failed")
-            if column == TEST_COLUMN:
-                item.setData(TestRowDelegate.SECONDARY_ROLE, first_line)
-            elif column == RESULT_COLUMN:
-                # The one place a colour is asserted: a status means the same on every
-                # theme, so this is a constant rather than a palette field (DESIGN.md #2).
-                colour = tint(row.status)
-                if colour is not None:
-                    item.setForeground(colour)
-            else:
-                faded = self.palette().text().color()
-                faded.setAlpha(SECONDARY_ALPHA)
-                item.setForeground(faded)
-            if row.test.archived:
-                item.setToolTip("Archived — off the roster and out of new runs")
-            self.setItem(index, column, item)
 
     def test_at(self, row: int) -> str | None:
         # A group heading is a real row carrying no test, so an unset role has to answer
@@ -219,6 +156,15 @@ class TestsTable(QTableWidget):
         for row in range(self.rowCount()):
             if self.test_at(row) in wanted:
                 model.select(self.model().index(row, TEST_COLUMN), flags)
+
+
+def _shade(color: str) -> QColor | None:
+    """A milestone heading's ink: its shade at the secondary alpha every heading's words take."""
+    if not color:
+        return None
+    ink = QColor(color)
+    ink.setAlpha(SECONDARY_ALPHA)
+    return ink
 
 
 def _role_at(item: QTableWidgetItem | None, role: int) -> str | None:

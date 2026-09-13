@@ -8,6 +8,11 @@ project and a run spanning several would have nowhere honest to live.
 sentence over it makes every reader do the arithmetic. So the first thing on the page is
 "38 of 42 passing" — or, in a run, how many are left to do.
 
+**The strip is the registry's.** New Run, Close Run and the four results are the verbs the
+Project and Step menus hold, rendered as glyphs: greyed with the reason until a run is open
+and a test is picked, worded with the count when several are. After a divider comes the
+view — which tests, which run's results, how they are grouped, whether the archived show.
+
 **The Run selector is the mode.** The table shows either the latest result per test or one
 run's results, and which of those is a dropdown rather than hidden state. Marking is
 possible only in the open run, which is the same rule the verbs are gated on: a project has
@@ -18,15 +23,7 @@ from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import (
-    QCheckBox,
-    QComboBox,
-    QHBoxLayout,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.scope import gatherers, kind_of
@@ -42,15 +39,18 @@ from dplanner.framework.context import (
     activity_uri,
     selection_uri,
 )
-from dplanner.framework.debounce import Debounced
-from dplanner.framework.module_data_section import PANEL_MARGIN
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.signalling import UpdatingIndicator
-from dplanner.framework.toolbar import control_bar
-from dplanner.framework.widgets import EmptyState
+from dplanner.framework.table import Selection
+from dplanner.framework.toolbar import Toolbar
+from dplanner.framework.widgets import EmptyState, captioned, note
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import covered, project_tests
 from dplanner.modules.testing.table import Row, TestsTable
-from dplanner.modules.testing.view import word
+from dplanner.modules.testing.view import RESULT_ORDER, word
+from dplanner.theme.cards import title_font
+from dplanner.theme.icons import archive_icon
+from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
     from dplanner.modules.testing.module import TestsDeps
@@ -58,15 +58,11 @@ if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forwar
 TESTS_KIND = "tests"
 ALL_TESTS_KIND = "all_tests"
 
-CAPTION_GAP = 6
-BLOCK_GAP = 12
-CONTROL_GAP = 8
-# Wide enough for a run's name and its (open) suffix; a combo that elides its own
-# contents makes the reader open it to find out what it says.
-SELECTOR_WIDTH = 180
-
-TAB_NOTE = "Everything this project verifies, and how it last did."
-ALL_NOTE = "Every test in every project in this library, and how it last did."
+TAB_HINT = "Everything this project verifies, and how it last did."
+ALL_HINT = "Every test in every project in this library, and how it last did."
+ARCHIVED_TIP = "List the tests taken off the roster as well"
+# Creation first, then what acts on the picked tests (DESIGN.md's *Tables*).
+RUN_VERBS = ("tests.new_run", "tests.close_run", *(f"test.result_{s}" for s in RESULT_ORDER))
 
 ROSTER = "Latest results"
 ALL_TESTS = "All tests"
@@ -97,50 +93,43 @@ def headline(statuses: Sequence[str], *, run: runs.Run | None = None) -> tuple[s
     return f"{label} — {verdict}", detail
 
 
-class _TestsPage(QWidget):
-    """The shared page: caption, the answer, then the table. Both activities host one."""
+def _selector(parent: QWidget, tip: str) -> QComboBox:
+    box = QComboBox(parent)
+    box.setToolTip(tip)
+    # As wide as what it says: a combo that elides its own entry makes the reader open it.
+    box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+    return box
 
-    def __init__(self, caption: str, note: str) -> None:
+
+class _TestsPage(QWidget):
+    """The shared page: the caption, the answer, the strip, then the table."""
+
+    def __init__(self, caption: str, hint: str, *, selection: Selection) -> None:
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
-        layout.setSpacing(CAPTION_GAP)
+        layout.setSpacing(SECTION_GAP)
 
-        title = QLabel(caption, self)
-        title.setObjectName("InspectorCaption")
-        layout.addWidget(title)
-
-        subtitle = QLabel(note, self)
-        subtitle.setObjectName("InspectorNote")
-        subtitle.setWordWrap(True)
-        layout.addWidget(subtitle)
-        layout.addSpacing(BLOCK_GAP)
-
+        head = QVBoxLayout()
+        layout.addLayout(head)  # Before it is filled: a parentless layout leaks its items.
+        head.setSpacing(CAPTION_GAP)
+        head.addWidget(captioned(caption, self, hint=hint))
         self.answer = QLabel(self)
-        answer_font = self.answer.font()
-        answer_font.setPointSizeF(answer_font.pointSizeF() + 2.0)
-        self.answer.setFont(answer_font)
-        layout.addWidget(self.answer)
+        self.answer.setFont(title_font(self.answer.font()))
+        head.addWidget(self.answer)
+        self.detail = note("", self)
+        head.addWidget(self.detail)
 
-        self.detail = QLabel(self)
-        self.detail.setObjectName("InspectorNote")
-        layout.addWidget(self.detail)
-        layout.addSpacing(BLOCK_GAP)
-
-        # Two toolbars rather than a layout of widgets: a QToolBar too narrow for its
-        # contents grows the » overflow button and puts the tail in a menu, where a plain
-        # row simply overlaps. The split is so the primary action stays right-aligned —
-        # the left bar takes the slack and is the one that ever needs to overflow.
         self.strip = QHBoxLayout()
-        self.strip.setSpacing(CONTROL_GAP)
-        layout.addLayout(self.strip)  # Before it is filled: a parentless layout leaks items.
-        self.controls = control_bar(self)
-        self.actions_bar = control_bar(self)
+        layout.addLayout(self.strip)
+        self.strip.setSpacing(FIELD_GAP)
+        self.controls = Toolbar(self)
         self.strip.addWidget(self.controls, 1)
-        self.strip.addWidget(self.actions_bar)
-        layout.addSpacing(CONTROL_GAP)
+        # Outside the strip, so folding the verbs into … can never take it.
+        self.updating = UpdatingIndicator(self)
+        self.strip.addWidget(self.updating)
 
-        self.table = TestsTable(self)
+        self.table = TestsTable(self, selection=selection)
         layout.addWidget(self.table, 1)
         self.empty = EmptyState(parent=self, stands_in_for=self.table)
         layout.addWidget(self.empty, 1)
@@ -158,69 +147,38 @@ class _TestsPage(QWidget):
 class TestsActivity(EntityActivity):
     """One project's tests: the roster, the runs, and the marking."""
 
-    def __init__(
-        self,
-        deps: "TestsDeps",
-        project_id: NodeId,
-        *,
-        mark: Callable[[NodeId, str, list[str], str], None],
-        start_run: Callable[[NodeId, StepId], None],
-    ) -> None:
+    def __init__(self, deps: "TestsDeps", project_id: NodeId) -> None:
         super().__init__(deps.context, "project", project_id)
         self._deps = deps
-        self._mark_tests = mark
-        self._start_a_run = start_run
         self._library = deps.library
         self.project_id = project_id
         self._scope: StepId = ""
         self._run_id: str = ""
         self._group: str = ""
+        # The runs the tab has already seen: a run opened since the last look is the one to
+        # show, since marking in it is what the person just asked for.
+        self._runs_seen: set[str] | None = None
 
-        self.page = _TestsPage("Tests", TAB_NOTE)
-        self.scope_box = QComboBox(self.page)
-        self.scope_box.setToolTip("Which tests to show: all of them, or one check's")
-        self.scope_box.setMinimumWidth(SELECTOR_WIDTH)
-        self.scope_box.currentIndexChanged.connect(self._on_scope)
-        self.run_box = QComboBox(self.page)
-        self.run_box.setToolTip("The latest result per test, or one run's")
-        self.run_box.setMinimumWidth(SELECTOR_WIDTH)
-        self.run_box.currentIndexChanged.connect(self._on_run)
-        self.group_box = QComboBox(self.page)
-        self.group_box.setToolTip("Read the list flat, or filed under what collects each test")
-        self.group_box.setMinimumWidth(SELECTOR_WIDTH)
-        self.group_box.currentIndexChanged.connect(self._on_group)
-        self.archived = QCheckBox("Show archived", self.page)
-        self.archived.toggled.connect(lambda _on: self._refresh())
-
-        self.mark_buttons = [
-            self._mark_button(status) for status in ("ok", "failed", "skipped", "pending")
-        ]
-        self.new_run = QPushButton("New Run…", self.page)
-        self.new_run.setObjectName("PrimaryButton")
-        self.new_run.clicked.connect(self._start_run)
-
-        # No "Scope" / "Run" captions: a caption and its combo would have to overflow as
-        # one, and the entries say what they are anyway ("All tests", "Check: …"). The
-        # tooltips carry the long form. Filters live on the left bar, which is the one
-        # allowed to overflow; the primary action stays on the right, always reachable.
-        # A toolbar overflows from its right end, so the order is most-used first. While a
-        # run is open, marking is what the user is here to do and the filters are the ones
-        # that may go into the » menu; with no run open the marking controls are not on
-        # screen at all, so the filters lead. The run's identity is never lost to the menu:
-        # the headline above already names it.
+        self.page = _TestsPage("Tests", TAB_HINT, selection="extended")
         controls = self.page.controls
-        self.marking_note = QLabel("Record as", controls)
-        self.marking_note.setObjectName("InspectorNote")
-        self._marking_actions = [controls.addWidget(self.marking_note)]
-        self._marking_actions += [controls.addWidget(button) for button in self.mark_buttons]
-        self._marking_separator = controls.addSeparator()
-        controls.addWidget(self.scope_box)
-        controls.addWidget(self.run_box)
-        # Held, because a toolbar wraps a widget in an action and it is the *action* that
-        # carries visibility — setting it on the combo alone leaves an empty slot behind.
-        self.group_action = controls.addWidget(self.group_box)
-        controls.addWidget(self.archived)
-        self.page.actions_bar.addWidget(self.new_run)
+        for action_id in RUN_VERBS:
+            controls.add_action(deps.actions, deps.context, action_id)
+        controls.add_divider()
+        self.scope_box = _selector(
+            self.page, "Which tests to show: all of them, or one collector's"
+        )
+        self.scope_box.currentIndexChanged.connect(self._on_scope)
+        self.run_box = _selector(self.page, "The latest result per test, or one run's")
+        self.run_box.currentIndexChanged.connect(self._on_run)
+        self.group_box = _selector(
+            self.page, "Read the list flat, or filed under what collects each test"
+        )
+        self.group_box.currentIndexChanged.connect(self._on_group)
+        for box in (self.scope_box, self.run_box, self.group_box):
+            controls.add_widget(box)
+        self.archived = controls.add_verb(
+            "Show archived", archive_icon, self._refresh, checkable=True, tip=ARCHIVED_TIP
+        )
 
         table = self.page.table
         table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -231,10 +189,7 @@ class TestsActivity(EntityActivity):
         library = self._library
         # After a quiet spell, not per signal: the table is rebuilt row by row.
         self._refresh_soon = Debounced(self._refresh, parent=self.page, service=deps.debounce)
-        # The page is shared with the all-tests tab, which rebuilds per signal and owes no
-        # indicator — so the seat at the strip's right is claimed by whoever debounces.
-        self.updating = UpdatingIndicator(self.page)
-        self.page.strip.addWidget(self.updating)
+        self.updating = self.page.updating
         self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
             # This project only, and no prose: tests are records, titles are fields.
@@ -266,14 +221,21 @@ class TestsActivity(EntityActivity):
     def widget(self) -> QWidget:
         return self.page
 
+    @property
+    def scope(self) -> StepId:
+        """The collector the tab is narrowed to, or "" — what a run opened from here covers."""
+        return self._scope
+
     def on_activated(self) -> None:
         super().on_activated()
         self._on_selection()
 
     def close(self) -> None:
+        self._refresh_soon.cancel()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
+        self.page.controls.dispose()
 
     def show_scope(self, step_id: StepId) -> None:
         """Open scoped to one check or release — what the Covers tab's button asks for."""
@@ -402,7 +364,9 @@ class TestsActivity(EntityActivity):
         run = self._current_run()
         self.page.lead(*headline([row.status for row in rows], run=run))
         self.page.say(self._nothing_to_show(project, rows))
-        self._sync_buttons(run)
+        # A run opening or closing changes what the strip's verbs can do without changing
+        # the selection, and a strip the registry feeds restates when the context is heard.
+        self._deps.context.refresh()
 
     def _nothing_to_show(self, project: Project, rows: Sequence[Row]) -> str:
         if rows:
@@ -439,10 +403,14 @@ class TestsActivity(EntityActivity):
         self._group = str(self.group_box.currentData() or "")
         # A project with nothing to group by shows no control at all, rather than one with
         # a single entry — DESIGN.md's rule that an empty box is worse than no box.
-        self.group_action.setVisible(len(entries) > 1)
+        self.page.controls.set_shown(self.group_box, len(entries) > 1)
 
     def _sync_runs(self) -> None:
         records = self._records()
+        opened = runs.open_run(records)
+        if self._runs_seen is not None and opened is not None and opened.id not in self._runs_seen:
+            self._run_id = opened.id
+        self._runs_seen = {run.id for run in records}
         entries = [(ROSTER, "")] + [
             (f"{run.label or run.id}{' (open)' if run.is_open else ''}", run.id)
             for run in reversed(records)
@@ -461,48 +429,6 @@ class TestsActivity(EntityActivity):
         box.setCurrentIndex(index if index >= 0 else 0)
         box.blockSignals(False)
 
-    def _sync_buttons(self, run: runs.Run | None) -> None:
-        # Marking belongs to the open run and nowhere else: a closed run is a record, and
-        # the roster is every run at once. The row goes off screen rather than greying.
-        markable = run is not None and run.is_open
-        self._marking_separator.setVisible(markable)
-        for action in self._marking_actions:
-            action.setVisible(markable)
-        picked = bool(self.page.table.selected_tests())
-        self.marking_note.setText("Record as" if picked else "Select a test, then")
-        for button in self.mark_buttons:
-            button.setEnabled(markable and picked)
-        self.new_run.setEnabled(bool(project_tests(self._project())))
-        self.new_run.setToolTip(
-            "Open a run over the current scope; every test in it starts unrecorded"
-            if self.new_run.isEnabled()
-            else "This project has no tests yet"
-        )
-
-    def _mark_button(self, status: str) -> QPushButton:
-        label = "Clear" if status == "pending" else word(status)
-        button = QPushButton(label, self.page.controls)
-        button.setObjectName("ToolbarButton")
-        button.setToolTip(f"Record the selected tests as {word(status).lower()}")
-        button.clicked.connect(lambda _checked=False, s=status: self._mark(s))
-        return button
-
-    def _mark(self, status: str) -> None:
-        run = self._current_run()
-        selected = self.page.table.selected_tests()
-        if run is None or not run.is_open or not selected:
-            return
-        self._mark_tests(self.project_id, run.id, selected, status)
-
-    def _start_run(self) -> None:
-        self._start_a_run(self.project_id, self._scope)
-        self._run_id = ""  # The new run becomes the open one; _sync_runs picks it up.
-        records = self._records()
-        opened = runs.open_run(records)
-        if opened is not None:
-            self._run_id = opened.id
-        self._refresh()
-
     # -- context ------------------------------------------------------------------------
 
     def _on_selection(self) -> None:
@@ -513,7 +439,6 @@ class TestsActivity(EntityActivity):
             ContextNode(selection_uri("test", test_id)) for test_id in tests
         )
         self.publish_selection(nodes)
-        self._sync_buttons(self._current_run())
 
     def _on_activated(self, row: int, _column: int) -> None:
         step_id = self.page.table.step_at(row)
@@ -543,7 +468,11 @@ class AllTestsActivity(ActivityBase):
     """
 
     def __init__(
-        self, library: Library, context: ContextService, open_step: Callable[[StepId], None]
+        self,
+        library: Library,
+        context: ContextService,
+        open_step: Callable[[StepId], None],
+        debounce: DebounceService,
     ) -> None:
         super().__init__()
         self._library = library
@@ -552,15 +481,25 @@ class AllTestsActivity(ActivityBase):
         self.uri = activity_uri(ALL_TESTS_KIND)
         self.title = "Tests — All Projects"
 
-        self.page = _TestsPage("Tests", ALL_NOTE)
-        self.page.table.setSelectionMode(self.page.table.SelectionMode.SingleSelection)
+        self.page = _TestsPage("Tests", ALL_HINT, selection="single")
+        self.archived = self.page.controls.add_verb(
+            "Show archived", archive_icon, self._refresh, checkable=True, tip=ARCHIVED_TIP
+        )
         self.page.table.cellActivated.connect(self._on_activated)
         self.widget = self.page
 
+        # After a quiet spell: the roll call walks every project's tests and hears the whole
+        # library, so a burst of edits anywhere is one rebuild rather than one per signal.
+        self._refresh_soon = Debounced(self._refresh, parent=self.page, service=debounce)
+        self.updating = self.page.updating
+        self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
-            library.structure_changed.connect(lambda *_a: self._refresh()),
-            library.field_changed.connect(lambda *_a: self._refresh()),
-            library.module_data_changed.connect(lambda *_a: self._refresh()),
+            signal.connect(lambda *_a: self._refresh_soon.trigger())
+            for signal in (
+                library.structure_changed,
+                library.field_changed,
+                library.module_data_changed,
+            )
         ]
         self._refresh()
 
@@ -568,15 +507,18 @@ class AllTestsActivity(ActivityBase):
         self._context.set_scope(SCOPE_ACTIVITY, (ContextNode(self.uri),))
 
     def close(self) -> None:
+        self._refresh_soon.cancel()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
+        self.page.controls.dispose()
 
     def _refresh(self) -> None:
         rows: list[Row] = []
+        archived = self.archived.isChecked()
         for project in self._library.projects:
             outcomes = runs.latest_results(runs.read(project))
-            for step, test in project_tests(project):
+            for step, test in project_tests(project, archived=archived):
                 outcome = outcomes.get(test.id)
                 rows.append(
                     Row(
