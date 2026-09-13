@@ -1123,6 +1123,30 @@ and `docs/screenshots/f1-design-example/` keeps them rendered so a pull request 
 it made. Every later step that touches a surface points at them; DESIGN.md's *Bringing a
 surface up* is the list of what to compare.
 
+**The dialogs pass put every dialog-shaped surface on the frame, and three rules came out
+of it** (`CLAUDE.md` states them; the renders are `docs/screenshots/s16-dialogs/`).
+**A settings page owns no outer margin.** Nine pages carried 20, 12 or no margin inside a
+dialog that added its own, so no two pages started their first caption at the same x, and
+one page was taller than the window with nothing to scroll it. The dialog is what knows
+where its seam falls and how tall it is, so it insets and scrolls; a page is
+`settings_page()` and `block()`s — the design example's form, which the pages would
+otherwise hand-write fifteen times, getting the layout-item rule (a child layout joins its
+parent before it is filled) wrong in one of them. **What a gesture came to after its dialog
+closed is a `notice()`.** A dozen `QMessageBox.warning` and `.information` calls reported a
+failed creation, a publish, the caveats of a move — each with a platform icon and the
+platform's arrangement of its words, the second design `confirm()` was written to retire
+for questions. A state the dialog is still showing is never one: a clone running, a
+refusal, a copied path go in its footer's status slot, where the person is looking, and a
+move that succeeded is recorded once, in the status bar. **A verb in a dialog's body is
+`quiet()`.** The per-dialog list existed to give body and footer buttons one look, and the
+tempting replacement, `#DialogBody QPushButton`, is specificity (1,0,1): it would outrank
+every id-only button rule inside a body — the step panel's own buttons inside Step Details
+among them — which is exactly the trap that grew the list. A property selector,
+`QPushButton[quiet="true"]`, is (0,1,1): it gives a body verb the footer's look and loses to
+any rule that names its widget, so `QPushButton#PrimaryButton` still wins and a quiet verb
+restyled as the primary takes the accent. `GlyphButton` is quiet already, for a verb whose
+glyph has to follow the theme on a page that outlives it.
+
 ## How a panel gets editors it has never heard of
 
 The step detail panel shows a Details tab first — estimate, description, figures — and a tab

@@ -95,7 +95,7 @@ class OpenProjectsDialog(DialogFrame):
         layout.addWidget(self.note)
 
         self.add_dismiss()
-        self.add_button = self.set_primary("Add to Library", self.accept)
+        self.add_projects_button = self.set_primary("Add to Library", self.accept)
         self.picker.changed.connect(self._load)
         self._load()
 
@@ -196,7 +196,9 @@ class OpenProjectsDialog(DialogFrame):
 
     def _revalidate(self) -> None:
         count = len(self.list.selectedItems())
-        self.add_button.setText(f"Add {count} to Library" if count > 1 else "Add to Library")
+        self.add_projects_button.setText(
+            f"Add {count} to Library" if count > 1 else "Add to Library"
+        )
         self.refuse(None if count else "")
 
     def accept(self) -> None:

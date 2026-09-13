@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
-from dplanner.framework.widgets import EmptyState, GlyphButton, block, caption, note
+from dplanner.framework.widgets import EmptyState, GlyphButton, block, caption, note, quiet
 from dplanner.theme import apply_theme
 from dplanner.theme.icons import refresh_icon
 from dplanner.theme.themes import DARK, LIGHT
@@ -127,3 +127,34 @@ def test_a_glyph_button_re_inks_on_a_palette_change(themed):
         assert button.icon().cacheKey() != before
     finally:
         button.deleteLater()
+
+
+@pytest.mark.parametrize("theme", (DARK, LIGHT), ids=("dark", "light"))
+def test_a_quiet_verb_wears_the_footer_look_and_a_restyled_primary_still_the_accent(themed, theme):
+    """The property rule gives a body verb the footer's ground and loses to a rule that
+    names the widget — which is what a `#DialogBody QPushButton` rule could not do."""
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QPushButton
+
+    apply_theme(themed, theme)
+    host = QWidget()
+    column = QVBoxLayout(host)
+    verb = quiet(QPushButton("Keep it here", host))
+    offer = quiet(QPushButton("Set up a plan repository…", host))
+    offer.setObjectName("PrimaryButton")
+    column.addWidget(verb)
+    column.addWidget(offer)
+    host.show()
+    themed.processEvents()
+    try:
+        image = host.grab().toImage()
+
+        def inside(button):
+            return button.mapTo(host, QPoint(4, button.height() // 2))
+
+        assert image.pixelColor(inside(verb)) == QColor(theme.bg_overlay)
+        assert image.pixelColor(inside(offer)) == QColor(theme.accent)
+        assert GlyphButton("Refresh", refresh_icon, host).property("quiet") is True
+    finally:
+        host.deleteLater()

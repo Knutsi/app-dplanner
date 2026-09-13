@@ -13,6 +13,7 @@ import pytest
 
 from dplanner.cli.checklist import Machine, MachineCheck, Reading, Remedy
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec, MenuStructure
+from dplanner.framework.signalling import TICKED, UNTICKED
 from dplanner.menus import MENU_STRUCTURE
 from dplanner.modules.checklist import module as checklist_module
 from dplanner.modules.checklist.dialog import (
@@ -22,9 +23,7 @@ from dplanner.modules.checklist.dialog import (
     GREETING,
     HEADING,
     MUTE,
-    TICKED,
     UNMUTE,
-    UNTICKED,
     ChecklistDialog,
     Preferences,
 )

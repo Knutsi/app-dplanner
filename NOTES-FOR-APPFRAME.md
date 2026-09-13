@@ -3448,12 +3448,13 @@ feeds `theme.qss`; a measure no stylesheet rule uses would be a token for its ow
 
 ## 41. From the dialogs pass (S16)
 
-### `framework/widgets.py` — `notice()`, `block()`, `GlyphButton`
+### `framework/widgets.py` — `notice()`, `block()`, `quiet()`, `GlyphButton`
 
 **What.** `notice(parent, title, text)` beside `confirm()`: a fit `DialogFrame` with the
 words as `#DialogQuestion` and one Close. `block(layout, head, *fields)`: one form block —
 a child layout joined to `layout` *before* it is filled, `CAPTION_GAP` spacing, the caption
-row then its fields. `GlyphButton(text, painter, parent, *, tip)`: a plain `QPushButton`
+row then its fields. `quiet(button)`: the footer's look for a body verb, through `QPushButton[quiet="true"]`.
+`GlyphButton(text, painter, parent, *, tip)`: a quiet `QPushButton`
 whose glyph is painted in the secondary ink and repainted on `PaletteChange`.
 
 **Why.** Twelve `QMessageBox.warning`/`.information` calls reported what a gesture came to
@@ -3463,8 +3464,9 @@ for the statement shape. Nine settings pages each hand-wrote the caption-over-fi
 sub-layout the design example shows — the layout-item rule (join before filling) is easy to
 get wrong in nine places and impossible in one. And a settings page is cached for the
 window's life, so a button's glyph painted once from the palette wore the theme it was
-built under; the button is a plain one on purpose (a body verb is a plain button, and a
-`#DialogBody QPushButton` rule would outrank every id-only button rule inside a body).
+built under; its look is `quiet()`'s — a property rule, specificity (0,1,1), beside the footer's,
+because a `#DialogBody QPushButton` rule would outrank every id-only button rule inside a
+body.
 
 **Upstream?** All three.
 
@@ -3502,3 +3504,25 @@ decided the order; the picker's main verb had no accent and its empty state was 
 swapped by hand.
 
 **Upstream?** Yes.
+
+### `theme.qss` — an editable combo in a dialog body
+
+**What.** `#DialogBody QComboBox QLineEdit` draws no frame and no padding, and the accent
+goes on `#DialogBody QComboBox:focus`.
+
+**Why.** `#DialogBody QLineEdit` reaches the line edit *inside* an editable combo too, so
+the first editable combo in a dialog body (the OpenAI model) drew a bordered, padded field
+inside the combo's own frame, its text clipped.
+
+**Upstream?** Yes, with the dialog field rules.
+
+### The frame's first-field focus follows construction order — and reparenting moves it
+
+**What.** `DialogFrame` focuses the first focusable widget `body.findChildren` returns,
+which is the order widgets became children. A `QSplitter.addWidget` reparents, so a tree
+built under the body and then handed to a splitter came *after* a page built later, and the
+Settings dialog opened with focus in a page's scroll area. Build into the container first,
+and give a scroll area that is only a frame `NoFocus`; the same order decided that the
+Confluence dialog focused its *Open tokens page* button before its email field.
+
+**Upstream?** As a sentence in the frame's docstring, yes.

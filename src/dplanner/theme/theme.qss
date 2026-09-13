@@ -152,6 +152,32 @@ QMenu::right-arrow {
     border-left: 2px solid $ACCENT;
 }
 
+/* The Settings tree (modules/settings/dialog.py): the picker list's rules on the dialog's
+   own ground — a hole in the page, the row washed under the pointer and wearing the accent
+   on its edge when picked, no dotted frame on the current row. A folder is a heading, bold
+   and secondary, set in Python: it is never picked. */
+#SettingsTree {
+    background: transparent;
+    border: none;
+    color: $TEXT_PRIMARY;
+    outline: 0;
+}
+
+#SettingsTree::item {
+    padding: ${CELL_PADDING_V}px ${CELL_PADDING_H}px;
+    border-left: 2px solid transparent;
+}
+
+#SettingsTree::item:hover {
+    background-color: $BG_ELEVATED;
+}
+
+#SettingsTree::item:selected {
+    background-color: $ACCENT_WASH;
+    border-left: 2px solid $ACCENT;
+    color: $TEXT_PRIMARY;
+}
+
 /* ---- Status bar -------------------------------------------------------------------- */
 
 QStatusBar {
@@ -857,14 +883,11 @@ QComboBox QAbstractItemView::item:selected {
     color: $TEXT_SECONDARY;
 }
 
-/* Dialog footer buttons: quiet bordered secondaries, at most one accent primary. */
-#TaskBrowserDialog QPushButton,
-#InstallDialog QPushButton,
-#ProjectDialog QPushButton,
-#MovePlanDialog QPushButton,
-#RepositoriesFolderDialog QPushButton,
-#GhRepoListDialog QPushButton,
-#OpenProjectsDialog QPushButton {
+/* The task browser's hand-rolled footer, until it is on the frame: the same declarations
+ * #DialogFooter QPushButton carries. Every other dialog reaches them through the frame,
+ * and no dialog is added to this rule again (ARCHITECTURE.md: *A primitive carries the
+ * rule*). */
+#TaskBrowserDialog QPushButton {
     background-color: $BG_OVERLAY;
     color: $TEXT_PRIMARY;
     border: 1px solid $BORDER;
@@ -872,23 +895,11 @@ QComboBox QAbstractItemView::item:selected {
     padding: 6px 14px;
 }
 
-#TaskBrowserDialog QPushButton:hover,
-#InstallDialog QPushButton:hover,
-#ProjectDialog QPushButton:hover,
-#MovePlanDialog QPushButton:hover,
-#RepositoriesFolderDialog QPushButton:hover,
-#GhRepoListDialog QPushButton:hover,
-#OpenProjectsDialog QPushButton:hover {
+#TaskBrowserDialog QPushButton:hover {
     border-color: $BORDER_STRONG;
 }
 
-#TaskBrowserDialog QPushButton:disabled,
-#InstallDialog QPushButton:disabled,
-#ProjectDialog QPushButton:disabled,
-#MovePlanDialog QPushButton:disabled,
-#RepositoriesFolderDialog QPushButton:disabled,
-#GhRepoListDialog QPushButton:disabled,
-#OpenProjectsDialog QPushButton:disabled {
+#TaskBrowserDialog QPushButton:disabled {
     color: $TEXT_DISABLED;
 }
 
@@ -909,10 +920,6 @@ QComboBox QAbstractItemView::item:selected {
  * already there — two lines a pixel apart is what the seam rule forbids. */
 #InstallRow[last="true"] {
     border-bottom: none;
-}
-
-#InstallRowState, #InstallRowNote {
-    color: $TEXT_SECONDARY;
 }
 
 /* ---- Task centre (DESIGN.md: what/why rows in a framed well, quiet actions) -------- */
@@ -964,12 +971,10 @@ QToolButton[repoTool="true"]:hover {
     border-radius: ${RADIUS_MD}px;
 }
 
-/* Secondary text: a column's branch, an empty column, a remark, a path preview, what an
- * empty page says — and the footer line under a column that names a fact nobody has
- * recorded. */
-#LogBranch, #LogEmpty, #GhNote, #ProjectNote, #ColocationWarningText, #RepoPickerNote,
-#MoveTargetPath, #MovePlanSummary, #OpenProjectsEmpty, #OpenProjectsNote, #RepoLocation,
-#RepoLineMissing, #EmptyStateText {
+/* Secondary text: a column's branch, what an empty page says — and the footer line under
+ * a column that names a fact nobody has recorded. Every other remark in these dialogs is
+ * a note (#InspectorNote) or a StatusLine, and styled as one. */
+#LogBranch, #RepoLocation, #RepoLineMissing, #EmptyStateText {
     color: $TEXT_SECONDARY;
 }
 
@@ -1042,7 +1047,10 @@ QToolButton[repoTool="true"]:hover {
     border-top: 1px solid $BORDER_FAINT;
 }
 
-#DialogFooter QPushButton {
+/* A footer's buttons, and a quiet verb in a body (framework/widgets.py's quiet()): the
+   property selector is (0,1,1), so it never outranks a rule that names its widget. */
+#DialogFooter QPushButton,
+QPushButton[quiet="true"] {
     background-color: $BG_OVERLAY;
     color: $TEXT_PRIMARY;
     border: 1px solid $BORDER;
@@ -1050,11 +1058,13 @@ QToolButton[repoTool="true"]:hover {
     padding: 6px 14px;
 }
 
-#DialogFooter QPushButton:hover {
+#DialogFooter QPushButton:hover,
+QPushButton[quiet="true"]:hover {
     border-color: $BORDER_STRONG;
 }
 
-#DialogFooter QPushButton:disabled {
+#DialogFooter QPushButton:disabled,
+QPushButton[quiet="true"]:disabled {
     color: $TEXT_DISABLED;
 }
 
@@ -1070,6 +1080,18 @@ QToolButton[repoTool="true"]:hover {
 }
 
 #DialogBody QLineEdit:focus, #DialogBody QPlainTextEdit:focus, #DialogBody QTextEdit:focus {
+    border-color: $ACCENT;
+}
+
+/* An editable combo's own line edit is a field inside a field: the combo draws the frame,
+   so the edit inside it draws none, and the accent goes on the combo. */
+#DialogBody QComboBox QLineEdit {
+    background: transparent;
+    border: none;
+    padding: 0px;
+}
+
+#DialogBody QComboBox:focus {
     border-color: $ACCENT;
 }
 

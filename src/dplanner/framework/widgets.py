@@ -4,8 +4,8 @@ Nothing here is a framework concept — these are the handful of things every se
 would otherwise reimplement slightly differently: a confirmation whose default is "no", a
 notice for what a gesture came to, a centred column at a readable measure, what an empty
 page says, the caption over a block (with its help glyph) and the remark under it, a form
-block, a plain button whose glyph follows the theme, and Ctrl+wheel zoom. Add to it
-sparingly; a helper that only one feature uses belongs in that feature.
+block, a quiet verb for a body and one whose glyph follows the theme, and Ctrl+wheel zoom.
+Add to it sparingly; a helper that only one feature uses belongs in that feature.
 """
 
 from collections.abc import Callable
@@ -185,10 +185,24 @@ def block(layout: QVBoxLayout, head: QWidget, *fields: QWidget) -> QVBoxLayout:
     return column
 
 
-class GlyphButton(QPushButton):
-    """A plain button whose glyph follows the theme.
+def quiet(button: QPushButton) -> QPushButton:
+    """A verb in a body — a dialog's, a settings page's — wearing the footer's quiet look.
 
-    DESIGN.md's *Buttons*: a verb in a body — a settings page, a card — is a plain button.
+    DESIGN.md's *Buttons*: a plain ``QPushButton`` is Fusion's and reads as such. The look
+    comes through a property rule, ``QPushButton[quiet="true"]``, never through
+    ``#DialogBody QPushButton``: that descendant rule is specificity (1,0,1) and would
+    outrank every id-only button rule inside a body, where the property rule's (0,1,1)
+    loses to any rule that names its widget — ``QPushButton#PrimaryButton`` included, so a
+    quiet verb restyled as the primary still takes the accent.
+    """
+    button.setProperty("quiet", True)
+    return button
+
+
+class GlyphButton(QPushButton):
+    """A quiet verb whose glyph follows the theme.
+
+    DESIGN.md's *Buttons*: a verb in a body — a settings page, a card — is :func:`quiet`.
     Its glyph is painted in the secondary ink and repainted on ``PaletteChange``, as the
     hint glyph is: a settings page lives as long as the window, so a glyph painted once
     would wear the theme it was built under. The slot is always there, which is what lets
@@ -204,6 +218,7 @@ class GlyphButton(QPushButton):
         tip: str = "",
     ) -> None:
         super().__init__(text, parent)
+        quiet(self)
         self._painter = painter
         self.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
         if tip:

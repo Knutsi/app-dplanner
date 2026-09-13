@@ -12,19 +12,14 @@ import threading
 from collections.abc import Callable
 
 from PySide6.QtCore import QObject, Signal
-from PySide6.QtWidgets import (
-    QComboBox,
-    QFormLayout,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QPushButton,
-    QWidget,
-)
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLineEdit, QWidget
 
 from dplanner.core.secrets import get_secret, set_secret
 from dplanner.framework.llm_service import LLMService
+from dplanner.framework.settings_registry import settings_page
+from dplanner.framework.signalling import Spinner, StatusLine
 from dplanner.framework.user_config import get_global, set_global
+from dplanner.framework.widgets import GlyphButton, block, captioned
 from dplanner.modules.llm_openai.provider import (
     DEFAULT_MODEL,
     DEFAULT_REASONING_EFFORT,
@@ -32,6 +27,12 @@ from dplanner.modules.llm_openai.provider import (
     current_reasoning_effort,
     list_chat_models,
 )
+from dplanner.theme.icons import refresh_icon
+from dplanner.theme.tokens import FIELD_GAP
+
+KEY_HINT = "Kept in this computer's keychain, never in the plan and never in a file."
+MODEL_HINT = "Type a model's name, or pick one — Refresh lists the chat models this account has."
+EFFORT_HINT = "How long reasoning models may think; ignored by models without reasoning."
 
 # (label, stored value); "" means the request parameter is never sent.
 REASONING_EFFORT_CHOICES = (
@@ -75,9 +76,8 @@ def cached_models() -> list[str]:
 
 
 def build_page(llm: LLMService, parent: QWidget | None) -> QWidget:
-    page = QWidget(parent)
+    page, layout = settings_page(parent)
     page.setObjectName("OpenAISettingsPage")
-    layout = QFormLayout(page)
 
     api_key_edit = QLineEdit(page)
     api_key_edit.setObjectName("OpenAIApiKeyEdit")
@@ -90,7 +90,7 @@ def build_page(llm: LLMService, parent: QWidget | None) -> QWidget:
         llm.config_changed.emit()
 
     api_key_edit.editingFinished.connect(commit_api_key)
-    layout.addRow("API key", api_key_edit)
+    block(layout, captioned("API key", page, KEY_HINT), api_key_edit)
 
     model_combo = QComboBox(page)
     model_combo.setObjectName("OpenAIModelCombo")
@@ -118,47 +118,47 @@ def build_page(llm: LLMService, parent: QWidget | None) -> QWidget:
     line_edit.editingFinished.connect(commit_model)
     model_combo.activated.connect(lambda _index: commit_model())
 
-    refresh_button = QPushButton("Refresh", page)
-    refresh_button.setObjectName("OpenAIRefreshModelsButton")
-    refresh_button.setToolTip("Fetch the account's chat models from OpenAI")
-    fetch_status = QLabel(page)
-    fetch_status.setObjectName("OpenAIModelFetchStatus")
-    fetch_status.hide()
+    # The button whose verb fetches carries a glyph, and the arc turns in it while the
+    # fetch runs; where the fetch stands is a status line under the row (DESIGN.md's
+    # *Signalling*), never a label rewritten by hand.
+    refresh_button = GlyphButton(
+        "Refresh", refresh_icon, page, tip="Fetch the account's chat models from OpenAI"
+    )
+    spinner = Spinner(page).attach(refresh_button)
+    fetch_status = StatusLine(page)
 
     def on_models(models: list[str] | None, error: str) -> None:
         refresh_button.setEnabled(True)
+        spinner.stop()
         if models is None:
-            fetch_status.setText(f"Could not fetch models: {error}")
-            fetch_status.show()
+            fetch_status.say(f"Could not fetch models: {error}", "error")
             return
         set_global(MODULE_ID, "models_cache", models)
         populate(models)
-        fetch_status.setText(f"{len(models)} models")
-        fetch_status.show()
+        fetch_status.say(f"{len(models)} models", "ok")
 
     loader = _ModelLoader(on_models, page)
 
     def refresh() -> None:
         refresh_button.setEnabled(False)
-        fetch_status.setText("Fetching…")
-        fetch_status.show()
+        spinner.start()
+        fetch_status.say("Fetching the account's models…", "busy")
         loader.start()
 
     refresh_button.clicked.connect(refresh)
 
-    model_row = QHBoxLayout()
-    model_row.addWidget(model_combo, 1)
-    model_row.addWidget(refresh_button)
-    layout.addRow("Model", model_row)
-    layout.addRow("", fetch_status)
+    model_row = QWidget(page)
+    row = QHBoxLayout(model_row)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(FIELD_GAP)
+    row.addWidget(model_combo, 1)
+    row.addWidget(refresh_button)
+    block(layout, captioned("Model", page, MODEL_HINT), model_row, fetch_status)
 
     effort_combo = QComboBox(page)
     effort_combo.setObjectName("OpenAIReasoningEffortCombo")
     for label, value in REASONING_EFFORT_CHOICES:
         effort_combo.addItem(label, value)
-    effort_combo.setToolTip(
-        "How long reasoning models may think; ignored by models without reasoning"
-    )
     index = effort_combo.findData(current_reasoning_effort())
     effort_combo.setCurrentIndex(
         index if index != -1 else effort_combo.findData(DEFAULT_REASONING_EFFORT)
@@ -169,6 +169,6 @@ def build_page(llm: LLMService, parent: QWidget | None) -> QWidget:
         llm.config_changed.emit()
 
     effort_combo.currentIndexChanged.connect(commit_effort)
-    layout.addRow("Reasoning", effort_combo)
-
+    block(layout, captioned("Reasoning", page, EFFORT_HINT), effort_combo)
+    layout.addStretch(1)
     return page

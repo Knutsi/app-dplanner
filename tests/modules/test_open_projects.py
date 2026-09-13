@@ -195,7 +195,10 @@ def test_open_projects_lists_what_the_repository_holds_with_who_and_when(
     ]
     # Every addable row starts selected: joining a plan repository means joining it.
     assert sorted(dialog.chosen()) == sorted([plans / "search", plans / "billing"])
-    assert dialog.add_button.text() == "Add 2 to Library" and dialog.add_button.isEnabled()
+    assert (
+        dialog.add_projects_button.text() == "Add 2 to Library"
+        and dialog.add_projects_button.isEnabled()
+    )
     dialog.deleteLater()
 
 
@@ -204,7 +207,7 @@ def test_a_project_already_here_is_greyed_and_not_offered(services, plans, monke
     dialog.picker.set_current(plans)
     assert dialog.rows()[0] == ("Search · 0 steps", "already in this library")
     assert dialog.chosen() == [plans / "billing"]
-    assert dialog.add_button.text() == "Add to Library"
+    assert dialog.add_projects_button.text() == "Add to Library"
     dialog.deleteLater()
 
 
@@ -265,7 +268,7 @@ def test_an_empty_repository_says_so_and_a_dangling_index_line_is_named(
     dialog.picker.set_current(root)
     assert dialog.empty.isVisibleTo(dialog) and "No projects" in dialog.empty.text()
     assert dialog.note.isVisibleTo(dialog) and "gone" in dialog.note.text()
-    assert not dialog.add_button.isEnabled()
+    assert not dialog.add_projects_button.isEnabled()
     dialog.deleteLater()
 
 

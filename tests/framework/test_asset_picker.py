@@ -73,7 +73,7 @@ def test_an_empty_picker_says_so_in_words(app):
 def test_insert_is_the_primary_and_is_refused_until_something_is_picked(dialog):
     from dplanner.framework.dialog import DialogFrame
 
-    assert isinstance(dialog, DialogFrame)
+    assert issubclass(AssetPickerDialog, DialogFrame)
     assert [b.text() for b in dialog.footer_buttons()] == ["Insert", "Cancel"]
     primary = dialog.primary()
     assert primary is not None and primary.isDefault() and not primary.isEnabled()

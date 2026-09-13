@@ -82,7 +82,7 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import EmptyState, block, caption, confirm, note
+from dplanner.framework.widgets import EmptyState, block, caption, confirm, note, quiet
 from dplanner.modules.projects.repo_picker import (
     Entry,
     PlanTarget,
@@ -275,6 +275,7 @@ class RepositoryColumn(QWidget):
         )
         self.setup_button = self.empty.button
         if self.setup_button is not None:
+            quiet(self.setup_button)  # The accent is restyled on while the shape drifts.
             self.setup_button.setObjectName("PlanSetupButton")
         layout.addWidget(self.well, 1)
         layout.addWidget(self.empty, 1)
@@ -488,7 +489,7 @@ class ProjectDialog(DialogFrame):
 
         # -- what is wrong; what the last request did goes in the footer's status slot ----
         self.warning = note("", body)
-        self.keep_button = QPushButton("Keep it here", body)
+        self.keep_button = quiet(QPushButton("Keep it here", body))
         self.keep_button.setObjectName("KeepColocationButton")
         self.keep_button.setToolTip("The plan stays inside its code on purpose; stop warning")
         self.keep_button.clicked.connect(self._keep_here)

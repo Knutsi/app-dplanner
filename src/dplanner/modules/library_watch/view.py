@@ -52,7 +52,9 @@ class ConflictDialog(DialogFrame):
         self.theirs_button = self.add_button("Take Theirs", lambda: self._choose(THEIRS))
         self.theirs_button.setToolTip("Replace this window's unsaved edit with what is on disk")
         self.mine_button = self.add_button("Keep Mine", lambda: self._choose(MINE))
-        self.mine_button.setToolTip("Save this window's edit over what the other writer put on disk")
+        self.mine_button.setToolTip(
+            "Save this window's edit over what the other writer put on disk"
+        )
         self.add_dismiss("Later")
         if agent_refusal:
             self.refuse(agent_refusal)

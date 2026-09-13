@@ -16,6 +16,7 @@ disk afterwards, so what they show is always what is true.
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFontMetrics
 from PySide6.QtWidgets import QPlainTextEdit, QVBoxLayout, QWidget
 
 from dplanner.cli.install import (
@@ -63,6 +64,8 @@ class _Row(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.line = StatusLine(self)
         self.note = note("", self)
+        # The why starts under the words, not under the mark — the Setup Checklist's row.
+        self.note.setIndent(QFontMetrics(self.line.font()).horizontalAdvance(f"{TICKED} "))
         layout = QVBoxLayout(self)
         layout.setContentsMargins(ROW_PADDING_H, ROW_PADDING_V, ROW_PADDING_H, ROW_PADDING_V)
         layout.setSpacing(ROW_LINE_GAP)

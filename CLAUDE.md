@@ -389,7 +389,14 @@ root, stop and look for the registry or capability you have not found yet.
   table's row height is computed from the font and set on the vertical header, never a
   pixel token; an empty page swaps through `EmptyState.stands_in_for`; a refused primary
   is `refuse(reason)` — disabled, its name kept, the reason in the footer's status slot.
-  `ARCHITECTURE.md`'s *A primitive carries the rule* has the reasoning.
+  **A settings page owns no outer margin**: `settings_page()` builds it, `block()` stacks
+  its captioned fields, and the dialog insets it from its seam and scrolls it. **What a
+  gesture came to after its dialog closed is a `notice()`**, never a `QMessageBox`; a state
+  the dialog can still show goes in its own status slot. **A verb in a dialog's body is
+  `quiet()`** — the footer's look through a property rule, never `#DialogBody QPushButton`,
+  which would outrank every id-only button rule inside a body — and a `GlyphButton`, quiet
+  already, when its glyph must follow the theme. `ARCHITECTURE.md`'s *A primitive carries
+  the rule* has the reasoning.
 - **A pane is marked only while there is another pane.** The accent edge on the group you are
   in appears when the window splits and goes when it stops being split — the same condition
   that installs `_ActiveGroupWatcher`, because it is the same fact. It lives on a one-widget

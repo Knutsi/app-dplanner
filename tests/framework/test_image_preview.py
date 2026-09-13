@@ -69,10 +69,10 @@ def test_the_preview_is_a_frame_with_close_alone_as_the_way_out(app):
 
 
 def test_opening_a_file_that_is_gone_says_so_in_the_footer_not_a_box(app, monkeypatch):
-    from dplanner.framework import image_preview
+    from PySide6.QtGui import QDesktopServices
 
     opened = []
-    monkeypatch.setattr(image_preview.QDesktopServices, "openUrl", lambda url: opened.append(url))
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url))
     dialog = ImagePreviewDialog(image(4, 4), "dot.png", path="/nowhere/dot.png")
     try:
         dialog._open_externally("/nowhere/dot.png")

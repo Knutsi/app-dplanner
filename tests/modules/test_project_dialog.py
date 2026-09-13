@@ -247,9 +247,12 @@ def test_the_menu_renders_what_the_entries_say(dialog):
 
 def test_set_code_repository_commits_through_the_undo_stack(services, dialog, project, monkeypatch):
     asked = []
-    monkeypatch.setattr(
-        LinePrompt, "ask", staticmethod(lambda *a, **k: asked.append((a, k)) or CODE_URL)
-    )
+
+    def ask(*args, **kwargs):
+        asked.append((args, kwargs))
+        return CODE_URL
+
+    monkeypatch.setattr(LinePrompt, "ask", staticmethod(ask))
     entry(dialog.code_column, "Set Code Repository…").run()
     # A LinePrompt named for its verb, seeded with what is recorded (DESIGN.md's *Dialogs*).
     assert asked[0][0][1:4] == (

@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QComboBox, QLineEdit, QListWidget, QPushButton
+from PySide6.QtWidgets import QComboBox, QLineEdit
 
 from dplanner.domain.agents import AgentHarness, RunFacts, Usage, harness_by_id, harness_for_command
 from dplanner.modules import agent_harnesses
@@ -520,7 +520,7 @@ def test_the_detected_profiles_dialog_ticks_the_runnable_and_adds_the_ticked(app
 
 
 def test_the_settings_page_adds_the_detected_profiles(app, monkeypatch):
-    from PySide6.QtWidgets import QDialog, QPushButton
+    from PySide6.QtWidgets import QDialog
 
     from dplanner.modules.step_agent_instruction import settings_page
     from dplanner.modules.step_agent_instruction.detect_dialog import DetectedProfilesDialog
@@ -542,9 +542,9 @@ def test_the_settings_page_adds_the_detected_profiles(app, monkeypatch):
 
     monkeypatch.setattr(settings_page, "DetectedProfilesDialog", Detected)
     page = settings_page.build_page(None, platform="linux", harnesses=HARNESSES)
-    button = page.findChild(QPushButton, "AgentProfileDetect")
-    assert button is not None
-    button.click()
+    profiles = page.findChild(settings_page.ProfileList)
+    assert profiles is not None
+    profiles.detect_action.trigger()
     assert [p.name for p in read_profiles()] == ["Mine", "Claude Code in Ghostty"]
     page.deleteLater()
 
@@ -584,24 +584,26 @@ def test_a_name_nobody_typed_follows_the_choices_and_a_typed_one_stays(app):
 
 
 def test_the_settings_page_adds_removes_and_promotes_profiles(app):
+    from dplanner.framework.list_rows import EMPHASIS_ROLE
     from dplanner.modules.step_agent_instruction.profiles import read_profiles
-    from dplanner.modules.step_agent_instruction.settings_page import build_page
+    from dplanner.modules.step_agent_instruction.settings_page import ProfileList, build_page
 
     page = build_page(None, platform="linux", harnesses=HARNESSES)
-    listing = page.findChild(QListWidget, "AgentProfileList")
-    add = page.findChild(QPushButton, "AgentProfileAdd")
-    remove = page.findChild(QPushButton, "AgentProfileRemove")
-    promote = page.findChild(QPushButton, "AgentProfileDefault")
+    profiles = page.findChild(ProfileList)
     name = page.findChild(QLineEdit, "AgentProfileName")
     agent = page.findChild(QComboBox, "AgentPresetCombo")
     terminal = page.findChild(QLineEdit, "AgentLaunchCommandEdit")
-    assert isinstance(listing, QListWidget) and isinstance(agent, QComboBox)
-    assert isinstance(add, QPushButton) and isinstance(remove, QPushButton)
-    assert isinstance(promote, QPushButton)
+    assert profiles is not None and isinstance(agent, QComboBox)
     assert isinstance(name, QLineEdit) and isinstance(terminal, QLineEdit)
-    assert listing.count() == 1 and not remove.isEnabled() and not promote.isEnabled()
+    listing = profiles.table
+    add, remove = profiles.add_action, profiles.remove_action
+    promote = profiles.default_action
+    assert listing.rowCount() == 1 and not remove.isEnabled() and not promote.isEnabled()
+    # Disabled, never hidden — and the reason is in the verb's own words.
+    assert remove.text() == "Remove — the only profile"
+    assert promote.text() == "Make Default — already the default"
 
-    add.click()  # A copy of the picked profile, named by its choices.
+    add.trigger()  # A copy of the picked profile, named by its choices.
     assert [p.name for p in read_profiles()] == ["Default", "Claude Code"]
     assert listing.currentRow() == 1 and remove.isEnabled() and promote.isEnabled()
     name.setText("Codex in herdr")
@@ -618,11 +620,13 @@ def test_the_settings_page_adds_removes_and_promotes_profiles(app):
         launcher.HERDR_COMMAND,
     )
 
-    promote.click()
+    promote.trigger()
     assert [p.name for p in read_profiles()] == ["Codex in herdr", "Default"]
-    assert listing.item(0).text() == "Codex in herdr (default)"
-    listing.setCurrentRow(1)
-    remove.click()
+    first = listing.item(0, 0)
+    assert first is not None
+    assert first.text() == "Codex in herdr" and first.data(EMPHASIS_ROLE)  # The bold row.
+    listing.setCurrentCell(1, 0)
+    remove.trigger()
     assert [p.name for p in read_profiles()] == ["Codex in herdr"]
     page.deleteLater()
 
@@ -631,23 +635,24 @@ def test_the_settings_page_renames_a_profile_as_its_choices_change(app):
     """Add, then pick a terminal, then an agent: the name keeps up, and the list shows
     it. Type a name and it is yours through every later change."""
     from dplanner.modules.step_agent_instruction.profiles import read_profiles
-    from dplanner.modules.step_agent_instruction.settings_page import build_page
+    from dplanner.modules.step_agent_instruction.settings_page import ProfileList, build_page
 
     page = build_page(None, platform="linux", harnesses=HARNESSES)
-    listing = page.findChild(QListWidget, "AgentProfileList")
-    add = page.findChild(QPushButton, "AgentProfileAdd")
+    profiles = page.findChild(ProfileList)
     name = page.findChild(QLineEdit, "AgentProfileName")
     terminal = page.findChild(QLineEdit, "AgentLaunchCommandEdit")
-    assert isinstance(listing, QListWidget) and isinstance(add, QPushButton)
+    assert profiles is not None
     assert isinstance(name, QLineEdit) and isinstance(terminal, QLineEdit)
+    listing, add = profiles.table, profiles.add_action
 
-    add.click()
+    add.trigger()
     terminal.setText(launcher.HERDR_COMMAND)
     terminal.editingFinished.emit()
     assert [p.name for p in read_profiles()] == ["Default", "Claude Code in herdr"]
-    assert listing.item(1).text() == "Claude Code in herdr"
+    second = listing.item(1, 0)
+    assert second is not None and second.text() == "Claude Code in herdr"
     assert name.text() == "Claude Code in herdr"
-    add.click()  # A copy of the herdr profile: the same name, numbered.
+    add.trigger()  # A copy of the herdr profile: the same name, numbered.
     assert read_profiles()[2].name == "Claude Code in herdr 2"
     terminal.setText("ghostty -e {script}")
     terminal.editingFinished.emit()

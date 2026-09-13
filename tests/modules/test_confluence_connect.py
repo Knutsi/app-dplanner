@@ -282,23 +282,38 @@ def test_each_kind_opens_its_own_address(confluence):
     )
 
 
-def test_the_settings_page_lists_sites_and_forgets_one(confluence, services, secrets):
-    from PySide6.QtWidgets import QPushButton
-
-    from dplanner.modules.spec_confluence.settings_page import build_page
+def test_the_settings_page_lists_sites_and_forgets_one(confluence, services, secrets, monkeypatch):
+    """A table with its verbs on a strip above it: Forget greyed until a site is picked,
+    asked about because it deletes a token, and the table traded for the empty state
+    once nothing is left."""
+    from dplanner.framework.table import Table
+    from dplanner.framework.toolbar import Toolbar
+    from dplanner.modules.spec_confluence import settings_page
 
     set_global(MODULE_ID, module_mod.SITES_KEY, {SITE: "me@acme.example"})
     secrets.stored[(MODULE_ID, "token:acme.atlassian.net")] = "tok"
-    page = build_page(
+    asked = []
+
+    def confirm(*_args, verb="", **_kwargs):
+        asked.append(verb)
+        return True
+
+    monkeypatch.setattr(settings_page, "confirm", confirm)
+    page = settings_page.build_page(
         None, sites=confluence.sites, reconnect=lambda *_a: False, forget=confluence.forget
     )
     try:
-        forget = next(b for b in page.findChildren(QPushButton) if b.objectName() == "forgetSite")
-        forget.click()
+        table = page.findChild(Table)
+        strip = page.findChild(Toolbar)
+        assert table is not None and strip is not None
+        _reconnect, forget = strip.verbs()
+        assert table.rowCount() == 1 and not forget.isEnabled()
+        table.selectRow(0)
+        assert forget.isEnabled()
+        forget.trigger()
+        assert asked == ["Forget"]
         assert confluence.sites() == {} and secrets.stored == {}
-        assert not any(
-            b.objectName() == "forgetSite" for b in page.findChildren(QPushButton) if b.isVisible()
-        )
+        assert table.isHidden() and not forget.isEnabled()
     finally:
         page.deleteLater()
 

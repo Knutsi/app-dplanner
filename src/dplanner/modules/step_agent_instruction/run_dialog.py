@@ -15,7 +15,7 @@ from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QLabel, QPlainTextEdit, QWidget
 
 from dplanner.framework.dialog import DialogFrame
-from dplanner.framework.widgets import caption, make_text_well, note, space_lines
+from dplanner.framework.widgets import block, caption, make_text_well, note, space_lines
 
 DIALOG_SIZE = (560, 480)
 
@@ -83,11 +83,12 @@ class RunAnywayDialog(DialogFrame):
         self.lead.setWordWrap(True)
         layout.addWidget(self.lead)
         for heading, lines in self._groups:
-            if heading:
-                layout.addWidget(caption(heading, body))
             listed = note("\n".join(lines), body)
             listed.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-            layout.addWidget(listed)
+            if heading:
+                block(layout, caption(heading, body), listed)
+            else:
+                layout.addWidget(listed)
         self.closing = QLabel(closing, body)
         self.closing.setObjectName("DialogQuestion")
         self.closing.setWordWrap(True)

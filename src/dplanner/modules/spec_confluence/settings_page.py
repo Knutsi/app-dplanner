@@ -1,11 +1,27 @@
-"""Settings ▸ Confluence: the sites this person is connected to, each with Reconnect…
-and Forget. Per user, per machine — the rows are ``user_config``'s and the tokens the
-keychain's; the plan never learns either."""
+"""Settings ▸ Confluence: the sites this person is connected to, as a table with its verbs
+on a strip above it — *Reconnect…* and *Forget*, greyed until a site is picked. Per user,
+per machine — the rows are ``user_config``'s and the tokens the keychain's; the plan never
+learns either. Forgetting deletes a token the person can only get back from Atlassian, so
+it asks first."""
 
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QWidget
+
+from dplanner.framework.list_rows import HOST_ROLE
+from dplanner.framework.settings_registry import settings_page
+from dplanner.framework.table import Column, Table
+from dplanner.framework.toolbar import Toolbar
+from dplanner.framework.widgets import EmptyState, block, captioned, confirm
+from dplanner.theme.icons import connect_icon, trash_icon
+
+SITES_HINT = (
+    "A token is kept in this computer's keychain and read only when a source is fetched;"
+    " forgetting a site deletes it."
+)
+NO_SITES = (
+    "Not connected to any site yet — a Confluence source is added from a project's Specs tab."
+)
 
 
 def build_page(
@@ -15,61 +31,56 @@ def build_page(
     reconnect: Callable[[QWidget, str], bool],
     forget: Callable[[str], None],
 ) -> QWidget:
-    page = QWidget(parent)
+    page, layout = settings_page(parent)
     page.setObjectName("ConfluenceSettingsPage")
-    layout = QVBoxLayout(page)
-    layout.setContentsMargins(20, 20, 20, 20)
-    layout.setSpacing(12)
-    note = QLabel(
-        "Confluence sites this computer is connected to. A token is kept in the OS keychain "
-        "and read only when a source is fetched; forgetting a site deletes it. Sources are "
-        "added from a project's Specs tab.",
-        page,
+
+    table = Table(
+        (Column("Site", resize="interactive"), Column("Account", resize="stretch")),
+        parent=page,
     )
-    note.setObjectName("InspectorNote")
-    note.setWordWrap(True)
-    layout.addWidget(note)
-    rows = QVBoxLayout()
-    rows.setSpacing(8)
-    layout.addLayout(rows)
-    layout.addStretch(1)
+    empty = EmptyState("", page, stands_in_for=table)
+
+    def picked() -> str | None:
+        chosen = table.selectedItems()
+        return str(chosen[0].data(HOST_ROLE)) if chosen else None
 
     def rebuild() -> None:
-        while rows.count():
-            item = rows.takeAt(0)
-            widget = item.widget() if item is not None else None
-            if widget is not None:
-                widget.deleteLater()
-        connected = sites()
-        if not connected:
-            empty = QLabel("Not connected to any site yet.", page)
-            empty.setObjectName("InspectorNote")
-            rows.addWidget(empty)
-            return
-        for site, email in sorted(connected.items()):
-            row = QWidget(page)
-            row.setObjectName("ConfluenceSiteRow")
-            line = QHBoxLayout(row)
-            line.setContentsMargins(0, 0, 0, 0)
-            facts = QLabel(f"{site}  —  {email}", row)
-            facts.setTextFormat(Qt.TextFormat.PlainText)
-            line.addWidget(facts, 1)
-            again = QPushButton("Reconnect…", row)
-            again.clicked.connect(lambda _c=False, s=site: reconnected(s))
-            line.addWidget(again)
-            drop = QPushButton("Forget", row)
-            drop.setObjectName("forgetSite")
-            drop.clicked.connect(lambda _c=False, s=site: forgotten(s))
-            line.addWidget(drop)
-            rows.addWidget(row)
+        table.clear_rows()
+        for site, email in sorted(sites().items()):
+            table.add_row([site, email], data={HOST_ROLE: site})
+        table.fit_columns()
+        empty.say("" if table.rowCount() else NO_SITES)
+        reword()
 
-    def reconnected(site: str) -> None:
-        reconnect(page, site)
-        rebuild()
+    def on_reconnect() -> None:
+        site = picked()
+        if site is not None:
+            reconnect(page, site)
+            rebuild()
 
-    def forgotten(site: str) -> None:
-        forget(site)
-        rebuild()
+    def on_forget() -> None:
+        site = picked()
+        if site is not None and confirm(
+            page,
+            "Forget Site",
+            f"Forget {site}? Its token is deleted from this computer's keychain.",
+            verb="Forget",
+        ):
+            forget(site)
+            rebuild()
 
+    strip = Toolbar(page)
+    reconnect_action = strip.add_verb("Reconnect…", connect_icon, on_reconnect)
+    forget_action = strip.add_verb("Forget", trash_icon, on_forget)
+
+    def reword() -> None:
+        on = picked() is not None
+        reconnect_action.setEnabled(on)
+        forget_action.setEnabled(on)
+
+    table.itemSelectionChanged.connect(reword)
+    column = block(layout, captioned("Connected sites", page, SITES_HINT), strip)
+    column.addWidget(table, 1)
+    column.addWidget(empty, 1)
     rebuild()
     return page
