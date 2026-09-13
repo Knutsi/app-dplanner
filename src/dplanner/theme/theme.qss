@@ -124,7 +124,7 @@ QMenu::right-arrow {
     color: $TEXT_PRIMARY;
     border: 1px solid $BORDER;
     border-radius: ${RADIUS_SM}px;
-    padding: 6px 12px;
+    padding: ${CELL_PADDING_V}px ${ROW_PADDING_H}px;
 }
 
 #PickerInput:focus {
@@ -140,7 +140,7 @@ QMenu::right-arrow {
 }
 
 #PickerList::item {
-    border-left: 2px solid transparent;
+    border-left: ${EDGE_W}px solid transparent;
 }
 
 #PickerList::item:hover {
@@ -149,7 +149,7 @@ QMenu::right-arrow {
 
 #PickerList::item:selected {
     background-color: $ACCENT_WASH;
-    border-left: 2px solid $ACCENT;
+    border-left: ${EDGE_W}px solid $ACCENT;
 }
 
 /* The Settings tree (modules/settings/dialog.py): the picker list's rules on the dialog's

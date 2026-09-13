@@ -159,6 +159,7 @@ def test_a_quiet_verb_wears_the_footer_look_and_a_restyled_primary_still_the_acc
     finally:
         host.deleteLater()
 
+
 def test_a_number_box_prints_a_number_the_way_a_person_writes_it(app):
     from dplanner.framework.widgets import NumberBox
 

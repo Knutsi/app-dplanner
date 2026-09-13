@@ -106,3 +106,11 @@ def test_the_arrows_move_the_list_while_the_field_keeps_the_keyboard(host, app):
     up = QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Up, Qt.KeyboardModifier.NoModifier)
     picker.eventFilter(picker.field, up)
     assert picker.list.currentRow() == 0
+
+
+def test_a_query_that_matches_nothing_says_so_where_the_rows_would_be(host):
+    picker, _picked = built(host, query="zzqx")
+    assert listed(picker) == []
+    assert picker.empty.isVisibleTo(picker) and not picker.list.isVisibleTo(picker)
+    picker._refilter("parser")
+    assert listed(picker) == ["Write the parser"] and not picker.empty.isVisibleTo(picker)

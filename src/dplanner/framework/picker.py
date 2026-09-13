@@ -31,10 +31,12 @@ from PySide6.QtWidgets import (
 
 from dplanner.framework.action_registry import PATH_SEPARATOR
 from dplanner.framework.list_rows import DETAIL_ROLE, TRAILING_ROLE, TwoLineDelegate
+from dplanner.framework.widgets import EmptyState
 from dplanner.theme.icons import ICON_SIZE
 from dplanner.theme.tokens import FIELD_GAP
 
 PICKER_WIDTH = 480
+NOTHING_MATCHES = "Nothing matches what was typed."
 
 
 def fuzzy_score(query: str, text: str) -> int | None:
@@ -139,7 +141,10 @@ class PickerDialog(QDialog):
         layout.setContentsMargins(FIELD_GAP, FIELD_GAP, FIELD_GAP, FIELD_GAP)
         layout.setSpacing(FIELD_GAP)
         layout.addWidget(self.field)
-        layout.addWidget(self.list)
+        layout.addWidget(self.list, 1)
+        # A query that matches nothing says so where the rows would be, never an empty hole.
+        self.empty = EmptyState(parent=self, stands_in_for=self.list)
+        layout.addWidget(self.empty, 1)
 
         self._refilter("")
         self.field.setFocus()
@@ -171,6 +176,7 @@ class PickerDialog(QDialog):
             self.list.addItem(item)
         if self.list.count():
             self.list.setCurrentRow(0)
+        self.empty.say("" if rows else NOTHING_MATCHES)
 
     def _take(self) -> None:
         item = self.list.currentItem()
