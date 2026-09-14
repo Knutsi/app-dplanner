@@ -445,9 +445,10 @@ src/dplanner/
 │   ├── spec_git/            a git repository as a spec source: the subprocess door (client.py),
 │   │                        the locator, the blobless shallow sparse fetch and the size guard
 │   │                        (source.py), and the dialog that lists the remote's folders
-│   ├── coverage/            the spec and what became of it: passages → features → milestones →
+│   ├── coverage/            the plan against the spec: milestones → features → passages →
 │   │                        tests and docs (trace.py, one derived picture), the Coverage tab's
-│   │                        four lanes (scene.py), and `dplanner coverage show|spec|review`
+│   │                        four lanes as a drill-down (scene.py), and `dplanner coverage
+│   │                        show|spec|review`
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit

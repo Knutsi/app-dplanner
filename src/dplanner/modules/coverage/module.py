@@ -1,8 +1,8 @@
 """The coverage module's Qt half: the Coverage tab and the verbs that reach it.
 
-*Show Coverage* opens the tab on a project; *Show in Coverage* opens it lit on a step —
-its feature, its milestone, or its first test; *Show Spec Passage* opens the Specs tab
-washed at the passages a step reaches. Each is disabled with its reason when the step has
+*Show Coverage* opens the tab on a project; *Show in Coverage* opens it standing on a
+step — its feature, its milestone, or its first test; *Show Spec Passage* opens the
+Specs tab washed at the passages a step reaches. Each is disabled with its reason when the step has
 none, never hidden, so the canvas's right-click carries all three.
 """
 
@@ -34,13 +34,13 @@ class CoverageModule:
         return activity if isinstance(activity, CoverageActivity) else None
 
     def show_passage(self, project_id: NodeId, document: str, quote: str) -> None:
-        """The tab, lit on one passage — what the Specs tab's *Coverage* button runs."""
+        """The tab, standing on one passage — the Specs tab's *Coverage* button."""
         activity = self._opened(project_id)
         if activity is not None:
             activity.focus_passage(document, quote)
 
     def show_step(self, step_id: StepId) -> None:
-        """The tab, lit on what ``step_id`` is in the trace."""
+        """The tab, standing on what ``step_id`` is in the trace."""
         deps = self._deps
         if not deps.library.has(step_id):
             return
@@ -68,8 +68,8 @@ class CoverageModule:
                 group="open",
                 order=32,
                 icon=coverage_icon,
-                tip="The spec's passages, the features read from them, their milestones, "
-                "tests and docs — as one picture",
+                tip="The milestones, the features under them, the spec passages they "
+                "were read from and the tests and docs that prove them — as one picture",
                 state=self._on_a_project,
                 run=self._open,
             )
@@ -82,7 +82,7 @@ class CoverageModule:
                 group="open",
                 order=50,
                 icon=coverage_icon,
-                tip="Light this step's path through the coverage picture",
+                tip="Stand this step up in the coverage picture",
                 state=self._traced,
                 run=self._show_step,
             )

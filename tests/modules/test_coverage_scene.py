@@ -1,5 +1,6 @@
-"""The Coverage tab: lanes, cards and links over a real project; a pick lights a path
-and scrolls the other lanes; a double-click opens the thing; the verbs that reach it."""
+"""The Coverage tab: lanes, cards and links over a real project; the picks are the
+drill-down that fills the lanes to their right; a double-click opens the thing; the
+verbs that reach it; and the size hint the splitter has to be able to trust."""
 
 import pytest
 from tests.modules.test_spec import imported
@@ -9,7 +10,13 @@ from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.modules.coverage.activity import CoverageActivity
 from dplanner.modules.coverage.module import NO_PASSAGE_REASON, NOT_TRACED_REASON
-from dplanner.modules.coverage.scene import LANE_MIN_W, LaneItem
+from dplanner.modules.coverage.scene import (
+    GUTTER,
+    LANE_MIN_W,
+    NOTHING_PROVEN,
+    PICK_A_FEATURE,
+    LaneItem,
+)
 from dplanner.modules.coverage.trace import FEATURES, MILESTONES, OUTCOMES, SPEC
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.aspect import FeatureSource
@@ -64,48 +71,85 @@ def feature_card(project, title):
     return f"feature:{step.id}"
 
 
-def test_the_lanes_hold_the_trace(project, tab):
-    assert ids(tab, SPEC) == ["doc:guide", "passage:guide:0", "passage:guide:1"]
-    assert ids(tab, FEATURES) == [feature_card(project, "Import"), feature_card(project, "Export")]
-    # A milestone, and the bucket for the feature none of them gathers.
+def test_the_lanes_open_on_the_questions_and_the_answers_wait(project, tab):
+    """Milestones and features stand from the start; the spec and the outcomes wait to be
+    asked for, and say which pick would fill them."""
     assert len(ids(tab, MILESTONES)) == 2 and ids(tab, MILESTONES)[0].startswith("milestone:")
     assert ids(tab, MILESTONES)[1] == "bucket:none"
-    assert len(ids(tab, OUTCOMES)) == 30
-    assert len(tab.scene.links) == 2 + 2 + 30
+    assert ids(tab, FEATURES) == [feature_card(project, "Import"), feature_card(project, "Export")]
+    assert ids(tab, SPEC) == [] and ids(tab, OUTCOMES) == []
+    assert tab.scene.lanes[SPEC].hint == PICK_A_FEATURE
+    assert tab.scene.lanes[OUTCOMES].hint == PICK_A_FEATURE
+    # Only the lines between two cards that stand are drawn: each feature to its milestone.
+    assert len(tab.scene.links) == 2
     assert "guide · 2 of 3 paragraphs cited" in tab.summary.text()
     assert not tab.review_action.isEnabled()
 
 
-def test_a_pick_lights_the_path_and_scrolls_every_other_lane(project, tab):
+def test_a_milestone_narrows_the_features_and_a_feature_stands_its_spec_and_outcomes(project, tab):
+    _work, imp, beta, _export = project.steps
     scene = tab.scene
-    outcomes = scene.lanes[OUTCOMES]
-    outcomes.set_offset(outcomes.max_offset())  # Scrolled to the bottom beforehand.
-    assert outcomes.offset > 0
-    features = scene.lanes[FEATURES]
+    scene.pick(f"milestone:{beta.id}")
+    assert ids(tab, FEATURES) == [feature_card(project, "Import")]  # Export is under none.
+    assert ids(tab, SPEC) == [] and scene.lanes[SPEC].hint == PICK_A_FEATURE
+    assert [link.lit for link in scene.links] == [True]
+
+    scene.pick(feature_card(project, "Import"))  # Another lane: the milestone stays picked.
+    assert scene.picked == {f"milestone:{beta.id}", feature_card(project, "Import")}
+    assert ids(tab, SPEC) == ["doc:guide", "passage:guide:0"]
+    assert len(ids(tab, OUTCOMES)) == 30  # The 30 tests behind it, and no other feature's.
+    assert len(scene.links) == 1 + 1 + 30
+    assert all(link.lit for link in scene.links if link.target == f"feature:{imp.id}")
+
+    # A feature the picked milestone does not gather cannot be stood up beside it.
+    scene.pick(feature_card(project, "Export"))
+    assert scene.picked == {f"milestone:{beta.id}"} and ids(tab, SPEC) == []
+
+
+def test_ctrl_click_adds_within_one_lane_and_a_plain_click_replaces(project, tab):
+    scene = tab.scene
     scene.pick(feature_card(project, "Import"))
-    lit = {card_id for card_id, card in scene.cards.items() if card.opacity() == 1.0}
-    assert lit == tab.trace.path(feature_card(project, "Import")).items
-    assert scene.cards[feature_card(project, "Export")].opacity() < 1.0
-    assert scene.cards[feature_card(project, "Import")].selected
-    assert [link.lit for link in scene.links if link.source.item.id == "passage:guide:1"] == [False]
-    assert outcomes.offset == 0.0  # Brought its first lit card into view…
-    assert features.offset == 0.0  # …while the picked lane never moved.
+    scene.pick(feature_card(project, "Export"), True)
+    assert ids(tab, SPEC) == ["doc:guide", "passage:guide:0", "passage:guide:1"]
+    scene.pick(feature_card(project, "Export"), True)  # Picking it again takes it back out.
+    assert scene.picked == {feature_card(project, "Import")}
+    scene.pick(feature_card(project, "Export"))  # A plain click replaces its lane's picks.
+    assert scene.picked == {feature_card(project, "Export")}
+    assert ids(tab, SPEC) == ["doc:guide", "passage:guide:1"]
+    assert ids(tab, OUTCOMES) == [] and scene.lanes[OUTCOMES].hint == NOTHING_PROVEN
     scene.pick(None)
-    assert all(card.opacity() == 1.0 for card in scene.cards.values())
-    assert all(link.lit is None for link in scene.links)
+    assert scene.picked == frozenset() and ids(tab, SPEC) == []
 
 
-def test_a_pick_publishes_the_step_and_a_background_pane_stays_quiet(services, project, tab):
-    work, imp, _beta, _export = project.steps
+def test_a_pick_publishes_every_picked_step_and_a_background_pane_stays_quiet(
+    services, project, tab
+):
+    work, imp, _beta, export = project.steps
     tab.scene.pick(feature_card(project, "Import"))
     assert services.context.current().selected_entities("step") == [imp.id]
-    tab.scene.pick("test:T100")
-    assert services.context.current().selected_entities("step") == [work.id]
-    tab.scene.pick("passage:guide:0")
-    assert services.context.current().selected_entities("step") == []
-    tab.on_deactivated()
+    tab.scene.pick(feature_card(project, "Export"), True)
+    assert services.context.current().selected_entities("step") == [imp.id, export.id]
+    tab.scene.pick("test:T100")  # A test in the outcomes lane: the step it hangs off.
+    assert services.context.current().selected_entities("step") == [imp.id, export.id, work.id]
+    tab.on_deactivated()  # A background pane does not speak for the user.
     tab.scene.pick(feature_card(project, "Import"))
-    assert services.context.current().selected_entities("step") == []
+    assert services.context.current().selected_entities("step") == [imp.id, export.id, work.id]
+
+
+def test_a_lane_keeps_its_place_across_a_refresh(services, project, tab):
+    """A rebuild is a rebuild of the cards, not of what the lane stands: a change
+    elsewhere in the project must not scroll the reader back to the top."""
+    _work, imp, _beta, _export = project.steps
+    tab.scene.pick(feature_card(project, "Import"))
+    outcomes = tab.scene.lanes[OUTCOMES]
+    outcomes.set_offset(96.0)
+    services.document.set_field(imp.id, "title", "Import, renamed")
+    services.debounce.flush_all()
+    assert [card.item.id for card in outcomes.cards][:1] == ["test:T100"]
+    assert outcomes.offset == 96.0
+    # But a lane that now stands something else opens at the top.
+    outcomes.set_cards(list(outcomes.cards)[:5])
+    assert outcomes.offset == 0.0
 
 
 def test_a_double_click_opens_the_thing(services, project, tab, monkeypatch):
@@ -143,7 +187,22 @@ def test_the_lanes_relayout_across_every_width_without_recursing(tab):
     assert tab.scene.sceneRect().width() >= 4 * LANE_MIN_W
 
 
-def test_the_wheel_scrolls_one_lane_and_the_thumb_says_so(tab):
+def test_the_view_never_reports_a_width_it_was_given(tab):
+    """A ``QGraphicsView``'s own size hint is its scene rect, and this scene is laid to
+    the viewport: a splitter honouring that widens the view, which widens the hint."""
+    hint, floor = tab.view.sizeHint(), tab.view.minimumSizeHint()
+    assert floor.width() < hint.width() < 4 * LANE_MIN_W + 4 * GUTTER
+    for width in (400, 900, 1600):
+        tab.view.resize(width, 500)
+        assert tab.view.sizeHint() == hint
+        assert tab.view.minimumSizeHint() == floor
+    # And the lanes fit their own extent exactly: no scroll bar comes and goes on a drag.
+    tab.view.resize(1200, 500)
+    assert tab.scene.sceneRect().width() == 1200
+
+
+def test_the_wheel_scrolls_one_lane_and_the_thumb_says_so(project, tab):
+    tab.scene.pick(feature_card(project, "Import"))  # Its 30 tests overflow the lane.
     outcomes = tab.scene.lanes[OUTCOMES]
     assert outcomes.thumb() is not None and outcomes.offset == 0.0
     outcomes.set_offset(96.0)
@@ -165,7 +224,7 @@ def test_the_step_verbs_reach_the_tab(services, project, tab):
     greyed = show.state(on(plain.id))
     assert greyed.enabled is False and greyed.label == NOT_TRACED_REASON
     services.actions.run("coverage.show_step", on(beta.id))
-    assert tab.scene.lit == f"milestone:{beta.id}"
+    assert tab.scene.picked == {f"milestone:{beta.id}"}
 
     passage = services.actions.spec("coverage.show_passage")
     assert passage.state(on(imp.id)).enabled
@@ -184,7 +243,9 @@ def test_the_specs_tab_jumps_back_to_the_passage(services, project, tab):
     cursor.setPosition(editor.document().toPlainText().index("a CSV"))
     editor.setTextCursor(cursor)
     specs.to_coverage.trigger()
-    assert tab.scene.lit == "passage:guide:0"
+    # Landing on a passage picks what it takes to stand it up: the feature citing it.
+    assert tab.scene.picked == {feature_card(project, "Import")}
+    assert ids(tab, SPEC) == ["doc:guide", "passage:guide:0"]
 
 
 def test_the_tab_follows_the_project(services, project, tab):

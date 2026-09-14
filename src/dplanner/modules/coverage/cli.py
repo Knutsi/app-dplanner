@@ -22,6 +22,7 @@ from dplanner.modules.coverage.trace import (
     FEATURES,
     MILESTONES,
     NO_MILESTONE,
+    OUTCOMES,
     SPEC,
     DocumentCoverage,
     Item,
@@ -216,7 +217,7 @@ def _trace_json(trace: Trace, *, document: str | None, feature: str | None) -> d
 def _kept(trace: Trace, *, document: str | None, feature: str | None) -> set[str]:
     keep = {item.id for item in trace.items}
     if feature is not None:
-        keep &= trace.path(f"feature:{feature}").items
+        keep &= trace.path(f"feature:{feature}")
     if document is not None:
         docs = {
             item.id
@@ -231,12 +232,17 @@ def _kept(trace: Trace, *, document: str | None, feature: str | None) -> set[str
     return keep
 
 
+def _serves(trace: Trace, column: int, token: str, keep: set[str]) -> list[Item]:
+    """The items of ``column`` that serve ``token`` — the one relation the picture is
+    made of, read straight off the items rather than through the lines drawn between
+    them: the terminal walks the plan from the spec down, whatever order the lanes sit in.
+    """
+    return [item for item in trace.column(column) if token in item.features and item.id in keep]
+
+
 def _render_show(trace: Trace, *, document: str | None, feature: str | None) -> str:
     keep = _kept(trace, document=document, feature=feature)
     by_id = {item.id: item for item in trace.items}
-    downstream: dict[str, list[str]] = {}
-    for link in trace.links:
-        downstream.setdefault(link.source, []).append(link.target)
     lines: list[str] = []
     seen_features: set[str] = set()
 
@@ -250,18 +256,13 @@ def _render_show(trace: Trace, *, document: str | None, feature: str | None) -> 
         note = f"  ({item.detail})" if item.detail else ""
         lines.append(f"{indent}{item.title}{note}")
         seen_features.add(fid)
-        for target in downstream.get(item.id, ()):
-            if target not in keep:
-                continue
-            holder = by_id[target]
+        for holder in _serves(trace, MILESTONES, fid, keep):
             lines.append(
                 f"{indent}  ↳ {holder.title}" + (f" ({holder.detail})" if holder.detail else "")
             )
-            for outcome in downstream.get(holder.id, ()):
-                if outcome in keep and fid in by_id[outcome].features:
-                    out = by_id[outcome]
-                    what = "docs" if out.id.startswith("docs:") else out.detail.split(" · ")[0]
-                    lines.append(f"{indent}      {what:<6} {out.title}{mark(out)}")
+            for out in _serves(trace, OUTCOMES, fid, keep):
+                what = "docs" if out.id.startswith("docs:") else out.detail.split(" · ")[0]
+                lines.append(f"{indent}      {what:<6} {out.title}{mark(out)}")
 
     for doc in trace.column(SPEC):
         if doc.id not in keep or not doc.id.startswith("doc:"):
@@ -288,8 +289,8 @@ def _render_show(trace: Trace, *, document: str | None, feature: str | None) -> 
         (holder, out)
         for holder in trace.column(MILESTONES)
         if holder.id in keep and holder.id != NO_MILESTONE
-        for target in downstream.get(holder.id, ())
-        if target in keep and (out := by_id[target]).features == {holder.id}
+        for out in _serves(trace, OUTCOMES, holder.token, keep)
+        if out.features == {holder.token}
     ]
     if direct:
         lines.append("Held directly by a milestone:")

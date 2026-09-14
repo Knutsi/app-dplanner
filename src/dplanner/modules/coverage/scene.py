@@ -6,12 +6,18 @@ shows how much is out of view — and between neighbouring lanes a :class:`Gutte
 holding the :class:`LinkItem`\\ s. A link runs from a lane's right edge to the next lane's
 left edge, at the height of the cards it joins; a card scrolled out of view carries its
 end of the line past the gutter's clip, so the line is cut at the gutter's edge rather
-than drawn over a caption. The view never scrolls: the lanes do.
+than drawn over a caption. Down the page the lanes scroll and the view never does; across
+it the view scrolls only where four lanes at their narrowest genuinely do not fit, and a
+pick then brings the lane it fills into view.
 
-**Picking lights a path and scrolls the other lanes to it.** The scene asks the trace
-(:meth:`~dplanner.modules.coverage.trace.Trace.path`) and dims everything else to a
-fraction; every lane but the one the pick landed in brings its first lit card into view.
-The picked lane never moves — the card under the pointer stays under the pointer.
+**Picking is the drill-down, and a lane holds only what the picks stand up.** The scene
+asks the trace (:meth:`~dplanner.modules.coverage.trace.Trace.shown`) which items stand
+and builds a line only between two that do — so the lanes to the right fill as a
+milestone and then a feature are picked, rather than dealing a plan's whole spec out at
+once and fading the nine tenths nobody asked about. A click picks within its own lane and
+clears the lanes to its right; Ctrl (or Shift) adds to that lane; the ground and Escape
+clear. A lane whose content changed starts at the top, which is why nothing scrolls
+another lane for the reader.
 
 Every colour is read from the scene's palette at paint time (``items.live_palette``'s
 discipline), so a theme switch repaints the picture with nothing stored to go stale. Card
@@ -19,7 +25,7 @@ metrics and the shadow are ``theme/cards.py``'s, shared with the canvas; the sta
 wears is a mark — a dot, a ring — never a phrase.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
@@ -44,9 +50,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.modules.coverage.trace import COLUMN_TITLES, Item, Trace
+from dplanner.modules.coverage.trace import (
+    COLUMN_TITLES,
+    FEATURES,
+    MILESTONES,
+    SPEC,
+    Item,
+    Trace,
+)
 from dplanner.theme.cards import (
-    DIM_OPACITY,
     FILL_ALPHA,
     LIFT,
     LIFTED_SHADOW,
@@ -87,11 +99,18 @@ MARK_D = 8.0
 # This view's kinds, as the medallion vocabulary names them on the canvas.
 GLYPHS = {"feature": "layers", "milestone": "tag", "test": "beaker"}
 
-# What is not on the path fades to ``DIM_OPACITY`` (theme/cards.py, shared with the canvas's
-# spotlight); a lit link thickens like a selected edge.
+# A line into or out of a picked card thickens into the accent, like a selected edge.
 LINK_ALPHA = 70
 LINK_W = 1.4
 LINK_LIT_W = 2.4
+
+# What a lane with nothing in it says: which pick fills it, or why the picks left it bare.
+NO_MILESTONES = "No milestones — a milestone gathers the features under it"
+NO_FEATURES = "No features yet"
+NO_FEATURES_HELD = "No features under the milestones picked"
+PICK_A_FEATURE = "Pick a feature — Ctrl-click adds another"
+NOTHING_CITED = "The features picked were read from no passage"
+NOTHING_PROVEN = "The features picked carry no test or document"
 
 # Semantic marks: constant tints that read on every theme (DESIGN.md exception #2).
 BAD = QColor(220, 110, 110)
@@ -110,7 +129,7 @@ class CardItem(QGraphicsObject):
     """One item of the trace as a card: title, one secondary line, a medallion for its
     kind and a mark for its state. It reports presses; the scene decides what they mean."""
 
-    clicked = Signal(str)
+    clicked = Signal(str, bool)  # The item's id, and whether it adds to its lane's picks.
     double_clicked = Signal(str)
     menu_requested = Signal(str, QPointF)
 
@@ -297,7 +316,8 @@ class CardItem(QGraphicsObject):
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:
-            self.clicked.emit(self.item.id)
+            adding = Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+            self.clicked.emit(self.item.id, bool(event.modifiers() & adding))
         elif event.button() == Qt.MouseButton.RightButton:
             self.menu_requested.emit(self.item.id, event.screenPos())
         event.accept()
@@ -319,12 +339,11 @@ def _base_font(font: QFont) -> QFont:
 class LinkItem(QGraphicsPathItem):
     """A curve from one lane's edge to the next, at the height of the cards it joins."""
 
-    def __init__(self, index: int, source: CardItem, target: CardItem) -> None:
+    def __init__(self, source: CardItem, target: CardItem) -> None:
         super().__init__()
-        self.index = index
         self.source = source
         self.target = target
-        self.lit: bool | None = None
+        self.lit = False
         self.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
 
     def follow(self, left_x: float, right_x: float) -> None:
@@ -341,10 +360,9 @@ class LinkItem(QGraphicsPathItem):
         point = card.mapToScene(QPointF(0.0, card.height / 2))
         return parent.mapFromScene(point).y() if parent is not None else point.y()
 
-    def set_lit(self, lit: bool | None) -> None:
+    def set_lit(self, lit: bool) -> None:
         if lit != self.lit:
             self.lit = lit
-            self.setOpacity(DIM_OPACITY if lit is False else 1.0)
             self.update()
 
     def paint(
@@ -391,6 +409,8 @@ class LaneItem(QGraphicsObject):
         self.offset = 0.0
         self.content_height = 0.0
         self.cards: list[CardItem] = []
+        self.standing: list[str] = []  # What it stands, by id — kept across a rebuild.
+        self.hint = ""  # What to say while the lane stands nothing.
         self.clip = QGraphicsRectItem(self)
         self.clip.setPen(Qt.PenStyle.NoPen)
         self.clip.setBrush(Qt.BrushStyle.NoBrush)
@@ -402,6 +422,20 @@ class LaneItem(QGraphicsObject):
         self.setAcceptHoverEvents(True)
 
     # -- geometry ------------------------------------------------------------------------
+
+    def set_cards(self, cards: list[CardItem]) -> None:
+        """What this lane stands, in order. A lane whose content changed starts at the
+        top: an offset kept from a longer list would open it part-way down a new one."""
+        standing = [card.item.id for card in cards]
+        if standing != self.standing:
+            self.standing = standing
+            self.offset = 0.0
+        self.cards = cards
+
+    def release(self) -> None:
+        """Let the card items go before a rebuild. What the lane *stands* is unchanged, so
+        a refresh that did not touch this lane leaves it scrolled where the reader left it."""
+        self.cards = []
 
     def place(self, rect: QRectF, base: QFont) -> None:
         """Take a rect; stack the cards inside it; keep the scroll in range."""
@@ -481,6 +515,18 @@ class LaneItem(QGraphicsObject):
             int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter),
             self.title,
         )
+        if not self.cards and self.hint:
+            font.setBold(False)
+            painter.setFont(font)
+            painter.drawText(
+                self.clip.rect().adjusted(LANE_PAD, LANE_PAD, -LANE_PAD, -LANE_PAD),
+                int(
+                    Qt.AlignmentFlag.AlignHCenter
+                    | Qt.AlignmentFlag.AlignTop
+                    | Qt.TextFlag.TextWordWrap
+                ),
+                self.hint,
+            )
         thumb = self.thumb()
         if thumb is not None:
             ink = QColor(palette.text().color())
@@ -525,9 +571,10 @@ class LaneItem(QGraphicsObject):
 
 
 class CoverageScene(QGraphicsScene):
-    """The trace as lanes, cards and links; picks, scrolls and lights them."""
+    """The trace as lanes, cards and links: the picks say what stands, and a line joins
+    two things that both do."""
 
-    picked = Signal(str)  # An item id, or "" when the path is cleared.
+    picked_changed = Signal()
     activated = Signal(str)
     menu_requested = Signal(str, QPointF)
 
@@ -543,61 +590,114 @@ class CoverageScene(QGraphicsScene):
             self.addItem(gutter)
         self.cards: dict[str, CardItem] = {}
         self.links: list[LinkItem] = []
-        self.lit: str | None = None
+        self.picked: frozenset[str] = frozenset()
+        # Every card of every lane, whether or not the picks stand it: a card is built
+        # once per trace and hidden in between, because the click that changes the picks
+        # is delivered *by* one of them and must not be answered by deleting it.
+        self._held: list[list[CardItem]] = [[] for _ in self.lanes]
         self._viewport = (900.0, 600.0)
         self._font = QFont()
 
     # -- what is shown ---------------------------------------------------------------------
 
     def show_trace(self, trace: Trace, base: QFont | None = None) -> None:
-        """Rebuild wholesale; keep the lit path by id where the id survives."""
+        """Rebuild wholesale; keep the picks by id where the id survives."""
         if base is not None:
             self._font = base
         self.trace = trace
+        self._drop_links()
         for lane in self.lanes:
-            for card in lane.cards:
-                self.removeItem(card)
-            lane.cards = []
-        for link in self.links:
-            self.removeItem(link)
-        self.links = []
+            lane.release()
+        for card in self.cards.values():
+            self.removeItem(card)
         self.cards = {}
+        self._held = [[] for _ in self.lanes]
         for item in trace.items:
             card = CardItem(item, LANE_MIN_W)
             card.setParentItem(self.lanes[item.column].holder)
             card.clicked.connect(self.pick)
             card.double_clicked.connect(self.activated)
             card.menu_requested.connect(self.menu_requested)
-            self.lanes[item.column].cards.append(card)
+            self._held[item.column].append(card)
             self.cards[item.id] = card
-        for index, edge in enumerate(trace.links):
+        self.set_picked(self.picked)
+
+    def _sync(self) -> None:
+        """Stand what the picks stand up, join what stands, and lay the lanes out."""
+        shown = self.trace.shown(self.picked) if self.trace is not None else frozenset()
+        for lane, held in zip(self.lanes, self._held, strict=True):
+            standing = []
+            for card in held:
+                card.setVisible(card.item.id in shown)
+                card.set_selected(card.item.id in self.picked)
+                if card.item.id in shown:
+                    standing.append(card)
+            lane.set_cards(standing)
+            lane.hint = self._hint(lane.column, standing)
+        self._rebuild_links(shown)
+        self.relayout()
+
+    def _hint(self, column: int, standing: Sequence[CardItem]) -> str:
+        """What a lane with nothing in it says — which pick fills it, or why it is bare."""
+        if standing:
+            return ""
+        picked = [self.cards[item_id].item.column for item_id in self.picked]
+        if column == MILESTONES:
+            return NO_MILESTONES
+        if column == FEATURES:
+            return NO_FEATURES_HELD if MILESTONES in picked else NO_FEATURES
+        if FEATURES not in picked:
+            return PICK_A_FEATURE
+        return NOTHING_CITED if column == SPEC else NOTHING_PROVEN
+
+    def _drop_links(self) -> None:
+        for link in self.links:
+            self.removeItem(link)
+        self.links = []
+
+    def _rebuild_links(self, shown: Iterable[str]) -> None:
+        """One :class:`LinkItem` per link both of whose ends stand — never a line to a
+        card the picks left out, and never a line item nobody can see."""
+        self._drop_links()
+        standing = set(shown)
+        for edge in self.trace.links if self.trace is not None else ():
+            if edge.source not in standing or edge.target not in standing:
+                continue
             source, target = self.cards.get(edge.source), self.cards.get(edge.target)
             if source is None or target is None:
                 continue
-            drawn = LinkItem(index, source, target)
+            drawn = LinkItem(source, target)
+            drawn.set_lit(edge.source in self.picked or edge.target in self.picked)
             drawn.setParentItem(self.gutters[source.item.column])
             self.links.append(drawn)
-        self.relayout()
-        self.pick(self.lit if self.lit in self.cards else None, scroll=False)
 
     def relayout(self, viewport: tuple[float, float] | None = None) -> None:
-        """Lay the lanes across the viewport's width; never inside a paint."""
+        """Lay the lanes across the viewport's width; never inside a paint.
+
+        The widths are whole numbers and the scene rect is the lanes' own extent, so at
+        every width wider than the four at their narrowest the picture fits exactly and
+        no scroll bar comes and goes as the pane is dragged.
+        """
         if viewport is not None:
+            if viewport == self._viewport:
+                return  # The scroll bar coming and going resizes the viewport, not the lanes.
             self._viewport = viewport
         width, height = self._viewport
         lanes = len(self.lanes)
-        lane_w = max(LANE_MIN_W, (width - 2 * MARGIN - (lanes - 1) * GUTTER) / lanes)
+        gutter = GUTTER if width >= NARROW_VIEWPORT else GUTTER_NARROW
+        room = width - 2 * MARGIN - (lanes - 1) * gutter
+        lane_w = max(LANE_MIN_W, float(int(room / lanes)))
         lane_h = max(CAPTION_H + LANE_PAD * 2, height - 2 * MARGIN)
         x = MARGIN
         for index, lane in enumerate(self.lanes):
             lane.place(QRectF(x, MARGIN, lane_w, lane_h), self._font)
             if index < len(self.gutters):
                 self.gutters[index].setRect(
-                    QRectF(x + lane_w, MARGIN + CAPTION_H, GUTTER, lane_h - CAPTION_H - LANE_PAD)
+                    QRectF(x + lane_w, MARGIN + CAPTION_H, gutter, lane_h - CAPTION_H - LANE_PAD)
                 )
-            x += lane_w + GUTTER
+            x += lane_w + gutter
         self.setSceneRect(
-            QRectF(0.0, 0.0, max(width, x - GUTTER + MARGIN), max(height, lane_h + 2 * MARGIN))
+            QRectF(0.0, 0.0, max(width, x - gutter + MARGIN), max(height, lane_h + 2 * MARGIN))
         )
         self._follow_links()
 
@@ -609,39 +709,63 @@ class CoverageScene(QGraphicsScene):
 
     # -- picking ---------------------------------------------------------------------------
 
-    def pick(self, item_id: str | None, *, scroll: bool = True) -> None:
-        """Light ``item_id``'s path — or clear it — and bring the rest of it into view
-        in every lane but the one it is in."""
-        self.lit = item_id if item_id in self.cards else None
-        path = self.trace.path(self.lit) if self.trace is not None and self.lit else None
-        for card_id, card in self.cards.items():
-            card.set_selected(card_id == self.lit)
-            card.setOpacity(1.0 if path is None or card_id in path.items else DIM_OPACITY)
-        for link in self.links:
-            link.set_lit(None if path is None else link.index in path.links)
-        if scroll and path is not None and self.lit is not None:
-            picked_column = self.cards[self.lit].item.column
-            self._scroll_to(path.items, skip=picked_column)
-        self.picked.emit(self.lit or "")
+    def pick(self, item_id: str | None, adding: bool = False) -> None:
+        """Pick a card: within its own lane, clearing the lanes to its right — which is
+        what makes the picture a drill-down. ``adding`` (Ctrl or Shift) adds to that lane
+        instead, and picking a card the lane already holds takes it back out."""
+        card = self.cards.get(item_id or "")
+        if card is None:
+            self.set_picked(frozenset())
+            return
+        column = card.item.column
+        before = {other for other in self.picked if self.cards[other].item.column < column}
+        same = {other for other in self.picked if self.cards[other].item.column == column}
+        lane = (same ^ {card.item.id}) if adding else {card.item.id}
+        self.set_picked(frozenset(before | lane))
+
+    def set_picked(self, picked: frozenset[str]) -> None:
+        """Take the picks, drop the ones a lane to their left no longer stands, and sync."""
+        picked = frozenset(item_id for item_id in picked if item_id in self.cards)
+        while self.trace is not None:
+            narrowed = picked & self.trace.shown(picked)
+            if narrowed == picked:
+                break
+            picked = narrowed
+        self.picked = picked
+        self._sync()
+        self.picked_changed.emit()
 
     def focus(self, item_id: str) -> None:
-        """Light the path and bring the item itself into view too — a jump's landing."""
-        if item_id not in self.cards:
+        """Stand ``item_id`` up — picking whatever it takes — and bring it into view."""
+        card = self.cards.get(item_id)
+        if card is None or self.trace is None:
             return
-        self.pick(item_id)
-        card = self.cards[item_id]
+        self.set_picked(self._picks_for(card.item))
         self.lanes[card.item.column].scroll_into_view(card)
 
-    def _scroll_to(self, lit: frozenset[str], *, skip: int) -> None:
-        for lane in self.lanes:
-            if lane.column == skip:
-                continue
-            first = next((card for card in lane.cards if card.item.id in lit), None)
-            if first is not None:
-                lane.scroll_into_view(first)
+    def _picks_for(self, item: Item) -> frozenset[str]:
+        """What must be picked for ``item`` to stand: itself where it can be picked, and
+        otherwise whatever it serves — the features that cite a passage, the milestone
+        whose own work a test is."""
+        if item.token:
+            return frozenset({item.id})
+        if self.trace is None:
+            return frozenset()
+        return frozenset(
+            other.id for other in self.trace.items if other.token and other.token in item.features
+        )
 
     def lane_cards(self, column: int) -> Sequence[CardItem]:
         return self.lanes[column].cards
+
+    def lane_after(self, picked: Iterable[str]) -> QRectF | None:
+        """Where the lane a pick fills is, for a viewport too narrow to hold four —
+        picking a feature must not fill a lane the reader cannot see."""
+        columns = [self.cards[item_id].item.column for item_id in picked]
+        if not columns or max(columns) + 1 >= len(self.lanes):
+            return None
+        lane = self.lanes[max(columns) + 1]
+        return QRectF(lane.pos(), lane.boundingRect().size())
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:  # noqa: N802
         super().mousePressEvent(event)

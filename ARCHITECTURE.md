@@ -5037,7 +5037,8 @@ feature whose cone holds its step (two features → both, honestly), a milestone
 card all its features. What lights up on a pick is then one set intersection: a feature
 lights exactly its chain, a milestone everything behind it, a passage two features cite
 both — no case per kind. A milestone also carries a token of its own, so work it holds
-directly belongs to it and to nothing else. The alternative — walking links upstream and
+directly belongs to it and to nothing else; that same token is what the lanes' drill-down
+reads (below). The alternative — walking links upstream and
 downstream — would have needed a rule per column pair to keep one feature's tests from
 lighting another's, and it would have been wrong the first time a step sat in two cones.
 
@@ -5045,11 +5046,52 @@ lighting another's, and it would have been wrong the first time a step sat in tw
 scene: a lane is a clipped column with its own offset and a thumb only while it
 overflows, a link runs from one lane's edge to the next at the height of the cards it
 joins, and a card scrolled out of view carries its end past the gutter's clip, so the
-line is cut at the gutter rather than drawn over a caption. A pick scrolls every lane
-but the one it landed in — the card under the pointer stays under the pointer. Cards
-paint with the primitives the canvas paints with (`theme/cards.py`, moved there so two
-modules can share them without importing each other), and every colour is read from the
-scene's palette at paint time, so a theme switch costs nothing.
+line is cut at the gutter rather than drawn over a caption. Cards paint with the
+primitives the canvas paints with (`theme/cards.py`, moved there so two modules can share
+them without importing each other), and every colour is read from the scene's palette at
+paint time, so a theme switch costs nothing.
+
+**The lanes are a drill-down, and the plan leads it.** They read *Milestones · Features ·
+Spec · Tests & Docs*, and a lane stands only what the picks stand up: every milestone
+always, the features the picked milestones gather (every feature while none is picked),
+and — in the last two — what the picks *themselves* stand for. The first arrangement drew
+the derivation's own order, spec first, with everything standing at once and everything
+off the picked path faded to a fraction: a plan with a real specification opened as a wall
+of passages and test cards, four fifths of it dimmed, and the question it answered ("what
+became of this paragraph?") is the one a person asks *last*. A person opens this tab
+holding a milestone or a feature in their head, which is why those two lead and why the
+answers wait to be asked for. The rule that makes it one rule rather than four: an item
+that can be picked carries its own `token` beside the features it serves, and a lane to
+the right stands an item whose features meet the picked tokens. So a picked milestone
+stands up the work it holds *directly* and never its features' whole spec — and a lane
+with nothing in it says which pick would fill it, which is where the reader learns that
+Ctrl-click adds another.
+
+**A drill-down needs a selection, so a pick is a set.** A click picks within its own lane
+and clears the lanes to its right; Ctrl (or Shift) adds to that lane, and picking a card
+that lane already holds takes it back out; the ground and Escape clear. Picks the lanes
+to their left no longer stand are dropped as the picks settle, so the feature you picked
+under one milestone cannot survive picking another — and every picked card's step is
+published, because picking three features is picking three steps and the Step verbs act
+on all of them. Nothing is dimmed any more: a card that is not on the picture is not on
+the picture. What lights is the *lines* into and out of a picked card, and the picture
+carries fewer of them for it — the spec lane's document card is the hub on its right, so
+a feature's tests hang off the document it was read from rather than off every passage
+of it separately, which is the same claim drawn a dozen times.
+
+**A view whose extent is laid out to its viewport must not report that extent as its size
+hint.** `QGraphicsView.sizeHint()` *is* the scene rect mapped to the viewport, and this
+scene's rect is laid to the viewport — so a splitter honouring the hint widens the view,
+which widens the scene, which widens the hint: opening the tab pushed the index panel off
+the left of the window and dragging the seam jumped. `CoverageView` returns a constant
+instead. Two rules keep the rest of it still: the lane width is a whole number, so at any
+width wider than four lanes at their narrowest the picture fits its viewport *exactly*
+rather than by a rounding error that flickers the scroll bar on and off through a drag;
+and a relayout for a viewport size the scene already has returns at once, because the
+scroll bar coming and going resizes the viewport and would otherwise re-enter the layout.
+When four lanes at their narrowest genuinely do not fit, the bar is honest and a pick
+brings the lane it fills into view — a feature that filled a lane off the right of the
+pane would look like a pick that did nothing.
 
 ## A note is a record with a label, and the briefing carries an index
 

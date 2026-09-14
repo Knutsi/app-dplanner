@@ -1,4 +1,4 @@
-"""The trace: spec passages → features → milestones → tests and docs, as one picture.
+"""The trace: milestones → features → spec passages → tests and docs, as one picture.
 
 Nothing here is stored. A feature record says which passages it was read from, the graph
 says which milestone gathers its step and which tests sit in its cone, and the docs
@@ -8,13 +8,21 @@ every one through a callable on :class:`Readers`, handed in by the composition r
 the coverage module imports no other module and the picture cannot disagree with the
 verbs that wrote it.
 
+**The columns are a drill-down, and the plan leads it.** A milestone gathers features, a
+feature was read from passages and is proven by tests and documents — so the picture
+opens on what a person has in their head (the milestones, and every feature) and
+:meth:`Trace.shown` says what the picks stand up: the features the picked milestones
+gather, and the spec and the outcomes of the picked features alone. A whole plan's
+passages dealt out at once is a wall nobody reads.
+
 **The path rule is feature membership.** Every item carries the features it serves: a
 passage the features citing it, a feature itself, a milestone the features it gathers, a
 test or a docs card the feature whose cone holds its step. Asking what lights up when
 one item is picked is then one set intersection — a feature lights exactly its chain, a
 milestone everything behind it, a passage two features cite both — with no special case
-per kind. A milestone also carries a token of its own, so the tests and docs it holds
-*directly* (work under it that no feature gathers) belong to it and to nothing else.
+per kind. An item that *can* be picked also carries a ``token`` of its own: what it
+contributes when it is, which is why a milestone stands up the work it holds directly
+(work under it that no feature gathers) and never its features' whole spec.
 
 Two readers: the Coverage tab draws it, ``dplanner coverage …`` prints it.
 """
@@ -27,8 +35,8 @@ from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.scope import StepPredicate, gatherers
 from dplanner.domain.store import FilesFor
 
-SPEC, FEATURES, MILESTONES, OUTCOMES = 0, 1, 2, 3
-COLUMN_TITLES = ("Spec", "Features", "Milestones", "Tests & Docs")
+MILESTONES, FEATURES, SPEC, OUTCOMES = 0, 1, 2, 3
+COLUMN_TITLES = ("Milestones", "Features", "Spec", "Tests & Docs")
 NO_MILESTONE = "bucket:none"
 UNTITLED = "Untitled"
 
@@ -113,6 +121,9 @@ class Item:
     color: str = ""
     state: str = ""  # An anchor state, a docs state, a test result — one word, drawn as a mark.
     features: frozenset[str] = frozenset()
+    # What picking this item stands up: a feature's own id, a milestone's own token, ""
+    # for an item that is an answer rather than a question (a passage, a test, a document).
+    token: str = ""
     target: tuple[str, str] = ("", "")  # What double-clicking opens: (kind, key).
     muted: bool = False
 
@@ -162,12 +173,6 @@ class DocumentCoverage:
 
 
 @dataclass(frozen=True)
-class Path:
-    items: frozenset[str]
-    links: frozenset[int]  # Indexes into ``Trace.links``.
-
-
-@dataclass(frozen=True)
 class Trace:
     items: tuple[Item, ...]
     links: tuple[Link, ...]
@@ -180,18 +185,40 @@ class Trace:
     def column(self, column: int) -> list[Item]:
         return [item for item in self.items if item.column == column]
 
-    def path(self, item_id: str) -> Path:
-        """Everything sharing a feature with ``item_id`` — its upstream and downstream."""
+    def shown(self, picked: frozenset[str]) -> frozenset[str]:
+        """Which items stand while ``picked`` is picked — the lanes' drill-down.
+
+        Every milestone, always: that is the question the picture opens on. The features
+        the picked milestones gather, or every feature while no milestone is picked. And
+        in the spec and outcome lanes, what the picks *themselves* stand for — a picked
+        feature's passages, tests and documents, a picked milestone's own direct work —
+        never what a milestone's features reach, which is the wall the drill-down avoids.
+        """
+        chosen = [item for item in self.items if item.id in picked]
+        milestones = [item for item in chosen if item.column == MILESTONES]
+        standing = {item.id for item in self.items if item.column == MILESTONES}
+        gathered: set[str] = set()
+        for item in milestones:
+            gathered |= item.features
+        for item in self.items:
+            if item.column == FEATURES and (not milestones or item.features & gathered):
+                standing.add(item.id)
+        focus = {item.token for item in chosen if item.token and item.id in standing}
+        if focus:
+            for item in self.items:
+                if item.column in (SPEC, OUTCOMES) and item.features & focus:
+                    standing.add(item.id)
+        return frozenset(standing)
+
+    def path(self, item_id: str) -> frozenset[str]:
+        """Everything sharing a feature with ``item_id`` — its upstream and its
+        downstream, which is what ``coverage show --feature`` cuts the report down to."""
         picked = self.item(item_id)
         if picked is None:
-            return Path(frozenset(), frozenset())
-        tokens = picked.features
-        if not tokens:
-            return Path(frozenset({item_id}), frozenset())
-        return Path(
-            frozenset(item.id for item in self.items if item.features & tokens),
-            frozenset(index for index, link in enumerate(self.links) if link.features & tokens),
-        )
+            return frozenset()
+        if not picked.features:
+            return frozenset({item_id})
+        return frozenset(item.id for item in self.items if item.features & picked.features)
 
 
 def milestone_token(step_id: StepId) -> str:
@@ -224,9 +251,24 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
 
     ordered = sorted(features, key=rank)
     items: list[Item] = []
-    links: list[Link] = []
+    joined: dict[tuple[str, str], set[str]] = {}
+    # Which document cards each feature was read from, in the order the documents come:
+    # the spec lane's hubs, and where a test's or a document's line is drawn from.
+    hubs: dict[str, list[str]] = {}
 
-    # Column 0: every document, its passages under it.
+    def join(source: str, target: str, tokens: frozenset[str]) -> None:
+        """One line per neighbouring pair, whatever says so — two features citing one
+        passage out of one document is one line from that document to their shared test."""
+        joined.setdefault((source, target), set()).update(tokens)
+
+    def spec_hubs(tokens: frozenset[str]) -> list[str]:
+        found: list[str] = []
+        for feature in ordered:
+            if feature.id in tokens:
+                found += [hub for hub in hubs.get(feature.id, ()) if hub not in found]
+        return found
+
+    # The spec lane: every document, its passages under it.
     coverage: list[DocumentCoverage] = []
     for document in documents:
         cited: dict[str, tuple[Citation, list[str]]] = {}
@@ -249,6 +291,9 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
         covered = _coverage(document, anchored)
         coverage.append(covered)
         every = frozenset(fid for _cit, fids in passages for fid in fids)
+        for feature in ordered:
+            if feature.id in every:
+                hubs.setdefault(feature.id, []).append(f"doc:{document.name}")
         items.append(
             Item(
                 f"doc:{document.name}",
@@ -274,11 +319,9 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 )
             )
             for fid in fids:
-                links.append(
-                    Link(f"passage:{document.name}:{number}", f"feature:{fid}", frozenset({fid}))
-                )
+                join(f"feature:{fid}", f"passage:{document.name}:{number}", frozenset({fid}))
 
-    # Column 1: the features, milestone-first so the lines to column 2 rarely cross.
+    # The features lane, milestone-first so the lines to the milestones rarely cross.
     steps = {step.id: step for step in project.steps}
     for feature in ordered:
         step = steps.get(feature.step)
@@ -291,11 +334,12 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 "",
                 tone="good" if done else "feature",
                 features=frozenset({feature.id}),
+                token=feature.id,
                 target=("feature", feature.id),
             )
         )
 
-    # Column 2: the milestones, and a bucket for what none gathers.
+    # The milestones lane, and a bucket for what none gathers.
     gathered: dict[StepId, list[Feature]] = {milestone.id: [] for milestone in milestones}
     loose: list[Feature] = []
     for feature in ordered:
@@ -304,11 +348,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
             loose.append(feature)
         for milestone_id in held:
             gathered[milestone_id].append(feature)
-            links.append(
-                Link(
-                    f"feature:{feature.id}", milestone_token(milestone_id), frozenset({feature.id})
-                )
-            )
+            join(milestone_token(milestone_id), f"feature:{feature.id}", frozenset({feature.id}))
     colors = readers.milestone_colors(library, project)
     for milestone in milestones:
         members = gathered[milestone.id]
@@ -323,6 +363,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 tone="highlight",
                 color=colors.get(milestone.id, ""),
                 features=frozenset({f.id for f in members} | {milestone_token(milestone.id)}),
+                token=milestone_token(milestone.id),
                 target=("step", milestone.id),
             )
         )
@@ -334,13 +375,16 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 "Not in a milestone",
                 f"{len(loose)} feature{'' if len(loose) == 1 else 's'}",
                 features=frozenset(f.id for f in loose),
+                token=NO_MILESTONE,
                 muted=True,
             )
         )
         for feature in loose:
-            links.append(Link(f"feature:{feature.id}", NO_MILESTONE, frozenset({feature.id})))
+            join(NO_MILESTONE, f"feature:{feature.id}", frozenset({feature.id}))
 
-    # Column 3: each feature's tests and docs, then what a milestone holds directly.
+    # The outcomes lane: each feature's tests and docs, then what a milestone holds
+    # directly. What they hang off is the document they were read from — a line from every
+    # passage to every test of the same feature is one claim drawn a dozen times over.
     results = readers.results(project)
     placed_tests: dict[str, int] = {}  # test id → index in items, to union a shared one.
 
@@ -369,7 +413,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                     )
                 )
             for source in sources:
-                links.append(Link(source, f"test:{row.id}", tokens))
+                join(source, f"test:{row.id}", tokens)
 
     def add_docs(
         step_id: StepId, title: str, tokens: frozenset[str], sources: Sequence[str]
@@ -389,12 +433,11 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
             )
         )
         for source in sources:
-            links.append(Link(source, f"docs:{step_id}", tokens))
+            join(source, f"docs:{step_id}", tokens)
 
     for feature in ordered:
-        held = milestones_of(feature)
-        sources = [milestone_token(m) for m in held] or [NO_MILESTONE]
         tokens = frozenset({feature.id})
+        sources = spec_hubs(tokens)
         add_tests(readers.tests(library, project, feature.step, feature_stop), tokens, sources)
         add_docs(feature.step, feature.title, tokens, sources)
     for milestone in milestones:
@@ -404,10 +447,13 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
             for row in readers.tests(library, project, milestone.id, readers.is_milestone)
             if row.id not in placed_tests
         ]
-        add_tests(direct, frozenset({token}), [token])
+        # Work a milestone holds directly was read from no passage: it stands under the
+        # milestone's own pick, with nothing in the spec lane to come from.
+        add_tests(direct, frozenset({token}), ())
         tokens = frozenset({f.id for f in gathered[milestone.id]} | {token})
-        add_docs(milestone.id, milestone.title, tokens, [token])
+        add_docs(milestone.id, milestone.title, tokens, spec_hubs(tokens))
 
+    links = [Link(source, target, frozenset(tokens)) for (source, target), tokens in joined.items()]
     unsourced = tuple(feature for feature in features if not feature.citations)
     return Trace(tuple(items), tuple(links), tuple(coverage), unsourced)
 

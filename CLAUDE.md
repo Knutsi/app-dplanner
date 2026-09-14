@@ -1729,16 +1729,31 @@ root, stop and look for the registry or capability you have not found yet.
   again on every read — exact, then fuzzy (seeded by the quote's rarest words, kept at
   `DRIFT_RATIO`), then lost — and a stamped passage in a document that changed since is
   *behind* only when the diff touched its paragraph. `coverage/trace.py` arranges
-  passages → features → milestones → tests and docs from every module's Qt-free half
+  milestones → features → passages → tests and docs from every module's Qt-free half
   (assembled in the root's `_coverage_trace`), and **the path rule is feature
-  membership**: every item carries the features it serves, so what lights up on a pick
-  is one set intersection with no case per kind. `dplanner coverage show|spec|review`
-  print it; the Coverage tab draws it as four lanes with links in the gutters; the Specs
+  membership**: every item carries the features it serves, so what an item reaches is
+  one set intersection with no case per kind. `dplanner coverage show|spec|review`
+  print it, walking it the other way — from the spec down; the Specs
   tab washes passages (`show_passages`) and offers *Cited*, *Coverage* and *Cite…*;
   `steps.details` lands on a test or a feature through `FocusableExtension`. Uncovered
   text is a report (`coverage spec --uncovered`), never a lint; it is also how an old
   project is retrofitted. `ARCHITECTURE.md`'s *A citation is a quote and a digest* has
   the reasoning.
+- **The Coverage tab is a drill-down, and its lanes stand only what the picks stand up.**
+  *Milestones · Features · Spec · Tests & Docs*: every milestone always, the features the
+  picked milestones gather (all of them while none is picked), and in the last two what
+  the picks *themselves* stand for — `Trace.shown`, off each item's own `token` beside the
+  features it serves, so a picked milestone stands up the work it holds **directly** and
+  never its features' whole spec. Drawing the derivation's own order instead, everything
+  at once with the unpicked faded, opened a real plan as a wall of passages. A click picks
+  within its lane and clears the lanes to its right, Ctrl (or Shift) adds, the ground and
+  Escape clear; every picked card's step is published; an empty lane says which pick would
+  fill it. **A view whose extent is laid out to its viewport never reports that extent as
+  its size hint** — `QGraphicsView.sizeHint()` *is* the scene rect, so honouring it widened
+  the view, the scene and then the hint again, which is what pushed the index panel off the
+  window and made the seam jump. Lane widths are whole numbers (a rounding error flickers
+  the scroll bar through a drag) and a relayout for a size the scene already has returns at
+  once. `ARCHITECTURE.md`'s *A citation is a quote and a digest* has the reasoning.
 - **The topology is read before the graph is edited.** A project's topology (`dplanner
   topology set|show`; the Specs tab's pinned first row; `modules/spec.md`) says how its
   graph is shaped, and every CLI verb that reshapes a graph declares `edits_graph` on its
