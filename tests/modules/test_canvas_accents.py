@@ -149,6 +149,24 @@ def test_an_instructed_step_wears_the_spark_medallion(services, project, tab):
     assert "spark" in node(tab, step)._accent.icons
 
 
+def test_prose_reaches_a_card_one_settle_later_rather_than_within_the_turn(
+    app, services, project, tab
+):
+    """A card shows no prose but whether an agent instruction exists, so a keystroke in a
+    description must not buy a sync of every card — and the spark still arrives, a settle
+    later. The window's regime: in the suite's immediate mode both run inline."""
+    step = project.steps[0]
+    services.debounce.set_immediate(False)
+    try:
+        services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+        app.processEvents()  # The canvas's own turn goes by without a sync.
+        assert "spark" not in node(tab, step)._accent.icons
+        services.debounce.flush_all()
+        assert "spark" in node(tab, step)._accent.icons
+    finally:
+        services.debounce.set_immediate(True)
+
+
 @pytest.mark.parametrize(
     ("state", "chip_text", "chip_tone"),
     [

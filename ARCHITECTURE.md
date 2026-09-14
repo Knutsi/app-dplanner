@@ -5493,6 +5493,18 @@ what the primitive replaced.
 The canvas is the deliberate exception: at 0 ms it settles once per event-loop turn, so
 there is no span for a person to read and an indicator would only flicker.
 
+**Prose reaches the canvas after a settle.** A card shows no prose but whether an agent
+instruction exists — the spark — yet every keystroke in a description ran the whole sync,
+each card's accents derived before the scene could find that nothing had changed. So
+`text_edited` reaches the canvas through a settle of its own and every other signal through
+the 0 ms one: a title still lands as it is typed, the spark appears one settle after an
+instruction's first character, and behind Step Details, where a settle waits for the modal,
+typing costs the canvas nothing until the dialog closes. The settle carries no indicator —
+it almost never changes a card, and a spinner over the graph at every pause would announce a
+redraw that is not coming. Filtering *which* prose a card reads was the alternative and was
+not built: the composition root would have to keep a list of text keys in step with
+`step_accent`, a second answer that drifts the day an accent reads prose nobody named.
+
 **And the indicator is a motion, not a word.** It carried *Updating…* for one step. A word
 at the end of a control strip is the only prose on a row of glyphs, it is four times the
 width of what it replaced, and it is the one thing on that strip a translation would have
