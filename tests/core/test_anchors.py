@@ -1,5 +1,7 @@
 """Where a quote sits in a document, judged again on every read — the pure text half."""
 
+from functools import cache
+
 from dplanner.core import anchors
 from dplanner.core.anchors import (
     Anchor,
@@ -177,3 +179,33 @@ def test_locate_many_agrees_with_locate_and_walks_the_document_once(monkeypatch)
     monkeypatch.setattr(anchors, "normalised", counted)
     locate_many(text, quotes)
     assert calls.count(text) == 1
+
+
+def test_a_pass_handed_one_fold_walks_its_document_once_and_judges_the_same() -> None:
+    """Normalising the document is what a judgement costs, so a pass over many citations
+    hands every one the same memo — and must get exactly the verdicts a fresh walk gives,
+    exact, drifted and lost alike."""
+    quotes = [
+        "Every login is logged",
+        "Every login attempt is logged, with the operator's name",
+        "Nothing like this was ever written down here.",
+        "",
+    ]
+    walked: list[str] = []
+
+    def fold(text: str) -> tuple[str, list[int]]:
+        walked.append(text)
+        return normalised(text)
+
+    memo = cache(fold)
+    judged = [
+        anchor_in(SPEC, "markdown", quote, digest="b", stamped="a", stamped_text=SPEC, fold=memo)
+        for quote in quotes
+    ]
+    fresh = [
+        anchor_in(SPEC, "markdown", quote, digest="b", stamped="a", stamped_text=SPEC)
+        for quote in quotes
+    ]
+    assert judged == fresh
+    assert [anchor.state for anchor in judged] == ["anchored", "drifted", "lost", "anchored"]
+    assert walked == [SPEC]

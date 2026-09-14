@@ -75,11 +75,15 @@ def working_days_after(start: date, days: float) -> date:
 
     A fraction is still a day on a calendar — half a day of work lands on a date — so the
     count rounds up. A start on a weekend rolls forward to the Monday.
+
+    Arithmetic rather than a walk: the canvas dates every milestone on each sync, and
+    stepping a day at a time made that quadratic in the plan's length.
     """
     when = next_working_day(start)
-    for _ in range(max(1, ceil(days)) - 1):
-        when = next_working_day(when + _ONE_DAY)
-    return when
+    weeks, remainder = divmod(max(1, ceil(days)) - 1, WORKING_DAYS_PER_WEEK)
+    if when.weekday() + remainder >= SATURDAY:
+        remainder += 2  # The remainder crosses a weekend.
+    return when + timedelta(days=7 * weeks + remainder)
 
 
 def working_days_between(start: date, finish: date) -> int:

@@ -122,7 +122,11 @@ paths:
   and the Feature tab's passage list. Nothing stores where a quote sits: `core/anchors.py` finds it
   again on every read — exact, then fuzzy (seeded by the quote's rarest words, kept at
   `DRIFT_RATIO`), then lost — and a stamped passage in a document that changed since is
-  *behind* only when the diff touched its paragraph. `coverage/trace.py` arranges
+  *behind* only when the diff touched its paragraph. **Judging a passage is a walk of its
+  whole document**, so a reader of many makes one `anchor_sources` call for the project —
+  never one per feature, never `anchor_in` in a loop — and that pass normalises each
+  document once (`fold`); the lint asking per feature cost the Problems panel 570 ms after
+  every pause in typing on a 262-citation plan (`NOTES-FOR-APPFRAME.md` §46). `coverage/trace.py` arranges
   milestones → features → passages → tests and docs from every module's Qt-free half
   (assembled in the root's `_coverage_trace`), and **the path rule is feature
   membership**: every item carries the features it serves, so what an item reaches is

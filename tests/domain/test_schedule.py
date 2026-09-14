@@ -4,7 +4,8 @@ Plain pytest, no ``qapp`` — ``domain/`` loads no Qt, and this file exercising 
 is what proves it beyond the import check.
 """
 
-from datetime import date
+from datetime import date, timedelta
+from math import ceil
 
 import pytest
 
@@ -20,6 +21,7 @@ from dplanner.domain.schedule import (
     share_at,
     volume_words,
     working_days_after,
+    working_days_between,
 )
 
 # 2026-09-07 is a Monday; 2026-09-12 a Saturday.
@@ -63,6 +65,17 @@ def test_a_sixth_day_lands_on_the_next_monday():
 
 def test_half_a_day_still_lands_on_a_date():
     assert working_days_after(MONDAY, 0.5) == MONDAY
+
+
+def test_a_landing_counts_working_days_across_every_weekend_from_any_start():
+    """Arithmetic rather than a walk, so it is held to its inverse: from every day of a
+    fortnight, day N lands on a weekday that is working day N from the start's own Monday."""
+    for offset in range(14):
+        start = MONDAY + timedelta(days=offset)
+        for days in (0.5, 1, 2, 4.5, 5, 6, 7, 11, 23, 64, 250):
+            landing = working_days_after(start, days)
+            assert landing.weekday() < 5
+            assert working_days_between(next_working_day(start), landing) == max(1, ceil(days))
 
 
 def test_a_week_is_five_working_days():

@@ -339,7 +339,11 @@ reasoning.
   `services.debounce.set_immediate(True)`, so every trigger runs inline and a test asserts on
   a view the line after a push exactly as before; the deferred path is tested once with real
   timers and once per view by switching it off and calling `flush_all()`. Never
-  `qtbot.wait` for a rebuild. **And a coalesced view says that a rebuild is owed**: an
+  `qtbot.wait` for a rebuild. **A settle behind a modal waits for it**: one owned outside
+  the active modal re-arms rather than runs, so typing in Step Details rebuilds nothing
+  behind it; a 0 ms run never waits (`ARCHITECTURE.md`'s *A settle behind a modal waits
+  for it*).
+  **And a coalesced view says that a rebuild is owed**: an
   `UpdatingIndicator` (`framework/signalling.py`) at the right end of the strip — the
   caption row, in a view with no strip — `follow()`ing the view's one `Debounced`, whose
   `pending_changed` settles on a rebuild that raised as much as one that returned. Wire it
