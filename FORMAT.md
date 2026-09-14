@@ -26,6 +26,7 @@ Four places, and the choice is not stylistic:
 | The project directory | content, and anything a collaborator should see | your model, or `module_data` / `module_text` / a module file area | yes — it is in the files, and in the commits |
 | Per user, per machine (Qt-free) | what the CLI must also read: the project library | `core/config_dir.py` + `domain/library_file.py` | no — it is a list of *this machine's* paths |
 | Per user, per machine (Qt-free) | what happened and how long it took: the telemetry journal, and a native crash's stack | `core/telemetry.py` under `config_dir()/telemetry/` — see *The telemetry journal* | no — it is this machine's diagnostics |
+| Per user, per machine (Qt-free) | who is working on a plan right now: an agent's *at work* claim | `domain/at_work.py` under `config_dir()/at-work/` — see *An agent's at-work claim* | no — it is a process that is running here, now |
 
 | Per user, per machine (GUI only) | preferences: panel layout, model choices, the agent launch profiles | `framework/user_config.py`'s `get_global` (QSettings) | no |
 | Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
@@ -103,6 +104,36 @@ longer; the rest lives in the window's ring buffer. `crash.log` beside it is
 `faulthandler`'s: the Python stack at a native crash, appended to. Neither is versioned
 or migrated — a reader tolerates unknown keys and a torn last line, and `dplanner
 telemetry clear` is the only maintenance.
+
+## An agent's at-work claim
+
+`config_dir()/at-work/<project>-<step or "plan">.json` is what `dplanner agent-work …`
+writes and the window reads: one file per claim, so several agents on one plan each write
+only their own and no two can lose an update to each other.
+
+```json
+{
+  "format": 1,
+  "project": "8f2c…", "step": "",
+  "doing": "Cutting the graph from the payments spec",
+  "done": 8, "of": 20,
+  "started": "2026-09-14T09:12:00+00:00",
+  "seen": "2026-09-14T09:41:07+00:00"
+}
+```
+
+`seen` is the last sign of life, renewed by **every** `dplanner` run against that project
+from inside an agent's shell — the agent needs no heartbeat of its own. Nothing derived is
+stored: how long ago that was, whether it still reads as *at work*, and how far along the
+agent says it is are all computed on every read (`domain/at_work.py`).
+
+**It is never in the project directory**, and that is the whole reason it is a row of its
+own above: it changes every few seconds and means "a process is running on this machine,
+now". In a plan it would be committed into everybody's history, arrive at every
+collaborator as an outside change, and have the window adopting an edit every two seconds.
+The file name is only a name — a reader takes the project and step from inside the record —
+and there is no migration: a file this build cannot read is skipped, and a claim nobody has
+renewed for a day is deleted by the next writer.
 
 ## The project format
 

@@ -15,7 +15,18 @@ whole rebuild is only what refresh falls back to when the store cannot read what
 reports the collision; autosave stays paused (its refused batch keeps the edit safe) while a
 modal offers the ways out: hand both versions to the configured agent — Run Agent's
 launcher, reached through the root — take theirs, keep ours, or later. Nobody else can make
-that call, so nothing tries; *Later* leaves a status-bar button that reopens the question.
+that call, so nothing tries; *Later* leaves the question standing in the notice bar over the
+window's content, with *Settle…* on it, which is where it goes on being visible.
+
+**While an agent says it is at work, the question waits rather than interrupts.** An agent
+announcing itself (``domain/at_work.py``) is already on screen as a standing notice asking
+the developer to keep their hands off the graph; raising a modal over that is the same
+rudeness twice, at the worst possible moment, and it is what made a plan being worked feel
+like an argument. So the collision stands in the notice bar instead — the question is never
+lost, only never thrown — and the modal opens the moment the person presses *Settle…*, or on
+the next collision once the agent has gone quiet. That standing notice is also what retired
+the status-bar button this used to leave behind: one fact said in one place, and the one
+that says it is the one a person cannot be looking away from.
 """
 
 from collections.abc import Callable, Sequence
@@ -24,7 +35,7 @@ from dataclasses import dataclass
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QWidget
 
-from dplanner.domain.model import Library, StepId
+from dplanner.domain.model import Library, ProjectId, StepId
 from dplanner.domain.store import Conflict
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -35,9 +46,10 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import Context
+from dplanner.framework.notices import Notice
 from dplanner.framework.session import RefreshResult, SessionControl
-from dplanner.framework.widgets import StatusBarButton, confirm
-from dplanner.framework.window import StatusHost
+from dplanner.framework.widgets import confirm
+from dplanner.framework.window import NoticeHost, StatusHost
 from dplanner.framework.window_watch import WatchableRepository, WorkspaceWatcher
 from dplanner.modules.library_watch.view import (
     AGENT,
@@ -49,6 +61,8 @@ from dplanner.modules.library_watch.view import (
 )
 
 MODULE_ID = "library_watch"
+NOTICE_ID = "library_watch.conflicts"
+SETTLE = "Settle…"
 
 NO_STEP = "only a step's entries can be handed to an agent"
 
@@ -60,6 +74,7 @@ class LibraryWatchDeps:
     actions: ActionRegistry
     switcher: SessionControl
     status: StatusHost
+    notices: NoticeHost
     parent: QWidget
     library: Library  # Names the nodes a conflict is on.
     # Hands a step's conflicting entries to the configured agent (True when a shell was
@@ -67,6 +82,10 @@ class LibraryWatchDeps:
     # agent module and arrive through the root; None is a build without one.
     hand_to_agent: Callable[[StepId, Sequence[Conflict]], bool] | None = None
     agent_refusal: Callable[[StepId], str] | None = None
+    # What an agent says it is doing on a project — "" when none says anything. The one
+    # question this module asks another module, and the answer decides only whether the
+    # collision is *thrown* at the user or left for them to pick up.
+    agent_at_work: Callable[[ProjectId], str] | None = None
 
 
 class LibraryWatchModule:
@@ -80,7 +99,6 @@ class LibraryWatchModule:
         # The set the dialog was last raised for: a tick that finds the same conflicts
         # again — every tick, while they wait — must not raise it again.
         self._asked: frozenset[Conflict] = frozenset()
-        self._button = StatusBarButton("Changed here and outside — click to settle")
         # Raises the question out of the timer slot and the autosave cascade — a modal
         # from inside a flush would block whatever asked for it. Owned by the window, so a
         # refusal met on the way out (the close hook's last flush) asks nobody.
@@ -93,8 +111,6 @@ class LibraryWatchModule:
         deps = self._deps
         self._watcher.changed.connect(self._on_changed)
         deps.autosave.failed.connect(self._on_refused)
-        deps.status.add_status_widget(self._button)
-        self._button.clicked.connect(self._ask)
         deps.actions.register(
             ActionSpec(
                 id="library_watch.reload",
@@ -145,13 +161,16 @@ class LibraryWatchModule:
                 f"Took {adoption.applied} {noun} from outside DPlanner", 4000
             )
         self._conflicts = adoption.conflicts
-        self._button.show_text(waiting_words(len(adoption.conflicts)))
+        self._say_waiting()
         waiting = frozenset(adoption.conflicts)
-        if waiting and waiting != self._asked:
+        if not waiting:
+            self._asked = frozenset()
+        elif waiting != self._asked and not self._agent_words():
+            # Nobody else is mid-sentence: ask now. While an agent is at work the question
+            # stays in the notice bar and `_asked` stays behind, so the next settle after
+            # it goes quiet raises it — the question is deferred, never dropped.
             self._asked = waiting
             self._ask_soon.start()
-        elif not waiting:
-            self._asked = frozenset()
 
     # -- the question ---------------------------------------------------------------------------
 
@@ -160,6 +179,7 @@ class LibraryWatchModule:
         deps = self._deps
         if not conflicts or not deps.parent.isVisible():
             return  # A window on its way out has nobody to ask.
+        self._asked = frozenset(conflicts)
         step_id = self._anchor(conflicts)
         if deps.hand_to_agent is None:
             refusal = "no agent in this build"
@@ -168,9 +188,50 @@ class LibraryWatchModule:
         else:
             refusal = deps.agent_refusal(step_id) if deps.agent_refusal is not None else ""
         choice = ConflictDialog(
-            [self._describe(conflict) for conflict in conflicts], refusal, deps.parent
+            [self._describe(conflict) for conflict in conflicts],
+            refusal,
+            deps.parent,
+            # Who the other writer is, when it said so: the developer is choosing between
+            # their edit and that agent's, and a dialog that did not name it would be
+            # asking them to guess.
+            at_work=self._agent_words(),
         ).choose()
         self._resolve(choice, conflicts, step_id)
+
+    def _agent_words(self) -> str:
+        """What an agent says it is doing on a project a waiting conflict is in — "" when
+        none does, and "" in a build with no agent-at-work module."""
+        at_work = self._deps.agent_at_work
+        if at_work is None:
+            return ""
+        seen: list[str] = []
+        for project_id in dict.fromkeys(conflict.project_id for conflict in self._conflicts):
+            words = at_work(project_id)
+            if words and words not in seen:
+                seen.append(words)
+        return "; ".join(seen)
+
+    def _say_waiting(self) -> None:
+        """The standing notice: how many entries wait, and the one way to settle them.
+
+        It stands beside the agent's own notice rather than inside it — one says what is
+        happening, the other what is owed — and it is how the question stays visible while
+        the modal is stood down.
+        """
+        deps = self._deps
+        if not self._conflicts:
+            deps.notices.clear_notice(NOTICE_ID)
+            return
+        deps.notices.show_notice(
+            Notice(
+                id=NOTICE_ID,
+                words=waiting_words(len(self._conflicts)),
+                tone="error",
+                action=SETTLE,
+                tip="Choose what happens to each entry; this window is not saving until you do",
+                act=self._ask,
+            )
+        )
 
     def _resolve(
         self, choice: str, conflicts: tuple[Conflict, ...], step_id: StepId | None
@@ -192,7 +253,7 @@ class LibraryWatchModule:
             deps.repo.mark_seen(conflicts)
         self._conflicts = ()
         self._asked = frozenset()
-        self._button.show_text("")
+        deps.notices.clear_notice(NOTICE_ID)
         deps.autosave.resume()
 
     def _anchor(self, conflicts: Sequence[Conflict]) -> StepId | None:

@@ -2174,6 +2174,79 @@ read as "another writer" and reload the window. So `LibraryStore._snapshot` walk
 `PLAN_ENTRIES` — `project.dproj`, `modules/`, `steps/` — which is exactly the set a flush
 could overwrite, and therefore the only set the question is about.
 
+### An agent at work says so, and the window says it back
+
+Everything above makes the *mechanics* of two writers safe: the change lands, nothing is
+overwritten, a collision is put to the user. What none of it does is make the other writer
+**visible**. A developer with a window open sees a graph quietly rearranging itself and,
+the first time they type into a step an agent is also rewriting, a modal asking them to
+settle a collision they had no way to see coming. The mechanism was right and the
+experience was of being ambushed by a tool that knew something it was not saying.
+
+So the agent says it. `dplanner agent-work start '<what I am doing>'` writes a **claim** —
+project, optionally a step, one line of prose, optionally the agent's own count of what it
+is working through, when it started and when it was last heard from — and
+`modules/agent_at_work/` stands one notice per claim over the window's content until it is
+gone. Four decisions carry it.
+
+**Liveness is reported, never guessed.** This was the whole design question, and every
+version that tried to *decide* whether an agent was still there was worse than the one
+that refused to. A heartbeat the agent must remember is a heartbeat it will forget mid-task;
+a lease is a number that is either too short (the banner vanishes while the agent thinks for
+twenty minutes on one tool call) or too long (a crashed agent holds the screen for an hour);
+a pid is a process the announcing `dplanner` run does not own — its parent may be a shell
+that lives for the session or one that exits with the call, and nothing can tell which. So
+`domain/at_work.py` stores facts and derives readings: the claim carries `seen`, every
+reader prints how long ago that was, and `is_fresh` decides only whether the words read
+*is at work* or *was at work*. A quiet claim keeps its place and changes tense. It goes
+away three ways and no others — the agent ends it, a person clears it from the banner, or
+a claim made a day later sweeps one nobody has renewed since — and each of those is
+somebody actually knowing something, which no timeout is.
+
+**Every `dplanner` run is the sign of life, and only an agent's is.** An agent that is
+working is already running verbs — a status, a note, a link — so `cli/main.py` renews the
+project's standing claims on every invocation and the agent never carries a heartbeat of
+its own. It never *makes* a claim: running a verb is evidence for a claim somebody made,
+not a claim of its own. And the renewal is handed to the run only from inside an agent's
+shell — `entry.py` passes the board when `agent_shell_marker()` says so, the same fact the
+window word is refused on, read from the other side — because a developer running
+`dplanner step list` in their own terminal would otherwise be vouching for an agent that
+died an hour ago.
+
+**A claim is this machine's, never the plan's.** It goes under `config_dir()/at-work/`
+beside the telemetry journal, for the reason FORMAT.md gives: a record that changes every
+few seconds and means "a process is running here, now" would, in a project directory, be
+committed into everybody's history, arrive at every collaborator as an outside change, and
+make the window adopt an edit every two seconds. One file per claim rather than one per
+project, so several agents on one plan — the four Run Agent will launch at once — never
+lose each other's updates to a read-modify-write race, and a reader is a directory listing.
+
+**The window makes no claim, ever.** Its only write is the clear. A window that could say
+"an agent is at work" would be a surface asserting something only the other process knows,
+and the first time it was wrong the banner would stop meaning anything. That is also why
+there is no window verb to start one and why `agent_at_work` registers no action beyond the
+row's own *Clear*.
+
+The payoff is the collision. `library_watch` now asks one question of this module — is an
+agent at work on the project this conflict is in? — and while the answer is yes it leaves
+its question in the notice bar and the status bar instead of raising the modal. The
+question is deferred, never dropped: the person presses *Settle…* when they are ready, the
+next collision after the agent goes quiet raises it as before, and the dialog names the
+agent in its own words, because *Take Theirs* means taking that agent's work and a dialog
+that did not say whose would be asking the developer to guess. The notice also replaced the
+status-bar button *Later* used to leave: with the question standing over the content there
+were two surfaces saying one thing, and the one that went is the one a person can look away
+from.
+
+What the banner is made of is the existing vocabulary and nothing new. DESIGN.md allows
+three motions in the whole application; the arc that says *something is running here* is
+one of them, and it leads a fresh claim. The tone is the reading — busy while the agent is
+at work, plain information once it has gone quiet. The count is the one amendment: a bar is
+for work whose end the application knows, and "never for an agent" was written when an
+agent's progress was unknowable. An agent that runs `agent-work set --done 8 --of 20` has
+declared a count, and a declared count is a count; a claim that declares none still gets
+the arc and no promise.
+
 ### A branch switched underneath the window is taken in, and said
 
 The window's own Switch Branch takes the tree in and drops the history (above). A switch

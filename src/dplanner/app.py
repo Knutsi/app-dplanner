@@ -13,6 +13,7 @@ a module subpackage from here is a layering violation the architecture test refu
 import faulthandler
 import sys
 from collections.abc import Sequence
+from functools import partial
 from pathlib import Path
 
 from PySide6.QtCore import QCoreApplication, Qt
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import QApplication
 
 from dplanner.assets import ICON_SIZES, icon_path
 from dplanner.core.telemetry import crash_log_path, current
+from dplanner.domain.at_work import AtWorkBoard
 from dplanner.domain.dictation import DictationProvider
 from dplanner.domain.library_file import resolve_library_path
 from dplanner.domain.seed import create_library
@@ -39,7 +41,12 @@ from dplanner.framework.splash import StartupSplash
 from dplanner.framework.theme_service import apply_saved_theme
 from dplanner.identity import APP_DOMAIN, APP_ID, APP_NAME, APP_VERSION
 from dplanner.menus import MENU_STRUCTURE
-from dplanner.modules import default_modules, dictation_providers, theme_providers
+from dplanner.modules import (
+    at_work_board,
+    default_modules,
+    dictation_providers,
+    theme_providers,
+)
 from dplanner.theme.providers import BUILTIN, ThemeProvider
 
 
@@ -136,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
     session_started(telemetry, library=library_path, version=APP_VERSION)
     code = 1
     try:
-        session = new_session(providers, dictation_providers())
+        session = new_session(providers, dictation_providers(), at_work_board())
         if open_at_startup(session, library_path):
             # Only once the window is up: the build itself blocks the GUI thread behind the
             # splash for as long as it takes, and the session's "open" span already says so.
@@ -158,6 +165,7 @@ def main(argv: list[str] | None = None) -> int:
 def new_session(
     theme_providers: Sequence[ThemeProvider] = (BUILTIN,),
     dictation_providers: Sequence[DictationProvider] = (),
+    at_work: AtWorkBoard | None = None,
 ) -> AppSession:
     """The session, wired to this application's model, menus and modules.
 
@@ -167,9 +175,13 @@ def new_session(
     different application. ``theme_providers`` is the machine's tuple from ``main``; the
     built-in alone by default, so a session built by a test never reads the desktop.
     ``dictation_providers`` likewise: none by default, so no test reaches a microphone.
+    ``at_work`` is where agents' claims are read from, and for the third time the same
+    rule: a board holding nothing by default, so a session built by a test never reads
+    what some agent is really doing on this machine.
     """
+    board = at_work if at_work is not None else AtWorkBoard(None)
     return AppSession(
-        module_factory=default_modules,
+        module_factory=partial(default_modules, board=board),
         repository=LibraryStore,
         menus=MenuStructure(MENU_STRUCTURE),
         seed=create_library,

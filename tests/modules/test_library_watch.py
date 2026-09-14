@@ -28,6 +28,14 @@ def module(session):
     return next(m for m in session.services.modules if m.id == "library_watch")
 
 
+def waiting_notice(session):
+    """The standing notice this module owns: the question, over the window's content."""
+    return next(
+        (n for n in session.services.window.notices.notices() if n.id == watch_module.NOTICE_ID),
+        None,
+    )
+
+
 def run_tracker(session):
     return next(m for m in session.services.modules if m.id == "step_agent_run")
 
@@ -80,11 +88,13 @@ class FakeDialog:
 
     asked: ClassVar[list[list[str]]] = []
     refusals: ClassVar[list[str]] = []
+    at_work: ClassVar[list[str]] = []
     answer = LATER
 
-    def __init__(self, rows, agent_refusal, _parent):
+    def __init__(self, rows, agent_refusal, _parent, at_work=""):
         FakeDialog.asked.append(list(rows))
         FakeDialog.refusals.append(agent_refusal)
+        FakeDialog.at_work.append(at_work)
 
     def choose(self):
         return FakeDialog.answer
@@ -93,7 +103,8 @@ class FakeDialog:
 @pytest.fixture(autouse=True)
 def _no_real_modal(monkeypatch):
     """A conflict raises the dialog through a zero-timer; a real one would hang the run."""
-    FakeDialog.asked, FakeDialog.refusals, FakeDialog.answer = [], [], LATER
+    FakeDialog.asked, FakeDialog.refusals, FakeDialog.at_work = [], [], []
+    FakeDialog.answer = LATER
     monkeypatch.setattr(watch_module, "ConflictDialog", FakeDialog)
 
 
@@ -265,7 +276,7 @@ def test_a_conflict_keeps_the_edit_pauses_autosave_and_asks(session, project, li
     watch._ask()
     assert FakeDialog.asked == [["Typed here · title and summary"]]
     assert FakeDialog.refusals == [watch_module.NO_STEP]  # A project entry: no agent.
-    assert not watch._button.isHidden()  # Later leaves the question reachable.
+    assert waiting_notice(session) is not None  # Later leaves the question reachable.
 
 
 def test_taking_theirs_adopts_and_resumes(session, project, library_file):
@@ -276,7 +287,7 @@ def test_taking_theirs_adopts_and_resumes(session, project, library_file):
     assert session.services.document.projects[0].title == "Agent titled"
     session.services.autosave.flush_now()
     assert not session.services.autosave.has_pending()
-    assert not watch._conflicts and watch._button.isHidden()
+    assert not watch._conflicts and waiting_notice(session) is None
 
 
 def test_keeping_mine_writes_over_theirs_and_resumes(session, project, library_file):
@@ -407,3 +418,70 @@ def test_the_conflict_dialog_is_on_the_frame_and_a_refused_agent_keeps_its_name(
     finally:
         dialog.deleteLater()
         refused.deleteLater()
+
+
+# -- while an agent says it is at work ----------------------------------------------------------
+
+
+def test_a_conflict_says_so_over_the_content_whether_or_not_it_asks(session, project, library_file):
+    """*Later* used to leave only a status-bar line. The question now stands where the
+    person is working, which is what lets the modal be held back at all."""
+    collide(session, project, library_file)
+    notice = waiting_notice(session)
+    assert notice is not None
+    assert notice.words.startswith("1 entry changed here and outside")
+    assert notice.tone == "error" and notice.action == watch_module.SETTLE
+
+
+def test_the_modal_stands_down_while_an_agent_says_it_is_at_work(
+    session, project, library_file, at_work_board
+):
+    """Two interruptions at the worst moment is one too many: the banner is already asking
+    the developer to keep their hands off the graph."""
+    at_work_board.start(project.id, doing="Rewriting the graph")
+    collide(session, project, library_file)
+    assert not FakeDialog.asked  # Nothing was thrown.
+    assert waiting_notice(session) is not None  # The question stands, reachable.
+
+
+def test_the_question_is_deferred_and_never_dropped(session, project, library_file, at_work_board):
+    """The person clicks *Settle…* when they are ready, and the dialog names who else was
+    writing — taking theirs means taking that agent's work."""
+    at_work_board.start(project.id, doing="Rewriting the graph")
+    watch = collide(session, project, library_file)
+    watch._ask()
+    assert FakeDialog.asked == [["Typed here · title and summary"]]
+    assert "Rewriting the graph" in FakeDialog.at_work[0]
+
+
+def test_once_the_agent_is_gone_the_next_collision_asks_again(
+    session, project, library_file, at_work_board
+):
+    at_work_board.start(project.id, doing="Rewriting the graph")
+    watch = collide(session, project, library_file)
+    assert not FakeDialog.asked
+
+    at_work_board.end(project.id)
+    agent_edits_the_project(library_file, "Agent titled twice")
+    watch._on_changed()
+    # The modal is raised out of the settle through a zero-timer, so what a test without an
+    # event loop can see is that it is armed — which is the whole assertion here.
+    assert watch._ask_soon.isActive()
+
+
+def test_the_dialog_names_the_other_writer_when_one_said_so(app):
+    """Taking theirs means taking that agent's work; a dialog that did not say whose would
+    be asking the developer to guess."""
+    from PySide6.QtWidgets import QLabel
+
+    from dplanner.modules.library_watch.view import ConflictDialog
+
+    said = "An agent is at work on Discovery — Rewriting the graph · heard just now"
+    dialog = ConflictDialog(["Typed here · title and summary"], "", None, at_work=said)
+    silent = ConflictDialog(["Typed here · title and summary"], "", None)
+    try:
+        assert any(said in label.text() for label in dialog.body.findChildren(QLabel))
+        assert not any("at work" in label.text() for label in silent.body.findChildren(QLabel))
+    finally:
+        dialog.deleteLater()
+        silent.deleteLater()

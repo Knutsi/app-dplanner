@@ -451,6 +451,10 @@ src/dplanner/
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
+│   ├── agent_at_work/       the other writer, made visible: an agent's own claim that it is
+│   │                        working this plan (`dplanner agent-work`, over `domain/at_work.py`)
+│   │                        standing over the window's content until it ends — and the one
+│   │                        question that holds the collision modal back while it does
 │   ├── install/             getting DPlanner onto this machine from the window: one dialog over `cli/install.py`, three rows and one button
 │   ├── checklist/           what this machine has of what DPlanner needs: the rows no feature owns, and the modal every module's rows are shown in
 │   ├── problems/            what is wrong with a plan, beside the canvas: the lint registry's

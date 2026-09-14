@@ -75,6 +75,14 @@ you work. So:
   (`agent set <step> --clear` merges one back without unmarking the step), and
   project-wide conventions belong in one standing instruction
   (`agent set --for-project <project> --file -`), not in every step.
+- **Say you are at work, before you start and while you go.** A DPlanner window may be
+  open on this plan, and the developer cannot see you: `dplanner agent-work start '<what
+  you are about to do>'` puts a standing banner over their content saying somebody else is
+  editing, `agent-work set '<what now>' --done N --of M` keeps it current, and `agent-work
+  end` takes it down. Add `--step S7` when you are working one step, so several agents on
+  one plan each say which work is theirs. Every other `dplanner` command you run renews it,
+  so you never need a heartbeat — but nothing else can end it, and a banner nobody ended is
+  one nobody believes next time.
 - **Do not invent structure the user did not ask for.** A plan with twenty imagined steps is
   harder to correct than an empty one.
 - **Show the shape.** `dplanner project graph <project>` renders the step graph as a

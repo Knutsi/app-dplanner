@@ -12,9 +12,10 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QByteArray, QSettings
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QMainWindow, QWidget
+from PySide6.QtWidgets import QMainWindow, QVBoxLayout, QWidget
 
 from dplanner.core.signals import Signal
+from dplanner.framework.notices import Notice, NoticeBar
 from dplanner.framework.panels import PanelArea, PanelDock
 from dplanner.framework.tabs import TabHost
 from dplanner.identity import APP_NAME
@@ -55,7 +56,17 @@ class AppWindow(QMainWindow):
         self.dock = dock
         self.panels_changed: Signal[str] = dock.panels_changed
         self.areas_changed: Signal[PanelArea] = dock.areas_changed
-        self.setCentralWidget(dock)
+        # Standing notices sit over the content, not in the status bar: a fact that holds
+        # while the person works has to be where they are working. The bar is invisible
+        # while nothing stands, so an ordinary window is exactly as it was.
+        self.notices = NoticeBar(self)
+        content = QWidget(self)
+        column = QVBoxLayout(content)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(self.notices)
+        column.addWidget(dock, 1)
+        self.setCentralWidget(content)
         self.statusBar().showMessage("Ready")
 
     # -- status (StatusHost) -----------------------------------------------------------------
@@ -65,6 +76,14 @@ class AppWindow(QMainWindow):
 
     def add_status_widget(self, widget: QWidget) -> None:
         self.statusBar().addPermanentWidget(widget)
+
+    # -- standing notices (NoticeHost) --------------------------------------------------------
+
+    def show_notice(self, notice: Notice) -> None:
+        self.notices.show_notice(notice)
+
+    def clear_notice(self, notice_id: str) -> None:
+        self.notices.clear_notice(notice_id)
 
     # -- panels (PanelHost) ------------------------------------------------------------------
 

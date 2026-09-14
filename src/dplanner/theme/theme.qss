@@ -511,6 +511,15 @@ QSplitter::handle:vertical:pressed {
     background-color: $BG_ELEVATED;
 }
 
+/* Standing notices over the window's content (framework/notices.py): the elevated ground
+   the panels wear, parted from the tabs by one hairline — the same seam a splitter draws,
+   because this is the same kind of edge and two vocabularies for one line is how a surface
+   grows its own look. No colour of its own: a notice's mood is its StatusLine's tone. */
+#NoticeBar {
+    background-color: $BG_ELEVATED;
+    border-bottom: 1px solid $BORDER;
+}
+
 /* A list of rich rows inside a panel: a well on the panel's elevated ground, the same
    contrast a plain field has, so a panel of lists and a panel of fields read alike. The
    rows themselves are the two-line delegate's. */
