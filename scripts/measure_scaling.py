@@ -784,8 +784,8 @@ def discard(harness: Harness, app: QApplication) -> None:
     The paste scenario copies through ``steps.copy``, which hands a Python-made ``QMimeData``
     to the clipboard; under the offscreen platform Qt keeps it in a global static that libc
     destroys *after* the interpreter, and its wrapper's destructor then calls into a
-    finalized Python — the exit-time segfault CLAUDE.md's *A worker that segfaults after
-    reporting green* describes, and ``tests/conftest.py`` clears after every test.
+    finalized Python — the exit-time segfault the `suite-crash` skill's *A worker that segfaults
+    after reporting green* describes, and ``tests/conftest.py`` clears after every test.
     """
     harness.session.close()
     QGuiApplication.clipboard().clear()

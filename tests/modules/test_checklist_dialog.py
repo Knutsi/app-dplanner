@@ -154,7 +154,7 @@ def test_a_machine_with_everything_says_so(app, services):
 
 def test_a_row_too_narrow_for_its_words_cuts_them_rather_than_widening_the_dialog(settled):
     """A row that wrapped would be a height that depends on a width inside a scroll area,
-    which is the shape that took the process down once (CLAUDE.md's *Checks*)."""
+    which is the shape that took the process down once (the `suite-crash` skill)."""
     dialog, _ran = settled
     row = dialog.rows[0]
     row.resize(120, row.height())

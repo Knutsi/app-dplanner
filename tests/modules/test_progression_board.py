@@ -44,8 +44,8 @@ def test_with_nothing_done_only_the_frontier_is_ready(services, project, tab):
 
 
 def test_reading_the_board_back_never_wraps_a_layout_item(monkeypatch, services, project, tab):
-    """A QLayoutItem wrapper is a double delete waiting for a gc pass (CLAUDE.md's crash
-    notes): the column keeps its own list of what it laid out and reads that, never the
+    """A QLayoutItem wrapper is a double delete waiting for a gc pass (the `suite-crash`
+    skill): the column keeps its own list of what it laid out and reads that, never the
     layout — including across a rebuild, which is what ``clear()`` used ``takeAt`` for."""
     from PySide6.QtWidgets import QLayout
 

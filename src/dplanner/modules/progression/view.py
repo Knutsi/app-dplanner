@@ -380,7 +380,7 @@ class StatusColumn(QFrame):
 
     def cards(self) -> list[StepCard]:
         # The list, never the layout: a QLayoutItem wrapper ``itemAt()`` hands out is a
-        # double delete waiting for a gc pass (CLAUDE.md's crash notes).
+        # double delete waiting for a gc pass (the `suite-crash` skill).
         return [widget for widget in self._held if isinstance(widget, StepCard)]
 
     def titles(self) -> list[str]:

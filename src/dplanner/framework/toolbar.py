@@ -238,7 +238,8 @@ class _Group(QWidget):
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(CAPTION_GAP if label else 0)
         # Added to its parent before it is filled: a parentless layout given widgets first
-        # leaves QWidgetItem wrappers alive on the Python side (CLAUDE.md, §14).
+        # leaves QWidgetItem wrappers alive on the Python side (CLAUDE.md's Qt rules,
+        # NOTES-FOR-APPFRAME.md §14).
         self.row = QHBoxLayout()
         column.addLayout(self.row)
         self.row.setContentsMargins(0, 0, 0, 0)

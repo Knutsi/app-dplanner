@@ -244,9 +244,10 @@ It targets the developer's own Omarchy VM by default and a throwaway container w
 the runner in the VM. A frozen build — `uv run pyinstaller dplanner.spec` — works on every
 platform and is how the spec stays correct between Windows runs.
 
-Layering rules are enforced by `tests/test_architecture.py`; the module recipe and the rules
-live in `CLAUDE.md`. `ARCHITECTURE.md` explains the shape and why. `DESIGN.md` is the UI
-standard, `FORMAT.md` the on-disk one.
+Layering rules are enforced by `tests/test_architecture.py`; the module recipe and the core
+rules live in `CLAUDE.md`, and the rules for each area in `.claude/rules/`
+(`scripts/rules.py for <path>` says which govern a file). `ARCHITECTURE.md` explains the
+shape and why. `DESIGN.md` is the UI standard, `FORMAT.md` the on-disk one.
 
 ## Layout
 
@@ -261,6 +262,7 @@ src/dplanner/
 ├── scripts/synthetic_library.py   a large library with the real aspect mix — for the harness, and for a window to feel
 ├── scripts/gc_catalog.py          a pytest plugin listing each test's Qt garbage in the collector's order
 ├── scripts/layout_item_double_delete.py   the layout-item double delete built to order, and the finalizer that stops it
+├── scripts/rules.py               which of the area rule files under .claude/rules/ govern a path, or a branch's diff
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 ├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
 ├── scripts/render_design_example.py  Debug ▸ Design Example — the modal, the table and the toolbars — both themes, to PNG

@@ -1,7 +1,8 @@
 # DPlanner's shape, and why
 
-`CLAUDE.md` carries these rules in their short, imperative form — this file is where the
-reasoning lives, so the short form does not have to be taken on faith.
+`CLAUDE.md` and its area files under `.claude/rules/` carry these rules in their short,
+imperative form — this file is where the reasoning lives, so the short form does not have to
+be taken on faith.
 
 app-framework's `docs/index.html` documents the machinery this is built on — the ten
 registries, the origin token, the two version axes, where state lives. This document covers
@@ -1124,7 +1125,7 @@ it made. Every later step that touches a surface points at them; DESIGN.md's *Br
 surface up* is the list of what to compare.
 
 **The dialogs pass put every dialog-shaped surface on the frame, and three rules came out
-of it** (`CLAUDE.md` states them; the renders are `docs/screenshots/s16-dialogs/`).
+of it** (`.claude/rules/shell-ui.md` states them; the renders are `docs/screenshots/s16-dialogs/`).
 **A settings page owns no outer margin.** Nine pages carried 20, 12 or no margin inside a
 dialog that added its own, so no two pages started their first caption at the same x, and
 one page was taller than the window with nothing to scroll it. The dialog is what knows
@@ -1149,7 +1150,7 @@ glyph has to follow the theme on a page that outlives it.
 
 ## A roster has three shapes: a table sets values in the row, a list stays a list, a well keeps its widgets
 
-`CLAUDE.md` has the rule; this is why. The tables-and-browsers pass (S15) took the last
+`.claude/rules/shell-ui.md` has the rule; this is why. The tables-and-browsers pass (S15) took the last
 hand-laid rosters onto the primitives, and each of them turned out to be one of three shapes.
 
 **A value set in a table's row belongs to the column, not to a widget in the cell.** The
@@ -2382,6 +2383,69 @@ store's own adoption of an outside change (*Adopting the other writer's changes 
 is the same shape one level down — a change nobody in this window decided, applied with an
 origin no view claims, off the stack — with one difference: it is *read off disk*, so it
 does not dirty anything.
+
+## The rulebook is loaded by where you work
+
+`CLAUDE.md` is loaded into every session whole, and on 13 September it was 152 KB — about
+38,000 tokens over 1,835 lines, nine times what it had been eighteen days before. Agents wrote
+to it in 30 of the last 55 sessions, because nearly every step settles a rule, and 56 merges
+had changed it on both sides. A session's first turn had doubled to about 98k tokens, paid
+again on each of a step's several hundred turns. None of that was the real cost. A rulebook of
+118 mechanical facts of equal weight is one in which the rule a change is about to break sits
+between a report's and a credential's, and Claude Code's own guidance is that a long
+instructions file is followed less well.
+
+So the rulebook is cut by **when a rule is needed**, and the trigger is the harness's rather
+than the model's judgement:
+
+- **The core, `CLAUDE.md`, always loads**: the principles, the checks, the layers, the
+  add-a-module recipe, and the mechanical facts that bind an edit wherever it is made — a
+  painter never trusts `option.palette`, a verb that does not apply is disabled and never
+  hidden, no subprocess runs in an action state. A rule belongs here when it has no path: it
+  is defined in `framework/` and applied in every module.
+- **Eleven area files under `.claude/rules/` load by path.** Each names the files it governs
+  in `paths:`, and Claude Code loads it when one of them is read — which is before any edit,
+  because an edit needs a read. The canvas's nineteen rules arrive with the first canvas file
+  an agent opens, and a report change never carries them.
+- **The crash forensics are a skill, `suite-crash`.** A diagnosis is a procedure reached for
+  by a symptom, which is what a model-invoked skill is for — told of a crashed worker in
+  three fresh sessions, a model loaded it before anything else all three times. The rules
+  those crashes left behind — never read a layout back, parent a layout before filling it —
+  are one line each in the core.
+
+**Why not one skill.** It was the first idea, and it is the right shape for the forensics and
+the wrong one for the rest: a skill loads when the model decides it is relevant, from a
+description capped at 1,536 characters, and "tint the squiggle" never makes a model think it
+needs "a painter never trusts `option.palette`". That is exactly the slip a rulebook exists to
+prevent. Nested per-directory `CLAUDE.md` files trigger by path too, but a rule does not follow
+a directory — the canvas spans `project_editor`, `framework` and `theme` — and a hook rebuilds
+what `paths:` already does, with its text arriving after the edit it was for.
+
+**What the path trigger cannot reach, and what does.** Measured on Claude Code 2.1.269 with an
+`InstructionsLoaded` log before anything moved: a Read loads the rule, a brace glob works, an
+unrelated file loads nothing, and a read in plan mode or by an Explore subagent loads it too.
+A `cat` through the shell and a Write of a new file load nothing, another agent CLI never reads
+`.claude/rules/`, and a plan is written before most of its files are read. `scripts/rules.py`
+answers the same question from the same `paths:` for all of those — `for <paths>` before a
+plan, `diff` before finishing — and `AGENTS.md` points Codex and OpenCode at both. It is two
+verbs and no search, because `grep` searches; and it lives in `scripts/` rather than the
+shipped CLI, because `dplanner` plans users' projects, its skill is generated from its
+registry, and the `dplanner` on PATH is the installed build, which would read one branch's
+rules with another branch's code.
+
+**Verbatim first.** The split moved every bullet and paragraph unchanged into exactly one file,
+checked mechanically, so it reviews as a move and a citation of a rule by its title still finds
+it. Trimming the long bullets — this file already carries the reasoning for 72 of them — is the
+next pass, one area at a time.
+
+**The core has a budget, and every module has an area.** `tests/test_rules.py` holds
+`CLAUDE.md` under 32 KiB, a fifth of what it was and small enough that adding to it means
+trimming it — the first turn of a fresh session with the same one-line prompt went from
+54,870 tokens to 23,036; asserts that every glob alternative still names a file, since a glob that names
+nothing is a rule nobody is handed; and makes every module package be claimed by an area or
+named in `UNSCOPED`, so a new module forces the question of which rules govern it.
+`.gitignore` carries `.claude/rules/` and the one skill into every worktree, and the rest of
+`.claude/` stays personal.
 
 ## The skill is a projection, not a document
 
@@ -5306,7 +5370,7 @@ the half of it that was worth having — work of a later release starting from n
 instead of from the release before it — is what `scope.crosses-milestones` already reports.
 The bare fact, which steps wait on nothing, is `order show`'s first wave. So the rule lives
 in the guide, where a recommendation belongs, and lint says nothing about it: the same
-judgement CLAUDE.md records for uncovered spec text, which is a report and never a lint.
+judgement `.claude/rules/collectors.md` records for uncovered spec text, which is a report and never a lint.
 
 `graph.orphan` is not part of that bet and was never in doubt. A step with no edge in
 either direction is on no graph, the canvas already rings it in the refusal red — the one
@@ -5776,9 +5840,9 @@ People with a stake in a project but no DPlanner — a sponsor, a product owner,
 colleague glancing at status — had nothing to look at. The answer is one HTML file per
 project that reads like a page and needs no server: the graph as the window draws it, the
 order, the time estimates, every step with everything the modules know about it, and a
-last section that says what DPlanner is and how to open the plan. `CLAUDE.md` has the rule
-in its short form (*A report is a publication, not a record*); this is why it is shaped
-the way it is.
+last section that says what DPlanner is and how to open the plan. `.claude/rules/cli.md` has
+the rule in its short form (*A report is a publication, not a record*); this is why it is
+shaped the way it is.
 
 **Modules say, one renderer shows.** A report is a question about *every* feature at once,
 and no module may import another, so no module can draw the page. The split that keeps

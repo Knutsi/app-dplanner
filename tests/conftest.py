@@ -190,7 +190,7 @@ def _collect_qt_garbage():
 
     The deferred deletes are dispatched first, for the same reason ``AppSession.close``
     dispatches its own: this fixture discards Qt objects with no event loop to follow, so
-    it owes them (CLAUDE.md's rule). Without it, a widget a test ``deleteLater``'d — a
+    it owes them (`.claude/rules/runtime.md`). Without it, a widget a test ``deleteLater``'d — a
     gallery cell, a replaced tab page — stays a live C++ child until some *later* test's
     ``session.close()`` dispatches every pending delete globally, which is exactly the
     cross-test object lifetime this fixture exists to prevent.
@@ -205,11 +205,11 @@ def _collect_qt_garbage():
 
     When a worker still dies with SIGSEGV in ``gc_collect -> subtype_dealloc -> ~QWidget``,
     the test it is reported against is only whichever one that worker was running —
-    ``CLAUDE.md``'s *Checks* section has the diagnosis recipe. One such crash (2026-09-01,
+    the ``suite-crash`` skill has the diagnosis recipe. One such crash (2026-09-01,
     roughly one full run in three) turned out to ride on working-tree module code that was
     rewritten before it ever shipped; the next (2026-09-04, deterministic for one worker's
     four tests) was root-caused with ``scripts/gc_catalog.py``: a ``QLayoutItem`` wrapper
-    cleared before its layout — CLAUDE.md's *A QLayoutItem wrapper is a double delete
+    cleared before its layout — the skill's *A `QLayoutItem` wrapper is a double delete
     waiting for a gc pass*. The policy that closes that one is installed below for every
     test that has an application, not only the ones built through the ``app`` fixture, so
     no test in a worker runs ahead of it.

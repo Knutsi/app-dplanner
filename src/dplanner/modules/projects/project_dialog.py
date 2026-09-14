@@ -171,7 +171,7 @@ class ElidedLabel(QLabel):
 
     Elision happens in the **paint**, never in a resize: a widget that rewrites its own
     text while being resized can change its size hint and drive the layout in a circle,
-    which is the shape behind CLAUDE.md's synchronous-layout crash. Painting cannot.
+    which is the shape behind the `suite-crash` skill's layout-loop crash. Painting cannot.
     The full text is the tooltip, so nothing is lost — and a path elides from the left,
     because a path's tail is what names it.
     """

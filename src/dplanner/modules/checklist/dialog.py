@@ -115,7 +115,7 @@ class _Row(QWidget):
     it; the *why* under it in secondary ink a point smaller, and only while there is one.
     **Both elide and neither wraps** — a row that grew taller as the dialog narrowed would
     be a height that depends on a width inside a scroll area, which is how the calendar once
-    took the process down (CLAUDE.md's *Checks*). The full words are the tooltip.
+    took the process down (the `suite-crash` skill). The full words are the tooltip.
 
     On the right, at most three: the remedy's own button where DPlanner can run the fix, a
     link where somebody else's page is the answer, and a ⋮ carrying what this row can be

@@ -143,7 +143,7 @@ class NoticeBar(QWidget):
         self._column.setContentsMargins(PANEL_MARGIN, FIELD_GAP, PANEL_MARGIN, FIELD_GAP)
         self._column.setSpacing(FIELD_GAP)
         # Our own list of what is in the layout: a layout is never read back (CLAUDE.md's
-        # *A QLayoutItem wrapper is a double delete waiting for a gc pass*).
+        # *Qt objects* rules; the `suite-crash` skill has the crash).
         self._rows: dict[str, _NoticeRow] = {}
         self.hide()
 

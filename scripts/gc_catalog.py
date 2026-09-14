@@ -1,6 +1,6 @@
 """A pytest plugin that catalogs the Qt-bearing garbage each test leaves, without freeing it.
 
-CLAUDE.md's recipe for a SIGSEGV inside the suite's boundary ``gc.collect()``: under
+`suite-crash`'s recipe for a SIGSEGV inside the suite's boundary ``gc.collect()``: under
 ``gc.DEBUG_SAVEALL`` nothing is freed, so the run cannot crash, and ``gc.garbage`` holds every
 collected cycle **in the order the collector would have cleared it** — which is the order
 that decides whether a wrapper dies before or after the C++ object it belongs to. Run one

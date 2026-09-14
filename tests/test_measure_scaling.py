@@ -3,8 +3,8 @@
 ``discard`` is the script's teardown, and the one thing it does that ``AppSession.close``
 does not is clear the clipboard: the paste scenario copies through ``steps.copy``, and a
 Python-made ``QMimeData`` left there dies in Qt's static destructors after Python has gone
-(CLAUDE.md's *A worker that segfaults after reporting green*). The suite's own fixture
-clears it after every test; the script has to do it itself.
+(the `suite-crash` skill's *A worker that segfaults after reporting green*). The suite's
+own fixture clears it after every test; the script has to do it itself.
 """
 
 from argparse import Namespace
