@@ -257,13 +257,33 @@ class ProjectActivity(EntityActivity):
         # Once per event-loop turn, not once per signal: a paste of forty steps is forty
         # signals and one sync, and a typed title still lands on the node as it is typed.
         self._sync_soon = Debounced(self._sync, 0, parent=self._page, service=deps.debounce)
+        # Prose after a settle instead: a card shows none of it but whether an agent
+        # instruction exists, and a sync derives every card before it can find that nothing
+        # changed. A settle also waits behind a modal, so typing in Step Details costs the
+        # canvas nothing until the dialog closes.
+        self._sync_after_prose = Debounced(self._sync, parent=self._page, service=deps.debounce)
+        library = self._product
         self._unsubscribes = [
             # Connected first, so a typing burst is sealed before the canvas re-syncs.
-            self._product.structure_changed.connect(self._on_structure),
-            # Every change inside this project, and none outside it. Prose reaches the
-            # node too — the spark glyph reads module_text — and sync diffs before
-            # repainting, so a keystroke that changes nothing it shows is free.
-            follow_project(self._product, self.project_id, self._sync_soon.trigger),
+            library.structure_changed.connect(self._on_structure),
+            # Every change inside this project, and none outside it.
+            follow_project(
+                library,
+                self.project_id,
+                self._sync_soon.trigger,
+                signals=(
+                    library.structure_changed,
+                    library.edges_changed,
+                    library.field_changed,
+                    library.module_data_changed,
+                ),
+            ),
+            follow_project(
+                library,
+                self.project_id,
+                self._sync_after_prose.trigger,
+                signals=(library.text_edited,),
+            ),
             *(
                 [deps.accents_changed.connect(self._on_accents_changed)]
                 if deps.accents_changed is not None

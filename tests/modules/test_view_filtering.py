@@ -39,7 +39,8 @@ VIEWS = [
 ]
 
 # Where each view keeps its indicator, from the activity the tab host hands back. The canvas
-# has none: it settles once per event-loop turn, not over the 300-500 ms a person can read.
+# has none: it settles once per event-loop turn, and its settle for prose almost never
+# changes a card.
 INDICATORS = [
     pytest.param(ORDER_KIND, "updating", id="order"),
     pytest.param(TIME_KIND, "updating", id="time"),

@@ -334,7 +334,8 @@ reasoning.
   project A's table to redraw for. What it calls is a `Debounced` (`framework/debounce.py`):
   `trigger()` restarts a single-shot timer, so a burst runs the rebuild once, over the latest
   state, and nothing queues — the canvas at 0 ms (once per event-loop turn, so a title still
-  lands on its node as it is typed), tables and lists after `SETTLE_MS` (300 ms), the Time tab
+  lands on its node as it is typed; prose after a settle, as a card shows none of it but the
+  spark), tables and lists after `SETTLE_MS` (300 ms), the Time tab
   after 500 ms. **Tests run in immediate mode**: the `session` fixture sets
   `services.debounce.set_immediate(True)`, so every trigger runs inline and a test asserts on
   a view the line after a push exactly as before; the deferred path is tested once with real
