@@ -146,7 +146,8 @@ paths:
   and the scene draws a line only between two lanes standing next to each other. A click
   picks within its lane and clears the lanes to its right, Ctrl (or Shift) adds, the
   ground and Escape clear; every picked card's step is published; an empty lane says which
-  pick would fill it. **A view whose extent is laid out to its viewport never reports that extent as
+  pick would fill it. A card that is a step — a milestone, a feature, a step — wears the
+  canvas's spine, its key up the left edge washed by status. **A view whose extent is laid out to its viewport never reports that extent as
   its size hint** — `QGraphicsView.sizeHint()` *is* the scene rect, so honouring it widened
   the view, the scene and then the hint again, which is what pushed the index panel off the
   window and made the seam jump. Lane widths are whole numbers (a rounding error flickers

@@ -40,8 +40,10 @@ from dplanner.theme.cards import (
     RESTING_SHADOW,
     SELECTED_BORDER_W,
     SELECTED_FILL_GAIN,
+    SPINE_W,
     over,
     paint_shadow,
+    paint_spine,
     title_font,
     title_lines,
 )
@@ -55,7 +57,6 @@ from dplanner.theme.tones import (
     CHIP_INFO_BORDER,
     CHIP_INFO_TINT,
     INVALID_TINT,
-    STATUS_TONES,
     VALID_TINT,
     recoloured,
     toned,
@@ -99,15 +100,6 @@ MUTED_TEXT_ALPHA = 110
 MUTED_SECONDARY_ALPHA = 80
 MUTED_FILL_ALPHA = 14
 MUTED_BORDER_ALPHA = 50
-
-# The spine: a strip down the node's left edge, clipped to the rounded body, carrying the
-# step's key read bottom-to-top and shaded by status. The chrome font's height plus five
-# or six pixels of air on either side of the key — at 18 it was two, and the number read
-# as jammed against the strip's edges; a four-character key runs some 30 px along it,
-# which the shortest card still has room for.
-SPINE_W = 26.0
-SPINE_FILL_ALPHA = 80  # A status tone's fill on the spine — a wash, not a swatch.
-SPINE_QUIET_ALPHA = 14  # No status to show: the spine is a shade darker than the body.
 
 BADGE_H = 14.0
 BADGE_PAD = 6.0
@@ -162,7 +154,6 @@ PAINT_MARGIN = max(
     LIFTED_SHADOW.drop + LIFTED_SHADOW.spread + 1.0,
 )
 
-SPINE_TONES = STATUS_TONES  # The spine says where the work stands, in the one vocabulary.
 CHIP_TONES = {
     "info": (CHIP_INFO_TINT, CHIP_INFO_BORDER),
     "attention": (CHIP_ATTENTION_TINT, CHIP_ATTENTION_BORDER),
@@ -265,7 +256,7 @@ def paint_node(
         painter.translate(0.0, -LIFT)
 
     paint_body(painter, palette, body, accent, state)
-    paint_spine(painter, palette, body, accent, text_colour)
+    paint_spine(painter, palette, body, accent.key_text, accent.spine_tone, text_colour)
     paint_marks(painter, palette, body, state)
     if accent.flagged:
         paint_problem(painter, body)
@@ -397,52 +388,6 @@ def problem_path(body: QRectF) -> QPainterPath:
         x += PROBLEM_WAVE
         up = not up
     return path
-
-
-def spine_rect(body: QRectF) -> QRectF:
-    return QRectF(body.left(), body.top(), SPINE_W, body.height())
-
-
-def spine_fill(palette: QPalette, tone: str) -> QColor:
-    """The spine's wash: the status tone at a wash's alpha, or a quiet shade of ink."""
-    toned = SPINE_TONES.get(tone)
-    fill = QColor(toned if toned is not None else palette.text().color())
-    fill.setAlpha(SPINE_FILL_ALPHA if toned is not None else SPINE_QUIET_ALPHA)
-    return fill
-
-
-def paint_spine(
-    painter: QPainter, palette: QPalette, body: QRectF, accent: NodeAccent, ink: QColor
-) -> None:
-    """The strip down the left edge: the status as a shade, the key read bottom-to-top.
-
-    Clipped to the rounded body so the strip's outer corners follow the card's, painted
-    after the body so the wash sits on the fill and under nothing. The key is set in the
-    chrome font, bold — it is the one thing on the card meant to be found from across
-    the graph — and rotated a quarter turn anticlockwise, the way a spine on a shelf
-    reads.
-    """
-    strip = spine_rect(body)
-    clip = QPainterPath()
-    clip.addRoundedRect(body, RADIUS, RADIUS)
-    painter.save()
-    painter.setClipPath(clip)
-    painter.fillRect(strip, spine_fill(palette, accent.spine_tone))
-    if accent.key_text:
-        font = QFont(painter.font())
-        font.setBold(True)
-        painter.setFont(font)
-        painter.setPen(ink)
-        metrics = QFontMetricsF(font)
-        length = metrics.horizontalAdvance(accent.key_text)
-        painter.translate(strip.center())
-        painter.rotate(-90.0)
-        painter.drawText(
-            QRectF(-length / 2, -metrics.height() / 2, length, metrics.height()),
-            int(Qt.AlignmentFlag.AlignCenter),
-            accent.key_text,
-        )
-    painter.restore()
 
 
 def paint_title(

@@ -2620,9 +2620,9 @@ def test_the_spine_carries_the_key_and_is_shaded_by_status(services, project, ta
     title's column, and a status changes its wash — busy blue for in-progress, the good
     green for done — while the body keeps its own fill beside it."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.project_editor.renderers import SPINE_W
     from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
     from dplanner.modules.step_status.aspect import write as status
+    from dplanner.theme.cards import SPINE_W
 
     step = project.steps[0]
     image = render_card(tab, step.id)
@@ -2657,8 +2657,7 @@ def ink_in_corner(tab, step_id) -> int:
     """How far the card's bottom-right corner departs from its own fill, rendered over the
     theme's base: the stat's text pulls a pixel far from it, an empty corner stays flat.
     The card is rendered over the theme's own ground, since its ink is the theme's."""
-    from dplanner.modules.project_editor.renderers import SPINE_W
-    from dplanner.theme.cards import PAD_Y, PADDING
+    from dplanner.theme.cards import PAD_Y, PADDING, SPINE_W
 
     node = scene(tab)._nodes[step_id]
     body = node.body_scene_rect()

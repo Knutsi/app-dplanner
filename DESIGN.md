@@ -178,7 +178,8 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
   edge carries the step's key (`S7`, `F3`) set bold and read bottom-to-top, washed by
   status: busy blue in progress, the bad red blocked, the good green done, a quiet shade of
   ink otherwise. It is the one thing on a card meant to be found from across the graph, and
-  the 3 px status bar it replaced is gone — one strip, two facts.
+  the 3 px status bar it replaced is gone — one strip, two facts. A coverage card that is a
+  step — a milestone, a feature, a step in the steps lane — wears the same spine.
 - **The title is the card**: two points larger than the chrome, normal weight, wrapping onto
   as many lines as the card has room for above its bottom line. A card can be dragged larger
   by any edge or corner to show more of a long name; the default footprint fits two lines.

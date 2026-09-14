@@ -71,14 +71,16 @@ from dplanner.theme.cards import (
     RESTING_SHADOW,
     SELECTED_BORDER_W,
     SELECTED_FILL_GAIN,
+    SPINE_W,
     over,
     paint_shadow,
+    paint_spine,
     title_font,
     title_lines,
 )
 from dplanner.theme.icons import paint_glyph
 from dplanner.theme.tokens import PANEL_MARGIN, SECONDARY_ALPHA, SECTION_GAP
-from dplanner.theme.tones import GOOD_BORDER, toned
+from dplanner.theme.tones import GOOD_BORDER, STEP_STATUS_TONES, toned
 
 # The tab page's margin, a lane's padding and the gap between cards: DESIGN.md's tokens, in
 # the scene's floats.
@@ -169,9 +171,13 @@ class CardItem(QGraphicsObject):
         path.addRoundedRect(self.body(), RADIUS, RADIUS)
         return path
 
+    def _inset(self) -> float:
+        """Where the content starts: past the spine, on a card that is a step."""
+        return SPINE_W + PAD_Y if self.item.key else PADDING
+
     def _title_width(self) -> float:
         glyph = MEDALLION_D + PADDING / 2 if kind_of(self.item) in GLYPHS else 0.0
-        return self.width - 2 * PADDING - glyph - MARK_D - PADDING / 2
+        return self.width - self._inset() - PADDING - glyph - MARK_D - PADDING / 2
 
     # -- look ----------------------------------------------------------------------------
 
@@ -195,12 +201,15 @@ class CardItem(QGraphicsObject):
         if self.selected:
             painter.translate(0.0, -LIFT)
         self._paint_body(painter, palette, body)
-        inner = body.adjusted(PADDING, PAD_Y, -PADDING, -PAD_Y)
+        inner = body.adjusted(self._inset(), PAD_Y, -PADDING, -PAD_Y)
         text = QColor(palette.text().color())
         faded = QColor(text)
         faded.setAlpha(SECONDARY_ALPHA)
         if self.item.muted:
             text.setAlpha(SECONDARY_ALPHA)
+        if self.item.key:
+            tone = STEP_STATUS_TONES.get(self.item.status, "")
+            paint_spine(painter, palette, body, self.item.key, tone, text)
         left = inner.left()
         glyph = GLYPHS.get(kind_of(self.item))
         if glyph is not None:

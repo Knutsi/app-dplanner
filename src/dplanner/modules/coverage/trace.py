@@ -99,7 +99,7 @@ class Readers:
     is_milestone: StepPredicate
     milestone_label: Callable[[Step], str]
     step_key: Callable[[Step], str]  # How every surface names a step: "S7".
-    is_done: StepPredicate
+    status: Callable[[Step], str]  # Where a step's work stands: "done", "blocked", …
     # (library, project, step, stops_at) → the tests at and behind a step.
     tests: Callable[[Library, Project, StepId, StepPredicate | None], Sequence[TestRow]]
     results: Callable[[Project], dict[str, str]]  # test id → how it last did.
@@ -132,6 +132,9 @@ class Item:
     token: str = ""
     target: tuple[str, str] = ("", "")  # What double-clicking opens: (kind, key).
     muted: bool = False
+    # An item that is a step carries its key and status up the card's spine; "" for the rest.
+    key: str = ""
+    status: str = ""
 
 
 @dataclass(frozen=True)
@@ -332,17 +335,19 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     steps = {step.id: step for step in project.steps}
     for feature in ordered:
         step = steps.get(feature.step)
-        done = step is not None and readers.is_done(step)
+        status = readers.status(step) if step is not None else ""
         items.append(
             Item(
                 f"feature:{feature.id}",
                 FEATURES,
                 feature.title or UNTITLED,
                 "",
-                tone="good" if done else "feature",
+                tone="good" if status == "done" else "feature",
                 features=frozenset({feature.id}),
                 token=feature.id,
                 target=("feature", feature.id),
+                key=readers.step_key(step) if step is not None else "",
+                status=status,
             )
         )
 
@@ -372,6 +377,8 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 features=frozenset({f.id for f in members} | {milestone_token(milestone.id)}),
                 token=milestone_token(milestone.id),
                 target=("step", milestone.id),
+                key=readers.step_key(milestone),
+                status=readers.status(milestone),
             )
         )
     if loose:
@@ -421,15 +428,17 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 items[index] = replace(items[index], features=items[index].features | tokens)
             else:
                 placed_steps[step.id] = len(items)
+                status = readers.status(step)
                 items.append(
                     Item(
                         f"step:{step.id}",
                         STEPS,
                         step.title or UNTITLED,
-                        readers.step_key(step),
-                        tone="good" if readers.is_done(step) else "",
+                        tone="good" if status == "done" else "",
                         features=tokens,
                         target=("step", step.id),
+                        key=readers.step_key(step),
+                        status=status,
                     )
                 )
             for source in sources:

@@ -202,6 +202,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         problem_icon,
         spec_icon,
     )
+    from dplanner.theme.tones import STEP_STATUS_TONES
 
     library: Library = services.document
     # The composition root knows the concrete store, exactly as it knows the concrete
@@ -565,7 +566,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
             key_text=_step_key(step),
-            spine_tone={"in-progress": "busy", "blocked": "bad", "done": "good"}.get(status, ""),
+            spine_tone=STEP_STATUS_TONES.get(status, ""),
             chip_text=chip_text,
             chip_tone=chip_tone,
             # Done outranks a kind, and a milestone outranks a feature: the coarser claim
@@ -2382,7 +2383,7 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
             is_milestone=lambda step: bool(milestone_read(step)),
             milestone_label=milestone_read,
             step_key=_step_key,
-            is_done=lambda step: step_status(step) == "done",
+            status=step_status,
             tests=tests,
             results=results,
             docs=docs,

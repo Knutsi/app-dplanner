@@ -54,6 +54,9 @@ VALID_TINT = QColor(120, 200, 140, 180)
 INVALID_TINT = QColor(220, 110, 110, 180)
 BUSY_TINT = QColor(110, 160, 220, 180)
 STATUS_TONES: dict[str, QColor] = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
+# A step's status as one of those tones: the spine's wash on every card that is a step. A
+# status with nothing to say — pending — is absent, and the spine stays a quiet shade.
+STEP_STATUS_TONES: dict[str, str] = {"in-progress": "busy", "blocked": "bad", "done": "good"}
 
 
 def toned(name: str, color: str = "") -> tuple[QColor, QColor] | None:

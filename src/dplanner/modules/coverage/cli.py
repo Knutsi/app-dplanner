@@ -181,6 +181,7 @@ def _item_json(item: Item) -> dict[str, object]:
     return {
         "id": item.id,
         "column": item.column,
+        "key": item.key,
         "title": item.title,
         "detail": item.detail,
         "state": item.state,

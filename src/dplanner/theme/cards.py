@@ -1,5 +1,6 @@
 """The primitives every painted card is made of: its radius and paddings, the shadow it
-rests on, the opaque fill a tint lands as, and the title face and wrap.
+rests on, the opaque fill a tint lands as, the title face and wrap, and the spine that
+names a step.
 
 Two surfaces paint cards — the graph canvas (``modules/project_editor/renderers.py``) and
 the coverage view — and modules never import each other, so what they share lives here
@@ -10,7 +11,17 @@ beside the tones and glyphs they also share. Everything is a pure function over 
 from dataclasses import dataclass
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QFontMetricsF, QPainter
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetrics,
+    QFontMetricsF,
+    QPainter,
+    QPainterPath,
+    QPalette,
+)
+
+from dplanner.theme.tones import STATUS_TONES
 
 RADIUS = 8.0  # = theme.tokens.RADIUS_MD, matched by eye rather than import: this is a painter.
 # DESIGN.md's row of rich content: 12 across, 8 down. The vertical 8 is what lets two lines of
@@ -157,3 +168,54 @@ def title_lines(
         else:
             line = attempt
     return [*lines, metrics.elidedText(line, Qt.TextElideMode.ElideRight, int(width))]
+
+
+# The spine: a strip down a card's left edge, clipped to the rounded body, carrying the
+# step's key read bottom-to-top and shaded by status. The chrome font's height plus five
+# or six pixels of air on either side of the key — at 18 it was two, and the number read
+# as jammed against the strip's edges; a four-character key runs some 30 px along it,
+# which the shortest card still has room for.
+SPINE_W = 26.0
+SPINE_FILL_ALPHA = 80  # A status tone's fill on the spine — a wash, not a swatch.
+SPINE_QUIET_ALPHA = 14  # No status to show: the spine is a shade darker than the body.
+
+
+def spine_fill(palette: QPalette, tone: str) -> QColor:
+    """The spine's wash: the status tone at a wash's alpha, or a quiet shade of ink."""
+    toned = STATUS_TONES.get(tone)
+    fill = QColor(toned if toned is not None else palette.text().color())
+    fill.setAlpha(SPINE_FILL_ALPHA if toned is not None else SPINE_QUIET_ALPHA)
+    return fill
+
+
+def paint_spine(
+    painter: QPainter, palette: QPalette, body: QRectF, key: str, tone: str, ink: QColor
+) -> None:
+    """The strip down the left edge: ``tone`` as a shade, ``key`` read bottom-to-top.
+
+    Clipped to the rounded body so the strip's outer corners follow the card's, painted
+    after the body so the wash sits on the fill and under nothing. The key is set in the
+    chrome font, bold — it is the one thing on the card meant to be found from across the
+    surface — and rotated a quarter turn anticlockwise, the way a spine on a shelf reads.
+    """
+    strip = QRectF(body.left(), body.top(), SPINE_W, body.height())
+    clip = QPainterPath()
+    clip.addRoundedRect(body, RADIUS, RADIUS)
+    painter.save()
+    painter.setClipPath(clip)
+    painter.fillRect(strip, spine_fill(palette, tone))
+    if key:
+        font = QFont(painter.font())
+        font.setBold(True)
+        painter.setFont(font)
+        painter.setPen(ink)
+        metrics = QFontMetricsF(font)
+        length = metrics.horizontalAdvance(key)
+        painter.translate(strip.center())
+        painter.rotate(-90.0)
+        painter.drawText(
+            QRectF(-length / 2, -metrics.height() / 2, length, metrics.height()),
+            int(Qt.AlignmentFlag.AlignCenter),
+            key,
+        )
+    painter.restore()

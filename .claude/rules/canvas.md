@@ -120,12 +120,13 @@ paths:
   the card while Space was held — **and with Space held the arrows and `hjkl` page it**, a
   third of the viewport at a time, a tenth with Shift, claimed in the mode so the same keys
   stop selecting steps while the hand is on the plane.
-- **The spine is the card's left edge, and it says who and where.** `paint_spine` draws
-  a 26 px strip inside the left edge, clipped to the body, carrying the key rotated a
-  quarter turn and washed by status — busy blue for in-progress, bad red for blocked, the
-  good green for done, a quiet shade otherwise (`NodeAccent.key_text`, `spine_tone`; the
-  3 px status bar it replaces is gone). The title and the left-edge decorations start
-  past it (`LEFT_INSET`).
+- **The spine is the card's left edge, and it says who and where.** `paint_spine`
+  (`theme/cards.py`, shared with the coverage lanes' step cards) draws a 26 px strip
+  inside the left edge, clipped to the body, carrying the key rotated a quarter turn and
+  washed by status — busy blue for in-progress, bad red for blocked, the good green for
+  done, a quiet shade otherwise (`NodeAccent.key_text`, `spine_tone`, read from
+  `theme/tones.py`'s `STEP_STATUS_TONES`; the 3 px status bar it replaces is gone). The
+  title and the left-edge decorations start past it (`LEFT_INSET`).
 - **A picked node is lifted, not recoloured — and every card rests on a shadow.** Selection
   thickens the border to the accent, *gains* whatever fill the node already had (so a picked
   milestone is still purple), lifts the card two pixels over a deeper shadow than the faint

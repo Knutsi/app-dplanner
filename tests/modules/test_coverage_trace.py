@@ -121,7 +121,7 @@ def readers(project) -> Readers:
         is_milestone=lambda step: step.id == m1.id,
         milestone_label=lambda step: "M1" if step.id == m1.id else "",
         step_key=lambda step: f"key-{step.title}",
-        is_done=lambda step: step.id == export.id,
+        status=lambda step: "done" if step.id == export.id else "",
         tests=tests_of,
         results=lambda _p: {"T100": "ok", "T102": "failed"},
         docs=lambda _l, _p, step_id: {imp.id: "current", m1.id: "stale"}.get(step_id, ""),
@@ -171,8 +171,13 @@ def test_the_columns_hold_documents_passages_features_milestones_steps_tests_and
     assert [item.id for item in trace.column(STEPS)] == [
         f"step:{step.id}" for step in (work, imp, other, export, dark, ghost, login, m1)
     ]
-    assert item(trace, f"step:{work.id}").detail == "key-work"
+    # A step's key rides on every item that is a step, for the card's spine.
+    assert item(trace, f"step:{work.id}").key == "key-work"
+    assert item(trace, feature_of(project, "Import")).key == "key-Import"
+    assert item(trace, milestone_token(m1.id)).key == "key-M1"
+    assert item(trace, NO_MILESTONE).key == "" and item(trace, "test:T100").key == ""
     assert item(trace, f"step:{export.id}").tone == "good"
+    assert item(trace, f"step:{export.id}").status == "done"
     assert item(trace, f"step:{login.id}").features == {milestone_token(m1.id)}
 
 

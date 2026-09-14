@@ -88,6 +88,8 @@ def test_show_walks_from_the_document_to_the_tests(cli, project):
     # The lanes the tab draws, left to right: milestones, features, spec, steps, tests and docs.
     assert columns["doc:readings"] == SPEC_LANE and columns["test:T100"] == OUTCOMES
     assert columns[ids["Import"].replace("feature:", "step:")] == STEPS
+    keys = {item["id"]: item["key"] for item in shown["items"]}
+    assert keys[ids["Import"]] == "F2" and keys["bucket:none"] == ""
     assert [f["title"] for f in shown["unsourced"]] == ["Dark mode"]
     assert shown["documents"][0]["cited"] == 3
     only = data(cli("coverage", "show", project, "--feature", "Export", "--json"))

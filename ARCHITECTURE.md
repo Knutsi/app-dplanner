@@ -1941,6 +1941,11 @@ strips down one edge would have been noise. The done wash sits on the done body'
 — the body says the work receded, the spine says why. Everything on the left edge starts
 past it (`LEFT_INSET`): the medallions, the chip, the title.
 
+The painter is `theme/cards.py`'s, beside the other card primitives, and the status → shade
+table is `theme/tones.py`'s `STEP_STATUS_TONES`, because the canvas is not the only surface
+where a step is a card: the coverage lanes' milestones, features and steps wear the same
+spine, so a key reads the same up every card that is a step.
+
 ### A picked node is lifted, not recoloured
 
 Selection used to be a one-pixel-wider border in the accent, and on a graph of twenty nodes
