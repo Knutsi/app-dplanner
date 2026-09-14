@@ -207,7 +207,10 @@ it says, in the secondary ink at its top, which pick would fill it. A lane whose
 changed starts at the top. A card's state is a mark at its top-right corner — a hollow
 accent ring for *behind*, a filled accent dot for *drifted*, green for *ok*, red for
 *failed* or *lost*, a faint ring for *pending* — never a word; a line into or out of a
-picked card takes the accent and thickens.
+picked card takes the accent and thickens. **A lane the reader can do without is a
+checkable verb on the strip** (the coverage view's *Show steps*), and the lines follow
+what stands: a connection is drawn only between two lanes side by side, so taking a lane
+away joins its neighbours directly.
 
 ## Cards
 

@@ -17,7 +17,7 @@ from dplanner.modules.coverage.scene import (
     PICK_A_FEATURE,
     LaneItem,
 )
-from dplanner.modules.coverage.trace import FEATURES, MILESTONES, OUTCOMES, SPEC
+from dplanner.modules.coverage.trace import FEATURES, MILESTONES, OUTCOMES, SPEC, STEPS
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.aspect import FeatureSource
 from dplanner.modules.feature.aspect import write as feature_write
@@ -121,6 +121,36 @@ def test_ctrl_click_adds_within_one_lane_and_a_plain_click_replaces(project, tab
     assert scene.picked == frozenset() and ids(tab, SPEC) == []
 
 
+def test_the_steps_lane_stands_between_the_spec_and_the_tests_when_asked_for(
+    services, project, tab
+):
+    """A switch on the strip: the steps each pick holds, and the document's lines to the
+    tests rerouted through the steps they sit on — and put back when it is switched off."""
+    work, imp, _beta, _export = project.steps
+    scene = tab.scene
+    assert scene.columns == (MILESTONES, FEATURES, SPEC, OUTCOMES) and ids(tab, STEPS) == []
+    tab.steps_action.trigger()
+    assert scene.columns == (MILESTONES, FEATURES, SPEC, STEPS, OUTCOMES)
+    assert ids(tab, STEPS) == [] and scene.lanes[STEPS].hint == PICK_A_FEATURE
+
+    scene.pick(feature_card(project, "Import"))
+    assert ids(tab, STEPS) == [f"step:{work.id}", f"step:{imp.id}"]  # Its work, then itself.
+    pairs = {(link.source.item.id, link.target.item.id) for link in scene.links}
+    assert ("doc:guide", f"step:{work.id}") in pairs
+    assert (f"step:{work.id}", "test:T100") in pairs
+    assert not [pair for pair in pairs if pair[0] == "doc:guide" and pair[1].startswith("test:")]
+    # Each feature to its milestone, Import to its passage, the document to its two steps,
+    # and the step the 30 tests sit on to each of them.
+    assert len(scene.links) == 2 + 1 + 2 + 30
+
+    scene.pick(f"step:{work.id}")
+    assert services.context.current().selected_entities("step") == [imp.id, work.id]
+    tab.steps_action.trigger()  # Switched off: its pick goes with it, and the lines go back.
+    assert scene.picked == {feature_card(project, "Import")} and ids(tab, STEPS) == []
+    pairs = {(link.source.item.id, link.target.item.id) for link in scene.links}
+    assert ("doc:guide", "test:T100") in pairs and len(scene.links) == 2 + 1 + 30
+
+
 def test_a_pick_publishes_every_picked_step_and_a_background_pane_stays_quiet(
     services, project, tab
 ):
@@ -179,12 +209,15 @@ def test_a_double_click_opens_the_thing(services, project, tab, monkeypatch):
 
 
 def test_the_lanes_relayout_across_every_width_without_recursing(tab):
-    for width in range(240, 1400, 37):
-        tab.view.resize(width, 300 + width % 97)
-        lanes = tab.scene.lanes
-        assert all(lane.rect.width() >= LANE_MIN_W for lane in lanes)
-        assert all(isinstance(lane, LaneItem) for lane in lanes)
-    assert tab.scene.sceneRect().width() >= 4 * LANE_MIN_W
+    for arrangement in range(2):  # The four lanes, then with the steps lane between.
+        if arrangement:
+            tab.steps_action.trigger()
+        for width in range(240, 1400, 37):
+            tab.view.resize(width, 300 + width % 97)
+            lanes = [tab.scene.lanes[column] for column in tab.scene.columns]
+            assert all(lane.rect.width() >= LANE_MIN_W for lane in lanes)
+            assert all(isinstance(lane, LaneItem) for lane in lanes)
+        assert tab.scene.sceneRect().width() >= len(lanes) * LANE_MIN_W
 
 
 def test_the_view_never_reports_a_width_it_was_given(tab):

@@ -2292,7 +2292,7 @@ def _scope_kinds(
 
 
 def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -> "Trace":
-    """The coverage picture: milestones → features → spec passages → tests and docs.
+    """The coverage picture: milestones → features → spec passages → steps → tests and docs.
 
     The one place the spec, the feature steps, the collectors, the tests and the docs
     meet; each answers through its own Qt-free reader and ``coverage/trace.py`` only
@@ -2381,6 +2381,7 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
             is_feature=is_feature,
             is_milestone=lambda step: bool(milestone_read(step)),
             milestone_label=milestone_read,
+            step_key=_step_key,
             is_done=lambda step: step_status(step) == "done",
             tests=tests,
             results=results,

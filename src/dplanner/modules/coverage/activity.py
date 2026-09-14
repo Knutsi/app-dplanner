@@ -1,5 +1,6 @@
 """The Coverage tab: one project's trace, drawn — with a strip above it saying, per
-document, how much of the spec is cited, and the verb that lights what wants a look.
+document, how much of the spec is cited, the verb that lights what wants a look, and the
+switch that stands the steps between the spec and its tests.
 
 The tab owns nothing the trace does not: it asks ``trace_of`` on every coalesced change
 of its project, hands the answer to the scene, and turns the scene's gestures into the
@@ -35,13 +36,27 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import EmptyState, note
 from dplanner.modules.coverage.scene import GUTTER, LANE_MIN_W, MARGIN, CoverageScene
-from dplanner.modules.coverage.trace import FEATURES, MILESTONES, OUTCOMES, SPEC, Trace, flat
-from dplanner.theme.icons import eye_icon
+from dplanner.modules.coverage.trace import (
+    FEATURES,
+    MILESTONES,
+    OUTCOMES,
+    SPEC,
+    STEPS,
+    Trace,
+    flat,
+)
+from dplanner.theme.icons import eye_icon, graph_icon
 from dplanner.theme.tokens import CONTROL_GAP, FIELD_GAP
 
 COVERAGE_KIND = "coverage"
-# What the tab asks the layout for, and the least it can be cut to: four lanes at their
-# narrowest, and one — constants, because a hint read off the scene would grow with the pane.
+# The lanes, left to right: the four the tab opens on, and the same with the steps standing
+# between the spec and the tests and documents that sit on them — a lane the reader asks for.
+LANES = (MILESTONES, FEATURES, SPEC, OUTCOMES)
+WITH_STEPS = (MILESTONES, FEATURES, SPEC, STEPS, OUTCOMES)
+STEPS_TIP = "The steps each pick holds, in a lane between the spec and its tests"
+# What the tab asks the layout for, and the least it can be cut to: the four lanes it opens
+# on at their narrowest, and one — constants, because a hint read off the scene would grow
+# with the pane.
 WANTED = QSize(int(4 * LANE_MIN_W + 3 * GUTTER + 2 * MARGIN), 420)
 FLOOR = QSize(int(LANE_MIN_W + 2 * MARGIN), 160)
 NO_DOCUMENTS = "No spec documents — import one to trace it"
@@ -80,7 +95,7 @@ class CoverageDeps:
 
 class CoverageView(QGraphicsView):
     """The viewport: the lanes laid to its width, and a horizontal scroll bar only when
-    four lanes at their narrowest still do not fit — a finite extent, so the bar is honest.
+    the lanes at their narrowest still do not fit — a finite extent, so the bar is honest.
 
     **Its size hint is a constant, and it has to be.** ``QGraphicsView`` hands out the
     scene rect as its size hint, and this scene's rect is laid to the viewport — so a
@@ -146,6 +161,9 @@ class CoverageActivity(EntityActivity):
             self._review,
             tip="Light every passage that no longer simply anchors",
         )
+        self.steps_action = self.controls.add_verb(
+            "Show steps", graph_icon, self._show_steps, checkable=True, tip=STEPS_TIP
+        )
         # The stretch is the strip's: a Toolbar's size hint is its … button.
         row.addWidget(self.controls, 1)
         self.summary = note("", self.strip)
@@ -155,7 +173,7 @@ class CoverageActivity(EntityActivity):
         row.addWidget(self.updating)
         layout.addWidget(self.strip)
 
-        self.scene = CoverageScene()
+        self.scene = CoverageScene(LANES)
         self.scene.picked_changed.connect(self._on_picked)
         self.scene.picked_changed.connect(self._reveal_next_lane)
         self.scene.activated.connect(self._on_activated)
@@ -230,9 +248,12 @@ class CoverageActivity(EntityActivity):
             said.append(f"{count} feature{'' if count == 1 else 's'} citing nothing")
         self.summary.setText("   ".join(said) or NO_DOCUMENTS)
         self.review_action.setEnabled(any(doc.review for doc in self.trace.documents))
-        # Four empty lanes say nothing; a project with nothing in any of them says so instead.
-        traced = any(self.trace.column(column) for column in (SPEC, FEATURES, MILESTONES, OUTCOMES))
+        # Empty lanes say nothing; a project with nothing in any of them says so instead.
+        traced = any(self.trace.column(column) for column in WITH_STEPS)
         self.empty.say("" if traced else NOTHING_TRACED)
+
+    def _show_steps(self) -> None:
+        self.scene.set_columns(WITH_STEPS if self.steps_action.isChecked() else LANES)
 
     def _review(self) -> None:
         """Pick the first passage that wants a look; the others are its neighbours."""

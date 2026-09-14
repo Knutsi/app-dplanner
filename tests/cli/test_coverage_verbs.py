@@ -6,7 +6,7 @@ import json
 import pytest
 from tests.cli.spec_helpers import source
 
-from dplanner.modules.coverage.trace import FEATURES, OUTCOMES
+from dplanner.modules.coverage.trace import FEATURES, OUTCOMES, STEPS
 from dplanner.modules.coverage.trace import SPEC as SPEC_LANE
 
 SPEC = """# Readings
@@ -83,10 +83,11 @@ def test_show_walks_from_the_document_to_the_tests(cli, project):
 
     shown = data(cli("coverage", "show", project, "--json"))
     columns = {item["id"]: item["column"] for item in shown["items"]}
-    ids = {item["title"]: item["id"] for item in shown["items"]}
-    # The lanes the tab draws, left to right: milestones, features, spec, tests and docs.
-    assert columns["doc:readings"] == SPEC_LANE and columns[ids["Import"]] == FEATURES
-    assert columns["test:T100"] == OUTCOMES
+    # Features by title: a feature's own step is a card of the steps lane under the same name.
+    ids = {item["title"]: item["id"] for item in shown["items"] if item["column"] == FEATURES}
+    # The lanes the tab draws, left to right: milestones, features, spec, steps, tests and docs.
+    assert columns["doc:readings"] == SPEC_LANE and columns["test:T100"] == OUTCOMES
+    assert columns[ids["Import"].replace("feature:", "step:")] == STEPS
     assert [f["title"] for f in shown["unsourced"]] == ["Dark mode"]
     assert shown["documents"][0]["cited"] == 3
     only = data(cli("coverage", "show", project, "--feature", "Export", "--json"))

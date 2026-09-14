@@ -10,6 +10,7 @@ from dplanner.modules.coverage.trace import (
     NO_MILESTONE,
     OUTCOMES,
     SPEC,
+    STEPS,
     Citation,
     Document,
     Feature,
@@ -119,6 +120,7 @@ def readers(project) -> Readers:
         is_feature=lambda step: step.id in (imp.id, export.id, dark.id, ghost.id),
         is_milestone=lambda step: step.id == m1.id,
         milestone_label=lambda step: "M1" if step.id == m1.id else "",
+        step_key=lambda step: f"key-{step.title}",
         is_done=lambda step: step.id == export.id,
         tests=tests_of,
         results=lambda _p: {"T100": "ok", "T102": "failed"},
@@ -126,16 +128,15 @@ def readers(project) -> Readers:
     )
 
 
-def test_the_columns_hold_documents_passages_features_milestones_tests_and_docs():
+def test_the_columns_hold_documents_passages_features_milestones_steps_tests_and_docs():
     library, project = graph()
-    work, imp, m1, *_rest = project.steps
+    work, imp, m1, other, export, login, dark, ghost = project.steps
     trace = build(readers(project), library, project, no_files)
     spec = [item.id for item in trace.column(SPEC)]
     assert spec == ["doc:spec", "passage:spec:0", "passage:spec:1", "passage:spec:2", "doc:empty"]
     # Passages sit in document order; the lost one last. A passage two features cite is one item.
     titles = {item.id: item.title for item in trace.items}
     assert titles["passage:spec:0"].startswith("Operators MUST")
-    imp, export = project.steps[1], project.steps[4]
     assert item(trace, "passage:spec:1").features == {imp.id, export.id}
     assert item(trace, "passage:spec:2").state == "lost"
     assert item(trace, "doc:spec").detail == "2 of 3 paragraphs cited · 1 to review"
@@ -165,13 +166,22 @@ def test_the_columns_hold_documents_passages_features_milestones_tests_and_docs(
     assert item(trace, "test:T100").target == ("test", f"{work.id}\0T100")
     assert item(trace, f"docs:{m1.id}").state == "stale"
     assert [f.title for f in trace.unsourced] == ["Dark mode"]
+    # Each feature's steps, its own step last; then what the milestone holds directly — the
+    # step no feature gathers, and the milestone's own, where its tests and document sit.
+    assert [item.id for item in trace.column(STEPS)] == [
+        f"step:{step.id}" for step in (work, imp, other, export, dark, ghost, login, m1)
+    ]
+    assert item(trace, f"step:{work.id}").detail == "key-work"
+    assert item(trace, f"step:{export.id}").tone == "good"
+    assert item(trace, f"step:{login.id}").features == {milestone_token(m1.id)}
 
 
 def test_links_join_neighbouring_columns_only():
     """Milestone → feature → passage, and the document a feature was read from on to its
-    tests and docs: one line per neighbouring pair, whatever says so."""
+    steps, tests and docs, and each step on to what sits on it: one line per pair that can
+    stand side by side, whatever says so."""
     library, project = graph()
-    imp, m1 = project.steps[1], project.steps[2]
+    work, imp, m1, other, export, login, _dark, ghost = project.steps
     trace = build(readers(project), library, project, no_files)
     m = milestone_token(m1.id)
     pairs = {(link.source, link.target) for link in trace.links}
@@ -191,19 +201,38 @@ def test_links_join_neighbouring_columns_only():
         ("doc:spec", f"docs:{imp.id}"),
         ("doc:spec", "test:T103"),
         ("doc:spec", f"docs:{m1.id}"),
+        # With the steps lane between: the document on to the steps its features hold…
+        ("doc:spec", f"step:{work.id}"),
+        ("doc:spec", f"step:{imp.id}"),
+        ("doc:spec", f"step:{other.id}"),
+        ("doc:spec", f"step:{export.id}"),
+        ("doc:spec", f"step:{ghost.id}"),
+        # …and each step on to the tests on it, a collector's own step to its document.
+        (f"step:{work.id}", "test:T100"),
+        (f"step:{imp.id}", "test:T101"),
+        (f"step:{other.id}", "test:T103"),
+        (f"step:{login.id}", "test:T102"),
+        (f"step:{imp.id}", f"docs:{imp.id}"),
+        (f"step:{imp.id}", f"docs:{m1.id}"),
+        (f"step:{m1.id}", f"docs:{m1.id}"),
     }
-    # T102 is the milestone's own work: read from no passage, so nothing leads to it.
-    assert not [link for link in trace.links if link.target == "test:T102"]
+    # T102 is the milestone's own work: read from no passage, so only its step leads to it.
+    assert [link.source for link in trace.links if link.target == "test:T102"] == [
+        f"step:{login.id}"
+    ]
+    # Every pair is neighbours in one of the tab's two arrangements: with the steps lane
+    # between the spec and the outcomes, or without it.
     by_id = {item.id: item for item in trace.items}
     for link in trace.links:
-        assert by_id[link.target].column == by_id[link.source].column + 1
+        pair = (by_id[link.source].column, by_id[link.target].column)
+        assert pair[1] == pair[0] + 1 or pair == (SPEC, OUTCOMES)
 
 
 def test_shown_is_the_drill_down():
     """Every milestone always; the picked milestones' features; and the spec and the
     outcomes of what is picked itself, never of everything a milestone gathers."""
     library, project = graph()
-    imp, m1 = project.steps[1], project.steps[2]
+    work, imp, m1, _other, _export, login, _dark, _ghost = project.steps
     trace = build(readers(project), library, project, no_files)
     m, importing = milestone_token(m1.id), feature_of(project, "Import")
 
@@ -213,12 +242,23 @@ def test_shown_is_the_drill_down():
     both_lanes = {m, NO_MILESTONE} | {item.id for item in trace.column(FEATURES)}
     assert shown() == both_lanes  # Nothing picked: the questions, none of the answers.
     # A milestone narrows the features to the ones it gathers — and stands up the work it
-    # holds directly, which no feature would ever stand up.
-    assert shown(m) == {m, NO_MILESTONE, importing, "test:T102", f"docs:{m1.id}"}
-    # A feature stands up its own passages, tests and documents, and no other feature's.
+    # holds directly, which no feature would ever stand up: the step under it no feature
+    # gathers, the milestone's own step, and what sits on them.
+    assert shown(m) == {
+        m,
+        NO_MILESTONE,
+        importing,
+        f"step:{login.id}",
+        f"step:{m1.id}",
+        "test:T102",
+        f"docs:{m1.id}",
+    }
+    # A feature stands up its own passages, steps, tests and documents, and no other
+    # feature's.
     lit = shown(importing)
     assert lit >= both_lanes | {"doc:spec", "passage:spec:0", "passage:spec:1"}
     assert lit >= {"test:T100", "test:T101", f"docs:{imp.id}"}
+    assert lit >= {f"step:{work.id}", f"step:{imp.id}"} and f"step:{login.id}" not in lit
     assert "passage:spec:2" not in lit and "test:T103" not in lit
     assert "test:T102" not in lit  # The milestone's own work is the milestone's to show.
     # Picked together, each stands up its own: the milestone's direct work beside the
@@ -230,7 +270,7 @@ def test_shown_is_the_drill_down():
 
 def test_the_path_is_feature_membership():
     library, project = graph()
-    imp, m1 = project.steps[1], project.steps[2]
+    work, imp, m1, _other, _export, login, _dark, _ghost = project.steps
     trace = build(readers(project), library, project, no_files)
     m = milestone_token(m1.id)
     # A feature lights exactly its chain — not the other feature's tests, not the
@@ -242,6 +282,8 @@ def test_the_path_is_feature_membership():
         "passage:spec:1",
         feature_of(project, "Import"),
         m,
+        f"step:{work.id}",
+        f"step:{imp.id}",
         "test:T100",
         "test:T101",
         f"docs:{imp.id}",
@@ -262,7 +304,8 @@ def test_the_path_is_feature_membership():
         "test:T103",
         "test:T100",
     } <= lit
-    # A test held directly by the milestone lights the milestone and its docs, nothing else.
+    # A test held directly by the milestone lights the milestone, the steps it holds
+    # directly and its docs — nothing else.
     lit = trace.path("test:T102")
-    assert lit == {m, "test:T102", f"docs:{m1.id}"}
+    assert lit == {m, f"step:{login.id}", f"step:{m1.id}", "test:T102", f"docs:{m1.id}"}
     assert trace.path("no:such") == frozenset()

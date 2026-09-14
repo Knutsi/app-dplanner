@@ -134,15 +134,19 @@ paths:
   project is retrofitted. `ARCHITECTURE.md`'s *A citation is a quote and a digest* has
   the reasoning.
 - **The Coverage tab is a drill-down, and its lanes stand only what the picks stand up.**
-  *Milestones · Features · Spec · Tests & Docs*: every milestone always, the features the
-  picked milestones gather (all of them while none is picked), and in the last two what
-  the picks *themselves* stand for — `Trace.shown`, off each item's own `token` beside the
-  features it serves, so a picked milestone stands up the work it holds **directly** and
-  never its features' whole spec. Drawing the derivation's own order instead, everything
-  at once with the unpicked faded, opened a real plan as a wall of passages. A click picks
-  within its lane and clears the lanes to its right, Ctrl (or Shift) adds, the ground and
-  Escape clear; every picked card's step is published; an empty lane says which pick would
-  fill it. **A view whose extent is laid out to its viewport never reports that extent as
+  *Milestones · Features · Spec · Tests & Docs*, with *Steps* before the last while the
+  strip's *Show steps* is on: every milestone always, the features the picked milestones
+  gather (all of them while none is picked), and right of the features what the picks
+  *themselves* stand for — `Trace.shown`, off each item's own `token` beside the features
+  it serves, so a picked milestone stands up the work it holds **directly** and never its
+  features' whole spec. Drawing the derivation's own order instead, everything at once
+  with the unpicked faded, opened a real plan as a wall of passages. **A lane that comes
+  and goes reroutes the lines, never the trace**: the trace records every pair that can
+  stand side by side — a document to its features' tests *and* to the steps they sit on —
+  and the scene draws a line only between two lanes standing next to each other. A click
+  picks within its lane and clears the lanes to its right, Ctrl (or Shift) adds, the
+  ground and Escape clear; every picked card's step is published; an empty lane says which
+  pick would fill it. **A view whose extent is laid out to its viewport never reports that extent as
   its size hint** — `QGraphicsView.sizeHint()` *is* the scene rect, so honouring it widened
   the view, the scene and then the hint again, which is what pushed the index panel off the
   window and made the seam jump. Lane widths are whole numbers (a rounding error flickers

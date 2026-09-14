@@ -1,14 +1,16 @@
-"""Four lanes of cards joined by lines: the coverage trace, drawn.
+"""Lanes of cards joined by lines: the coverage trace, drawn.
 
-One ``QGraphicsScene``, four :class:`LaneItem`\\ s side by side, each a clipped column that
-scrolls on its own — the wheel over a lane moves that lane, a thumb on its right edge
-shows how much is out of view — and between neighbouring lanes a :class:`GutterItem`
-holding the :class:`LinkItem`\\ s. A link runs from a lane's right edge to the next lane's
-left edge, at the height of the cards it joins; a card scrolled out of view carries its
-end of the line past the gutter's clip, so the line is cut at the gutter's edge rather
-than drawn over a caption. Down the page the lanes scroll and the view never does; across
-it the view scrolls only where four lanes at their narrowest genuinely do not fit, and a
-pick then brings the lane it fills into view.
+One ``QGraphicsScene``, a :class:`LaneItem` per column side by side — the steps lane only
+while the reader asks for it — each a clipped column that scrolls on its own: the wheel
+over a lane moves that lane, and a thumb on its right edge shows how much is out of view.
+Between neighbouring lanes a :class:`GutterItem` holds the :class:`LinkItem`\\ s. A link
+runs from a lane's right edge to the next lane's left edge, at the height of the cards it
+joins; a card scrolled out of view carries its end of the line past the gutter's clip, so
+the line is cut at the gutter's edge rather than drawn over a caption. A link is drawn only
+between two lanes standing side by side, which is how a lane coming and going reroutes the
+lines past it. Down the page the lanes scroll and the view never does; across it the view
+scrolls only where the lanes at their narrowest genuinely do not fit, and a pick then
+brings the lane it fills into view.
 
 **Picking is the drill-down, and a lane holds only what the picks stand up.** The scene
 asks the trace (:meth:`~dplanner.modules.coverage.trace.Trace.shown`) which items stand
@@ -578,9 +580,10 @@ class CoverageScene(QGraphicsScene):
     activated = Signal(str)
     menu_requested = Signal(str, QPointF)
 
-    def __init__(self) -> None:
+    def __init__(self, columns: Sequence[int]) -> None:
         super().__init__()
         self.trace: Trace | None = None
+        # A lane for every column, indexed by it; ``columns`` says which stand, in order.
         self.lanes = [LaneItem(column, title) for column, title in enumerate(COLUMN_TITLES)]
         self.gutters = [GutterItem() for _ in range(len(COLUMN_TITLES) - 1)]
         for lane in self.lanes:
@@ -588,6 +591,8 @@ class CoverageScene(QGraphicsScene):
             lane.scrolled.connect(self._follow_links)
         for gutter in self.gutters:
             self.addItem(gutter)
+        self.columns: tuple[int, ...] = ()
+        self._position: dict[int, int] = {}  # A standing column → its place, left to right.
         self.cards: dict[str, CardItem] = {}
         self.links: list[LinkItem] = []
         self.picked: frozenset[str] = frozenset()
@@ -597,6 +602,7 @@ class CoverageScene(QGraphicsScene):
         self._held: list[list[CardItem]] = [[] for _ in self.lanes]
         self._viewport = (900.0, 600.0)
         self._font = QFont()
+        self.set_columns(columns)
 
     # -- what is shown ---------------------------------------------------------------------
 
@@ -622,15 +628,26 @@ class CoverageScene(QGraphicsScene):
             self.cards[item.id] = card
         self.set_picked(self.picked)
 
+    def set_columns(self, columns: Sequence[int]) -> None:
+        """Which lanes stand, left to right. A pick in a lane taken away goes with it, and
+        the lines join whichever lanes are now neighbours."""
+        self.columns = tuple(columns)
+        self._position = {column: place for place, column in enumerate(self.columns)}
+        for lane in self.lanes:
+            lane.setVisible(lane.column in self._position)
+        self.set_picked(self.picked)
+
     def _sync(self) -> None:
-        """Stand what the picks stand up, join what stands, and lay the lanes out."""
+        """Stand what the picks stand up in the lanes standing, join what stands, and lay
+        the lanes out."""
         shown = self.trace.shown(self.picked) if self.trace is not None else frozenset()
         for lane, held in zip(self.lanes, self._held, strict=True):
             standing = []
             for card in held:
-                card.setVisible(card.item.id in shown)
+                on = lane.column in self._position and card.item.id in shown
+                card.setVisible(on)
                 card.set_selected(card.item.id in self.picked)
-                if card.item.id in shown:
+                if on:
                     standing.append(card)
             lane.set_cards(standing)
             lane.hint = self._hint(lane.column, standing)
@@ -656,8 +673,10 @@ class CoverageScene(QGraphicsScene):
         self.links = []
 
     def _rebuild_links(self, shown: Iterable[str]) -> None:
-        """One :class:`LinkItem` per link both of whose ends stand — never a line to a
-        card the picks left out, and never a line item nobody can see."""
+        """One :class:`LinkItem` per link both of whose ends stand in neighbouring lanes —
+        never a line to a card the picks left out, never a line item nobody can see, and
+        never a line across a lane: the trace also records the pair that lane's absence
+        would join."""
         self._drop_links()
         standing = set(shown)
         for edge in self.trace.links if self.trace is not None else ():
@@ -666,16 +685,19 @@ class CoverageScene(QGraphicsScene):
             source, target = self.cards.get(edge.source), self.cards.get(edge.target)
             if source is None or target is None:
                 continue
+            gutter = self._position.get(source.item.column)
+            if gutter is None or self._position.get(target.item.column) != gutter + 1:
+                continue
             drawn = LinkItem(source, target)
             drawn.set_lit(edge.source in self.picked or edge.target in self.picked)
-            drawn.setParentItem(self.gutters[source.item.column])
+            drawn.setParentItem(self.gutters[gutter])
             self.links.append(drawn)
 
     def relayout(self, viewport: tuple[float, float] | None = None) -> None:
-        """Lay the lanes across the viewport's width; never inside a paint.
+        """Lay the standing lanes across the viewport's width; never inside a paint.
 
         The widths are whole numbers and the scene rect is the lanes' own extent, so at
-        every width wider than the four at their narrowest the picture fits exactly and
+        every width wider than the lanes at their narrowest the picture fits exactly and
         no scroll bar comes and goes as the pane is dragged.
         """
         if viewport is not None:
@@ -683,19 +705,21 @@ class CoverageScene(QGraphicsScene):
                 return  # The scroll bar coming and going resizes the viewport, not the lanes.
             self._viewport = viewport
         width, height = self._viewport
-        lanes = len(self.lanes)
+        lanes = len(self.columns)
         gutter = GUTTER if width >= NARROW_VIEWPORT else GUTTER_NARROW
         room = width - 2 * MARGIN - (lanes - 1) * gutter
         lane_w = max(LANE_MIN_W, float(int(room / lanes)))
         lane_h = max(CAPTION_H + LANE_PAD * 2, height - 2 * MARGIN)
         x = MARGIN
-        for index, lane in enumerate(self.lanes):
-            lane.place(QRectF(x, MARGIN, lane_w, lane_h), self._font)
-            if index < len(self.gutters):
-                self.gutters[index].setRect(
+        for place, column in enumerate(self.columns):
+            self.lanes[column].place(QRectF(x, MARGIN, lane_w, lane_h), self._font)
+            if place < lanes - 1:
+                self.gutters[place].setRect(
                     QRectF(x + lane_w, MARGIN + CAPTION_H, gutter, lane_h - CAPTION_H - LANE_PAD)
                 )
             x += lane_w + gutter
+        for spare in self.gutters[lanes - 1 :]:
+            spare.setRect(QRectF())  # The gutter a lane taken away leaves over holds no line.
         self.setSceneRect(
             QRectF(0.0, 0.0, max(width, x - gutter + MARGIN), max(height, lane_h + 2 * MARGIN))
         )
@@ -703,7 +727,7 @@ class CoverageScene(QGraphicsScene):
 
     def _follow_links(self) -> None:
         for link in self.links:
-            gutter = self.gutters[link.source.item.column]
+            gutter = self.gutters[self._position[link.source.item.column]]
             rect = gutter.rect()
             link.follow(rect.left(), rect.right())
 
@@ -724,8 +748,13 @@ class CoverageScene(QGraphicsScene):
         self.set_picked(frozenset(before | lane))
 
     def set_picked(self, picked: frozenset[str]) -> None:
-        """Take the picks, drop the ones a lane to their left no longer stands, and sync."""
-        picked = frozenset(item_id for item_id in picked if item_id in self.cards)
+        """Take the picks, drop the ones in a lane not standing or that a lane to their left
+        no longer stands, and sync."""
+        picked = frozenset(
+            item_id
+            for item_id in picked
+            if item_id in self.cards and self.cards[item_id].item.column in self._position
+        )
         while self.trace is not None:
             narrowed = picked & self.trace.shown(picked)
             if narrowed == picked:
@@ -759,12 +788,12 @@ class CoverageScene(QGraphicsScene):
         return self.lanes[column].cards
 
     def lane_after(self, picked: Iterable[str]) -> QRectF | None:
-        """Where the lane a pick fills is, for a viewport too narrow to hold four —
+        """Where the lane a pick fills is, for a viewport too narrow to hold them all —
         picking a feature must not fill a lane the reader cannot see."""
-        columns = [self.cards[item_id].item.column for item_id in picked]
-        if not columns or max(columns) + 1 >= len(self.lanes):
+        places = [self._position[self.cards[item_id].item.column] for item_id in picked]
+        if not places or max(places) + 1 >= len(self.columns):
             return None
-        lane = self.lanes[max(columns) + 1]
+        lane = self.lanes[self.columns[max(places) + 1]]
         return QRectF(lane.pos(), lane.boundingRect().size())
 
     def mousePressEvent(self, event: QGraphicsSceneMouseEvent) -> None:  # noqa: N802

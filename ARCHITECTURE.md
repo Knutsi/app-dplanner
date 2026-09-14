@@ -5106,7 +5106,7 @@ reads (below). The alternative — walking links upstream and
 downstream — would have needed a rule per column pair to keep one feature's tests from
 lighting another's, and it would have been wrong the first time a step sat in two cones.
 
-**Four lanes, each scrolling on its own, and links only in the gutters.** The tab is one
+**Lanes, each scrolling on its own, and links only in the gutters.** The tab is one
 scene: a lane is a clipped column with its own offset and a thumb only while it
 overflows, a link runs from one lane's edge to the next at the height of the cards it
 joins, and a card scrolled out of view carries its end past the gutter's clip, so the
@@ -5131,6 +5131,18 @@ stands up the work it holds *directly* and never its features' whole spec — an
 with nothing in it says which pick would fill it, which is where the reader learns that
 Ctrl-click adds another.
 
+**The steps lane is asked for, and a lane that comes and goes reroutes the lines.** Between
+the spec and its proof sits the work: the steps each pick holds, a feature's own step among
+them, since that is where its tests and its document sit. *Show steps* on the strip stands
+that lane there, so the picture reads requirement, work, proof from left to right. It is off
+by default because the question the tab opens on is what became of the spec, and a lane of
+every step behind every feature is the long way round to that answer. A line may only cross
+the gutter between two lanes, so the trace records every pair that can stand side by side
+— a document joins its features' tests directly *and* joins the steps they sit on, and each
+step joins its tests — and the scene draws the pairs that are neighbours in the lanes
+standing. That is the whole of the switch: no rule per arrangement, and nothing rebuilt but
+the lines.
+
 **A drill-down needs a selection, so a pick is a set.** A click picks within its own lane
 and clears the lanes to its right; Ctrl (or Shift) adds to that lane, and picking a card
 that lane already holds takes it back out; the ground and Escape clear. Picks the lanes
@@ -5149,11 +5161,11 @@ scene's rect is laid to the viewport — so a splitter honouring the hint widens
 which widens the scene, which widens the hint: opening the tab pushed the index panel off
 the left of the window and dragging the seam jumped. `CoverageView` returns a constant
 instead. Two rules keep the rest of it still: the lane width is a whole number, so at any
-width wider than four lanes at their narrowest the picture fits its viewport *exactly*
+width wider than the lanes at their narrowest the picture fits its viewport *exactly*
 rather than by a rounding error that flickers the scroll bar on and off through a drag;
 and a relayout for a viewport size the scene already has returns at once, because the
 scroll bar coming and going resizes the viewport and would otherwise re-enter the layout.
-When four lanes at their narrowest genuinely do not fit, the bar is honest and a pick
+When the lanes at their narrowest genuinely do not fit, the bar is honest and a pick
 brings the lane it fills into view — a feature that filled a lane off the right of the
 pane would look like a pick that did nothing.
 

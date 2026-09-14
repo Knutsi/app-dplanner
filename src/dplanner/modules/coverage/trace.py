@@ -1,28 +1,33 @@
-"""The trace: milestones → features → spec passages → tests and docs, as one picture.
+"""The trace: milestones → features → spec passages → steps → tests and docs, as one picture.
 
 Nothing here is stored. A feature record says which passages it was read from, the graph
-says which milestone gathers its step and which tests sit in its cone, and the docs
-module says whether its compiled document is current — four facts four modules own, and
-this file only *arranges* them into columns and the links between neighbours. It reads
+says which milestone gathers its step and which steps and tests sit in its cone, and the
+docs module says whether its compiled document is current — four facts four modules own,
+and this file only *arranges* them into columns and the links between neighbours. It reads
 every one through a callable on :class:`Readers`, handed in by the composition root, so
 the coverage module imports no other module and the picture cannot disagree with the
 verbs that wrote it.
 
 **The columns are a drill-down, and the plan leads it.** A milestone gathers features, a
-feature was read from passages and is proven by tests and documents — so the picture
-opens on what a person has in their head (the milestones, and every feature) and
+feature was read from passages, holds steps and is proven by tests and documents — so the
+picture opens on what a person has in their head (the milestones, and every feature) and
 :meth:`Trace.shown` says what the picks stand up: the features the picked milestones
-gather, and the spec and the outcomes of the picked features alone. A whole plan's
-passages dealt out at once is a wall nobody reads.
+gather, and the spec, the steps and the outcomes of the picked features alone. A whole
+plan's passages dealt out at once is a wall nobody reads.
 
 **The path rule is feature membership.** Every item carries the features it serves: a
 passage the features citing it, a feature itself, a milestone the features it gathers, a
-test or a docs card the feature whose cone holds its step. Asking what lights up when
+step, a test or a docs card the feature whose cone holds it. Asking what lights up when
 one item is picked is then one set intersection — a feature lights exactly its chain, a
 milestone everything behind it, a passage two features cite both — with no special case
 per kind. An item that *can* be picked also carries a ``token`` of its own: what it
 contributes when it is, which is why a milestone stands up the work it holds directly
 (work under it that no feature gathers) and never its features' whole spec.
+
+**A link is recorded for every pair of columns that can stand side by side.** The steps
+column is a lane the tab shows only when asked, so a document joins its features' tests
+and documents directly *and* joins the steps they sit on, which join them in turn; the tab
+draws whichever pairs are neighbours in the lanes it is showing.
 
 Two readers: the Coverage tab draws it, ``dplanner coverage …`` prints it.
 """
@@ -32,11 +37,11 @@ from dataclasses import dataclass, replace
 
 from dplanner.core.anchors import Anchor, blocks, covered_by
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.scope import StepPredicate, gatherers
+from dplanner.domain.scope import StepPredicate, cone, gatherers
 from dplanner.domain.store import FilesFor
 
-MILESTONES, FEATURES, SPEC, OUTCOMES = 0, 1, 2, 3
-COLUMN_TITLES = ("Milestones", "Features", "Spec", "Tests & Docs")
+MILESTONES, FEATURES, SPEC, STEPS, OUTCOMES = 0, 1, 2, 3, 4
+COLUMN_TITLES = ("Milestones", "Features", "Spec", "Steps", "Tests & Docs")
 NO_MILESTONE = "bucket:none"
 UNTITLED = "Untitled"
 
@@ -93,6 +98,7 @@ class Readers:
     is_feature: StepPredicate
     is_milestone: StepPredicate
     milestone_label: Callable[[Step], str]
+    step_key: Callable[[Step], str]  # How every surface names a step: "S7".
     is_done: StepPredicate
     # (library, project, step, stops_at) → the tests at and behind a step.
     tests: Callable[[Library, Project, StepId, StepPredicate | None], Sequence[TestRow]]
@@ -110,7 +116,7 @@ class Readers:
 @dataclass(frozen=True)
 class Item:
     # "doc:<name>" | "passage:<name>:<n>" | "feature:<id>" | "milestone:<step>" |
-    # NO_MILESTONE | "test:<id>" | "docs:<step>"
+    # NO_MILESTONE | "step:<step>" | "test:<id>" | "docs:<step>"
     id: str
     column: int
     title: str
@@ -190,9 +196,10 @@ class Trace:
 
         Every milestone, always: that is the question the picture opens on. The features
         the picked milestones gather, or every feature while no milestone is picked. And
-        in the spec and outcome lanes, what the picks *themselves* stand for — a picked
-        feature's passages, tests and documents, a picked milestone's own direct work —
-        never what a milestone's features reach, which is the wall the drill-down avoids.
+        in the spec, steps and outcome lanes, what the picks *themselves* stand for — a
+        picked feature's passages, steps, tests and documents, a picked milestone's own
+        direct work — never what a milestone's features reach, which is the wall the
+        drill-down avoids.
         """
         chosen = [item for item in self.items if item.id in picked]
         milestones = [item for item in chosen if item.column == MILESTONES]
@@ -206,7 +213,7 @@ class Trace:
         focus = {item.token for item in chosen if item.token and item.id in standing}
         if focus:
             for item in self.items:
-                if item.column in (SPEC, OUTCOMES) and item.features & focus:
+                if item.column in (SPEC, STEPS, OUTCOMES) and item.features & focus:
                     standing.add(item.id)
         return frozenset(standing)
 
@@ -382,14 +389,51 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
         for feature in loose:
             join(NO_MILESTONE, f"feature:{feature.id}", frozenset({feature.id}))
 
-    # The outcomes lane: each feature's tests and docs, then what a milestone holds
-    # directly. What they hang off is the document they were read from — a line from every
-    # passage to every test of the same feature is one claim drawn a dozen times over.
+    # The steps and outcomes lanes: each feature's steps, tests and docs, then what a
+    # milestone holds directly. A test or a document hangs off the document its feature was
+    # read from — a line from every passage to every test of the same feature is one claim
+    # drawn a dozen times over — and off the step it sits on, for the lanes with the steps
+    # standing between the two.
     results = readers.results(project)
+    placed_steps: dict[StepId, int] = {}  # step id → index in items, to union a shared one.
     placed_tests: dict[str, int] = {}  # test id → index in items, to union a shared one.
 
     def feature_stop(step: Step) -> bool:
         return readers.is_feature(step) or readers.is_milestone(step)
+
+    def held_by(root: StepId, stops_at: StepPredicate) -> list[Step]:
+        """The steps a collector holds: its cone, and its own step, where a test or a
+        document of its own sits."""
+        found = cone(library, project, root, stops_at=stops_at).steps
+        own = steps.get(root)
+        return [*found, *([own] if own is not None else [])]
+
+    def step_hubs(tokens: frozenset[str]) -> list[str]:
+        """The cards of the collectors' own steps behind ``tokens``: where a document sits."""
+        found = [f"step:{feature.step}" for feature in ordered if feature.id in tokens]
+        found += [f"step:{m.id}" for m in milestones if milestone_token(m.id) in tokens]
+        return found
+
+    def add_steps(held: Sequence[Step], tokens: frozenset[str], sources: Sequence[str]) -> None:
+        for step in held:
+            if step.id in placed_steps:
+                index = placed_steps[step.id]
+                items[index] = replace(items[index], features=items[index].features | tokens)
+            else:
+                placed_steps[step.id] = len(items)
+                items.append(
+                    Item(
+                        f"step:{step.id}",
+                        STEPS,
+                        step.title or UNTITLED,
+                        readers.step_key(step),
+                        tone="good" if readers.is_done(step) else "",
+                        features=tokens,
+                        target=("step", step.id),
+                    )
+                )
+            for source in sources:
+                join(source, f"step:{step.id}", tokens)
 
     def add_tests(rows: Sequence[TestRow], tokens: frozenset[str], sources: Sequence[str]) -> None:
         for row in rows:
@@ -414,6 +458,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 )
             for source in sources:
                 join(source, f"test:{row.id}", tokens)
+            join(f"step:{row.step}", f"test:{row.id}", tokens)
 
     def add_docs(
         step_id: StepId, title: str, tokens: frozenset[str], sources: Sequence[str]
@@ -438,20 +483,24 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     for feature in ordered:
         tokens = frozenset({feature.id})
         sources = spec_hubs(tokens)
+        add_steps(held_by(feature.step, feature_stop), tokens, sources)
         add_tests(readers.tests(library, project, feature.step, feature_stop), tokens, sources)
-        add_docs(feature.step, feature.title, tokens, sources)
+        add_docs(feature.step, feature.title, tokens, [*sources, *step_hubs(tokens)])
     for milestone in milestones:
         token = milestone_token(milestone.id)
+        # Work a milestone holds directly was read from no passage: it stands under the
+        # milestone's own pick, with nothing in the spec lane to come from.
+        own = frozenset({token})
+        work = held_by(milestone.id, readers.is_milestone)
+        add_steps([step for step in work if step.id not in placed_steps], own, ())
         direct = [
             row
             for row in readers.tests(library, project, milestone.id, readers.is_milestone)
             if row.id not in placed_tests
         ]
-        # Work a milestone holds directly was read from no passage: it stands under the
-        # milestone's own pick, with nothing in the spec lane to come from.
-        add_tests(direct, frozenset({token}), ())
+        add_tests(direct, own, ())
         tokens = frozenset({f.id for f in gathered[milestone.id]} | {token})
-        add_docs(milestone.id, milestone.title, tokens, spec_hubs(tokens))
+        add_docs(milestone.id, milestone.title, tokens, [*spec_hubs(tokens), *step_hubs(tokens)])
 
     links = [Link(source, target, frozenset(tokens)) for (source, target), tokens in joined.items()]
     unsourced = tuple(feature for feature in features if not feature.citations)

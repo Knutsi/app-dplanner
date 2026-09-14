@@ -448,9 +448,9 @@ src/dplanner/
 │   │                        the locator, the blobless shallow sparse fetch and the size guard
 │   │                        (source.py), and the dialog that lists the remote's folders
 │   ├── coverage/            the plan against the spec: milestones → features → passages →
-│   │                        tests and docs (trace.py, one derived picture), the Coverage tab's
-│   │                        four lanes as a drill-down (scene.py), and `dplanner coverage
-│   │                        show|spec|review`
+│   │                        steps → tests and docs (trace.py, one derived picture), the
+│   │                        Coverage tab's lanes as a drill-down (scene.py), and `dplanner
+│   │                        coverage show|spec|review`
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
 │   │                        tab, the pool, display titles, and `dplanner asset`
 │   ├── library_watch/       taking what something else wrote in place; asking when it collides with an unsaved edit
