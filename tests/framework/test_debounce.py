@@ -6,7 +6,7 @@ actually turning (``qtbot.wait``); every other test runs in immediate mode.
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QDialog, QWidget
 
 from dplanner.core.telemetry import current
 from dplanner.framework.debounce import Debounced, DebounceService
@@ -178,3 +178,28 @@ def test_a_debouncer_whose_parent_died_is_no_longer_live(app):
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     assert service.pending() == []
     service.flush_all()  # Nothing to settle, and nothing raises.
+
+
+def test_a_settle_behind_a_modal_waits_for_it_to_close(host, qtbot):
+    """Typing in a modal dialog must not rebuild the window behind it on every pause: a
+    settle owned outside the dialog stays owed until it closes, while the dialog's own
+    settles — and every zero-delay run — go on as before."""
+    dialog = QDialog()
+    inside = QWidget(dialog)
+    behind_view, inside_view, next_turn_view = _View(), _View(), _View()
+    behind = Debounced(behind_view.refresh, 30, parent=host)
+    within = Debounced(inside_view.refresh, 30, parent=inside)
+    next_turn = Debounced(next_turn_view.refresh, 0, parent=host)
+    dialog.setModal(True)
+    dialog.show()
+    try:
+        for debounced in (behind, within, next_turn):
+            debounced.trigger()
+        qtbot.wait(120)
+        assert (inside_view.rebuilds, next_turn_view.rebuilds) == (1, 1)
+        assert behind_view.rebuilds == 0 and behind.pending()
+    finally:
+        dialog.hide()
+    qtbot.wait(120)
+    assert behind_view.rebuilds == 1 and not behind.pending()
+    dialog.deleteLater()

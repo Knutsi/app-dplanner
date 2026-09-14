@@ -3,11 +3,12 @@
 Three projects in one plan repository — *Big* and *Sibling* of ``--steps`` steps each, and
 *Small* of twenty — with the mix of aspects a real plan carries: a chain with branches and
 a few plain links, statuses (a done prefix, a working band, the odd blocked step), an
-estimate on most steps, a milestone every fifteen, a feature step
-per record, agent steps, checks, two tests on most steps with three closed runs and one
-open, notes, a description on every step, and a stored position on every step (or on all
-but an ``--unplaced`` share, to price the automatic layout). Two projects of the same size
-is what catches a view that listens to the whole library instead of its own project.
+estimate on most steps, a milestone every fifteen, a feature step per record quoting a
+spec of a requirement per step, agent steps, checks, two tests on most steps with three
+closed runs and one open, notes, a description on every step, and a stored position on
+every step (or on all but an ``--unplaced`` share, to price the automatic layout). Two
+projects of the same size is what catches a view that listens to the whole library instead
+of its own project.
 
     uv run python scripts/synthetic_library.py --steps 400 --out ~/dplanner-perf
     dplanner window --library ~/dplanner-perf/library.json     # from your own terminal
@@ -32,6 +33,7 @@ from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.seed import create_library, seed_project
+from dplanner.domain.store import ModuleFileArea
 from dplanner.modules import default_module_formats
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.estimation.schedule import write_start
@@ -42,6 +44,8 @@ from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
 from dplanner.modules.project_editor.positions import write_position
 from dplanner.modules.project_editor.sorts import layered_flow
+from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
+from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
 from dplanner.modules.step_agent_instruction.aspect import write_state as agent_state
 from dplanner.modules.step_check.aspect import write as check
 from dplanner.modules.step_milestone.aspect import write as milestone
@@ -74,7 +78,24 @@ def build_library(
             context.library.add_child(context.library.id, project)
             count = SMALL_STEPS if slug == "small" else steps
             _fill(context.library, project, count, unplaced)
+            _spec(context.store.files(project.id, SPEC_ID), context.library, project, count)
     return library_file
+
+
+def _spec(area: ModuleFileArea, library: Library, project: Project, count: int) -> None:
+    """The spec every feature step quotes, a requirement per step — so a passage is judged
+    against a document the size a real plan's is, and not against a name that is missing,
+    which costs nothing and once hid a 570 ms settle."""
+    requirements = [
+        f"## Requirement {index}\n\nThe product needs {_title(index)}. It is measured, logged "
+        "and reviewed like everything else in this part of the plan, and nobody ships it "
+        "until its tests pass."
+        for index in range(count)
+    ]
+    data = ("# Spec\n\n" + "\n\n".join(requirements) + "\n").encode()
+    today = date.today().isoformat()
+    documents, _document, _outcome = import_document(area, [], "spec", data, "spec.md", today)
+    SetModuleDataCommand(project.id, SPEC_ID, write_index(SpecIndex(documents, []))).redo(library)
 
 
 def _fill(library: Library, project: Project, count: int, unplaced: float) -> None:

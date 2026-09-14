@@ -17,6 +17,15 @@ switch: immediate, and ``trigger()`` runs the action inline — which is exactly
 behaviour every view had before it was coalesced. The suite's ``session`` fixture sets it;
 the timer path is tested once, here, and once per conversion.
 
+**A settle behind a modal dialog waits for it to close.** Step Details is modal, and typing
+in it rebuilt the window behind it on every pause — the Problems reading, the Order table,
+Coverage — for views nobody could read past the dialog or act on. So a settle that falls
+due while a modal is up, owned by anything outside that dialog, starts its timer again: the
+run stays owed, the view's indicator stays up, and it runs within one quiet spell of the
+dialog closing. The dialog's own settles run as before, and a zero delay never waits — it
+promises the next frame, and the context's announcement, which keeps every action state
+true for the next keystroke, is one. ``flush()`` still runs whatever is owed.
+
 **A run is a ``refresh`` span in the journal**, named for the view's method and carrying
 how many triggers it folded — "this rebuild replaced 37 signals" is the number that says
 whether coalescing earned its place. The timer is parented to the view's widget, so a
@@ -27,6 +36,7 @@ from collections.abc import Callable
 from weakref import WeakValueDictionary
 
 from PySide6.QtCore import QObject, QTimer
+from PySide6.QtWidgets import QApplication, QWidget
 from shiboken6 import isValid
 
 from dplanner.core.signals import Signal
@@ -113,7 +123,7 @@ class Debounced(QObject):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.setInterval(delay_ms)
-        self._timer.timeout.connect(self._run)
+        self._timer.timeout.connect(self._due)
         # The journal names a slot for what it wraps, and a signal connected to this sees
         # the trigger; ``__wrapped__`` on it is how the view's own method gets the credit.
         self.name = describe_slot(action)
@@ -147,6 +157,25 @@ class Debounced(QObject):
 
     def pending(self) -> bool:
         return self._timer.isActive()
+
+    def _due(self) -> None:
+        if self._behind_a_modal():
+            self._timer.start()  # Still owed: ask again after another quiet spell.
+            return
+        self._run()
+
+    def _behind_a_modal(self) -> bool:
+        """Whether a modal dialog stands in front of what this settles for — any owner
+        outside the dialog, including one that is no widget at all, like a service."""
+        if self._delay_ms == 0:
+            return False
+        modal = QApplication.activeModalWidget()
+        if modal is None:
+            return False
+        owner = self.parent()
+        while owner is not None and not isinstance(owner, QWidget):
+            owner = owner.parent()
+        return owner is None or not modal.isAncestorOf(owner)
 
     def _run(self) -> None:
         folded, self._folded = self._folded, 0

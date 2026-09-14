@@ -25,7 +25,7 @@ and the feature and coverage modules read the verdicts — which is why it lives
 beside ``text_diff.py`` rather than in any one of them.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Literal
@@ -33,6 +33,9 @@ from typing import Literal
 from dplanner.core.text_diff import diff_hunks
 
 type AnchorState = Literal["anchored", "behind", "drifted", "lost", "missing"]
+
+# A text lower-cased with its whitespace collapsed, and the raw offset of every character.
+type Folded = tuple[str, list[int]]
 
 # The shortest quote worth matching fuzzily — below this, any two sentences of English
 # "match" — and what seeds the search: a word this long, the few rarest of them, and at
@@ -81,7 +84,7 @@ class Block:
     is_heading: bool = False
 
 
-def normalised(text: str) -> tuple[str, list[int]]:
+def normalised(text: str) -> Folded:
     """``text`` lower-cased with whitespace runs collapsed to one space, and for every
     character of the result the raw offset it came from (plus one past the end)."""
     out: list[str] = []
@@ -105,28 +108,12 @@ def normalised(text: str) -> tuple[str, list[int]]:
 def locate(text: str, quote: str) -> tuple[int, int] | None:
     """The raw ``(start, end)`` of the first place ``quote`` appears in ``text``, case and
     whitespace aside — None when it does not, or when the quote is blank."""
-    needle, _ = normalised(quote)
-    if not needle:
-        return None
-    haystack, back = normalised(text)
-    hit = haystack.find(needle)
-    if hit < 0:
-        return None
-    return back[hit], back[hit + len(needle) - 1] + 1
+    return _find(normalised(text), quote)
 
 
 def locate_all(text: str, quote: str) -> list[tuple[int, int]]:
     """Every raw span where ``quote`` appears, case and whitespace aside, in order."""
-    needle, _ = normalised(quote)
-    if not needle:
-        return []
-    haystack, back = normalised(text)
-    spans = []
-    hit = haystack.find(needle)
-    while hit >= 0:
-        spans.append((back[hit], back[hit + len(needle) - 1] + 1))
-        hit = haystack.find(needle, hit + 1)
-    return spans
+    return _find_all(normalised(text), quote)
 
 
 def locate_many(text: str, quotes: Sequence[str]) -> list[tuple[int, int, str]]:
@@ -139,17 +126,8 @@ def locate_many(text: str, quotes: Sequence[str]) -> list[tuple[int, int, str]]:
     ``locate`` on every keystroke, which measured 15 ms a keystroke on a 24 KB document
     with eight citations. One normalisation, N finds.
     """
-    haystack, back = normalised(text)
-    found: list[tuple[int, int, str]] = []
-    for quote in quotes:
-        needle, _ = normalised(quote)
-        if not needle:
-            continue
-        hit = haystack.find(needle)
-        if hit < 0:
-            continue
-        found.append((back[hit], back[hit + len(needle) - 1] + 1, quote))
-    return found
+    folded = normalised(text)
+    return [(*span, quote) for quote in quotes if (span := _find(folded, quote)) is not None]
 
 
 def fuzzy_locate(text: str, quote: str) -> tuple[int, int, float] | None:
@@ -162,8 +140,36 @@ def fuzzy_locate(text: str, quote: str) -> tuple[int, int, float] | None:
     since every ratio is over a string the size of the quote, and a few rare words seed
     only a handful of windows even in a long document.
     """
+    return _fuzzy(text, normalised(text), quote)
+
+
+def _find(folded: Folded, quote: str) -> tuple[int, int] | None:
     needle, _ = normalised(quote)
-    haystack, back = normalised(text)
+    if not needle:
+        return None
+    haystack, back = folded
+    hit = haystack.find(needle)
+    if hit < 0:
+        return None
+    return back[hit], back[hit + len(needle) - 1] + 1
+
+
+def _find_all(folded: Folded, quote: str) -> list[tuple[int, int]]:
+    needle, _ = normalised(quote)
+    if not needle:
+        return []
+    haystack, back = folded
+    spans = []
+    hit = haystack.find(needle)
+    while hit >= 0:
+        spans.append((back[hit], back[hit + len(needle) - 1] + 1))
+        hit = haystack.find(needle, hit + 1)
+    return spans
+
+
+def _fuzzy(text: str, folded: Folded, quote: str) -> tuple[int, int, float] | None:
+    needle, _ = normalised(quote)
+    haystack, back = folded
     if len(needle) < FUZZY_MIN or not haystack:
         return None
     play = max(1, round(len(needle) * WINDOW_PLAY))
@@ -289,34 +295,42 @@ def anchor_in(
     digest: str,
     stamped: str,
     stamped_text: str | None,
+    fold: Callable[[str], Folded] = normalised,
 ) -> Anchor:
     """Judge one quote against a document's text.
 
     ``digest`` is the document as it is now; ``stamped`` is what the source recorded when
     it was read (``""`` for never) and ``stamped_text`` that version's text, when it is
     still on disk. ``text`` None means the document cannot be read at all.
+
+    ``fold`` is how a document is normalised, and it is the whole cost of a judgement: a
+    per-character walk of the document, where the quote is a few dozen characters. A
+    caller judging many quotes against the same few documents hands in one memo of
+    :func:`normalised` for its pass — ``anchor_sources`` does — so a document is walked
+    once however many passages cite it.
     """
     if text is None:
         return Anchor("missing", digest=digest)
     if not quote.strip():
         # A citation of the document as a whole: nothing to find, nothing to lose.
         return Anchor("anchored", digest=digest)
-    hit = locate(text, quote)
+    folded = fold(text)
+    hit = _find(folded, quote)
     if hit is not None:
         start, end = hit
         page = None
         pages: tuple[int, ...] = ()
         if kind == "pdf":
             page = page_at(text, start)
-            seen = {page_at(text, other) for other, _end in locate_all(text, quote)}
+            seen = {page_at(text, other) for other, _end in _find_all(folded, quote)}
             pages = tuple(sorted(number for number in seen if number is not None))
         state: AnchorState = "anchored"
         if stamped and stamped != digest:
-            old = locate(stamped_text, quote) if stamped_text is not None else None
+            old = _find(fold(stamped_text), quote) if stamped_text is not None else None
             if old is None or touched(stamped_text or "", text, *old):
                 state = "behind"
         return Anchor(state, start, end, page, digest=digest, pages=pages)
-    drift = fuzzy_locate(text, quote)
+    drift = _fuzzy(text, folded, quote)
     if drift is None:
         return Anchor("lost", digest=digest)
     start, end, ratio = drift

@@ -3851,3 +3851,42 @@ objects* rules, and `NOTES-FOR-APPFRAME.md` §14, which `toolbar.py` had attribu
 about one area moved to `.claude/rules/`, and the diagnosis of a crash moved to a skill.
 
 **Upstream?** No — the citations are this application's documents.
+
+## 46. From the typing-lag pass
+
+### `framework/debounce.py` — a settle behind a modal waits for it
+
+**What.** A `Debounced` with a real delay that falls due while
+`QApplication.activeModalWidget()` is up, and whose first `QWidget` up the parent chain is
+not inside that dialog (or who has none), starts its timer again instead of running. Zero
+delays and immediate mode are unchanged, and `flush()` still runs whatever is owed.
+
+**Why.** Typing in Step Details, which is modal, rebuilt every view behind it at each pause:
+630 ms freezes on an 80-step plan with three tabs open, 1.25 s with all of them. With this
+and the `core/anchors.py` change below, the longest block while typing is 28 ms either way.
+`ARCHITECTURE.md`'s *A settle behind a modal waits for it* has the reasoning.
+
+**Upstream?** Yes. It knows nothing about any feature, and any template application with a
+modal editor over debounced views gains it.
+
+### `core/anchors.py` — `anchor_in` takes a `fold`, and the finders share one body
+
+**What.** `anchor_in(..., fold=normalised)` names how a document, and a stamped version of
+it, is normalised. `locate`, `locate_all`, `locate_many` and `fuzzy_locate` normalise once
+and call private finders over the result (`_find`, `_find_all`, `_fuzzy`), so `locate_many`
+no longer carries a copy of the find. The spec module's `anchor_sources` hands every
+judgement in a pass one `functools.cache(normalised)`, and the passage lint makes one pass
+per project where it made one per feature.
+
+**Why.** The `locate_many` entry above learned that normalising the document is what a
+judgement costs, and fixed two callers; `anchor_in` was a third. On a real plan — 262
+citations, documents up to 57 KB at about 4 ms each to normalise — every judgement walked
+its document again: 545 ms for the Problems reading and 573 ms for the Coverage tab, after
+every pause in typing. It is 20 and 36 ms now. Two alternatives were measured and dropped. A
+faster `normalised`, slicing whitespace-separated runs rather than looping per character,
+came to 1.1× and needed a special case for Greek final sigma to stay equivalent. A
+module-level `lru_cache` would pin megabytes of offsets per document for the life of the
+window, and the Specs tab would churn it on every keystroke — so the memo lives exactly as
+long as one pass.
+
+**Upstream?** Only with the anchoring module, which is this application's.

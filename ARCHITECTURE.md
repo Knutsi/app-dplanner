@@ -5504,6 +5504,31 @@ glyph it borrows and gives back, or a bare `QLabel` that *is* the slot and shows
 idle. `UpdatingIndicator` is the second of those with a `Debounced` attached, which is why
 wiring a view stayed three lines when the look changed.
 
+**A settle behind a modal waits for it.** Step details moved out of the side panel into a
+modal dialog (`steps.details`), and coalescing still let every pause in typing rebuild the
+window behind it. Measured on a real plan of 80 steps and 262 spec citations, typing a
+sentence into the dialog froze the window for **630 ms** at every pause with the graph, the
+Order table and the Time tab open, and for **1.25 s** with every tab open — the Problems
+reading (545 ms) and the Coverage tab (573 ms) each re-judging every citation, for views
+nobody could see past the dialog or act on until it closed. So a `Debounced` asks, when its
+timer falls due, whether a modal dialog is up with its owner outside it, and if so starts
+the timer again instead of running. Three choices make that one rule rather than a flag per
+view. **The owner is the parent chain** — the first `QWidget` above the `Debounced` — so the
+dialog's own sections (its Agent tab's briefing, its Tests tab) go on settling, the docked
+panel's copies behind it wait, and an owner that is no widget at all, a service like the
+Problems reading, stands behind every dialog. **Only a settle waits**: a 0 ms run promises
+the next frame, and the context's announcement is one — holding it would leave the dialog's
+own action states a keystroke behind. **Nothing is dropped**: the run stays pending, so the
+view's indicator stays up and `flush_all` still settles it, and it runs within one quiet
+spell of the dialog closing — once, 20 to 36 ms a view on the same plan. It is a re-armed
+timer rather than a close hook because a hook would need every modal to call it —
+confirmations, file pickers, the expanded editor — where the check is one
+`activeModalWidget()` per due settle. With the citation walk fixed too
+(`NOTES-FOR-APPFRAME.md` §46), the longest block while typing in the dialog on that plan is
+**28 ms**, with three tabs open or all of them. `scripts/synthetic_library.py` now gives
+every project a spec its features quote, because a citation of a missing document costs
+nothing, and that is how the scaling harness missed all of this.
+
 ## How the application scales
 
 Measured on 2026-09-08, four days after the coalescing pass above and after the coverage

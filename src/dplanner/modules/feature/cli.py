@@ -352,13 +352,14 @@ def lint_checks(*, anchor: Anchoring, key_of: Callable[[Step], str] = _no_key) -
         """Every passage judged again — never a stored answer, because `spec import`
         replaces a document with no window running to notice. Lost, drifted and behind
         each name the verb that resolves them; a passage whose document is gone is
-        nobody's finding (there is nothing to check it against)."""
+        nobody's finding (there is nothing to check it against). One anchoring pass for
+        the project: the Problems panel reruns this after every pause in typing."""
+        cited = [(step, read(step) or ()) for step in features_in(project)]
+        verdicts = iter(anchor(files, project, [ref for _, cites in cited for ref in refs(cites)]))
         findings = []
-        for step in features_in(project):
-            cites = read(step) or ()
-            verdicts = anchor(files, project, refs(cites))
-            for source, verdict in zip(cites, verdicts, strict=True):
-                finding = _passage_finding(step, key_of(step), source, verdict)
+        for step, cites in cited:
+            for source in cites:
+                finding = _passage_finding(step, key_of(step), source, next(verdicts))
                 if finding is not None:
                     findings.append(finding)
         return findings

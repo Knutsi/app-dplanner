@@ -17,11 +17,12 @@ surfaces cannot disagree about what a document or a figure is.
 import hashlib
 from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
+from functools import cache
 from pathlib import PurePosixPath
 from typing import Any
 
 from dplanner.cli.command import CliError
-from dplanner.core.anchors import Anchor, anchor_in
+from dplanner.core.anchors import Anchor, anchor_in, normalised
 from dplanner.core.fsio import slugify
 from dplanner.core.module_data import stamped
 from dplanner.domain.assets import (
@@ -668,9 +669,11 @@ def anchor_sources(files: FilesFor, project: Project, sources: Sequence[SourceRe
 
     The spec module's one answer to "does this passage still anchor, and where?", handed
     to the feature module and the coverage view by the composition root. Batched so a
-    document is read once for every feature citing it, and a superseded version once for
-    every source stamped with it. A never-flushed project has no directory and reads as
-    *missing* throughout — a warning, never a refusal, is every caller's rule.
+    document is read — and normalised, which is what a judgement costs — once for every
+    feature citing it, and a superseded version once for every source stamped with it; so
+    a caller with many sources makes one call, never one per feature. A never-flushed
+    project has no directory and reads as *missing* throughout — a warning, never a
+    refusal, is every caller's rule.
     """
     documents = {doc.name: doc for doc in read_index(project).documents}
     try:
@@ -679,6 +682,7 @@ def anchor_sources(files: FilesFor, project: Project, sources: Sequence[SourceRe
         area = None
     texts: dict[str, str | None] = {}
     olds: dict[tuple[str, str], str | None] = {}
+    fold = cache(normalised)
     anchors = []
     for name, quote, read_at in sources:
         document = documents.get(name)
@@ -701,6 +705,7 @@ def anchor_sources(files: FilesFor, project: Project, sources: Sequence[SourceRe
                 digest=digest,
                 stamped=read_at,
                 stamped_text=old,
+                fold=fold,
             )
         )
     return anchors
