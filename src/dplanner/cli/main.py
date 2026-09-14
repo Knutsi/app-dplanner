@@ -23,6 +23,7 @@ from dplanner.cli.command import CliCommand, CliContext, CliError, CliRegistry
 from dplanner.cli.discovery import find_current_project, find_library, open_library
 from dplanner.core.module_data import ModuleDataFormat
 from dplanner.core.telemetry import current
+from dplanner.domain.at_work import AtWorkBoard
 from dplanner.domain.library_file import LIBRARY_ENV
 from dplanner.identity import APP_NAME, APP_VERSION
 
@@ -141,6 +142,7 @@ def run(
     argv: Sequence[str],
     out: TextIO | None = None,
     err: TextIO | None = None,
+    board: "AtWorkBoard | None" = None,
 ) -> int:
     """Parse, open the library if the verb needs one, and run it.
 
@@ -152,6 +154,17 @@ def run(
     A bare run prints the whole help and exits 2 — git's convention — because argparse's own
     answer names neither the nouns nor the window word, and an agent that ran the command
     bare was asking for exactly that list.
+
+    ``board`` is where **this run is recorded as an agent's sign of life**
+    (``domain/at_work.py``): every invocation renews whatever the agent already claimed on
+    the project it resolved, so an agent that is working — writing statuses, adding notes —
+    never has to remember a heartbeat on top of the work. It never *makes* a claim, because
+    running a verb is evidence for a claim somebody made and not a claim of its own.
+
+    None means this run is nobody's sign of life, and that is the ordinary case: ``entry.py``
+    passes a board only when an agent CLI's shell is around the process, because a developer
+    running a verb in their own terminal must not renew somebody else's claim. The verbs that
+    read and write claims hold their own board and work either way.
     """
     out = out if out is not None else sys.stdout
     err = err if err is not None else sys.stderr
@@ -179,6 +192,8 @@ def run(
                 context.current = find_current_project(
                     context.library, context.store, args.project_scope
                 )
+                if board is not None and context.current is not None:
+                    board.touch(context.current.id)
                 code = command.run(context, args)
     except CliError as error:
         print(f"{PROG}: {error}", file=err)

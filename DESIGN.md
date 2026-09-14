@@ -31,6 +31,7 @@ re-rendering — never styling one surface by name.
 | a value set in a table's row | `Column(editor=NumberEditor(…) \| DateEditor(…))`, and `chips=` for its usual values | `framework/table.py` | `s15-tables-and-browsers/estimates-*`, `time-*` |
 | rows that each carry their own verbs and outlive a refresh | `RowWell`, `WellRow` | `framework/row_well.py` | `s15-tables-and-browsers/tasks-*`, `agents-*` |
 | words in the status bar that open what they sum up | `StatusBarButton` | `framework/widgets.py` | — |
+| a fact that holds until it stops holding, over the whole window | `Notice`, `NoticeBar` | `framework/notices.py` | the modal's *Signalling* block |
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
 | a strip that is a tool palette | `Toolbar.add_group` | `framework/toolbar.py` | the toolbars tab: `toolbars-*`, `toolbars-folded-*` |
 | a verb the registry owns, with an arrow | `Toolbar.add_action(menu=…, data_menu=…)` | `framework/toolbar.py` | the Documentation view's strip |
@@ -635,9 +636,13 @@ and one stylesheet rule for the progress bar:
   `theme/tones.py`'s `STATUS_TONES`, the same shades the canvas spine wears.
 - **A progress bar is 4 px, accent, no text, no frame** — one bare `QProgressBar` rule —
   and only for work whose end the application knows: a fetch of 12 pages, a save over 3
-  repositories. Never for the debounce, never for an agent (a peer, not a task), and not
-  indeterminate: an unknown fraction is *busy*, and busy is a line. The task browser shows a
-  bar only for a task that reports its fraction; every other running task is a busy line.
+  repositories. Never for the debounce, never for an agent's own running (a peer, not a
+  task, and nothing here can see how far it has come), and not indeterminate: an unknown
+  fraction is *busy*, and busy is a line. **A count the agent itself declares is a count**,
+  though — `dplanner agent-work set --done 8 --of 20` is the agent saying what it is working
+  through — so that fills a bar exactly as the fetched pages do, and a claim that declares
+  none gets the arc and no promise. The task browser shows a bar only for a task that
+  reports its fraction; every other running task is a busy line.
 - **A remembered duration may fill a bar, under a fact that leads it.** How long the last
   run of the same operation took (`TaskService`'s duration memory, kept per user and
   machine) is a fair guess and a poor promise, so it is never the *only* thing a bar
@@ -647,7 +652,17 @@ and one stylesheet rule for the progress bar:
   (`ESTIMATE_CAP`), because a bar that reads complete while the work goes on is worse than
   one that reads slow. With nothing remembered the bar is the count alone, which is the
   honest picture on a machine's first run.
+- **A fact that holds goes over the content, not in the status bar.** *An agent is editing
+  this plan right now*, *2 entries changed here and outside* — true until they stop being
+  true, and the person must not miss them while they work — are a `Notice` in the
+  `NoticeBar` above the tabs (`framework/notices.py`): a row per owner, the same
+  vocabulary as a `StatusLine` (a tone, and the turning arc when it is about something
+  running), one quiet verb at the right, and the bar gone while nothing stands. The status
+  bar says what a gesture *came to*; this says what is *the case*.
 - **Never a modal for a background fact.** A modal asks; a fact is said where it bites.
+  **And a modal waits while somebody else is already interrupting**: while an agent says it
+  is at work, the collision question stands in the notice bar rather than being thrown over
+  a person who has just been asked to keep their hands off the graph.
 - **A field being dictated into wears the accent edge.** The microphone verb is checked
   while it listens and its glyph turns while the words are on their way; the editor says
   the same thing on its own border (`dictating`), the way a checked verb's glyph takes the

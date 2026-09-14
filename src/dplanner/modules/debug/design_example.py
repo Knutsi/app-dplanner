@@ -39,6 +39,7 @@ from dplanner.framework.activity import ActivityBase
 from dplanner.framework.context import SCOPE_ACTIVITY, ContextNode, ContextService, activity_uri
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
 from dplanner.framework.dialog import DialogFrame
+from dplanner.framework.notices import Notice, NoticeBar
 from dplanner.framework.signalling import Spinner, StatusLine, UpdatingIndicator
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.theme_service import ThemeService
@@ -304,6 +305,31 @@ class DesignExampleDialog(DialogFrame):
         self.progress.setValue(2)
         self.progress.setTextVisible(False)
         signals.addWidget(self.progress)
+        # Standing notices: a fact that holds until it stops holding. In the application
+        # this bar sits over the whole window's content (framework/main_window.py) — it is
+        # here so the two shapes can be compared with the lines above them. Busy with a
+        # declared count, and the same fact once it has gone quiet, with its one verb.
+        self.notices = NoticeBar(self.body)
+        self.notices.show_notice(
+            Notice(
+                id="demo.agent",
+                words="An agent is at work on Payments — linking the steps · 8 of 20"
+                " · heard just now",
+                tone="busy",
+                busy=True,
+                fraction=0.4,
+            )
+        )
+        self.notices.show_notice(
+            Notice(
+                id="demo.conflict",
+                words="2 entries changed here and outside — this window is not saving"
+                " until settled",
+                tone="error",
+                action="Settle…",
+            )
+        )
+        signals.addWidget(self.notices)
         self.refuse_switch = QCheckBox(
             "Refuse the primary, with the reason in the footer", self.body
         )

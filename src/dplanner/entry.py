@@ -33,7 +33,12 @@ from collections.abc import Mapping
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import WINDOW_WORD, run
 from dplanner.core.telemetry import Telemetry, install, journal_path
-from dplanner.modules import agent_harnesses, default_cli_commands, default_module_formats
+from dplanner.modules import (
+    agent_harnesses,
+    at_work_board,
+    default_cli_commands,
+    default_module_formats,
+)
 
 # Options that take a value, so the value is not mistaken for a command word. Both surfaces
 # understand --library; the CLI also scopes verbs with --project. Skipping the value is
@@ -121,8 +126,14 @@ def main(argv: list[str] | None = None) -> int:
         return gui_main([sys.argv[0], *window_arguments(arguments)])
 
     registry = CliRegistry()
-    registry.register_all(default_cli_commands())
-    return run(registry, default_module_formats(), arguments)
+    # One board, two uses. The verbs always have it. The *run* is handed it only from
+    # inside an agent's shell: renewing a claim is saying "that agent is still there", and
+    # a developer running a verb in their own terminal would be saying it for them. The
+    # marker is the same fact the window word is refused on, read from the other side.
+    board = at_work_board()
+    registry.register_all(default_cli_commands(board=board))
+    signing = board if agent_shell_marker() else None
+    return run(registry, default_module_formats(), arguments, board=signing)
 
 
 def window_main(argv: list[str] | None = None) -> int:

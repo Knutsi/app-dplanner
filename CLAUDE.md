@@ -795,11 +795,36 @@ root, stop and look for the registry or capability you have not found yet.
   has not flushed is a conflict**, reported and not adopted: that project's flush stays
   refused, autosave stays paused, and `modules/library_watch/` asks in a modal — hand both
   versions to the configured agent (Run Agent's launcher; the window yields to disk and the
-  merge arrives like any outside change), take theirs, keep mine, or later. The watcher no
+  merge arrives like any outside change), take theirs, keep mine, or later. *Later* leaves
+  the question standing in the notice bar with *Settle…* on it — one fact in one place,
+  which is what retired the status-bar button it used to leave. The watcher no
   longer waits for a quiet window: a flush re-stamps as it writes, so our own writes never
   read as foreign. Branch switch and pull go through the same `SessionControl.refresh`,
   clearing undo history (theirs describes another tree). `ARCHITECTURE.md`'s *Adopting the
   other writer's changes in place* has the reasoning.
+- **An agent at work says so, and the window says it back.** The other writer is
+  invisible, which is the whole problem: a developer editing a step an agent is rewriting
+  finds out when a modal asks them to settle a collision they did not cause. So an agent
+  announces itself — `dplanner agent-work start '<what I am doing>' [--step S7] [--of N]`,
+  `agent-work set`, `agent-work end`, `agent-work show` — and `modules/agent_at_work/`
+  polls the claims at the watcher's cadence and stands one `Notice` per claim over the
+  window's content: the turning arc, the agent's words, its own count, and when it was
+  last heard from. **Liveness is reported, never guessed** (`domain/at_work.py`): nothing
+  can see another process, so a claim that has gone quiet changes tense — *was at work …
+  last heard 22 minutes ago* — instead of disappearing, and it ends three ways and no
+  other: the agent ends it, a person clears it from the banner, or a later claim sweeps
+  one nobody has renewed since yesterday. **Every `dplanner` run is the sign of life** —
+  `cli/main.py` renews the project's standing claims, so an agent that is working never
+  needs a heartbeat — and **only from inside an agent's shell**, the marker `entry.py`
+  refuses the window word on, because a developer's own terminal must not vouch for
+  somebody else. A claim is per user and per machine (`config_dir()/at-work/`, one file
+  per claim so two agents never lose each other's update), never the plan: a heartbeat in
+  a project directory would commit into everybody's history. **The window makes no claim,
+  ever** — its only write is the clear. **And while an agent is at work the collision
+  waits rather than interrupts**: `library_watch` leaves its question in the notice bar
+  and the status bar instead of raising the modal, and names the agent in the dialog when
+  the person does open it. `ARCHITECTURE.md`'s *An agent at work says so* has the
+  reasoning.
 - **A branch switched underneath the window is taken in, and said.** The sync module
   asks every repository's branch at the workspace watcher's cadence (`POLL_MS`) and
   compares it with the one this window last saw; a switch it did not make — a terminal's

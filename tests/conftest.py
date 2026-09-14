@@ -100,7 +100,24 @@ def library_file(tmp_path):
 
 
 @pytest.fixture
-def session(app, library_file):
+def at_work_board(tmp_path):
+    """Where an agent's *at work* claims land in a test: this test's own directory, never
+    the user's (``domain/at_work.py``).
+
+    One board for both surfaces of a test. The ``cli`` fixture hands it to the verbs *and*
+    to the run, which is what ``entry.py`` does from inside an agent's shell — so a test
+    invocation reads as an agent's, which is who the CLI is for; a run that is nobody's
+    sign of life is ``run(board=None)``, tested where that distinction is the subject. The
+    ``session`` fixture reads the same directory, so a claim one fixture writes is a banner
+    the other shows.
+    """
+    from dplanner.domain.at_work import AtWorkBoard
+
+    return AtWorkBoard(tmp_path / "at-work")
+
+
+@pytest.fixture
+def session(app, library_file, at_work_board):
     """A whole application, built over a fresh, empty library in a temp directory.
 
     Built through ``AppSession`` — the same path ``dplanner.app.main`` takes — so a test can
@@ -111,7 +128,11 @@ def session(app, library_file):
     every later ``gc.collect()`` pays for it. Calling it twice is a no-op, so a test that
     closes early may still rely on this.
     """
-    session = new_session()
+    # The board is this test's own directory, never the user's: a window built here must
+    # not read what some agent is really doing on this machine — and a test that writes a
+    # claim through the ``cli`` fixture sees it in the window it built, because both
+    # fixtures are handed the one board.
+    session = new_session(at_work=at_work_board)
     assert session.open_initial(library_file)
     assert session.services is not None
     # Every coalesced view refresh runs inline: a test asserts on a view the line after it
@@ -263,7 +284,7 @@ def _fresh_session_settings():
 
 
 @pytest.fixture
-def registry():
+def registry(at_work_board):
     """The whole CLI, with the topology gate switched off.
 
     A gate with no record file refuses nothing and writes nothing, so no test here needs
@@ -277,7 +298,10 @@ def registry():
 
     registry = CliRegistry()
     registry.register_all(
-        default_cli_commands(gate=TopologyGate(record_path=None, topology_of=read_topology))
+        default_cli_commands(
+            gate=TopologyGate(record_path=None, topology_of=read_topology),
+            board=at_work_board,
+        )
     )
     return registry
 
@@ -317,7 +341,7 @@ def _default_project_dir(argv, workspace):
 
 
 @pytest.fixture
-def cli(registry, workspace, cli_library):
+def cli(registry, workspace, cli_library, at_work_board):
     from io import StringIO
 
     from dplanner.cli.main import run
@@ -327,7 +351,12 @@ def cli(registry, workspace, cli_library):
         out, err = StringIO(), StringIO()
         argv = _default_project_dir(argv, workspace)
         code = run(
-            registry, default_module_formats(), ["--library", str(cli_library), *argv], out, err
+            registry,
+            default_module_formats(),
+            ["--library", str(cli_library), *argv],
+            out,
+            err,
+            board=at_work_board,
         )
         assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
         return out.getvalue() + err.getvalue()
@@ -336,7 +365,7 @@ def cli(registry, workspace, cli_library):
 
 
 @pytest.fixture
-def cli_stdin(registry, workspace, cli_library):
+def cli_stdin(registry, workspace, cli_library, at_work_board):
     import sys
     from io import StringIO
 
@@ -355,6 +384,7 @@ def cli_stdin(registry, workspace, cli_library):
                 ["--library", str(cli_library), *argv],
                 out,
                 err,
+                board=at_work_board,
             )
         finally:
             sys.stdin = real

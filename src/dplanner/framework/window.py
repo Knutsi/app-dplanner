@@ -12,6 +12,7 @@ from typing import Protocol
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.signals import Signal
+from dplanner.framework.notices import Notice
 from dplanner.framework.panels import PanelArea
 
 
@@ -21,6 +22,19 @@ class StatusHost(Protocol):
     def show_status(self, text: str, msecs: int = 0) -> None: ...
 
     def add_status_widget(self, widget: QWidget) -> None: ...
+
+
+class NoticeHost(Protocol):
+    """The standing notices over the window's content (:mod:`dplanner.framework.notices`).
+
+    Separate from :class:`StatusHost` because they answer different questions: the status
+    bar says what a gesture came to, a notice says what is true until it stops being true.
+    A module owns its notice by id and is the only one that shows or clears it.
+    """
+
+    def show_notice(self, notice: Notice) -> None: ...
+
+    def clear_notice(self, notice_id: str) -> None: ...
 
 
 class PanelHost(Protocol):

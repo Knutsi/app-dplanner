@@ -1,5 +1,5 @@
 """What the window shows when an outside change collides with an unsaved edit: the modal
-that asks, and the status-bar button that keeps the question reachable after *Later*."""
+that asks, and the words the standing notice keeps it reachable by after *Later*."""
 
 from collections.abc import Sequence
 
@@ -32,7 +32,13 @@ class ConflictDialog(DialogFrame):
     kept; *Take Theirs* and *Keep Mine* are quiet secondaries; *Later* is Escape's.
     """
 
-    def __init__(self, rows: Sequence[str], agent_refusal: str, parent: QWidget | None) -> None:
+    def __init__(
+        self,
+        rows: Sequence[str],
+        agent_refusal: str,
+        parent: QWidget | None,
+        at_work: str = "",
+    ) -> None:
         super().__init__("Changed Here and Outside", parent)
         self.setMinimumWidth(MIN_WIDTH)
         self.choice = LATER
@@ -41,6 +47,12 @@ class ConflictDialog(DialogFrame):
         explanation.setObjectName("DialogQuestion")
         explanation.setWordWrap(True)
         layout.addWidget(explanation)
+        if at_work:
+            # Who the other writer is, in its own words. Taking theirs means taking that
+            # agent's work, and the choice reads differently once you know that.
+            who = note(f"{at_work}.", body)
+            who.setWordWrap(True)
+            layout.addWidget(who)
         for row in rows:
             label = note(f"•  {row}", body)
             label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -70,8 +82,12 @@ class ConflictDialog(DialogFrame):
 
 
 def waiting_words(count: int) -> str:
-    """The status-bar words while entries wait to be settled — nothing while none do."""
+    """The standing notice's words while entries wait to be settled — nothing while none do.
+
+    No glyph of its own: the notice is a ``StatusLine`` in the error tone and already
+    carries one, and a second would be two vocabularies for one fact.
+    """
     if not count:
         return ""
     noun = "entry" if count == 1 else "entries"
-    return f"● {count} {noun} changed here and outside"
+    return f"{count} {noun} changed here and outside — this window is not saving until settled"

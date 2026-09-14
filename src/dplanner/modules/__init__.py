@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from dplanner.domain.agents import AgentHarness
     from dplanner.domain.aspects import AspectSpec
     from dplanner.domain.assets import AssetSource
+    from dplanner.domain.at_work import AtWorkBoard
     from dplanner.domain.commands import Command
     from dplanner.domain.dictation import DictationProvider
     from dplanner.domain.model import Library, Project, Step
@@ -61,6 +62,7 @@ if TYPE_CHECKING:
 __all__ = [
     "agent_harnesses",
     "aspect_specs",
+    "at_work_board",
     "default_cli_commands",
     "default_module_formats",
     "default_modules",
@@ -69,7 +71,7 @@ __all__ = [
 ]
 
 
-def default_modules(services: "AppServices") -> list["Module"]:
+def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None) -> list["Module"]:
     from pathlib import Path
 
     from dplanner.core.config_dir import config_dir
@@ -91,6 +93,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+    from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
     from dplanner.modules.anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.appearance.module import AppearanceDeps, AppearanceModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
@@ -1126,6 +1129,21 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
+    # Built ahead of the list because the library watcher asks it one question — whether an
+    # agent is at work on the project a conflict is in — and stands its modal down while one
+    # is. The board comes from `app.new_session` — the machine's when the application runs,
+    # one holding nothing when a test builds — and is named nowhere deeper: no feature
+    # module reaches `config_dir`, the same rule the topology gate's record path follows.
+    agent_at_work = AgentAtWorkModule(
+        AgentAtWorkDeps(
+            board=board if board is not None else at_work_board(),
+            notices=services.window,
+            library=library,
+            parent=services.window,
+            key_of=_step_key,
+        )
+    )
+
     # Built ahead of the list too: the library watcher hands an entry two writers changed
     # at once to this module's launcher, and it is listed before this module.
     agent_instruction = StepAgentInstructionModule(
@@ -1249,6 +1267,9 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 publisher=publication_for,
             )
         ),
+        # Before the watcher: the banner that says an agent is at work is what makes the
+        # watcher's stood-down modal legible, so it must already be on screen.
+        agent_at_work,
         # After sync, so the conflict button lands to the right of the library path.
         LibraryWatchModule(
             LibraryWatchDeps(
@@ -1260,12 +1281,16 @@ def default_modules(services: "AppServices") -> list["Module"]:
                 actions=services.actions,
                 switcher=services.switcher,
                 status=services.window,
+                notices=services.window,
                 parent=services.window,
                 library=library,
                 # An entry both writers changed goes to Run Agent's launcher with both
                 # versions; the run is tracked on the step like any other.
                 hand_to_agent=agent_instruction.hand_conflicts,
                 agent_refusal=agent_instruction.conflict_refusal,
+                # Whether an agent says it is at work on a project: the modal stands down
+                # while one is, and the dialog says so when it does open.
+                agent_at_work=agent_at_work.at_work_words,
             )
         ),
         TaskCenterModule(
@@ -2097,6 +2122,17 @@ def _agent_preamble(step: "Step", in_worktree: bool, facts: "RepositoryFacts | N
         " step — and tell the developer this step needs the DPlanner skill"
         " (`dplanner skill install`)."
     ]
+    key = _step_key(step) or step.title or "this step"
+    ref = f"'{key}'" if " " in key else key
+    lines.append(
+        "Then say you are working, before you touch anything: `dplanner agent-work start"
+        f" '<what you are about to do>' --step {ref}`. A developer may have a DPlanner"
+        " window open on this plan, and that is what tells them somebody else is editing"
+        " it — without it they will edit the same steps you are rewriting and be asked to"
+        " settle collisions they did not cause. Keep it current as you go"
+        f" (`dplanner agent-work set '<what now>' --done N --of M`), and end it when you"
+        f" stop (`dplanner agent-work end --step {ref}`)."
+    )
     if in_worktree:
         name = _run_name(step)
         lines.append(
@@ -2206,7 +2242,10 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
         " in full, `--reach project` if every step should see it regardless;"
         f" `dplanner note attach {project} <id> <file>` for files.\n"
         f"If you cannot finish, `dplanner status set {ref} blocked` and say why in the"
-        " handoff note."
+        " handoff note.\n"
+        f"Either way, finish by ending your working claim: `dplanner agent-work end --step"
+        f" {ref}` — the window says an agent is at work on this plan until"
+        " you do, and a banner nobody ended is one nobody believes next time."
     )
 
 
@@ -2576,7 +2615,22 @@ def _rename_spec_references(project: "Project", name: str, chosen: str) -> list[
     return commands
 
 
-def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand"]:
+def at_work_board() -> "AtWorkBoard":
+    """Where an agent's *at work* claims live on this machine — ``domain/at_work.py``.
+
+    Named here and nowhere deeper, like the topology gate's record file and the spec-git
+    cache: a feature module never reaches ``config_dir()``. Both surfaces build it from
+    this one function, so the window reads exactly the directory the CLI writes.
+    """
+    from dplanner.core.config_dir import config_dir
+    from dplanner.domain.at_work import DIRECTORY, AtWorkBoard
+
+    return AtWorkBoard(config_dir() / DIRECTORY)
+
+
+def default_cli_commands(
+    gate: "TopologyGate | None" = None, board: "AtWorkBoard | None" = None
+) -> list["CliCommand"]:
     """Every ``dplanner <noun> <verb>``, from the same modules the window is built from.
 
     The headless half of the composition root. It imports each module's ``cli.py`` and
@@ -2585,7 +2639,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
 
     ``gate`` is the topology gate every graph-editing verb runs behind; None builds the
     real one over the user's config directory. The test suite's shared registry passes a
-    gate with no record file, so no test ever writes the per-user file.
+    gate with no record file, so no test ever writes the per-user file. ``board`` is the
+    same arrangement for the *at work* claims — None builds :func:`at_work_board`, and a
+    test hands in one over its own directory.
     """
     from dplanner.cli.aspects import commands as aspect_commands
     from dplanner.cli.assets import catalog_commands
@@ -2602,6 +2658,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.cli.telemetry import commands as telemetry_commands
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
+    from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.coverage import cli as coverage_cli
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
@@ -2640,6 +2697,8 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     sources = _asset_sources()
     if gate is None:
         gate = TopologyGate(record_path=config_dir() / RECORD_FILE, topology_of=read_topology)
+    if board is None:
+        board = at_work_board()
     commands = [
         *library_cli.commands(),
         # The step authors let `step add` author the step in the same call; the list
@@ -2669,6 +2728,9 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         # What a run consumed is read through the harness that ran it, so the verbs are
         # handed the same tuple the window's tracker reads.
         *agent_state_cli.commands(harnesses=agent_harnesses()),
+        # The agent's own account of what it is doing while it does it: the window's
+        # banner and the watcher's stood-down modal both read what these write.
+        *at_work_cli.commands(board=board, key_of=_step_key),
         *status_cli.commands(),
         *milestone_cli.commands(),
         # A feature's passages are anchored in the spec documents by the spec module's

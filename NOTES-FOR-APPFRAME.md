@@ -3793,3 +3793,47 @@ selection under the widgets and needed a taller row. Painting from one layout ke
 the unit, the height the font's, and the chips aligned whatever a row holds.
 
 **Upstream?** Yes, with the table.
+
+## 44. From the agent-at-work pass
+
+### `framework/notices.py` — `Notice` and `NoticeBar`, a standing fact over the content
+
+**What.** A new primitive: a bar between the menu bar and the window's content, holding one
+row per standing notice keyed by whoever owns it. A `Notice` is plain data — id, words, a
+tone, whether the turning arc leads it, a fraction for the 4 px bar, and one quiet verb with
+its callback — and `show_notice`/`clear_notice` are the whole API. A notice equal to the one
+already on screen redraws nothing, which is what makes it safe to drive from a poll; the bar
+is hidden while nothing stands. `framework/main_window.py` puts it above the `PanelDock` in
+a one-widget column and satisfies a new `NoticeHost` protocol in `framework/window.py`.
+
+**Why.** The application had three places to say something and none of them fitted a fact
+that is *true until it stops being true* and must not be missed: the status bar says what a
+gesture came to and is easy to miss, a dialog's status slot belongs to that dialog, and a
+modal asks rather than says. DPlanner needed it for "an agent is editing this plan right
+now" — the other writer is otherwise invisible, and a developer finds out by colliding with
+it — and the library watcher's "entries changed here and outside" moved onto it the same
+day, which is the usual sign a primitive was missing rather than invented.
+
+**Upstream?** Yes. It is entirely application-neutral, it is made of `signalling.py`'s
+existing vocabulary (a `StatusLine`, a `Spinner` on a bare label, the one `QProgressBar`
+rule) and it adds no motion the design standard did not already allow. The `#NoticeBar`
+stylesheet rule goes with it: the elevated ground the panels wear and one hairline
+underneath, no colour of its own — a notice's mood is its `StatusLine`'s tone.
+
+### What it taught: a fact about another process is reported, never inferred
+
+**What.** Not a code change — a design conclusion worth keeping. The feature had to answer
+"is that agent still there?", and every mechanism that tried to *decide* was worse than the
+one that refused to. A heartbeat the peer must remember is one it forgets mid-task; a lease
+is a number that is either too short (the banner vanishes while it thinks) or too long (a
+crash holds the screen for an hour); a pid is a process the announcing CLI run does not own,
+whose parent may be a session shell or a per-call one with no way to tell. What worked was
+storing the last sign of life and deriving every reading from it: the words change tense
+rather than disappearing, and the fact goes away only when somebody who actually knows
+something says so — the peer, a person, or a sweep a day later.
+
+**Why it generalises.** Any template application that shells out to a long-running peer — a
+build, a deploy, another editor — faces the same question, and the same answer holds: the
+honest surface says *last heard 22 minutes ago*, not *probably dead*.
+
+**Upstream?** As a note; there is no code to carry.
