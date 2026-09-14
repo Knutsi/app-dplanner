@@ -192,16 +192,21 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
 
 ## Lanes joined by lines
 
-A report of several columns whose rows relate — the coverage view's spec, features,
-milestones, tests — draws each column as a **lane** (`$BG_ELEVATED`, 1 px `$BORDER`,
+A report of several columns whose rows relate — the coverage view's milestones, features,
+spec, tests — draws each column as a **lane** (`$BG_ELEVATED`, 1 px `$BORDER`,
 `RADIUS_MD`, a bold secondary caption inside its top) with the cards stacked inside and
 the connections as curves in the **gutters** between lanes, never across a lane. A lane
 scrolls on its own — the wheel over it, a 4 px thumb at its right edge that exists only
-while it overflows — and the view itself never scrolls. Picking a card lights its path
-and dims everything else to about a third; the picked lane never moves, every other lane
-brings its first lit card into view. A card's state is a mark at its top-right corner —
-a hollow accent ring for *behind*, a filled accent dot for *drifted*, green for *ok*, red
-for *failed* or *lost*, a faint ring for *pending* — never a word.
+while it overflows.
+
+**The lanes read left to right, and a pick fills the lane after it.** A click picks within
+its own lane and clears the lanes to its right; Ctrl-click adds to that lane. Nothing is
+dimmed: a lane stands what the picks stand up and nothing else, and a lane with nothing in
+it says, in the secondary ink at its top, which pick would fill it. A lane whose content
+changed starts at the top. A card's state is a mark at its top-right corner — a hollow
+accent ring for *behind*, a filled accent dot for *drifted*, green for *ok*, red for
+*failed* or *lost*, a faint ring for *pending* — never a word; a line into or out of a
+picked card takes the accent and thickens.
 
 ## Cards
 

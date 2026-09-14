@@ -2253,7 +2253,7 @@ def _scope_kinds(
 
 
 def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -> "Trace":
-    """The coverage picture: spec passages → features → milestones → tests and docs.
+    """The coverage picture: milestones → features → spec passages → tests and docs.
 
     The one place the spec, the feature steps, the collectors, the tests and the docs
     meet; each answers through its own Qt-free reader and ``coverage/trace.py`` only

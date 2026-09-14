@@ -3,15 +3,15 @@ document, how much of the spec is cited, and the verb that lights what wants a l
 
 The tab owns nothing the trace does not: it asks ``trace_of`` on every coalesced change
 of its project, hands the answer to the scene, and turns the scene's gestures into the
-same verbs every other view runs — a click publishes the step, a double-click opens the
-thing through the callbacks the composition root wired, a right-click renders the Step
-menu. It never reaches another module.
+same verbs every other view runs — the picks publish their steps, a double-click opens
+the thing through the callbacks the composition root wired, a right-click renders the
+Step menu. It never reaches another module.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPointF, QSize, Qt
 from PySide6.QtGui import QKeyEvent, QPainter, QResizeEvent
 from PySide6.QtWidgets import QGraphicsView, QHBoxLayout, QVBoxLayout, QWidget
 
@@ -34,12 +34,16 @@ from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import EmptyState, note
-from dplanner.modules.coverage.scene import CoverageScene
+from dplanner.modules.coverage.scene import GUTTER, LANE_MIN_W, MARGIN, CoverageScene
 from dplanner.modules.coverage.trace import FEATURES, MILESTONES, OUTCOMES, SPEC, Trace, flat
 from dplanner.theme.icons import eye_icon
 from dplanner.theme.tokens import CONTROL_GAP, FIELD_GAP
 
 COVERAGE_KIND = "coverage"
+# What the tab asks the layout for, and the least it can be cut to: four lanes at their
+# narrowest, and one — constants, because a hint read off the scene would grow with the pane.
+WANTED = QSize(int(4 * LANE_MIN_W + 3 * GUTTER + 2 * MARGIN), 420)
+FLOOR = QSize(int(LANE_MIN_W + 2 * MARGIN), 160)
 NO_DOCUMENTS = "No spec documents — import one to trace it"
 NOTHING_TRACED = (
     "Nothing to trace yet. Import a spec on the Specs tab, and cite its passages from the "
@@ -76,7 +80,14 @@ class CoverageDeps:
 
 class CoverageView(QGraphicsView):
     """The viewport: the lanes laid to its width, and a horizontal scroll bar only when
-    four lanes at their narrowest still do not fit — a finite extent, so the bar is honest."""
+    four lanes at their narrowest still do not fit — a finite extent, so the bar is honest.
+
+    **Its size hint is a constant, and it has to be.** ``QGraphicsView`` hands out the
+    scene rect as its size hint, and this scene's rect is laid to the viewport — so a
+    splitter honouring the hint widens the view, which widens the scene, which widens the
+    hint again: opening the tab pushed the index panel off the left of the window, and
+    dragging the seam jumped. Nothing here reports a width it was given.
+    """
 
     def __init__(self, scene: CoverageScene, parent: QWidget | None = None) -> None:
         super().__init__(scene, parent)
@@ -88,6 +99,12 @@ class CoverageView(QGraphicsView):
         self.setFrameShape(QGraphicsView.Shape.NoFrame)
         self.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return WANTED
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return FLOOR
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)
@@ -139,7 +156,8 @@ class CoverageActivity(EntityActivity):
         layout.addWidget(self.strip)
 
         self.scene = CoverageScene()
-        self.scene.picked.connect(self._on_picked)
+        self.scene.picked_changed.connect(self._on_picked)
+        self.scene.picked_changed.connect(self._reveal_next_lane)
         self.scene.activated.connect(self._on_activated)
         self.scene.menu_requested.connect(self._on_menu)
         self.view = CoverageView(self.scene, page)
@@ -242,12 +260,20 @@ class CoverageActivity(EntityActivity):
             return target  # A feature's id is its step's.
         return None
 
-    def _on_picked(self, item_id: str) -> None:
-        step_id = self._step_of(item_id) if item_id else None
-        nodes: tuple[ContextNode, ...] = ()
-        if step_id is not None and self._deps.library.has(step_id):
-            nodes = (ContextNode(selection_uri("step", step_id)),)
-        self.publish_selection(nodes)
+    def _reveal_next_lane(self) -> None:
+        rect = self.scene.lane_after(self.scene.picked)
+        if rect is not None:
+            self.view.ensureVisible(rect, 0, 0)
+
+    def _on_picked(self) -> None:
+        """Every picked card's step, in the trace's own order — a pick is a selection the
+        Step verbs act on, and picking three features is picking three steps."""
+        steps: list[StepId] = []
+        for item in self.trace.items if self.trace is not None else ():
+            step_id = self._step_of(item.id) if item.id in self.scene.picked else None
+            if step_id is not None and step_id not in steps and self._deps.library.has(step_id):
+                steps.append(step_id)
+        self.publish_selection(tuple(ContextNode(selection_uri("step", s)) for s in steps))
 
     def _on_activated(self, item_id: str) -> None:
         item = self.trace.item(item_id) if self.trace is not None else None

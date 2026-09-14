@@ -6,6 +6,9 @@ import json
 import pytest
 from tests.cli.spec_helpers import source
 
+from dplanner.modules.coverage.trace import FEATURES, OUTCOMES
+from dplanner.modules.coverage.trace import SPEC as SPEC_LANE
+
 SPEC = """# Readings
 
 ## Import
@@ -81,8 +84,9 @@ def test_show_walks_from_the_document_to_the_tests(cli, project):
     shown = data(cli("coverage", "show", project, "--json"))
     columns = {item["id"]: item["column"] for item in shown["items"]}
     ids = {item["title"]: item["id"] for item in shown["items"]}
-    assert columns["doc:readings"] == 0 and columns[ids["Import"]] == 1
-    assert columns["test:T100"] == 3
+    # The lanes the tab draws, left to right: milestones, features, spec, tests and docs.
+    assert columns["doc:readings"] == SPEC_LANE and columns[ids["Import"]] == FEATURES
+    assert columns["test:T100"] == OUTCOMES
     assert [f["title"] for f in shown["unsourced"]] == ["Dark mode"]
     assert shown["documents"][0]["cited"] == 3
     only = data(cli("coverage", "show", project, "--feature", "Export", "--json"))
