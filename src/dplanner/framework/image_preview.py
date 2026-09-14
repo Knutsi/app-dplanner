@@ -8,12 +8,15 @@ a preview dialog whose whole job is fidelity must not be the blurriest surface i
 application.
 """
 
+from collections.abc import Sequence
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QImage, QPixmap
 from PySide6.QtWidgets import QLabel, QWidget
 
+from dplanner.domain.assets import ClickTarget
+from dplanner.framework.click_targets import marked
 from dplanner.framework.dialog import DialogFrame
 from dplanner.theme.tokens import SCREEN_SHARE
 
@@ -24,6 +27,11 @@ class ImagePreviewDialog(DialogFrame):
     A fit dialog: the pixmap sizes it. Close is the only way out, with *Open Externally*
     and *Copy Path* as quiet secondaries when there is a path, and what either came to
     said in the footer's status slot rather than in a box over the picture.
+
+    ``targets`` are the areas the prose that links this picture points at — rung here, at
+    the size somebody is actually looking at it. The picture on disk is untouched, and
+    *Open Externally* deliberately opens the bare one: the ring is this application's
+    reading of the prose, not part of the file.
     """
 
     def __init__(
@@ -34,11 +42,12 @@ class ImagePreviewDialog(DialogFrame):
         *,
         caption: str = "",
         path: str = "",
+        targets: Sequence[ClickTarget] = (),
     ) -> None:
         super().__init__(caption or f"{name} — {image.width()} x {image.height()}", parent)
         self.image_label = QLabel(self.body)
         self.image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.image_label.setPixmap(self._fitted(image))
+        self.image_label.setPixmap(self._fitted(marked(image, targets)))
         self.body_layout.addWidget(self.image_label)
         if path:
             self.add_button("Open Externally", lambda: self._open_externally(path))

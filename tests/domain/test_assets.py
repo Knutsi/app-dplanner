@@ -17,11 +17,17 @@ from dplanner.domain.assets import (
     AssetLocation,
     AssetSource,
     AssetUse,
+    ClickTarget,
     area_assets,
     asset_references,
     attach,
     catalog,
+    click_targets,
+    image_references,
     prunable,
+    target_fragment,
+    targets_by_asset,
+    without_fragment,
 )
 from dplanner.domain.library_file import write_library_file
 from dplanner.domain.model import Library, Project, Step
@@ -77,6 +83,51 @@ def test_asset_references_reads_both_link_forms_and_skips_foreign_targets():
         " and ![again]( assets/ab12.png )"
     )
     assert asset_references(body) == ["assets/ab12.png", "assets/cd34.pdf"]
+
+
+# -- click targets: which part of a picture the prose points at ----------------------------
+
+
+def test_a_click_target_rides_in_the_fragment_and_is_read_back_in_pixels():
+    assert click_targets("assets/ab12.png#click=120,340,80,32") == (ClickTarget(120, 340, 80, 32),)
+    assert click_targets("assets/ab12.png") == ()
+
+
+def test_several_targets_on_one_link_are_read_in_writing_order():
+    found = click_targets("assets/ab12.png#click=1,2,3,4;click=5,6,7,8")
+    assert found == (ClickTarget(1, 2, 3, 4), ClickTarget(5, 6, 7, 8))
+
+
+def test_a_malformed_fragment_reads_as_no_targets_rather_than_raising():
+    # Anything may end up in a link; a body an agent typed by hand must never fail a read.
+    assert click_targets("assets/ab12.png#click=nonsense") == ()
+    assert click_targets("assets/ab12.png#anchor") == ()
+
+
+def test_the_fragment_round_trips_through_the_writer():
+    targets = (ClickTarget(12, 34, 56, 78), ClickTarget(1, 2, 3, 4))
+    assert click_targets(f"assets/a.png{target_fragment(targets)}") == targets
+    assert target_fragment(()) == ""
+
+
+def test_a_fragment_is_not_part_of_the_name_either_scanner_answers():
+    body = "![go](assets/ab12.png#click=1,2,3,4) and [doc](assets/cd34.pdf#page=2)"
+    # Or the catalog would count one attachment as two and offer a used one for pruning.
+    assert asset_references(body) == ["assets/ab12.png", "assets/cd34.pdf"]
+    assert image_references(body) == ["assets/ab12.png"]
+    assert without_fragment("assets/ab12.png#click=1,2,3,4") == "assets/ab12.png"
+
+
+def test_one_picture_linked_twice_has_one_set_of_targets():
+    # Both links are about the same file; a reader shown one of two answers would be shown
+    # the wrong one half the time.
+    body = "![a](assets/ab12.png)\n![b](assets/ab12.png#click=1,2,3,4)"
+    assert targets_by_asset(body) == {"assets/ab12.png": (ClickTarget(1, 2, 3, 4),)}
+
+
+def test_targets_by_asset_skips_what_is_not_a_module_file():
+    body = "![ext](https://example.com/x.png#click=1,2,3,4)\n![own](assets/z.png)"
+    assert targets_by_asset(body) == {"assets/z.png": ()}
 
 
 def test_catalog_groups_identical_bytes_across_areas_into_one_entry(store, library):

@@ -162,17 +162,97 @@ difference from a description, and it is the one thing to get right:
 - A **test** says how somebody would *prove* it works — a year from now, with no memory of
   building it. It outlives the step, and it is run again and again.
 
+### Who runs these, and what they are not
+
+**These are not unit tests, and they are not code-level tests of any kind.** A test here is
+never about a function, a class, a module, a file path or an assertion in a test suite —
+none of those words belong in one. The code-level tests you write while executing a step
+live in the repository with the code, run in CI, and DPlanner never hears about them.
+
+A test here is an **acceptance test**: it is executed against the *running product*,
+through the surface a user actually touches, and it passes or fails on what that surface
+does. Write every one of them so that all three of these can carry it out:
+
+- a **person** who has never seen the code — a tester, a support engineer, the developer
+  who inherits this in a year;
+- an **automated browser or UI tool** — Playwright, Cypress, Selenium, an agent driving a
+  screen;
+- a **coding agent** asked to verify the step, which may be either of the above.
+
+**You cannot know which of the three will get it**, and you must not write for one of them.
+That is the whole constraint, and it has two practical consequences: name what is on the
+screen rather than what is in the code (*the Save button*, not `SaveButton.onClick`), and
+state every step as an action and an observable result, so a person can do it and a script
+can be written from it without guessing.
+
+### The shape of one
+
 A step carries **several tests**, each its own record with its own result in a run. Write
 one test per thing that can independently break, not one lumpy test per step. Each is
-markdown; keep it to numbered steps somebody can follow without asking you anything:
+markdown; keep it to numbered steps somebody can follow without asking you anything, and
+say what must be true after each:
 
 ```
-dplanner test add 'Fix list flicker' 'No flicker on render' --text '1. Open the list in
-the bench view with 200+ rows.
-2. It must not flicker when it first renders, nor when data updates underneath.'
+dplanner test add 'Fix list flicker' 'No flicker on render' \
+  --document ui-spec --quote 'The list MUST render without visible reflow' \
+  --text '1. Open the bench view with 200+ rows.
+2. The list renders once — no flicker on first paint.
+3. Push an update underneath it. It must not flicker again.'
 ```
 
-Three shapes are worth knowing:
+**Every test says where it came from, and this is not optional.** A test nobody can trace
+back to a claim about the product is one nobody can judge: the tester cannot tell what it
+is really asking, and the next planner cannot tell whether it still applies when the spec
+moves. So cite one of two things, in the same call that creates the test or afterwards:
+
+- the **spec passage** it proves — `--document <doc> --quote '…' [--page N]`;
+- the **implementation note** it came out of — `--note N4` — for a test that exists because
+  of something the work *discovered* rather than something the spec asked for.
+
+```
+dplanner test cite T100 --document ui-spec --quote 'The list MUST render without reflow'
+dplanner test cite T100 --note N4          # a test may prove more than one thing
+dplanner test uncite T100 --document ui-spec
+```
+
+`dplanner project lint` reports every test with no source as `test.unsourced`, and the
+window's Tests tab shows a Sources column with an em dash where one is missing. Nothing
+refuses a test without one — a plan written before this existed is full of them — but
+leaving a new one unsourced is leaving work for whoever runs it.
+
+### Screenshots, and pointing at one
+
+A test may carry pictures, and for anything visual it should: a screenshot of the state to
+start from, of the thing to click, of what the result must look like.
+
+```
+dplanner test attach 'Fix list flicker' bench-view.png
+# prints: assets/4f2a91c07b3d8e65.png
+```
+
+Reference it from the test body as `![The bench view](assets/4f2a91c07b3d8e65.png)`. The
+picture lives beside the **step**, so two of its tests can share one.
+
+**If you know where on the picture the reader must act, say so.** Add a `#click=` fragment
+to the link — `x,y,width,height` in the image's own pixels, from the top-left corner:
+
+```
+![Click Save](assets/4f2a91c07b3d8e65.png#click=412,268,96,32)
+![Both fields](assets/4f2a91c07b3d8e65.png#click=120,90,240,28;click=120,140,240,28)
+```
+
+DPlanner rings each area on the picture wherever it is shown, numbers them ①②③ when there
+is more than one, and burns the rings into the copy it exports, so a tester with only the
+exported pack still sees them. Several targets on one link are separated by `;`.
+
+**Only add one when you actually know the coordinates** — because you took the screenshot
+yourself, or drove the page with a tool that reported the element's bounding box. A guessed
+rectangle pointing at the wrong control is worse than no rectangle at all: leave it off and
+say where to click in words, which every reader can follow anyway.
+
+### Collectors, runs, and taking the tests away
+
+Three more shapes are worth knowing:
 
 - **A collector** is a step that stands for the work behind it. Three kinds, one derivation:
   a **check** (`dplanner check set`) gathers *everything* it waits on; a **feature step**
@@ -197,6 +277,11 @@ dplanner test-run show          # what is left, and what failed
 When you execute a test, **record what actually happened** — including `skipped`, and
 including a note on a failure. A run whose results were guessed is worse than no run.
 Marking a test the status it already has succeeds, so a batch is safe to re-run.
+
+The window writes the tests out for somebody with no DPlanner — *File ▸ Export ▸ Export
+Tests…*, or the strip on the Tests tab — as markdown with the screenshots beside it,
+optionally zipped. That is who a test is ultimately written for, and it is worth reading
+one back that way before deciding a test is finished.
 
 ## Writing the documentation
 

@@ -81,6 +81,7 @@ GLYPHS: dict[str, str] = {
     "pull-request": "git-pull-request",
     "clone": "copy",
     "move": "file-export",
+    "export": "package-export",  # A pack leaving: the tests written out for whoever runs them.
     "ticket": "ticket",
     # -- the markdown toolbar: what a mark *does* to the text it wraps -----------------
     # Tabler's own editor set. The pictures are the ones every writing tool uses, which is

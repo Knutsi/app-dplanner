@@ -380,6 +380,28 @@ per *project* and meant to be read — `T100, T101, …`, and `R100, R101, …` 
 run's results are a flat map, an id is quotable in a bug report, and renaming a test never
 detaches its history.
 
+**A test says where it came from, and that is a pointer and nothing else.** Format 2 adds
+`"sources": [{"kind": "spec", "ref": "ui-spec", "quote": "…", "page": 4}]` to a test's
+record — `kind` is `spec` or `note`, and `ref` is the name the thing's *owner* addresses
+it by: a spec document's name, or a note's id (`N3`). Nothing about the document or the
+note is copied in, so renaming either is the owner's business and no test goes stale; a
+`ref` nothing answers to still shows, saying so, rather than reading as no source at all.
+Absence means nobody recorded where the test came from, which `dplanner project lint`
+reports as `test.unsourced` — a claim about the plan, never a refusal at the door, because
+every plan written before format 2 is full of them. The bump exists because `write`
+rebuilds each row from the record, so a build that did not know the key would drop it:
+**bump when an older writer would destroy the new key**, the rule stated under
+`agent_usage` above.
+
+**A picture may say which part of itself a reader must act on.** A markdown link's
+fragment carries it — `![Click Save](assets/<hash>.png#click=412,268,96,32)`, `x,y,width,
+height` in the image's own pixels, several separated by `;` (`domain/assets.py`'s
+`ClickTarget`). A fragment because that is what a fragment is for: the blob stays
+content-addressed and shared, nothing on disk changes, a reader that does not know the
+syntax sees an ordinary link, and the two scanners that answer *which asset is this*
+strip it before they answer. It is not a testing-module shape — any prose in the
+application may carry one — but tests are what it was built for.
+
 **An aspect toggled on with nothing to say yet is a marker entry.** A step's "on/off" for
 a toggleable aspect is the presence of its `module_data` entry, and two aspects need a
 shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type toggle

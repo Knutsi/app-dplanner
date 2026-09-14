@@ -24,6 +24,12 @@ the same node. :meth:`set_area` is the one call that aims both; a host makes it 
 the id the *field* is keyed by — a test's body is keyed by the test and its images by the step
 — which is why the area arrives through a call rather than another ``…_for`` callable.
 
+**A picture the prose points at wears the ring.** A link may say which part of an image it
+means (``domain/assets.py``'s :class:`ClickTarget`), and the section reads that off the
+document it is bound to and hands it to the gallery, so the thumbnail and the lightbox show
+what the sentence beside them is talking about. It follows the text rather than the file:
+the bytes are content-addressed and never change, and the prose does.
+
 It knows nothing about any model: the caller supplies a factory that turns a target id into a
 :class:`TextField`, or into ``None`` when there is nothing to edit.
 """
@@ -34,6 +40,7 @@ from typing import Any
 from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
+from dplanner.domain.assets import ClickTarget, targets_by_asset
 from dplanner.framework.asset_gallery import AreaFor, AssetGallery
 from dplanner.framework.dictation import DictationService
 from dplanner.framework.markdown_highlight import MarkdownHighlighter
@@ -92,6 +99,7 @@ class ProseSection(QWidget):
         layout.addWidget(self.edit)
 
         self.gallery: AssetGallery | None = None
+        self._marks: dict[str, tuple[ClickTarget, ...]] = {}
         if attach_title is not None:
             self.gallery = AssetGallery(
                 self,
@@ -99,6 +107,11 @@ class ProseSection(QWidget):
                 attach_title=attach_title,
                 hide_when_empty=hide_gallery_when_empty,
             )
+            self.gallery.set_targets(lambda name: self._marks.get(name, ()))
+            # A picture the prose points at wears the ring, so the ring follows the prose:
+            # re-read on every edit, redraw only when the map actually moved — a keystroke
+            # in a sentence must not rebuild a grid of thumbnails.
+            self.edit.textChanged.connect(self._reread_marks)
             layout.addWidget(self.gallery)
 
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
@@ -137,8 +150,16 @@ class ProseSection(QWidget):
         """Aim the gallery and the editor's paste at one node's file area, or at nothing."""
         if self.gallery is None:
             return
+        self._marks = targets_by_asset(self.edit.toPlainText())
         self.gallery.set_area(area_for)
         self.edit.set_attach(self.gallery.attach_bytes if area_for is not None else None)
+
+    def _reread_marks(self) -> None:
+        marks = targets_by_asset(self.edit.toPlainText())
+        if marks == self._marks or self.gallery is None:
+            return
+        self._marks = marks
+        self.gallery.refresh()
 
     def set_picker(self, pick: Pick | None) -> None:
         """Offer the project's existing assets in this editor, or stop doing so.

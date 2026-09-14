@@ -50,6 +50,10 @@ class NotesActivity(EntityActivity):
         )
         layout.addWidget(self.view, 1)
 
+    def show_note(self, note_id: str) -> bool:
+        """Open the tab on one note — a jump from a test that says it came from it."""
+        return self.view.show_note(note_id)
+
     @property
     def uri(self) -> Uri:
         return activity_uri(NOTES_KIND, self.project_id)

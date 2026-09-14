@@ -94,7 +94,7 @@ def test_clicking_a_thumbnail_opens_the_preview(make_gallery, services, step, mo
     shown = []
 
     class FakeDialog:
-        def __init__(self, image, shown_name, parent=None, *, caption="", path=""):
+        def __init__(self, image, shown_name, parent=None, *, caption="", path="", targets=()):
             shown.append((image.width(), shown_name, path))
 
         def exec(self):
@@ -116,7 +116,7 @@ def test_thumbnails_stay_thumbnail_sized(make_gallery, services, step):
     name = attach(area, png_bytes(), "figure.png")
     gallery = make_gallery()
     gallery.set_area(lambda: services.repo.files(step.id, MODULE_ID))
-    _ratio, pixmap = gallery._thumbs[name]
+    _ratio, _targets, pixmap = gallery._thumbs[name]
     assert pixmap is not None
     assert pixmap.deviceIndependentSize().width() <= asset_gallery.THUMBNAIL_SIZE
 

@@ -201,7 +201,7 @@ uv run dplanner report csv search --table order         # one table, to stdout
             ├── step.json      id, title, edges: {"requires": [ids]}
             └── modules/
                 ├── estimation.json         a module's data
-                ├── testing.json            the tests this step keeps
+                ├── testing.json            the tests this step keeps, and what each cites
                 ├── step_description.md     a module's prose
                 ├── docs.md                 this step's documentation fragment
                 └── step_description/       a module's files
@@ -410,8 +410,11 @@ src/dplanner/
 │   │                        menu, `dplanner feature` (list, show, cite, uncite, reanchor)
 │   │                        (migrate.py collapses the old project catalogue onto its steps)
 │   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
-│   ├── testing/             what a step must keep passing: the tests it carries, the runs over
-│   │                        them, the project's Tests tab and the library-wide roll call
+│   ├── testing/             what a step must keep passing: the tests it carries, where each
+│   │                        was read from (a spec passage or a note), the runs over them, the
+│   │                        project's Tests tab — its feature list, its milestone filter and
+│   │                        its sources pane — the library-wide roll call, and Export Tests…
+│   │                        (pack.py says what a pack is, export.py writes one)
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │

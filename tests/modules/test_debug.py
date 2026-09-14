@@ -203,9 +203,13 @@ def test_the_strip_words_delete_with_the_count_and_add_appends(services):
     before = table.rowCount()
     delete = activity.delete_action
     assert not delete.isEnabled() and delete.text() == "Delete"
-    table.selectRow(1)
-    assert delete.isEnabled() and delete.text() == "Delete Step" == delete.toolTip()
+    # Through the selection model, never ``selectRow``: that asks the header which column
+    # sits at x=0, and a table the suite has never laid out answers -1, so the call is a
+    # silent no-op. Whether it has been laid out depends on what else the worker ran
+    # first, which is what made this one fail under ``--dist load`` and pass alone.
     flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+    table.selectionModel().select(table.model().index(1, 0), flags)
+    assert delete.isEnabled() and delete.text() == "Delete Step" == delete.toolTip()
     table.selectionModel().select(table.model().index(2, 0), flags)
     assert delete.text() == "Delete 2 Steps"
     delete.trigger()

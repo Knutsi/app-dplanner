@@ -320,6 +320,33 @@ def test_new_run_is_greyed_until_the_project_has_a_test(services, project, step)
 # -- the tabs ------------------------------------------------------------------------------
 
 
+def pick_collector(activity, step_id):
+    """Pick a row of the Tests tab's left list — what narrows the table to one feature."""
+    from dplanner.modules.testing.collectors import COLLECTOR_ROLE
+
+    listing = activity.collectors.list
+    for index in range(listing.count()):
+        if str(listing.item(index).data(COLLECTOR_ROLE)) == step_id:
+            listing.setCurrentRow(index)
+            return
+    raise AssertionError(f"{step_id} is not listed: {listed_collectors(activity)}")
+
+
+def listed_collectors(activity):
+    """The left list as (title, detail, trailing) — what a reader has to choose from."""
+    from dplanner.framework.list_rows import DETAIL_ROLE, TRAILING_ROLE
+
+    listing = activity.collectors.list
+    return [
+        (
+            listing.item(index).text(),
+            str(listing.item(index).data(DETAIL_ROLE) or ""),
+            str(listing.item(index).data(TRAILING_ROLE) or ""),
+        )
+        for index in range(listing.count())
+    ]
+
+
 def rows(section):
     """The roster's rows as (id, title) — what the picker above the editor is showing."""
     from dplanner.modules.testing.section import TEST_ID_ROLE
@@ -608,7 +635,8 @@ def test_the_library_wide_tab_lists_every_project_s_tests(services, make_project
 def test_the_tests_tab_can_be_read_by_feature(services, make_project):
     from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
     from dplanner.modules.feature.aspect import write as feature_write
-    from dplanner.modules.testing.activity import TESTS_KIND, UNGATHERED
+    from dplanner.modules.testing.activity import TESTS_KIND
+    from dplanner.modules.testing.aspect import UNGATHERED
 
     project = make_project("Widget")
     login, importer, export = chain(services, project, "Login", "Import", "Export")
@@ -827,7 +855,7 @@ def test_a_run_opened_from_the_strip_covers_the_tabs_scope_and_is_shown(
     services.document.set_module_data(gate.id, CHECK_ID, check_write(True))
 
     activity = services.tabs.open(TESTS_KIND, project.id)
-    activity.scope_box.setCurrentIndex(activity.scope_box.findData(gate.id))
+    pick_collector(activity, gate.id)
     services.actions.run("tests.new_run", services.context.current())
     run = open_run(services, project)
     assert list(run.tests) == ["TWo"] and run.label == "Smoke"

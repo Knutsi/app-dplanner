@@ -57,8 +57,10 @@ class NotesModule:
             retitles_on=deps.library.field_changed,
         )
 
-    def open(self, project_id: NodeId, *, preview: bool = False) -> None:
-        self._deps.tabs.open(NOTES_KIND, project_id, preview=preview)
+    def open(self, project_id: NodeId, *, preview: bool = False, note: str = "") -> None:
+        activity = self._deps.tabs.open(NOTES_KIND, project_id, preview=preview)
+        if note and isinstance(activity, NotesActivity):
+            activity.show_note(note)
 
     def index_row(self) -> ChildRow:
         """The row under each project in the Docs folder that opens this tab."""

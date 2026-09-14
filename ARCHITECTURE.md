@@ -4396,6 +4396,150 @@ bytes untouched — and its expand is the sanctioned one: a second `TextBinding`
 `TextField` implemented against the record (`testing/section.py`'s `TestBodyField`), never
 text copied into a dialog and back.
 
+## A test is written for a tester, not for a test runner
+
+Everything the Tests surfaces do follows from one fact about who reads them: the person
+executing a test is **not** the person who wrote it, has no DPlanner open half the time,
+and may not be a person at all — a browser tool driving the screen, or an agent asked to
+verify a step. Three consequences, all of them things the earlier design got subtly wrong
+by assuming a planner was reading.
+
+**A test here is an acceptance test and never a code-level one.** That distinction was
+implicit and therefore lost: agents handed the skill wrote unit tests into `test add`,
+because "a test" means a function-level assertion in most of the material they have ever
+read. It is now said in the skill in as many words, with the consequence spelled out —
+name what is on the screen, not what is in the code, because the reader may only have the
+screen. The code-level tests written while executing a step live in the repository with
+the code and DPlanner never hears about them.
+
+**A test says where it came from, and this is the fact the roster was missing.** A test
+nobody can trace back to a claim about the product cannot be *judged*: the tester cannot
+tell what it is really asking, and the next planner cannot tell whether it still applies
+when the spec moves. So a test cites a **spec passage** or an **implementation note** —
+two kinds because those are the two places a claim about the product legitimately comes
+from: what was asked for, and what the work discovered. It is one flat record with a
+`kind`, because every reader — the column, the pane, the export, the lint — asks the same
+four questions of both, and two classes would mean a branch in each of them.
+
+**What is stored is a pointer and nothing else.** A spec source holds the document's
+*name*; a note source holds the note's *id*. Not the title, not the body: those belong to
+whoever owns the thing, and a copy taken at cite time is wrong the first time somebody
+renames a document. Resolving a pointer is therefore an ask, and the composition root is
+what answers it (`_test_source_facts`) — the testing module may not import the spec module
+or the notes module, and the one place allowed to know all three exist is the root. A
+`SourceFacts` comes back: what it is called, what it says, and whether it is still there.
+
+**A pointer nobody can follow still shows.** The row says *"no longer there"* and the
+double-click is refused, because hiding it would leave the test looking sourced while it
+is not, and the reader who can mend it is the one looking at the row.
+
+**It is a lint finding, not a refusal.** `dplanner test add` with no source adds the test
+and says so; `project lint` reports `test.unsourced`. Every plan written before this
+existed is full of unsourced tests, and a verb that refused them would strand the plan
+rather than improve it — the same trade every other "ought to" here makes.
+
+## The Tests tab is three panes, because a tester asks three questions
+
+The tab used to be a table with a *scope* dropdown over it. Watching what a roster is
+actually used for says the three questions are asked in a fixed order, and only one of
+them was answered without opening something first.
+
+**Which feature is being tested** is a standing list on the left, not a dropdown. A tester
+picks one, works through it, picks the next; a control used every minute must not be one
+that has to be opened to see what it offers. Every collector is a row — a feature, a
+milestone, a check — with what it is and which milestone gathers it underneath, and how
+many tests it stands for at the right. *All tests* leads it, because the whole roster is a
+real answer too.
+
+**The funnel over that list filters the list, not the table.** A plan of any size has more
+features than fit beside a table, and the way a person narrows them is by release. It sits
+over the list rather than on the tab's own strip for exactly that reason: on the strip it
+would read as a second filter on the rows. A check is gathered by no milestone and drops
+out while a milestone filter is on — the honest answer rather than a special case.
+
+**A collector's row means what it gathers, truncated.** The cone stops where its kind
+stops (`stops_for`), so a feature row is that feature's own work and a milestone row is
+everything since the previous milestone. That is what makes the count on the row and the
+rows in the table the same answer, and what a run opened from the strip covers. The
+cumulative reading — everything behind it, what must pass to *ship* — is the milestone's
+row, one boundary further out.
+
+**Where the picked test came from** is the pane under the table. The Sources column says
+how many and what they are called; the pane says all of them, what each says, and opens
+the document or the note on a double-click. The quote is in the row *and* in the tooltip,
+wrapped: a passage is a paragraph, a cell elides, and Qt lays a plain tooltip on one
+endless line (`wrapped_tooltip` — a tooltip only word-wraps when it is rich text).
+
+**The step a test hangs off is no longer a column.** It was there because the table was
+written for a planner. The panel a double-click opens says which step, and the reader of a
+roster is after what is being proved. The library-wide roll call keeps it, because across
+projects it is the only placing a row has.
+
+**The right-click is the Test submenu and nothing else.** A table of tests offering Delete
+Step, Link and Run Agent offers a page of verbs about something the reader did not click
+on — and two of them act on a step the row merely mentions. `build_menu`'s `submenu`
+filter renders the Step menu's *Test* child, so this is still *a menu rendered, never a
+menu copied*: the results, the archive pair, and a new `test_open` band with the two verbs
+that lead back to what a test is about.
+
+## A picture may say where to act, in the link that shows it
+
+A test for anything visual wants a screenshot, and an agent that drove the screen knows
+*where on it* the reader must click. Saying so is worth a mechanism, and the mechanism had
+to satisfy three things at once: the blob stays content-addressed and shared between
+tests, no reader that does not know the syntax breaks, and nothing new reaches disk.
+
+**The fragment is the answer.** `![Click Save](assets/<hash>.png#click=412,268,96,32)` —
+the rectangle in the image's own pixels, several separated by `;`. A fragment is what says
+*which part of this* everywhere else on the web; the file is still the file, an older
+build shows an ordinary link, and the one thing it costs is that the two scanners
+answering *which asset is this* must strip it before they answer — which they now do, in
+the one place that defines what a reference is.
+
+**The ring is drawn, never stored.** `framework/click_targets.py` is the one painter, read
+by the gallery's thumbnail, the lightbox over it, and the exported pack. The original
+bytes are untouched: a marked copy that overwrote the blob would make one attachment two
+files, and the prose is what changes when somebody moves a target, not the picture. The
+colour is a constant, like a test result's — a screenshot carries its own colours and
+knows nothing of the theme it is shown in, so a ring in the palette's accent would vanish
+against the wrong screenshot on the wrong theme.
+
+**Only the export burns it in.** A pack leaves for somebody with no DPlanner, so the copy
+that travels has the ring painted into it and is re-encoded as PNG — a ring saved over a
+JPEG loses a little of the screenshot each time, and a pack is somebody's evidence.
+
+## A pack of tests is a publication, like a report
+
+`dplanner`'s reader is an agent and the window's is a planner; a **test** is executed by
+neither of them half the time. So the roster can leave as files: *File ▸ Export ▸ Export
+Tests…*, and the same verb on the Tests strip.
+
+**The split is the report's.** `pack.py` says what a pack *is* — an `ExportFormat` is a
+name and a render, `FORMATS` is the list — and it answers *files*, a path inside the pack
+and its bytes, never writing them. `export.py` is the window's half: it reads the plan
+into a pack, asks, writes, and says what came of it. Three things fall out of that shape:
+a second format (HTML, one file per test, a Playwright skeleton) is a row in `FORMATS`; a
+pack becomes a folder or a zip with no format learning which; and a test can assert on
+what a pack holds without a temporary directory.
+
+**The folder is flat and says what it is** — `tests.md` and an `assets/` beside it. One
+markdown file rather than one per test, because a tester reads a pack start to finish,
+prints it, or searches it, and forty files help with none of those. The pictures are
+renamed for the test that uses them (`T100-1.png`): the plan's content-addressed names
+tell the person who opens the pack nothing.
+
+**The name is timestamped and the zip is offered.** An export is a moment, not a
+destination — the second pack made on a Tuesday must not replace the first — so the save
+dialog opens on `<Project> tests 2026-09-14 1432`. A folder is what a person opens and a
+zip is what they send, so the switch is a question rather than a policy, and it remembers
+nothing.
+
+**It is written on the GUI thread, deliberately.** `TaskRunner` is for work that blocks —
+the network, a git checkout, a report over a whole plan. A pack is a markdown file and the
+screenshots a few tests link, read from the same local areas every thumbnail in the window
+is already read from synchronously. A worker here would buy nothing and cost a thread
+alive at teardown, which is the suite's SIGSEGV shape.
+
 ## A check is a scope over the graph, and so is a milestone
 
 A **check** is a step type that stands for everything behind it having been verified. What it

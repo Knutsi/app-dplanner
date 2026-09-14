@@ -9,7 +9,10 @@ An asset add is not undoable, and that is the honest trade: undoing a paste woul
 prose pointing at a file that had gone. An orphaned blob is recoverable; a dangling link
 is not.
 
-The second half of this file is the asset *catalog*: the vocabulary a module uses to say
+In the middle is what *prose* says about a file: which assets a document links,
+and — for a picture — which part of it the reader is meant to act on (:class:`ClickTarget`).
+
+The last part of this file is the asset *catalog*: the vocabulary a module uses to say
 which files it keeps and what still uses each — one derivation with three readers (the
 Assets tab, ``dplanner asset list``, ``asset prune``). The catalog is computed on every
 read and never stored; a module contributes an :class:`AssetSource` from its Qt-free half
@@ -61,7 +64,7 @@ def area_assets(files: FilesFor, node_id: NodeId, module_id: str) -> list[str]:
     return assets(area)
 
 
-# -- the catalog: what exists, and what still uses it -----------------------------------------
+# -- what prose says about a file: which ones, and where on one to act ------------------------
 
 _ASSET_REFERENCE = re.compile(r"\]\(\s*(assets/[^)\s]+)\s*\)")
 
@@ -74,8 +77,13 @@ def asset_references(markdown: str) -> list[str]:
     reference is, shared by the spec index and the asset catalog, so no two scanners can
     disagree. (:func:`image_references` answers a different question — any relative
     *image* embed, whatever it points at — for the dangling-link lints.)
+
+    A ``#…`` fragment is taken off: what follows the hash says which *part* of the file is
+    meant (:func:`click_targets`), and a catalog that read it as part of the name would
+    count one attachment as two and offer a used one for pruning.
     """
-    return list(dict.fromkeys(_ASSET_REFERENCE.findall(markdown)))
+    found = (without_fragment(ref) for ref in _ASSET_REFERENCE.findall(markdown))
+    return list(dict.fromkeys(found))
 
 
 _IMAGE_REFERENCE = re.compile(r"!\[[^\]]*\]\(\s*([^)\s]+)")
@@ -90,7 +98,80 @@ def image_references(markdown: str) -> list[str]:
     copies of it before it moved.
     """
     found = _IMAGE_REFERENCE.findall(markdown)
-    return [ref for ref in found if "://" not in ref and not ref.startswith("/")]
+    local = [ref for ref in found if "://" not in ref and not ref.startswith("/")]
+    return [without_fragment(ref) for ref in local]
+
+
+# -- click targets: where on a picture the reader is meant to act ------------------------------
+
+# ``assets/<hash>.png#click=120,340,80,32`` — the area of the picture a step of a test
+# means, in the image's own pixels, several separated by ``;``. A fragment because that is
+# what a fragment is for everywhere else: the file is the file, and what follows the ``#``
+# says which part of it is being pointed at. Nothing on disk changes, no reader that does
+# not know the syntax breaks, and a link that carries one still names exactly one asset —
+# which is why the two scanners above strip it before they answer.
+_CLICK_TARGET = re.compile(r"click=(-?\d+),(-?\d+),(\d+),(\d+)")
+
+
+@dataclass(frozen=True)
+class ClickTarget:
+    """A rectangle on a picture, in the picture's own pixels.
+
+    An agent that drove the screen knows where the button was; a person writing a test by
+    hand does not, and never has to — a picture with no target is the ordinary case and the
+    only thing a target adds is a ring drawn round the spot.
+    """
+
+    x: int
+    y: int
+    width: int
+    height: int
+
+
+def click_targets(reference: str) -> tuple[ClickTarget, ...]:
+    """The targets a link's fragment marks, in the order they were written.
+
+    Read from the whole reference rather than from a fragment the caller split off, so
+    there is one place that knows the spelling.
+    """
+    _name, _, fragment = reference.partition("#")
+    return tuple(
+        ClickTarget(int(x), int(y), int(width), int(height))
+        for x, y, width, height in _CLICK_TARGET.findall(fragment)
+    )
+
+
+def target_fragment(targets: Sequence[ClickTarget]) -> str:
+    """The fragment for ``targets`` — ``""`` for none, so a caller can concatenate it."""
+    if not targets:
+        return ""
+    return "#" + ";".join(f"click={t.x},{t.y},{t.width},{t.height}" for t in targets)
+
+
+def without_fragment(reference: str) -> str:
+    """The asset a reference names, with any ``#…`` taken off."""
+    return reference.partition("#")[0]
+
+
+def targets_by_asset(markdown: str) -> dict[str, tuple[ClickTarget, ...]]:
+    """Every asset the markdown marks, and what it marks on it.
+
+    A picture linked twice — once plain, once with a target — is one asset with one set of
+    targets: the union in writing order, because both links are about the same file and a
+    reader shown one of the two would be shown the wrong one half the time.
+    """
+    found: dict[str, tuple[ClickTarget, ...]] = {}
+    for reference in _IMAGE_REFERENCE.findall(markdown):
+        if "://" in reference or reference.startswith("/"):
+            continue
+        name = without_fragment(reference)
+        marks = tuple(dict.fromkeys(found.get(name, ()) + click_targets(reference)))
+        if marks or name not in found:
+            found[name] = marks
+    return found
+
+
+# -- the catalog: what exists, and what still uses it -----------------------------------------
 
 
 @dataclass(frozen=True)

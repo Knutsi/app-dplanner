@@ -172,6 +172,30 @@ class NotesView(QWidget):
     def selected(self) -> str | None:
         return self._selected
 
+    def show_note(self, note_id: str) -> bool:
+        """Land on one note — what a jump from elsewhere in the window arrives at.
+
+        The list may be filtered to labels this note does not wear, so the filter is
+        cleared first: a jump that landed on nothing would look like a broken link, where
+        the honest answer is that the reader had narrowed the list.
+        """
+        if not any(record.id == note_id for record in self._records()):
+            return False
+        if self.filter.active():
+            self.filter.clear()
+        self._selected = note_id
+        self._refresh_soon.flush()
+        for index in range(self.list.count()):
+            if str(self.list.item(index).data(NOTE_ROLE)) == note_id:
+                self.list.setCurrentRow(index)
+                return True
+        return True
+
+    def _records(self) -> list[Note]:
+        if not self._library.has(self._project_id):
+            return []
+        return read_log(self._library.project(self._project_id))
+
     # -- verbs ---------------------------------------------------------------------------------
 
     def add_note(self) -> str | None:

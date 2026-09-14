@@ -1582,6 +1582,52 @@ root, stop and look for the registry or capability you have not found yet.
   narrow dock — because a stack of equal cards stops working at the third test.
   `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
   reasoning, including the diff trade the string body accepts.
+- **A test is an acceptance test, executed by whoever is holding the product.** Never a
+  unit test and never code-level: the reader may be a tester, a browser tool driving the
+  screen, or an agent, and the author cannot know which — so a test names what is *on the
+  screen*, never what is in the code. The skill says so in as many words
+  (`cli/skill_preamble.md`'s *Writing tests*), because "a test" means a function-level
+  assertion in most of what an agent has ever read.
+- **A test says where it came from, and what is stored is a pointer.** Every test cites a
+  **spec passage** or an **implementation note** — `TestSource(kind, ref, quote, page)`,
+  `testing` format 2 — where `ref` is the document's name or the note's id and *nothing*
+  about either is copied in, so a rename is the owner's business and no test goes stale.
+  Resolving one is an ask: `TestsDeps.source_facts` and `open_source` are composed by the
+  root (`_test_source_facts`), the one place allowed to know the spec module and the notes
+  module both exist. A pointer nobody can follow **still shows**, saying so, or the test
+  would read as sourced. It is `dplanner project lint`'s `test.unsourced`, never a refusal
+  at the door — every plan written before this is full of them. `ARCHITECTURE.md`'s *A test
+  is written for a tester* has the reasoning.
+- **The Tests tab is three panes, and the step is not a column.** Which feature is being
+  tested is a standing `RichList` on the left with a `FilterButton` over it limiting the
+  *list* (never the table) by milestone; what the tests are is the table; where the picked
+  one came from is the pane under it, whose tooltips carry the whole passage through
+  `wrapped_tooltip` — Qt lays a plain tooltip on one endless line. A collector's row means
+  what it **gathers**, truncated at `stops_for`, so the count on the row, the rows in the
+  table and what a run opened from the strip covers are one answer. The right-click renders
+  the Step menu's **Test** child and nothing else (`build_menu`'s `submenu` filter, so it is
+  still a menu rendered rather than copied), with a `test_open` band leading back to the
+  step or the feature. `ARCHITECTURE.md`'s *The Tests tab is three panes* has the reasoning.
+- **A picture may say which part of itself to act on, in the link that shows it.**
+  `![Click Save](assets/<hash>.png#click=412,268,96,32)` — pixels of the image, several
+  separated by `;`, parsed by `domain/assets.py` and drawn by `framework/click_targets.py`
+  for the thumbnail, the lightbox and the exported pack. A **fragment** because the file is
+  still the file: nothing new reaches disk, an older build sees an ordinary link, and the
+  two scanners answering *which asset is this* strip it before they answer. The ring is
+  never painted into the stored blob — only into the copy an export carries, which is
+  re-encoded as PNG. The colour is a **constant**, like a result's: a screenshot knows
+  nothing of the theme it is shown in. `ARCHITECTURE.md`'s *A picture may say where to act*
+  has the reasoning.
+- **The tests can leave as a pack, and a format is a row in a list.** *File ▸ Export ▸
+  Export Tests…* and the Tests strip run one verb over `testing/pack.py`'s `FORMATS` — an
+  `ExportFormat` is a name and a render, and a render answers **files** (a path inside the
+  pack and its bytes) rather than writing them, so a second format is a row and a pack
+  becomes a folder or a zip with no format learning which. `export.py` is the window's
+  half: read the plan into a `TestPack`, ask, write, `notice()`. The folder is flat —
+  `tests.md` and `assets/T100-1.png` — the default name carries the day *and the minute*,
+  and the zip is offered rather than assumed. Written on the GUI thread on purpose:
+  `TaskRunner` is for work that blocks, and a thread alive at teardown is the suite's
+  SIGSEGV shape. `ARCHITECTURE.md`'s *A pack of tests is a publication* has the reasoning.
 - **Documentation is a fragment per step and a document per collector, and an agent
   compiles it.** The `docs` aspect is a step's **documentation fragment**; `docs_compiled` is
   a collector's **documentation**, made of everything it gathers — the words on every

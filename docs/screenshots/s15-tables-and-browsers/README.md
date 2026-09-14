@@ -27,7 +27,7 @@ up* is the list of what to compare.
 | `before-tasks-*` | The task browser: a plain dialog, a well of hand-laid rows with indeterminate bars. |
 | `before-agents-*` | The Agents browser: the task browser's copy, with no stylesheet for the copy. |
 | `before-palette-*` | The command palette open, filtered to *mark*, and with nothing matching. |
-| `tests-*`, `tests-picked-*` | The Tests tab on the table primitive: one strip of glyph verbs and selectors, results in their tone, headings in a milestone's shade at a plain row's height. |
+| `tests-*`, `tests-picked-*` | The Tests tab on the table primitive: one strip of glyph verbs and selectors, results in their tone, headings in a milestone's shade at a plain row's height. Re-rendered by the tests-for-testers pass (S17), which gave it the feature list and its milestone funnel on the left, a Sources column, the pane under the table saying where the picked test came from, and no Step column. |
 | `all-tests-*`, `all-tests-picked-*` | The roll call across the library, debounced, with its indicator and *Show archived*. |
 | `coverage-*` | The Coverage tab: its *Review* verb a glyph on a `Toolbar`, the facts beside it as a note. |
 | `assets-*`, `assets-picked-*` | The Assets tab: two tables under one strip — attach, open, copy the path, delete, clean up — and a filter over *unused* and each source. |

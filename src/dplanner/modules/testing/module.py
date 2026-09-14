@@ -14,14 +14,16 @@ verb that fixes it. A capability absent from the build is what HIDDEN is for, an
 these are.
 """
 
-from collections.abc import Callable
+import dataclasses
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from PySide6.QtWidgets import QTreeWidgetItem, QWidget
 
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
-from dplanner.domain.scope import ScopeKind, kind_of
+from dplanner.domain.scope import ScopeKind, gatherers, kind_of, stops_for
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -48,6 +50,7 @@ from dplanner.framework.project_list_segment import LeadingRow, ProjectListSegme
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import notice
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.activity import (
     ALL_TESTS_KIND,
@@ -59,7 +62,9 @@ from dplanner.modules.testing.aspect import (
     DATA_FORMAT,
     MODULE_ID,
     SPEC,
+    SourceFacts,
     Test,
+    TestSource,
     covered,
     enabled,
     next_test_id,
@@ -67,6 +72,8 @@ from dplanner.modules.testing.aspect import (
     read,
     write,
 )
+from dplanner.modules.testing.export import ExportDialog, gather, write_pack
+from dplanner.modules.testing.pack import default_name
 from dplanner.modules.testing.section import CoversSection, TestsSection
 from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.theme.icons import (
@@ -74,6 +81,7 @@ from dplanner.theme.icons import (
     check_icon,
     close_icon,
     eraser_icon,
+    export_icon,
     list_icon,
     play_icon,
     project_icon,
@@ -96,6 +104,16 @@ def _no_color(_step_id: str) -> str:
     return ""
 
 
+def _bare_facts(_project_id: NodeId, source: TestSource) -> SourceFacts:
+    """A source printed as the pointer it is — what a build with neither the spec module
+    nor the notes module can honestly say about one."""
+    return SourceFacts(label=source.words)
+
+
+def _no_opening(_project_id: NodeId, _source: TestSource) -> None:
+    """Nothing to open: the same build again. A source still reads; it just goes nowhere."""
+
+
 @dataclass(frozen=True)
 class TestsDeps:
     library: Library
@@ -113,6 +131,13 @@ class TestsDeps:
     # gathers without learning that any of those aspects exist. Named by the composition
     # root, the one place allowed to know all three.
     scopes: tuple[ScopeKind, ...]
+    # Which of those kinds is the *release* grain and which is the *feature* grain, by id.
+    # The Tests tab filters its feature list by the first and files an exported pack under
+    # the second, and neither may be guessed from a spelling: a module never learns another
+    # module's id, so the composition root says which is which. Empty means this build has
+    # no such kind, and the surfaces that read them simply offer less.
+    release_kind: str = ""
+    feature_kind: str = ""
     # The store's file areas — how a test body's images are attached and shown. They are
     # the *step's* files, the same ones `dplanner test attach` writes; None is a build
     # without file storage.
@@ -126,6 +151,17 @@ class TestsDeps:
     milestone_color: Callable[[str], str] = field(default=_no_color)
     # Dictation into the editors; None is a build without a microphone.
     dictation: DictationService | None = None
+    # What a test's source is *called* where it lives, and what it says. The record holds
+    # a pointer and nothing else, so a document's name and a note's title are asked of
+    # whoever owns them — composed by the root, which is the one place that may know both
+    # the spec module and the notes module exist.
+    source_facts: Callable[[NodeId, TestSource], SourceFacts] = field(default=_bare_facts)
+    # Following one: the Specs tab on that document with the passage washed, or the notes
+    # tab on that note. Composed by the root for the same reason.
+    open_source: Callable[[NodeId, TestSource], None] = field(default=_no_opening)
+    # Writing the picked tests out as a pack somebody can take away. None is a build
+    # without the export dialog; the verb is then greyed with its reason rather than gone.
+    export: "Callable[[NodeId, Sequence[str]], None] | None" = None
 
 
 class TestsModule:
@@ -203,7 +239,9 @@ class TestsModule:
 
     def _all_factory(self, _target: str | None) -> AllTestsActivity:
         deps = self._deps
-        return AllTestsActivity(deps.library, deps.context, self._open_details, deps.debounce)
+        return AllTestsActivity(
+            deps.library, deps.context, self._open_details, deps.debounce, deps.source_facts
+        )
 
     def _segment(self, root: QTreeWidgetItem) -> ProjectListSegment:
         """A row per project, under an *All Projects* row: tests are the one surface that is
@@ -314,6 +352,41 @@ class TestsModule:
                 run=self._close_run,
             ),
             ActionSpec(
+                id="test.open_origin",
+                label="Open Origin Step",
+                menu="Step",
+                group="test_open",
+                submenu="Test",
+                order=10,
+                tip="The step this test hangs off, in the step panel",
+                state=self._origin_state,
+                run=self._open_origin,
+            ),
+            ActionSpec(
+                id="test.open_feature",
+                label="Open Origin Feature",
+                menu="Step",
+                group="test_open",
+                submenu="Test",
+                order=20,
+                tip="The feature this test's step flows into",
+                state=self._feature_state,
+                run=self._open_feature,
+            ),
+            ActionSpec(
+                id="tests.export",
+                label="Export &Tests…",
+                menu="File",
+                group="export",
+                submenu="Export",
+                order=40,  # After the report's HTML/PDF and the tables' workbook.
+                tip="Write the picked tests out as markdown with their screenshots — a "
+                "pack for whoever is going to run them",
+                icon=export_icon,
+                state=self._export_state,
+                run=self._export,
+            ),
+            ActionSpec(
                 id="tests.open",
                 label="Show &Tests",
                 menu="Project",
@@ -401,7 +474,7 @@ class TestsModule:
             by_step.setdefault(
                 step.id,
                 [
-                    Test(test.id, test.title, test.body, archived) if test.id in wanted else test
+                    dataclasses.replace(test, archived=archived) if test.id in wanted else test
                     for test in read(step)
                 ],
             )
@@ -509,16 +582,24 @@ class TestsModule:
         """Ask for a name, then open a run over the scope. Closes whatever was open."""
         deps = self._deps
         project = deps.library.project(project_id)
+        scoped = project.step(scope) if scope else None
+        # Truncated where the collector's own kind stops, so a run opened from the strip
+        # covers exactly the rows the tab is showing — the list on the left and the run
+        # must never mean two different things by "this feature".
         pairs = (
-            covered(deps.library, project, scope)
-            if scope and project.step(scope) is not None
+            covered(
+                deps.library,
+                project,
+                scope,
+                stops_at=stops_for(deps.scopes, scoped),
+            )
+            if scoped is not None
             else project_tests(project)
         )
         if not pairs:
             return
         records = runs.read(project)
         suggestion = f"Run {runs.next_run_id(records)[1:]}"
-        scoped = project.step(scope) if scope else None
         where = (scoped.title or "that step") if scoped else "every test"
         count = f"{len(pairs)} test{'' if len(pairs) == 1 else 's'}"
         label = LinePrompt.ask(
@@ -569,6 +650,117 @@ class TestsModule:
         project = self._focused_project(context)
         if project is not None:
             self.open(project.id)
+
+    # -- where a test came from, and taking the tests away ---------------------------------
+
+    def _origin_state(self, context: Context) -> ActionState:
+        pairs = self._selected_tests(context)
+        if not pairs:
+            return ActionState(enabled=False, label="Open Origin Step — pick a test")
+        return ActionState()
+
+    def _open_origin(self, context: Context) -> None:
+        pairs = self._selected_tests(context)
+        if pairs:
+            self._open_details(pairs[0][0].id)
+
+    def _feature_of(self, context: Context) -> Step | None:
+        """The feature the picked test's step flows into, or None.
+
+        The first, when two features both wait on the step: the same case
+        ``dplanner project lint`` names ``scope.shared``, and picking one of them is a
+        better answer than a greyed verb on a step that plainly is in a feature.
+        """
+        pairs = self._selected_tests(context)
+        if not pairs:
+            return None
+        step = pairs[0][0]
+        project = self._deps.library.project_of(step.id)
+        kind = next(
+            (found for found in self._deps.scopes if found.id == self._deps.feature_kind), None
+        )
+        if kind is None:
+            return None
+        owners = gatherers(
+            self._deps.library, project, carried_by=kind.carried_by, stops_at=kind.stops_at
+        )
+        return next(
+            (
+                found
+                for owner in owners.get(step.id, ())
+                if (found := project.step(owner)) is not None
+            ),
+            None,
+        )
+
+    def _feature_state(self, context: Context) -> ActionState:
+        if not self._selected_tests(context):
+            return ActionState(enabled=False, label="Open Origin Feature — pick a test")
+        if self._feature_of(context) is None:
+            return ActionState(
+                enabled=False,
+                label="Open Origin Feature — no feature gathers this test's step",
+            )
+        return ActionState()
+
+    def _open_feature(self, context: Context) -> None:
+        found = self._feature_of(context)
+        if found is not None:
+            self._open_details(found.id)
+
+    def _export_state(self, context: Context) -> ActionState:
+        project = self._focused_project(context)
+        if project is None:
+            return DISABLED
+        if self._deps.export is None:
+            return ActionState(enabled=False, label="Export Tests… — not in this build")
+        if not project_tests(project):
+            return ActionState(enabled=False, label="Export Tests… — this project has no tests")
+        picked = len(self._selected_tests(context))
+        if picked > 1:
+            # The count says the verb is about to act on more than the eye is on — the
+            # same courtesy the result verbs pay.
+            return ActionState(label=f"Export {picked} Tests…")
+        return ActionState()
+
+    def _export(self, context: Context) -> None:
+        project = self._focused_project(context)
+        export = self._deps.export
+        if project is None or export is None:
+            return
+        # Nothing picked means the whole roster: the dialog says which, and a reader who
+        # picked nothing asked for the project rather than for an empty pack.
+        export(project.id, [test.id for _step, test in self._selected_tests(context)])
+
+    def export_tests(self, project_id: NodeId, wanted: Sequence[str]) -> Path | None:
+        """Gather, ask, write, say — the whole gesture; answers where the pack landed.
+
+        Public because it *is* the export: the verb above is handed it by the composition
+        root as ``TestsDeps.export`` so a build without a window can leave it out, and a
+        test can run the whole thing without a menu.
+        """
+        deps = self._deps
+        project = deps.library.project(project_id)
+        pack = gather(
+            deps.library,
+            project,
+            wanted=wanted,
+            scope=self._narrowed_to(project_id),
+            scopes=deps.scopes,
+            feature_kind=deps.feature_kind,
+            facts_for=lambda source: deps.source_facts(project_id, source),
+            files=deps.files,
+        )
+        dialog = ExportDialog(pack.note, default_name(pack.project), deps.parent)
+        dialog.exec()
+        chosen = dialog.chosen()
+        dialog.deleteLater()
+        if chosen is None:
+            return None
+        landed = write_pack(chosen.format.render(pack), chosen.path, zipped=chosen.zipped)
+        # What a gesture came to after its dialog closed is a notice, never a message box.
+        notice(deps.parent, "Export Tests", f"{len(pack.tests)} tests written to {landed}")
+        return landed
 
     def _open_scope(self, step_id: StepId) -> None:
         project = self._deps.library.project_of(step_id)

@@ -117,6 +117,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.library.module import LibraryDeps, LibraryModule
     from dplanner.modules.library_watch.module import LibraryWatchDeps, LibraryWatchModule
     from dplanner.modules.llm.module import LlmDeps, LlmModule
+    from dplanner.modules.notes.log import read_log
     from dplanner.modules.notes.module import NotesDeps, NotesModule
     from dplanner.modules.openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.problems.module import ProblemsDeps, ProblemsModule
@@ -140,6 +141,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
     from dplanner.modules.spec.cli import digest_of as spec_digest_of
+    from dplanner.modules.spec.cli import document_names
     from dplanner.modules.spec.cli import document_names as spec_document_names
     from dplanner.modules.spec.module import SpecDeps, SpecModule
     from dplanner.modules.spec.module import open_url as open_in_browser
@@ -169,6 +171,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         StepDescriptionModule,
     )
     from dplanner.modules.step_description.section import SeparateInstructionLink
+    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
@@ -182,6 +185,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
+    from dplanner.modules.testing.aspect import SPEC_SOURCE, SourceFacts, TestSource
     from dplanner.modules.testing.aspect import read as tests_read
     from dplanner.modules.testing.module import TestsDeps, TestsModule
     from dplanner.modules.time_estimates.module import (
@@ -1184,6 +1188,66 @@ def default_modules(services: "AppServices") -> list["Module"]:
         )
     )
 
+    # What a test's source is called and what it says, and what following one opens. A
+    # test cites a *spec passage* or an *implementation note*, and neither module may
+    # import the other or the testing one — so the branch on the kind lives here, the one
+    # place allowed to know all three exist. The same hand-over the coverage view's
+    # `show_passages` uses.
+    def _test_source_facts(project_id: str, source: TestSource) -> SourceFacts:
+        project = library.project(project_id)
+        if source.kind == SPEC_SOURCE:
+            known = source.ref in document_names(project)
+            return SourceFacts(label=source.words, detail=source.quote, found=known)
+        record = next((one for one in read_log(project) if one.id == source.ref), None)
+        if record is None:
+            return SourceFacts(label=source.ref, found=False)
+        return SourceFacts(label=f"{record.id} {record.title}".strip(), detail=record.body)
+
+    def _open_test_source(project_id: str, source: TestSource) -> None:
+        if source.kind == SPEC_SOURCE:
+            spec.show_passages(project_id, source.ref, [source.quote] if source.quote else [])
+        else:
+            notes.open(project_id, note=source.ref)
+
+    def _export_tests(project_id: str, wanted: "Sequence[str]") -> None:
+        tests.export_tests(project_id, wanted)
+
+    # Constructed before the list because its own Export verb runs a method on it, and the
+    # verb is one of its own: the seam above closes over the name bound just below, which
+    # is the `spec.show_passages` hand-over again.
+    tests = TestsModule(
+        TestsDeps(
+            dictation=services.dictation,
+            library=library,
+            debounce=services.debounce,
+            undo=services.undo,
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            sections=services.inspector_sections,
+            segments=services.index_segments,
+            theme=services.theme,
+            parent=services.window,
+            files=store.files,
+            # A check declares a scope; a feature and a milestone already were ones, and
+            # all three are the same walk with a different stopping rule. Named here,
+            # the one place that may know every aspect, so none learns the others.
+            scopes=_scope_kinds(check_read, is_feature, milestone_read),
+            # Which of those three is the release grain and which the feature grain. Said
+            # here rather than matched on a spelling inside the module: a scope kind's id
+            # is the owning module's, and no module may know another's.
+            release_kind=MILESTONE_ID,
+            feature_kind=FEATURE_ID,
+            pick_assets=pick_assets,
+            # Grouping by milestone writes each heading in that milestone's own shade,
+            # so the Tests tab reads as the same sequence the calendar does.
+            milestone_color=milestone_color,
+            source_facts=_test_source_facts,
+            open_source=_open_test_source,
+            export=_export_tests,
+        )
+    )
+
     return [
         # -- the shell -------------------------------------------------------------------
         AppShellModule(
@@ -1562,30 +1626,7 @@ def default_modules(services: "AppServices") -> list["Module"]:
         feature,
         # Registers nothing: it owns the widget the graph tab stands beside the canvas.
         problems,
-        TestsModule(
-            TestsDeps(
-                dictation=services.dictation,
-                library=library,
-                debounce=services.debounce,
-                undo=services.undo,
-                actions=services.actions,
-                context=services.context,
-                tabs=services.tabs,
-                sections=services.inspector_sections,
-                segments=services.index_segments,
-                theme=services.theme,
-                parent=services.window,
-                files=store.files,
-                # A check declares a scope; a feature and a milestone already were ones, and
-                # all three are the same walk with a different stopping rule. Named here,
-                # the one place that may know every aspect, so none learns the others.
-                scopes=_scope_kinds(check_read, is_feature, milestone_read),
-                pick_assets=pick_assets,
-                # Grouping by milestone writes each heading in that milestone's own shade,
-                # so the Tests tab reads as the same sequence the calendar does.
-                milestone_color=milestone_color,
-            )
-        ),
+        tests,
         GithubModule(
             GithubDeps(
                 actions=services.actions,
@@ -2613,6 +2654,7 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.library import cli as library_cli
     from dplanner.modules.notes import cli as note_cli
+    from dplanner.modules.notes.log import read_log
     from dplanner.modules.progression import cli as progression_cli
     from dplanner.modules.project_assets import cli as assets_cli
     from dplanner.modules.project_assets.cli import read_titles
@@ -2675,7 +2717,12 @@ def default_cli_commands(gate: "TopologyGate | None" = None) -> list["CliCommand
         # one derivation, handed across here — `cite`, `reanchor`, `step add --feature`
         # and lint all judge a quote the same way.
         *feature_cli.commands(anchor=spec_cli.anchor_sources, key_of=_step_key),
-        *testing_cli.commands(),
+        # Where a test came from: the spec module's index and the note log, so the
+        # testing verbs can check a source points at something without importing either.
+        *testing_cli.commands(
+            documents=spec_cli.document_names,
+            notes=lambda project: [record.id for record in read_log(project)],
+        ),
         *check_cli.commands(),
         # What any collector gathers is one derivation asked three ways, so it is one verb
         # rather than one per aspect. The kinds and the coverage walk arrive as arguments,

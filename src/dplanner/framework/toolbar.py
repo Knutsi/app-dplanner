@@ -876,6 +876,24 @@ class FilterButton(QWidget):
         self._actions[key] = action
         return action
 
+    def set_filters(self, entries: Sequence[tuple[str, str]]) -> None:
+        """Replace the whole popup — for a funnel whose entries are *data*.
+
+        A filter over a closed vocabulary (the note labels) is added once at build time;
+        one over a project's own milestones changes as the plan does, and rebuilding it
+        by hand meant reaching past this class into its actions. What was already ticked
+        and still exists stays ticked, so a rebuild the reader did not ask for does not
+        silently widen what they are looking at.
+        """
+        if [(key, action.text()) for key, action in self._actions.items()] == list(entries):
+            return
+        kept = set(self.active())
+        self.menu.clear()  # The QActions are the menu's children and go with it.
+        self._actions.clear()
+        for key, text in entries:
+            self.add_filter(key, text)
+        self.set_active(kept & {key for key, _text in entries})
+
     def active(self) -> list[str]:
         return [key for key, action in self._actions.items() if action.isChecked()]
 

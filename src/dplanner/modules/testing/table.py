@@ -6,10 +6,12 @@ worth printing. Writing that once is the difference between a feature and two fe
 will drift — and the cross-project view is explicitly the half that grows later.
 
 What a row wears is ``framework/table.py``'s: the test's title over the first line of its
-body, the result in its own tone, a failed row washed in the failure's, and a group as one
-spanned heading — written in a milestone's shade when the group is a milestone, so grouping
-by milestone reads as the same sequence the calendar and the graph show. **A column of
-blanks is hidden rather than shown.**
+body, where it came from, the result in its own tone, a failed row washed in the failure's,
+and a group as one spanned heading — written in a milestone's shade when the group is a
+milestone, so grouping by milestone reads as the same sequence the calendar and the graph
+show. **A column of blanks is hidden rather than shown**, and one whose content has no
+natural length is capped and elided: a cell nobody came for must not push off the edge the
+ones they did.
 """
 
 from collections.abc import Sequence
@@ -22,6 +24,7 @@ from PySide6.QtWidgets import QTableWidgetItem, QWidget
 from dplanner.domain.model import Step, StepId
 from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.table import Cell, Column, Selection, Table
+from dplanner.framework.widgets import wrapped_tooltip
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.runs import Outcome
 from dplanner.modules.testing.view import FAILED_ROW_TINT, tint, word
@@ -31,19 +34,39 @@ COLUMNS = (
     Column("Test", detail=True, resize="interactive"),
     Column("Project"),
     Column("Step"),
-    Column("Covered by"),
+    # Interactive, not contents-sized: a contents column follows its cells forever and
+    # ignores a width set on it, and this one's content is a list with no natural length.
+    Column("Covered by", resize="interactive"),
     Column("Result"),
     Column("When"),
+    Column("Sources"),
 )
-TEST_COLUMN, PROJECT_COLUMN, STEP_COLUMN, COVERED_COLUMN, RESULT_COLUMN, WHEN_COLUMN = range(6)
+(
+    TEST_COLUMN,
+    PROJECT_COLUMN,
+    STEP_COLUMN,
+    COVERED_COLUMN,
+    RESULT_COLUMN,
+    WHEN_COLUMN,
+    SOURCES_COLUMN,
+) = range(7)
 
 # A test's own line can be long; past this the column stops growing and elides.
 TEST_MAX_WIDTH = 340
+# And a test behind six collectors names all six. Sized to its content it took the whole
+# table and pushed Result, When and Sources off the right-hand edge — which is how a column
+# nobody came for hides the ones they did. Capped, elided, and the whole list in the tooltip.
+COVERED_MAX_WIDTH = 220
 
 TEST_ROLE = HOST_ROLE
 STEP_ROLE = HOST_ROLE + 1
 
 ARCHIVED_TIP = "Archived — off the roster and out of new runs"
+UNSOURCED = "—"
+UNSOURCED_TIP = (
+    "This test says nowhere it came from. A test a reader cannot trace back to a spec "
+    "passage or an implementation note is one nobody can judge."
+)
 
 
 @dataclass(frozen=True)
@@ -58,6 +81,11 @@ class Row:
     step: Step
     project: str = ""
     covered_by: tuple[str, ...] = ()
+    # What the test's sources are *called* where they live — a spec document's name, a
+    # note's title — resolved by whoever built the row, because the record holds only the
+    # pointer and a title copied into it would drift the day somebody renamed the thing.
+    source_words: tuple[str, ...] = ()
+    source_tip: str = ""
     outcome: Outcome | None = None
     status: str = "pending"  # This run's result in run mode; the latest one otherwise.
     # What this test is filed under when the reader asked for grouping — a feature's title,
@@ -80,7 +108,9 @@ class TestsTable(Table):
         super().__init__(COLUMNS, selection=selection, parent=parent)
         self._sized = False
 
-    def show_rows(self, rows: Sequence[Row], *, show_project: bool = False) -> None:
+    def show_rows(
+        self, rows: Sequence[Row], *, show_project: bool = False, show_step: bool = True
+    ) -> None:
         keep = self.selected_tests()
         self.clear_rows()
         for entry in _with_headings(rows):
@@ -91,6 +121,11 @@ class TestsTable(Table):
                 self.add_heading(title, ink=_shade(color))
         # A column of blanks is noise: hide what this scope has nothing to say about.
         self.setColumnHidden(PROJECT_COLUMN, not show_project)
+        # A project's own tab says which step a test hangs off in the panel it opens, and
+        # the reader of a test roster is after what is being proved rather than where the
+        # work sat; the roll call keeps it, because across projects it is the only
+        # placing a row has.
+        self.setColumnHidden(STEP_COLUMN, not show_step)
         self.setColumnHidden(COVERED_COLUMN, not any(row.covered_by for row in rows))
         self.setColumnHidden(WHEN_COLUMN, not any(row.outcome for row in rows))
         self._reselect(keep)
@@ -98,7 +133,8 @@ class TestsTable(Table):
             # Once, on the first rows: the test column is interactive so the reader's own
             # width survives every refresh after this one.
             self.fit_columns()
-            self.setColumnWidth(TEST_COLUMN, min(self.columnWidth(TEST_COLUMN), TEST_MAX_WIDTH))
+            for column, cap in ((TEST_COLUMN, TEST_MAX_WIDTH), (COVERED_COLUMN, COVERED_MAX_WIDTH)):
+                self.setColumnWidth(column, min(self.columnWidth(column), cap))
             self._sized = bool(rows)
 
     def _add(self, row: Row) -> None:
@@ -110,10 +146,19 @@ class TestsTable(Table):
                 ),
                 Cell(row.project, secondary=True, tooltip=tip),
                 Cell(row.step.title or "Untitled step", secondary=True, tooltip=tip),
-                Cell(", ".join(row.covered_by), secondary=True, tooltip=tip),
+                Cell(
+                    ", ".join(row.covered_by),
+                    secondary=True,
+                    tooltip=_covered_tip(row) or tip,
+                ),
                 # The one place a colour is asserted: a status means the same on every theme.
                 Cell(word(row.status), ink=tint(row.status), tooltip=tip),
                 Cell(_when(row), secondary=True, tooltip=tip),
+                Cell(
+                    ", ".join(row.source_words) or UNSOURCED,
+                    secondary=True,
+                    tooltip=row.source_tip or (tip if row.source_words else UNSOURCED_TIP),
+                ),
             ),
             tint=FAILED_ROW_TINT if row.status == "failed" else None,
             data={TEST_ROLE: row.test.id, STEP_ROLE: row.step.id},
@@ -190,6 +235,13 @@ def _with_headings(rows: Sequence[Row]) -> list[Row | tuple[str, str]]:
             laid.append((current, row.group_color))
         laid.append(row)
     return laid
+
+
+def _covered_tip(row: Row) -> str:
+    """Every collector the row sits behind, one per line — the cap above elides the cell."""
+    if len(row.covered_by) < 2:
+        return ""
+    return wrapped_tooltip("\n".join(row.covered_by))
 
 
 def _preview(body: str) -> str:

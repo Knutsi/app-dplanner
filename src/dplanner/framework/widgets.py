@@ -4,10 +4,12 @@ Nothing here is a framework concept — these are the handful of things every se
 would otherwise reimplement slightly differently: a confirmation whose default is "no", a
 notice for what a gesture came to, a centred column at a readable measure, what an empty
 page says, the caption over a block (with its help glyph) and the remark under it, a form
-block, a quiet verb for a body and one whose glyph follows the theme, and Ctrl+wheel zoom.
+block, a quiet verb for a body and one whose glyph follows the theme, a tooltip that
+wraps, and Ctrl+wheel zoom.
 Add to it sparingly; a helper that only one feature uses belongs in that feature.
 """
 
+import html
 from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt
@@ -117,6 +119,26 @@ def note(text: str, parent: QWidget | None = None) -> QLabel:
     label.setObjectName("InspectorNote")
     label.setWordWrap(True)
     return label
+
+
+# A tooltip carrying a sentence rather than a label: wide enough to read, narrow enough
+# that the eye finds the next line. The measure typography has settled on, in characters.
+TOOLTIP_WIDTH = 460
+
+
+def wrapped_tooltip(text: str, *, width: int = TOOLTIP_WIDTH) -> str:
+    """``text`` as a tooltip that wraps — Qt lays a plain one on a single line forever.
+
+    Qt word-wraps a tooltip only when it is *rich* text (``QTipLabel`` sets its wrap from
+    ``mightBeRichText``), so anything longer than a label — a note's body, the passage a
+    test proves — has to arrive as markup or it runs off the screen. Escaped, because the
+    text is somebody's prose and may hold a ``<``; newlines kept, because the paragraphs
+    in a quoted passage are part of what is being quoted.
+    """
+    if not text.strip():
+        return ""
+    body = html.escape(text.strip()).replace("\n", "<br>")
+    return f'<div style="width: {width}px">{body}</div>'
 
 
 def ink_of(widget: QWidget) -> QColor:

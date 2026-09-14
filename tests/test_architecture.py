@@ -69,6 +69,7 @@ HEADLESS_FILES = (
     "log.py",
     "collect.py",
     "runs.py",
+    "pack.py",
     "usage.py",
     "terminal.py",
     "harness.py",

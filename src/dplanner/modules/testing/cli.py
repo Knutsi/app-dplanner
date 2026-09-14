@@ -9,8 +9,10 @@ mark`` is the verb this file is really shaped around: terse, idempotent, and saf
 a batch where some of the marks are already what they should be.
 """
 
+import dataclasses
 from argparse import ArgumentParser, Namespace
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.assets import step_asset_commands
@@ -23,7 +25,10 @@ from dplanner.domain.store import FilesFor
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import (
     MODULE_ID,
+    NOTE_SOURCE,
+    SPEC_SOURCE,
     Test,
+    TestSource,
     covered,
     next_test_id,
     project_tests,
@@ -33,6 +38,13 @@ from dplanner.modules.testing.aspect import (
 )
 
 _STATUS_GLYPH = {"ok": "✓", "failed": "✗", "skipped": "-", "pending": " "}
+
+# What a source may point at, asked of whoever owns it. Named by the composition root, so
+# this file learns neither that the spec module exists nor that the notes module does — the
+# ``progression/cli.py`` hand-over, one level of indirection and no import.
+DocumentNames = Callable[[Project], list[str]]
+NoteIds = Callable[[Project], list[str]]
+NO_SOURCE = "say where it came from: --document D [--quote Q], or --note N3"
 
 
 # -- finding a test -------------------------------------------------------------------
@@ -101,17 +113,54 @@ def _save_runs(context: CliContext, project: Project, records: list[runs.Run]) -
 # -- the verbs ------------------------------------------------------------------------
 
 
-def commands() -> list[CliCommand]:
+def commands(*, documents: DocumentNames, notes: NoteIds) -> list[CliCommand]:
+    """Every ``test`` and ``test-run`` verb.
+
+    ``documents`` and ``notes`` say what a source may point at — the spec module's index
+    and the note log, handed over by the composition root so this file imports neither.
+    One inner wrapper each, the ``progression/cli.py`` shape.
+    """
+
+    def add(context: CliContext, args: Namespace) -> int:
+        return _add(context, args, documents, notes)
+
+    def cite(context: CliContext, args: Namespace) -> int:
+        return _cite(context, args, documents, notes)
+
     return [
         CliCommand(
             path=("test", "add"),
-            summary="Add a test to a step: what must keep being true once the work is done.",
+            summary="Add a test to a step: what must keep being true once the work is done, "
+            "and the spec passage or note it came from.",
             configure=_configure_add,
-            run=_add,
+            run=add,
             examples=(
                 "dplanner test add 'Fix list flicker' 'No flicker on render' "
-                "--text '1. Open the list. 2. It must not flicker.'",
-                "dplanner test add 'Fix list flicker' 'Rotation' --file steps.md",
+                "--text '1. Open the list. 2. It must not flicker.' "
+                "--document ui-spec --quote 'The list MUST not flicker'",
+                "dplanner test add 'Fix list flicker' 'Rotation' --file steps.md --note N4",
+            ),
+        ),
+        CliCommand(
+            path=("test", "cite"),
+            summary="Say where a test came from: a spec passage, or an implementation note. "
+            "A test may prove more than one.",
+            configure=_configure_cite,
+            run=cite,
+            examples=(
+                "dplanner test cite T100 --document ui-spec "
+                "--quote 'The list MUST not flicker' --page 4",
+                "dplanner test cite T100 --note N4",
+            ),
+        ),
+        CliCommand(
+            path=("test", "uncite"),
+            summary="Forget a source a test was read from — one, or all of them.",
+            configure=_configure_uncite,
+            run=_uncite,
+            examples=(
+                "dplanner test uncite T100 --document ui-spec",
+                "dplanner test uncite T100 --all",
             ),
         ),
         CliCommand(
@@ -229,6 +278,23 @@ def _configure_add(parser: ArgumentParser) -> None:
     step_arg(parser)
     parser.add_argument("title", help="what the test is called, in the roster and in a run")
     _body_arguments(parser)
+    # Authored whole: a test and where it came from in one call, so the two never arrive
+    # as two commits and a test is never momentarily unsourced. See *Authoring a step is
+    # one verb, many modules* — the same argument, one level down.
+    _source_arguments(parser, adding=True)
+
+
+def _configure_cite(parser: ArgumentParser) -> None:
+    test_arg(parser)
+    _source_arguments(parser, adding=False)
+
+
+def _configure_uncite(parser: ArgumentParser) -> None:
+    test_arg(parser)
+    parser.add_argument("--document", help="the spec document to stop citing")
+    parser.add_argument("--note", help="the note to stop citing, by id")
+    parser.add_argument("--quote", default="", help="one passage (default: every one of it)")
+    parser.add_argument("--all", action="store_true", help="forget every source")
 
 
 def _body(args: Namespace) -> str:
@@ -237,14 +303,30 @@ def _body(args: Namespace) -> str:
     return args.text or ""
 
 
-def _add(context: CliContext, args: Namespace) -> int:
+def _add(context: CliContext, args: Namespace, documents: DocumentNames, notes: NoteIds) -> int:
     step = find_step(context.library, args.step, context.current)
     project = context.library.project_of(step.id)
-    added = Test(id=next_test_id(project), title=args.title, body=_body(args))
+    source = _named_source(project, args, documents, notes)
+    added = Test(
+        id=next_test_id(project),
+        title=args.title,
+        body=_body(args),
+        sources=(source,) if source is not None else (),
+    )
     _save(context, step, [*read(step), added])
+    # A test with nowhere to point is added and *said*, never refused: refusing would
+    # strand every plan written before sources existed, and lint is where an "ought to"
+    # lives in this application.
+    warning = "" if source else f"\n  no source — {NO_SOURCE}"
     context.report(
-        {"step": step.id, "id": added.id, "title": added.title, "body": added.body},
-        f"{added.id}  {added.title}  ({step.title})",
+        {
+            "step": step.id,
+            "id": added.id,
+            "title": added.title,
+            "body": added.body,
+            "sources": [_source_data(s) for s in added.sources],
+        },
+        f"{added.id}  {added.title}  ({step.title}){warning}",
     )
     return 0
 
@@ -260,13 +342,145 @@ def _set(context: CliContext, args: Namespace) -> int:
     if args.title is None and args.file is None and args.text is None:
         raise CliError("nothing to change — pass --title, --file or --text")
     body = test.body if (args.file is None and args.text is None) else _body(args)
-    changed = Test(test.id, args.title or test.title, body, test.archived)
+    changed = dataclasses.replace(test, title=args.title or test.title, body=body)
     _save(context, step, replace(read(step), changed))
     context.report(
         {"step": step.id, "id": changed.id, "title": changed.title, "body": changed.body},
         f"{changed.id}  {changed.title}",
     )
     return 0
+
+
+# -- where a test came from -------------------------------------------------------------
+
+
+def _source_arguments(parser: ArgumentParser, *, adding: bool) -> None:
+    """The four flags that name one source. Two kinds, and never both at once."""
+    where = parser.add_mutually_exclusive_group(required=not adding)
+    where.add_argument("--document", help="the spec document this test was read from")
+    where.add_argument("--note", help="the implementation note it came from, by id (N3)")
+    parser.add_argument("--quote", default="", help="the passage of the document it proves")
+    parser.add_argument("--page", type=int, help="the page that passage sits on")
+
+
+def _named_source(
+    project: Project, args: Namespace, documents: DocumentNames, notes: NoteIds
+) -> TestSource | None:
+    """The one source ``args`` names, checked against whoever owns it — None for none.
+
+    A pointer at something that is not there is refused rather than stored: the whole
+    point of a source is that a tester can open it, and a name nobody can resolve is a
+    dead link that only shows itself to the person least able to fix it.
+    """
+    if getattr(args, "note", None):
+        return TestSource(kind=NOTE_SOURCE, ref=_one_note(project, args.note, notes))
+    if not getattr(args, "document", None):
+        return None
+    return TestSource(
+        kind=SPEC_SOURCE,
+        ref=_one_document(project, args.document, documents),
+        quote=args.quote,
+        page=args.page,
+    )
+
+
+def _one_document(project: Project, needle: str, documents: DocumentNames) -> str:
+    """The document ``needle`` names — exactly, else uniquely by part of its name.
+
+    ``find_step``'s rule again: an ambiguous name lists what it matched rather than
+    resolving to the first, because a source pointing at one of two documents somebody
+    might have meant is the failure nobody can see.
+    """
+    names = documents(project)
+    if needle in names:
+        return needle
+    lowered = needle.lower()
+    partial = [name for name in names if lowered in name.lower()]
+    if len(partial) == 1:
+        return partial[0]
+    if not partial:
+        known = ", ".join(names) or "none yet — `dplanner spec new`"
+        raise CliError(f"no spec document matching {needle!r} — this project has: {known}")
+    raise CliError(f"{needle!r} matches several documents: {', '.join(sorted(partial))}")
+
+
+def _one_note(project: Project, needle: str, notes: NoteIds) -> str:
+    ids = notes(project)
+    found = next((one for one in ids if one.lower() == needle.strip().lower()), None)
+    if found is None:
+        known = ", ".join(ids) or "none yet — `dplanner note add`"
+        raise CliError(f"no note {needle!r} in this project — it has: {known}")
+    return found
+
+
+def _same_source(source: TestSource, other: TestSource) -> bool:
+    """Whether two sources point at the same thing. The page is not part of the answer:
+    it says where to look, not what is being pointed at, and citing the same passage
+    again with a page is correcting the pointer rather than adding a second one."""
+    return (source.kind, source.ref, source.quote) == (other.kind, other.ref, other.quote)
+
+
+def _source_line(source: TestSource) -> str:
+    quote = f" — {source.quote}" if source.quote else ""
+    return f"{source.kind}: {source.words}{quote}"
+
+
+def _source_data(source: TestSource) -> dict[str, Any]:
+    return {
+        "kind": source.kind,
+        "ref": source.ref,
+        "quote": source.quote,
+        "page": source.page,
+    }
+
+
+def _cite(context: CliContext, args: Namespace, documents: DocumentNames, notes: NoteIds) -> int:
+    project, step, test = find_test(context.library, args.test, context.current)
+    source = _named_source(project, args, documents, notes)
+    assert source is not None  # The argument group is required on this verb.
+    kept = [held for held in test.sources if not _same_source(held, source)]
+    changed = dataclasses.replace(test, sources=(*kept, source))
+    _save(context, step, replace(read(step), changed))
+    context.report(
+        {"id": test.id, "sources": [_source_data(s) for s in changed.sources]},
+        f"{test.id}  {test.title}: {len(changed.sources)} "
+        f"source{'s' if len(changed.sources) != 1 else ''}\n  {_source_line(source)}",
+    )
+    return 0
+
+
+def _uncite(context: CliContext, args: Namespace) -> int:
+    _project, step, test = find_test(context.library, args.test, context.current)
+    if args.all:
+        kept: tuple[TestSource, ...] = ()
+    elif args.document is None and args.note is None:
+        raise CliError("say which source: --document D [--quote Q], --note N3, or --all")
+    else:
+        wanted_kind = NOTE_SOURCE if args.note else SPEC_SOURCE
+        wanted_ref = args.note or args.document
+        kept = tuple(
+            held
+            for held in test.sources
+            if held.kind != wanted_kind
+            or not _matches_ref(held.ref, wanted_ref)
+            or (args.quote and held.quote != args.quote)
+        )
+    gone = len(test.sources) - len(kept)
+    if gone:
+        _save(context, step, replace(read(step), dataclasses.replace(test, sources=kept)))
+    context.report(
+        {"id": test.id, "removed": gone, "sources": [_source_data(s) for s in kept]},
+        f"{test.id}: {gone} source{'s' if gone != 1 else ''} removed"
+        if gone
+        else f"{test.id}: nothing to remove — it does not cite that",
+    )
+    return 0
+
+
+def _matches_ref(ref: str, needle: str) -> bool:
+    """Loose on the way *out* as well as in: whatever spelling named the document when it
+    was cited is the spelling that must un-cite it."""
+    return ref.lower() == needle.lower() or needle.lower() in ref.lower()
 
 
 def _show(context: CliContext, args: Namespace) -> int:
@@ -279,11 +493,15 @@ def _show(context: CliContext, args: Namespace) -> int:
         "archived": test.archived,
         "step": step.id,
         "step_title": step.title,
+        "sources": [_source_data(source) for source in test.sources],
         "latest": _outcome_data(outcome),
     }
     lines = [f"{test.id}  {test.title}", f"  on {step.title}", f"  {_outcome_text(outcome)}"]
     if test.archived:
         lines.insert(1, "  archived")
+    lines += [f"  from {_source_line(source)}" for source in test.sources] or [
+        f"  no source — {NO_SOURCE}"
+    ]
     if test.body:
         lines += ["", test.body]
     context.report(data, "\n".join(lines))
@@ -380,7 +598,7 @@ def _set_archived(context: CliContext, needle: str, archived: bool) -> int:
         # Already there is success — state-setting verbs must survive batches.
         context.report({"id": test.id, "archived": archived}, f"{test.id}: already {word}")
         return 0
-    changed = Test(test.id, test.title, test.body, archived)
+    changed = dataclasses.replace(test, archived=archived)
     _save(context, step, replace(read(step), changed))
     context.report({"id": test.id, "archived": archived}, f"{test.id}: {word}")
     return 0
@@ -582,7 +800,14 @@ def step_author() -> StepAuthor:
 
 
 def lint_checks() -> list[LintCheck]:
-    """One check: a test with a title and no body is one nobody can execute."""
+    """Two checks, and both are about a test nobody could act on.
+
+    A test with no body cannot be executed; a test with no source cannot be *judged* —
+    the tester cannot tell what claim it is really making, and the next planner cannot
+    tell whether it still applies when the spec moves. Neither is refused where it is
+    written, because an existing plan is full of both and a verb that refused them would
+    strand the plan; this is where an "ought to" lives here.
+    """
 
     def empty_tests(_library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
         return [
@@ -597,4 +822,18 @@ def lint_checks() -> list[LintCheck]:
             if not test.body.strip()
         ]
 
-    return [empty_tests]
+    def unsourced(_library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
+        return [
+            LintFinding(
+                check="test.unsourced",
+                subject_id=step.id,
+                subject=step.title,
+                message=f"test {test.id} ({test.title}) says nowhere it came from: "
+                f"`dplanner test cite {test.id} --document <doc> --quote '…'` "
+                f"or `--note N<n>`",
+            )
+            for step, test in project_tests(project)
+            if not test.sources
+        ]
+
+    return [empty_tests, unsourced]

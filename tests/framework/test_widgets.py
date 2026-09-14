@@ -169,3 +169,26 @@ def test_a_number_box_prints_a_number_the_way_a_person_writes_it(app):
         assert [box.textFromValue(value) for value in (0.25, 0.5, 3.0)] == ["0.25", "0.5", "3"]
     finally:
         box.deleteLater()
+
+
+def test_a_wrapped_tooltip_is_rich_text_so_qt_wraps_it_at_all(app):
+    from dplanner.framework.widgets import wrapped_tooltip
+
+    # QTipLabel takes its word wrap from `mightBeRichText`, so a plain tooltip is laid on
+    # one endless line: markup is not decoration here, it is the whole mechanism.
+    found = wrapped_tooltip("a sentence long enough to need a second line")
+    assert found.startswith("<div") and found.endswith("</div>")
+
+
+def test_a_wrapped_tooltip_escapes_the_prose_it_carries(app):
+    from dplanner.framework.widgets import wrapped_tooltip
+
+    # The text is somebody's quoted passage; a stray `<` must not eat the rest of it.
+    assert "&lt;b&gt;" in wrapped_tooltip("a <b> tag")
+    assert "<br>" in wrapped_tooltip("one\ntwo")
+
+
+def test_nothing_to_say_is_no_tooltip_rather_than_an_empty_box(app):
+    from dplanner.framework.widgets import wrapped_tooltip
+
+    assert wrapped_tooltip("") == "" and wrapped_tooltip("   \n ") == ""

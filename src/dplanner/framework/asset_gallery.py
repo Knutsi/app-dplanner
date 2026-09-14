@@ -22,6 +22,11 @@ Two source modes, two path vocabularies — never mixed:
 Thumbnails are cached by name (content-addressed: same name, same bytes — never stale)
 and rebuilt only when the device pixel ratio changes, and they are rendered *at* that
 ratio: a gallery of soft previews on a sharp screen defeats its own point.
+
+A host that knows the prose can hand over :meth:`set_targets`, and a picture the prose
+points *at* wears the ring on its thumbnail and in the lightbox. The cache key gains the
+targets for exactly that reason: the bytes did not change when the prose did, so a name
+alone would keep showing yesterday's ring.
 """
 
 from collections.abc import Callable, Sequence
@@ -40,8 +45,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.domain.assets import assets, attach
+from dplanner.domain.assets import ClickTarget, assets, attach
 from dplanner.domain.store import ModuleFileArea
+from dplanner.framework.click_targets import marked
 from dplanner.framework.image_preview import ImagePreviewDialog
 
 THUMBNAIL_SIZE = 76  # On the 4-point grid; large enough to recognise a figure.
@@ -50,6 +56,9 @@ ITEM_GAP = 6  # Within the gallery — DESIGN.md's within-block spacing.
 # The provider resolves the node's file area, raising KeyError while the node is unflushed.
 AreaFor = Callable[[], ModuleFileArea]
 ReadBytes = Callable[[str], bytes | None]
+# What the prose above marks on one file: the areas of a screenshot it points the reader
+# at (``domain/assets.py``). A host that has the document says; one that has not, does not.
+TargetsFor = Callable[[str], Sequence[ClickTarget]]
 
 
 class _Thumb(QLabel):
@@ -123,7 +132,10 @@ class AssetGallery(QWidget):
         self._files: list[str] = []
         self._read: ReadBytes | None = None
         self._remove_file: Callable[[str], None] | None = None
-        self._thumbs: dict[str, tuple[float, QPixmap | None]] = {}
+        self._targets_for: TargetsFor | None = None
+        # Keyed by (name, ratio, targets): content-addressed bytes never go stale, but the
+        # ring drawn over them follows prose that changes under the same name.
+        self._thumbs: dict[str, tuple[float, tuple[ClickTarget, ...], QPixmap | None]] = {}
         self._names: list[str] = []
         self._columns = 0
 
@@ -185,6 +197,16 @@ class AssetGallery(QWidget):
         self.setEnabled(read is not None)
         self.refresh()
 
+    def set_targets(self, targets_for: TargetsFor | None) -> None:
+        """Say what the prose above marks on each file, or stop saying it.
+
+        Aimed from the host's ``show_target`` beside :meth:`set_area`, and called again
+        whenever the document changes — the ring is a reading of the prose, so it follows
+        every keystroke that moves one.
+        """
+        self._targets_for = targets_for
+        self.refresh()
+
     def refresh(self) -> None:
         self._names = list(self._files)
         if self._area_for is not None:
@@ -192,9 +214,10 @@ class AssetGallery(QWidget):
             self._names = assets(area) if area is not None else []
         ratio = self.devicePixelRatioF()
         for name in self._names:
+            targets = self._targets(name)
             cached = self._thumbs.get(name)
-            if cached is None or cached[0] != ratio:
-                self._thumbs[name] = (ratio, self._thumbnail(name, ratio))
+            if cached is None or cached[0] != ratio or cached[1] != targets:
+                self._thumbs[name] = (ratio, targets, self._thumbnail(name, ratio, targets))
         self._rebuild_grid()
 
     # -- internals -----------------------------------------------------------------------------
@@ -213,12 +236,19 @@ class AssetGallery(QWidget):
             return area.read_bytes(name) if area is not None else None
         return self._read(name) if self._read is not None else None
 
-    def _thumbnail(self, name: str, ratio: float) -> QPixmap | None:
+    def _targets(self, name: str) -> tuple[ClickTarget, ...]:
+        return tuple(self._targets_for(name)) if self._targets_for is not None else ()
+
+    def _thumbnail(
+        self, name: str, ratio: float, targets: Sequence[ClickTarget] = ()
+    ) -> QPixmap | None:
         data = self._read_bytes(name)
         image = QImage.fromData(data) if data is not None else QImage()
         if image.isNull():
             return None
-        scaled = image.scaled(
+        # Marked at full size and scaled after: a ring drawn on the thumbnail would be
+        # measured in the thumbnail's pixels, and the rectangles are in the picture's.
+        scaled = marked(image, targets).scaled(
             round(THUMBNAIL_SIZE * ratio),
             round(THUMBNAIL_SIZE * ratio),
             Qt.AspectRatioMode.KeepAspectRatio,
@@ -238,7 +268,9 @@ class AssetGallery(QWidget):
             area = self._resolve()
             if area is not None:
                 path = str(area.absolute(name))
-        ImagePreviewDialog(image, Path(name).name, self, path=path).exec()
+        ImagePreviewDialog(
+            image, Path(name).name, self, path=path, targets=self._targets(name)
+        ).exec()
 
     def _attach(self) -> None:
         chosen, _filter = QFileDialog.getOpenFileName(self, self._attach_title)
@@ -282,7 +314,7 @@ class AssetGallery(QWidget):
         self._columns = self._column_count()
         removable = self._remove_file is not None or (self._editable and self._area_for is not None)
         for index, name in enumerate(self._names):
-            _ratio, pixmap = self._thumbs.get(name, (1.0, None))
+            _ratio, _targets, pixmap = self._thumbs.get(name, (1.0, (), None))
             cell = _AssetItem(name, pixmap, self._view, self._remove if removable else None)
             self._grid.addWidget(cell, index // self._columns, index % self._columns)
         # Pack the cells left: all spare width goes to a phantom trailing column, or a

@@ -8,25 +8,46 @@ project and a run spanning several would have nowhere honest to live.
 sentence over it makes every reader do the arithmetic. So the first thing on the page is
 "38 of 42 passing" — or, in a run, how many are left to do.
 
-**The strip is the registry's.** New Run, Close Run and the four results are the verbs the
-Project and Step menus hold, rendered as glyphs: greyed with the reason until a run is open
-and a test is picked, worded with the count when several are. After a divider comes the
-view — which tests, which run's results, how they are grouped, whether the archived show.
+**The strip is the registry's.** New Run, Close Run, the four results and Export are the
+verbs the Project, Step and File menus hold, rendered as glyphs: greyed with the reason
+until a run is open and a test is picked, worded with the count when several are. After a
+divider comes the view — which run's results, how they are grouped, whether the archived
+show.
 
 **The Run selector is the mode.** The table shows either the latest result per test or one
 run's results, and which of those is a dropdown rather than hidden state. Marking is
 possible only in the open run, which is the same rule the verbs are gated on: a project has
 at most one open run, so "mark this ok" never has to ask which.
+
+**Three panes, and each answers a different question.** Which feature is being tested is
+the standing list on the left (``collectors.py``) — it replaced a *scope* dropdown, because
+a tester picks one over and over and a control they use every minute must not be one they
+have to open first. What the tests are is the table. Where the picked one came from is the
+pane under it (``sources.py``). The step a test hangs off is *not* a column here: the panel
+a double-click opens says it, and the reader of a roster is after what is being proved.
+
+**The right-click is the Test submenu and nothing else.** A table of tests offering Delete
+Step, Link and Run Agent offers a page of verbs about something the reader did not click
+on. ``build_menu``'s ``submenu`` filter renders the Step menu's *Test* child — the results,
+the archive pair, and the two verbs that open where a test came from — so this is still a
+menu rendered rather than a menu copied.
 """
 
 from collections.abc import Callable, Sequence
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
-from dplanner.domain.scope import gatherers, kind_of
+from dplanner.domain.scope import gatherers, kind_of, stops_for
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.activity import ActivityBase, EntityActivity, follow_project
 from dplanner.framework.context import (
@@ -43,9 +64,26 @@ from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.table import Selection
 from dplanner.framework.toolbar import Toolbar
-from dplanner.framework.widgets import EmptyState, captioned, note
+from dplanner.framework.widgets import EmptyState, captioned, note, wrapped_tooltip
 from dplanner.modules.testing import runs
-from dplanner.modules.testing.aspect import covered, project_tests
+from dplanner.modules.testing.aspect import (
+    UNGATHERED,
+    SourceFacts,
+    Test,
+    TestSource,
+    covered,
+    find,
+    project_tests,
+    read,
+)
+from dplanner.modules.testing.collectors import (
+    PANE_WIDTH,
+    CollectorPane,
+    collectors,
+    listed,
+    milestones_of,
+)
+from dplanner.modules.testing.sources import SourcesPane, kind_words
 from dplanner.modules.testing.table import Row, TestsTable
 from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.theme.cards import title_font
@@ -62,14 +100,15 @@ TAB_HINT = "Everything this project verifies, and how it last did."
 ALL_HINT = "Every test in every project in this library, and how it last did."
 ARCHIVED_TIP = "List the tests taken off the roster as well"
 # Creation first, then what acts on the picked tests (DESIGN.md's *Tables*).
-RUN_VERBS = ("tests.new_run", "tests.close_run", *(f"test.result_{s}" for s in RESULT_ORDER))
+RUN_VERBS = (
+    "tests.new_run",
+    "tests.close_run",
+    *(f"test.result_{s}" for s in RESULT_ORDER),
+    "tests.export",
+)
 
 ROSTER = "Latest results"
-ALL_TESTS = "All tests"
 NO_GROUPING = "Flat list"
-# A test on a step nothing collects: work that reaches no release. `dplanner project lint`
-# reports the same steps as `scope.ungathered`, so the two surfaces say one thing.
-UNGATHERED = "Not in any feature"
 
 
 def headline(statuses: Sequence[str], *, run: runs.Run | None = None) -> tuple[str, str]:
@@ -102,9 +141,24 @@ def _selector(parent: QWidget, tip: str) -> QComboBox:
 
 
 class _TestsPage(QWidget):
-    """The shared page: the caption, the answer, the strip, then the table."""
+    """The shared page: the caption, the answer, the strip, then the table and its panes.
 
-    def __init__(self, caption: str, hint: str, *, selection: Selection) -> None:
+    The two activities take different parts of it. The roll call is a table and nothing
+    else — a feature list is one project's fact, and a source pane would have to resolve
+    against whichever project each row came from. The project tab takes all three, parted
+    by splitters: the seam belongs to the splitter and neither pane draws an edge of its
+    own (``CLAUDE.md``'s *A seam belongs to the splitter*).
+    """
+
+    def __init__(
+        self,
+        caption: str,
+        hint: str,
+        *,
+        selection: Selection,
+        panes: bool = False,
+        open_source: Callable[[TestSource], None] | None = None,
+    ) -> None:
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
@@ -130,9 +184,39 @@ class _TestsPage(QWidget):
         self.strip.addWidget(self.updating)
 
         self.table = TestsTable(self, selection=selection)
-        layout.addWidget(self.table, 1)
         self.empty = EmptyState(parent=self, stands_in_for=self.table)
-        layout.addWidget(self.empty, 1)
+        self.collectors: CollectorPane | None = None
+        self.sources: SourcesPane | None = None
+        if not panes:
+            layout.addWidget(self.table, 1)
+            layout.addWidget(self.empty, 1)
+            return
+
+        assert open_source is not None
+        self.collectors = CollectorPane(self)
+        rows = QWidget(self)
+        rows_layout = QVBoxLayout(rows)
+        rows_layout.setContentsMargins(0, 0, 0, 0)
+        rows_layout.setSpacing(0)
+        rows_layout.addWidget(self.table, 1)
+        rows_layout.addWidget(self.empty, 1)
+        self.sources = SourcesPane(open_source, self)
+
+        self.down = QSplitter(Qt.Orientation.Vertical, self)
+        self.down.setChildrenCollapsible(False)
+        self.down.addWidget(rows)
+        self.down.addWidget(self.sources)
+        self.down.setStretchFactor(0, 3)
+        self.down.setStretchFactor(1, 1)
+
+        self.across = QSplitter(Qt.Orientation.Horizontal, self)
+        self.across.setChildrenCollapsible(False)
+        self.across.addWidget(self.collectors)
+        self.across.addWidget(self.down)
+        self.across.setStretchFactor(0, 0)
+        self.across.setStretchFactor(1, 1)
+        self.across.setSizes([PANE_WIDTH, PANE_WIDTH * 3])
+        layout.addWidget(self.across, 1)
 
     def say(self, message: str) -> None:
         """A tab cannot go off screen the way a panel does, so it says so in words."""
@@ -158,27 +242,34 @@ class TestsActivity(EntityActivity):
         # The runs the tab has already seen: a run opened since the last look is the one to
         # show, since marking in it is what the person just asked for.
         self._runs_seen: set[str] | None = None
+        # What each source resolved to, for the length of one rebuild. See `_facts`.
+        self._facts_memo: dict[tuple[str, str, str, int | None], SourceFacts] = {}
 
-        self.page = _TestsPage("Tests", TAB_HINT, selection="extended")
+        self.page = _TestsPage(
+            "Tests", TAB_HINT, selection="extended", panes=True, open_source=self._open_source
+        )
         controls = self.page.controls
         for action_id in RUN_VERBS:
             controls.add_action(deps.actions, deps.context, action_id)
         controls.add_divider()
-        self.scope_box = _selector(
-            self.page, "Which tests to show: all of them, or one collector's"
-        )
-        self.scope_box.currentIndexChanged.connect(self._on_scope)
         self.run_box = _selector(self.page, "The latest result per test, or one run's")
         self.run_box.currentIndexChanged.connect(self._on_run)
         self.group_box = _selector(
             self.page, "Read the list flat, or filed under what collects each test"
         )
         self.group_box.currentIndexChanged.connect(self._on_group)
-        for box in (self.scope_box, self.run_box, self.group_box):
+        for box in (self.run_box, self.group_box):
             controls.add_widget(box)
         self.archived = controls.add_verb(
             "Show archived", archive_icon, self._refresh, checkable=True, tip=ARCHIVED_TIP
         )
+
+        self.collectors = self.page.collectors
+        assert self.collectors is not None
+        self.collectors.list.itemSelectionChanged.connect(self._on_collector)
+        self.collectors.filter.changed.connect(self._refresh)
+        self.sources = self.page.sources
+        assert self.sources is not None
 
         table = self.page.table
         table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -238,12 +329,19 @@ class TestsActivity(EntityActivity):
         self.page.controls.dispose()
 
     def show_scope(self, step_id: StepId) -> None:
-        """Open scoped to one check or release — what the Covers tab's button asks for."""
+        """Open narrowed to one collector — what the Covers tab's button asks for.
+
+        The funnel is cleared first: arriving at a feature a milestone filter has hidden
+        would land the reader on an empty list and no way of telling why.
+        """
+        assert self.collectors is not None
         self._scope = step_id
+        self.collectors.filter.clear()
         self._refresh()
 
-    def _on_scope(self, _index: int) -> None:
-        self._scope = str(self.scope_box.currentData() or "")
+    def _on_collector(self) -> None:
+        assert self.collectors is not None
+        self._scope = self.collectors.picked()
         self._refresh()
 
     def _on_run(self, _index: int) -> None:
@@ -269,7 +367,7 @@ class TestsActivity(EntityActivity):
         project = self._project()
         archived = self.archived.isChecked()
         if self._scope and project.step(self._scope) is not None:
-            pairs = covered(self._library, project, self._scope, archived=archived)
+            pairs = self._covered(project, self._scope, archived=archived)
         else:
             pairs = project_tests(project, archived=archived)
         records = self._records()
@@ -284,6 +382,8 @@ class TestsActivity(EntityActivity):
                 test=test,
                 step=step,
                 covered_by=scopes.get(test.id, ()),
+                source_words=self._source_words(test),
+                source_tip=self._source_tip(test),
                 outcome=outcomes.get(test.id),
                 status=(
                     run.result(test.id).status
@@ -339,6 +439,69 @@ class TestsActivity(EntityActivity):
             )
         return found
 
+    # -- where a test came from ----------------------------------------------------------
+
+    def _facts(self, source: TestSource) -> SourceFacts:
+        """What one source is called and what it says, asked of whoever owns it — once.
+
+        Memoised for the length of one rebuild, because resolving a spec source reads the
+        project's spec index: asked per row, a roster of two hundred tests would read it
+        two hundred times for an answer that cannot change while the table is being
+        filled. Cleared at the top of every refresh, so a renamed document still shows
+        under its new name on the next one.
+        """
+        key = (source.kind, source.ref, source.quote, source.page)
+        found = self._facts_memo.get(key)
+        if found is None:
+            found = self._deps.source_facts(self.project_id, source)
+            self._facts_memo[key] = found
+        return found
+
+    def _source_words(self, test: Test) -> tuple[str, ...]:
+        return tuple(self._facts(source).label for source in test.sources)
+
+    def _source_tip(self, test: Test) -> str:
+        """The column's tooltip: every source of this test, with what each one says.
+
+        Wrapped, because a quoted passage is a paragraph and Qt lays a plain tooltip on
+        one line however long it is.
+        """
+        if not test.sources:
+            return ""
+        lines = []
+        for source in test.sources:
+            facts = self._facts(source)
+            lines.append(f"{kind_words(source)} — {facts.label}")
+            if facts.detail:
+                lines.append(facts.detail.strip())
+        return wrapped_tooltip("\n".join(lines))
+
+    def _picked_test(self) -> Test | None:
+        """The one test the sources pane is about: the first of the selection.
+
+        The table selects several at a time — marking twelve tests is what a run is made
+        of — and *where this came from* is a question about one. The first is the honest
+        answer to "which of these", and a selection of one is by far the common case.
+        """
+        picked = self.page.table.selected_tests()
+        if not picked or not self._library.has(self.project_id):
+            return None
+        return next(
+            (
+                found
+                for step in self._project().steps
+                if (found := find(read(step), picked[0])) is not None
+            ),
+            None,
+        )
+
+    def _show_sources(self) -> None:
+        assert self.sources is not None
+        self.sources.show_sources(self._picked_test(), self._facts)
+
+    def _open_source(self, source: TestSource) -> None:
+        self._deps.open_source(self.project_id, source)
+
     def _scope_titles(
         self, project: Project, _records: Sequence[runs.Run]
     ) -> dict[str, tuple[str, ...]]:
@@ -356,14 +519,16 @@ class TestsActivity(EntityActivity):
         if not self._library.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         project = self._project()
-        self._sync_scopes(project)
+        self._facts_memo.clear()
+        self._sync_collectors(project)
         self._sync_runs()
         self._sync_grouping(project)
         rows = self._rows()
-        self.page.table.show_rows(rows)
+        self.page.table.show_rows(rows, show_step=False)
         run = self._current_run()
         self.page.lead(*headline([row.status for row in rows], run=run))
         self.page.say(self._nothing_to_show(project, rows))
+        self._show_sources()
         # A run opening or closing changes what the strip's verbs can do without changing
         # the selection, and a strip the registry feeds restates when the context is heard.
         self._deps.context.refresh()
@@ -378,19 +543,38 @@ class TestsActivity(EntityActivity):
             )
         if self._current_run() is not None:
             return "This run holds no tests in the current scope."
-        return "Nothing in this scope. Every test here is archived, or the scope is empty."
+        return "Nothing here. Every test in this feature is archived, or it has none yet."
 
-    def _sync_scopes(self, project: Project) -> None:
-        entries = [(ALL_TESTS, "")] + [
-            (f"{self._scope_kind_label(step)}: {step.title or 'Untitled step'}", step.id)
-            for step in self._scope_steps(project)
-        ]
-        self._reload(self.scope_box, entries, self._scope)
-        self._scope = str(self.scope_box.currentData() or "")
+    def _sync_collectors(self, project: Project) -> None:
+        """The left list, and the funnel over it. The pick is the tab's scope."""
+        pane = self.collectors
+        assert pane is not None
+        release = self._deps.release_kind
+        wanted = pane.show_filters(milestones_of(project, self._deps.scopes, release))
+        found = collectors(self._library, project, self._deps.scopes, self._test_count, release)
+        self._scope = pane.show_collectors(listed(found, wanted), self._scope)
 
-    def _scope_kind_label(self, step: Step) -> str:
-        kind = kind_of(self._deps.scopes, step)
-        return kind.label if kind is not None else ""
+    def _test_count(self, step_id: StepId) -> int:
+        """How many live tests one collector stands for — the number on its row."""
+        return len(self._covered(self._project(), step_id))
+
+    def _covered(
+        self, project: Project, step_id: StepId, *, archived: bool = False
+    ) -> list[tuple[Step, Test]]:
+        """The tests one collector *gathers* — its cone truncated where its kind stops.
+
+        Truncated, not cumulative: a feature row means that feature's own work, which is
+        what makes the count on the row and the rows in the table the same answer. What
+        must pass to *ship* is the milestone's row, which stops one boundary further out.
+        """
+        step = project.step(step_id)
+        return covered(
+            self._library,
+            project,
+            step_id,
+            archived=archived,
+            stops_at=stops_for(self._deps.scopes, step) if step is not None else None,
+        )
 
     def _sync_grouping(self, project: Project) -> None:
         """Only kinds this project actually has: a selector offering nothing teaches nothing."""
@@ -439,6 +623,7 @@ class TestsActivity(EntityActivity):
             ContextNode(selection_uri("test", test_id)) for test_id in tests
         )
         self.publish_selection(nodes)
+        self._show_sources()
 
     def _on_activated(self, row: int, _column: int) -> None:
         step_id = self.page.table.step_at(row)
@@ -456,7 +641,10 @@ class TestsActivity(EntityActivity):
             return
         if table.test_at(row) not in table.selected_tests():
             table.selectRow(row)
-        menu = build_menu(self._deps.actions, self._deps.context, "Step", table)
+        # The Step menu's *Test* child and nothing else: what a run recorded, the archive
+        # pair, and the way back to where the test came from. The whole Step menu here
+        # offered Delete Step and Run Agent over a row that is not a step.
+        menu = build_menu(self._deps.actions, self._deps.context, "Step", table, submenu="Test")
         menu.exec(table.viewport().mapToGlobal(position))
 
 
@@ -473,11 +661,13 @@ class AllTestsActivity(ActivityBase):
         context: ContextService,
         open_step: Callable[[StepId], None],
         debounce: DebounceService,
+        source_facts: Callable[[NodeId, TestSource], SourceFacts],
     ) -> None:
         super().__init__()
         self._library = library
         self._context = context
         self._open_step = open_step
+        self._source_facts = source_facts
         self.uri = activity_uri(ALL_TESTS_KIND)
         self.title = "Tests — All Projects"
 
@@ -525,6 +715,11 @@ class AllTestsActivity(ActivityBase):
                         test=test,
                         step=step,
                         project=project.title or "Untitled project",
+                        # Resolved per project, because a source's name lives wherever the
+                        # source does and the roll call spans every project in the library.
+                        source_words=tuple(
+                            self._source_facts(project.id, source).label for source in test.sources
+                        ),
                         outcome=outcome,
                         status=outcome.result.status if outcome else "pending",
                     )

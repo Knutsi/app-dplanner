@@ -20,6 +20,7 @@ onto the undo stack the way the time report's focus spinbox is. The registry ver
 the Tests activity, where a row *is* a test and selecting one is the natural gesture.
 """
 
+import dataclasses
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt
@@ -122,7 +123,7 @@ class TestBodyField:
         found = find(tests, self._test_id)
         if found is None:  # The test went while the editor was open; write nothing.
             return SetModuleDataCommand(self._step_id, MODULE_ID, write(tests))
-        changed = replace(tests, Test(found.id, found.title, spliced, found.archived))
+        changed = replace(tests, dataclasses.replace(found, body=spliced))
         return SetModuleDataCommand(
             self._step_id,
             MODULE_ID,
@@ -424,7 +425,7 @@ class TestsSection(QWidget):
         step, test = self._step(), find(self._tests(), self._selected)
         if step is None or test is None:
             return
-        changed = Test(test.id, test.title, test.body, not test.archived)
+        changed = dataclasses.replace(test, archived=not test.archived)
         self._push(
             step,
             replace(read(step), changed),
@@ -577,7 +578,7 @@ class _TestDetail(QWidget):
         test = find(read(step), self._test_id)
         if test is None or test.title == self.title.text():
             return
-        changed = Test(test.id, self.title.text(), test.body, test.archived)
+        changed = dataclasses.replace(test, title=self.title.text())
         self._undo.push(
             SetModuleDataCommand(
                 step.id, MODULE_ID, write(replace(read(step), changed)), label="Rename Test"

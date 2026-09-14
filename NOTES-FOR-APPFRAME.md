@@ -3793,3 +3793,104 @@ selection under the widgets and needed a taller row. Painting from one layout ke
 the unit, the height the font's, and the chips aligned whatever a row holds.
 
 **Upstream?** Yes, with the table.
+
+## 44. From the tests-for-testers pass (S17)
+
+Everything below is framework-side; the application half of the pass lives in
+`ARCHITECTURE.md`'s *A test is written for a tester*, *The Tests tab is three panes* and
+*A picture may say where to act*.
+
+### `framework/click_targets.py` — ringing a part of a picture (new file)
+
+**What.** One painter. `marked(image, targets)` returns a *copy* of a `QImage` with a ring
+round each rectangle, numbered ①②③ when there is more than one; `marked_bytes(data,
+targets)` is the same for a copy that leaves the application, answering PNG bytes and the
+suffix they now wear. The rectangles come from `domain/assets.py` — a markdown link may
+carry `#click=x,y,width,height` (repeatable with `;`), read by `click_targets()` and
+`targets_by_asset()`.
+
+**Why.** A test's screenshot often needs to say *where* on itself the reader must act, and
+an agent that drove the screen has the coordinates. Worth upstreaming: a prose editor with
+attachments is a framework thing, and "point at part of this picture" is the first thing
+anybody wants after "show this picture".
+
+**Three things that are not obvious.**
+
+- The colour is a **constant**, not a palette colour. A screenshot carries its own colours
+  and knows nothing of the theme it is shown in, so an accent-coloured ring vanishes
+  against the wrong screenshot on the wrong theme. Amber on a dark hairline reads on both.
+- **The original is never painted over.** The blob is content-addressed and shared; a
+  marked copy that overwrote it would make one attachment two files. What changes when
+  somebody moves a target is the *prose*, not the picture.
+- **`QPainter.end()` explicitly**, in a `finally`, before the image is handed back: a
+  painter still active on a `QImage` Python is about to drop is a crash waiting for the
+  next collection.
+
+### `QBuffer(QByteArray())` is a use-after-free — found the hard way
+
+**What.** `QBuffer(QByteArray())` hands the buffer a Python temporary that is freed on the
+next line; every write then lands in freed memory. It does not raise — it aborts in
+`malloc`, and only sometimes. A bare `QBuffer()` owns its bytes and is what to write.
+
+**And `QImage.save(device, format=…)` takes a `str`.** PySide's stub types `format` as
+`bytes | bytearray | memoryview`; passing what the stub asks for raises `ValueError` at
+runtime. The `# type: ignore[call-overload]` is the stub's bug, not ours — worth a report
+upstream if anyone is passing.
+
+### `framework/asset_gallery.py` — the gallery draws what the prose marks
+
+**What.** `set_targets(targets_for)` says what the document above marks on each file; the
+thumbnail and the lightbox then wear the ring. The thumbnail cache key gains the targets
+(`(name, ratio, targets)`) — content-addressed bytes never go stale, but the ring follows
+prose that changes under the same name. `ImagePreviewDialog` takes `targets=` for the same
+reason. **Marked at full size and scaled after**: a ring drawn on the thumbnail would be
+measured in the thumbnail's pixels, and the rectangles are in the picture's.
+
+### `framework/prose_section.py` — the ring follows the text
+
+**What.** The section reads `targets_by_asset()` off the document it is bound to and hands
+it to the gallery, re-reading on `textChanged` and redrawing **only when the map actually
+moved** — a keystroke in a sentence must not rebuild a grid of thumbnails.
+
+### `framework/widgets.py` — `wrapped_tooltip`
+
+**What.** Wraps text in a `<div>` with the prose escaped and newlines kept.
+
+**Why this is not decoration.** `QTipLabel` takes its word wrap from `Qt::mightBeRichText`,
+so a *plain* tooltip is laid out on one endless line however long it is. Any tooltip
+carrying a sentence rather than a label — a quoted spec passage, a note's body — has to
+arrive as markup or it runs off the screen. This is the kind of thing every application
+rediscovers; it belongs upstream.
+
+### `framework/toolbar.py` — `FilterButton.set_filters`
+
+**What.** Replaces the whole popup from a list of `(key, text)`, keeping ticked what still
+exists.
+
+**Why.** `add_filter` is right for a closed vocabulary (the note labels, added once at
+build time). A funnel over a *project's* milestones changes as the plan does, and rebuilding
+it meant reaching past the class into `_actions` — which is what this pass was about to do.
+
+### A suite trap worth knowing: `selectRow` is a silent no-op on a table nobody laid out
+
+**What.** `QTableView::selectRow` asks its horizontal header which column sits at x=0. A
+table that has never been laid out — every table in an offscreen suite that did not happen
+to get an event loop turn — answers **-1**, the model index is invalid, and the call does
+nothing at all. Whether a given table has been laid out depends on what else the worker
+ran first, so a test using it passes alone, passes under `--dist loadfile`, and fails under
+the default `--dist load`.
+
+**What to write instead**: the selection model, which is the path `Table._reselect` already
+takes:
+
+```python
+flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+table.selectionModel().select(table.model().index(row, 0), flags)
+```
+
+This pass found it because new tests hit it; `tests/modules/test_debug.py`'s
+`test_the_strip_words_delete_with_the_count_and_add_appends` was already failing this way
+on the committed tree under that file combination, and is fixed here. **There are around
+twenty other `selectRow` calls in the suite** carrying the same latent hazard — not
+converted in this pass, because each needs its own look, but they are the first thing to
+suspect the next time a selection assertion fails only in a full run.

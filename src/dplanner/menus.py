@@ -97,6 +97,10 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "test_result" feeds that same Test submenu with what a run *recorded*, so the rule
     # between what a test is and what it did is drawn inside the child menu — and, holding
     # no top-level entry of its own, the group adds no rule to the menu itself.
+    # "test_open" is the third band of that child menu: the way back from a test to what it
+    # is about. It is a group of its own so the Tests tab's right-click — which renders the
+    # Test submenu and nothing else (framework/action_menu.py's submenu filter) — reads as
+    # three bands: what this test did, what it is, and where it came from.
     # "agent" holds both launches, as a band of two child menus: Run Agent, which carries a
     # step's work out, and Compile with Agent, which writes a collector's documentation from
     # the fragments behind it. Compiling had a "docs" group of its own while it was an LLM
@@ -104,7 +108,16 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # kind" — and it is a coding agent in a terminal now, tracked as a run on the step and
     # reachable through Show Agent Terminal, so the reason for the separate group went with
     # the mechanism.
-    "Step": ("edit", "link", "classify", "test_result", "agent", "open", "navigate"),
+    "Step": (
+        "edit",
+        "link",
+        "classify",
+        "test_result",
+        "test_open",
+        "agent",
+        "open",
+        "navigate",
+    ),
     # "runs" is the Agent List — the live shells this window launched, a data child menu
     # rebuilt on open — above "install", what this machine has of DPlanner itself.
     "Tools": ("runs", "install"),

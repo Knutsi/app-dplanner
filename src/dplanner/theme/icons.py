@@ -502,6 +502,11 @@ def move_icon(color: str | QColor) -> QIcon:
     return glyph_icon("move", color)
 
 
+def export_icon(color: str | QColor) -> QIcon:
+    """A pack leaving: tests written out for whoever is going to run them."""
+    return glyph_icon("export", color)
+
+
 def close_icon(color: str | QColor) -> QIcon:
     """A cross: the close button on a tab, and a panel's way out.
 
