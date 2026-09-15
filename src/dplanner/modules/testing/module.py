@@ -16,6 +16,7 @@ these are.
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from dataclasses import replace as replace_fields
 
 from PySide6.QtWidgets import QTreeWidgetItem, QWidget
 
@@ -401,7 +402,7 @@ class TestsModule:
             by_step.setdefault(
                 step.id,
                 [
-                    Test(test.id, test.title, test.body, archived) if test.id in wanted else test
+                    replace_fields(test, archived=archived) if test.id in wanted else test
                     for test in read(step)
                 ],
             )

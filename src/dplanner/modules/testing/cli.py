@@ -9,6 +9,7 @@ mark`` is the verb this file is really shaped around: terse, idempotent, and saf
 a batch where some of the marks are already what they should be.
 """
 
+import dataclasses
 from argparse import ArgumentParser, Namespace
 from collections.abc import Sequence
 
@@ -22,8 +23,13 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import (
+    AUDIENCE_IDS,
+    DEFAULT_AUDIENCE,
     MODULE_ID,
     Test,
+    audience_words,
+    audiences_of,
+    check_audience,
     covered,
     next_test_id,
     project_tests,
@@ -33,6 +39,26 @@ from dplanner.modules.testing.aspect import (
 )
 
 _STATUS_GLYPH = {"ok": "✓", "failed": "✗", "skipped": "-", "pending": " "}
+
+# What `--audience` takes to mean "back to unclassified". An aspect whose default is not
+# "off" needs a word for returning to it — `estimate clear` and `describe clear` are the
+# same idea as verbs; here one repeatable flag covers both directions.
+NO_AUDIENCE = "none"
+
+
+def _audience_argument(parser: ArgumentParser, *, purpose: str) -> None:
+    """The ``--audience`` a test verb takes. Repeat it to name more than one."""
+    parser.add_argument(
+        "--audience",
+        action="append",
+        metavar="WHO",
+        help=f"{purpose} — one of: {', '.join(AUDIENCE_IDS)}. Repeat for several.",
+    )
+
+
+def _wanted_audiences(args: Namespace) -> tuple[str, ...]:
+    """The audiences named on the command line, checked and in canonical order."""
+    return tuple(check_audience(value) for value in (args.audience or ()))
 
 
 # -- finding a test -------------------------------------------------------------------
@@ -228,6 +254,7 @@ def _body_arguments(parser: ArgumentParser) -> None:
 def _configure_add(parser: ArgumentParser) -> None:
     step_arg(parser)
     parser.add_argument("title", help="what the test is called, in the roster and in a run")
+    _audience_argument(parser, purpose="who the test is for")
     _body_arguments(parser)
 
 
@@ -240,10 +267,21 @@ def _body(args: Namespace) -> str:
 def _add(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step, context.current)
     project = context.library.project_of(step.id)
-    added = Test(id=next_test_id(project), title=args.title, body=_body(args))
+    added = Test(
+        id=next_test_id(project),
+        title=args.title,
+        body=_body(args),
+        audiences=_wanted_audiences(args),
+    )
     _save(context, step, [*read(step), added])
     context.report(
-        {"step": step.id, "id": added.id, "title": added.title, "body": added.body},
+        {
+            "step": step.id,
+            "id": added.id,
+            "title": added.title,
+            "body": added.body,
+            "audiences": list(added.audiences),
+        },
         f"{added.id}  {added.title}  ({step.title})",
     )
     return 0
@@ -252,21 +290,51 @@ def _add(context: CliContext, args: Namespace) -> int:
 def _configure_set(parser: ArgumentParser) -> None:
     test_arg(parser)
     parser.add_argument("--title", help="rename the test")
+    _audience_argument(
+        parser, purpose=f"replace who the test is for; {NO_AUDIENCE!r} leaves it unclassified"
+    )
     _body_arguments(parser)
 
 
 def _set(context: CliContext, args: Namespace) -> int:
     _project, step, test = find_test(context.library, args.test, context.current)
-    if args.title is None and args.file is None and args.text is None:
-        raise CliError("nothing to change — pass --title, --file or --text")
+    if args.title is None and args.file is None and args.text is None and not args.audience:
+        raise CliError("nothing to change — pass --title, --file, --text or --audience")
     body = test.body if (args.file is None and args.text is None) else _body(args)
-    changed = Test(test.id, args.title or test.title, body, test.archived)
+    changed = dataclasses.replace(
+        test,
+        title=args.title or test.title,
+        body=body,
+        audiences=_replacement_audiences(args, test),
+    )
     _save(context, step, replace(read(step), changed))
     context.report(
-        {"step": step.id, "id": changed.id, "title": changed.title, "body": changed.body},
+        {
+            "step": step.id,
+            "id": changed.id,
+            "title": changed.title,
+            "body": changed.body,
+            "audiences": list(changed.audiences),
+        },
         f"{changed.id}  {changed.title}",
     )
     return 0
+
+
+def _replacement_audiences(args: Namespace, test: Test) -> tuple[str, ...]:
+    """What ``test set --audience`` leaves behind: the named set, nothing, or what was there.
+
+    ``--audience none`` is how a test goes back to unclassified; without it the flag can only
+    ever add, and a mistake would be unfixable from the terminal.
+    """
+    named = args.audience or []
+    if not named:
+        return test.audiences
+    if NO_AUDIENCE in named:
+        if len(named) > 1:
+            raise CliError(f"--audience {NO_AUDIENCE} cannot be combined with an audience")
+        return ()
+    return _wanted_audiences(args)
 
 
 def _show(context: CliContext, args: Namespace) -> int:
@@ -277,11 +345,17 @@ def _show(context: CliContext, args: Namespace) -> int:
         "title": test.title,
         "body": test.body,
         "archived": test.archived,
+        "audiences": list(test.audiences),
         "step": step.id,
         "step_title": step.title,
         "latest": _outcome_data(outcome),
     }
-    lines = [f"{test.id}  {test.title}", f"  on {step.title}", f"  {_outcome_text(outcome)}"]
+    lines = [
+        f"{test.id}  {test.title}",
+        f"  for {audience_words(test)}",
+        f"  on {step.title}",
+        f"  {_outcome_text(outcome)}",
+    ]
     if test.archived:
         lines.insert(1, "  archived")
     if test.body:
@@ -331,6 +405,7 @@ def _configure_list(parser: ArgumentParser) -> None:
     parser.add_argument(
         "--archived", action="store_true", help="include tests taken off the roster"
     )
+    _audience_argument(parser, purpose="only the tests written for these")
 
 
 def _list(context: CliContext, args: Namespace) -> int:
@@ -340,6 +415,7 @@ def _list(context: CliContext, args: Namespace) -> int:
     else:
         scope = find_step(context.library, args.scope, project)
         pairs = covered(context.library, project, scope.id, archived=args.archived)
+    pairs = _for_audiences(pairs, _wanted_audiences(args))
     outcomes = runs.latest_results(runs.read(project))
     data = {
         "project": project.id,
@@ -348,6 +424,9 @@ def _list(context: CliContext, args: Namespace) -> int:
                 "id": test.id,
                 "title": test.title,
                 "archived": test.archived,
+                # The stored ids, not what it reads as, so a caller can tell a test nobody
+                # has classified from one somebody deliberately filed under `other`.
+                "audiences": list(test.audiences),
                 "step": step.id,
                 "step_title": step.title,
                 "latest": _outcome_data(outcomes.get(test.id)),
@@ -356,13 +435,31 @@ def _list(context: CliContext, args: Namespace) -> int:
         ],
     }
     width = max((len(test.title) for _step, test in pairs), default=0)
+    for_width = max((len(audience_words(test)) for _step, test in pairs), default=0)
     lines = [
         f"{_STATUS_GLYPH[_status(outcomes, test)]} {test.id:<4} {test.title:<{width}}  "
-        f"{step.title}" + ("  (archived)" if test.archived else "")
+        f"{audience_words(test):<{for_width}}  {step.title}"
+        + ("  (archived)" if test.archived else "")
         for step, test in pairs
     ]
-    context.report(data, "\n".join(lines) if lines else "No tests yet.")
+    context.report(data, "\n".join(lines) if lines else _nothing_listed(args))
     return 0
+
+
+def _for_audiences(
+    pairs: Sequence[tuple[Step, Test]], wanted: Sequence[str]
+) -> list[tuple[Step, Test]]:
+    """``pairs`` narrowed to the tests written for any of ``wanted``; all of them when it is
+    empty. Read through ``audiences_of``, so an unclassified test answers to `other`."""
+    if not wanted:
+        return list(pairs)
+    return [pair for pair in pairs if set(audiences_of(pair[1])) & set(wanted)]
+
+
+def _nothing_listed(args: Namespace) -> str:
+    if args.audience:
+        return f"No test is written for {', '.join(args.audience)}."
+    return "No tests yet."
 
 
 def _status(outcomes: dict[str, runs.Outcome], test: Test) -> str:
@@ -380,7 +477,7 @@ def _set_archived(context: CliContext, needle: str, archived: bool) -> int:
         # Already there is success — state-setting verbs must survive batches.
         context.report({"id": test.id, "archived": archived}, f"{test.id}: already {word}")
         return 0
-    changed = Test(test.id, test.title, test.body, archived)
+    changed = dataclasses.replace(test, archived=archived)
     _save(context, step, replace(read(step), changed))
     context.report({"id": test.id, "archived": archived}, f"{test.id}: {word}")
     return 0
@@ -411,6 +508,7 @@ def _configure_start(parser: ArgumentParser) -> None:
         metavar="STEP",
         help="run only the tests behind this step — a check, a release, or any step",
     )
+    _audience_argument(parser, purpose="run only the tests written for these")
     parser.add_argument("--label", default="", help="what to call this run: 'Pre-release 3'")
 
 
@@ -423,7 +521,14 @@ def _start(context: CliContext, args: Namespace) -> int:
         scope = find_step(context.library, args.scope, project)
         scope_id = scope.id
         pairs = covered(context.library, project, scope.id)
+    # Narrowed like the listing is, and for the same reason an agent asked for it: "run the
+    # QA pass" is a real occasion. The run records only the ids it was opened over — that
+    # already says what it covers, so it needs no audience of its own.
+    wanted = _wanted_audiences(args)
+    pairs = _for_audiences(pairs, wanted)
     if not pairs:
+        if wanted:
+            raise CliError(f"no test in that scope is written for {', '.join(wanted)}")
         raise CliError("that scope holds no tests — `dplanner test add <step> '<title>'` first")
     records = runs.started(
         runs.read(project), [test.id for _step, test in pairs], label=args.label, scope=scope_id
@@ -569,12 +674,25 @@ def step_author() -> StepAuthor:
             metavar="TITLE",
             help="a first test for the new step — what must keep being true",
         )
+        # Its own flag rather than `--audience`, because `step add` carries every module's
+        # and a bare one would read as the step's. Without it the new test lands
+        # unclassified and `project lint` asks about it straight away.
+        parser.add_argument(
+            "--test-audience",
+            action="append",
+            metavar="WHO",
+            help=f"who that test is for — one of: {', '.join(AUDIENCE_IDS)}. Repeat for several.",
+        )
 
     def author(context: CliContext, step: Step, args: Namespace) -> StepAuthored | None:
         if args.test is None:
             return None
         # The step names its project — `step add` may run with no current project.
-        added = Test(id=next_test_id(context.library.project_of(step.id)), title=args.test)
+        added = Test(
+            id=next_test_id(context.library.project_of(step.id)),
+            title=args.test,
+            audiences=tuple(check_audience(value) for value in (args.test_audience or ())),
+        )
         context.apply(SetModuleDataCommand(step.id, MODULE_ID, write([added])))
         return StepAuthored({"test": added.id}, f"test: {added.id} {added.title}")
 
@@ -582,7 +700,7 @@ def step_author() -> StepAuthor:
 
 
 def lint_checks() -> list[LintCheck]:
-    """One check: a test with a title and no body is one nobody can execute."""
+    """Two checks: a test nobody can execute, and one that does not say who it is for."""
 
     def empty_tests(_library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
         return [
@@ -597,4 +715,20 @@ def lint_checks() -> list[LintCheck]:
             if not test.body.strip()
         ]
 
-    return [empty_tests]
+    def unclassified(_library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
+        """The raw field, not ``audiences_of`` — this is the one question that is about
+        whether somebody has actually said, rather than what the test counts as."""
+        return [
+            LintFinding(
+                check="test.audience",
+                subject_id=step.id,
+                subject=step.title,
+                message=f"test {test.id} ({test.title}) does not say who it is for — it reads "
+                f"as {DEFAULT_AUDIENCE!r}: `dplanner test set {test.id} --audience "
+                f"{AUDIENCE_IDS[0]}`",
+            )
+            for step, test in project_tests(project)
+            if not test.audiences
+        ]
+
+    return [empty_tests, unclassified]

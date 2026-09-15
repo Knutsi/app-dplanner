@@ -201,6 +201,100 @@ def test_lint_names_the_verb_that_closes_each_finding(cli):
     assert "dplanner check clear 'Lonely check'" in by_check["scope.gathers-nothing"]
 
 
+# -- who a test is for, through the CLI ---------------------------------------------------
+
+
+def test_a_test_is_added_with_the_audiences_it_is_written_for(cli):
+    added = data(cli("test", "add", "Fix list flicker", "No flicker", "--audience", "qa", "--json"))
+    assert added["audiences"] == ["qa"]
+    assert data(cli("test", "show", "T100", "--json"))["audiences"] == ["qa"]
+
+
+def test_an_audience_off_the_list_is_refused_rather_than_stored(cli):
+    refused = cli("test", "add", "Fix list flicker", "No flicker", "--audience", "qa2", expect=1)
+    assert "qa2" in refused
+    assert "technical" in refused  # It names what it would have taken.
+
+
+def test_setting_an_audience_replaces_the_set_and_none_clears_it(cli):
+    cli("test", "add", "Fix list flicker", "No flicker", "--audience", "qa")
+    swapped = data(cli("test", "set", "T100", "--audience", "technical", "--json"))
+    assert swapped["audiences"] == ["technical"]
+    cleared = data(cli("test", "set", "T100", "--audience", "none", "--json"))
+    assert cleared["audiences"] == []
+
+
+def test_none_cannot_be_combined_with_an_audience(cli):
+    cli("test", "add", "Fix list flicker", "No flicker", "--audience", "qa")
+    refused = cli("test", "set", "T100", "--audience", "none", "--audience", "qa", expect=1)
+    assert "cannot be combined" in refused
+
+
+def test_an_audience_on_its_own_is_something_to_change(cli):
+    """``test set`` used to refuse anything but a title or a body."""
+    cli("test", "add", "Fix list flicker", "No flicker")
+    cli("test", "set", "T100", "--audience", "qa")
+    assert data(cli("test", "show", "T100", "--json"))["audiences"] == ["qa"]
+
+
+def test_listing_narrows_to_an_audience_and_the_unclassified_answer_to_other(cli):
+    cli("test", "add", "Fix list flicker", "Mechanism", "--audience", "technical")
+    cli("test", "add", "Pre-release check", "By hand", "--audience", "qa")
+    cli("test", "add", "Pre-release check", "Nobody said")
+    listed = data(cli("test", "list", "widget", "--audience", "qa", "--json"))["tests"]
+    assert [row["id"] for row in listed] == ["T101"]
+    # Stored, not derived: a caller can tell "nobody said" from a deliberate `other`.
+    unsaid = data(cli("test", "list", "widget", "--audience", "other", "--json"))["tests"]
+    assert [(row["id"], row["audiences"]) for row in unsaid] == [("T102", [])]
+
+
+def test_a_run_can_be_opened_over_one_audience(cli):
+    cli("test", "add", "Fix list flicker", "Mechanism", "--audience", "technical")
+    cli("test", "add", "Pre-release check", "By hand", "--audience", "qa")
+    opened = data(cli("test-run", "start", "widget", "--audience", "qa", "--label", "QA", "--json"))
+    assert opened["tests"] == ["T101"]
+
+
+def test_a_run_over_an_audience_nothing_is_written_for_says_so(cli):
+    cli("test", "add", "Fix list flicker", "Mechanism", "--audience", "technical")
+    refused = cli("test-run", "start", "widget", "--audience", "qa", expect=1)
+    assert "written for qa" in refused
+
+
+def test_lint_asks_a_test_that_does_not_say_who_it_is_for(cli):
+    cli("test", "add", "Fix list flicker", "Nobody said", "--text", "1. Look")
+    cli("test", "add", "Pre-release check", "Said", "--text", "1. Look", "--audience", "other")
+    findings = data(cli("project", "lint", "--json", expect=1))["findings"]
+    unclassified = [row for row in findings if row["check"] == "test.audience"]
+    assert len(unclassified) == 1  # Only T100: saying `other` out loud is an answer.
+    assert "T100" in unclassified[0]["message"]
+    assert "dplanner test set T100 --audience qa" in unclassified[0]["message"]
+
+
+def test_step_add_can_say_who_its_first_test_is_for(cli):
+    cli(
+        "step",
+        "add",
+        "widget",
+        "Empty state",
+        "--test",
+        "Says nothing here yet",
+        "--test-audience",
+        "qa",
+    )
+    assert data(cli("test", "show", "T100", "--json"))["audiences"] == ["qa"]
+
+
+def test_editing_a_test_never_drops_the_audience_it_was_given(cli):
+    """Every writer rebuilds the record, so each is a chance to lose a field it forgot."""
+    cli("test", "add", "Fix list flicker", "No flicker", "--audience", "qa", "--text", "1. Look")
+    cli("test", "set", "T100", "--title", "Renamed")
+    cli("test", "set", "T100", "--text", "1. Look again")
+    cli("test", "archive", "T100")
+    cli("test", "unarchive", "T100")
+    assert data(cli("test", "show", "T100", "--json"))["audiences"] == ["qa"]
+
+
 # -- the window --------------------------------------------------------------------------
 
 
@@ -832,3 +926,90 @@ def test_a_run_opened_from_the_strip_covers_the_tabs_scope_and_is_shown(
     run = open_run(services, project)
     assert list(run.tests) == ["TWo"] and run.label == "Smoke"
     assert activity.run_box.currentData() == run.id  # The run just opened is what shows.
+
+
+# -- who a test is for, in the window -----------------------------------------------------
+
+
+def test_the_audience_filter_narrows_the_table_and_the_lead_says_so(services, make_project):
+    from dplanner.modules.testing.activity import NO_MATCH, TESTS_KIND
+    from dplanner.modules.testing.table import AUDIENCE_COLUMN
+
+    project = make_project("Widget")
+    work, other = chain(services, project, "Work", "Other")
+    services.document.set_module_data(
+        work.id, MODULE_ID, write([Test("T100", "By hand", audiences=("qa",))])
+    )
+    services.document.set_module_data(
+        other.id, MODULE_ID, write([Test("T101", "Mechanism", audiences=("technical",))])
+    )
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    table = activity.page.table
+    assert table.rowCount() == 2
+    assert not table.isColumnHidden(AUDIENCE_COLUMN)
+    assert table.item(0, AUDIENCE_COLUMN).text() == "QA"
+
+    activity.page.audience.set_active(["qa"])
+    assert [table.test_at(row) for row in range(table.rowCount())] == ["T100"]
+    # The tab leads with a count, so a count that has lost rows has to say it has.
+    assert "1 of 2 shown" in activity.page.detail.text()
+
+    activity.page.audience.set_active(["other"])
+    assert table.rowCount() == 0
+    assert activity.page.empty.label.text() == NO_MATCH
+
+    activity.page.audience.clear()
+    assert table.rowCount() == 2
+    assert "shown" not in activity.page.detail.text()
+
+
+def test_an_unclassified_test_answers_to_other_and_hides_the_column(services, make_project):
+    from dplanner.modules.testing.activity import TESTS_KIND
+    from dplanner.modules.testing.table import AUDIENCE_COLUMN
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    give(services, work, "T100")
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    table = activity.page.table
+    # Nothing here is classified, so the column would say "Other" all the way down.
+    assert table.isColumnHidden(AUDIENCE_COLUMN)
+    activity.page.audience.set_active(["other"])
+    assert table.rowCount() == 1  # It still answers the filter: it is what it reads as.
+
+
+def test_ticking_an_audience_is_one_undoable_step_per_test(services, step, section):
+    step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
+    section.show_target(step.id)
+
+    section.detail.audience_boxes["qa"].setChecked(True)
+    section.detail.audience_boxes["technical"].setChecked(True)
+    assert read(step)[0].audiences == ("qa", "technical")
+
+    services.undo.undo()
+    assert read(step)[0].audiences == ("qa",)  # Two toggles, two steps — never coalesced.
+    services.undo.redo()
+    section.detail.audience_boxes["qa"].setChecked(False)
+    assert read(step)[0].audiences == ("technical",)
+
+
+def test_the_boxes_say_what_is_stored_and_the_note_says_what_it_reads_as(services, step, section):
+    step.module_data[MODULE_ID] = write([Test("T100", "One")])
+    section.show_target(step.id)
+    assert not any(box.isChecked() for box in section.detail.audience_boxes.values())
+    assert "reads as Other" in section.detail.result.text()
+
+    section.detail.audience_boxes["other"].setChecked(True)
+    assert read(step)[0].audiences == ("other",)
+    # Said out loud now, so the note that asks for it goes.
+    assert "reads as Other" not in section.detail.result.text()
+
+
+def test_typing_in_the_body_keeps_the_audience(services, step, section):
+    """The body field rebuilds the record on every keystroke — the easiest place to lose it."""
+    step.module_data[MODULE_ID] = write([Test("T100", "One", audiences=("qa",))])
+    section.show_target(step.id)
+    section.detail.body.edit.setPlainText("1. Look at it.")
+    assert read(step)[0].audiences == ("qa",)

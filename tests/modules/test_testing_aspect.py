@@ -6,12 +6,18 @@ the CLI can reach without a graphics stack.
 
 import pytest
 
+from dplanner.cli.command import CliError
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.modules.step_check import aspect as check
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import (
+    AUDIENCE_IDS,
+    DEFAULT_AUDIENCE,
     Test,
+    audience_words,
+    audiences_of,
+    check_audience,
     covered,
     enabled,
     find,
@@ -19,6 +25,7 @@ from dplanner.modules.testing.aspect import (
     next_test_id,
     project_tests,
     read,
+    remint_for_paste,
     replace,
     summary,
     write,
@@ -280,3 +287,62 @@ def test_a_tally_names_every_status_so_nobody_guesses_a_zero():
         "failed": 1,
         "skipped": 0,
     }
+
+
+# -- who a test is for --------------------------------------------------------------
+
+
+def test_an_audience_survives_a_write_and_a_read():
+    _library, project = build("A")
+    step = by_title(project, "A")
+    give(step, Test("T100", "One", audiences=("qa", "technical")))
+    assert read(step) == [Test("T100", "One", audiences=("qa", "technical"))]
+
+
+def test_a_test_that_says_nothing_stores_nothing_and_reads_as_the_default():
+    unclassified = Test("T100", "One")
+    assert "audiences" not in write([unclassified])["tests"][0]
+    assert unclassified.audiences == ()
+    assert audiences_of(unclassified) == (DEFAULT_AUDIENCE,)
+    # The two questions kept apart: what it counts as, and whether anybody has said.
+    assert audiences_of(Test("T101", "Two", audiences=("other",))) == ("other",)
+
+
+def test_the_stored_order_is_canonical_however_it_was_named():
+    named = write([Test("T100", "One", audiences=("technical", "qa"))])
+    reversed_ = write([Test("T100", "One", audiences=("qa", "technical"))])
+    assert named == reversed_
+    assert named["tests"][0]["audiences"] == ["qa", "technical"]
+
+
+def test_an_audience_this_build_does_not_know_reads_as_absent():
+    _library, project = build("A")
+    step = by_title(project, "A")
+    step.module_data["testing"] = {
+        "tests": [{"id": "T100", "title": "One", "audiences": ["technical", "astrologer"]}]
+    }
+    assert read(step) == [Test("T100", "One", audiences=("technical",))]
+
+
+def test_audience_words_names_the_labels_in_order():
+    assert audience_words(Test("T100", "One", audiences=("technical", "qa"))) == "QA, Technical"
+    assert audience_words(Test("T101", "Two")) == "Other"
+
+
+def test_an_audience_off_the_list_is_refused_by_name():
+    assert check_audience("qa") == "qa"
+    with pytest.raises(CliError) as refused:
+        check_audience("astrologer")
+    assert "astrologer" in str(refused.value)
+    for audience_id in AUDIENCE_IDS:
+        assert audience_id in str(refused.value)
+
+
+def test_a_pasted_test_keeps_its_audience_and_loses_only_its_id():
+    _library, project = build("A")
+    step = by_title(project, "A")
+    give(step, Test("T100", "One", audiences=("qa",)))
+    remint_for_paste(project, [step])
+    pasted = read(step)[0]
+    assert pasted.audiences == ("qa",)
+    assert pasted.id != "T100"

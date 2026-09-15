@@ -62,6 +62,23 @@ paths:
   narrow dock — because a stack of equal cards stops working at the third test.
   `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
   reasoning, including the diff trade the string body accepts.
+- **A test says who it is for, and the list is closed.** `qa`, `technical`, `other` —
+  `AUDIENCES` in `modules/testing/aspect.py`, owned there rather than by the composition
+  root because nothing outside testing has an opinion about the word (`notes`' `LABELS` is
+  the same shape, and `check_audience` the same refusal). A test carries **several**:
+  one thing can be worth proving by hand *and* worth proving mechanically. **`audiences_of`
+  is the one derivation** — what it stored, or `other` — and everything that shows or filters
+  a test reads it, so a plan written before audiences existed changed meaning nowhere. Two
+  readers ask the **raw** field instead, and both are asking *has anybody said?*: the
+  `test.audience` lint, and the step panel's three checkboxes, which would otherwise render
+  an `Other` nobody could untick. That pairing is the whole design — the requirement is real
+  without a migration guessing an answer, and the lint is what carries an old plan over a
+  test at a time. It is a **label** everywhere (the tab's Audience column — hidden while no
+  test in scope names one — the Covers row, the report table and its per-step block, `test
+  list`, `test show`) and a **filter** everywhere (the `FilterButton` on both Tests tabs,
+  `test list --audience`, `test-run start --audience`, and a pick on the published page). A
+  run records only the ids it was opened over, so it needs no audience of its own.
+  `ARCHITECTURE.md`'s *A test says who it is for* has the reasoning.
 - **Documentation is a fragment per step and a document per collector, and an agent
   compiles it.** The `docs` aspect is a step's **documentation fragment**; `docs_compiled` is
   a collector's **documentation**, made of everything it gathers — the words on every
