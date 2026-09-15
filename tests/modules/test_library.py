@@ -1,6 +1,6 @@
 """The library module: New/Open Project Library as spawned instances, and the title.
 
-Project membership — New Project…, Open Projects… — is the projects module's now
+Project membership — New Project…, Open Project… — is the projects module's now
 (``test_open_projects.py``); this module says which *library* a window holds.
 """
 

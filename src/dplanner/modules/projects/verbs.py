@@ -7,6 +7,9 @@ any of them coordinating — and lets a test evaluate one by handing it a constr
 Settings… opens the module's Project dialog, where every edit is live and undoable; Move
 Plan… opens its wizard, on any project — the plan's repository is a choice that can be
 made again, and the one that got it wrong the first time is the one that needs to.
+**Share Project… is the one that sits in File**, beside Open Project…, because the two are
+one round trip: what this writes is what that reads. It is still a verb on a project, so
+it is a spec here like the rest and greyed with the same state.
 Removal is a membership change, not an edit: it leaves the undo stack alone (a removed
 project's files stay on disk, and Ctrl+Z could not honestly re-attach them), so it carries
 its own origin like any directly-applied external change.
@@ -28,7 +31,7 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import Context
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
-from dplanner.theme.icons import move_icon
+from dplanner.theme.icons import link_icon, move_icon
 
 _MEMBERSHIP_ORIGIN: object = object()
 
@@ -41,9 +44,10 @@ class ProjectVerbs:
     open_project: Callable[[NodeId], None]
     # The store's half of removal, wired by the composition root.
     detach: Callable[[ProjectId], None]
-    # The module's two dialogs, on a project.
+    # The module's dialogs, on a project.
     settings: Callable[[ProjectId], None]
     move: Callable[[ProjectId], None]
+    share: Callable[[ProjectId], None]
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
@@ -73,6 +77,18 @@ class ProjectVerbs:
                 state=self._on_a_project,
                 run=self._move,
                 icon=move_icon,
+            ),
+            ActionSpec(
+                id="projects.share",
+                label="&Share Project…",
+                menu="File",
+                group="project",
+                order=30,
+                tip="A link that sets this project up on somebody else's machine — "
+                "both repositories, and where the plan sits in its own",
+                state=self._on_a_project,
+                run=self._share,
+                icon=link_icon,
             ),
             ActionSpec(
                 id="projects.remove",
@@ -118,6 +134,11 @@ class ProjectVerbs:
         project = self._focused(context)
         if project is not None:
             self.move(project.id)
+
+    def _share(self, context: Context) -> None:
+        project = self._focused(context)
+        if project is not None:
+            self.share(project.id)
 
     def _remove(self, context: Context) -> None:
         project = self._focused(context)

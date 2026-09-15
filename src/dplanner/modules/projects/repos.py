@@ -1,6 +1,6 @@
 """Qt-free shapes for the project surfaces that talk about repositories.
 
-The Project dialog, the Repositories card, Open Projects and Move Plan all read the same
+The Project dialog, the Repositories card, Open Project and Move Plan all read the same
 two repositories and use git and GitHub the same handful of ways. What they need is one
 frozen bundle of callables the composition root fills in — :class:`RepositoryServices` —
 so a dialog test hands over lambdas and never spawns ``git`` or ``gh``, and the module
@@ -68,6 +68,20 @@ def shown_path(path: Path) -> str:
         return "~/" + path.relative_to(Path.home()).as_posix()
     except ValueError:
         return str(path)
+
+
+@dataclass(frozen=True)
+class Joined:
+    """A project the library is about to take in: where it is on this machine, and the
+    code checkout to record beside it.
+
+    The one answer both ways into *Open Project…* end at — a browsed plan repository's
+    rows and a project link's clone — so the module that connects them reads one shape
+    and never learns which page it came from.
+    """
+
+    directory: Path
+    checkout: Path | None = None
 
 
 @dataclass(frozen=True)

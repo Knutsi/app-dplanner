@@ -236,7 +236,7 @@ line that leads nowhere is skipped while another resolves — a project somebody
 hand must not hide its neighbours — and an index none of whose lines leads anywhere is an
 error rather than a fallthrough: the walk never quietly acts on some other project above
 one the user explicitly named. The file is meant to be committed, so everyone who clones
-the repository — people and agents alike — gets the discovery, and *Open Projects…* and
+the repository — people and agents alike — gets the discovery, and *Open Project…* and
 `dplanner library browse` get their list, for free. A repository with no index is scanned
 three levels deep instead, skipping `.git`, `steps/`, `modules/` and the worktrees.
 
@@ -245,6 +245,50 @@ root (`seed_project`, `add_to_index`); moving one out drops the line and adds it
 plan arrives; deleting one drops it. An existing line is never rewritten — a hand-written
 one is the user's word — and a project that *is* the repository root needs none, so none
 is written.
+
+### The project link (`.dlink`)
+
+A **project link** is the one file here that is *not* part of a project: it describes one,
+so that somebody who has never seen the plan can set it up. Three facts do it — which plan
+repository, where in it, and which code — and everything else it carries is only so that
+the receiving surface can say what it is about to do before it clones anything.
+
+```json
+{
+  "dplanner": "project-link",
+  "format": 1,
+  "id": "9b1c…",
+  "title": "Search rewrite",
+  "summary": "Replace the index",
+  "plan": { "remote": "https://github.com/acme/plans", "path": "search-rewrite" },
+  "code": { "remote": "https://github.com/acme/widget" }
+}
+```
+
+Same bytes rules as everything else (UTF-8, LF, two-space indent, sorted keys, a trailing
+newline) and the same *absence encodes the default* rule: an empty field writes no key, and
+`"path": "."` is a plan repository that is one project. A `path` that is absolute or climbs
+out with `..` is refused, and so is a remote that starts with `-`: a link comes from
+somebody else, and it may name a folder inside its plan repository and nothing more. `"format"` is the link's own axis,
+a third beside the project format and each module's — it belongs to
+`domain/project_link.py` and to nothing else, and a **newer** one is refused by name rather
+than read half-way, because the machine reading it is by definition not the machine that
+wrote it.
+
+The same fields travel as one line, which is what a chat window takes and what the QR code
+in *Share Project…* encodes:
+
+```
+dplanner://project?plan=https://github.com/acme/plans&path=search-rewrite&code=https://github.com/acme/widget&id=9b1c…&title=Search%20rewrite&format=1
+```
+
+**Spelt out rather than packed.** A blob would be shorter, and a person asked to open
+somebody else's link would have no way to see where it points before opening it. The two
+encodings are one dataclass with one reader each, so neither can grow a field the other
+lacks; `dplanner project share` and `project open` are the terminal's half, and the
+document a `.dlink` holds is exactly what `--json` prints. **It carries no credentials and
+grants no access** — it names public URLs and a path, and whoever opens it still needs
+their own access to both repositories.
 
 ### The `reports` directory
 

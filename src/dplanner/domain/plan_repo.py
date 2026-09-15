@@ -7,8 +7,8 @@ somebody chose to. The index is the structure; a repository made before it exist
 index and is scanned instead, shallowly, so a clone from any era answers the same question.
 
 Two readers, one function: ``dplanner library browse`` (and ``library add <root>``) and the
-Open Projects dialog. Nothing here opens a project or touches the library — it reads the
-one file that says what a project is called and how many steps it has.
+Open Project wizard's browse page. Nothing here opens a project or touches the library — it
+reads the one file that says what a project is called and how many steps it has.
 """
 
 import json

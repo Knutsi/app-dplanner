@@ -924,8 +924,9 @@ QComboBox QAbstractItemView::item:selected {
     color: $TEXT_PRIMARY;
 }
 
-/* ---- Projects: the Project dialog, Move Plan, Open Projects (DESIGN.md: settings above a
- * rule, log wells below; a glyph button beside each field; one primary per surface) ---- */
+/* ---- Projects: the Project dialog, Move Plan, Open Project, Share Project (DESIGN.md:
+ * settings above a rule, log wells below; a glyph button beside each field; one primary
+ * per surface) ---- */
 
 /* A glyph button beside a field: the quiet bordered look, the verb in its tooltip. */
 QToolButton[repoTool="true"] {
@@ -939,8 +940,9 @@ QToolButton[repoTool="true"]:hover {
     border-color: $BORDER_STRONG;
 }
 
-/* The wells: a log column, the folder candidates, the GitHub list, the projects to add. */
-#LogWell, #RepositoriesFolderList, #GhRepoList, #OpenProjectsList {
+/* The wells: a log column, the folder candidates, the GitHub list, the projects to add,
+ * and the two ways into Open Project. */
+#LogWell, #RepositoriesFolderList, #GhRepoList, #OpenProjectsList, #OpenProjectWays {
     background-color: $BG_BASE;
     border: 1px solid $BORDER;
     border-radius: ${RADIUS_MD}px;

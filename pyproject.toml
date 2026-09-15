@@ -11,6 +11,10 @@ dependencies = [
     # In-app PDF rendering for spec documents. Deliberately not the full PySide6 (QtPdf
     # lives in the hundreds-of-MB Addons package); pdfium is one small native wheel.
     "pypdfium2>=5",
+    # The QR code a project link is offered as. Pure Python, no dependencies of its own,
+    # and it hands over the module matrix — the Share dialog paints that itself, so the
+    # code is crisp at any size and never a bitmap scaled up.
+    "segno>=1.6",
 ]
 
 [project.scripts]

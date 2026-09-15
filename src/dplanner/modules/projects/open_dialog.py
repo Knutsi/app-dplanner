@@ -1,61 +1,76 @@
-"""Open Projects…: pick a plan repository, see what it holds, add the chosen ones.
+"""Open Project…: the two ways a project gets into a library, as one wizard.
 
-A plan repository holds several projects for several people, so joining one is a browse,
-not a file dialog: the picker names the repository — one the library uses, another folder,
-a clone from GitHub — and the list shows every project it lists (or, with no index,
-holds) with who worked on each and when; rows already in this library are greyed. The
-rows come from ``domain/plan_repo.list_projects`` on the spot; the activity behind each
-is one git log per project, read off the GUI thread and dropped when it arrives for a
-repository the dialog has since left. Every addable row starts selected: joining a plan
-repository usually means joining all of it.
+There are exactly two, and they suit different people. Somebody who has just been handed a
+**project link** knows nothing about this library yet and should not have to: the link says
+which plan repository, which folder in it and which code, and the wizard clones what is
+missing. Somebody who already works out of a plan repository wants to **browse** it and
+pick — often several projects at once, which is what a shared plan repository is for.
+
+So the first page asks which, and remembers the answer: the link leads on a machine that
+has never chosen, and from then on the way that person actually uses opens first. Nothing
+else about the pages is shared — each one owns its content, its refusal and the words on
+the primary, and this file is the frame that shows one of them at a time.
+
+The wizard **answers, it does not connect**. Both pages end at a
+:class:`~dplanner.modules.projects.repos.Joined` on disk, and ``ProjectsModule`` adds them
+to the library with the membership origin, off the undo stack — the same rule every other
+membership change follows.
 """
 
-from collections.abc import Collection
+from collections.abc import Callable, Collection
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtCore import Signal as QtSignal
-from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem, QWidget
+from PySide6.QtWidgets import (
+    QAbstractScrollArea,
+    QListWidget,
+    QListWidgetItem,
+    QSizePolicy,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
-from dplanner.core.storage.provider import StorageError
-from dplanner.domain.plan_repo import ago, list_projects
 from dplanner.framework.dialog import DialogFrame
-from dplanner.framework.list_rows import DETAIL_ROLE, MUTED_ROLE, TwoLineDelegate
-from dplanner.framework.task_runner import TaskRunner
+from dplanner.framework.list_rows import DETAIL_ROLE, TwoLineDelegate
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
-from dplanner.framework.widgets import EmptyState, block, caption, note
-from dplanner.modules.projects.repo_picker import RepoPicker
-from dplanner.modules.projects.repos import RepoLog, RepositoryServices, shown_path
+from dplanner.framework.user_config import get_global, set_global
+from dplanner.framework.widgets import caption
+from dplanner.modules.projects.browse_page import BrowsePage
+from dplanner.modules.projects.link_page import LinkPage
+from dplanner.modules.projects.repos import MODULE_ID, Joined, RepositoryServices
+from dplanner.theme.tokens import CAPTION_GAP
 
-# Past the delegate's own roles (DETAIL, MUTED, EMPHASIS, RULE sit at UserRole + 2..5).
-PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 10
-RELATIVE_ROLE = int(Qt.ItemDataRole.UserRole) + 11
-ACTIVITY_LIMIT = 30
-DIALOG_SIZE = (680, 520)
+# One size for every page: a dialog on screen never resizes itself (shell-ui.md), so the
+# chooser's two rows sit at the top of the room the other pages need.
+DIALOG_SIZE = (680, 560)
+WAY_KEY = "open_project_way"
+LINK, BROWSE = "link", "browse"
+WAY_ROLE = int(Qt.ItemDataRole.UserRole) + 10
+
+# The two ways in, in the order they are offered. A link is first because it is the only
+# one somebody joining a project for the first time can act on.
+WAYS: tuple[tuple[str, str, str], ...] = (
+    (LINK, "Open a project link", "Paste a link somebody sent you, or open a .dlink file"),
+    (
+        BROWSE,
+        "Browse a plan repository",
+        "Pick the projects you work on out of a repository you can reach",
+    ),
+)
+
+CHOOSE, LINK_PAGE, BROWSE_PAGE = 0, 1, 2
 
 
-def activity_line(log: RepoLog) -> str:
-    """A row's second line: who last touched the plan and when, then everyone who has."""
-    if not log.entries:
-        return "no commits yet"
-    first = log.entries[0]
-    authors: list[str] = []
-    for entry in log.entries:
-        if entry.author not in authors:
-            authors.append(entry.author)
-    line = f"{first.author}, {ago(first.when)}"
-    if len(authors) > 1:
-        line += " · " + ", ".join(authors)
-    return line
+class OpenProjectDialog(DialogFrame):
+    """A framed wizard: the way in, then the page for it.
 
-
-class OpenProjectsDialog(DialogFrame):
-    """A framed dialog: the plan repository as a captioned block, the projects it holds
-    as rows — or an empty state saying what to pick — and *Add to Library* worded with
-    the count and refused while nothing is chosen."""
-
-    _activity = QtSignal(str, object, str)  # (root, {relative: RepoLog}, error)
+    One primary throughout, re-worded per page — *Continue*, then the page's own verb —
+    because a wizard has one next step at a time and a second accent button would be a
+    second answer to the same question. *Back* joins the footer when there is somewhere to
+    go back to and leaves it on the first page, where it would name nothing.
+    """
 
     def __init__(
         self,
@@ -65,142 +80,134 @@ class OpenProjectsDialog(DialogFrame):
         *,
         listed_dirs: Collection[Path],
         listed_ids: Collection[str],
+        known_checkout: Callable[[str], Path | None],
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__("Open Projects", parent, size=DIALOG_SIZE)
-        self._services = services
-        self._listed_dirs = {directory.resolve() for directory in listed_dirs}
-        self._listed_ids = set(listed_ids)
-        self._root: Path | None = None
-        self._refetch = False
-        self._runner = TaskRunner(tasks, parent=self)
-        self._activity.connect(self._on_activity)
-        body, layout = self.body, self.body_layout
+        super().__init__("Open Project", parent, size=DIALOG_SIZE)
+        self.setObjectName("OpenProjectDialog")
+        self._joined: list[Joined] = []
 
-        self.picker = RepoPicker(services, tasks, theme=theme, parent=body)
-        self.picker.setObjectName("OpenRepoPicker")
-        block(layout, caption("Plan repository", body), self.picker)
-        self.list = QListWidget(body)
-        self.list.setObjectName("OpenProjectsList")
-        self.list.setItemDelegate(TwoLineDelegate(self.list))
-        self.list.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.list.itemSelectionChanged.connect(self._revalidate)
-        layout.addWidget(self.list, 1)
-        self.empty = EmptyState("", body, stands_in_for=self.list)
-        layout.addWidget(self.empty, 1)
-        # A remark about the data — lines in .dplanner that lead nowhere — is a body
-        # note; the footer's status slot is the refusal's.
-        self.note = note("", body)
-        self.note.hide()
-        layout.addWidget(self.note)
+        self.choose = QWidget(self.body)
+        chooser = QVBoxLayout(self.choose)
+        chooser.setContentsMargins(0, 0, 0, 0)
+        chooser.setSpacing(CAPTION_GAP)
+        chooser.addWidget(caption("How would you like to open a project?", self.choose))
+        self.ways = QListWidget(self.choose)
+        self.ways.setObjectName("OpenProjectWays")
+        self.ways.setItemDelegate(TwoLineDelegate(self.ways))
+        for way, label, detail in WAYS:
+            item = QListWidgetItem(label)
+            item.setData(DETAIL_ROLE, detail)
+            item.setData(WAY_ROLE, way)
+            self.ways.addItem(item)
+        self.ways.itemActivated.connect(lambda _item: self._advance())
+        self.ways.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.ways.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        chooser.addWidget(self.ways)
+        chooser.addStretch(1)
+        remembered = str(get_global(MODULE_ID, WAY_KEY, LINK))
+        self.ways.setCurrentRow(
+            next((row for row, (way, _l, _d) in enumerate(WAYS) if way == remembered), 0)
+        )
 
+        self.link = LinkPage(
+            services,
+            tasks,
+            theme,
+            listed_dirs=listed_dirs,
+            listed_ids=listed_ids,
+            known_checkout=known_checkout,
+            parent=self.body,
+        )
+        self.link.changed.connect(self._revalidate)
+        self.link.finished.connect(self._on_finished)
+        self.browse = BrowsePage(
+            services,
+            tasks,
+            theme,
+            listed_dirs=listed_dirs,
+            listed_ids=listed_ids,
+            parent=self.body,
+        )
+        self.browse.changed.connect(self._revalidate)
+        self.browse.committed.connect(self._advance)
+
+        self.pages = QStackedWidget(self.body)
+        for page in (self.choose, self.link, self.browse):
+            self.pages.addWidget(page)
+        self.body_layout.addWidget(self.pages, 1)
+
+        self.back_button = self.add_button("Back", self._back)
+        self.back_button.setVisible(False)
         self.add_dismiss()
-        self.add_projects_button = self.set_primary("Add to Library", self.accept)
-        self.picker.changed.connect(self._load)
-        self._load()
+        self.primary_button = self.set_primary("Continue", self._advance)
+        self.show_page(CHOOSE)
 
-    # -- the rows ------------------------------------------------------------------------------
+    # -- moving between the pages ----------------------------------------------------------
 
-    def _load(self) -> None:
-        target = self.picker.current()
-        self.list.clear()
-        self.note.hide()
-        if target is None:
-            self._root = None
-            self.empty.say("Pick a plan repository — or clone one.")
+    def way(self) -> str:
+        item = self.ways.currentItem()
+        return str(item.data(WAY_ROLE)) if item is not None else LINK
+
+    def current_page(self) -> int:
+        """Which page is showing. Not ``page`` — the frame's own body widget has that name."""
+        return self.pages.currentIndex()
+
+    def _advance(self) -> None:
+        """The primary, whatever it says right now: choose a way, or run the page's verb.
+
+        Also what a double-click on a row runs, which is why it re-reads the refusal: an
+        activation must not do what a greyed button would refuse to.
+        """
+        if not self.primary_button.isEnabled():
+            return
+        page = self.current_page()
+        if page == CHOOSE:
+            set_global(MODULE_ID, WAY_KEY, self.way())
+            self.show_page(LINK_PAGE if self.way() == LINK else BROWSE_PAGE)
+            return
+        if page == LINK_PAGE:
+            self.link.begin()  # Answers through `finished`; the clone takes as long as it takes.
             self._revalidate()
             return
-        root = target.root
-        self._root = root
-        listing = list_projects(root)
-        for found in listing.projects:
-            steps = f"{found.steps} step{'s' if found.steps != 1 else ''}"
-            item = QListWidgetItem(f"{found.title} · {steps}")
-            item.setData(PATH_ROLE, str(found.directory))
-            item.setData(RELATIVE_ROLE, found.relative)
-            here = (
-                found.directory.resolve() in self._listed_dirs
-                or found.project_id in self._listed_ids
-            )
-            if here:
-                item.setData(DETAIL_ROLE, "already in this library")
-                item.setData(MUTED_ROLE, True)
-                item.setFlags(Qt.ItemFlag.NoItemFlags)
-            else:
-                item.setData(DETAIL_ROLE, "…")
-            self.list.addItem(item)
-            if not here:
-                item.setSelected(True)
-        if listing.dangling:
-            count = len(listing.dangling)
-            lines = f"{count} line{'s' if count != 1 else ''}"
-            verb = "leads" if count == 1 else "lead"
-            self.note.setText(f"{lines} in .dplanner {verb} nowhere: {', '.join(listing.dangling)}")
-            self.note.show()
-        self.empty.say("" if self.list.count() else f"No projects in {shown_path(root)}.")
+        self._joined = [Joined(directory) for directory in self.browse.chosen()]
+        self.browse.remember()
+        self.accept()
+
+    def _back(self) -> None:
+        self.show_page(CHOOSE)
+
+    def show_page(self, page: int) -> None:
+        """Show one of the three pages, and re-read the footer from it."""
+        self.pages.setCurrentIndex(page)
+        self.back_button.setVisible(page != CHOOSE)
+        if page == LINK_PAGE:
+            self.link.link_edit.setFocus()  # The one page that opens on something to type.
         self._revalidate()
-        self._request_activity(root, [found.relative for found in listing.projects])
 
-    def _request_activity(self, root: Path, relatives: list[str]) -> None:
-        if not relatives:
+    def _on_finished(self, ok: bool) -> None:
+        joined = self.link.answer()
+        if ok and joined is not None:
+            self._joined = [joined]
+            self.accept()
             return
-        services = self._services
+        self._revalidate()
 
-        def body() -> None:  # Worker thread: the captured root and names, never the model.
-            logs: dict[str, RepoLog] = {}
-            error = ""
-            for relative in relatives:
-                scope = "" if relative == "." else relative
-                try:
-                    logs[relative] = services.history_for(root, scope, ACTIVITY_LIMIT)
-                except (StorageError, OSError) as failure:
-                    error = error or str(failure)
-            self._activity.emit(str(root), logs, error)
-
-        if not self._runner.run("Reading who worked on what", body, key="projects.activity"):
-            self._refetch = True
-
-    def _on_activity(self, root: str, logs: object, error: str) -> None:
-        if self._refetch:
-            self._refetch = False
-            if self._root is not None:
-                self._request_activity(self._root, self._relatives())
-        if self._root is None or root != str(self._root):
-            return  # The dialog moved to another repository while this read was out.
-        found = logs if isinstance(logs, dict) else {}
-        for index in range(self.list.count()):
-            item = self.list.item(index)
-            if item is None or item.data(MUTED_ROLE):
-                continue
-            log = found.get(item.data(RELATIVE_ROLE))
-            item.setData(DETAIL_ROLE, activity_line(log) if log is not None else error or "")
-
-    def _relatives(self) -> list[str]:
-        return [
-            str(item.data(RELATIVE_ROLE))
-            for item in (self.list.item(index) for index in range(self.list.count()))
-            if item is not None
-        ]
-
-    # -- the answer ------------------------------------------------------------------------------
-
-    def rows(self) -> list[tuple[str, str]]:
-        return [
-            (item.text(), str(item.data(DETAIL_ROLE) or ""))
-            for item in (self.list.item(index) for index in range(self.list.count()))
-            if item is not None
-        ]
-
-    def chosen(self) -> list[Path]:
-        return [Path(item.data(PATH_ROLE)) for item in self.list.selectedItems()]
+    # -- what the footer says ---------------------------------------------------------------
 
     def _revalidate(self) -> None:
-        count = len(self.list.selectedItems())
-        self.add_projects_button.setText(
-            f"Add {count} to Library" if count > 1 else "Add to Library"
-        )
-        self.refuse(None if count else "")
+        """The footer is the current page's: its verb on the primary, its refusal beside it.
+        Both pages answer the same two questions, so there is no branch past which one."""
+        page = self.current_page()
+        if page == CHOOSE:
+            self.primary_button.setText("Continue")
+            self.refuse(None)
+            return
+        current: LinkPage | BrowsePage = self.link if page == LINK_PAGE else self.browse
+        self.primary_button.setText(current.primary_text())
+        self.refuse(current.refusal())
 
-    def accept(self) -> None:
-        self.picker.remember()
-        super().accept()
+    # -- the answer -------------------------------------------------------------------------
+
+    def joined(self) -> list[Joined]:
+        return self._joined
