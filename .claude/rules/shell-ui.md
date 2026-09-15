@@ -32,6 +32,8 @@ paths:
   table's row height is computed from the font and set on the vertical header, never a
   pixel token; an empty page swaps through `EmptyState.stands_in_for`; a refused primary
   is `refuse(reason)` — disabled, its name kept, the reason in the footer's status slot.
+  **A dialog on screen never resizes itself**: its size is set once, before it shows, and
+  a wizard's pages share it (`modules/projects/open_dialog.py`).
   **A settings page owns no outer margin**: `settings_page()` builds it, `block()` stacks
   its captioned fields, and the dialog insets it from its seam and scrolls it. **What a
   gesture came to after its dialog closed is a `notice()`**, never a `QMessageBox`; a state

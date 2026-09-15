@@ -13,7 +13,7 @@ temporary directory, so no path or preference of the rendering machine reaches a
 | `project-settings-*` | The Project dialog with Close alone, every edit live; both repositories apart, their logs side by side. |
 | `project-colocated-*` | A plan still inside its code: the warning, and the plan column's empty state carrying *Set up a plan repository…* as its verb. |
 | `project-create-*` | New Project: the plan repository, the folder, the code repository and its checkout as captioned blocks, and *Create* refused in words — a project already exists at that folder. |
-| `open-project-ways-*` | Open Project, page one: the two ways in as a captioned list, sized to its two rows rather than to the pages behind it; *Continue* the primary. |
+| `open-project-ways-*` | Open Project, page one: the two ways in as a captioned list of two rows, in the room the later pages need — the wizard never resizes on screen; *Continue* the primary. |
 | `open-project-link-*` | The link page: what the link names, where the plan will be cloned, and where the code should go — each under its caption, *Back* beside Cancel. |
 | `open-project-browse-*` | The browse page: the plan repository under its caption, the projects it holds with who worked on each, and the primary worded with the count. |
 | `share-project-*` | Share Project: what the link sets up and what it does not grant, the link itself, and the same link as a QR code — dark on light whatever the theme, because a camera reads it. *Copy Link* the primary, *Save File…* quiet beside Close. |

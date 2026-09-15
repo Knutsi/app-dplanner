@@ -22,8 +22,10 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
+    QAbstractScrollArea,
     QListWidget,
     QListWidgetItem,
+    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -40,10 +42,9 @@ from dplanner.modules.projects.link_page import LinkPage
 from dplanner.modules.projects.repos import MODULE_ID, Joined, RepositoryServices
 from dplanner.theme.tokens import CAPTION_GAP
 
+# One size for every page: a dialog on screen never resizes itself (shell-ui.md), so the
+# chooser's two rows sit at the top of the room the other pages need.
 DIALOG_SIZE = (680, 560)
-# The chooser holds two rows and a caption, so it is sized for two rows and a caption: one
-# shape for all three pages would open a wizard on a window four-fifths empty.
-CHOOSE_SIZE = (560, 260)
 WAY_KEY = "open_project_way"
 LINK, BROWSE = "link", "browse"
 WAY_ROLE = int(Qt.ItemDataRole.UserRole) + 10
@@ -100,7 +101,10 @@ class OpenProjectDialog(DialogFrame):
             item.setData(WAY_ROLE, way)
             self.ways.addItem(item)
         self.ways.itemActivated.connect(lambda _item: self._advance())
-        chooser.addWidget(self.ways, 1)
+        self.ways.setSizeAdjustPolicy(QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents)
+        self.ways.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
+        chooser.addWidget(self.ways)
+        chooser.addStretch(1)
         remembered = str(get_global(MODULE_ID, WAY_KEY, LINK))
         self.ways.setCurrentRow(
             next((row for row, (way, _l, _d) in enumerate(WAYS) if way == remembered), 0)
@@ -174,9 +178,8 @@ class OpenProjectDialog(DialogFrame):
         self.show_page(CHOOSE)
 
     def show_page(self, page: int) -> None:
-        """Show one of the three pages, and re-read the footer and the size from it."""
+        """Show one of the three pages, and re-read the footer from it."""
         self.pages.setCurrentIndex(page)
-        self.resize(*(CHOOSE_SIZE if page == CHOOSE else DIALOG_SIZE))
         self.back_button.setVisible(page != CHOOSE)
         if page == LINK_PAGE:
             self.link.link_edit.setFocus()  # The one page that opens on something to type.

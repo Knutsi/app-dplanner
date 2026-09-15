@@ -51,7 +51,6 @@ from dplanner.modules.library_watch.view import ConflictDialog
 from dplanner.modules.projects.move_dialog import MovePlanDialog
 from dplanner.modules.projects.open_dialog import (
     BROWSE_PAGE,
-    CHOOSE_SIZE,
     LINK_PAGE,
     OpenProjectDialog,
 )
@@ -586,7 +585,7 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
         parent=services.window,
     )
     inline(opening.browse._runner, opening.link._runner)
-    framed(opening, CHOOSE_SIZE, app)  # The wizard sizes itself per page; this is page one's.
+    framed(opening, OPEN_SIZE, app)
     save(opening, out, "open-project-ways", theme, app)
     opening.show_page(LINK_PAGE)
     opening.link.set_text(
@@ -600,11 +599,9 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
             )
         )
     )
-    opening.resize(*OPEN_SIZE)
     settle(app)
     save(opening, out, "open-project-link", theme, app)
     opening.show_page(BROWSE_PAGE)
-    opening.resize(*OPEN_SIZE)
     opening.browse.picker.set_current(plans)
     save(opening, out, "open-project-browse", theme, app)
     discard(opening)

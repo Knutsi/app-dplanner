@@ -246,6 +246,17 @@ def test_continuing_shows_the_page_for_the_chosen_way_and_back_returns(services,
     dialog.deleteLater()
 
 
+def test_the_wizard_keeps_one_size_from_page_to_page(services, monkeypatch):
+    """A Wayland compositor applies a shown window's resize at its next configure, so a
+    wizard that resized per page drew each page clipped until focus moved."""
+    dialog = wizard(services, monkeypatch)
+    size = dialog.size()
+    for page in (LINK_PAGE, BROWSE_PAGE, CHOOSE):
+        dialog.show_page(page)
+        assert dialog.size() == size
+    dialog.deleteLater()
+
+
 def test_the_way_last_used_is_the_one_the_next_wizard_opens_on(services, monkeypatch):
     first = wizard(services, monkeypatch)
     first.ways.setCurrentRow(1)

@@ -1168,6 +1168,16 @@ any rule that names its widget, so `QPushButton#PrimaryButton` still wins and a 
 restyled as the primary takes the accent. `GlyphButton` is quiet already, for a verb whose
 glyph has to follow the theme on a page that outlives it.
 
+**A dialog on screen never resizes itself.** The Open Project wizard first sized itself
+per page — two rows for the chooser, room for a list after it — and on Hyprland the page
+after the chooser drew clipped, its footer outside the window, until focus moved. On
+Wayland the compositor owns a window's geometry: a client's resize of a shown window is a
+request it takes up at its next configure, so Qt lays the new page out at the new size
+while the surface stays at the old one. X11, Windows, macOS and the offscreen renders all
+apply the resize at once, which is why nothing but a real session showed it. So a dialog's
+size is `DialogFrame`'s `size=` and nothing later, and a wizard's pages share one — a short
+page sits at the top of the room its longer siblings need.
+
 ## A roster has three shapes: a table sets values in the row, a list stays a list, a well keeps its widgets
 
 `.claude/rules/shell-ui.md` has the rule; this is why. The tables-and-browsers pass (S15) took the last
