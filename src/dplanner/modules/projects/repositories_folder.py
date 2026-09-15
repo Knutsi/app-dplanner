@@ -1,6 +1,6 @@
 """Where clones land on this machine: asked once, then remembered.
 
-A plan repository cloned from Open Projects and a code repository cloned from the Project
+A plan repository cloned from Open Project and a code repository cloned from the Project
 dialog go to the same folder, because that is how people keep checkouts — one directory
 of repositories under a name that varies by habit (``~/Code``, ``~/src``, ``~/repos``).
 The first clone asks, with the likely folders found on disk as rows and the first of them

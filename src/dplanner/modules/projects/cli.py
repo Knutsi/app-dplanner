@@ -31,7 +31,7 @@ from dplanner.cli.lookup import (
     project_of_steps,
     step_arg,
 )
-from dplanner.core.fsio import slugify
+from dplanner.core.fsio import slugify, write_atomic
 from dplanner.core.storage.locations import (
     canonical_remote,
     find_repo_root,
@@ -61,10 +61,22 @@ from dplanner.domain.model import (
     TextEdit,
 )
 from dplanner.domain.ordering import placed, ports
+from dplanner.domain.project_link import (
+    SUFFIX,
+    LinkError,
+    ProjectLink,
+    document,
+    document_text,
+    encode,
+    find_clone,
+    link_for,
+    project_directory,
+)
+from dplanner.domain.project_link import read as read_link
 from dplanner.domain.relocate import RelocateError, move_project, target_in
 from dplanner.domain.repositories import ACCEPTED, RepositoryFacts, repository_facts
 from dplanner.domain.seed import seed_project
-from dplanner.domain.store import FilesFor
+from dplanner.domain.store import PROJECT_META, FilesFor
 
 
 def _no_key(_step: Step) -> str:
@@ -211,6 +223,28 @@ def commands(
                 "dplanner project move discovery --into ~/plans",
                 "dplanner project move discovery --into ~/plans --init-repo",
                 "dplanner project move discovery --to ~/plans/search/discovery",
+            ),
+        ),
+        CliCommand(
+            path=("project", "share"),
+            summary="A link that sets this project up on somebody else's machine: both "
+            "repositories, and where the plan sits in its own.",
+            configure=_configure_share,
+            run=_project_share,
+            examples=(
+                "dplanner project share discovery",
+                f"dplanner project share discovery --file ~/discovery{SUFFIX}",
+            ),
+        ),
+        CliCommand(
+            path=("project", "open"),
+            summary="Add the project a link names, from a clone of its plan repository "
+            "this machine already has.",
+            configure=_configure_open,
+            run=_project_open,
+            examples=(
+                f"dplanner project open ~/discovery{SUFFIX}",
+                "dplanner project open 'dplanner://project?plan=…' --into ~/Code/plans",
             ),
         ),
         CliCommand(
@@ -710,6 +744,111 @@ def _project_move(context: CliContext, args: Namespace) -> int:
             "notes": list(moved.notes),
         },
         "\n".join(lines),
+    )
+    return 0
+
+
+def _configure_share(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument(
+        "--file",
+        metavar="PATH",
+        help=f"also write the link as a {SUFFIX} file to send as an attachment",
+    )
+
+
+def _project_share(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.library, args.project)
+    try:
+        link = link_for(project, context.store.project_dir(project.id), _facts(context, project))
+    except LinkError as error:
+        raise CliError(str(error)) from error
+    text = encode(link)
+    lines = [text]
+    data: dict[str, Any] = {"link": text, "document": document(link)}
+    if args.file:
+        path = Path(args.file).expanduser()
+        if path.suffix != SUFFIX:
+            path = path.with_suffix(SUFFIX)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_atomic(path, document_text(link))
+        data["file"] = str(path)
+        lines.append(f"written to {path}")
+    context.report(data, "\n".join(lines))
+    return 0
+
+
+def _configure_open(parser: ArgumentParser) -> None:
+    parser.add_argument("link", help=f"a dplanner:// link, or a {SUFFIX} file")
+    parser.add_argument(
+        "--into",
+        metavar="PLAN_REPO",
+        help="the clone of the link's plan repository to read the project out of; "
+        "by default, whichever clone this library already uses",
+    )
+    parser.add_argument(
+        "--checkout",
+        metavar="PATH",
+        help="where this machine has the code that link names checked out",
+    )
+
+
+def _plan_roots(context: CliContext) -> list[Path]:
+    """Every plan repository this library already reads — the clones `project open` may
+    take a project out of without fetching anything."""
+    found: list[Path] = []
+    for project in context.library.projects:
+        root = find_repo_root(context.store.project_dir(project.id))
+        if root is not None and root not in found:
+            found.append(root)
+    return found
+
+
+def _link_root(context: CliContext, link: ProjectLink, into: str | None) -> Path:
+    """The clone to read the project out of.
+
+    **Nothing is cloned here.** `library add` sets the precedent: where the window offers
+    to fetch, the terminal says what to run, because a verb an agent may call must not
+    reach the network on its own. So an unknown plan repository is a refusal that carries
+    the exact two commands that fix it.
+    """
+    if into:
+        root = find_repo_root(Path(into).expanduser())
+        if root is None:
+            raise CliError(f"{into} is not inside a git repository")
+        return root
+    root = find_clone(_plan_roots(context), link.plan_remote)
+    if root is None:
+        raise CliError(
+            f"no clone of {link.plan_label} here — run `git clone {link.plan_remote}`, "
+            "then this again with --into <the clone>"
+        )
+    return root
+
+
+def _project_open(context: CliContext, args: Namespace) -> int:
+    try:
+        link = read_link(args.link)
+    except LinkError as error:
+        raise CliError(str(error)) from error
+    root = _link_root(context, link, args.into)
+    directory = project_directory(root, link)
+    if not (directory / PROJECT_META).is_file():
+        raise CliError(f"{root} has no project at {link.plan_path} — pull it and try again")
+    for existing in context.library.projects:
+        if context.store.project_dir(existing.id).resolve() == directory.resolve():
+            raise CliError(f"{directory} is already in the library")
+    if link.project_id and context.library.has(link.project_id):
+        raise CliError(f"“{link.name}” is already in the library")
+    project = context.store.attach(directory)
+    # Membership is applied directly, as everywhere else: the CLI has no undo stack, and
+    # the window's half of this verb is off the stack too.
+    context.library.add_child(context.library.id, project)
+    if args.checkout:
+        context.store.set_checkout(project.id, Path(args.checkout).expanduser().resolve())
+    context.report(
+        _project_row(context, project),
+        "\n".join([f"Added {project.title!r}  {project.id}", *_repository_lines(context, project)]),
     )
     return 0
 

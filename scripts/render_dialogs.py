@@ -36,6 +36,7 @@ from dplanner.app import new_session
 from dplanner.cli.install import COMMAND, LAUNCHER, SKILL, Item, Outcome
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import SetFieldCommand
+from dplanner.domain.project_link import ProjectLink, encode
 from dplanner.domain.relocate import Moved
 from dplanner.domain.repositories import repository_facts
 from dplanner.domain.seed import create_library, seed_project
@@ -48,8 +49,13 @@ from dplanner.framework.user_config import set_global
 from dplanner.modules.install import dialog as install_dialog
 from dplanner.modules.library_watch.view import ConflictDialog
 from dplanner.modules.projects.move_dialog import MovePlanDialog
+from dplanner.modules.projects.open_dialog import (
+    BROWSE_PAGE,
+    CHOOSE_SIZE,
+    LINK_PAGE,
+    OpenProjectDialog,
+)
 from dplanner.modules.projects.open_dialog import DIALOG_SIZE as OPEN_SIZE
-from dplanner.modules.projects.open_dialog import OpenProjectsDialog
 from dplanner.modules.projects.project_dialog import (
     CREATE,
     CREATE_SIZE,
@@ -59,6 +65,7 @@ from dplanner.modules.projects.project_dialog import (
 from dplanner.modules.projects.repo_picker import GH_LIST_SIZE, GhRepoListDialog
 from dplanner.modules.projects.repos import LogEntry, PullRequest, RepoLog, RepositoryServices
 from dplanner.modules.projects.repositories_folder import RepositoriesFolderDialog
+from dplanner.modules.projects.share_dialog import ShareProjectDialog
 from dplanner.modules.settings.dialog import DIALOG_SIZE as SETTINGS_DIALOG_SIZE
 from dplanner.modules.settings.module import SettingsModule
 from dplanner.modules.spec_confluence import module as confluence_module
@@ -77,6 +84,7 @@ FIT_WIDTH = 520  # A fit dialog at the width a person's first sentence would giv
 CHART_SIZE = (1000, 720)
 EDITOR_SIZE = (900, 600)
 CODE_URL = "https://github.com/acme/widget"
+PLANS_URL = "https://github.com/acme/plans"
 WAIT_S = 10.0
 
 PROMPT = """# Step: Build the quick-reg modal
@@ -568,19 +576,52 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
     save(creating, out, "project-create", theme, app)
     discard(creating)
 
-    opening = OpenProjectsDialog(
+    opening = OpenProjectDialog(
         replace(repos, plan_roots=lambda: []),
         services.tasks,
         services.theme,
         listed_dirs=[],
         listed_ids=[],
+        known_checkout=lambda _remote: None,
         parent=services.window,
     )
-    inline(opening._runner)
-    opening.picker.set_current(plans)
-    framed(opening, OPEN_SIZE, app)
-    save(opening, out, "open-projects", theme, app)
+    inline(opening.browse._runner, opening.link._runner)
+    framed(opening, CHOOSE_SIZE, app)  # The wizard sizes itself per page; this is page one's.
+    save(opening, out, "open-project-ways", theme, app)
+    opening.show_page(LINK_PAGE)
+    opening.link.set_text(
+        encode(
+            ProjectLink(
+                plan_remote=PLANS_URL,
+                plan_path="search",
+                title="Search",
+                summary="Replace the index",
+                code_remote=CODE_URL,
+            )
+        )
+    )
+    opening.resize(*OPEN_SIZE)
+    settle(app)
+    save(opening, out, "open-project-link", theme, app)
+    opening.show_page(BROWSE_PAGE)
+    opening.resize(*OPEN_SIZE)
+    opening.browse.picker.set_current(plans)
+    save(opening, out, "open-project-browse", theme, app)
     discard(opening)
+
+    sharing = ShareProjectDialog(
+        ProjectLink(
+            plan_remote=PLANS_URL,
+            plan_path="search",
+            title="Search",
+            summary="Replace the index",
+            code_remote=CODE_URL,
+        ),
+        services.window,
+    )
+    fitted(sharing, app, 560)
+    save(sharing, out, "share-project", theme, app)
+    discard(sharing)
 
     moving = MovePlanDialog(
         title="Discovery",

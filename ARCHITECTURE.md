@@ -37,13 +37,33 @@ git repository, opened through its own storage provider. A **Step** is a node in
 
 **Why membership changes bypass the undo stack.** Creating a project may `git init` a
 repository and always writes files outside any store; removing one only forgets it. Neither
-is something Ctrl+Z could honestly reverse, so File ▸ New Project, Open Projects and Remove
+is something Ctrl+Z could honestly reverse, so File ▸ New Project, Open Project and Remove
 from Library apply their model change directly with their own origin — the same discipline
 as syncing an external fact, below. The membership verbs live with the project verbs
-(`modules/projects/`): New Project is the Project dialog in create mode and Open Projects
-browses a plan repository, and both start from the same question — *which plan
+(`modules/projects/`): New Project is the Project dialog in create mode and Open Project is
+a wizard over the two ways in, and all of them start from the same question — *which plan
 repository?* — answered by one picker. The library module keeps only the question of
 *which library*.
+
+**A project link is the third way in, and the only one that works on a machine with
+nothing.** Open Project's browse page assumes a plan repository you can already name;
+somebody being brought onto a project cannot name one. So *File ▸ Share Project…* writes
+what they are missing — the plan repository's remote, the project's path inside it, and the
+code repository — as a line to paste, a `.dlink` file to send, or a QR code to hold up, and
+the wizard's link page reads any of them, clones what this machine lacks and connects the
+result. `domain/project_link.py` owns the document and both encodings; neither surface
+parses anything itself, which is what makes `dplanner project share` and `project open` the
+same feature rather than a second one.
+
+Three decisions are worth writing down. **The link is readable, not packed**: a person
+asked to open somebody else's link can see which repositories it names before opening it,
+and that is worth the extra characters. **It carries no access**, and the Share dialog says
+so in a sentence — the failure mode of a thing that looks like an invitation is somebody
+assuming it is one. And **the terminal never clones**: `project open` resolves the link
+against the clones the library already has and otherwise refuses with the `git clone` line
+to run, exactly as `library add` does, because a verb an agent may call should not reach
+the network on its own — while the window, where a person is watching, does clone, inside
+the page they pressed the button in.
 
 **Why opening another library is another process.** Every registry refuses a duplicate id,
 so two libraries in one process was never implementable — and unlike the old
@@ -3906,7 +3926,7 @@ Create mode keeps its form: with nothing on disk yet there is no log to read and
 to run, so the fields *are* the answer.
 
 **A plan repository holds several projects for several people.** Its root carries the
-`.dplanner` index (`FORMAT.md`), which is what lets *Open Projects…* and `dplanner library
+`.dplanner` index (`FORMAT.md`), which is what lets *Open Project…* and `dplanner library
 browse` list what a clone holds, with who worked on each and when (`activity`, one git log
 per project). It may be local-only — `git init` from New Project or Move Plan — or on
 GitHub, published from the same dialogs through `gh`; clones land in one *repositories
@@ -3935,7 +3955,7 @@ plan is inside its code, *Move Plan…* once it is out), and the skill still tel
 to run `dplanner project move` when the developer asks and never unasked.
 
 The git requirement is **gating at membership, honest afterwards**: New Project initialises
-or picks a plan repository, Open Projects lists only what is inside one (the plan's history
+or picks a plan repository, Open Project's browse page lists only what is inside one (the plan's history
 *is* the repository's history), but a project whose repository breaks later degrades to
 disabled verbs, not a broken library.
 

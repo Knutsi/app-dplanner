@@ -1,24 +1,39 @@
-"""Membership: File ▸ New Project… and Open Projects…, the projects module's half.
+"""Membership: File ▸ New Project… and Open Project…, the projects module's half.
 
-Both dialogs are stood in for at the names the module reads, and the Open Projects
-dialog is also built for real over the running application's services — git runs, gh
-never does. What is under test is everything around them: what gets seeded on disk,
-listed in the index, attached to the store, added to the model, greyed as already here,
-or refused with a reason.
+Both dialogs are stood in for at the names the module reads, and the Open Project wizard
+is also built for real over the running application's services — git runs, gh never does.
+What is under test is everything around them: what gets seeded on disk, listed in the
+index, attached to the store, added to the model, greyed as already here, or refused with
+a reason. The wizard's two pages are tested through the wizard rather than on their own,
+because which page is showing is half of what it does.
 """
 
 import subprocess
+from dataclasses import replace
+from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QDialog, QFileDialog
 
 from dplanner.core.storage.locations import init_repo
+from dplanner.core.storage.provider import StorageError
+from dplanner.domain.plan_repo import read_meta
+from dplanner.domain.project_link import ProjectLink, document_text, encode
 from dplanner.domain.seed import seed_project
 from dplanner.domain.store import PROJECT_META
 from dplanner.modules.projects import module as projects_module
-from dplanner.modules.projects.open_dialog import OpenProjectsDialog
+from dplanner.modules.projects.open_dialog import (
+    BROWSE,
+    BROWSE_PAGE,
+    CHOOSE,
+    LINK,
+    LINK_PAGE,
+    OpenProjectDialog,
+)
 from dplanner.modules.projects.project_dialog import NewProjectSpec
 from dplanner.modules.projects.repo_picker import PlanTarget
+from dplanner.modules.projects.repos import Joined, shown_path
+from dplanner.modules.projects.repositories_folder import set_repositories_folder
 
 
 def run(services, action_id):
@@ -47,12 +62,34 @@ def commit_all(root, author="Anna"):
     )
 
 
-def inline(dialog, monkeypatch):
+def inline(runner, monkeypatch):
+    """Run a page's task bodies where they are called: a test asserts on the answer, and
+    the thread is not what is under test here."""
+
     def run_now(_label, body, **_kwargs):
         body()
         return True
 
-    monkeypatch.setattr(dialog._runner, "run", run_now)
+    monkeypatch.setattr(runner, "run", run_now)
+
+
+def answering(joined):
+    """Stands in for the wizard at the name the module reads; answers what the test set."""
+
+    class Fake:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def exec(self):
+            return 1 if joined else 0
+
+        def joined(self):
+            return joined
+
+        def deleteLater(self):  # noqa: N802 - Qt's name
+            pass
+
+    return Fake
 
 
 # -- New Project… ------------------------------------------------------------------------------
@@ -153,7 +190,7 @@ def test_cancelling_new_project_creates_nothing(services, create):
     assert services.document.projects == []
 
 
-# -- Open Projects… ----------------------------------------------------------------------------
+# -- Open Project…: the wizard frame --------------------------------------------------------------
 
 
 @pytest.fixture
@@ -167,95 +204,134 @@ def plans(tmp_path):
     return root
 
 
-def open_dialog(services, monkeypatch, *, listed_dirs=(), listed_ids=()):
+def wizard(services, monkeypatch, *, listed_dirs=None, listed_ids=None, clone=None, checkout=None):
+    """The wizard over the running application, wired as the module wires it — the library
+    it already has is what the pages grey and refuse against, so a test that adds a project
+    first sees it here too."""
     deps = module(services)._deps
-    dialog = OpenProjectsDialog(
-        deps.repos,
+    repos = deps.repos if clone is None else replace(deps.repos, clone=clone)
+    dialog = OpenProjectDialog(
+        repos,
         deps.tasks,
         deps.theme,
-        listed_dirs=list(listed_dirs),
-        listed_ids=list(listed_ids),
+        listed_dirs=list(deps.project_dirs() if listed_dirs is None else listed_dirs),
+        listed_ids=list(
+            [p.id for p in services.document.projects] if listed_ids is None else listed_ids
+        ),
+        known_checkout=(lambda _remote: checkout),
         parent=services.window,
     )
-    inline(dialog, monkeypatch)
+    inline(dialog.browse._runner, monkeypatch)
+    inline(dialog.link._runner, monkeypatch)
     return dialog
 
 
-def test_open_projects_lists_what_the_repository_holds_with_who_and_when(
-    services, plans, monkeypatch
-):
-    dialog = open_dialog(services, monkeypatch)
-    assert dialog.empty.isVisibleTo(dialog) and not dialog.list.isVisibleTo(
-        dialog
-    )  # Nothing picked.
-    dialog.picker.set_current(plans)
-    assert dialog.rows() == [
+def test_the_wizard_opens_on_the_way_in_that_needs_no_library(services, monkeypatch):
+    dialog = wizard(services, monkeypatch)
+    assert dialog.current_page() == CHOOSE
+    assert dialog.way() == LINK  # A link is what somebody joining for the first time has.
+    assert dialog.primary_button.text() == "Continue"
+    assert not dialog.back_button.isVisibleTo(dialog)
+    dialog.deleteLater()
+
+
+def test_continuing_shows_the_page_for_the_chosen_way_and_back_returns(services, monkeypatch):
+    dialog = wizard(services, monkeypatch)
+    dialog.ways.setCurrentRow(1)
+    assert dialog.way() == BROWSE
+    dialog.primary_button.click()
+    assert dialog.current_page() == BROWSE_PAGE and dialog.back_button.isVisibleTo(dialog)
+    dialog.back_button.click()
+    assert dialog.current_page() == CHOOSE and not dialog.back_button.isVisibleTo(dialog)
+    dialog.deleteLater()
+
+
+def test_the_way_last_used_is_the_one_the_next_wizard_opens_on(services, monkeypatch):
+    first = wizard(services, monkeypatch)
+    first.ways.setCurrentRow(1)
+    first.primary_button.click()
+    first.deleteLater()
+    again = wizard(services, monkeypatch)
+    assert again.way() == BROWSE
+    again.deleteLater()
+
+
+# -- Open Project… ▸ browse a plan repository ------------------------------------------------------
+
+
+def browsing(services, monkeypatch, **kwargs):
+    dialog = wizard(services, monkeypatch, **kwargs)
+    dialog.ways.setCurrentRow(1)
+    dialog.primary_button.click()
+    return dialog
+
+
+def test_browsing_lists_what_the_repository_holds_with_who_and_when(services, plans, monkeypatch):
+    dialog = browsing(services, monkeypatch)
+    page = dialog.browse
+    assert page.empty.isVisibleTo(page) and not page.list.isVisibleTo(page)  # Nothing picked.
+    page.picker.set_current(plans)
+    assert page.rows() == [
         ("Search · 0 steps", "Anna, just now"),
         ("Billing · 0 steps", "Bo, just now"),
     ]
     # Every addable row starts selected: joining a plan repository means joining it.
-    assert sorted(dialog.chosen()) == sorted([plans / "search", plans / "billing"])
-    assert (
-        dialog.add_projects_button.text() == "Add 2 to Library"
-        and dialog.add_projects_button.isEnabled()
-    )
+    assert sorted(page.chosen()) == sorted([plans / "search", plans / "billing"])
+    assert dialog.primary_button.text() == "Add 2 to Library" and dialog.primary_button.isEnabled()
     dialog.deleteLater()
 
 
 def test_a_project_already_here_is_greyed_and_not_offered(services, plans, monkeypatch):
-    dialog = open_dialog(services, monkeypatch, listed_dirs=[plans / "search"])
-    dialog.picker.set_current(plans)
-    assert dialog.rows()[0] == ("Search · 0 steps", "already in this library")
-    assert dialog.chosen() == [plans / "billing"]
-    assert dialog.add_projects_button.text() == "Add to Library"
+    dialog = browsing(services, monkeypatch, listed_dirs=[plans / "search"])
+    dialog.browse.picker.set_current(plans)
+    assert dialog.browse.rows()[0] == ("Search · 0 steps", "already in this library")
+    assert dialog.browse.chosen() == [plans / "billing"]
+    assert dialog.primary_button.text() == "Add to Library"
     dialog.deleteLater()
 
 
 def test_the_same_plan_in_another_clone_is_greyed_by_its_id(services, plans, monkeypatch):
-    from dplanner.domain.plan_repo import read_meta
-
-    search_id = read_meta(plans / "search")["id"]
-    dialog = open_dialog(services, monkeypatch, listed_ids=[search_id])
-    dialog.picker.set_current(plans)
-    assert dialog.rows()[0][1] == "already in this library"
+    dialog = browsing(services, monkeypatch, listed_ids=[read_meta(plans / "search")["id"]])
+    dialog.browse.picker.set_current(plans)
+    assert dialog.browse.rows()[0][1] == "already in this library"
     dialog.deleteLater()
 
 
-def test_an_activity_answer_for_a_repository_the_dialog_left_is_dropped(
+def test_an_activity_answer_for_a_repository_the_page_left_is_dropped(
     services, plans, tmp_path, monkeypatch
 ):
     other = init_repo(tmp_path / "other")
     seed_project(other / "gadget", "Gadget")
     commit_all(other, "Cy")
-    dialog = open_dialog(services, monkeypatch)
+    dialog = browsing(services, monkeypatch)
+    page = dialog.browse
     pending = []
 
     def hold(_label, body, **_kwargs):
         pending.append(body)
         return True
 
-    monkeypatch.setattr(dialog._runner, "run", hold)
-    dialog.picker.set_current(plans)
-    dialog.picker.set_current(other)
-    pending[0]()  # The first repository's answer arrives after the dialog moved on.
-    assert dialog.rows() == [("Gadget · 0 steps", "…")]
+    monkeypatch.setattr(page._runner, "run", hold)
+    page.picker.set_current(plans)
+    page.picker.set_current(other)
+    pending[0]()  # The first repository's answer arrives after the page moved on.
+    assert page.rows() == [("Gadget · 0 steps", "…")]
     pending[1]()
-    assert dialog.rows() == [("Gadget · 0 steps", "Cy, just now")]
+    assert page.rows() == [("Gadget · 0 steps", "Cy, just now")]
     dialog.deleteLater()
 
 
 def test_browsing_to_a_folder_outside_git_is_refused_in_the_note(services, tmp_path, monkeypatch):
     loose = tmp_path / "loose"
     loose.mkdir()
-    dialog = open_dialog(services, monkeypatch)
+    dialog = browsing(services, monkeypatch)
+    picker = dialog.browse.picker
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(loose))
-    browse = next(
-        e for e in dialog.picker.entries() if e is not None and e.label == "Another folder…"
-    )
+    browse = next(e for e in picker.entries() if e is not None and e.label == "Another folder…")
     browse.run()
-    assert "not inside a git repository" in dialog.picker.note.words()
-    assert dialog.picker.note.tone() == "error"
-    assert dialog.picker.current() is None
+    assert "not inside a git repository" in picker.note.words()
+    assert picker.note.tone() == "error"
+    assert picker.current() is None
     dialog.deleteLater()
 
 
@@ -264,34 +340,231 @@ def test_an_empty_repository_says_so_and_a_dangling_index_line_is_named(
 ):
     root = init_repo(tmp_path / "plans")
     (root / ".dplanner").write_text("gone\n")
-    dialog = open_dialog(services, monkeypatch)
-    dialog.picker.set_current(root)
-    assert dialog.empty.isVisibleTo(dialog) and "No projects" in dialog.empty.text()
-    assert dialog.note.isVisibleTo(dialog) and "gone" in dialog.note.text()
-    assert not dialog.add_projects_button.isEnabled()
+    dialog = browsing(services, monkeypatch)
+    page = dialog.browse
+    page.picker.set_current(root)
+    assert page.empty.isVisibleTo(page) and "No projects" in page.empty.text()
+    assert page.note.isVisibleTo(page) and "gone" in page.note.text()
+    assert not dialog.primary_button.isEnabled()
     dialog.deleteLater()
 
 
 def test_adding_connects_the_chosen_projects_to_the_library(services, plans, monkeypatch):
-    chosen = [plans / "search", plans / "billing"]
-
-    class Fake:
-        def __init__(self, *_args, **_kwargs):
-            pass
-
-        def exec(self):
-            return 1
-
-        def chosen(self):
-            return chosen
-
-        def deleteLater(self):  # noqa: N802 - Qt's name
-            pass
-
-    monkeypatch.setattr(projects_module, "OpenProjectsDialog", Fake)
-    run(services, "projects.browse")
+    joined = [Joined(plans / "search"), Joined(plans / "billing")]
+    monkeypatch.setattr(projects_module, "OpenProjectDialog", answering(joined))
+    run(services, "projects.add")
     assert [p.title for p in services.document.projects] == ["Search", "Billing"]
     assert (
         services.repo.project_dir(services.document.projects[0].id) == (plans / "search").resolve()
     )
     assert "2 projects added" in services.window.statusBar().currentMessage()
+
+
+# -- Open Project… ▸ open a project link ----------------------------------------------------------
+
+
+@pytest.fixture
+def shared(tmp_path):
+    """A plan repository published somewhere, and the link to one project in it.
+
+    The remote is a path rather than a URL because a test may not reach GitHub, and
+    ``canonical_remote`` treats the two the same — which is the point: what a link names
+    is a remote, whatever kind.
+    """
+    origin = init_repo(tmp_path / "origin" / "plans")
+    seed_project(origin / "search", "Search", summary="Replace the index")
+    commit_all(origin, "Anna")
+    return origin, ProjectLink(
+        plan_remote=str(origin),
+        plan_path="search",
+        project_id=read_meta(origin / "search")["id"],
+        title="Search",
+        summary="Replace the index",
+        code_remote="https://github.com/acme/widget",
+    )
+
+
+def linking(services, monkeypatch, **kwargs):
+    dialog = wizard(services, monkeypatch, **kwargs)
+    dialog.primary_button.click()  # The link row leads.
+    assert dialog.current_page() == LINK_PAGE
+    return dialog
+
+
+def cloner(tmp_path, recorded):
+    """Stands in for gh: a clone is a git clone of a path, and what was asked is recorded."""
+
+    def clone(remote, dest):
+        recorded.append((remote, dest))
+        subprocess.run(["git", "clone", "-q", str(remote), str(dest)], check=True)
+
+    return clone
+
+
+def test_a_pasted_link_says_what_it_names_and_where_the_plan_will_land(
+    services, shared, monkeypatch
+):
+    _origin, link = shared
+    dialog = linking(services, monkeypatch)
+    dialog.link.set_text(encode(link))
+    page = dialog.link
+    assert page.found.isVisibleTo(page)
+    assert page.project_line.text() == "Search"
+    assert page.summary_line.text() == "Replace the index"
+    assert "will be cloned into" in page.plan_where.text()
+    assert dialog.primary_button.text() == "Set Up Project" and dialog.primary_button.isEnabled()
+    dialog.deleteLater()
+
+
+def test_a_link_file_is_read_the_same_as_a_pasted_one(services, shared, tmp_path, monkeypatch):
+    _origin, link = shared
+    path = tmp_path / link.filename
+    path.write_text(document_text(link), encoding="utf-8")
+    dialog = linking(services, monkeypatch)
+    dialog.link.set_text(str(path))
+    assert dialog.link.project_line.text() == "Search"
+    dialog.deleteLater()
+
+
+def test_something_that_is_not_a_link_is_refused_under_the_field(services, monkeypatch):
+    dialog = linking(services, monkeypatch)
+    dialog.link.set_text("https://github.com/acme/plans")
+    page = dialog.link
+    assert page.link_status.tone() == "error" and "not a dplanner" in page.link_status.words()
+    assert not page.found.isVisibleTo(page)
+    assert not dialog.primary_button.isEnabled()
+    dialog.deleteLater()
+
+
+def test_a_link_for_a_project_already_here_is_refused_by_name(services, shared, monkeypatch):
+    _origin, link = shared
+    dialog = linking(services, monkeypatch, listed_ids=[link.project_id])
+    dialog.link.set_text(encode(link))
+    assert dialog.link.refusal() == "“Search” is already in this library"
+    assert not dialog.primary_button.isEnabled()
+    dialog.deleteLater()
+
+
+def test_a_plan_repository_this_machine_already_has_is_used_rather_than_cloned(
+    services, shared, plans, tmp_path, monkeypatch
+):
+    origin, link = shared
+    # The library's own plan repository is a clone of the link's remote, so there is
+    # nothing to fetch: the wizard points straight at the project inside it.
+    here = tmp_path / "here"
+    subprocess.run(["git", "clone", "-q", str(origin), str(here)], check=True)
+    module(services)._deps.connect_project(here / "search", None)
+    recorded: list[tuple[str, Path]] = []
+    dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
+    dialog.link.set_text(encode(link))
+    assert dialog.link.plan_where.text() == f"already at {shown_path(here / 'search')}"
+    assert dialog.link.refusal() == "“Search” is already in this library"
+    assert recorded == []
+    dialog.deleteLater()
+
+
+def test_a_clone_without_the_project_the_link_names_says_to_pull(
+    services, shared, tmp_path, monkeypatch
+):
+    origin, link = shared
+    here = tmp_path / "here"
+    subprocess.run(["git", "clone", "-q", str(origin), str(here)], check=True)
+    module(services)._deps.connect_project(here / "search", None)
+    moved = replace(link, plan_path="ranking", project_id="another", title="Ranking")
+    dialog = linking(services, monkeypatch)
+    dialog.link.set_text(encode(moved))
+    assert "pull it and try again" in (dialog.link.refusal() or "")
+    dialog.deleteLater()
+
+
+def test_setting_up_clones_the_plan_and_answers_with_the_project_directory(
+    services, shared, tmp_path, monkeypatch
+):
+    origin, link = shared
+    set_repositories_folder(tmp_path / "Code")
+    recorded: list[tuple[str, Path]] = []
+    dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
+    dialog.link.set_text(encode(link))
+    dialog.link.checkout_edit.clear()  # The code is somebody else's problem in this test.
+    dialog.primary_button.click()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert dialog.joined() == [Joined(tmp_path / "Code" / "plans" / "search", None)]
+    assert recorded == [(str(origin), tmp_path / "Code" / "plans")]
+    dialog.deleteLater()
+
+
+def test_setting_up_clones_the_code_into_the_folder_the_person_named(
+    services, shared, tmp_path, monkeypatch
+):
+    origin, link = shared
+    code_origin = init_repo(tmp_path / "origin" / "widget")
+    (code_origin / "README.md").write_text("the widget\n")
+    commit_all(code_origin, "Anna")
+    link = replace(link, code_remote=str(code_origin))
+    set_repositories_folder(tmp_path / "Code")
+    recorded: list[tuple[str, Path]] = []
+    dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
+    dialog.link.set_text(encode(link))
+    assert dialog.link.checkout_edit.text() == str(tmp_path / "Code" / "widget")
+    assert "will be cloned into" in dialog.link.checkout_where.text()
+    dialog.primary_button.click()
+    assert dialog.joined()[0].checkout == tmp_path / "Code" / "widget"
+    assert (tmp_path / "Code" / "widget" / ".git").is_dir()
+    assert [remote for remote, _dest in recorded] == [str(origin), str(code_origin)]
+    dialog.deleteLater()
+
+
+def test_a_checkout_this_machine_already_has_is_offered_rather_than_a_clone(
+    services, shared, tmp_path, monkeypatch
+):
+    _origin, link = shared
+    here = init_repo(tmp_path / "widget")
+    dialog = linking(services, monkeypatch, checkout=here)
+    dialog.link.set_text(encode(link))
+    assert dialog.link.checkout_edit.text() == str(here)
+    assert dialog.link.checkout_where.text() == "acme/widget, already there"
+    dialog.deleteLater()
+
+
+def test_a_checkout_folder_that_is_something_else_is_refused(
+    services, shared, tmp_path, monkeypatch
+):
+    _origin, link = shared
+    occupied = tmp_path / "occupied"
+    occupied.mkdir()
+    (occupied / "notes.txt").write_text("mine")
+    dialog = linking(services, monkeypatch)
+    dialog.link.set_text(encode(link))
+    dialog.link.checkout_edit.setText(str(occupied))
+    assert "is not a checkout" in (dialog.link.refusal() or "")
+    assert not dialog.primary_button.isEnabled()
+    dialog.deleteLater()
+
+
+def test_a_link_naming_no_code_repository_leaves_the_checkout_alone(services, shared, monkeypatch):
+    _origin, link = shared
+    dialog = linking(services, monkeypatch)
+    dialog.link.set_text(encode(replace(link, code_remote="")))
+    assert not dialog.link.checkout_edit.isEnabled()
+    assert dialog.link.checkout_where.text() == "this link names no code repository"
+    assert dialog.primary_button.isEnabled()
+    dialog.deleteLater()
+
+
+def test_a_clone_that_fails_says_so_and_the_wizard_stays_open(
+    services, shared, tmp_path, monkeypatch
+):
+    _origin, link = shared
+    set_repositories_folder(tmp_path / "Code")
+
+    def refuse(_remote, _dest):
+        raise StorageError("gh is not signed in")
+
+    dialog = linking(services, monkeypatch, clone=refuse)
+    dialog.link.set_text(encode(link))
+    dialog.link.checkout_edit.clear()
+    dialog.primary_button.click()
+    assert dialog.result() != QDialog.DialogCode.Accepted  # Nothing accepted it.
+    assert dialog.link.link_status.words() == "gh is not signed in"
+    assert dialog.joined() == []
+    dialog.deleteLater()

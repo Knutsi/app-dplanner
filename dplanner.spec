@@ -61,6 +61,7 @@ for distribution in (
     "shiboken6",
     "keyring",
     "pypdfium2",
+    "segno",
     "openai",
     "anthropic",
 ):

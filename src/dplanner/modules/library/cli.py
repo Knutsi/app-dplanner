@@ -1,13 +1,15 @@
 """``dplanner library …`` — membership, headless.
 
-The same rules as the window's New Project and Open Projects: a project directory must
+The same rules as the window's New Project and Open Project: a project directory must
 carry a ``project.dproj`` and sit inside a git repository. Non-interactive, so where the
 window offers to ``git init``, this refuses and says what to run.
 
 A **plan repository** — a git repository whose ``.dplanner`` index lists its projects,
 several of them for several people — is joined in two commands: clone it, then
 ``library add <root>`` adds every project it lists; ``library browse <root>`` shows them
-first, with who worked on each and when, as the window's Open Projects dialog does.
+first, with who worked on each and when, as the Open Project wizard's browse page does.
+A project somebody sent a link to is ``project open`` — the same document the window's
+*Share Project…* writes, read by the same domain reader.
 """
 
 from argparse import ArgumentParser, Namespace
