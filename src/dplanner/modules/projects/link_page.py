@@ -182,7 +182,7 @@ class LinkPage(QWidget):
             return
         self._link = link
         self.link_status.say(f"{link.plan_label} · {link.name}", "ok")
-        self._here = find_clone(self._services.plan_roots(), link.plan_remote)
+        self._here = self._clone_here(link)
         self._describe(link)
         self.found.show()
         self.changed.emit()
@@ -223,6 +223,16 @@ class LinkPage(QWidget):
         here = directory is not None and directory.resolve() in self._listed_dirs
         if here or (link.project_id and link.project_id in self._listed_ids):
             self._problem = f"“{link.name}” is already in this library"
+
+    def _clone_here(self, link: ProjectLink) -> Path | None:
+        """A clone of the link's plan repository on this machine: one the library reads, or
+        the one an earlier *Set Up Project* cloned before failing on the code — which no
+        project reads yet, and which a second clone into the same folder would refuse."""
+        candidates = list(self._services.plan_roots())
+        folder = repositories_folder()
+        if folder is not None and (folder / repo_folder_name(link.plan_remote) / ".git").exists():
+            candidates.append(folder / repo_folder_name(link.plan_remote))
+        return find_clone(candidates, link.plan_remote)
 
     def _clone_line(self, remote: str) -> str:
         """Where a clone of ``remote`` will land, or that the folder is still to be picked
@@ -272,7 +282,11 @@ class LinkPage(QWidget):
             return (f"{link.code_label} — nothing is checked out here yet", "")
         if (path / ".git").exists():
             return (f"{link.code_label}, already there", "")
-        if path.exists() and any(path.iterdir()):
+        try:
+            occupied = path.exists() and (not path.is_dir() or any(path.iterdir()))
+        except OSError:
+            occupied = True
+        if occupied:
             return ("", f"{shown_path(path)} exists and is not a checkout")
         return (f"will be cloned into {shown_path(path)}", "")
 
@@ -305,18 +319,19 @@ class LinkPage(QWidget):
         link = self._link
         if link is None or self._working:
             return
-        plan_root = self._here
         checkout = self.checkout()
         clone_code = checkout is not None and not (checkout / ".git").exists()
-        if plan_root is None or clone_code:
+        here = self._clone_here(link)
+        if here is None or clone_code:
             folder = ensure_repositories_folder(self)
             if folder is None:
                 self.finished.emit(False)
                 return
-            if plan_root is None:
-                plan_root = folder / repo_folder_name(link.plan_remote)
-        services, target = self._services, plan_root
-        fresh = self._here is None
+            here = self._clone_here(link)  # The folder may have been named just now.
+            target = here or folder / repo_folder_name(link.plan_remote)
+        else:
+            target = here
+        services, fresh = self._services, here is None
 
         def body() -> None:  # Worker thread: paths and remotes, never the model.
             try:

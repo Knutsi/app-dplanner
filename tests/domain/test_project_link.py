@@ -167,6 +167,21 @@ def test_another_scheme_is_refused():
         decode("https://github.com/acme/plans")
 
 
+@pytest.mark.parametrize(
+    "path", ["/etc", "../elsewhere", "team/../../elsewhere", "C:\\Users", "..\\elsewhere"]
+)
+def test_a_path_that_leaves_the_plan_repository_is_refused_in_either_form(path):
+    with pytest.raises(LinkError, match="leaves its plan repository"):
+        decode(encode(link(plan_path=path)))
+    with pytest.raises(LinkError, match="leaves its plan repository"):
+        read_document(document(link(plan_path=path)))
+
+
+def test_a_remote_that_would_read_as_an_option_is_refused():
+    with pytest.raises(LinkError, match="not a repository address"):
+        decode(encode(link(code_remote="--upload-pack=touch x")))
+
+
 def test_a_newer_link_format_says_to_update():
     with pytest.raises(LinkError, match="newer DPlanner"):
         decode(f"dplanner://project?plan={PLAN_REMOTE}&format={FORMAT + 1}")

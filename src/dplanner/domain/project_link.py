@@ -26,7 +26,7 @@ is needed at all.
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 from urllib.parse import parse_qsl, quote, urlsplit
 
@@ -273,6 +273,15 @@ def _build(**fields: str) -> ProjectLink:
     link = ProjectLink(**fields)
     if not link.plan_remote:
         raise LinkError("the link names no plan repository")
+    # A link arrives from somebody else, and both surfaces act on what it names: a remote is
+    # handed to a clone, and the path is joined onto this machine's copy of the repository.
+    for remote in (link.plan_remote, link.code_remote):
+        if remote.startswith("-"):
+            raise LinkError(f"this is not a repository address: {remote}")
+    # Read by Windows rules, which take both separators and see a drive as well as a root.
+    path = PureWindowsPath(link.plan_path)
+    if path.anchor or ".." in path.parts:
+        raise LinkError(f"the link's path leaves its plan repository: {link.plan_path}")
     return link
 
 

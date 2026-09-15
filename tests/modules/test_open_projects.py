@@ -514,6 +514,30 @@ def test_setting_up_clones_the_code_into_the_folder_the_person_named(
     dialog.deleteLater()
 
 
+def test_setting_up_again_after_the_code_failed_uses_the_plan_it_already_cloned(
+    services, shared, tmp_path, monkeypatch
+):
+    origin, link = shared
+    set_repositories_folder(tmp_path / "Code")
+    recorded: list[tuple[str, Path]] = []
+    clone_plan = cloner(tmp_path, recorded)
+
+    def clone(remote, dest):
+        if remote == link.code_remote:
+            raise StorageError("no access to acme/widget")
+        clone_plan(remote, dest)
+
+    dialog = linking(services, monkeypatch, clone=clone)
+    dialog.link.set_text(encode(link))  # The checkout is offered in the folder, to be cloned.
+    dialog.primary_button.click()
+    assert dialog.link.link_status.words() == "no access to acme/widget"
+    dialog.link.checkout_edit.clear()
+    dialog.primary_button.click()
+    assert dialog.joined() == [Joined(tmp_path / "Code" / "plans" / "search", None)]
+    assert recorded == [(str(origin), tmp_path / "Code" / "plans")]  # Cloned once, not twice.
+    dialog.deleteLater()
+
+
 def test_a_checkout_this_machine_already_has_is_offered_rather_than_a_clone(
     services, shared, tmp_path, monkeypatch
 ):
@@ -526,16 +550,18 @@ def test_a_checkout_this_machine_already_has_is_offered_rather_than_a_clone(
     dialog.deleteLater()
 
 
-def test_a_checkout_folder_that_is_something_else_is_refused(
-    services, shared, tmp_path, monkeypatch
+@pytest.mark.parametrize("taken", ["occupied", "occupied/notes.txt"])
+def test_a_checkout_path_that_is_something_else_is_refused(
+    services, shared, tmp_path, monkeypatch, taken
 ):
+    """A folder of something else — or a file, which is no folder to look inside at all."""
     _origin, link = shared
     occupied = tmp_path / "occupied"
     occupied.mkdir()
     (occupied / "notes.txt").write_text("mine")
     dialog = linking(services, monkeypatch)
     dialog.link.set_text(encode(link))
-    dialog.link.checkout_edit.setText(str(occupied))
+    dialog.link.checkout_edit.setText(str(tmp_path / taken))
     assert "is not a checkout" in (dialog.link.refusal() or "")
     assert not dialog.primary_button.isEnabled()
     dialog.deleteLater()

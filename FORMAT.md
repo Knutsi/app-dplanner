@@ -267,7 +267,9 @@ the receiving surface can say what it is about to do before it clones anything.
 
 Same bytes rules as everything else (UTF-8, LF, two-space indent, sorted keys, a trailing
 newline) and the same *absence encodes the default* rule: an empty field writes no key, and
-`"path": "."` is a plan repository that is one project. `"format"` is the link's own axis,
+`"path": "."` is a plan repository that is one project. A `path` that is absolute or climbs
+out with `..` is refused, and so is a remote that starts with `-`: a link comes from
+somebody else, and it may name a folder inside its plan repository and nothing more. `"format"` is the link's own axis,
 a third beside the project format and each module's — it belongs to
 `domain/project_link.py` and to nothing else, and a **newer** one is refused by name rather
 than read half-way, because the machine reading it is by definition not the machine that

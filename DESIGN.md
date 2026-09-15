@@ -769,7 +769,7 @@ Dialogs:
 - *(done — S16)* `ProjectDialog` — Close alone in settings mode; create mode a form of
   captioned blocks whose Create is refused in words; what a request came to in the footer's
   status slot, and the plan column's set-up offer the verb of an `EmptyState`.
-- *(done — S16)* `OpenProjectsDialog`, `MovePlanDialog`, `RepositoriesFolderDialog`,
+- *(done — S16)* `OpenProjectDialog`, `MovePlanDialog`, `RepositoriesFolderDialog`,
   `GhRepoListDialog` — on the frame; the repository picker's four glyph buttons one ⋯
   menu and its note a `StatusLine`; the GitHub list captioned, its listing in the status
   slot; the prompts `LinePrompt`s and the result boxes `notice()`s.
