@@ -2246,12 +2246,39 @@ from.
 
 What the banner is made of is the existing vocabulary and nothing new. DESIGN.md allows
 three motions in the whole application; the arc that says *something is running here* is
-one of them, and it leads a fresh claim. The tone is the reading — busy while the agent is
-at work, plain information once it has gone quiet. The count is the one amendment: a bar is
-for work whose end the application knows, and "never for an agent" was written when an
-agent's progress was unknowable. An agent that runs `agent-work set --done 8 --of 20` has
-declared a count, and a declared count is a count; a claim that declares none still gets
-the arc and no promise.
+one of them, and it leads a fresh claim. The tone is the reading — a warning while the
+agent is at work, plain information once it has gone quiet. The count is the one amendment:
+a bar is for work whose end the application knows, and "never for an agent" was written
+when an agent's progress was unknowable. An agent that runs `agent-work set --done 8 --of
+20` has declared a count, and a declared count is a count; a claim that declares none still
+gets the arc and no promise.
+
+#### The banner is a band, and the band is the meter
+
+The first build said all of that in a dot beside secondary words with a 4 px strip under
+them, and it was too quiet for what it means. Two things were wrong and both are about
+where a fact of this kind is read. The tone was *busy*, which is the blue this application
+says "a piece of work is running" in — true of the agent and beside the point for the
+reader, whose problem is that **somebody else is writing this plan and they should keep
+their hands still**. That is a caution, not a report, and the vocabulary had no word for
+it: `warn` is the fifth tone, the amber the canvas chips already wear, and it is not a
+weaker error — an error is this work failing and carries its remedy, where a warning is
+something nobody can fix and everybody must see. And a tone said in a dot is a tone for a
+surface somebody has chosen to look at; a standing notice is the opposite, so it wears the
+tone as a **band across the whole row**. It is the one surface in the application where
+that is right, and the reason is exactly that it is the one surface a person must not read
+past.
+
+The 4 px strip went the same way, for a reason that generalises past this banner: **a meter
+has to be legible as a meter before anything has happened.** At nought per cent the strip
+was a hairline under the words, indistinguishable from the seam above it, so the first
+thing a reader learned about the agent's progress was learned only once the agent had made
+some. The band fills instead — the same hue at a greater weight, from the left — and the
+percentage stands at the right, next to the verb, where the eye is already going. An amber
+row saying *0%* is plainly something that fills; a hairline is not. The strip keeps every
+other job it had (a fetch, a save over three repositories, always under the fact that leads
+it), because those are read inside a surface the person came to, and the notice is the
+surface that came to them.
 
 ### A branch switched underneath the window is taken in, and said
 

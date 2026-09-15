@@ -3820,6 +3820,10 @@ rule) and it adds no motion the design standard did not already allow. The `#Not
 stylesheet rule goes with it: the elevated ground the panels wear and one hairline
 underneath, no colour of its own — a notice's mood is its `StatusLine`'s tone.
 
+*Superseded in part by §47 below*, which is what to carry: the row wears its tone as a band
+and a declared fraction fills that band, so the `QProgressBar` and the mood-in-a-dot
+described here are no longer what the primitive does.
+
 ### What it taught: a fact about another process is reported, never inferred
 
 **What.** Not a code change — a design conclusion worth keeping. The feature had to answer
@@ -3890,3 +3894,47 @@ window, and the Specs tab would churn it on every keystroke — so the memo live
 long as one pass.
 
 **Upstream?** Only with the anchoring module, which is this application's.
+
+## 47. From the standing-notice pass
+
+### `framework/notices.py`, `framework/signalling.py`, `theme/tones.py` — a fifth tone, and a notice that is a band
+
+**What.** Three changes that go together.
+
+- `Tone` gains `warn`, and `STATUS_TONES` the amber it is said in (the same hue the canvas
+  chips already use for attention). `tone_colour(tone)` is new beside it — the one reader of
+  the private tone→shade table, so a surface that *paints* a tone takes the same colour a
+  `StatusLine` writes its glyph in, and a tone added to the vocabulary reaches both.
+- `_NoticeRow` paints its own background: the tone washed across the whole row at
+  `BAND_ALPHA`, with `RADIUS_SM` corners. Plain `info` paints nothing and keeps the bar's
+  ground.
+- The row's 4 px `QProgressBar` is gone. A declared `fraction` now fills that band from the
+  left at `FILLED_ALPHA` — the same rounded rect, clipped — and a `#NoticePercent` label
+  carries the reading at the right, next to the verb, with its room fixed at the width of
+  `100%` so the verb does not step sideways as the count climbs. The row is one `QHBoxLayout`
+  again rather than a line inside a column.
+
+**Why.** Both halves are about where a fact of this kind is read, and both came from using
+it. The tone was `busy` — the blue for *a piece of work is running* — which is true of the
+agent and beside the point for the reader, whose problem is that somebody else is writing
+this plan and they should keep their hands still. That is a caution, and the vocabulary had
+no word for it: an error is this work failing and carries its remedy, where a warning is
+something nobody can fix and everybody must see. And a tone in a dot is a tone for a surface
+somebody chose to look at; a standing notice is the one surface a person must not read past,
+which is exactly the case for wearing it as a band.
+
+The bar went for a reason that generalises past this feature: **a meter has to be legible as
+a meter before anything has happened.** At nought per cent a 4 px strip is a hairline under
+the words, indistinguishable from the seam above it, so the first thing a reader learns about
+progress is learned only once there is some. A band that fills, with the percentage beside
+the verb, says *0%* plainly. The strip keeps every other job it had — a fetch, a save over
+three repositories — because those are read inside a surface the person came to.
+
+`theme/tones.py` also gained `at_alpha(color, alpha)` on the way — three places were
+copying a `QColor` and setting its alpha by hand (`recoloured`, `button_tone`, and the band
+would have been a fourth), and mutating a shared tone constant in place is a bug waiting for
+its first caller to forget the copy.
+
+**Upstream?** Yes, all three. None of them knows anything about agents or plans: `warn` is a
+gap any application's tone vocabulary has, and the band is the notice primitive the template
+would ship, made to carry what it is for. The `#NoticePercent` rule goes with it.

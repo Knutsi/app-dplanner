@@ -64,9 +64,12 @@ paths:
   announces itself — `dplanner agent-work start '<what I am doing>' [--step S7] [--of N]`,
   `agent-work set`, `agent-work end`, `agent-work show` — and `modules/agent_at_work/`
   polls the claims at the watcher's cadence and stands one `Notice` per claim over the
-  window's content: the turning arc, the agent's words, its own count, and when it was
-  last heard from. **Liveness is reported, never guessed** (`domain/at_work.py`): nothing
-  can see another process, so a claim that has gone quiet changes tense — *was at work …
+  window's content: an **amber band** across it (the `warn` tone — a caution about another
+  writer, never the red an error owns), the turning arc, the agent's words, its own count
+  filling that band with the percentage beside *Clear*, and when it was last heard from. A
+  claim that has gone quiet drops to plain information and loses the band. **Liveness is
+  reported, never guessed** (`domain/at_work.py`): nothing can see another process, so a
+  claim that has gone quiet changes tense — *was at work …
   last heard 22 minutes ago* — instead of disappearing, and it ends three ways and no
   other: the agent ends it, a person clears it from the banner, or a later claim sweeps
   one nobody has renewed since yesterday. **Every `dplanner` run is the sign of life** —

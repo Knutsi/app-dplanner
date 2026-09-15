@@ -140,7 +140,7 @@ def test_the_menu_opens_the_design_example_modal_on_the_frame(example):
 
 
 def test_every_signalling_state_is_on_the_modal(example):
-    assert [line.tone() for line in example.lines] == ["info", "busy", "ok", "error"]
+    assert [line.tone() for line in example.lines] == ["info", "busy", "ok", "warn", "error"]
     assert example.problem.tone() == "error" and not example.problem.isHidden()
     assert example.progress.maximum() == 5 and not example.progress.isTextVisible()
     primary = example.primary()

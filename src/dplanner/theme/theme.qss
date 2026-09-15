@@ -514,10 +514,17 @@ QSplitter::handle:vertical:pressed {
 /* Standing notices over the window's content (framework/notices.py): the elevated ground
    the panels wear, parted from the tabs by one hairline — the same seam a splitter draws,
    because this is the same kind of edge and two vocabularies for one line is how a surface
-   grows its own look. No colour of its own: a notice's mood is its StatusLine's tone. */
+   grows its own look. The rows on it carry the colour: each is a band painted in its tone,
+   in code, because a semantic tint is a low-alpha constant and not a theme colour. */
 #NoticeBar {
     background-color: $BG_ELEVATED;
     border-bottom: 1px solid $BORDER;
+}
+
+/* How far a notice's work has come, beside its verb. Full ink where the words beside it are
+   secondary: the band says *something is happening* and this is the one number on it. */
+#NoticePercent {
+    color: $TEXT_PRIMARY;
 }
 
 /* A list of rich rows inside a panel: a well on the panel's elevated ground, the same
@@ -570,8 +577,10 @@ QSplitter::handle:vertical:pressed {
 }
 
 /* A progress bar is a 4 px accent strip — no text, no frame — and there is one kind of it
-   (DESIGN.md's *Signalling*). The chunk must be styled too, or Fusion's striped chunk is
-   drawn into the trough and reads as mud. */
+   (DESIGN.md's *Signalling*), under the fact that leads it. The chunk must be styled too,
+   or Fusion's striped chunk is drawn into the trough and reads as mud. A standing notice is
+   the one place that does not use it: there the whole band fills, because a 4 px strip at
+   nought is a hairline nobody reads as a meter. */
 QProgressBar {
     background-color: $BG_OVERLAY;
     border: none;
