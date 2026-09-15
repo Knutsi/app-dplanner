@@ -4688,6 +4688,56 @@ its words, and a pick matches one value at a time. The options are built from th
 a plan with nothing blocked no longer offers *Blocked* — which the hard-coded four always
 did.
 
+## A test goes stale when the step under it moves
+
+Eleven tests on one real plan contradicted the product and lint said nothing about any of
+them. Nothing was broken: three decision notes had changed what the work should do, months
+after the steps carrying those tests were marked done, and a test is exactly the thing that
+does not notice. `dplanner test review` is the report that notices — `coverage review`'s
+shape, because it answers the same kind of question: *what needs a person after something
+underneath it changed?*
+
+**The comparison is against the test's last run, because there is no other date to use.**
+The obvious reading of "a done step with a later note" wants the day the step became done,
+and `step_status` stores `{"status": "done"}` and nothing else — no stamp, anywhere. Adding
+one was the wrong fix twice over: it is a stored fact where this codebase derives, and it
+would answer for nothing that happened before the day it shipped, which is precisely the
+eleven tests that prompted the feature.
+
+So the verb asks the question the data can answer, which turns out to be the better one:
+**has this test been run since the note landed?** `runs.latest_results` already gives every
+test's last outcome in one pass, and a run carries the day it was closed — or opened, for a
+run still open, because a result recorded in it was recorded then and not whenever the run
+eventually ends. A test nobody has ever run is behind *every* note on its step, which is the
+honest reading: nothing has established it against any of them. A note nobody dated is the
+mirror case — it cannot be *shown* to postdate a run, so it counts only against a test that
+never ran, rather than putting a row in front of somebody that they cannot act on.
+
+**Only a done step is asked.** Work in progress is meant to be ahead of its tests; reporting
+it would bury the real findings under every step anybody is currently working on.
+
+**Which labels unsettle a test is named in the composition root**, `_unsettling_notes()`,
+and the reason is the one `_scope_kinds()` gives: the root is the single place allowed to
+know every aspect at once, and `modules/testing/` may not learn the notes module's
+vocabulary. A `decision` changes what the work should do and a `spec-change` records where
+it departed from the spec — either can leave a test proving last month's answer. A
+`handoff` says where the code lives, a `later` defers work, a `post-project` note is for
+afterwards; none of them makes a claim about what a test should assert, so none should put
+one in front of anybody. Notes reach testing as a neutral `(id, label, title, made)` keyed
+by step — `cli/scopes.py`'s `CoveredTest` hand-over, one layer down — so testing learns
+nothing about what else a note carries.
+
+Superseded notes are dropped on the way. The note that replaced one is itself a decision,
+made later, so it already stands for the doubt; keeping both would name one test twice for
+what is one thing to do. For the same reason a row is **per test, not per note**: a test
+behind three decisions is one piece of work, and the newest note is the one that says what
+it now has to prove.
+
+**A verb, not a lint check.** Lint is for findings with a crisp fix — a missing body, a
+dangling edge. Whether a test still proves the right thing needs somebody to read the note
+and decide, and the two ways out (re-run it, or rewrite what it asserts) are a judgement
+rather than a remedy. `coverage review` drew that line first, and this follows it.
+
 ## A check is a scope over the graph, and so is a milestone
 
 A **check** is a step type that stands for everything behind it having been verified. What it

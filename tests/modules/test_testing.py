@@ -1013,3 +1013,168 @@ def test_typing_in_the_body_keeps_the_audience(services, step, section):
     section.show_target(step.id)
     section.detail.body.edit.setPlainText("1. Look at it.")
     assert read(step)[0].audiences == ("qa",)
+
+
+# -- tests that have gone stale -----------------------------------------------------------
+
+
+@pytest.fixture
+def stale(cli):
+    """A done step with a test that was run, and then a decision that moved under it."""
+    cli("test", "add", "Fix list flicker", "No flicker", "--text", "1. Look")
+    cli("test-run", "start", "widget", "--label", "P1")
+    cli("test-run", "mark", "T100", "ok")
+    cli("test-run", "close", "widget")
+    cli("status", "set", "Fix list flicker", "done")
+    return cli
+
+
+def findings(cli, *argv):
+    return data(cli("test", "review", "widget", "--json", *argv))["findings"]
+
+
+def test_a_test_not_run_since_a_later_note_is_reported(stale):
+    stale(
+        "note",
+        "add",
+        "widget",
+        "decision",
+        "rows may arrive late",
+        "--step",
+        "Fix list flicker",
+        "--made",
+        "2099-01-01",
+    )
+    found = findings(stale)
+    assert [row["test"] for row in found] == ["T100"]
+    assert found[0]["note"] == "N1" and found[0]["label"] == "decision"
+    # The advice names the verbs that close it, the way `coverage review`'s rows do.
+    assert "test-run start" in found[0]["advice"] and "test set T100" in found[0]["advice"]
+
+
+def test_a_note_older_than_the_last_run_is_not_a_finding(stale):
+    """The run already answered for it — that is the whole question this verb asks."""
+    stale(
+        "note",
+        "add",
+        "widget",
+        "decision",
+        "settled before the run",
+        "--step",
+        "Fix list flicker",
+        "--made",
+        "2000-01-01",
+    )
+    assert findings(stale) == []
+
+
+def test_only_a_decision_or_a_spec_change_unsettles_a_test(stale):
+    """A handoff says where the code lives; it makes no claim about what a test proves."""
+    for label in ("handoff", "later", "post-project"):
+        stale(
+            "note",
+            "add",
+            "widget",
+            label,
+            f"a {label} note",
+            "--step",
+            "Fix list flicker",
+            "--made",
+            "2099-01-01",
+        )
+    assert findings(stale) == []
+
+
+def test_a_step_still_being_worked_on_is_not_behind_its_tests(cli):
+    """Work in progress is *meant* to be ahead of its tests; only a done step has settled."""
+    cli("test", "add", "Fix list flicker", "No flicker", "--text", "1. Look")
+    cli(
+        "note",
+        "add",
+        "widget",
+        "decision",
+        "rows may arrive late",
+        "--step",
+        "Fix list flicker",
+        "--made",
+        "2099-01-01",
+    )
+    assert findings(cli) == []  # pending
+    cli("status", "set", "Fix list flicker", "in-progress")
+    assert findings(cli) == []
+    cli("status", "set", "Fix list flicker", "done")
+    assert [row["test"] for row in findings(cli)] == ["T100"]
+
+
+def test_a_test_nobody_ever_ran_is_behind_every_note_on_its_step(cli):
+    cli("test", "add", "Fix list flicker", "Never run", "--text", "1. Look")
+    cli("status", "set", "Fix list flicker", "done")
+    cli(
+        "note",
+        "add",
+        "widget",
+        "spec-change",
+        "the header is optional",
+        "--step",
+        "Fix list flicker",
+        "--made",
+        "2000-01-01",
+    )
+    found = findings(cli)
+    # Older than any run there could have been, and still a finding: nothing has
+    # established this test against it.
+    assert [(row["test"], row["last_run"]) for row in found] == [("T100", "")]
+    assert "never run" in found[0]["what"]
+
+
+def test_an_archived_test_is_off_the_roster_and_out_of_the_review(stale):
+    stale(
+        "note",
+        "add",
+        "widget",
+        "decision",
+        "rows may arrive late",
+        "--step",
+        "Fix list flicker",
+        "--made",
+        "2099-01-01",
+    )
+    assert len(findings(stale)) == 1
+    stale("test", "archive", "T100")
+    assert findings(stale) == []
+
+
+def test_a_superseded_note_names_its_test_once_behind_the_note_that_replaced_it(stale):
+    stale(
+        "note",
+        "add",
+        "widget",
+        "decision",
+        "rows may arrive late",
+        "--step",
+        "Fix list flicker",
+        "--made",
+        "2099-01-01",
+    )
+    stale(
+        "note",
+        "add",
+        "widget",
+        "decision",
+        "rows arrive in order after all",
+        "--step",
+        "Fix list flicker",
+        "--made",
+        "2099-02-02",
+        "--supersedes",
+        "N1",
+    )
+    found = findings(stale)
+    assert [row["test"] for row in found] == ["T100"]  # Once, not twice.
+    assert found[0]["note"] == "N2"
+
+
+def test_a_project_with_nothing_stale_says_so(stale):
+    from dplanner.modules.testing.cli import REVIEW_CLEAR
+
+    assert REVIEW_CLEAR in stale("test", "review", "widget")

@@ -195,6 +195,18 @@ dplanner test-run start --audience qa --label 'QA pass'
 A test that says nothing reads as `other` everywhere it is shown, so nothing is lost — but
 say it out loud, and `--audience none` is how one goes back to unclassified.
 
+**Tests go stale, and nothing else notices.** A step is marked done, and months later a
+decision or spec-change note changes what the work should do — the test carries on
+asserting last month's answer. `dplanner test review` lists the live tests on done steps
+that have not been run since such a note landed on them, each with the two ways out:
+
+```
+dplanner test review              # before trusting a plan's test results
+```
+
+Run it when you pick up an unfamiliar plan, and after writing a `decision` or
+`spec-change` note yourself: the note you just made is the one putting tests in doubt.
+
 Three shapes are worth knowing:
 
 - **A collector** is a step that stands for the work behind it. Three kinds, one derivation:

@@ -11,7 +11,7 @@ a batch where some of the marks are already what they should be.
 
 import dataclasses
 from argparse import ArgumentParser, Namespace
-from collections.abc import Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.assets import step_asset_commands
@@ -19,7 +19,7 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, Project, Step
+from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import (
@@ -44,6 +44,27 @@ _STATUS_GLYPH = {"ok": "✓", "failed": "✗", "skipped": "-", "pending": " "}
 # "off" needs a word for returning to it — `estimate clear` and `describe clear` are the
 # same idea as verbs; here one repeatable flag covers both directions.
 NO_AUDIENCE = "none"
+
+# -- what `test review` is handed ------------------------------------------------------
+
+# A note, as much of one as this verb reads: its id, its label, its title and the day it
+# was made. The composition root adapts the notes module's records to it, so neither
+# module imports the other and testing learns nothing about what else a note carries —
+# `cli/scopes.py`'s `CoveredTest` is the same hand-over one layer down.
+type StepNote = tuple[str, str, str, str]
+
+# Which notes unsettle a test is the root's to say: it is the one place that may know
+# every aspect, and `_scope_kinds()` names its predicates literally for the same reason.
+type NotesFor = Callable[[Project], Mapping[StepId, Sequence[StepNote]]]
+
+DONE = "done"
+DAY = 10  # An ISO stamp's date — the grain a note is written at, so the grain to compare.
+
+REVIEW_CLEAR = "every test on a done step has been run since the last note on it"
+REVIEW_ADVICE = (
+    "run it again — `dplanner test-run start --scope {step}` then `test-run mark {test} "
+    "<result>` — or `dplanner test set {test} --file -` if the note changed what it proves"
+)
 
 
 def _audience_argument(parser: ArgumentParser, *, purpose: str) -> None:
@@ -127,7 +148,10 @@ def _save_runs(context: CliContext, project: Project, records: list[runs.Run]) -
 # -- the verbs ------------------------------------------------------------------------
 
 
-def commands() -> list[CliCommand]:
+def commands(*, status_for: Callable[[Step], str], notes_for: NotesFor) -> list[CliCommand]:
+    def review(context: CliContext, args: Namespace) -> int:
+        return _review(context, args, status_for, notes_for)
+
     return [
         CliCommand(
             path=("test", "add"),
@@ -167,6 +191,14 @@ def commands() -> list[CliCommand]:
                 "dplanner test list widget --scope 'Pre-release check'",
                 "dplanner test list --archived --json",
             ),
+        ),
+        CliCommand(
+            path=("test", "review"),
+            summary="Tests that have gone stale: on a done step, not run since a decision "
+            "or spec-change note landed on it.",
+            configure=_project_arg,
+            run=review,
+            examples=("dplanner test review", "dplanner test review widget --json"),
         ),
         CliCommand(
             path=("test", "archive"),
@@ -465,6 +497,94 @@ def _nothing_listed(args: Namespace) -> str:
 def _status(outcomes: dict[str, runs.Outcome], test: Test) -> str:
     outcome = outcomes.get(test.id)
     return outcome.result.status if outcome else "pending"
+
+
+# -- test review ----------------------------------------------------------------------
+
+
+def _last_seen(outcome: runs.Outcome | None) -> str:
+    """The day a test last had a result, or "" when it never has had one.
+
+    A run's own day: closed if it is, else opened, because a result recorded in a run
+    still open was recorded today and not whenever the run eventually ends.
+    """
+    if outcome is None:
+        return ""
+    return (outcome.run.closed or outcome.run.opened)[:DAY]
+
+
+def _behind(notes: Sequence[StepNote], last_seen: str) -> StepNote | None:
+    """The newest note the test has not been run since, or None when it is up to date.
+
+    A test nobody has ever run is behind every note on its step: nothing has established
+    it against any of them. A note nobody dated cannot be *shown* to postdate a run, so
+    it counts only in that case — claiming staleness from an absent date would put a row
+    in front of somebody that they cannot act on.
+    """
+    later = [note for note in notes if note[3] > last_seen] if last_seen else list(notes)
+    # By day, then by id, so two notes of one day pick the same one on every run.
+    return max(later, key=lambda note: (note[3], note[0])) if later else None
+
+
+def _review_rows(
+    project: Project, status_for: Callable[[Step], str], notes_for: NotesFor
+) -> list[dict[str, str]]:
+    """One row per stale test, naming the newest note it is behind.
+
+    Per test rather than per note: a test behind three decisions is one thing to do, and
+    the newest note is the one that says what it now has to prove.
+    """
+    by_step = notes_for(project)
+    if not by_step:
+        return []
+    outcomes = runs.latest_results(runs.read(project))
+    rows: list[dict[str, str]] = []
+    for step in project.steps:
+        notes = by_step.get(step.id)
+        # Only a done step: work still in progress is *meant* to be ahead of its tests.
+        if not notes or status_for(step) != DONE:
+            continue
+        for test in read(step):
+            if test.archived:
+                continue  # Off the roster: nobody is going to run it, stale or not.
+            last_seen = _last_seen(outcomes.get(test.id))
+            found = _behind(notes, last_seen)
+            if found is None:
+                continue
+            note_id, label, note_title, made = found
+            ran = f"last run {last_seen}" if last_seen else "never run"
+            rows.append(
+                {
+                    "test": test.id,
+                    "title": test.title,
+                    "audiences": ", ".join(audiences_of(test)),
+                    "step": step.id,
+                    "step_title": step.title,
+                    "note": note_id,
+                    "label": label,
+                    "note_title": note_title,
+                    "made": made,
+                    "last_run": last_seen,
+                    "subject": test.id,
+                    "what": f"{test.title} on {step.title} — {ran}, behind {note_id} "
+                    f"({label}{f', {made}' if made else ''}) {note_title!r}",
+                    "advice": REVIEW_ADVICE.format(test=test.id, step=repr(step.title)),
+                }
+            )
+    return rows
+
+
+def _review(
+    context: CliContext, args: Namespace, status_for: Callable[[Step], str], notes_for: NotesFor
+) -> int:
+    project = _scoped(context, args.project)
+    rows = _review_rows(project, status_for, notes_for)
+    context.report(
+        {"project": project.id, "findings": rows, "count": len(rows)},
+        "\n".join(f"{row['subject']:<6} {row['what']}\n    {row['advice']}" for row in rows)
+        or REVIEW_CLEAR,
+    )
+    return 0
 
 
 # -- archive / unarchive / remove -----------------------------------------------------
