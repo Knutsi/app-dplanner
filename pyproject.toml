@@ -1,6 +1,8 @@
 [project]
 name = "dplanner"
-version = "0.1.0"
+# Read from identity.py — see [tool.hatch.version]. The version was written out twice and
+# the copies could disagree; a release tags one of them.
+dynamic = ["version"]
 description = "An application built on app-framework"
 requires-python = ">=3.13,<3.15"
 dependencies = [
@@ -25,6 +27,14 @@ dpw = "dplanner.entry:window_main"
 [build-system]
 requires = ["hatchling>=1.27"]
 build-backend = "hatchling.build"
+
+# The version is `identity.APP_VERSION` and nowhere else. It was written here too, and the
+# two could drift — a build reporting one number while the tag says another is a support
+# question nobody can answer. Hatchling reads the line with this pattern (no import, so it
+# costs the build nothing), and `scripts/release.py` rewrites that one line.
+[tool.hatch.version]
+path = "src/dplanner/identity.py"
+pattern = 'APP_VERSION: Final = "(?P<version>[^"]+)"'
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/dplanner"]

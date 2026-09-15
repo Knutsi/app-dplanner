@@ -143,7 +143,12 @@ def test_the_mac_bundle_is_a_plist_and_a_script_handing_over(tmp_path):
     assert plist["CFBundleIdentifier"] == "local.dplanner"
     assert plist["CFBundlePackageType"] == "APPL"
     assert bundle.script == bundle.path / "Contents" / "MacOS" / "DPlanner"
-    assert bundle.script.read_text() == f'#!/bin/sh\nexec {shlex.quote(str(dpw))} "$@"\n'
+    handover = f'exec {shlex.quote(str(dpw))} "$@"'
+    assert bundle.script.read_text() == (
+        "#!/bin/sh\n"
+        f'[ -n "$SHELL" ] && exec "$SHELL" -lc {shlex.quote(handover)} -- "$@"\n'
+        f"{handover}\n"
+    )
     assert bundle.target() == dpw
 
     spaced = Path("/Users/a b/dpw")  # Finder runs the script with no shell profile.
@@ -152,6 +157,24 @@ def test_the_mac_bundle_is_a_plist_and_a_script_handing_over(tmp_path):
     assert bundle.target() == spaced
     assert bundle.remove() and not bundle.path.exists()
     assert not bundle.remove()
+
+
+def test_the_mac_bundle_hands_over_through_the_login_shell_and_falls_back(tmp_path):
+    """Finder starts the bundle with launchd's four-directory PATH, so the hand-over goes
+    through the user's login shell — that is where `brew shellenv` and uv's installer wrote
+    themselves. `$SHELL` unset must still open a window, with a thin PATH, rather than none."""
+    bundle = AppBundle(tmp_path / "Applications" / "DPlanner.app", Recorder())
+    bundle.write(Path("/Users/me/.local/bin/dpw"))
+    lines = bundle.script.read_text().splitlines()
+    assert lines[1].startswith('[ -n "$SHELL" ] && exec "$SHELL" -lc ')
+    assert lines[2].startswith("exec ")  # The fallback, and what target() reads.
+
+    # A path with an apostrophe in it: the hand-over is a `-c` argument inside a script, so
+    # it is quoted twice. Quoted once, the inner string ends early and the bundle execs
+    # nothing — and `target()` must still read the executable back out of the fallback line.
+    awkward = Path("/Users/o'brien/my apps/dpw")
+    bundle.write(awkward)
+    assert bundle.target() == awkward
 
 
 @POSIX_MODE_BITS

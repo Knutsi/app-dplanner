@@ -2,6 +2,7 @@
 paths:
   - "src/dplanner/entry.py"
   - "src/dplanner/cli/**"
+  - "src/dplanner/core/user_path.py"
   - "src/dplanner/modules/*/{cli,checks,report}.py"
   - "src/dplanner/modules/{install,checklist,reporting}/**"
   - "tests/cli/**"
@@ -28,6 +29,31 @@ paths:
   app bundle, a Start Menu shortcut through PowerShell) behind one contract, each testable
   on every other platform. Neither word reaches the skill. `ARCHITECTURE.md`'s *The window
   is a word* has the reasoning.
+- **The window repairs its PATH; the CLI never does.** A window opened from a desktop
+  launcher is started by the session launcher, not a shell, so it inherits launchd's
+  `/usr/bin:/bin:/usr/sbin:/sbin` on macOS — and every one of the ~26 `shutil.which` call
+  sites then answers `None` for `gh`, `uv`, `git` and every agent CLI, on a machine where all
+  of them work from a terminal. `core/user_path.py`'s `repair()` puts the user's PATH back
+  once, in `entry.py`'s window branch and nowhere else: a verb is always run from a shell
+  that already has it, and a login-shell subprocess per invocation is a real cost to the
+  agent driving the CLI. **The word is what tells the two apart** — one more thing the
+  window-is-a-word dispatch is good for. Four rules keep the repair safe: it asks `$SHELL -lc`
+  and never `-lic` (a login shell reads the `.zprofile` `brew shellenv` wrote itself into; an
+  *interactive* one also sources nvm, pyenv and a prompt framework, seconds for an answer it
+  already has); it **appends and never reorders or shortens**, so a path the process was
+  given deliberately still wins and calling twice does nothing; a missing `$SHELL`, a
+  non-zero exit and a timeout are all the same answer, falling through to `KNOWN_PREFIXES`
+  rather than failing; and **the prefix list is an argument**, because half of it is absolute
+  and exists on the machine running the suite. `cli/desktop.py`'s `bundle_script()` is the
+  same fix one layer out and **quotes twice** — the hand-over is a `-c` argument inside a
+  script, so a home directory with an apostrophe ends the inner string early when it is
+  quoted once. The checklist's *PATH from your shell* row **reports the repair, never the
+  tools**: `repair()` remembers what it did and the probe reads that (no subprocess, the
+  Problems count's arrangement), because each tool that matters already has a row and a
+  second list of the same names is two rows able to disagree about one fact. Its only
+  failing state is the one worth a row — a launcher started the window and the login shell
+  would not answer — and it **advises rather than requires**, since a thin PATH is a degraded
+  window, not an unusable one, and `required` means exit 1 and a probe at every start.
 - **Installing is one act, and the pieces stay.** The command, the desktop launcher and the
   agent skill go in together — `dplanner install all`, `install status`, `install remove`
   and *Tools ▸ Install DPlanner…*, all four over `cli/install.py`'s one reader (`items`,

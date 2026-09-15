@@ -211,7 +211,6 @@ wheels = [
 
 [[package]]
 name = "dplanner"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
