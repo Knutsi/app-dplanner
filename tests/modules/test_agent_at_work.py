@@ -51,15 +51,17 @@ def test_an_agent_at_work_is_said_over_the_content(session, project, at_work_boa
     module(session).refresh()
     (notice,) = notices(session)
     assert notice.words.startswith("An agent is at work on Discovery — Cutting the graph")
-    assert notice.tone == "busy" and notice.busy
+    # Warn, not busy: the band is not this window's work running, it is a caution about
+    # somebody else's — so it is amber, and the arc beside it is what says *running*.
+    assert notice.tone == "warn" and notice.busy
     assert session.services.window.notices.isVisible()
 
 
-def test_a_declared_count_fills_the_bar_and_an_undeclared_one_draws_none(
+def test_a_declared_count_fills_the_band_and_an_undeclared_one_fills_none(
     session, project, at_work_board
 ):
-    """A bar is for work whose end is known, and an agent that counted its own steps has
-    said so; one that offered no count gets the busy arc and no promise."""
+    """A meter is for work whose end is known, and an agent that counted its own steps has
+    said so; one that offered no count gets the arc and no promise."""
     at_work_board.start(project.id, doing="Cutting", of=20)
     at_work_board.set(project.id, done=5)
     module(session).refresh()

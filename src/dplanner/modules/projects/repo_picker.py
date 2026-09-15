@@ -2,7 +2,7 @@
 clone from GitHub — or, where a new one may be made, a fresh local repository or one to
 publish on GitHub.
 
-Open Projects, Move Plan and New Project all ask this question, so it is one widget: a
+Open Project, Move Plan and New Project all ask this question, so it is one widget: a
 dropdown of the known plan repositories, last used first, and one ⋯ menu of the other
 ways in — built when it opens, an entry greyed with its reason where it cannot run right
 now, the same list to learn in every dialog that asks (DESIGN.md's *Buttons*). What it

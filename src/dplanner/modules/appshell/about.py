@@ -50,6 +50,7 @@ BUILT_ON: tuple[Component, ...] = (
     Component("Shiboken", "the binding between Python and Qt", "shiboken6"),
     Component("keyring", "the OS keychain a source's token is kept in", "keyring"),
     Component("pypdfium2", "rendering a specification's PDF pages", "pypdfium2"),
+    Component("Segno", "the QR code a project link is offered as", "segno"),
     Component("OpenAI Python", "talking to an OpenAI model, where one is configured", "openai"),
     Component(
         "Anthropic Python",

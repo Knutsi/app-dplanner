@@ -1,7 +1,7 @@
 """File ▸ New/Open Project Library, and the window's title.
 
 Which *library* is open is this module's subject. Which projects it lists is the projects
-module's (*File ▸ New Project…*, *Open Projects…*, Remove from Library), and the headless
+module's (*File ▸ New Project…*, *Open Project…*, Remove from Library), and the headless
 ``library …`` verbs in ``cli.py`` beside this file apply the same membership origin.
 
 Opening a *different* library is not a switch but a new process: every registry refuses a

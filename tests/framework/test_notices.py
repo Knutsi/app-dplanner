@@ -9,6 +9,8 @@ stands**, so an ordinary window grows no chrome it did not ask for.
 import pytest
 
 from dplanner.framework.notices import Notice, NoticeBar
+from dplanner.framework.signalling import tone_colour
+from dplanner.theme.tones import STATUS_TONES
 
 
 @pytest.fixture
@@ -71,11 +73,28 @@ def test_a_busy_notice_turns_the_arc_and_a_settled_one_stops_it(bar):
     assert not bar._rows["one"]._spinner.is_spinning()
 
 
-def test_a_declared_count_draws_the_bar_and_no_count_draws_none(bar):
+def test_a_declared_count_says_how_far_and_no_count_says_nothing(bar):
+    """The band is the meter, so what a reader is given is the percentage beside the verb —
+    and a count of nought still shows, which is the whole reason the 4 px strip went: a
+    meter has to be legible as one before anything has happened."""
     bar.show_notice(Notice(id="one", words="Half way", fraction=0.5))
-    assert not bar._rows["one"]._bar.isHidden()
+    assert bar._rows["one"]._percent.text() == "50%"
+    bar.show_notice(Notice(id="one", words="Not started", fraction=0.0))
+    assert not bar._rows["one"]._percent.isHidden()
+    assert bar._rows["one"]._percent.text() == "0%"
     bar.show_notice(Notice(id="one", words="No telling", fraction=-1.0))
-    assert bar._rows["one"]._bar.isHidden()
+    assert bar._rows["one"]._percent.isHidden()
+    assert bar._rows["one"]._percent.text() == ""
+
+
+def test_a_notice_wears_its_tone_as_a_band_and_plain_information_wears_none(bar):
+    """A standing fact is the one thing on screen a person must not read past, so the tone
+    is the whole row rather than a dot beside the words. Information has no tone and no
+    band — which is how a claim that has gone quiet stops shouting without leaving."""
+    bar.show_notice(Notice(id="one", words="An agent is at work", tone="warn"))
+    assert tone_colour(bar._rows["one"].notice().tone) == STATUS_TONES["warn"]
+    bar.show_notice(Notice(id="one", words="An agent was at work", tone="info"))
+    assert tone_colour(bar._rows["one"].notice().tone) is None
 
 
 def test_a_notice_carries_one_verb_and_runs_it(bar):

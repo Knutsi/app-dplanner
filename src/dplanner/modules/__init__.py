@@ -241,7 +241,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     store.checkout_changed.connect(lambda _project_id: services.context.refresh())
 
     # -- git and GitHub for the project surfaces ----------------------------------------
-    # The Project dialog, the Repositories card, Open Projects and Move Plan reach both
+    # The Project dialog, the Repositories card, Open Project and Move Plan reach both
     # repositories through this one bundle; the root names the providers (rule 8) and
     # the github module's gh door (rule 5) so the projects module names neither.
 

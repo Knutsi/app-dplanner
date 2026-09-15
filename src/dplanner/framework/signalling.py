@@ -5,10 +5,12 @@ three-quarter arc for as long as a piece of work runs, and there is exactly one 
 in the application: in the glyph slot of the button whose verb started the work, or — as an
 :class:`UpdatingIndicator` — on its own at the right end of a control strip, for the 300 to
 500 ms in which a view still shows the picture the person has just changed. A
-:class:`StatusLine` says where a piece of work stands, in a tone — busy, ok, error, or plain
-information — as a glyph beside secondary text: the glyph carries the mood, the words carry
-the fact. It lives where the answer will land: a dialog footer's status slot, the right end
-of a page's control strip.
+:class:`StatusLine` says where a piece of work stands, in a tone — busy, ok, warn, error,
+or plain information — as a glyph beside secondary text: the glyph carries the mood, the
+words carry the fact. It lives where the answer will land: a dialog footer's status slot,
+the right end of a page's control strip. *Warn* is the tone that is not about this work
+failing: somebody else is at it, or something is going on that the reader should not walk
+into — amber, and never the red an error owns.
 
 The indicator sits at the right end of a control strip's *layout*, outside the
 ``Toolbar``, so folding the strip can never take it; it keeps its room while
@@ -35,15 +37,27 @@ from dplanner.theme.tones import STATUS_TONES
 
 SPIN_MS = 80  # A frame every 80 ms: one turn a second, calm rather than frantic.
 
-Tone = Literal["info", "busy", "ok", "error"]
+Tone = Literal["info", "busy", "ok", "warn", "error"]
 # A tone's entry in the theme's status vocabulary; information wears the label's own ink.
-_TONE_KEYS: dict[str, str] = {"busy": "busy", "ok": "good", "error": "bad"}
+_TONE_KEYS: dict[str, str] = {"busy": "busy", "ok": "good", "warn": "warn", "error": "bad"}
 GLYPH = "●"
 # The mark of a row in a list of things that should be true: ticked when it is, an empty
 # box when it is not, and the tone still carries the mood (DESIGN.md's *Lists of rich
 # items*). The Setup Checklist's rows and the Install dialog's read as one list.
 TICKED = "\u2611"
 UNTICKED = "\u2610"
+
+
+def tone_colour(tone: Tone) -> QColor | None:
+    """The shade a tone is said in, or None for plain information — which has no colour of
+    its own and wears the surface's own ink.
+
+    The one reader of :data:`_TONE_KEYS`, so a surface that *paints* a tone rather than
+    writing a glyph in it — a standing notice's band — takes the same shade from the same
+    place, and a tone added to the vocabulary reaches both.
+    """
+    key = _TONE_KEYS.get(tone)
+    return None if key is None else STATUS_TONES[key]
 
 
 class Spinner(QObject):
@@ -193,10 +207,10 @@ class StatusLine(QLabel):
         vocabulary, which is what the tones exist to prevent.
         """
         self._words, self._tone = text, tone
-        key = _TONE_KEYS.get(tone)
+        shade = tone_colour(tone)
         mark = html.escape(glyph)
-        if key is not None:
-            mark = f'<span style="color:{STATUS_TONES[key].name()}">{mark}</span>'
+        if shade is not None:
+            mark = f'<span style="color:{shade.name()}">{mark}</span>'
         self.setText(f"{mark}&nbsp;{html.escape(text)}")
         self.setVisible(bool(text))
 

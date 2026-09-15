@@ -95,12 +95,21 @@ The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` als
 one). A plan lives in a **plan repository** — a git repository holding several projects,
 listed in its `.dplanner` index — and records the **code repository** it is about, so an
 agent works in the code and every `dplanner` call reaches the plan. *File ▸ New Project…*
-starts one in a plan repository you pick, initialise or clone; *Open Projects…* browses a
-plan repository and adds the projects you work on; *Project ▸ Settings…* is one column per
+starts one in a plan repository you pick, initialise or clone; *Open Project…* is a wizard
+over the two ways into a library — a **project link** somebody sent you, or a plan
+repository browsed for the projects you work on; *Project ▸ Settings…* is one column per
 repository — its log and open pull requests over what the repository is and where it is on
 this machine, with a ⋯ menu of everything you can do to either — and *Move Plan…* moves a
 plan into a plan repository, out of the code it was kept in or on from one picked wrongly.
 *New/Open Project Library* starts a separate instance.
+
+**Bringing somebody onto a project is one link.** *File ▸ Share Project…* offers it three
+ways — a line to paste, a `.dlink` file to attach, or a QR code to hold up — carrying both
+repositories and where the plan sits in its own. Opening it clones what this machine does
+not have, asks where the code should go, and adds the project; a colleague needs no
+instructions and no paths typed out. It grants nothing: they still need their own access to
+both repositories. `dplanner project share` and `dplanner project open` are the same thing
+from a terminal, over the same file.
 
 ## Working with an agent
 

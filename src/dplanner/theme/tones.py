@@ -19,9 +19,11 @@ the two collectors never read as one, and 42° from the done green — which add
 *mutes* its node, so the pair is told apart by weight as well as by hue, and a feature
 still wears its layer medallion. Fill low-alpha, border full-strength.
 
-The status tones — good, busy, bad — are the spine's shades on the canvas and the dot a
-``StatusLine`` wears in a dialog's footer: one word for "this is where the work stands"
-wherever it is said, which is why they live here and not with the canvas painters.
+The status tones — good, busy, bad, warn — are the spine's shades on the canvas and the dot
+a ``StatusLine`` wears in a dialog's footer: one word for "this is where the work stands"
+wherever it is said, which is why they live here and not with the canvas painters. Warn is
+the amber the chips already use: a caution rather than a failure, and the tone a standing
+notice washes its whole band in.
 """
 
 from PySide6.QtGui import QColor
@@ -53,7 +55,16 @@ BUTTON_FILL_ALPHA = 70
 VALID_TINT = QColor(120, 200, 140, 180)
 INVALID_TINT = QColor(220, 110, 110, 180)
 BUSY_TINT = QColor(110, 160, 220, 180)
-STATUS_TONES: dict[str, QColor] = {"good": VALID_TINT, "busy": BUSY_TINT, "bad": INVALID_TINT}
+# A caution that is not a failure — *somebody else is working here; keep your hands still*.
+# The chip's attention amber at the status tones' weight, so one hue means "careful"
+# whether it is a chip on a node or a notice over the whole window.
+WARN_TINT = QColor(220, 170, 90, 180)
+STATUS_TONES: dict[str, QColor] = {
+    "good": VALID_TINT,
+    "busy": BUSY_TINT,
+    "bad": INVALID_TINT,
+    "warn": WARN_TINT,
+}
 # A step's status as one of those tones: the spine's wash on every card that is a step. A
 # status with nothing to say — pending — is absent, and the spine stays a quiet shade.
 STEP_STATUS_TONES: dict[str, str] = {"in-progress": "busy", "blocked": "bad", "done": "good"}
@@ -77,8 +88,18 @@ def toned(name: str, color: str = "") -> tuple[QColor, QColor] | None:
 
 def recoloured(tone: QColor, color: str) -> QColor:
     """``color`` at ``tone``'s alpha — the one place a shade takes a tone's weight."""
+    return at_alpha(QColor(color), tone.alpha())
+
+
+def at_alpha(color: QColor, alpha: int) -> QColor:
+    """``color`` at ``alpha``, leaving the colour it was handed alone.
+
+    The one place a tone is re-weighed: a checked control's fill, a notice's band and the
+    part of that band a count has filled are all one hue said at three strengths, and a
+    ``QColor`` mutated in place is a shared constant quietly changed for everybody.
+    """
     shade = QColor(color)
-    shade.setAlpha(tone.alpha())
+    shade.setAlpha(alpha)
     return shade
 
 
@@ -87,6 +108,4 @@ def button_tone(name: str, color: str = "") -> tuple[QColor, QColor] | None:
     tone = toned(name, color)
     if tone is None:
         return None
-    fill = QColor(tone[1])
-    fill.setAlpha(BUTTON_FILL_ALPHA)
-    return fill, tone[1]
+    return at_alpha(tone[1], BUTTON_FILL_ALPHA), tone[1]

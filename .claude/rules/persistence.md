@@ -64,9 +64,12 @@ paths:
   announces itself — `dplanner agent-work start '<what I am doing>' [--step S7] [--of N]`,
   `agent-work set`, `agent-work end`, `agent-work show` — and `modules/agent_at_work/`
   polls the claims at the watcher's cadence and stands one `Notice` per claim over the
-  window's content: the turning arc, the agent's words, its own count, and when it was
-  last heard from. **Liveness is reported, never guessed** (`domain/at_work.py`): nothing
-  can see another process, so a claim that has gone quiet changes tense — *was at work …
+  window's content: an **amber band** across it (the `warn` tone — a caution about another
+  writer, never the red an error owns), the turning arc, the agent's words, its own count
+  filling that band with the percentage beside *Clear*, and when it was last heard from. A
+  claim that has gone quiet drops to plain information and loses the band. **Liveness is
+  reported, never guessed** (`domain/at_work.py`): nothing can see another process, so a
+  claim that has gone quiet changes tense — *was at work …
   last heard 22 minutes ago* — instead of disappearing, and it ends three ways and no
   other: the agent ends it, a person clears it from the banner, or a later claim sweeps
   one nobody has renewed since yesterday. **Every `dplanner` run is the sign of life** —
@@ -99,11 +102,28 @@ paths:
   reload: File ▸ New/Open Project Library spawns a detached instance
   (`modules/library/module.py::spawn_instance`).
 - **Project membership changes bypass the undo stack.** New Project may `git init` and
-  always writes outside any store; Open Projects and Remove from Library only remember and
+  always writes outside any store; Open Project and Remove from Library only remember and
   forget. Neither is honestly reversible, so they apply directly with `LIBRARY_ORIGIN` —
   the root's `connect_project` — and the library file is rewritten by the ordinary flush
   (a structure mark on the library root). The verbs live in `modules/projects/`; the
   library module keeps New/Open Project Library and the title.
+- **There are two ways into a library and a project link is what makes the second one
+  possible.** *Open Project…* is a wizard (`modules/projects/open_dialog.py`) over a
+  chooser page, a **link** page and a **browse** page — the old Open Projects dialog, now
+  `browse_page.py`. Both pages end at one `Joined(directory, checkout)` on disk and the
+  module connects it, so neither grew a membership path of its own; the chooser remembers
+  which way this person uses and a machine that has never chosen opens on the link, the
+  only one somebody with no plan repository can act on. *File ▸ Share Project…* writes what
+  that page reads. **`domain/project_link.py` is the whole vocabulary** — the document, the
+  `.dlink` file, the `dplanner://project?…` line, and `find_clone`/`find_checkout`, which
+  are what stop the wizard cloning something this machine already has — and no surface
+  parses a link itself. **The window clones and the terminal does not**: the link page runs
+  it through `TaskRunner` inside the page the person pressed, while `dplanner project open`
+  resolves against known clones and otherwise refuses with the `git clone` line, the rule
+  `library add` already set. The link **carries no access**, and the Share dialog says so
+  in a sentence rather than leaving somebody to assume otherwise. `FORMAT.md`'s *The
+  project link* is the format; `ARCHITECTURE.md`'s *Why membership changes bypass the undo
+  stack* has the reasoning.
 - **The GitHub tab's standing line is the picker fetch.** Showing a step fetches the
   repository's branches and PRs (again past `LISTS_TTL_S`), and the answer says where
   the refs stand — the PR's state and title now, whether the branch is still on the

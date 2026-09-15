@@ -11,12 +11,13 @@ changes either), the Repositories card on the project panel, Move Plan, and the 
 ▸ Repositories* page. Git and GitHub reach it only through the :class:`RepositoryServices`
 the composition root fills in.
 
-Membership is here too — *File ▸ New Project…* (the Project dialog in create mode) and
-*Open Projects…* (a plan repository browsed, its projects picked) — because both start
-from the same question, which plan repository, and the same picker answers it. Adding a
-project happens **off the undo stack**, through the root's ``connect_project`` with the
-library origin: creating one initialises a repository and writes files an undo could never
-honestly take back. The library file is rewritten by the store on the next autosave flush.
+Membership is here too — *File ▸ New Project…* (the Project dialog in create mode),
+*Open Project…* (the wizard: a project link, or a plan repository browsed) and *Share
+Project…*, which writes the link the wizard reads. They start from the same question,
+which plan repository, and the same picker answers it. Adding a project happens **off the
+undo stack**, through the root's ``connect_project`` with the library origin: creating one
+initialises a repository and writes files an undo could never honestly take back. The
+library file is rewritten by the store on the next autosave flush.
 """
 
 from collections.abc import Callable
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import QTreeWidgetItem, QWidget
 from dplanner.core.storage.locations import init_repo
 from dplanner.core.storage.provider import StorageError
 from dplanner.domain.model import Library, NodeId, Project, ProjectId
+from dplanner.domain.project_link import LinkError, find_checkout, link_for
 from dplanner.domain.relocate import RelocateError
 from dplanner.domain.seed import seed_project
 from dplanner.domain.store import ProjectProblem
@@ -53,10 +55,11 @@ from dplanner.modules.projects.card import RepositoriesCard
 from dplanner.modules.projects.index import ProjectEntry as ProjectEntry
 from dplanner.modules.projects.index import ProjectsSegment
 from dplanner.modules.projects.move_dialog import MovePlanDialog
-from dplanner.modules.projects.open_dialog import OpenProjectsDialog
+from dplanner.modules.projects.open_dialog import OpenProjectDialog
 from dplanner.modules.projects.project_dialog import CREATE, ProjectDialog
 from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices, shown_path
 from dplanner.modules.projects.settings_page import build_page
+from dplanner.modules.projects.share_dialog import ShareProjectDialog
 from dplanner.modules.projects.verbs import ProjectVerbs
 from dplanner.theme.icons import branch_icon, container_icon
 
@@ -87,7 +90,7 @@ class ProjectsDeps:
     # Its other half: attach a directory (with the code checkout, when known) and add
     # the project to the library with the membership origin, off the undo stack.
     connect_project: Callable[[Path, Path | None], Project]
-    # Every directory the library lists, opened or not — what Open Projects greys.
+    # Every directory the library lists, opened or not — what the wizard greys.
     project_dirs: Callable[[], list[Path]]
     # Library entries that failed to open — shown greyed with the reason.
     problems: Callable[[], list[ProjectProblem]]
@@ -120,14 +123,14 @@ class ProjectsModule:
         )
         deps.actions.register(
             ActionSpec(
-                id="projects.browse",
-                label="&Open Projects…",
+                id="projects.add",
+                label="&Open Project…",
                 menu="File",
                 group="project",
                 order=20,
                 shortcut="Ctrl+O",
-                tip="Browse a plan repository and add the projects you work on",
-                run=self.open_projects,
+                tip="Set up a project from a link somebody sent, or browse a plan repository",
+                run=self.add_projects,
             )
         )
         ProjectVerbs(
@@ -138,6 +141,7 @@ class ProjectsModule:
             detach=deps.detach,
             settings=self.show_project,
             move=self.move_plan,
+            share=self.share_project,
         ).register_into(deps.actions)
 
         deps.cards.register(
@@ -213,25 +217,56 @@ class ProjectsModule:
         if spec.plan.publish:
             self._publish(spec.plan.root, spec.plan.publish)
 
-    def open_projects(self, _context: Context) -> None:
+    def add_projects(self, _context: Context) -> None:
+        """*Open Project…*: the wizard answers with what is on disk, this connects it."""
         deps = self._deps
-        dialog = OpenProjectsDialog(
+        dialog = OpenProjectDialog(
             deps.repos,
             deps.tasks,
             deps.theme,
             listed_dirs=deps.project_dirs(),
             listed_ids=[project.id for project in deps.library.projects],
+            known_checkout=self._checkout_of,
             parent=deps.parent,
         )
         accepted = bool(dialog.exec())
-        chosen = dialog.chosen() if accepted else []
+        chosen = dialog.joined() if accepted else []
         dialog.deleteLater()
-        added = [deps.connect_project(directory, None) for directory in chosen]
+        added = [deps.connect_project(join.directory, join.checkout) for join in chosen]
         if len(added) == 1:
             title = added[0].title or added[0].folder_name
             deps.status.show_status(f"“{title}” added to the library", 4000)
         elif added:
             deps.status.show_status(f"{len(added)} projects added to the library", 4000)
+
+    def _checkout_of(self, remote: str) -> Path | None:
+        """Where this machine already has ``remote`` checked out, if some other project
+        here plans the same code — what the link page offers rather than cloning again."""
+        deps = self._deps
+        facts = [deps.repos.facts_of(project.id) for project in deps.library.projects]
+        return find_checkout([(found.repository, found.checkout) for found in facts], remote)
+
+    def share_project(self, project_id: ProjectId) -> None:
+        """*Share Project…*: the link, the file and the code, for one project.
+
+        The refusals are the interesting half — a plan outside git, or in a repository
+        nobody else can clone — and they are a `notice`, because the gesture is over by
+        the time they are known and there is no dialog left to say it in.
+        """
+        deps = self._deps
+        if not deps.library.has(project_id):
+            return
+        project = deps.library.project(project_id)
+        try:
+            link = link_for(
+                project, deps.repos.project_dir(project_id), deps.repos.facts_of(project_id)
+            )
+        except LinkError as error:
+            notice(deps.parent, "Share Project", f"There is nothing to share yet — {error}.")
+            return
+        dialog = ShareProjectDialog(link, deps.parent)
+        dialog.exec()
+        dialog.deleteLater()
 
     def _publish(self, root: Path, name: str) -> None:
         """Publish a plan repository made a moment ago. Synchronous, like the move it

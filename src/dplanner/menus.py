@@ -18,8 +18,12 @@ that does not exist is vocabulary that lies, and the next person goes looking fo
 from typing import Final
 
 MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
-    # "project" (New Project, Open Projects) comes from the projects module, "library"
-    # (New/Open Project Library, Reload) from the library module and the watcher;
+    # "project" (New Project, Open Project, Share Project) comes from the projects module
+    # and "library" (New/Open Project Library, Reload) from the library module and the
+    # watcher; the two are a band each because one is about *a* project and the other about
+    # which library this window is. Share Project sits in the first even though it acts on
+    # the focused project: it is Open Project's other half — what one writes, the other
+    # reads — and a round trip split across two menus is one nobody finds.
     # "save"/"branch" from sync; "window" from
     # the app shell and the settings dialog. "export" holds the Export submenu — one entry
     # per feature that can write itself out: the order list's and the milestones' CSVs,
