@@ -40,7 +40,7 @@ re-rendering — never styling one surface by name.
 | a combo box on a strip or in a dialog | a plain `QComboBox` — the stylesheet dresses it | `theme.qss` | `dropdown-*` |
 | "the view is rebuilding" | `UpdatingIndicator` — a `Spinner` on its own | `framework/signalling.py` | the strip's right end, `dialog-working-*` |
 | "this button's work is running" | `Spinner` | `framework/signalling.py` | `dialog-working-*` |
-| busy, ok, error or plain information in words | `StatusLine` | `framework/signalling.py` | the modal's *Signalling* block |
+| busy, ok, warn, error or plain information in words | `StatusLine` | `framework/signalling.py` | the modal's *Signalling* block |
 | a list of facts about this machine | one `StatusLine` per row, grouped | `modules/checklist/dialog.py` | `docs/screenshots/f13-checklist/` |
 | a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
 | a caption over a block, a remark under it | `caption()`, `captioned()`, `note()`, `block()` | `framework/widgets.py` | the modal's form |
@@ -640,11 +640,15 @@ and one stylesheet rule for the progress bar:
 - **Success** — the ok tone in that place, standing until the next change; the window's
   status bar carries the one-line record of a gesture (*3 agents launched*).
 - **A `StatusLine` is a glyph in a tone beside secondary words**: the glyph carries the
-  mood, the words carry the fact, and a paragraph of red is shouting. Four tones — info
-  (the line's own ink), busy (the spine's blue), ok (the good green), error (the bad red),
-  `theme/tones.py`'s `STATUS_TONES`, the same shades the canvas spine wears.
-- **A progress bar is 4 px, accent, no text, no frame** — one bare `QProgressBar` rule —
-  and only for work whose end the application knows: a fetch of 12 pages, a save over 3
+  mood, the words carry the fact, and a paragraph of red is shouting. Five tones — info
+  (the line's own ink), busy (the spine's blue), ok (the good green), warn (the chips'
+  attention amber), error (the bad red), `theme/tones.py`'s `STATUS_TONES`, the same shades
+  the canvas spine wears. **Warn is not a weaker error**: an error is this work failing and
+  carries its remedy, where warn is something going on that the reader should not walk
+  into — another writer at the same plan — which nobody can fix and everybody must see.
+- **A progress bar is 4 px, accent, no text, no frame** — one bare `QProgressBar` rule,
+  under the fact that leads it (*Publishing 2 of 5 repositories*) — and only for work whose
+  end the application knows: a fetch of 12 pages, a save over 3
   repositories. Never for the debounce, never for an agent's own running (a peer, not a
   task, and nothing here can see how far it has come), and not indeterminate: an unknown
   fraction is *busy*, and busy is a line. **A count the agent itself declares is a count**,
@@ -668,6 +672,17 @@ and one stylesheet rule for the progress bar:
   vocabulary as a `StatusLine` (a tone, and the turning arc when it is about something
   running), one quiet verb at the right, and the bar gone while nothing stands. The status
   bar says what a gesture *came to*; this says what is *the case*.
+- **A standing notice wears its tone as a band, and the band is its meter.** This is the
+  one surface where the tone is the whole row rather than a glyph beside the words, because
+  it is the one surface a person must not read past: the row is washed in its tone
+  (`BAND_ALPHA`, a semantic tint over whatever ground the theme has) — amber while another
+  writer is at work, red while something is owed — and plain information wears none, which
+  is how a claim that has gone quiet stops shouting without leaving the screen. **A
+  declared count fills that band from the left** at the same hue's greater weight and says
+  how far in words at the right, beside the verb. It is the one place the 4 px bar is not
+  used, and the reason is what a meter has to do before anything has happened: a strip at
+  nought per cent is a hairline nobody reads as a meter, where a band saying *0%* is
+  plainly something that fills.
 - **Never a modal for a background fact.** A modal asks; a fact is said where it bites.
   **And a modal waits while somebody else is already interrupting**: while an agent says it
   is at work, the collision question stands in the notice bar rather than being thrown over

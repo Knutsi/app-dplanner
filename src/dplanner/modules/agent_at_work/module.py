@@ -9,11 +9,13 @@ window's content for as long as it holds.
 
 Three things it does, and no more:
 
-- **Polls the board** every :data:`POLL_MS` and shows one standing notice per claim: the
-  turning arc while the agent reads as at work, the words the agent wrote, its own count
-  when it offered one, and when it was last heard from. A claim that has gone quiet keeps
-  its row and changes its words — *was at work … last heard 22 minutes ago* — because a
-  banner that vanished would be a guess about a process we cannot see.
+- **Polls the board** every :data:`POLL_MS` and shows one standing notice per claim: an
+  amber band across the window, the turning arc while the agent reads as at work, the words
+  the agent wrote, its own count filling that band with the percentage beside the verb, and
+  when it was last heard from. A claim that has gone quiet keeps its row, loses the band and
+  changes its words — *was at work … last heard 22 minutes ago* — because a banner that
+  vanished would be a guess about a process we cannot see, and one still shouting an hour
+  later would be a lie.
 - **Offers the one way out a person needs**: *Clear* drops a claim an agent left behind.
   Not a plan edit and not undoable — it is this machine's bookkeeping, like dismissing a
   launched run.
@@ -101,9 +103,12 @@ class AgentAtWorkModule:
         return Notice(
             id=notice_id,
             words=claim_words(claim, self._project_title(claim), self._step_key(claim)),
-            # Busy while the agent is at work, plain information once it has gone quiet:
-            # the tone is the reading, and the reading is the last sign of life.
-            tone="busy" if fresh else "info",
+            # A warning while the agent is at work, plain information once it has gone
+            # quiet: the tone is the reading, and the reading is the last sign of life.
+            # Warn rather than busy because the band is not about *our* work running — it
+            # is asking the developer to keep their hands off a plan somebody else is
+            # writing, which is a caution, and amber is what this application says that in.
+            tone="warn" if fresh else "info",
             busy=fresh,
             fraction=fraction(claim),
             action=CLEAR,

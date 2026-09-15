@@ -286,13 +286,14 @@ class DesignExampleDialog(DialogFrame):
         self.spinner = Spinner(self.body).attach(self.change_button)
         self.spinner.follow(self._recompute_soon)
         self.change_button.clicked.connect(self._recompute_soon.trigger)
-        self.lines = [StatusLine(self.body) for _ in range(4)]
+        self.lines = [StatusLine(self.body) for _ in range(5)]
         for line, (words, tone) in zip(
             self.lines,
             (
                 ("12 pages, fetched today", "info"),
                 ("Reading the repository…", "busy"),
                 ("Connected — this account can read the space", "ok"),
+                ("An agent is rewriting this step — leave it be", "warn"),
                 ("gh is not installed — branches and PRs are typed, not picked", "error"),
             ),
             strict=True,
@@ -307,17 +308,31 @@ class DesignExampleDialog(DialogFrame):
         signals.addWidget(self.progress)
         # Standing notices: a fact that holds until it stops holding. In the application
         # this bar sits over the whole window's content (framework/main_window.py) — it is
-        # here so the two shapes can be compared with the lines above them. Busy with a
-        # declared count, and the same fact once it has gone quiet, with its one verb.
+        # here so the two shapes can be compared with the lines above them. Three: a band
+        # with a declared count filling it, the same fact once it has gone quiet, and one
+        # that is owed. A count of nought is deliberate — a meter has to read as one before
+        # anything has happened, which is what the strip above it cannot do.
         self.notices = NoticeBar(self.body)
         self.notices.show_notice(
             Notice(
                 id="demo.agent",
                 words="An agent is at work on Payments — linking the steps · 8 of 20"
                 " · heard just now",
-                tone="busy",
+                tone="warn",
                 busy=True,
                 fraction=0.4,
+                action="Clear",
+            )
+        )
+        self.notices.show_notice(
+            Notice(
+                id="demo.starting",
+                words="An agent is at work on Billing — reading the plan · 0 of 12"
+                " · heard just now",
+                tone="warn",
+                busy=True,
+                fraction=0.0,
+                action="Clear",
             )
         )
         self.notices.show_notice(

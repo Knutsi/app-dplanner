@@ -40,6 +40,16 @@ paths:
   which would outrank every id-only button rule inside a body — and a `GlyphButton`, quiet
   already, when its glyph must follow the theme. `ARCHITECTURE.md`'s *A primitive carries
   the rule* has the reasoning.
+- **A standing notice is a band in its tone, and the band is its meter.** The notice bar
+  (`framework/notices.py`) is the one surface that wears a tone as a whole row rather than
+  as a glyph beside the words, because it is the one a person must not read past: the row is
+  washed in the tone (`BAND_ALPHA`, a semantic tint painted in code — a theme colour would
+  be an opaque one), a declared `fraction` fills it from the left at `FILLED_ALPHA`, and the
+  percentage stands at the right beside the verb. Plain `info` paints no band, which is what
+  a fact that has stopped needing the eye becomes. It is the one place the 4 px
+  `QProgressBar` is *not* the answer: a strip at nought per cent is a hairline nobody reads
+  as a meter. `ARCHITECTURE.md`'s *The banner is a band, and the band is the meter* has the
+  reasoning.
 - **A roster has three shapes, and each is a primitive.** A `Table` when a reader compares
   across rows — and a value set in the row is the column's `editor` or its `chips`, painted
   and hit-tested by the table, never a widget planted in a cell with `setCellWidget`. A
