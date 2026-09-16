@@ -375,6 +375,7 @@ def test_the_browser_lists_runs_with_their_outcome(services, step, tmp_path):
     runs = module(services)
     runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"))
     runs._open_browser()
+    runs._browser.show_ended.setChecked(True)  # So the row is still listed once it ends.
     rows = runs._browser.rows()
     assert len(rows) == 1
     (row,) = rows
@@ -391,6 +392,66 @@ def test_the_browser_lists_runs_with_their_outcome(services, step, tmp_path):
     runs._clear_ended()
     assert runs.runs() == [] and runs._browser.empty.isVisibleTo(runs._browser)
     assert not runs._browser.clear_button.isEnabled()
+
+
+def test_the_browser_lists_the_newest_run_first(services, step, tmp_path):
+    """The one just launched is what a person came to look at, so it is the first row —
+    and an ended run sorts by the stamp its own line shows, the time it ended."""
+    runs = module(services)
+    for index in range(3):
+        directory = tmp_path / f"run-{index}"
+        directory.mkdir()
+        runs.track(step.id, str(directory / "shell"), str(directory / "exit"))
+    # Stamps a second apart, in launch order, and the middle run ended last of the two.
+    runs._runs = [
+        replace(run, launched=f"2026-09-16T10:0{index}:00+00:00")
+        for index, run in enumerate(runs._runs)
+    ]
+    runs._open_browser()
+    assert [row.run.key for row in runs._browser.rows()] == [
+        str(tmp_path / "run-2"),
+        str(tmp_path / "run-1"),
+        str(tmp_path / "run-0"),
+    ]
+
+    runs._runs[0] = replace(runs._runs[0], outcome="finished", ended="2026-09-16T11:00:00+00:00")
+    runs._runs[1] = replace(runs._runs[1], outcome="failed", ended="2026-09-16T12:00:00+00:00")
+    runs._browser.show_ended.setChecked(True)
+    assert [row.run.key for row in runs._browser.rows()] == [
+        str(tmp_path / "run-2"),  # The live one, whenever it started.
+        str(tmp_path / "run-1"),  # Then the ended ones, the last to end first.
+        str(tmp_path / "run-0"),
+    ]
+
+
+def test_the_browser_keeps_the_ended_runs_off_screen_until_they_are_asked_for(
+    services, step, tmp_path
+):
+    """The default list is what is happening now: an ended run leaves it, the footer still
+    counts it, and the empty state says where it went. Clear ended waits for the switch —
+    a verb that deletes what the list is not showing acts blind."""
+    runs = module(services)
+    runs.track(step.id, str(tmp_path / "shell"), str(tmp_path / "exit"))
+    runs._open_browser()
+    browser = runs._browser
+    assert not browser.show_ended.isChecked()  # The default: the ended ones are not listed.
+
+    (tmp_path / "exit").write_text("0\n")
+    runs.check()
+    assert browser.rows() == [] and runs.runs()[0].outcome == "finished"
+    assert browser.status.words() == "1 ended"
+    assert browser.empty.text() == "No agent is running — tick Show ended for the run that ended."
+    assert not browser.clear_button.isEnabled()
+    assert "Show ended" in browser.clear_button.toolTip()
+
+    browser.show_ended.setChecked(True)
+    assert [row.title.text() for row in browser.rows()] == ["Deploy"]
+    assert not browser.empty.isVisibleTo(browser)
+    assert browser.clear_button.isEnabled() and browser.clear_button.toolTip() == ""
+
+    browser.clear_button.click()
+    assert runs.runs() == []
+    assert browser.empty.text() == "No agent has been launched from this window."
 
 
 def test_the_browser_greys_show_terminal_per_run(services, step, tmp_path, monkeypatch):
@@ -492,6 +553,7 @@ def test_an_ended_run_shows_the_command_that_picks_it_up_again(services, step, t
         " 7a1e4c2e-0000-4000-8000-000000000003\n"
     )
     runs._open_browser()
+    runs._browser.show_ended.setChecked(True)  # The same row, before and after it ends.
     (row,) = runs._browser.rows()
     assert not row.note.isVisibleTo(row)
 
@@ -512,5 +574,6 @@ def test_an_ended_run_without_a_resume_shows_none(services, step, tmp_path):
     (tmp_path / "exit").write_text("1\n")
     runs.check()
     runs._open_browser()
+    runs._browser.show_ended.setChecked(True)
     (row,) = runs._browser.rows()
     assert not row.note.isVisibleTo(row) and row.note.text() == ""

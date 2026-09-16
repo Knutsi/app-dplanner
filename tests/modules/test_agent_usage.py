@@ -115,6 +115,7 @@ def test_an_ended_run_reads_its_tokens_back_and_records_them_on_the_step(
     assert not services.undo.can_undo()
     assert "12.0k in · 345 out" in services.window.statusBar().currentMessage()
     runs._open_browser()
+    runs._browser.show_ended.setChecked(True)  # The run is over, so the switch lists it.
     (row,) = runs._browser.rows()
     # What it was handed sits with what it spent, the size first because it was known first.
     assert row.status.words().endswith("briefed 18.4k chars · 12.0k in · 345 out")
@@ -165,6 +166,7 @@ def test_a_run_with_no_record_ends_as_before(services, step, tmp_path, monkeypat
     # No record means no row, and a faked zero-token one would have the step claim it spent
     # nothing rather than say nothing — so what it was handed is said off the run instead.
     runs._open_browser()
+    runs._browser.show_ended.setChecked(True)  # The run is over, so the switch lists it.
     (row,) = runs._browser.rows()
     assert row.status.words().endswith("briefed 18.4k chars")
     # A session named up front still resumes, record or no record.
