@@ -55,6 +55,8 @@ HEADLESS_FILES = (
     "cli.py",
     "checks.py",
     "aspect.py",
+    "categories.py",
+    "export.py",
     "clipboard.py",
     "positions.py",
     "placement.py",

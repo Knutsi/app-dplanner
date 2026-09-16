@@ -29,6 +29,7 @@ from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -70,6 +71,7 @@ from dplanner.modules.testing.aspect import (
     replace,
     write,
 )
+from dplanner.modules.testing.filing import UNCATEGORISED, catalog, sort_keys
 from dplanner.modules.testing.view import StatusChip, outcome_line, tint, word
 
 BLOCK_GAP = 12
@@ -85,6 +87,10 @@ WIDE_THRESHOLD = 540  # Narrower than this and two columns would starve each oth
 DETAIL_MIN_HEIGHT = 140
 
 TAB_NOTE = "How you would know this step works — kept after the work is done."
+SORT_KEY_TIP = (
+    "What orders this test inside its category — the view it exercises, say. Tests sharing "
+    "one are executed together in the Tests tab."
+)
 BODY_PLACEHOLDER = "1. Do this.\n2. This must be true."
 # Neutral about *what* the step is: a check, a feature and a milestone are scopes in
 # exactly the same way, and this tab appears on all three. Neutral about the *reading*
@@ -497,22 +503,57 @@ class _TestDetail(QWidget):
         # more than one reader. They say what is *stored*, so an unclassified test shows
         # three empty boxes and the note below says what it reads as instead — ticking
         # `Other` through `audiences_of` would render a box that could not be unticked.
-        self.audiences = QWidget(self)
-        audience_row = QHBoxLayout(self.audiences)
-        audience_row.setContentsMargins(0, 0, 0, 0)
-        audience_row.setSpacing(FIELD_GAP)
-        caption = QLabel("Audience", self.audiences)
+        self.classification = QWidget(self)
+        row = QHBoxLayout(self.classification)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(FIELD_GAP)
+        caption = QLabel("Audience", self.classification)
         caption.setObjectName("InspectorCaption")
-        audience_row.addWidget(caption)
+        row.addWidget(caption)
         self.audience_boxes: dict[str, QCheckBox] = {}
         for audience in AUDIENCES:
-            box = QCheckBox(audience.label, self.audiences)
+            box = QCheckBox(audience.label, self.classification)
             box.setToolTip(audience.meaning)
             box.toggled.connect(partial(self._commit_audience, audience.id))
-            audience_row.addWidget(box)
+            row.addWidget(box)
             self.audience_boxes[audience.id] = box
-        audience_row.addStretch(1)
-        layout.addWidget(self.audiences)
+        row.addStretch(1)
+        layout.addWidget(self.classification)
+
+        # Where it is filed, on a row of its own: the audience row is already three boxes
+        # wide, and this is the tightest surface in the application. The category is one
+        # value out of a list the project keeps, so it is a picker; the sort key is free
+        # text with the keys already in use offered as you type, because it has no
+        # catalogue and never needed one. The category list is edited in Project ▸ Test
+        # Categories…, never here — a panel that let you rename one would be renaming it
+        # for every other test too.
+        self.filing = QWidget(self)
+        filing_row = QHBoxLayout(self.filing)
+        filing_row.setContentsMargins(0, 0, 0, 0)
+        filing_row.setSpacing(FIELD_GAP)
+        category_caption = QLabel("Category", self.filing)
+        category_caption.setObjectName("InspectorCaption")
+        filing_row.addWidget(category_caption)
+        self.category = QComboBox(self.filing)
+        self.category.setToolTip("What this test is filed under in the Tests tab")
+        self.category.currentIndexChanged.connect(self._commit_category)
+        filing_row.addWidget(self.category, 1)
+        sort_caption = QLabel("Sort key", self.filing)
+        sort_caption.setObjectName("InspectorCaption")
+        filing_row.addWidget(sort_caption)
+        self.sort_key = QComboBox(self.filing)
+        self.sort_key.setEditable(True)
+        self.sort_key.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.sort_key.setToolTip(SORT_KEY_TIP)
+        # An editable combo always has one; the `| None` is Qt's, not a real maybe.
+        field = self.sort_key.lineEdit()
+        assert field is not None
+        self.sort_key_field: QLineEdit = field
+        self.sort_key_field.setPlaceholderText("What orders it inside its category")
+        self.sort_key_field.editingFinished.connect(self._commit_sort_key)
+        self.sort_key.activated.connect(lambda _index: self._commit_sort_key())
+        filing_row.addWidget(self.sort_key, 1)
+        layout.addWidget(self.filing)
 
         # A plain expanding text well: the detail pane is not a card in a scrolling stack,
         # so the editor may simply take the room and scroll like any other document.
@@ -570,7 +611,8 @@ class _TestDetail(QWidget):
             self.identity,
             self.title,
             self.chip,
-            self.audiences,
+            self.classification,
+            self.filing,
             self.body,
             self.result,
         ):
@@ -590,6 +632,8 @@ class _TestDetail(QWidget):
         if not self.title.hasFocus():
             self.title.setText(test.title)
         self.chip.show_status(outcome.result.status if outcome else "pending")
+        self._show_category(test)
+        self._show_sort_key(test)
         for audience_id, box in self.audience_boxes.items():
             # Blocked, or setting the boxes to match the record would push a command back.
             box.blockSignals(True)
@@ -609,8 +653,96 @@ class _TestDetail(QWidget):
             )
         )
 
+    def _show_category(self, test: Test) -> None:
+        """The picker's entries, and the one this test carries.
+
+        Rebuilt rather than diffed: a project's categories are few, and the list can have
+        gained one since the last look — the category editor's Save is exactly that.
+        *Uncategorised* is the first entry and carries no name, so the picker can always
+        say what an unfiled test is without the catalogue having to hold a word for it.
+        """
+        entries = [(UNCATEGORISED, "")]
+        if self._step_id is not None and self._library.has(self._step_id):
+            project = self._library.project_of(self._step_id)
+            entries += [(entry.name, entry.name) for entry in catalog(project)]
+        # A test filed under something the catalogue lost still shows it: the value is the
+        # test's, and a picker that quietly moved it to Uncategorised would be an edit.
+        if test.category and test.category not in [name for _label, name in entries]:
+            entries.append((test.category, test.category))
+        self.category.blockSignals(True)
+        if [
+            (self.category.itemText(i), self.category.itemData(i))
+            for i in range(self.category.count())
+        ] != entries:
+            self.category.clear()
+            for label, value in entries:
+                self.category.addItem(label, value)
+        found = self.category.findData(test.category)
+        self.category.setCurrentIndex(found if found >= 0 else 0)
+        self.category.blockSignals(False)
+
+    def _show_sort_key(self, test: Test) -> None:
+        """The keys already in use as completions, and this test's own in the field.
+
+        An editable combo rather than a plain field: there is no catalogue to pick from,
+        but there is a set already in use, and offering it is what stops the same view
+        being spelled three ways down one project.
+        """
+        offered = []
+        if self._step_id is not None and self._library.has(self._step_id):
+            offered = sort_keys(self._library.project_of(self._step_id))
+        self.sort_key.blockSignals(True)
+        if [self.sort_key.itemText(i) for i in range(self.sort_key.count())] != offered:
+            self.sort_key.clear()
+            self.sort_key.addItems(offered)
+        if not self.sort_key_field.hasFocus():
+            self.sort_key.setEditText(test.sort_key)
+        self.sort_key.blockSignals(False)
+
     def dispose(self) -> None:
         self.body.dispose()
+
+    def _commit_sort_key(self) -> None:
+        """One finished edit, one undoable command — ``_commit_category``'s rule."""
+        if self._step_id is None or not self._library.has(self._step_id):
+            return
+        step = self._library.step(self._step_id)
+        test = find(read(step), self._test_id)
+        wanted = self.sort_key.currentText().strip()
+        if test is None or test.sort_key == wanted:
+            return
+        changed = dataclasses.replace(test, sort_key=wanted)
+        self._undo.push(
+            SetModuleDataCommand(
+                step.id,
+                MODULE_ID,
+                write(replace(read(step), changed)),
+                label=f"Set Test {test.id} Sort Key",
+            )
+        )
+        self._undo.break_coalescing()
+
+    def _commit_category(self, _index: int) -> None:
+        """One pick, one undoable command — ``_commit_audience``'s rule for a picker."""
+        if self._step_id is None or not self._library.has(self._step_id):
+            return
+        step = self._library.step(self._step_id)
+        test = find(read(step), self._test_id)
+        wanted = str(self.category.currentData() or "")
+        if test is None or test.category == wanted:
+            return
+        changed = dataclasses.replace(test, category=wanted)
+        self._undo.push(
+            SetModuleDataCommand(
+                step.id,
+                MODULE_ID,
+                write(replace(read(step), changed)),
+                label=f"Set Test {test.id} Category",
+            )
+        )
+        # A pick is a finished gesture, as a click on an audience box is: the label is the
+        # merge key, so without this two picks on one test would fold into one undo step.
+        self._undo.break_coalescing()
 
     def _commit_audience(self, audience_id: str, on: bool) -> None:
         """One toggle, one undoable command.

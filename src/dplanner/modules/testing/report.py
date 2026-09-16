@@ -22,6 +22,7 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import audience_words, read
+from dplanner.modules.testing.filing import category_of
 
 TABLE_ID = "tests"
 NOT_RUN = "not run"
@@ -46,6 +47,7 @@ def report_source(*, key_of: Callable[[Step], str]) -> ReportSource:
                         (
                             test.id,
                             test.title,
+                            category_of(test),
                             audience_words(test),
                             key_of(step),
                             result,
@@ -63,8 +65,10 @@ def report_source(*, key_of: Callable[[Step], str]) -> ReportSource:
             (
                 Column("Test", "key"),
                 Column("Title"),
-                # Filterable: a published page is read by whoever the plan is shared with,
-                # and "show me the QA tests" is the question they arrive with.
+                # Filterable, both of them: a published page is read by whoever the plan is
+                # shared with, and "show me the QA tests" and "show me the import tests" are
+                # the two questions they arrive with.
+                Column("Category", filter=True),
                 Column("Audience", filter=True),
                 Column("Step", "key"),
                 Column("Latest result", "status"),
@@ -72,7 +76,8 @@ def report_source(*, key_of: Callable[[Step], str]) -> ReportSource:
             ),
             tuple(rows),
             note="The latest result is the newest run that recorded one; a test nobody has "
-            "run yet says so. A test that does not say who it is for reads as Other.",
+            "run yet says so. A test that does not say who it is for reads as Other, and one "
+            "filed under nothing reads as Uncategorised.",
         )
         return Contribution(placed=(Placed("steps", 20, table),), facets=facets)
 

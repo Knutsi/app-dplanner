@@ -13,6 +13,12 @@ slot reserved on every row of a glyph column so titles align, numbers right-alig
 secondary line under a cell's text where the column allows one, and a group heading as a
 spanned row nobody can select.
 
+A group heading may be **collapsible**: give :meth:`Table.add_heading` a ``key`` and the
+rows after it fold under it, behind a disclosure chevron the whole heading row is the target
+for. What is folded is remembered **by key**, across the wholesale rebuild a host does on
+every refresh, because a roster that reopened every group whenever anything changed would be
+unusable — and the key is the host's word (a category's name), never a row number.
+
 A cell may carry an ink of its own — a result's tone, a milestone's shade — and a column may
 carry a :class:`CellEditor`: a double-click, F2 or a typed key opens it over the cell, and a
 committed value lands in the cell and is announced once through ``edited``, which the host
@@ -46,6 +52,7 @@ from PySide6.QtCore import (
     QModelIndex,
     QPersistentModelIndex,
     QPoint,
+    QPointF,
     QRect,
     QRectF,
     QSize,
@@ -69,6 +76,7 @@ from PySide6.QtWidgets import (
     QDateEdit,
     QDoubleSpinBox,
     QHeaderView,
+    QLineEdit,
     QStyle,
     QStyledItemDelegate,
     QStyleOptionViewItem,
@@ -80,8 +88,10 @@ from PySide6.QtWidgets import (
 
 from dplanner.core.signals import Signal
 from dplanner.framework.list_rows import (
+    COLLAPSED_ROLE,
     DETAIL_ROLE,
     EMPHASIS_ROLE,
+    GROUP_ROLE,
     HEADING_ROLE,
     ICON_GAP,
     INK_ROLE,
@@ -107,6 +117,8 @@ from dplanner.theme.tokens import (
 )
 
 GLYPH_SLOT = KEY_BADGE_W  # Wide enough for a key badge; a glyph sits at its left.
+CHEVRON_W = 12  # The disclosure triangle's slot on a collapsible heading.
+CHEVRON_SIDE = 7.0  # The triangle itself, drawn inside that slot.
 HOVER_ALPHA = 12  # The text colour at ~5 %: a wash that says the row is a target.
 GRID = 4  # Row heights land on the 4-point scale.
 
@@ -184,6 +196,33 @@ class NumberEditor:
         if not isinstance(value, int | float):
             return self.blank_text
         return f"{value:g}{self.suffix}"
+
+
+@dataclass(frozen=True)
+class TextEditor:
+    """Words typed into the cell — the plainest editor there is, and the one a roster of
+    *names* wants. ``blank_text`` is what an empty value prints as, so a row with nothing
+    in it still says what the column is for rather than showing a hole."""
+
+    blank_text: str = ""
+    placeholder: str = ""
+
+    def make(self, parent: QWidget) -> QWidget:
+        field = QLineEdit(parent)
+        field.setPlaceholderText(self.placeholder)
+        return field
+
+    def load(self, editor: QWidget, value: object) -> None:
+        assert isinstance(editor, QLineEdit)
+        editor.setText(str(value) if isinstance(value, str) else "")
+        editor.selectAll()  # A typed letter replaces the name, as it would in a field.
+
+    def read(self, editor: QWidget) -> object:
+        assert isinstance(editor, QLineEdit)
+        return editor.text().strip()
+
+    def text(self, value: object) -> str:
+        return str(value) if isinstance(value, str) and value else self.blank_text
 
 
 @dataclass(frozen=True)
@@ -323,6 +362,13 @@ class Table(QTableWidget):
         self._rich = any(column.detail for column in columns)
         self._hovered: int | None = None
         self._chip: tuple[int, int, int] | None = None  # (row, column, position) under the pointer.
+        # Collapsible groups: which keys are folded (kept across a rebuild — the host's
+        # refresh must not reopen what the reader shut), which heading row each key is on,
+        # and which group each content row belongs to.
+        self._collapsed: set[str] = set()
+        self._heading_rows: dict[int, str] = {}
+        self._row_group: dict[int, str] = {}
+        self._filling: str = ""  # The key rows are landing under while a table is filled.
         self._edit_on_release: QPersistentModelIndex | None = None
         # A committed edit, as (row, column, value): the host's cue to push its command.
         self.edited: Signal[int, int, object] = Signal("table.edited")
@@ -420,13 +466,30 @@ class Table(QTableWidget):
                 item.setData(TINT_ROLE, tint)
             for role, value in (data or {}).items():
                 item.setData(role, value)
+        if self._filling:
+            # A row belongs to the last collapsible heading added before it, so a host
+            # fills a grouped table exactly as it fills a flat one.
+            self._row_group[row] = self._filling
+            self.setRowHidden(row, self._filling in self._collapsed)
         return row
 
-    def add_heading(self, text: str, *, ink: QColor | None = None) -> int:
+    def add_heading(
+        self,
+        text: str,
+        *,
+        ink: QColor | None = None,
+        glyph: QIcon | None = None,
+        key: str = "",
+    ) -> int:
         """A group heading: one spanned row of bold secondary words that nothing selects.
 
         ``ink`` colours the words — a milestone's shade at the secondary alpha, so the
         heading over a milestone's rows says which milestone wherever else it is seen.
+        ``glyph`` puts a picture in front of them, for a group that has one of its own.
+
+        ``key`` makes the group **collapsible**: the rows added after it fold under this
+        one, the heading wears a disclosure chevron and the whole row is the target that
+        toggles it. Folded is remembered by key across a rebuild — see the module docstring.
         """
         row = self.rowCount()
         self.insertRow(row)
@@ -435,10 +498,48 @@ class Table(QTableWidget):
             item.setFlags(Qt.ItemFlag.NoItemFlags)
             item.setData(HEADING_ROLE, True)
             item.setData(INK_ROLE, ink)
+            if column == 0:
+                item.setIcon(glyph if glyph is not None else QIcon())
+                item.setData(GROUP_ROLE, key)
+                item.setData(COLLAPSED_ROLE, key in self._collapsed)
             self.setItem(row, column, item)
         self.setSpan(row, 0, 1, self.columnCount())
         self.setRowHeight(row, row_height(self.font(), rich=False))
+        self._filling = key
+        if key:
+            self._heading_rows[row] = key
         return row
+
+    # -- collapsing --------------------------------------------------------------------
+
+    def collapsed(self) -> set[str]:
+        """The group keys folded shut — what a host stores if it wants to outlive the tab."""
+        return set(self._collapsed)
+
+    def set_collapsed(self, key: str, folded: bool) -> None:
+        """Fold or open one group, now and on every rebuild until it is said otherwise."""
+        if folded == (key in self._collapsed):
+            return
+        self._collapsed.symmetric_difference_update({key})
+        for row, found in self._heading_rows.items():
+            if found == key and (item := self.item(row, 0)) is not None:
+                item.setData(COLLAPSED_ROLE, folded)
+        for row, found in self._row_group.items():
+            if found == key:
+                self.setRowHidden(row, folded)
+        self.viewport().update()
+
+    def group_at(self, row: int) -> str:
+        """The collapsible group ``row`` is a heading for, or "" — what a click asks."""
+        return self._heading_rows.get(row, "")
+
+    def is_heading(self, row: int) -> bool:
+        """Whether ``row`` is a group heading rather than one of the things being listed."""
+        item = self.item(row, 0)
+        return item is not None and bool(item.data(HEADING_ROLE))
+
+    def toggle_group(self, key: str) -> None:
+        self.set_collapsed(key, key not in self._collapsed)
 
     def set_cell(self, row: int, column: int, cell: Cell | str) -> None:
         if isinstance(cell, str):
@@ -467,6 +568,11 @@ class Table(QTableWidget):
     def clear_rows(self) -> None:
         self.clearSpans()
         self.setRowCount(0)
+        # Which row was which goes; *what is folded* stays, keyed by the host's own word,
+        # so a refresh between two keystrokes does not spring every group open.
+        self._heading_rows.clear()
+        self._row_group.clear()
+        self._filling = ""
         self._hover(None)
         self._hover_chip(None)
 
@@ -498,6 +604,19 @@ class Table(QTableWidget):
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
         super().mouseMoveEvent(event)
         self._hover_chip(self.chip_under(event.position().toPoint()))
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        """A press on a collapsible heading folds it, and goes no further.
+
+        The whole row is the target rather than the chevron alone: a heading selects
+        nothing and runs nothing else, so there is no second thing a click there could
+        have meant, and a seven-pixel triangle is not a target.
+        """
+        key = self.group_at(self.rowAt(event.position().toPoint().y()))
+        if key and event.button() == Qt.MouseButton.LeftButton:
+            self.toggle_group(key)
+            return
+        super().mousePressEvent(event)
 
     def edit_after_release(self, index: QModelIndex | QPersistentModelIndex) -> None:
         """Open the editor once the click that asked for it is over: Qt ends a release by
@@ -579,6 +698,52 @@ class TableDelegate(QStyledItemDelegate):
         """``text`` as it will be drawn in ``font``, cut to ``width``."""
         return QFontMetrics(font).elidedText(text, Qt.TextElideMode.ElideRight, width)
 
+    def _paint_heading_marks(
+        self,
+        painter: QPainter,
+        option: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+        ink: QColor,
+    ) -> int:
+        """A heading's chevron and glyph; returns where its words start.
+
+        The chevron is drawn rather than vendored: like the key badge and the filter
+        funnel it is a picture of *state* — open or shut — and its two forms are one
+        triangle turned, which no icon set spells the same way twice.
+        """
+        left = option.rect.left() + self._table.padding()
+        if index.data(GROUP_ROLE):
+            middle = option.rect.center().y() + 1
+            shut = bool(index.data(COLLAPSED_ROLE))
+            half = CHEVRON_SIDE / 2
+            centre = QPointF(left + CHEVRON_W / 2, float(middle))
+            if shut:
+                points = [
+                    QPointF(centre.x() - half + 1, centre.y() - CHEVRON_SIDE),
+                    QPointF(centre.x() - half + 1, centre.y() + CHEVRON_SIDE),
+                    QPointF(centre.x() + half + 1, centre.y()),
+                ]
+            else:
+                points = [
+                    QPointF(centre.x() - CHEVRON_SIDE, centre.y() - half),
+                    QPointF(centre.x() + CHEVRON_SIDE, centre.y() - half),
+                    QPointF(centre.x(), centre.y() + half),
+                ]
+            painter.save()
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(ink)
+            painter.drawPolygon(points)
+            painter.restore()
+            left += CHEVRON_W + ICON_GAP
+        icon = index.data(Qt.ItemDataRole.DecorationRole)
+        if isinstance(icon, QIcon) and not icon.isNull():
+            slot = QRect(left, option.rect.center().y() - ICON_SIZE // 2, ICON_SIZE, ICON_SIZE)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            icon.paint(painter, slot, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            left += ICON_SIZE + ICON_GAP
+        return left
+
     def paint(
         self,
         painter: QPainter,
@@ -620,15 +785,21 @@ class TableDelegate(QStyledItemDelegate):
             primary = ink
         column = index.column()
         pad = self._table.padding()
-        left = self.text_left(column, opt.rect)
-        width = max(0, opt.rect.right() - pad - left + 1)
         metrics = opt.fontMetrics
         painter.save()
         icon = index.data(Qt.ItemDataRole.DecorationRole)
-        if self._table.columns()[column].glyph and isinstance(icon, QIcon) and not icon.isNull():
-            slot = self.glyph_rect(opt.rect, metrics)
-            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-            icon.paint(painter, slot, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        if heading:
+            left = self._paint_heading_marks(painter, opt, index, secondary)
+        else:
+            left = self.text_left(column, opt.rect)
+            glyphed = self._table.columns()[column].glyph
+            if glyphed and isinstance(icon, QIcon) and not icon.isNull():
+                slot = self.glyph_rect(opt.rect, metrics)
+                painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+                icon.paint(
+                    painter, slot, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                )
+        width = max(0, opt.rect.right() - pad - left + 1)
 
         font = self.font_for(opt, index)
         painter.setFont(font)

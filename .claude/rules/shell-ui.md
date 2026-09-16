@@ -53,12 +53,34 @@ paths:
   as a meter. `ARCHITECTURE.md`'s *The banner is a band, and the band is the meter* has the
   reasoning.
 - **A roster has three shapes, and each is a primitive.** A `Table` when a reader compares
-  across rows — and a value set in the row is the column's `editor` or its `chips`, painted
-  and hit-tested by the table, never a widget planted in a cell with `setCellWidget`. A
-  `RichList` when there is one column of things. A `RowWell` when every row carries verbs of
-  its own and has to outlive a refresh (the task and Agents browsers). A strip control that
-  comes and goes is `Toolbar.set_shown`, never `hide()`, which the next reflow undoes.
+  across rows — and a value set in the row is the column's `editor` (`NumberEditor`,
+  `DateEditor`, `TextEditor`) or its `chips`, painted and hit-tested by the table, never a
+  widget planted in a cell with `setCellWidget`. A `RichList` when there is one column of
+  things. A `RowWell` when every row carries verbs of its own and has to outlive a refresh
+  (the task and Agents browsers). A strip control that comes and goes is
+  `Toolbar.set_shown`, never `hide()`, which the next reflow undoes.
   `ARCHITECTURE.md`'s *A roster has three shapes* has the reasoning.
+- **A group heading may fold, and the table remembers by key.** `Table.add_heading(text,
+  key=…)` makes the rows after it a collapsible group: a disclosure chevron (drawn, not
+  vendored — it is a picture of *state*, like the key badge and the filter funnel), and the
+  **whole heading row** is the target, because a heading selects nothing and runs nothing
+  else. What is folded is kept **inside the table, by the host's own word, across
+  `clear_rows`** — a host rebuilds a grouped table wholesale on every refresh, and a fold
+  remembered by row number would spring every group open on the next keystroke. A heading
+  with no key is the plain spanned rule it always was; `glyph` puts the group's own picture
+  in front of its words. `ARCHITECTURE.md`'s *The category headings fold* has the reasoning.
+- **A host's own verb on a strip says why it is greyed through `Toolbar.set_tip`**, never
+  `action.setToolTip`: `_retip` composes that string from the verb's words, its key and its
+  standing explanation, and runs again on the next `changed` — so anything written straight
+  onto the action is gone by the next `setEnabled`. A registry-fed verb gets the same thing
+  from its `ActionState` on every context change.
+- **A filter button's face says what is chosen.** `FilterButton` goes accent while anything
+  is on, which tells a reader something is hidden and not *what* — so the face carries the
+  answer: the label while nothing is picked, the one filter's words when one is, and
+  `Label · N` past that, because three names in a row outgrow the strip and a reader
+  counting them learns nothing the number did not say. The full list stays in the tooltip.
+  The face therefore changes width with the pick, so nothing is laid out beside it at a
+  fixed offset.
 - **A pane is marked only while there is another pane.** The accent edge on the group you are
   in appears when the window splits and goes when it stops being split — the same condition
   that installs `_ActiveGroupWatcher`, because it is the same fact. It lives on a one-widget

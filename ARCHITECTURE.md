@@ -4688,6 +4688,186 @@ its words, and a pick matches one value at a time. The options are built from th
 a plan with nothing blocked no longer offers *Blocked* — which the hard-coded four always
 did.
 
+## A test is filed under a category, and its words are the key
+
+The audience above is one axis and it is closed. The axis a roster of two hundred tests
+actually needs is the other one — *what kind of thing is this test* — and it cannot be
+closed, because *Import*, *Permissions*, *Print layout* and *Rate limiting* are this
+project's words and the next project's are different ones. So a test carries a **category**:
+one line of free text, catalogued beside the project.
+
+**The words are the key.** There is no minted id. `dplanner test set T100 --category
+'Import'` is the whole story; a diff says which group a test moved to; an agent that has
+never seen this plan can file a test from the catalogue it just printed. The alternative —
+a stable `c3` with a label beside it — buys exactly one thing, a free rename, and charges
+for it in every other place: a CLI nobody can type, a JSON nobody can read, and a label that
+drifts from its id the first time two agents disagree. The price of the choice is that a
+rename **is** a rewrite of every test carrying the old words, and that price is paid where
+it is visible: `test-category set --rename` and the editor's Save both do it in one undoable
+step, and the editor's row says how many tests it is about to move before it moves them.
+
+**The catalogue is stored; membership is derived.** `{"categories": [{"name": …, "icon": …}]}`
+beside the project, in the order somebody wrote them. It is stored for one reason that
+matters: an agent reading a spec can lay the groups out *before* the tests that will fill
+them, which is what makes the tests arrive filed instead of arriving and then being sorted.
+What is *in* a category is never stored — `counts()` walks the tests, the same rule the
+topological order keeps. And a category a test names that the catalogue does not is still a
+real category: `catalog()` appends it, unglyphed, after the ones that were written down. A
+typo therefore shows up as a group of one rather than as a test that has quietly fallen out
+of every list, and the editor is where it gets merged.
+
+**Absence reads as *Uncategorised*, and the lint asks anyway** — the audience's rule, one
+vocabulary over, with one difference: `test.category` stays quiet until the project has any
+categories at all. A plan that has not started filing its tests is not behind on anything;
+the check exists to catch the test added *after* the filing was laid out, which is the one
+an agent's next `test add` forgets.
+
+### Two writers, one project entry
+
+`runs` and `categories` are both project-level keys under the module id `testing`, and
+`SetModuleDataCommand` stores an entry **whole**. Each writer returning a dict built from
+its own half would therefore have silently deleted the other's key — a run started after
+the categories were laid out would have taken them with it. `aspect.project_entry()` is the
+one composer, both writers go through it, and `runs.write()` grew a `project` parameter so
+it could. The generalisation is worth stating, because the module system invites the bug:
+*one module id may name several shapes, and every writer of a shared entry must compose it
+from what is on disk.* `FORMAT.md`'s "one module id, two shapes" paragraph is the same fact
+seen from the data's side.
+
+### The sort key is an ergonomic, not a second layer of filing
+
+The category answers *what kind of test is this*. The question left over is the one
+somebody **executing** a roster has: within *Set up new customer*, which twenty of these
+can I do without switching screens? That is not a second category — filing it twice would
+double the headings and halve the page — it is an **order**. So a test carries a `sort_key`:
+free text, no catalogue, no editor, and no meaning beyond *tests sharing one belong
+together*.
+
+Three decisions make it worth having rather than clever.
+
+**It always sorts, inside whatever group is current.** *Ergonomic order* on the Tests strip
+is on by default and the switch is there to turn it **off**, not on. A sort key that only
+sometimes sorts is one nobody can rely on halfway down a list with a device in the other
+hand — and a project that uses no sort keys is ordered identically either way, because the
+sort is stable and a keyless test keeps its place. Unticking it gives back the plan's own
+order, which is the reading somebody following the *work* wants.
+
+**Alphabetical, keyless last.** Adjacency is the whole win, so any consistent order would
+do; alphabetical is the one a reader can predict without opening anything, and it is what
+somebody who numbers their keys (*1. Sign in*, *2. Import*) already expects to happen. The
+alternative — first appearance in project order — is invisible, and an agent that wanted a
+particular sequence would have no way to ask for one.
+
+**It is a column, not a heading.** `Table` groups flat: rows belong to the heading above
+them until the next one, so a second level would have needed nesting in the primitive and
+would have made folding a category ambiguous. It is also the wrong shape for the fact — the
+rows are *already adjacent* once they are sorted, which is what a reader sees, and the
+column is there to say what the run of rows has in common. So the Sort key column follows
+the ordinary blank-column rule and appears the day a project starts using one.
+
+The CLI half is `test add|set --sort-key`, `test list --sort-key` and `--flat`, and — the
+one an agent reorganising a roster actually runs — **`dplanner test file`**, which takes
+many tests and both filing fields in one call. That verb replaced `test-category assign`:
+`test set` is one test with many fields, `test file` is many tests with the two fields that
+say where a test goes, and having one verb per axis would have been two verbs for one
+gesture. In the window it is the step panel's field (an editable combo, offering the keys
+already in use so one view is not spelled three ways) and `Step ▸ Test Sort Key ▸ …`, whose
+last entry mints a new key — because with no catalogue there is no editor to send anybody
+to.
+
+### Grouping is one selector, and the tests' own vocabulary leads it
+
+The Tests tab already grouped by feature, milestone or check. Category could have been a
+second control beside that one — and would have been wrong: *by feature*, *by milestone*,
+*by check* and *by category* are four answers to one question, so they are four entries in
+one box. Making that true meant generalising what grouped the rows, because the three that
+existed are facts about a test's **step** and the new one is a fact about the **test** — a
+step's three tests are often three different kinds of thing, which is most of why the
+category exists at all. `_Grouping` is two functions, *where does this row sort* and *what
+heading does it land under*, both taking `(step, test)`; the collector grouping ignores the
+test and the category grouping ignores the step. One shape asked twice, rather than two
+mechanisms that will one day disagree about what a heading is.
+
+Category leads the list and is the default *while the project has one*, because filing by
+what a test is beats a flat roster and a project with no categories would otherwise open on
+a single heading saying *Uncategorised*. The default stands only until the reader picks a
+grouping themselves; after that their answer is the answer.
+
+### The category headings fold, and the table remembers by key
+
+Grouping two hundred tests is only half the reading. The other half is folding twelve of
+the thirteen groups shut, which is what turns the roster into a page. So `Table.add_heading`
+takes a `key`, and a keyed heading wears a disclosure chevron and swallows the click that
+toggles it — the **whole row** is the target, because a heading selects nothing and runs
+nothing else, so there is no second thing a click there could have meant and a seven-pixel
+triangle is not a target.
+
+What is folded is remembered **by key, inside the table, across `clear_rows`**. That is the
+part that had to be got right: a host rebuilds a grouped table wholesale on every refresh,
+and a fold remembered by row number would spring every group open on the next keystroke
+anywhere in the project. The key is the host's own word — a category's name — so folding
+*Smoke* folds the same group after a rebuild, after a rename that kept the name, and after
+the tab is reopened over the same rows. The collector groupings pass no key and so do not
+fold: a feature's tests are already few, and a reader who asked to see them beside each
+other did not ask to unfold them one at a time.
+
+### Export is what the tab is showing
+
+"Narrow it to QA, then hand that to the QA team" is one gesture, so `File ▸ Export ▸ Tests`
+writes what the project's Tests tab is *currently showing* — its scope, its audience filter,
+whether the archived are in — rather than opening a second dialog asking the same three
+questions the strip has already been answering. `TestsActivity.showing()` is the one reader
+of that, and `New Test Run` uses it too: the old `_narrowed_to` was the same walk for the
+scope alone, and generalising it was cheaper than a near-copy beside it. With no tab open
+the verb exports the project's whole roster, which is the honest reading of "no narrowing".
+The CLI takes the narrowing as flags, because a terminal has no tab to read.
+
+The two formats are deliberate and neither is the report. `cli/report/` publishes *the plan*
+and names each test in one line; this writes *the tests*, filed under their categories, with
+every body in full. Markdown is what a repository keeps and what the next agent converts
+into whatever TestRail wants; HTML is one self-contained page whose every test is a
+`<details>` that opens on its body, which is what makes a hundred of them scannable. Neither
+inlines pictures: a test body's images live in the step's file area, and embedding them
+would make this a publication, which is the report's job.
+
+## A test is run from a panel, and a double-click there opens the test
+
+A roster is not read, it is *worked down*. The gesture that was missing is the one between
+two tests: mark this, look at the next. Doing it from the table alone means the body is a
+one-line preview and the only way to read a test in full was to open its **step** — which
+is the wrong thing twice over, because it is a page about the work rather than about what
+you are checking, and because it is a modal that takes the list away every time.
+
+So there is a **Test panel**, in the window's right area beside Project and Step: the test's
+id and title, where it is filed, its last result, the four result verbs, *Show Step*, and
+Previous/Next. Three things about it are the design.
+
+**It renders the body rather than editing it.** A numbered list is a numbered list here,
+not `1.` and a full stop. Authoring stays in the step panel's Tests tab, where the editor,
+the images and the audience boxes already are, and *Show Step* is the door — one click, and
+a door somebody executing a test wants anyway when what they find contradicts the step.
+Rendering is also why the panel resolves `![](assets/…)` against the step's own file area:
+the link the editor stores is relative to a directory nothing outside the plan can follow.
+
+**Double-clicking a row in a Tests tab opens the test, not its step.** That is the one
+deliberate exception to *double-clicking a step anywhere runs `steps.details`*, and the
+reason is that in this table a row **is** a test — its step is a column. The roll call does
+the same, and because it spans projects and publishes no selection of its own, it hands the
+verb a constructed context naming exactly that row. The verb (`test.details`) only
+*reveals* the panel; the panel was already following the context, so a single click updates
+it and a double-click is what puts it on screen. That is also why there is no preference
+for any of this: a panel is already something the user switches on and off, in one place,
+for every panel there is.
+
+**Next and Previous move the table's selection, never the panel's own.** A panel may not
+publish a selection — it follows the context, and writing to it would fight whatever else
+is showing. So the panel asks the Tests tab to pick the neighbouring row, the table
+publishes as it always does, and the panel follows like any other change. It is the *tab's*
+order that "next" means, not the project's: the reader's scope, their audience filter and
+their ergonomic order are what put the next test where they are looking. With no Tests tab
+open there is nothing to walk, and both verbs are greyed saying so — which is honest rather
+than defensive, because "next" has no meaning without a list.
+
 ## A test goes stale when the step under it moves
 
 Eleven tests on one real plan contradicted the product and lint said nothing about any of

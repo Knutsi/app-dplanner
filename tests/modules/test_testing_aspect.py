@@ -201,13 +201,13 @@ def outcome(records, test_id):
 
 def project_with_runs(*records):
     project = Project(title="Widget")
-    project.module_data["testing"] = runs.write(records)
+    project.module_data["testing"] = runs.write(project, records)
     return project
 
 
 def test_a_project_with_no_entry_has_no_runs():
     assert runs.read(Project(title="Widget")) == []
-    assert runs.write([]) == {}
+    assert runs.write(Project(title="Widget"), []) == {}
 
 
 def test_a_run_round_trips_with_its_results():
@@ -224,7 +224,7 @@ def test_a_run_round_trips_with_its_results():
 def test_a_test_with_no_result_entry_is_pending():
     run = runs.Run(id="R100", tests=("T100",))
     assert run.result("T100") == runs.Result("pending")
-    assert "T100" not in runs.write([run])["runs"][0].get("results", {})
+    assert "T100" not in runs.write(Project(title="Widget"), [run])["runs"][0].get("results", {})
 
 
 def test_starting_a_run_closes_whatever_was_open():

@@ -120,30 +120,36 @@ def test_every_control_on_a_strip_is_one_height(themed, app):
         host.deleteLater()
 
 
-def test_a_filter_button_says_when_a_filter_is_on_and_keeps_its_size(host, app):
+def test_a_filter_button_says_what_is_chosen_and_the_glyph_says_that_it_is(host, app):
     from dplanner.framework.toolbar import FilterButton
 
-    button = FilterButton(host)
+    button = FilterButton(host, label="Audience")
     heard = []
     button.changed.connect(lambda: heard.append(button.active()))
     agent = button.add_filter("agent", "Agent steps")
     button.add_filter("milestone", "Milestones")
     host.show()
     app.processEvents()
-    idle = button.face.sizeHint()
     idle_icon = button.face.icon().cacheKey()
     assert not button.clear_button.isEnabled() and button.face.property("active") is False
-    assert button.face.toolTip() == "Filter"
+    assert button.face.text() == "Audience" and button.face.toolTip() == "Audience"
+
     agent.trigger()  # The menu's own click: toggles and stays open.
     assert heard == [["agent"]] and button.clear_button.isEnabled()
     assert button.face.property("active") is True and button.face.icon().cacheKey() != idle_icon
-    assert button.face.toolTip() == "Filter — Agent steps"
-    assert button.face.sizeHint() == idle  # The indicator is the glyph: nothing moved.
+    # One pick puts its own words on the face; the full list stays in the tooltip.
+    assert button.face.text() == "Agent steps"
+    assert button.face.toolTip() == "Audience — Agent steps"
+
     button.set_active({"agent", "milestone"})
     assert sorted(button.active()) == ["agent", "milestone"]
+    # Past one it is the count: three names in a row outgrow the strip.
+    assert button.face.text() == "Audience · 2"
+    assert "Agent steps" in button.face.toolTip() and "Milestones" in button.face.toolTip()
+
     button.clear_button.click()
     assert button.active() == [] and heard[-1] == [] and not button.clear_button.isEnabled()
-    assert button.face.property("active") is False
+    assert button.face.property("active") is False and button.face.text() == "Audience"
     assert all(a.isCheckable() for a in button.menu.actions())
 
 

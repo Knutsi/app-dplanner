@@ -23,9 +23,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Final
 
-from dplanner.core.module_data import stamped
 from dplanner.domain.model import Project, StepId, now_stamp
-from dplanner.modules.testing.aspect import DATA_FORMAT, next_numbered
+from dplanner.modules.testing.aspect import DATA_FORMAT, next_numbered, project_entry
 
 # In the order a run moves through them. "pending" first because it is the default, and it
 # is the one that is never written: a test with no result entry is pending.
@@ -99,38 +98,40 @@ def _results(value: Any) -> dict[str, Result]:
     return found
 
 
-def write(runs: Sequence[Run]) -> dict[str, Any]:
-    """The project entry to store. No runs gives ``{}``, which removes the file."""
-    if not runs:
-        return {}
-    return stamped(
-        {
-            "runs": [
-                {
-                    "id": run.id,
-                    **({"label": run.label} if run.label else {}),
-                    **({"opened": run.opened} if run.opened else {}),
-                    **({"closed": run.closed} if run.closed else {}),
-                    **({"scope": run.scope} if run.scope else {}),
-                    **({"tests": list(run.tests)} if run.tests else {}),
-                    **(
-                        {
-                            "results": {
-                                test_id: {
-                                    "status": result.status,
-                                    **({"note": result.note} if result.note else {}),
-                                }
-                                for test_id, result in sorted(run.results.items())
+def write(project: Project, runs: Sequence[Run]) -> dict[str, Any]:
+    """The project entry to store — ``project``'s, because the runs share it.
+
+    The category catalogue lives under the same module id beside the same project, so this
+    hands its half to :func:`~dplanner.modules.testing.aspect.project_entry` rather than
+    returning a dict of its own. No runs removes the key, and an entry with nothing left in
+    it removes the file.
+    """
+    return project_entry(
+        project,
+        runs=[
+            {
+                "id": run.id,
+                **({"label": run.label} if run.label else {}),
+                **({"opened": run.opened} if run.opened else {}),
+                **({"closed": run.closed} if run.closed else {}),
+                **({"scope": run.scope} if run.scope else {}),
+                **({"tests": list(run.tests)} if run.tests else {}),
+                **(
+                    {
+                        "results": {
+                            test_id: {
+                                "status": result.status,
+                                **({"note": result.note} if result.note else {}),
                             }
+                            for test_id, result in sorted(run.results.items())
                         }
-                        if run.results
-                        else {}
-                    ),
-                }
-                for run in runs
-            ]
-        },
-        DATA_FORMAT.version,
+                    }
+                    if run.results
+                    else {}
+                ),
+            }
+            for run in runs
+        ],
     )
 
 

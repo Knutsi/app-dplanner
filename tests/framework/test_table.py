@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QDateEdit,
     QDoubleSpinBox,
     QHeaderView,
+    QLineEdit,
     QStyleOptionViewItem,
     QToolTip,
     QWidget,
@@ -102,6 +103,21 @@ def test_a_heading_spans_the_table_and_is_never_selected(table):
     assert table.rowHeight(0) < table.rowHeight(1)  # One line, whatever the rows are.
 
 
+def test_a_text_editor_trims_what_was_typed_and_prints_its_blank(app):
+    from dplanner.framework.table import TextEditor
+
+    editor = TextEditor(blank_text="Unnamed")
+    host = QWidget()
+    field = editor.make(host)
+    assert isinstance(field, QLineEdit)
+    editor.load(field, "Smoke")
+    assert field.text() == "Smoke"
+    field.setText("  Import ")
+    assert editor.read(field) == "Import"
+    assert editor.text("") == "Unnamed" and editor.text("Import") == "Import"
+    host.deleteLater()
+
+
 def test_rich_tables_are_taller_than_plain_ones_and_follow_the_font(app):
     plain = Table((Column("A"),))
     rich = Table((Column("A", detail=True),))
@@ -126,6 +142,62 @@ def test_fit_columns_opens_an_interactive_column_at_its_content(table):
     before = table.columnWidth(0)
     table.fit_columns()
     assert table.columnWidth(0) > before
+
+
+def test_a_keyed_heading_folds_the_rows_under_it(table):
+    table.add_heading("Smoke", key="Smoke")
+    table.add_row(["a"])
+    table.add_row(["b"])
+    table.add_heading("Import", key="Import")
+    table.add_row(["c"])
+
+    table.toggle_group("Smoke")
+    assert [table.isRowHidden(row) for row in range(5)] == [False, True, True, False, False]
+    assert table.collapsed() == {"Smoke"}
+    table.set_collapsed("Smoke", False)
+    assert not any(table.isRowHidden(row) for row in range(5))
+
+
+def test_a_heading_with_no_key_is_the_plain_rule_it_always_was(table):
+    table.add_heading("Later")
+    table.add_row(["a"])
+    assert table.group_at(0) == "" and table.is_heading(0)
+    assert not table.is_heading(1)
+
+
+def test_what_is_folded_survives_the_wholesale_rebuild_a_host_does(table):
+    """A fold remembered by row number would spring open on the next keystroke anywhere."""
+    table.add_heading("Smoke", key="Smoke")
+    table.add_row(["a"])
+    table.toggle_group("Smoke")
+
+    table.clear_rows()
+    table.add_heading("Smoke", key="Smoke")
+    table.add_row(["a"])
+    assert table.collapsed() == {"Smoke"} and table.isRowHidden(1)
+
+
+def test_a_press_anywhere_on_a_keyed_heading_folds_it_and_goes_no_further(table, app):
+    table.add_heading("Smoke", key="Smoke")
+    table.add_row(["a"])
+    table.resize(400, 200)
+    table.show()
+    QCoreApplication.processEvents()
+
+    middle = table.visualRect(table.model().index(0, 1)).center()
+    QTest.mouseClick(table.viewport(), Qt.MouseButton.LeftButton, pos=middle)
+    assert table.collapsed() == {"Smoke"}
+    assert table.selectedItems() == []  # A heading picks nothing; the click was the fold.
+    table.hide()
+
+
+def test_a_heading_may_wear_the_groups_own_glyph(table):
+    from PySide6.QtGui import QIcon, QPixmap
+
+    pixmap = QPixmap(16, 16)
+    pixmap.fill(QColor("red"))
+    table.add_heading("Smoke", key="Smoke", glyph=QIcon(pixmap))
+    assert not table.item(0, 0).icon().isNull()
 
 
 def test_clear_rows_drops_spans_and_hover(table):

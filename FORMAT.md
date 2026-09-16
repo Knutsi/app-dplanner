@@ -465,6 +465,29 @@ from its fields, so an older build that edits one test drops the audiences of ev
 that step. Worth knowing what the stamp does and does not buy — `migrated()` only makes the
 *migration pass* leave newer data alone; nothing refuses an older build's write.
 
+**`category` and `sort_key` are the same idea with an open vocabulary, and the category's
+list lives beside the project.** A test carries `"category": "Import"` — the category's *words*, not a minted id,
+because there is no closed list to mint against and because a diff naming the group a test
+moved to is worth more than a stable key nobody can type. Absent is unfiled, which reads as
+`Uncategorised` everywhere and which `project lint`'s `test.category` asks about once the
+project has any categories at all. The catalogue itself is the project's entry under the
+same module id: `{"categories": [{"name": "Import", "icon": "layers"}], "runs": […]}`, in
+the order they were written, `icon` a glyph key from `categories.ICONS` and absent when the
+category wears none. It is stored rather than derived from the tests precisely so it can be
+laid out *before* them; what is **in** a category is never stored, and a category a test
+names that the catalogue does not is still real — it is simply one nobody wrote down, which
+is how a typo stays visible. **Two writers share that one project entry**, so neither may
+hand `set_module_data` a dict built from its own half: `aspect.project_entry()` is the one
+composer, and `runs.write()` and `categories.write_catalog()` both go through it. Renaming
+a category rewrites every test that carries it — that is the price the words-not-an-id
+choice pays, paid in one undoable step by `test-category set --rename` and by the category
+editor's Save. **`sort_key` is the second, ergonomic axis** — `"sort_key": "Customer list
+view"` — which orders a test *inside* its category and has no catalogue at all, because it
+is not a vocabulary anybody maintains: absent is no key, and a key nothing else names is
+simply a group of one. All three keys are why the format is **3**; they arrived together
+and none has been on anybody's disk without the others, so one pass-through migration
+records what two would have.
+
 **An aspect toggled on with nothing to say yet is a marker entry.** A step's "on/off" for
 a toggleable aspect is the presence of its `module_data` entry, and two aspects need a
 shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type toggle

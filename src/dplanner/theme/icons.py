@@ -452,6 +452,14 @@ def sweep_icon(color: str | QColor) -> QIcon:
     return glyph_icon("sweep", color)
 
 
+def chevron_left_icon(color: str | QColor) -> QIcon:
+    return glyph_icon("chevron-left", color)
+
+
+def chevron_right_icon(color: str | QColor) -> QIcon:
+    return glyph_icon("chevron-right", color)
+
+
 def camera_icon(color: str | QColor) -> QIcon:
     """A camera: keep the plan as it stands, to compare against later."""
     return glyph_icon("camera", color)
