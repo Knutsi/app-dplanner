@@ -20,7 +20,6 @@ from pathlib import Path
 from PySide6.QtCore import Signal as QtSignal
 from PySide6.QtWidgets import (
     QFileDialog,
-    QHBoxLayout,
     QLabel,
     QLineEdit,
     QVBoxLayout,
@@ -44,7 +43,7 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.widgets import block, caption, note
-from dplanner.modules.projects.repo_picker import tool_button
+from dplanner.modules.projects.repo_picker import field_row, tool_button
 from dplanner.modules.projects.repos import Joined, RepositoryServices, shown_path
 from dplanner.modules.projects.repositories_folder import (
     ensure_repositories_folder,
@@ -103,11 +102,7 @@ class LinkPage(QWidget):
         self.choose_button = tool_button("Choose a link file…", "ChooseLinkButton", self)
         self.choose_button.setIcon(folder_icon(ink))
         self.choose_button.clicked.connect(self._browse)
-        field = QWidget(self)
-        row = QHBoxLayout(field)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(self.link_edit, 1)
-        row.addWidget(self.choose_button)
+        field = field_row(self.link_edit, self.choose_button, self)
         self.link_status = StatusLine(self)
         block(layout, caption("Project link", self), field, self.link_status)
 
@@ -137,11 +132,7 @@ class LinkPage(QWidget):
         self.browse_button = tool_button("Choose the checkout…", "BrowseCheckoutButton", self.found)
         self.browse_button.setIcon(folder_icon(ink))
         self.browse_button.clicked.connect(self._browse_checkout)
-        checkout_row = QWidget(self.found)
-        row = QHBoxLayout(checkout_row)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.addWidget(self.checkout_edit, 1)
-        row.addWidget(self.browse_button)
+        checkout_row = field_row(self.checkout_edit, self.browse_button, self.found)
         self.checkout_where = note("", self.found)
         block(found_layout, caption("Code", self.found), checkout_row, self.checkout_where)
         layout.addStretch(1)

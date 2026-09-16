@@ -25,12 +25,17 @@ instead of a log: its history *is* the code's, and showing the same commits twic
 say they were apart. Cloning, publishing and creating on GitHub run in a second task body,
 and their outcome lands in the model on the GUI thread through one ``_done`` signal.
 
-*File ▸ New Project…* is the same dialog in **create mode**: a form, because nothing
-exists yet to have a menu about — the name, the summary, then the plan repository, the
-folder inside it, the code repository and its checkout as captioned blocks, and Create as
-the primary, refused in words until the plan has a home. It answers a
-:class:`NewProjectSpec`; the module seeds the project and connects it, so the dialog
-writes nothing anywhere.
+*File ▸ New Project…* is the same dialog in **create mode**: a form, because there is no
+history yet to read — the name, the summary, then the plan repository, the folder inside
+it, the code repository and its checkout as captioned blocks, and Create as the primary,
+refused in words until the plan has a home. **Both repositories are picked rather than
+typed**, and each field carries the ⋯ of the other ways in: the plan's is the
+:class:`~dplanner.modules.projects.repo_picker.RepoPicker`, the code's is a list of what
+this library already plans over *Pick from GitHub…* and *Clone into Repositories Folder* —
+and naming code another project here plans brings that project's checkout with it, because
+a second plan for one repository needs no second clone. It answers a
+:class:`NewProjectSpec`; the module seeds the project and connects it, so the dialog writes
+nothing into the library.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -50,7 +55,6 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMenu,
     QPushButton,
     QSizePolicy,
     QVBoxLayout,
@@ -85,12 +89,14 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import EmptyState, block, caption, confirm, note, quiet
 from dplanner.modules.projects.repo_picker import (
     Entry,
+    GhRepoListDialog,
     PlanTarget,
     RepoAction,
     RepoPicker,
+    field_row,
     github_name_problem,
     menu_button,
-    menu_of,
+    popup_menu,
     tool_button,
 )
 from dplanner.modules.projects.repos import (
@@ -102,6 +108,7 @@ from dplanner.modules.projects.repos import (
     RepoLog,
     RepositoryServices,
     code_lines,
+    github_url,
     plan_lines,
     shown_path,
 )
@@ -115,6 +122,7 @@ from dplanner.theme.icons import (
     clone_icon,
     code_icon,
     external_icon,
+    find_icon,
     folder_icon,
     move_icon,
     plus_icon,
@@ -383,14 +391,8 @@ class RepositoryColumn(QWidget):
         """What the menu would offer right now — asked afresh, and what a test reads."""
         return list(self._entries())
 
-    def menu(self) -> QMenu:
-        """The ⋯ menu as it stands, built afresh every time it opens."""
-        return menu_of(self.entries(), self._color, self)
-
     def popup(self) -> None:
-        menu = self.menu()
-        menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
-        menu.deleteLater()
+        popup_menu(self.menu_button, self.entries(), self._color)
 
     def _activate(self, item: QListWidgetItem) -> None:
         url = item.data(URL_ROLE)
@@ -411,6 +413,7 @@ class ProjectDialog(DialogFrame):
         theme: ThemeService,
         *,
         move: Callable[[NodeId], None],
+        known_checkout: Callable[[str], Path | None] | None = None,
         mode: str = SETTINGS,
         parent: QWidget | None = None,
     ) -> None:
@@ -426,7 +429,11 @@ class ProjectDialog(DialogFrame):
         self._library = library
         self._undo = undo
         self._services = services
+        self._tasks = tasks
         self._move = move
+        # Where this machine already has a code repository checked out, asked of the
+        # library rather than of disk — create mode offers it rather than asking twice.
+        self._known_checkout = known_checkout or (lambda _remote: None)
         self._project_id: NodeId | None = None
         self._facts: RepositoryFacts | None = None
         self._gh_refusal: str | None = None
@@ -435,8 +442,10 @@ class ProjectDialog(DialogFrame):
         self._reader = TaskRunner(tasks, parent=self)
         self._worker = TaskRunner(tasks, parent=self)
         # Everything that wears the theme's ink, as "repaint me in this colour". A mode
-        # adds what it built, so _paint branches on nothing.
+        # adds what it built, so _paint branches on nothing. The ink itself is kept for the
+        # pop-ups, which are painted when they open rather than held.
         self._painters: list[Callable[[str], None]] = []
+        self._ink = ""
         self._fetched.connect(self._on_logs)
         self._done.connect(self._on_done)
 
@@ -532,9 +541,11 @@ class ProjectDialog(DialogFrame):
         self, services: RepositoryServices, tasks: TaskService, theme: ThemeService
     ) -> None:
         """New Project…: the same name and summary, then the fields that decide where the
-        plan and the code will live, each under its caption (DESIGN.md's *Forms*). No
-        logs and no menus — nothing exists to read or act on yet — so the answer is a
-        :class:`NewProjectSpec` and Create is the primary."""
+        plan and the code will live, each under its caption (DESIGN.md's *Forms*). No logs
+        — there is no history yet to read — but each repository field carries the ⋯ of the
+        ways to answer it that are not typing, because *picking* a repository is a verb
+        even before the project exists. The answer is a :class:`NewProjectSpec` and Create
+        is the primary."""
         body, layout = self.body, self.body_layout
 
         self.plan_picker = RepoPicker(services, tasks, allow_new=True, theme=theme, parent=body)
@@ -560,7 +571,17 @@ class ProjectDialog(DialogFrame):
         line.setPlaceholderText(
             "https://github.com/acme/widget — the code this plan is about (optional)"
         )
-        block(layout, caption("Code repository", body), self.repository_combo)
+        # What this library already plans is the list: a second plan for code somebody here
+        # already works on is the common case, and a remote URL is nobody's idea of
+        # something to type. Nothing is current until it is picked — an editable combo
+        # opened on its first row would answer a question nobody asked.
+        self.repository_combo.addItems(self._known_repositories())
+        self.repository_combo.setCurrentIndex(-1)
+        self.repository_combo.activated.connect(lambda _index: self._offer_checkout())
+        self.code_menu = menu_button("Other ways to name the code repository", body)
+        self.code_menu.clicked.connect(self._code_popup)
+        code_row = field_row(self.repository_combo, self.code_menu, body)
+        block(layout, caption("Code repository", body), code_row)
 
         self.checkout_edit = QLineEdit(body)
         self.checkout_edit.setObjectName("CodeCheckoutEdit")
@@ -568,14 +589,9 @@ class ProjectDialog(DialogFrame):
             "Where the code is checked out on this machine (optional)"
         )
         self.browse_button = tool_button("Choose the checkout…", "BrowseCheckoutButton", body)
-        self.browse_button.clicked.connect(self._browse_for_create)
+        self.browse_button.clicked.connect(self._browse_checkout)
         self._painters.append(lambda ink: self.browse_button.setIcon(folder_icon(ink)))
-        checkout_row = QWidget(body)
-        row = QHBoxLayout(checkout_row)
-        row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(FIELD_GAP)
-        row.addWidget(self.checkout_edit, 1)
-        row.addWidget(self.browse_button)
+        checkout_row = field_row(self.checkout_edit, self.browse_button, body)
         block(layout, caption("Checkout", body), checkout_row)
         layout.addStretch(1)
 
@@ -603,9 +619,45 @@ class ProjectDialog(DialogFrame):
             summary=self.summary_edit.text().strip(),
             plan=plan,
             folder=folder,
-            repository=self.repository_combo.currentText().strip(),
+            repository=self._code_url(),
             checkout=Path(checkout).expanduser() if checkout else None,
         )
+
+    def _known_repositories(self) -> list[str]:
+        """The code repositories this library already plans, each once, in the order the
+        projects stand in. Read off the model: no disk, no gh, no subprocess."""
+        found: list[str] = []
+        for project in self._library.projects:
+            if project.repository and project.repository not in found:
+                found.append(project.repository)
+        return found
+
+    def _offer_checkout(self) -> None:
+        """Create mode: where this machine already has the named code checked out, if
+        another project here plans it and nothing has been said about this one's checkout
+        yet — a team's second plan for one repository needs no second clone."""
+        url = self._code_url()
+        if self.checkout_edit is None or not url or self.checkout_edit.text().strip():
+            return
+        found = self._known_checkout(url)
+        if found is not None:
+            self.checkout_edit.setText(shown_path(found))
+
+    def _create_code_entries(self) -> list[Entry]:
+        """Create mode's code ⋯: the ways to name the code repository that are not typing
+        it. Choosing the checkout is the checkout's own button, beside the checkout."""
+        return [
+            RepoAction("Pick from GitHub…", find_icon, self._pick_repository, self._gh_reason()),
+            RepoAction(
+                "Clone into Repositories Folder",
+                clone_icon,
+                self._clone_checkout,
+                self._gh_reason() or ("" if self._code_url() else "no code repository named"),
+            ),
+        ]
+
+    def _code_popup(self) -> None:
+        popup_menu(self.code_menu, self._create_code_entries(), self._ink)
 
     def _folder_typed(self, _text: str) -> None:
         self._folder_touched = True  # From here the name no longer dictates the folder.
@@ -701,6 +753,7 @@ class ProjectDialog(DialogFrame):
         gh = self._gh_reason()
         return [
             RepoAction("Set Code Repository…", code_icon, self._ask_repository),
+            RepoAction("Pick from GitHub…", find_icon, self._pick_repository, gh),
             RepoAction(
                 "Open on GitHub",
                 external_icon,
@@ -838,15 +891,48 @@ class ProjectDialog(DialogFrame):
         if text != project.summary:
             self._undo.push(SetFieldCommand(project.id, "summary", text, view_origin=self))
 
+    def _code_url(self) -> str:
+        """The code repository as this mode holds it: the create form's field, or the fact
+        the project records."""
+        if self.repository_combo is not None:
+            return self.repository_combo.currentText().strip()
+        return self._facts.repository if self._facts is not None else ""
+
     def _set_repository(self, text: str) -> None:
-        """The code repository, through the undo stack — it is a fact the whole team
-        shares, written into ``project.dproj``."""
+        """The code repository: the create form's field, or — through the undo stack — the
+        fact the whole team shares, written into ``project.dproj``."""
+        if self.repository_combo is not None:
+            self.repository_combo.setEditText(text)
+            self._offer_checkout()
+            return
         project = self._project()
         if project is None or text == project.repository:
             return
         self._undo.push(SetFieldCommand(project.id, "repository", text, view_origin=self))
         self._refresh()
         self._request_logs()
+
+    def _record_checkout(self, root: Path) -> None:
+        """Where the code is on this machine: the create form's field, or straight into
+        the library file — a per-machine fact, so it never goes onto the undo stack."""
+        if self.checkout_edit is not None:
+            self.checkout_edit.setText(shown_path(root))
+            return
+        project = self._project()
+        if project is not None:
+            self._services.set_checkout(project.id, root)
+
+    def _pick_repository(self) -> None:
+        """One of the person's own repositories on GitHub, chosen from the listing rather
+        than typed — the same listing a plan repository is cloned from."""
+        picker = GhRepoListDialog(
+            self._services, self._tasks, self, title="Code Repository", verb="Choose"
+        )
+        accepted = bool(picker.exec())
+        repo = picker.chosen() if accepted else ""
+        picker.deleteLater()
+        if repo:
+            self._set_repository(github_url(repo))
 
     def _ask_repository(self) -> None:
         facts = self._facts
@@ -864,40 +950,29 @@ class ProjectDialog(DialogFrame):
             self._set_repository(text)
 
     def _browse_checkout(self) -> None:
-        """Where the code is on this machine — a per-machine fact, so it goes straight
-        into the library file rather than onto the undo stack."""
-        project = self._project()
-        if project is None:
-            return
+        """A folder on this machine, and the repository it turns out to be.
+
+        A checkout whose origin is not the code repository named is the trap this asks
+        about — silently keeping either answer would leave the two disagreeing — and it is
+        the same question in both modes, answered into the field or into the library file.
+        """
         root = self._ask_checkout()
         if root is None:
             return
-        self._services.set_checkout(project.id, root)
+        self._record_checkout(root)
         origin = origin_url(root)
-        if not origin:
+        named = self._code_url()
+        if not origin or (named and canonical_remote(origin) == canonical_remote(named)):
             return
-        if project.repository and canonical_remote(origin) == canonical_remote(project.repository):
-            return
-        if project.repository and not confirm(
+        if named and not confirm(
             self,
             "Code Repository",
-            f"This checkout's origin is {origin}, not {project.repository}.\n\n"
+            f"This checkout's origin is {origin}, not {named}.\n\n"
             f"Record {origin} as the code repository?",
             verb="Record",
         ):
             return
         self._set_repository(origin)
-
-    def _browse_for_create(self) -> None:
-        """Create mode: nothing exists yet, so a picked checkout fills the fields that
-        carry the answer to Create rather than writing anything."""
-        root = self._ask_checkout()
-        if root is None or self.checkout_edit is None or self.repository_combo is None:
-            return
-        self.checkout_edit.setText(shown_path(root))
-        origin = origin_url(root)
-        if origin and not self.repository_combo.currentText().strip():
-            self.repository_combo.setEditText(origin)
 
     def _ask_checkout(self) -> Path | None:
         start = repositories_folder() or Path.home()
@@ -929,18 +1004,18 @@ class ProjectDialog(DialogFrame):
     # -- gh, off the GUI thread ---------------------------------------------------------------
 
     def _clone_checkout(self) -> None:
-        facts = self._facts
-        project = self._project()
-        if project is None or facts is None or not facts.repository:
+        """The code repository named, cloned into the repositories folder — and recorded
+        as this machine's checkout of it, into the field or into the library file."""
+        url = self._code_url()
+        if not url:
             return
         folder = ensure_repositories_folder(self)
         if folder is None:
             return
-        url = facts.repository
         label = remote_label(url)
         dest = folder / (label.rsplit("/", 1)[-1] or "code")
         if (dest / ".git").exists():
-            self._services.set_checkout(project.id, dest)
+            self._record_checkout(dest)
             self._say(f"Using the checkout already at {shown_path(dest)}", "ok")
             return
         if dest.exists():
@@ -1026,17 +1101,20 @@ class ProjectDialog(DialogFrame):
 
     def _on_done(self, what: str, result: object, error: str) -> None:
         self._working = False
-        project = self._project()
         if error:
             self._say(error, "error")
             return
-        if project is None:
-            return
         if what == "clone":
+            # Recorded the way this mode records a checkout: through the store, which
+            # refreshes the columns, or into the create form's field.
             landed = Path(str(result))
             self._say(f"Cloned into {shown_path(landed)}", "ok")
-            self._services.set_checkout(project.id, landed)  # Refreshes through the store.
-        elif what == "create":
+            self._record_checkout(landed)
+            return
+        project = self._project()
+        if project is None:
+            return
+        if what == "create":
             assert isinstance(result, tuple)
             url, dest = str(result[0]), Path(str(result[1]))
             self._say(f"Created {remote_label(url)} and cloned it into {shown_path(dest)}", "ok")
@@ -1078,8 +1156,9 @@ class ProjectDialog(DialogFrame):
         return label
 
     def _paint(self, theme: Theme) -> None:
-        """Everything that wears ink, repainted. The menus' glyphs are not here: a pop-up
-        is built when it opens, so its colour cannot go stale."""
+        """Everything that wears ink, repainted, and the ink itself kept for the pop-ups:
+        a menu is built when it opens, from this, so its glyphs cannot go stale."""
+        self._ink = theme.text_secondary
         for repaint in self._painters:
             repaint(theme.text_secondary)
 
