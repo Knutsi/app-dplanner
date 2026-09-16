@@ -20,12 +20,15 @@ onto the undo stack the way the time report's focus spinbox is. The registry ver
 the Tests activity, where a row *is* a test and selecting one is the natural gesture.
 """
 
+import dataclasses
 from collections.abc import Callable
+from functools import partial
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QCheckBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -56,8 +59,10 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import (
+    AUDIENCES,
     MODULE_ID,
     Test,
+    audience_words,
     covered,
     find,
     next_test_id,
@@ -122,7 +127,7 @@ class TestBodyField:
         found = find(tests, self._test_id)
         if found is None:  # The test went while the editor was open; write nothing.
             return SetModuleDataCommand(self._step_id, MODULE_ID, write(tests))
-        changed = replace(tests, Test(found.id, found.title, spliced, found.archived))
+        changed = replace(tests, dataclasses.replace(found, body=spliced))
         return SetModuleDataCommand(
             self._step_id,
             MODULE_ID,
@@ -424,7 +429,7 @@ class TestsSection(QWidget):
         step, test = self._step(), find(self._tests(), self._selected)
         if step is None or test is None:
             return
-        changed = Test(test.id, test.title, test.body, not test.archived)
+        changed = dataclasses.replace(test, archived=not test.archived)
         self._push(
             step,
             replace(read(step), changed),
@@ -487,6 +492,28 @@ class _TestDetail(QWidget):
             header.addWidget(corner)
         layout.addLayout(header)
 
+        # Who the test is for. Three independent toggles rather than the roster's fourth
+        # column: this is the tightest surface in the application, and a test may be for
+        # more than one reader. They say what is *stored*, so an unclassified test shows
+        # three empty boxes and the note below says what it reads as instead — ticking
+        # `Other` through `audiences_of` would render a box that could not be unticked.
+        self.audiences = QWidget(self)
+        audience_row = QHBoxLayout(self.audiences)
+        audience_row.setContentsMargins(0, 0, 0, 0)
+        audience_row.setSpacing(FIELD_GAP)
+        caption = QLabel("Audience", self.audiences)
+        caption.setObjectName("InspectorCaption")
+        audience_row.addWidget(caption)
+        self.audience_boxes: dict[str, QCheckBox] = {}
+        for audience in AUDIENCES:
+            box = QCheckBox(audience.label, self.audiences)
+            box.setToolTip(audience.meaning)
+            box.toggled.connect(partial(self._commit_audience, audience.id))
+            audience_row.addWidget(box)
+            self.audience_boxes[audience.id] = box
+        audience_row.addStretch(1)
+        layout.addWidget(self.audiences)
+
         # A plain expanding text well: the detail pane is not a card in a scrolling stack,
         # so the editor may simply take the room and scroll like any other document.
         # A test's images are the *step's*, not the test's: `dplanner test attach` has
@@ -539,7 +566,14 @@ class _TestDetail(QWidget):
     ) -> None:
         self._step_id = step_id
         showing = step_id is not None and test is not None
-        for widget in (self.identity, self.title, self.chip, self.body, self.result):
+        for widget in (
+            self.identity,
+            self.title,
+            self.chip,
+            self.audiences,
+            self.body,
+            self.result,
+        ):
             widget.setVisible(showing)
         self.empty.setVisible(not showing)
         if not showing or test is None:
@@ -556,11 +590,19 @@ class _TestDetail(QWidget):
         if not self.title.hasFocus():
             self.title.setText(test.title)
         self.chip.show_status(outcome.result.status if outcome else "pending")
+        for audience_id, box in self.audience_boxes.items():
+            # Blocked, or setting the boxes to match the record would push a command back.
+            box.blockSignals(True)
+            box.setChecked(audience_id in test.audiences)
+            box.blockSignals(False)
         self.result.setText(
             " · ".join(
                 part
                 for part in (
                     "Archived — out of new runs" if test.archived else "",
+                    # The one place the fallback is spelled out, next to the boxes that do
+                    # not show it. It is also what `project lint`'s `test.audience` asks.
+                    "" if test.audiences else f"No audience set — reads as {audience_words(test)}",
                     outcome_line(outcome),
                 )
                 if part
@@ -570,6 +612,37 @@ class _TestDetail(QWidget):
     def dispose(self) -> None:
         self.body.dispose()
 
+    def _commit_audience(self, audience_id: str, on: bool) -> None:
+        """One toggle, one undoable command.
+
+        ``SetModuleDataCommand`` coalesces on ``(node, module, label)`` with no time
+        window, so this owes two things: a label naming the *test*, like the title and the
+        body have, so ticking a box on one test never folds into a box on another; and a
+        seal afterwards, because a click is a finished gesture and the two boxes of one
+        test would otherwise merge into a single step.
+        """
+        if self._step_id is None or not self._library.has(self._step_id):
+            return
+        step = self._library.step(self._step_id)
+        test = find(read(step), self._test_id)
+        if test is None or (audience_id in test.audiences) == on:
+            return
+        wanted = set(test.audiences) | {audience_id} if on else set(test.audiences) - {audience_id}
+        changed = dataclasses.replace(
+            test, audiences=tuple(a.id for a in AUDIENCES if a.id in wanted)
+        )
+        self._undo.push(
+            SetModuleDataCommand(
+                step.id,
+                MODULE_ID,
+                write(replace(read(step), changed)),
+                label=f"Set Test {test.id} Audience",
+            )
+        )
+        # A click is a finished gesture, so the next one starts its own step. The label
+        # alone would not do it: it is the merge key, and both boxes of one test share it.
+        self._undo.break_coalescing()
+
     def _commit_title(self) -> None:
         if self._step_id is None or not self._library.has(self._step_id):
             return
@@ -577,7 +650,7 @@ class _TestDetail(QWidget):
         test = find(read(step), self._test_id)
         if test is None or test.title == self.title.text():
             return
-        changed = Test(test.id, self.title.text(), test.body, test.archived)
+        changed = dataclasses.replace(test, title=self.title.text())
         self._undo.push(
             SetModuleDataCommand(
                 step.id, MODULE_ID, write(replace(read(step), changed)), label="Rename Test"
@@ -718,11 +791,11 @@ class CoversSection(_TestListSection):
         for title, held in groups:
             self.add_card(_GroupHeader(title, self._tally(held, outcomes)))
             for step, test in held:
-                self.add_card(_CoveredRow(step.title, test.title, outcomes.get(test.id)))
+                self.add_card(_CoveredRow(step.title, test, outcomes.get(test.id)))
         if groups and direct:
             self.add_card(_GroupHeader(DIRECT_GROUP, self._tally(direct, outcomes)))
         for step, test in direct:
-            self.add_card(_CoveredRow(step.title, test.title, outcomes.get(test.id)))
+            self.add_card(_CoveredRow(step.title, test, outcomes.get(test.id)))
 
         everything = [pair for _title, held in groups for pair in held] + direct
         self.say(
@@ -786,9 +859,9 @@ class _GroupHeader(QWidget):
 
 
 class _CoveredRow(QFrame):
-    """One covered test, read-only: what it is, which step it belongs to, how it last did."""
+    """One covered test, read-only: what it is, who it is for, which step, how it last did."""
 
-    def __init__(self, step_title: str, test_title: str, outcome: runs.Outcome | None) -> None:
+    def __init__(self, step_title: str, test: Test, outcome: runs.Outcome | None) -> None:
         super().__init__()
         self.setObjectName("ToolCard")
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -798,10 +871,12 @@ class _CoveredRow(QFrame):
 
         names = QVBoxLayout()
         names.setSpacing(4)  # DESIGN.md: a rich row's lines sit 4 px apart.
-        primary = QLabel(test_title or "Untitled test", self)
+        primary = QLabel(test.title or "Untitled test", self)
         primary.setWordWrap(True)
         names.addWidget(primary)
-        secondary = QLabel(step_title or "Untitled step", self)
+        # The audience rides on the line that already names the step: this row is a glance
+        # at what a collector stands for, and who each test is for is part of that.
+        secondary = QLabel(f"{step_title or 'Untitled step'} · {audience_words(test)}", self)
         secondary.setObjectName("InspectorNote")
         secondary.setWordWrap(True)
         names.addWidget(secondary)

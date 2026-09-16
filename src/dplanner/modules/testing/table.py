@@ -22,7 +22,7 @@ from PySide6.QtWidgets import QTableWidgetItem, QWidget
 from dplanner.domain.model import Step, StepId
 from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.table import Cell, Column, Selection, Table
-from dplanner.modules.testing.aspect import Test
+from dplanner.modules.testing.aspect import Test, audience_words
 from dplanner.modules.testing.runs import Outcome
 from dplanner.modules.testing.view import FAILED_ROW_TINT, tint, word
 from dplanner.theme.tokens import SECONDARY_ALPHA
@@ -32,10 +32,19 @@ COLUMNS = (
     Column("Project"),
     Column("Step"),
     Column("Covered by"),
+    Column("Audience"),
     Column("Result"),
     Column("When"),
 )
-TEST_COLUMN, PROJECT_COLUMN, STEP_COLUMN, COVERED_COLUMN, RESULT_COLUMN, WHEN_COLUMN = range(6)
+(
+    TEST_COLUMN,
+    PROJECT_COLUMN,
+    STEP_COLUMN,
+    COVERED_COLUMN,
+    AUDIENCE_COLUMN,
+    RESULT_COLUMN,
+    WHEN_COLUMN,
+) = range(7)
 
 # A test's own line can be long; past this the column stops growing and elides.
 TEST_MAX_WIDTH = 340
@@ -92,6 +101,10 @@ class TestsTable(Table):
         # A column of blanks is noise: hide what this scope has nothing to say about.
         self.setColumnHidden(PROJECT_COLUMN, not show_project)
         self.setColumnHidden(COVERED_COLUMN, not any(row.covered_by for row in rows))
+        # On the test's *stored* audiences, not on what it reads as: `audience_words` never
+        # answers blank, so a project nobody has classified would otherwise grow a column
+        # saying "Other" all the way down.
+        self.setColumnHidden(AUDIENCE_COLUMN, not any(row.test.audiences for row in rows))
         self.setColumnHidden(WHEN_COLUMN, not any(row.outcome for row in rows))
         self._reselect(keep)
         if not self._sized:
@@ -111,6 +124,7 @@ class TestsTable(Table):
                 Cell(row.project, secondary=True, tooltip=tip),
                 Cell(row.step.title or "Untitled step", secondary=True, tooltip=tip),
                 Cell(", ".join(row.covered_by), secondary=True, tooltip=tip),
+                Cell(audience_words(row.test), secondary=True, tooltip=tip),
                 # The one place a colour is asserted: a status means the same on every theme.
                 Cell(word(row.status), ink=tint(row.status), tooltip=tip),
                 Cell(_when(row), secondary=True, tooltip=tip),

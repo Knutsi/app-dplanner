@@ -445,7 +445,8 @@ node kinds — beside the *project* it is the **compilation instructions**, whic
 compile briefing, which is `step_agent_instruction`'s shape for the same reason.
 
 **A record list is the shape for a fact a step has several of.** `testing` writes
-`{"tests": [{"id": "T100", "title": "…", "body": "…"}]}` beside a step: a *test* belongs to
+`{"tests": [{"id": "T100", "title": "…", "body": "…", "audiences": ["qa", "technical"]}]}`
+beside a step: a *test* belongs to
 exactly one step, a step carries several, and each has its own result in a run. The body is
 markdown **inside the record** rather than in `modules/testing.md`, because a node holds
 exactly one prose document and this is N of them. The trade is explicit: a body edit diffs as one changed line
@@ -453,7 +454,16 @@ rather than line by line, which is bearable while test bodies are a few lines ea
 are the exception and go where a description's do, in the step's file area. Ids are minted
 per *project* and meant to be read — `T100, T101, …`, and `R100, R101, …` for runs — so a
 run's results are a flat map, an id is quotable in a bug report, and renaming a test never
-detaches its history.
+detaches its history. **`audiences` says who the test is written for** — a closed list
+(`qa`, `technical`, `other`), stored in that order however they were named so the bytes do
+not depend on the typing, and **absent when nobody has said**, which reads as `other`
+everywhere a test is shown. Absence is not migrated into an explicit `other`, because the
+two are different claims: `project lint`'s `test.audience` asks for the answer a test at a
+time, which is what lets a plan written before audiences existed stay exactly as it is.
+That key is why the format is **2**, under the rule below: `write()` rebuilds each record
+from its fields, so an older build that edits one test drops the audiences of every test on
+that step. Worth knowing what the stamp does and does not buy — `migrated()` only makes the
+*migration pass* leave newer data alone; nothing refuses an older build's write.
 
 **An aspect toggled on with nothing to say yet is a marker entry.** A step's "on/off" for
 a toggleable aspect is the presence of its `module_data` entry, and two aspects need a

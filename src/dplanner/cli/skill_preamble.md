@@ -180,6 +180,33 @@ the bench view with 200+ rows.
 2. It must not flicker when it first renders, nor when data updates underneath.'
 ```
 
+**Say who each test is for.** Every test carries one or more audiences — `qa` for
+something somebody executes by hand, `technical` for an engineer proving the mechanism,
+`other` for neither. It is how a plan produces the list you hand to QA rather than the
+whole roster, so `dplanner project lint` asks about any test that does not say:
+
+```
+dplanner test add 'Fix list flicker' 'No flicker on render' --audience qa --text '1. …'
+dplanner test set T100 --audience qa --audience technical
+dplanner test list --audience qa
+dplanner test-run start --audience qa --label 'QA pass'
+```
+
+A test that says nothing reads as `other` everywhere it is shown, so nothing is lost — but
+say it out loud, and `--audience none` is how one goes back to unclassified.
+
+**Tests go stale, and nothing else notices.** A step is marked done, and months later a
+decision or spec-change note changes what the work should do — the test carries on
+asserting last month's answer. `dplanner test review` lists the live tests on done steps
+that have not been run since such a note landed on them, each with the two ways out:
+
+```
+dplanner test review              # before trusting a plan's test results
+```
+
+Run it when you pick up an unfamiliar plan, and after writing a `decision` or
+`spec-change` note yourself: the note you just made is the one putting tests in doubt.
+
 Three shapes are worth knowing:
 
 - **A collector** is a step that stands for the work behind it. Three kinds, one derivation:

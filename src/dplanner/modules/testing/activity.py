@@ -42,10 +42,10 @@ from dplanner.framework.context import (
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.table import Selection
-from dplanner.framework.toolbar import Toolbar
+from dplanner.framework.toolbar import FilterButton, Toolbar
 from dplanner.framework.widgets import EmptyState, captioned, note
 from dplanner.modules.testing import runs
-from dplanner.modules.testing.aspect import covered, project_tests
+from dplanner.modules.testing.aspect import AUDIENCES, audiences_of, covered, project_tests
 from dplanner.modules.testing.table import Row, TestsTable
 from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.theme.cards import title_font
@@ -61,6 +61,8 @@ ALL_TESTS_KIND = "all_tests"
 TAB_HINT = "Everything this project verifies, and how it last did."
 ALL_HINT = "Every test in every project in this library, and how it last did."
 ARCHIVED_TIP = "List the tests taken off the roster as well"
+AUDIENCE_TIP = "Show only the tests written for these"
+NO_MATCH = "No test here is written for those audiences. Clear the filter to see them all."
 # Creation first, then what acts on the picked tests (DESIGN.md's *Tables*).
 RUN_VERBS = ("tests.new_run", "tests.close_run", *(f"test.result_{s}" for s in RESULT_ORDER))
 
@@ -125,6 +127,12 @@ class _TestsPage(QWidget):
         self.strip.setSpacing(FIELD_GAP)
         self.controls = Toolbar(self)
         self.strip.addWidget(self.controls, 1)
+        # Built here so both tabs offer the same filter with the same words. It is added to
+        # the strip by whoever wants it, in the order that tab reads best.
+        self.audience = FilterButton(label="Audience")
+        self.audience.face.setToolTip(AUDIENCE_TIP)
+        for audience in AUDIENCES:
+            self.audience.add_filter(audience.id, audience.label)
         # Outside the strip, so folding the verbs into … can never take it.
         self.updating = UpdatingIndicator(self)
         self.strip.addWidget(self.updating)
@@ -142,6 +150,24 @@ class _TestsPage(QWidget):
         self.answer.setText(answer)
         self.detail.setText(detail)
         self.detail.setVisible(bool(detail))
+
+    def keep_for_audience(self, rows: list[Row]) -> list[Row]:
+        """``rows`` narrowed to the picked audiences; all of them while none is picked."""
+        wanted = set(self.audience.active())
+        if not wanted:
+            return rows
+        return [row for row in rows if set(audiences_of(row.test)) & wanted]
+
+    def lead_filtered(self, shown: int, total: int, answer: str, detail: str) -> None:
+        """Lead with the answer, and say when the answer is only part of the roster.
+
+        A widget among the verbs never folds into the strip's ``…`` — it hides when there is
+        no room (``DESIGN.md``) — so on a narrow tab the filter can be applied with nothing
+        left on screen saying so. This tab leads with a count, and a count that has silently
+        lost rows is a wrong answer, so the line under it carries the narrowing.
+        """
+        narrowed = f"{shown} of {total} shown" if shown != total else ""
+        self.lead(answer, " · ".join(part for part in (narrowed, detail) if part))
 
 
 class TestsActivity(EntityActivity):
@@ -168,6 +194,9 @@ class TestsActivity(EntityActivity):
             self.page, "Which tests to show: all of them, or one collector's"
         )
         self.scope_box.currentIndexChanged.connect(self._on_scope)
+        # Beside the scope box: both narrow *which tests*, where the run box picks which
+        # results and the group box says how they are filed.
+        controls.add_widget(self.page.audience)
         self.run_box = _selector(self.page, "The latest result per test, or one run's")
         self.run_box.currentIndexChanged.connect(self._on_run)
         self.group_box = _selector(
@@ -192,6 +221,7 @@ class TestsActivity(EntityActivity):
         self.updating = self.page.updating
         self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
+            self.page.audience.changed.connect(self._refresh_soon.trigger),
             # This project only, and no prose: tests are records, titles are fields.
             follow_project(
                 library,
@@ -359,18 +389,25 @@ class TestsActivity(EntityActivity):
         self._sync_scopes(project)
         self._sync_runs()
         self._sync_grouping(project)
-        rows = self._rows()
+        gathered = self._rows()
+        rows = self.page.keep_for_audience(gathered)
         self.page.table.show_rows(rows)
         run = self._current_run()
-        self.page.lead(*headline([row.status for row in rows], run=run))
-        self.page.say(self._nothing_to_show(project, rows))
+        self.page.lead_filtered(
+            len(rows), len(gathered), *headline([row.status for row in rows], run=run)
+        )
+        self.page.say(self._nothing_to_show(project, gathered, rows))
         # A run opening or closing changes what the strip's verbs can do without changing
         # the selection, and a strip the registry feeds restates when the context is heard.
         self._deps.context.refresh()
 
-    def _nothing_to_show(self, project: Project, rows: Sequence[Row]) -> str:
+    def _nothing_to_show(
+        self, project: Project, gathered: Sequence[Row], rows: Sequence[Row]
+    ) -> str:
         if rows:
             return ""
+        if gathered:
+            return NO_MATCH  # The scope holds tests; the audience filter is what emptied it.
         if not project_tests(project, archived=True):
             return (
                 "No tests yet. Add one from a step's Tests tab — mark the step with "
@@ -482,6 +519,7 @@ class AllTestsActivity(ActivityBase):
         self.title = "Tests — All Projects"
 
         self.page = _TestsPage("Tests", ALL_HINT, selection="single")
+        self.page.controls.add_widget(self.page.audience)
         self.archived = self.page.controls.add_verb(
             "Show archived", archive_icon, self._refresh, checkable=True, tip=ARCHIVED_TIP
         )
@@ -501,6 +539,7 @@ class AllTestsActivity(ActivityBase):
                 library.module_data_changed,
             )
         ]
+        self._unsubscribes.append(self.page.audience.changed.connect(self._refresh_soon.trigger))
         self._refresh()
 
     def on_activated(self) -> None:
@@ -529,13 +568,18 @@ class AllTestsActivity(ActivityBase):
                         status=outcome.result.status if outcome else "pending",
                     )
                 )
-        self.page.table.show_rows(rows, show_project=True)
-        self.page.lead(*headline([row.status for row in rows]))
-        self.page.say(
-            ""
-            if rows
-            else "No tests in this library yet. Open a project and mark a step with "
-            "Step ▸ Type ▸ Test."
+        shown = self.page.keep_for_audience(rows)
+        self.page.table.show_rows(shown, show_project=True)
+        self.page.lead_filtered(len(shown), len(rows), *headline([row.status for row in shown]))
+        self.page.say(self._nothing_to_show(rows, shown))
+
+    def _nothing_to_show(self, rows: Sequence[Row], shown: Sequence[Row]) -> str:
+        if shown:
+            return ""
+        if rows:
+            return NO_MATCH
+        return (
+            "No tests in this library yet. Open a project and mark a step with Step ▸ Type ▸ Test."
         )
 
     def _on_activated(self, row: int, _column: int) -> None:

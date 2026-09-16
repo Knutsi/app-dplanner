@@ -78,6 +78,10 @@ class Figure:
 class Column:
     label: str
     kind: ColumnKind = "text"
+    # Offer the reader a pick of this column's values above the table. The page builds the
+    # list from the rows, so a column only ever offers values something actually has, and a
+    # cell naming several (", "-joined) is matched a value at a time.
+    filter: bool = False
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,10 @@ class Table:
     columns: tuple[Column, ...]
     rows: tuple[Row, ...]
     note: str = ""
+    # Offer a box that narrows to the rows holding some words. Worth it for a long table a
+    # reader arrives at knowing what they are looking for; a `Column`'s `filter` is the
+    # other half, for narrowing to a value rather than searching for one.
+    searchable: bool = False
 
 
 @dataclass(frozen=True)

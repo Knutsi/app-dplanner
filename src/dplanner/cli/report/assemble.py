@@ -134,7 +134,7 @@ def _steps_table(steps: Sequence[StepCard]) -> Table:
         Column("Key", "key"),
         Column("Step"),
         Column("Kind"),
-        Column("Status", "status"),
+        Column("Status", "status", filter=True),
     ]
     facet_labels: list[str] = []
     for card in steps:
@@ -156,7 +156,8 @@ def _steps_table(steps: Sequence[StepCard]) -> Table:
         )
         for card in steps
     )
-    return Table(STEPS_TABLE_ID, "Steps", tuple(columns), rows)
+    # The one table a reader arrives at looking for a step by name, so it earns the box.
+    return Table(STEPS_TABLE_ID, "Steps", tuple(columns), rows, searchable=True)
 
 
 def _facet_value(card: StepCard, label: str) -> str:

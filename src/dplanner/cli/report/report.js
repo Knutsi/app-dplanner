@@ -83,22 +83,29 @@
   }
   window.addEventListener("hashchange", fromHash);
 
-  // The steps table: a filter box and a status pick.
-  var filter = document.getElementById("step-filter");
-  var status = document.getElementById("status-filter");
-  function applyFilter() {
-    var words = (filter ? filter.value : "").trim().toLowerCase();
-    var want = status ? status.value : "";
-    document.querySelectorAll("#table-steps tbody tr").forEach(function (row) {
-      var text = row.textContent.toLowerCase();
-      var word = row.querySelector(".status");
-      var has = word ? word.className.replace("status ", "").replace("status-", "") : "";
-      var hidden = (words && text.indexOf(words) < 0) || (want && has !== want);
-      row.classList.toggle("hidden", !!hidden);
-    });
-  }
-  if (filter) filter.addEventListener("input", applyFilter);
-  if (status) status.addEventListener("change", applyFilter);
+  // Each table narrows itself: an optional search box over the whole row, and one pick per
+  // column that declared itself filterable. A cell that names several values carries them
+  // in data-values, so a pick matches a value at a time rather than the cell's own words.
+  document.querySelectorAll("figure.table").forEach(function (figure) {
+    var search = figure.querySelector(".filter input[type=search]");
+    var picks = Array.prototype.slice.call(figure.querySelectorAll(".filter select[data-column]"));
+    if (!search && !picks.length) return;
+    function applyFilter() {
+      var words = (search ? search.value : "").trim().toLowerCase();
+      figure.querySelectorAll("tbody tr").forEach(function (row) {
+        var hidden = !!words && row.textContent.toLowerCase().indexOf(words) < 0;
+        picks.forEach(function (pick) {
+          if (hidden || !pick.value) return;
+          var cell = row.children[parseInt(pick.getAttribute("data-column"), 10)];
+          var values = cell ? (cell.getAttribute("data-values") || "").split("|") : [];
+          if (values.indexOf(pick.value) < 0) hidden = true;
+        });
+        row.classList.toggle("hidden", hidden);
+      });
+    }
+    if (search) search.addEventListener("input", applyFilter);
+    picks.forEach(function (pick) { pick.addEventListener("change", applyFilter); });
+  });
 
   // The graph: pan by dragging, zoom by wheel or buttons, fit on load.
   document.querySelectorAll("figure.graph-frame").forEach(function (frame) {

@@ -248,3 +248,43 @@ def test_the_steps_table_marks_milestones_and_carries_facet_columns(cli_library,
     card = report.step(by_key["S1"].step_id)
     assert card is not None
     assert [facet.label for facet in card.facets] == ["Estimate", "Description", "Decision"]
+
+
+def test_the_tests_table_names_the_audience_and_offers_it_as_a_pick(cli, plan, tmp_path):
+    cli("test", "add", "Interview", "Mechanism", "--audience", "technical", "--text", "1. Look")
+    cli("test", "add", "Interview", "By hand", "--audience", "qa", "--audience", "technical")
+    cli("test", "add", "Ship it", "Nobody said")
+    target = tmp_path / "plan.html"
+    cli("report", "html", "Discovery", "--out", str(target))
+    text = target.read_text(encoding="utf-8")
+
+    assert '<th class="kind-text">Audience</th>' in text
+    # A cell naming two carries them apart from its words, because `_cell` prettifies what
+    # it prints and a pick has to match what the data says.
+    assert 'data-values="QA|Technical"' in text
+    # The picks offer what the rows actually hold — including Other, which is what a test
+    # nobody has classified reads as.
+    for value in ("QA", "Technical", "Other"):
+        assert f'<option value="{value}">' in text
+    # And the per-step block says it too, for a reader who is looking at one step.
+    assert "— QA, Technical —" in text
+
+
+def test_a_column_pick_offers_only_the_values_its_rows_hold(cli, plan, tmp_path):
+    """The steps table's status pick used to be four hard-coded options, blocked included."""
+    target = tmp_path / "plan.html"
+    cli("report", "html", "Discovery", "--out", str(target))
+    text = target.read_text(encoding="utf-8")
+    assert '<select data-column="3"><option value="">Any status</option>' in text
+    assert '<option value="done">done</option>' in text
+    assert 'value="blocked"' not in text  # Nothing here is blocked, so it is not offered.
+    assert 'id="status-filter"' not in text  # The bespoke one is gone, not doubled up.
+
+
+def test_the_audience_reaches_the_sheets_the_page_exports(cli, plan, tmp_path):
+    cli("test", "add", "Interview", "By hand", "--audience", "qa")
+    target = tmp_path / "tests.csv"
+    cli("report", "csv", "Discovery", "--table", "tests", "--out", str(target))
+    rows = target.read_text(encoding="utf-8").splitlines()
+    assert "Audience" in rows[0]
+    assert "QA" in rows[1]

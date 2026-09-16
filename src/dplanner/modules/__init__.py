@@ -41,7 +41,7 @@ if TYPE_CHECKING:
     from dplanner.domain.at_work import AtWorkBoard
     from dplanner.domain.commands import Command
     from dplanner.domain.dictation import DictationProvider
-    from dplanner.domain.model import Library, Project, Step
+    from dplanner.domain.model import Library, Project, Step, StepId
     from dplanner.domain.ordering import Placed
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.schedule import Scheduled
@@ -2509,6 +2509,32 @@ def _llm_providers() -> tuple[tuple[str, str], ...]:
     return (("llm_openai", "OpenAI"), ("llm_anthropic", "Anthropic"))
 
 
+def _unsettling_notes(
+    project: "Project",
+) -> dict["StepId", tuple[tuple[str, str, str, str], ...]]:
+    """The standing notes that put a test in doubt, by the step they were made on.
+
+    **Which labels those are is named here, literally**, for the reason `_scope_kinds()`
+    names its predicates here: this is the one place that may know every aspect, and
+    `modules/testing/` may not learn the notes module's vocabulary. A *decision* changes
+    what the work should do and a *spec-change* records where it departed from the spec —
+    either can leave a test proving last month's answer. A *handoff*, a *later* or a
+    *post-project* note says nothing about what a test should assert, so neither should
+    it put one in front of somebody.
+
+    Superseded notes are dropped: the note that replaced one is itself a decision, made
+    later, so it already stands for the doubt — reporting both would name one test twice.
+    """
+    from dplanner.modules.notes.log import read_log, standing
+
+    unsettling = ("decision", "spec-change")
+    found: dict[StepId, list[tuple[str, str, str, str]]] = {}
+    for note in standing(read_log(project)):
+        if note.label in unsettling and note.step:
+            found.setdefault(note.step, []).append((note.id, note.label, note.title, note.made))
+    return {step_id: tuple(notes) for step_id, notes in found.items()}
+
+
 def _lint_checks() -> tuple["LintCheck", ...]:
     """What a plan can be wrong about, from every module that knows a kind of wrong.
 
@@ -2739,7 +2765,9 @@ def default_cli_commands(
         # one derivation, handed across here — `cite`, `reanchor`, `step add --feature`
         # and lint all judge a quote the same way.
         *feature_cli.commands(anchor=spec_cli.anchor_sources, key_of=_step_key),
-        *testing_cli.commands(),
+        # `test review` reads a step's status and the notes made on it — both through
+        # their modules' Qt-free readers, handed over here so no cli.py imports another's.
+        *testing_cli.commands(status_for=step_status, notes_for=_unsettling_notes),
         *check_cli.commands(),
         # What any collector gathers is one derivation asked three ways, so it is one verb
         # rather than one per aspect. The kinds and the coverage walk arrive as arguments,

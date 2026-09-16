@@ -4595,6 +4595,149 @@ bytes untouched — and its expand is the sanctioned one: a second `TextBinding`
 `TextField` implemented against the record (`testing/section.py`'s `TestBodyField`), never
 text copied into a dialog and back.
 
+## A test says who it is for
+
+A plan's roster of tests is not one list. The tests somebody sits down and executes by hand
+are a different reading from the ones an engineer writes to prove a mechanism, and the
+useful artefact is usually one of the two rather than the union. So a test carries an
+**audience**, and the feature is that word appearing as a label wherever a test is shown and
+as a filter wherever a list of tests is produced.
+
+**The list is closed, and testing owns it.** `AUDIENCES` in `modules/testing/aspect.py` —
+`qa`, `technical`, `other` — each an id, a label and a line of meaning, the same shape
+`modules/notes/log.py` gives its `LABELS`. Free-form tags were the obvious alternative and
+were rejected for the reason free-form tags always lose: `QA` and `qa` become two audiences,
+and a filter over a vocabulary nobody agreed on is a search box with extra steps. It is
+**not** wired in the composition root beside `_scope_kinds()`, and that is a deliberate
+difference: the scope kinds live there because they name *other modules'* aspects — a check,
+a feature, a milestone — and testing may not import them. Nothing outside testing has an
+opinion about who a test is for, so handing the vocabulary in would have bought three
+injection points (`TestsDeps`, `commands()`, `report_source()`) for a three-line tuple, and
+`aspect.py` could no longer check a value on the way in. Widening the list is a line in that
+tuple; making it configurable, when somebody asks, is a change in one file.
+
+**A test carries several.** One thing can be worth proving by hand *and* worth proving
+mechanically, and forcing a choice would put the same test in the wrong list half the time.
+The cost is that a filter is a set intersection rather than an equality, which is four
+characters, and that a cell may name two — which is the one thing the published page's
+picks had to be taught (see below).
+
+### Absence reads as *other*, and the lint asks anyway
+
+This is the part worth writing down, because the two halves look like they contradict each
+other and do not.
+
+`audiences_of(test)` returns what the test stored, or `("other",)` when it stored nothing.
+Every view, filter and export reads it, so a plan written before audiences existed changed
+meaning nowhere and needed no migration pass guessing at answers: its tests simply read as
+*Other*, appear under the *Other* pick, and print as *Other*. Absence encoding a default is
+the ordinary `FORMAT.md` rule, applied in the direction the fact points.
+
+But *other* as a fallback is not a classification, and the point of the feature is that
+somebody says. So `project lint` gained `test.audience`, and it is the **one** reader that
+looks at the raw `test.audiences` instead — because its question is not *what does this test
+count as* but *has anybody actually said*. The lint is the migration, applied a test at a
+time by the person who knows the answer, which is the only place that answer exists.
+
+The step panel's three checkboxes are the second raw reader, and the first attempt got this
+wrong in a way worth recording. Driving them from `audiences_of` renders *Other* ticked on
+an unclassified test — and then it cannot be unticked, because unticking stores `()` and
+`()` reads back as `("other",)`. A checkbox that refuses to come off is a bug the model
+caused, not the widget. So the boxes say what is **stored**, three empty boxes on a test
+nobody has classified, and the line under them — the one already carrying *Archived* and the
+last run — says *"No audience set — reads as Other"*. That line is also, word for word, what
+the lint asks for, in the place you would fix it.
+
+### Every writer of a record is a chance to lose a field
+
+Adding a field to `Test` meant finding six places that rebuilt one positionally from its
+four fields — `test set`, `test archive`, the panel's archive, the bulk archive, the title
+commit, and `TestBodyField.command`, which runs on **every keystroke in a test body**. Each
+would have silently dropped the new field. They are all `dataclasses.replace` now, and the
+rule generalises past this change: *a record with more than two fields is amended, never
+rebuilt* — `remint_for_paste` already knew, which is why a pasted test keeps its audience
+and loses only its id.
+
+The same shape decided the format bump. `FORMAT.md`'s rule is *bump when an older writer
+would destroy the new key, not when it merely would not write it*, and `write()` rebuilding
+every record is exactly the destroying case, so `testing` is format 2 with a pass-through
+migration. What the stamp actually buys is narrower than the two existing pass-throughs
+claim, and the migration's docstring says so: `migrated()` only makes the **migration pass**
+leave newer data alone with a warning. `set_module_data` checks no version and `read()`
+never looks at the stamp, so an older build still reads these tests and still rewrites them
+without their audiences. The stamp records that the entry may carry keys an older build does
+not know; it does not enforce it.
+
+### The filter on a published page belongs to the column, not to the verb
+
+`dplanner report html --audience qa` would have been the obvious way to hand somebody a
+QA-only page, and it is the one thing this feature deliberately does not have: `cli/report/`
+never imports a module, and a flag spelled `--audience` would put a testing word inside it
+anyway. What the report layer *can* own is "this column is worth picking from", so
+`parts.Column` gained `filter`, `page.py` renders a `<select>` per filterable column, and
+`report.js` applies them per table. One published page any reader narrows for themselves
+beats an edition per audience, and it is what `page.py` had already decided for the steps
+table's status.
+
+That existing status filter folded into the new mechanism rather than sitting beside it, and
+folding it taught the one thing a generic version has to get right. The old predicate read
+the *class* off the rendered cell, because `_cell` prettifies what it prints — a status
+loses its hyphen, a date becomes "in three weeks" — and an audience cell names several at
+once, `", "`-joined. So a filterable cell carries its values in `data-values`, apart from
+its words, and a pick matches one value at a time. The options are built from the rows, so
+a plan with nothing blocked no longer offers *Blocked* — which the hard-coded four always
+did.
+
+## A test goes stale when the step under it moves
+
+Eleven tests on one real plan contradicted the product and lint said nothing about any of
+them. Nothing was broken: three decision notes had changed what the work should do, months
+after the steps carrying those tests were marked done, and a test is exactly the thing that
+does not notice. `dplanner test review` is the report that notices — `coverage review`'s
+shape, because it answers the same kind of question: *what needs a person after something
+underneath it changed?*
+
+**The comparison is against the test's last run, because there is no other date to use.**
+The obvious reading of "a done step with a later note" wants the day the step became done,
+and `step_status` stores `{"status": "done"}` and nothing else — no stamp, anywhere. Adding
+one was the wrong fix twice over: it is a stored fact where this codebase derives, and it
+would answer for nothing that happened before the day it shipped, which is precisely the
+eleven tests that prompted the feature.
+
+So the verb asks the question the data can answer, which turns out to be the better one:
+**has this test been run since the note landed?** `runs.latest_results` already gives every
+test's last outcome in one pass, and a run carries the day it was closed — or opened, for a
+run still open, because a result recorded in it was recorded then and not whenever the run
+eventually ends. A test nobody has ever run is behind *every* note on its step, which is the
+honest reading: nothing has established it against any of them. A note nobody dated is the
+mirror case — it cannot be *shown* to postdate a run, so it counts only against a test that
+never ran, rather than putting a row in front of somebody that they cannot act on.
+
+**Only a done step is asked.** Work in progress is meant to be ahead of its tests; reporting
+it would bury the real findings under every step anybody is currently working on.
+
+**Which labels unsettle a test is named in the composition root**, `_unsettling_notes()`,
+and the reason is the one `_scope_kinds()` gives: the root is the single place allowed to
+know every aspect at once, and `modules/testing/` may not learn the notes module's
+vocabulary. A `decision` changes what the work should do and a `spec-change` records where
+it departed from the spec — either can leave a test proving last month's answer. A
+`handoff` says where the code lives, a `later` defers work, a `post-project` note is for
+afterwards; none of them makes a claim about what a test should assert, so none should put
+one in front of anybody. Notes reach testing as a neutral `(id, label, title, made)` keyed
+by step — `cli/scopes.py`'s `CoveredTest` hand-over, one layer down — so testing learns
+nothing about what else a note carries.
+
+Superseded notes are dropped on the way. The note that replaced one is itself a decision,
+made later, so it already stands for the doubt; keeping both would name one test twice for
+what is one thing to do. For the same reason a row is **per test, not per note**: a test
+behind three decisions is one piece of work, and the newest note is the one that says what
+it now has to prove.
+
+**A verb, not a lint check.** Lint is for findings with a crisp fix — a missing body, a
+dangling edge. Whether a test still proves the right thing needs somebody to read the note
+and decide, and the two ways out (re-run it, or rewrite what it asserts) are a judgement
+rather than a remedy. `coverage review` drew that line first, and this follows it.
+
 ## A check is a scope over the graph, and so is a milestone
 
 A **check** is a step type that stands for everything behind it having been verified. What it

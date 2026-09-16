@@ -62,6 +62,38 @@ paths:
   narrow dock — because a stack of equal cards stops working at the third test.
   `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
   reasoning, including the diff trade the string body accepts.
+- **A test says who it is for, and the list is closed.** `qa`, `technical`, `other` —
+  `AUDIENCES` in `modules/testing/aspect.py`, owned there rather than by the composition
+  root because nothing outside testing has an opinion about the word (`notes`' `LABELS` is
+  the same shape, and `check_audience` the same refusal). A test carries **several**:
+  one thing can be worth proving by hand *and* worth proving mechanically. **`audiences_of`
+  is the one derivation** — what it stored, or `other` — and everything that shows or filters
+  a test reads it, so a plan written before audiences existed changed meaning nowhere. Two
+  readers ask the **raw** field instead, and both are asking *has anybody said?*: the
+  `test.audience` lint, and the step panel's three checkboxes, which would otherwise render
+  an `Other` nobody could untick. That pairing is the whole design — the requirement is real
+  without a migration guessing an answer, and the lint is what carries an old plan over a
+  test at a time. It is a **label** everywhere (the tab's Audience column — hidden while no
+  test in scope names one — the Covers row, the report table and its per-step block, `test
+  list`, `test show`) and a **filter** everywhere (the `FilterButton` on both Tests tabs,
+  `test list --audience`, `test-run start --audience`, and a pick on the published page). A
+  run records only the ids it was opened over, so it needs no audience of its own.
+  `ARCHITECTURE.md`'s *A test says who it is for* has the reasoning.
+- **A test goes stale when the step under it settles and then moves.** `dplanner test
+  review` reports a live test on a **done** step that has not been run since a standing
+  `decision` or `spec-change` note landed on that step — the shape `coverage review` has
+  (rows of subject/what/advice, one table of remedies so the text and the `--json` agree).
+  **There is no record of when a step became done**, so the comparison is against the
+  test's **own last run** (`runs.latest_results`, the run's `closed` or `opened` day):
+  that is the fact that exists, and it is the better question anyway — *is this result
+  still worth trusting?* A test nobody ever ran is behind every note on its step. **Which
+  labels unsettle a test is wired in `modules/__init__.py::_unsettling_notes()`**, not in
+  `modules/testing/`: a decision and a spec-change change what the work should do, a
+  handoff does not, and testing may not learn the notes module's vocabulary — the same
+  reason `_scope_kinds()` names its predicates in the root. Notes arrive as a neutral
+  `(id, label, title, made)` by step (`cli/scopes.py`'s `CoveredTest` hand-over, one
+  layer down), superseded ones dropped so a reversal names a test once rather than twice.
+  `ARCHITECTURE.md`'s *A test goes stale when the step under it moves* has the reasoning.
 - **Documentation is a fragment per step and a document per collector, and an agent
   compiles it.** The `docs` aspect is a step's **documentation fragment**; `docs_compiled` is
   a collector's **documentation**, made of everything it gathers — the words on every

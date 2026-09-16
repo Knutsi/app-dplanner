@@ -19,13 +19,20 @@ images go: the step's file area, referenced as ``![](assets/…)``.
 
 Ids are minted per *project*, not per step, so a run's results map is flat and a person can
 say "t7 failed" out loud. ``spec``'s ``next_id`` is the precedent.
+
+**A test also says who it is for** — a closed list of :data:`AUDIENCES`, owned here rather
+than by the composition root because nothing outside testing has an opinion about the word.
+A test may carry several; one that carries none reads as ``other`` through
+:func:`audiences_of`, which is what let the field arrive without migrating anybody's plan.
+``project lint`` asks for the explicit answer instead, a test at a time.
 """
 
 import dataclasses
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Final
 
+from dplanner.cli.command import CliError
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.assets import (
@@ -40,13 +47,56 @@ from dplanner.domain.scope import StepPredicate, cone
 from dplanner.domain.store import FilesFor
 
 MODULE_ID = "testing"
-DATA_FORMAT = ModuleDataFormat(MODULE_ID)
+
+
+def _to_format_2(data: dict[str, Any]) -> dict[str, Any]:
+    """Format 1 shapes are valid format 2 shapes: the bump exists for the ``audiences`` key.
+
+    Beside a step this entry is a step's tests and beside the project it is the project's
+    runs — one module id, two shapes, and a migration owes both a thought (``FORMAT.md``).
+    Neither shape changed, so both pass through.
+
+    What the stamp buys is narrower than it looks, and the two existing pass-throughs
+    overstate it: :func:`~dplanner.core.module_data.migrated` only makes the *migration
+    pass* leave newer data alone with a warning. ``set_module_data`` checks no version and
+    :func:`read` never looks at the stamp, so an older build still reads these tests and
+    still rewrites them without their audiences. The stamp records that the entry may carry
+    keys an older build does not know; it does not enforce it.
+    """
+    return dict(data)
+
+
+DATA_FORMAT = ModuleDataFormat(MODULE_ID, 2, (_to_format_2,))
 
 # Ids people say out loud and write in a bug report: T100, T101, … Three digits from
 # the start so every id in a project is the same width, and high enough that nobody
 # mistakes one for a count of anything.
 TEST_ID_PREFIX = "T"
 FIRST_TEST_NUMBER = 100
+
+
+@dataclass(frozen=True)
+class Audience:
+    """Somebody a test is written for. Closed list, owned here — see :data:`AUDIENCES`."""
+
+    id: str
+    label: str
+    meaning: str  # One line, printed wherever the list is offered.
+
+
+# Who a test is for. Closed, and owned by this module rather than the composition root,
+# because nothing outside testing has an opinion about the word — the tab, the verbs and
+# the report all read this tuple directly. Widening it is a line here and nothing else.
+AUDIENCES: Final[tuple[Audience, ...]] = (
+    Audience("qa", "QA", "Somebody executing the test by hand"),
+    Audience("technical", "Technical", "An engineer proving the mechanism works"),
+    Audience("other", "Other", "Neither of those — or nobody has said yet"),
+)
+AUDIENCE_IDS = tuple(audience.id for audience in AUDIENCES)
+# What a test with nothing stored reads as. A project written before audiences existed is
+# not wrong, it is unclassified, and unclassified work is somebody's — `lint` asks for the
+# explicit answer (`test.audience`) rather than a migration guessing one.
+DEFAULT_AUDIENCE = "other"
 
 
 @dataclass(frozen=True)
@@ -61,6 +111,9 @@ class Test:
     title: str
     body: str = ""
     archived: bool = False
+    # Who it is written for, in AUDIENCES order. Empty is *nobody has said*, which reads as
+    # `other` through `audiences_of` and is what `lint`'s `test.audience` asks about.
+    audiences: tuple[str, ...] = ()
 
 
 def read(step: Step) -> list[Test]:
@@ -74,30 +127,70 @@ def read(step: Step) -> list[Test]:
             title=str(entry.get("title", "")),
             body=str(entry.get("body", "")),
             archived=bool(entry.get("archived")),
+            audiences=_audiences_in(entry.get("audiences")),
         )
         for entry in raw
         if isinstance(entry, dict) and isinstance(entry.get("id"), str)
     ]
 
 
+def _entry(test: Test) -> dict[str, Any]:
+    """One test as it is stored. Absence encodes every default (``FORMAT.md``), and the
+    audiences are re-ordered on the way out so the bytes never depend on the order somebody
+    happened to name them in."""
+    audiences = _audiences_in(list(test.audiences))
+    return {
+        "id": test.id,
+        "title": test.title,
+        **({"body": test.body} if test.body else {}),
+        **({"archived": True} if test.archived else {}),
+        **({"audiences": list(audiences)} if audiences else {}),
+    }
+
+
 def write(tests: Sequence[Test]) -> dict[str, Any]:
     """The entry to store. No tests gives ``{}``, which removes the file."""
     if not tests:
         return {}
-    return stamped(
-        {
-            "tests": [
-                {
-                    "id": test.id,
-                    "title": test.title,
-                    **({"body": test.body} if test.body else {}),
-                    **({"archived": True} if test.archived else {}),
-                }
-                for test in tests
-            ]
-        },
-        DATA_FORMAT.version,
-    )
+    return stamped({"tests": [_entry(test) for test in tests]}, DATA_FORMAT.version)
+
+
+def _audiences_in(raw: object) -> tuple[str, ...]:
+    """The audiences a stored entry names: known ids only, in :data:`AUDIENCES` order.
+
+    Normalising on the way in is what makes the order canonical everywhere — two agents
+    naming the same pair in different orders write the same bytes, and a diff means
+    something. An id this build does not know is dropped rather than raising, the same
+    tolerance ``read`` shows the rest of the entry.
+    """
+    named = {entry for entry in raw if isinstance(entry, str)} if isinstance(raw, list) else set()
+    return tuple(audience.id for audience in AUDIENCES if audience.id in named)
+
+
+def audiences_of(test: Test) -> tuple[str, ...]:
+    """What the test counts as: what it stored, or :data:`DEFAULT_AUDIENCE` when it stored
+    nothing.
+
+    The one derivation every view, filter and export reads, so an unclassified test lands
+    somewhere honest instead of falling out of every list. Two readers deliberately ask the
+    raw ``test.audiences`` instead — ``lint`` and the step panel's checkboxes — because
+    theirs is the other question: *has anybody actually said?*
+    """
+    return test.audiences or (DEFAULT_AUDIENCE,)
+
+
+def audience_words(test: Test) -> str:
+    """What a row or a cell says a test is for: the labels, in order."""
+    wanted = audiences_of(test)
+    return ", ".join(audience.label for audience in AUDIENCES if audience.id in wanted)
+
+
+def check_audience(audience_id: str) -> str:
+    """``audience_id`` if it is one of :data:`AUDIENCES`; a CliError naming them otherwise."""
+    if audience_id not in AUDIENCE_IDS:
+        offered = ", ".join(f"{a.id} ({a.meaning.lower()})" for a in AUDIENCES)
+        raise CliError(f"no such audience {audience_id!r} — one of: {offered}")
+    return audience_id
 
 
 def enabled(step: Step) -> bool:

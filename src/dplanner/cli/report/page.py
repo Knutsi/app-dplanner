@@ -32,6 +32,7 @@ from dplanner.cli.report.parts import (
     SLOT_TITLES,
     SLOTS,
     Chart,
+    Column,
     Facet,
     Figure,
     Graph,
@@ -60,7 +61,7 @@ def render(report: Report, *, colors: Colors = LIGHT, about: str = "") -> str:
         parts = report.sections.get(slot, ())
         if not parts:
             continue
-        body = "".join(_parts(parts, colors, budget, slot, report.day))
+        body = "".join(_parts(parts, colors, budget, report.day))
         sections.append(f'<section id="{slot}"><h2>{_t(SLOT_TITLES[slot])}</h2>{body}</section>')
     if about:
         sections.append(
@@ -132,9 +133,7 @@ def summary_script(report: Report, slug: str) -> str:
 # -- parts -------------------------------------------------------------------------------------
 
 
-def _parts(
-    parts: Iterable[Part], colors: Colors, budget: "_ImageBudget", slot: str, today: date
-) -> list[str]:
+def _parts(parts: Iterable[Part], colors: Colors, budget: "_ImageBudget", today: date) -> list[str]:
     out: list[str] = []
     figures: list[Figure] = []
     for part in parts:
@@ -144,15 +143,15 @@ def _parts(
         if figures:
             out.append(_figures(figures))
             figures = []
-        out.append(_part(part, colors, budget, slot, today))
+        out.append(_part(part, colors, budget, today))
     if figures:
         out.append(_figures(figures))
     return out
 
 
-def _part(part: Part, colors: Colors, budget: "_ImageBudget", slot: str, today: date) -> str:
+def _part(part: Part, colors: Colors, budget: "_ImageBudget", today: date) -> str:
     if isinstance(part, Table):
-        return _table(part, slot, today)
+        return _table(part, today)
     if isinstance(part, Chart):
         return (
             f'<figure class="chart" id="chart-{_t(part.id)}"><figcaption>{_t(part.title)}'
@@ -185,33 +184,78 @@ def _figures(figures: list[Figure]) -> str:
     return f'<div class="figures">{tiles}</div>'
 
 
-def _table(table: Table, slot: str, today: date) -> str:
+def _table(table: Table, today: date) -> str:
     head = "".join(
         f'<th class="kind-{column.kind}">{_t(column.label)}</th>' for column in table.columns
     )
     rows = []
     for row in table.rows:
         cells = "".join(
-            f'<td class="kind-{column.kind}">{_cell(column.kind, text, today)}</td>'
+            f'<td class="kind-{column.kind}"{_values(column, text)}>'
+            f"{_cell(column.kind, text, today)}</td>"
             for column, text in zip(table.columns, row.cells, strict=True)
         )
         attrs = f' data-step="{_t(row.step_id)}"' if row.step_id else ""
         attrs += ' class="strong"' if row.strong else ""
         rows.append(f"<tr{attrs}>{cells}</tr>")
-    tools = (
-        '<div class="filter"><input id="step-filter" type="search" placeholder="Filter steps">'
-        '<select id="status-filter"><option value="">Any status</option>'
-        '<option value="pending">Pending</option><option value="in-progress">In progress</option>'
-        '<option value="done">Done</option><option value="blocked">Blocked</option></select></div>'
-        if slot == "steps" and table.id == "steps"
-        else ""
-    )
+    tools = _tools(table)
     return (
         f'<figure class="table" id="table-{_t(table.id)}"><figcaption>{_t(table.title)}'
         f"</figcaption>{tools}"
         f'<div class="scroll"><table class="data"><thead><tr>{head}</tr></thead>'
         f"<tbody>{''.join(rows)}</tbody></table></div>{_note(table.note)}</figure>"
     )
+
+
+# A filterable cell may name several values at once — a test written for QA *and* an
+# engineer — so the picks match a value at a time. The cell carries them apart from its
+# words, because `_cell` prettifies what it prints (a status loses its hyphen, a date
+# becomes "in three weeks") and a filter must match what the data says. A value carrying
+# this character would split in two and its pick would stop matching, which is why it is
+# one no vocabulary worth picking from uses.
+VALUE_SEPARATOR = "|"
+
+
+def _split(text: str) -> list[str]:
+    return [part.strip() for part in text.split(",") if part.strip()]
+
+
+def _values(column: Column, text: str) -> str:
+    """The ``data-values`` a filterable cell carries, or nothing for a column nobody picks."""
+    if not column.filter:
+        return ""
+    return f' data-values="{_t(VALUE_SEPARATOR.join(_split(text)))}"'
+
+
+def _tools(table: Table) -> str:
+    """The filter row above a table: a search box if the table asked for one, and a pick per
+    column that declared itself filterable, offering only values its rows actually hold.
+
+    Both are read off the part rather than off where it sits, which is what lets any module
+    declare a filter its own table wants without the renderer learning about the module.
+    """
+    picks = []
+    for index, column in enumerate(table.columns):
+        if not column.filter:
+            continue
+        seen = sorted({value for row in table.rows for value in _split(row.cells[index])})
+        if not seen:
+            continue  # A pick with nothing to choose between teaches nothing.
+        options = "".join(
+            f'<option value="{_t(value)}">{_t(value.replace("-", " "))}</option>' for value in seen
+        )
+        picks.append(
+            f'<select data-column="{index}">'
+            f'<option value="">Any {_t(column.label.lower())}</option>{options}</select>'
+        )
+    search = (
+        f'<input type="search" placeholder="Filter {_t(table.title.lower())}">'
+        if table.searchable
+        else ""
+    )
+    if not search and not picks:
+        return ""
+    return f'<div class="filter">{search}{"".join(picks)}</div>'
 
 
 def _cell(kind: str, text: str, today: date | None = None) -> str:

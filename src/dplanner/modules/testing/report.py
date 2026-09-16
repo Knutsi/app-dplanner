@@ -21,7 +21,7 @@ from dplanner.cli.report.parts import (
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor
 from dplanner.modules.testing import runs
-from dplanner.modules.testing.aspect import read
+from dplanner.modules.testing.aspect import audience_words, read
 
 TABLE_ID = "tests"
 NOT_RUN = "not run"
@@ -40,12 +40,13 @@ def report_source(*, key_of: Callable[[Step], str]) -> ReportSource:
             for test in tests:
                 outcome = latest.get(test.id)
                 result = outcome.result.status if outcome is not None else NOT_RUN
-                lines.append(f"- **{test.id}** {test.title} — {result}")
+                lines.append(f"- **{test.id}** {test.title} — {audience_words(test)} — {result}")
                 rows.append(
                     Row(
                         (
                             test.id,
                             test.title,
+                            audience_words(test),
                             key_of(step),
                             result,
                             outcome.run.id if outcome else "",
@@ -62,13 +63,16 @@ def report_source(*, key_of: Callable[[Step], str]) -> ReportSource:
             (
                 Column("Test", "key"),
                 Column("Title"),
+                # Filterable: a published page is read by whoever the plan is shared with,
+                # and "show me the QA tests" is the question they arrive with.
+                Column("Audience", filter=True),
                 Column("Step", "key"),
                 Column("Latest result", "status"),
                 Column("Run", "key"),
             ),
             tuple(rows),
             note="The latest result is the newest run that recorded one; a test nobody has "
-            "run yet says so.",
+            "run yet says so. A test that does not say who it is for reads as Other.",
         )
         return Contribution(placed=(Placed("steps", 20, table),), facets=facets)
 
