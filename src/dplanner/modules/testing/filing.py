@@ -1,9 +1,16 @@
-"""Test categories: the open vocabulary a project files its tests under.
+"""How a test is filed: the category it sits in, and the sort key that orders it inside.
 
 A roster of two hundred tests is a wall unless it is filed, and no closed list could name
 the groups every project will want — so unlike the audience (``aspect.py``'s ``AUDIENCES``,
-three words nothing outside testing has an opinion about) a category is **free text**, and
-the catalogue lives beside the *project* rather than in the application.
+three words nothing outside testing has an opinion about) both axes here are **free text**.
+
+**The category is the organising one**, catalogued beside the *project*, and everything
+below is about it. **The sort key is the ergonomic one**: not a second layer of filing but
+a key that orders a category's tests so somebody executing them stays in one place at a
+time — all the tests that exercise the customer list together, then all the detail-view
+ones. It has no catalogue and no editor, because it is not a vocabulary anybody maintains;
+it is a word an agent writes beside each test and a person reads down a column. See
+:func:`sort_keys` and :func:`ergonomic_order`.
 
 Three rules earn their own paragraph:
 
@@ -22,21 +29,23 @@ topological order keeps (``CLAUDE.md``). A category a test names but the catalog
 is still a real category — :func:`catalog` appends it — so a typo is visible and fixable
 rather than a test that has quietly fallen out of every list.
 
-**A test that names none reads as** :data:`UNCATEGORISED`. The same tolerance the audience
-shows, and for the same reason: a plan written before categories existed is not wrong, it
-is unfiled, and ``project lint``'s ``test.category`` is what carries it over a test at a
-time rather than a migration guessing an answer.
+**A test that names no category reads as** :data:`UNCATEGORISED`. The same tolerance the
+audience shows, and for the same reason: a plan written before categories existed is not
+wrong, it is unfiled, and ``project lint``'s ``test.category`` is what carries it over a
+test at a time rather than a migration guessing an answer. A test with no *sort key* needs
+no such word: it simply sorts last in its group, and a project that uses none is ordered
+exactly as it was.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 import dataclasses
-from collections.abc import Callable, Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
 from dplanner.cli.command import CliError
-from dplanner.domain.model import Project, StepId
+from dplanner.domain.model import Project, Step, StepId
 from dplanner.modules.testing.aspect import MODULE_ID, Test, project_entry, project_tests, read
 
 # What a refactor does to one step's tests: the whole list in, the whole list out. A rename
@@ -52,7 +61,7 @@ UNCATEGORISED: Final = "Uncategorised"
 # curated subset rather than the whole directory, because a picker of seventy-four glyphs —
 # undo, redo, bold — is a wall of its own; these are the ones that say something about a
 # *kind of test*. Named here, in the Qt-free half, so the CLI can refuse an unknown one
-# without a graphics stack; ``tests/modules/test_testing_categories.py`` checks every name
+# without a graphics stack; ``tests/modules/test_testing_filing.py`` checks every name
 # still has an SVG beside ``theme/icons.py``.
 ICONS: Final[tuple[str, ...]] = (
     "beaker",
@@ -132,6 +141,32 @@ def write_catalog(project: Project, categories: Sequence[Category]) -> dict[str,
     )
 
 
+def sort_keys(project: Project) -> list[str]:
+    """Every sort key this project's tests name, without regard to case, in reading order.
+
+    Derived, like everything else here: there is no catalogue to keep, so the picker and
+    the child menu both offer exactly what is already in use plus a way to type a new one.
+    """
+    found: dict[str, str] = {}
+    for _step, test in project_tests(project, archived=True):
+        if test.sort_key:
+            found.setdefault(test.sort_key.casefold(), test.sort_key)
+    return [found[key] for key in sorted(found)]
+
+
+def ergonomic_order(test: Test) -> tuple[int, str]:
+    """Where a test sorts inside its group, by its sort key.
+
+    Alphabetical, and a test with no key last. Adjacency is the whole win — the tests that
+    exercise one view being executed together — and alphabetical is the order a reader can
+    predict without opening anything, which matters when the list is being worked down with
+    a device in the other hand. An agent that wants a particular sequence says so in the
+    words (*1. Sign in*, *2. Import*), which is what somebody numbering them would expect
+    to happen anyway.
+    """
+    return (1, "") if not test.sort_key else (0, test.sort_key.casefold())
+
+
 def category_of(test: Test) -> str:
     """What the test counts as: what it named, or :data:`UNCATEGORISED`.
 
@@ -182,6 +217,38 @@ def counts(project: Project, *, archived: bool = False) -> dict[str, int]:
     return found
 
 
+def category_places(categories: Sequence[Category]) -> dict[str, int]:
+    """Where each category sorts, by its folded name — the catalogue's own order.
+
+    Takes the catalogue rather than the project because every caller already has it: the
+    Tests tab wants the entries for their glyphs and the export wants them for its
+    headings, and walking the tests twice to get the same answer is a walk too many.
+    """
+    return {entry.name.casefold(): index for index, entry in enumerate(categories)}
+
+
+def filed_place(places: Mapping[str, int], test: Test) -> tuple[int, str, int, str]:
+    """Where one test sorts: its category, then its sort key.
+
+    A name nobody catalogued answers past the end, which is where :func:`catalog` already
+    puts it, and :data:`UNCATEGORISED` answers past that.
+    """
+    name = category_of(test)
+    last = len(places) + 1
+    where = last if name == UNCATEGORISED else places.get(name.casefold(), last - 1)
+    return (where, name.casefold(), *ergonomic_order(test))
+
+
+def filed_order(project: Project, pairs: Sequence[tuple[Step, Test]]) -> list[tuple[Step, Test]]:
+    """``pairs`` in the order somebody would work down them: filed, then ergonomic.
+
+    Stable, so tests sharing a category and a sort key keep the order they arrived in —
+    which is the project's, and is the only order the graph has an opinion about.
+    """
+    places = category_places(catalog(project))
+    return sorted(pairs, key=lambda pair: filed_place(places, pair[1]))
+
+
 def find(categories: Sequence[Category], name: str) -> Category | None:
     """The category of these words, matched without regard to case — the way a person
     typing one and an agent writing one both expect it to be matched."""
@@ -214,13 +281,31 @@ def check_name(name: str) -> str:
     return trimmed
 
 
-def refiled(tests: Sequence[Test], test_ids: Iterable[str], category: str) -> list[Test]:
-    """``tests`` with the named ones filed under ``category`` — "" files them under none."""
+def refiled(
+    tests: Sequence[Test],
+    test_ids: Iterable[str],
+    *,
+    category: str | None = None,
+    sort_key: str | None = None,
+) -> list[Test]:
+    """``tests`` with the named ones refiled. ``None`` leaves an axis alone; "" clears it.
+
+    Both axes in one function because every caller that sets one may set the other — ``test
+    file`` takes both flags, and the two child menus are the same gesture aimed at a
+    different field.
+    """
+    if category is None and sort_key is None:
+        return list(tests)
     wanted = set(test_ids)
-    return [
-        dataclasses.replace(test, category=category) if test.id in wanted else test
-        for test in tests
-    ]
+
+    def moved(test: Test) -> Test:
+        return dataclasses.replace(
+            test,
+            category=test.category if category is None else category,
+            sort_key=test.sort_key if sort_key is None else sort_key,
+        )
+
+    return [moved(test) if test.id in wanted else test for test in tests]
 
 
 def renamed(tests: Sequence[Test], old: str, new: str) -> list[Test]:

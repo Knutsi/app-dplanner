@@ -422,8 +422,9 @@ src/dplanner/
 │   │                        (migrate.py collapses the old project catalogue onto its steps)
 │   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
-│   │                        them, the categories they are filed under (and their editor), the
-│   │                        project's Tests tab, the library-wide roll call and the exports
+│   │                        them, how they are filed (a category and a sort key, with the
+│   │                        category editor), the project's Tests tab, the library-wide roll
+│   │                        call, the Test panel a run is worked down from, and the exports
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │

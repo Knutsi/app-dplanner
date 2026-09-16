@@ -9,7 +9,7 @@ import pytest
 
 from dplanner.cli.command import CliError
 from dplanner.domain.model import Project, Step
-from dplanner.modules.testing import categories, export, runs
+from dplanner.modules.testing import export, filing, runs
 from dplanner.modules.testing.aspect import MODULE_ID, Test, write
 from dplanner.theme.icons import GLYPH_DIR
 
@@ -19,7 +19,7 @@ def project_with(*steps, catalog=()):
     for step in steps:
         project.steps.append(step)
     if catalog:
-        project.module_data[MODULE_ID] = categories.write_catalog(project, catalog)
+        project.module_data[MODULE_ID] = filing.write_catalog(project, catalog)
     return project
 
 
@@ -34,25 +34,25 @@ def step_with(title, *tests):
 
 def test_every_offered_icon_is_a_glyph_this_build_has():
     """The tuple is curated by hand and lives Qt-free, so nothing else would notice a typo."""
-    missing = [name for name in categories.ICONS if not GLYPH_DIR.joinpath(f"{name}.svg").is_file()]
+    missing = [name for name in filing.ICONS if not GLYPH_DIR.joinpath(f"{name}.svg").is_file()]
     assert missing == []
 
 
 def test_a_category_round_trips_with_its_icon():
-    project = project_with(catalog=[categories.Category("Import", "layers")])
-    assert categories.read_catalog(project) == [categories.Category("Import", "layers")]
+    project = project_with(catalog=[filing.Category("Import", "layers")])
+    assert filing.read_catalog(project) == [filing.Category("Import", "layers")]
 
 
 def test_an_icon_this_build_does_not_know_reads_as_none():
     project = Project(title="Widget")
     project.module_data[MODULE_ID] = {"categories": [{"name": "Import", "icon": "spaceship"}]}
-    assert categories.read_catalog(project) == [categories.Category("Import")]
+    assert filing.read_catalog(project) == [filing.Category("Import")]
 
 
 def test_an_empty_catalogue_leaves_no_key_and_keeps_the_runs():
     project = Project(title="Widget")
     project.module_data[MODULE_ID] = runs.write(project, [runs.Run(id="R100", label="P3")])
-    entry = categories.write_catalog(project, [])
+    entry = filing.write_catalog(project, [])
     assert "categories" not in entry
     kept = Project(title="W")
     kept.module_data[MODULE_ID] = entry
@@ -62,12 +62,10 @@ def test_an_empty_catalogue_leaves_no_key_and_keeps_the_runs():
 def test_the_runs_and_the_categories_share_one_entry_without_losing_each_other():
     """One module id, two shapes: neither writer may compose the entry from its own half."""
     project = Project(title="Widget")
-    project.module_data[MODULE_ID] = categories.write_catalog(
-        project, [categories.Category("Import")]
-    )
+    project.module_data[MODULE_ID] = filing.write_catalog(project, [filing.Category("Import")])
     project.module_data[MODULE_ID] = runs.write(project, [runs.Run(id="R100")])
 
-    assert [c.name for c in categories.read_catalog(project)] == ["Import"]
+    assert [c.name for c in filing.read_catalog(project)] == ["Import"]
     assert [run.id for run in runs.read(project)] == ["R100"]
 
 
@@ -84,33 +82,33 @@ def test_a_key_that_is_not_the_projects_is_refused_rather_than_written():
 def test_a_category_only_a_test_names_is_still_a_category_and_sorts_last():
     project = project_with(
         step_with("Login", Test("T100", "One", category="Zebra"), Test("T101", "Two")),
-        catalog=[categories.Category("Import", "layers")],
+        catalog=[filing.Category("Import", "layers")],
     )
-    assert [c.name for c in categories.catalog(project)] == ["Import", "Zebra"]
+    assert [c.name for c in filing.catalog(project)] == ["Import", "Zebra"]
     # Unglyphed: nobody wrote it down, so nobody picked a picture for it either.
-    assert categories.catalog(project)[1].icon == ""
+    assert filing.catalog(project)[1].icon == ""
 
 
 def test_counts_are_derived_and_name_every_catalogued_group_even_at_nought():
     project = project_with(
         step_with("Login", Test("T100", "One", category="Import"), Test("T101", "Two")),
-        catalog=[categories.Category("Import"), categories.Category("Smoke")],
+        catalog=[filing.Category("Import"), filing.Category("Smoke")],
     )
-    assert categories.counts(project) == {"Import": 1, "Smoke": 0, "Uncategorised": 1}
+    assert filing.counts(project) == {"Import": 1, "Smoke": 0, "Uncategorised": 1}
 
 
 def test_an_archived_test_keeps_its_category_alive_but_is_out_of_the_roster_count():
     project = project_with(
         step_with("Login", Test("T100", "One", archived=True, category="Smoke")),
     )
-    assert [c.name for c in categories.catalog(project)] == ["Smoke"]
-    assert categories.counts(project)["Smoke"] == 0
-    assert categories.counts(project, archived=True)["Smoke"] == 1
+    assert [c.name for c in filing.catalog(project)] == ["Smoke"]
+    assert filing.counts(project)["Smoke"] == 0
+    assert filing.counts(project, archived=True)["Smoke"] == 1
 
 
 def test_a_test_that_names_nothing_reads_as_uncategorised():
-    assert categories.category_of(Test("T100", "One")) == categories.UNCATEGORISED
-    assert categories.category_of(Test("T100", "One", category="Smoke")) == "Smoke"
+    assert filing.category_of(Test("T100", "One")) == filing.UNCATEGORISED
+    assert filing.category_of(Test("T100", "One", category="Smoke")) == "Smoke"
 
 
 # -- refusals -----------------------------------------------------------------------------
@@ -118,17 +116,17 @@ def test_a_test_that_names_nothing_reads_as_uncategorised():
 
 def test_an_unknown_icon_is_refused_naming_the_whole_set():
     with pytest.raises(CliError) as raised:
-        categories.check_icon("spaceship")
+        filing.check_icon("spaceship")
     assert "beaker" in str(raised.value) and "shield" in str(raised.value)
-    assert categories.check_icon("") == ""  # No icon is a fine answer.
+    assert filing.check_icon("") == ""  # No icon is a fine answer.
 
 
 def test_a_category_cannot_be_blank_or_be_called_uncategorised():
     with pytest.raises(CliError, match="needs a name"):
-        categories.check_name("  ")
+        filing.check_name("  ")
     with pytest.raises(CliError, match="reads as"):
-        categories.check_name("uncategorised")
-    assert categories.check_name("  Import ") == "Import"
+        filing.check_name("uncategorised")
+    assert filing.check_name("  Import ") == "Import"
 
 
 # -- the refactor -------------------------------------------------------------------------
@@ -140,7 +138,7 @@ def test_renaming_moves_every_test_carrying_the_old_words_whatever_their_case():
         Test("T101", "Two", category="import"),
         Test("T102", "Three", category="Smoke"),
     ]
-    moved = categories.renamed(tests, "Import", "Import and export")
+    moved = filing.renamed(tests, "Import", "Import and export")
     assert [test.category for test in moved] == ["Import and export", "Import and export", "Smoke"]
 
 
@@ -150,13 +148,13 @@ def test_rewrite_names_only_the_steps_a_change_actually_touches():
         step_with("Export", Test("T101", "Two", category="Smoke")),
         step_with("Quiet", Test("T102", "Three")),
     )
-    touched = categories.rewrite(project, lambda tests: categories.renamed(tests, "Import", "In"))
+    touched = filing.rewrite(project, lambda tests: filing.renamed(tests, "Import", "In"))
     assert [project.steps[0].id] == list(touched)
 
 
 def test_refiling_takes_the_named_tests_and_leaves_the_rest():
     tests = [Test("T100", "One"), Test("T101", "Two", category="Smoke")]
-    assert [t.category for t in categories.refiled(tests, ["T100"], "Import")] == [
+    assert [t.category for t in filing.refiled(tests, ["T100"], category="Import")] == [
         "Import",
         "Smoke",
     ]
@@ -172,7 +170,7 @@ def exported(**changed):
             Test("T100", "Signs in", body="1. Open it.\n2. It must work.", category="Smoke"),
             Test("T101", "Signs out", audiences=("qa",)),
         ),
-        catalog=[categories.Category("Smoke", "spark")],
+        catalog=[filing.Category("Smoke", "spark")],
     )
     return export.Exported(
         project=project,

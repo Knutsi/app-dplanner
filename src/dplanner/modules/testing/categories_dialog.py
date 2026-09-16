@@ -41,7 +41,7 @@ from dplanner.framework.table import Cell, Column, Table, TextEditor
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm, quiet
 from dplanner.modules.testing.aspect import MODULE_ID, Test, write
-from dplanner.modules.testing.categories import (
+from dplanner.modules.testing.filing import (
     ICONS,
     UNCATEGORISED,
     Category,

@@ -4734,6 +4734,47 @@ it could. The generalisation is worth stating, because the module system invites
 from what is on disk.* `FORMAT.md`'s "one module id, two shapes" paragraph is the same fact
 seen from the data's side.
 
+### The sort key is an ergonomic, not a second layer of filing
+
+The category answers *what kind of test is this*. The question left over is the one
+somebody **executing** a roster has: within *Set up new customer*, which twenty of these
+can I do without switching screens? That is not a second category — filing it twice would
+double the headings and halve the page — it is an **order**. So a test carries a `sort_key`:
+free text, no catalogue, no editor, and no meaning beyond *tests sharing one belong
+together*.
+
+Three decisions make it worth having rather than clever.
+
+**It always sorts, inside whatever group is current.** *Ergonomic order* on the Tests strip
+is on by default and the switch is there to turn it **off**, not on. A sort key that only
+sometimes sorts is one nobody can rely on halfway down a list with a device in the other
+hand — and a project that uses no sort keys is ordered identically either way, because the
+sort is stable and a keyless test keeps its place. Unticking it gives back the plan's own
+order, which is the reading somebody following the *work* wants.
+
+**Alphabetical, keyless last.** Adjacency is the whole win, so any consistent order would
+do; alphabetical is the one a reader can predict without opening anything, and it is what
+somebody who numbers their keys (*1. Sign in*, *2. Import*) already expects to happen. The
+alternative — first appearance in project order — is invisible, and an agent that wanted a
+particular sequence would have no way to ask for one.
+
+**It is a column, not a heading.** `Table` groups flat: rows belong to the heading above
+them until the next one, so a second level would have needed nesting in the primitive and
+would have made folding a category ambiguous. It is also the wrong shape for the fact — the
+rows are *already adjacent* once they are sorted, which is what a reader sees, and the
+column is there to say what the run of rows has in common. So the Sort key column follows
+the ordinary blank-column rule and appears the day a project starts using one.
+
+The CLI half is `test add|set --sort-key`, `test list --sort-key` and `--flat`, and — the
+one an agent reorganising a roster actually runs — **`dplanner test file`**, which takes
+many tests and both filing fields in one call. That verb replaced `test-category assign`:
+`test set` is one test with many fields, `test file` is many tests with the two fields that
+say where a test goes, and having one verb per axis would have been two verbs for one
+gesture. In the window it is the step panel's field (an editable combo, offering the keys
+already in use so one view is not spelled three ways) and `Step ▸ Test Sort Key ▸ …`, whose
+last entry mints a new key — because with no catalogue there is no editor to send anybody
+to.
+
 ### Grouping is one selector, and the tests' own vocabulary leads it
 
 The Tests tab already grouped by feature, milestone or check. Category could have been a
@@ -4788,6 +4829,44 @@ into whatever TestRail wants; HTML is one self-contained page whose every test i
 `<details>` that opens on its body, which is what makes a hundred of them scannable. Neither
 inlines pictures: a test body's images live in the step's file area, and embedding them
 would make this a publication, which is the report's job.
+
+## A test is run from a panel, and a double-click there opens the test
+
+A roster is not read, it is *worked down*. The gesture that was missing is the one between
+two tests: mark this, look at the next. Doing it from the table alone means the body is a
+one-line preview and the only way to read a test in full was to open its **step** — which
+is the wrong thing twice over, because it is a page about the work rather than about what
+you are checking, and because it is a modal that takes the list away every time.
+
+So there is a **Test panel**, in the window's right area beside Project and Step: the test's
+id and title, where it is filed, its last result, the four result verbs, *Show Step*, and
+Previous/Next. Three things about it are the design.
+
+**It renders the body rather than editing it.** A numbered list is a numbered list here,
+not `1.` and a full stop. Authoring stays in the step panel's Tests tab, where the editor,
+the images and the audience boxes already are, and *Show Step* is the door — one click, and
+a door somebody executing a test wants anyway when what they find contradicts the step.
+Rendering is also why the panel resolves `![](assets/…)` against the step's own file area:
+the link the editor stores is relative to a directory nothing outside the plan can follow.
+
+**Double-clicking a row in a Tests tab opens the test, not its step.** That is the one
+deliberate exception to *double-clicking a step anywhere runs `steps.details`*, and the
+reason is that in this table a row **is** a test — its step is a column. The roll call does
+the same, and because it spans projects and publishes no selection of its own, it hands the
+verb a constructed context naming exactly that row. The verb (`test.details`) only
+*reveals* the panel; the panel was already following the context, so a single click updates
+it and a double-click is what puts it on screen. That is also why there is no preference
+for any of this: a panel is already something the user switches on and off, in one place,
+for every panel there is.
+
+**Next and Previous move the table's selection, never the panel's own.** A panel may not
+publish a selection — it follows the context, and writing to it would fight whatever else
+is showing. So the panel asks the Tests tab to pick the neighbouring row, the table
+publishes as it always does, and the panel follows like any other change. It is the *tab's*
+order that "next" means, not the project's: the reader's scope, their audience filter and
+their ergonomic order are what put the next test where they are looking. With no Tests tab
+open there is nothing to walk, and both verbs are greyed saying so — which is honest rather
+than defensive, because "next" has no meaning without a list.
 
 ## A test goes stale when the step under it moves
 

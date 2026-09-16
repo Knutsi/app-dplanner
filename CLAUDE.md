@@ -313,7 +313,10 @@ reasoning.
   `StepPanel`, disposed on close. It is the one gesture across canvas, order, progression and
   estimates; a table runs it against a context naming exactly the row's step. Reveal-in-graph
   is the `steps.reveal` verb in the Step menu, not a double-click. `ARCHITECTURE.md`'s *The
-  same panel, briefly modal* has the reasoning.
+  same panel, briefly modal* has the reasoning. **The one exception is a table whose row is
+  not a step**: in the Tests tabs a row *is* a test and its step is a column, so a
+  double-click runs `test.details` and reveals the Test panel — `ARCHITECTURE.md`'s *A test
+  is run from a panel*.
 - **A canvas key names action ids; it is never an `ActionSpec.shortcut`.** A bare `h` on a
   menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
   `modules/project_editor/keymap.py`, where a key names the verbs it means in order and the

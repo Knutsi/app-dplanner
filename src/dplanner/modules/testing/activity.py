@@ -25,6 +25,13 @@ beside it. Category leads, and a project that has any categories opens on it: it
 only grouping that is the tests' own vocabulary rather than the graph's, and it is the one
 that makes a roster of two hundred readable. Its headings fold; the graph's do not, because
 a feature's tests are already few and the reader asked to see them beside each other.
+
+**And inside a group, the sort key is what makes the list ergonomic.** *Ergonomic order* on
+the strip — on by default — orders each group by its tests' sort key, so the tests that
+exercise one view are executed one after another instead of scattered down the page. It is
+a *sort*, not a second layer of headings: the key shows as a column when any test carries
+one, and a reader who wants the plan's own order unticks it. A project that uses no sort
+keys is ordered exactly as it was either way.
 """
 
 from collections.abc import Callable, Sequence
@@ -40,8 +47,6 @@ from dplanner.framework.action_menu import build_menu
 from dplanner.framework.activity import ActivityBase, EntityActivity, follow_project
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
-    SCOPE_SELECTION,
-    Context,
     ContextNode,
     ContextService,
     Uri,
@@ -61,11 +66,17 @@ from dplanner.modules.testing.aspect import (
     covered,
     project_tests,
 )
-from dplanner.modules.testing.categories import UNCATEGORISED, catalog, category_of
+from dplanner.modules.testing.filing import (
+    UNCATEGORISED,
+    catalog,
+    category_of,
+    category_places,
+    ergonomic_order,
+)
 from dplanner.modules.testing.table import Heading, Row, TestsTable
 from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.theme.cards import title_font
-from dplanner.theme.icons import archive_icon
+from dplanner.theme.icons import archive_icon, sort_icon
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
@@ -77,6 +88,10 @@ ALL_TESTS_KIND = "all_tests"
 TAB_HINT = "Everything this project verifies, and how it last did."
 ALL_HINT = "Every test in every project in this library, and how it last did."
 ARCHIVED_TIP = "List the tests taken off the roster as well"
+ERGONOMIC_TIP = (
+    "Order each group by its tests' sort key, so a run stays in one place at a time — "
+    "untick to read them in the plan's own order"
+)
 AUDIENCE_TIP = "Show only the tests written for these"
 NO_MATCH = "No test here is written for those audiences. Clear the filter to see them all."
 # Creation first, then what acts on the picked tests (DESIGN.md's *Tables*).
@@ -211,7 +226,8 @@ class Shown:
 
     A run opened from the strip covers what the tab is showing, and so does an export —
     which is the whole reason the audience filter is worth reading back rather than asking
-    for again in a dialog.
+    for again in a dialog. *Ergonomic order* is deliberately not here: an export is a run
+    sheet whichever way the tab is being read, so it always orders by sort key.
     """
 
     scope: StepId = ""
@@ -264,6 +280,12 @@ class TestsActivity(EntityActivity):
         self.group_box.currentIndexChanged.connect(self._on_group)
         for box in (self.scope_box, self.run_box, self.group_box):
             controls.add_widget(box)
+        self.ergonomic = controls.add_verb(
+            "Ergonomic order", sort_icon, self._refresh, checkable=True, tip=ERGONOMIC_TIP
+        )
+        # On by default: the sort key exists to make a run sequence, and a key that only
+        # sometimes sorts is one nobody can rely on halfway down a list.
+        self.ergonomic.setChecked(True)
         self.archived = controls.add_verb(
             "Show archived", archive_icon, self._refresh, checkable=True, tip=ARCHIVED_TIP
         )
@@ -314,6 +336,26 @@ class TestsActivity(EntityActivity):
     def scope(self) -> StepId:
         """The collector the tab is narrowed to, or "" — what a run opened from here covers."""
         return self._scope
+
+    def ordered_tests(self) -> list[str]:
+        """The test ids this tab is showing, in the order it is showing them.
+
+        What *next* means for the Test panel: the reader's own scope, filter and ordering,
+        rather than the project's list, which would land them somewhere they are not.
+        """
+        table = self.page.table
+        return [
+            found for row in range(table.rowCount()) if (found := table.test_at(row)) is not None
+        ]
+
+    def pick_test(self, test_id: str) -> None:
+        """Select one row, and publish it — the panel's Next, arriving the ordinary way.
+
+        The table is what owns the selection here, so stepping through is a *table*
+        gesture the panel asks for; the panel never publishes (``panel.py``).
+        """
+        self.page.table.select_tests([test_id])
+        self._on_selection()
 
     def showing(self) -> Shown:
         """Everything the tab is narrowed to — what a run and an export are both cut to."""
@@ -393,10 +435,16 @@ class TestsActivity(EntityActivity):
             )
             for step, test in pairs
         ]
-        if filing is None:
+        ergonomic = self.ergonomic.isChecked()
+        if filing is None and not ergonomic:
             return rows
-        # Stable, so within a group the rows keep the project order they arrived in.
-        return sorted(rows, key=lambda row: filing.place(row.step, row.test))
+
+        def where(row: Row) -> tuple[object, ...]:
+            group = filing.place(row.step, row.test) if filing is not None else ()
+            return (*group, *ergonomic_order(row.test)) if ergonomic else group
+
+        # Stable, so rows the key cannot part keep the project order they arrived in.
+        return sorted(rows, key=where)
 
     def _grouping(self, project: Project) -> "_Grouping | None":
         """How the rows are filed right now, or None while the list is read flat."""
@@ -412,8 +460,9 @@ class TestsActivity(EntityActivity):
         three different kinds of thing, which is most of why the category exists. The
         catalogue's order is the headings' order, and *Uncategorised* is always last.
         """
-        known = {entry.name.casefold(): entry for entry in catalog(project)}
-        places = {name: index for index, name in enumerate(known)}
+        entries = catalog(project)
+        known = {entry.name.casefold(): entry for entry in entries}
+        places = category_places(entries)
         last = len(places)
 
         def place(_step: Step, test: Test) -> tuple[int, str]:
@@ -510,6 +559,9 @@ class TestsActivity(EntityActivity):
         ]
         self._reload(self.scope_box, entries, self._scope)
         self._scope = str(self.scope_box.currentData() or "")
+        # A plan with nothing to narrow to shows no control at all — the same rule the
+        # grouping box keeps, and room the strip would rather give the verbs.
+        self.page.controls.set_shown(self.scope_box, len(entries) > 1)
 
     def _scope_kind_label(self, step: Step) -> str:
         kind = kind_of(self._deps.scopes, step)
@@ -552,6 +604,9 @@ class TestsActivity(EntityActivity):
         ]
         self._reload(self.run_box, entries, self._run_id)
         self._run_id = str(self.run_box.currentData() or "")
+        # And a project with no runs yet has no mode to be in: *Latest results* alone is
+        # the only reading there is.
+        self.page.controls.set_shown(self.run_box, len(entries) > 1)
 
     def _reload(self, box: QComboBox, entries: list[tuple[str, str]], keep: str) -> None:
         if [(box.itemText(i), box.itemData(i)) for i in range(box.count())] == entries:
@@ -576,13 +631,23 @@ class TestsActivity(EntityActivity):
         self.publish_selection(nodes)
 
     def _on_activated(self, row: int, _column: int) -> None:
-        step_id = self.page.table.step_at(row)
-        if step_id is None:
+        """Double-clicking a row here opens the **test**, not its step.
+
+        The one deliberate exception to *double-clicking a step anywhere runs
+        `steps.details`* (``CLAUDE.md``), and the reason is that in this table a row **is**
+        a test: its step is a column. The Test panel's *Show Step* is the door to the step,
+        one click away. ``ARCHITECTURE.md``'s *A test is run from a panel* has the rest.
+        """
+        table = self.page.table
+        if table.test_at(row) is None:
             return
-        self._deps.actions.run(
-            "steps.details",
-            Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
-        )
+        if table.test_at(row) not in table.selected_tests():
+            table.selectRow(row)
+        # Published unconditionally, even when the row was already picked: the verb is
+        # gated on *one* test being current, and a selection made while this pane was in
+        # the background never reached the context (`publish_selection`).
+        self._on_selection()
+        self._deps.actions.run("test.details", self._deps.context.current())
 
     def _on_context_menu(self, position: QPoint) -> None:
         """Make what is under the cursor current, then render the Step menu over it.
@@ -616,13 +681,13 @@ class AllTestsActivity(ActivityBase):
         self,
         library: Library,
         context: ContextService,
-        open_step: Callable[[StepId], None],
+        open_test: Callable[[str], None],
         debounce: DebounceService,
     ) -> None:
         super().__init__()
         self._library = library
         self._context = context
-        self._open_step = open_step
+        self._open_test = open_test
         self.uri = activity_uri(ALL_TESTS_KIND)
         self.title = "Tests — All Projects"
 
@@ -692,6 +757,12 @@ class AllTestsActivity(ActivityBase):
         )
 
     def _on_activated(self, row: int, _column: int) -> None:
-        step_id = self.page.table.step_at(row)
-        if step_id is not None:
-            self._open_step(step_id)
+        """The same gesture as the project tab's: a row is a test, so it opens the test.
+
+        The roll call publishes no selection of its own — it spans projects — so the verb
+        is handed a constructed context naming exactly this row, which is the documented
+        way to run a verb on something the user did not select (``CLAUDE.md``).
+        """
+        test_id = self.page.table.test_at(row)
+        if test_id is not None:
+            self._open_test(test_id)

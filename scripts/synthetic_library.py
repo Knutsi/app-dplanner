@@ -53,6 +53,7 @@ from dplanner.modules.step_status.aspect import write as status
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.aspect import write as tests
+from dplanner.modules.testing.filing import Category, write_catalog
 from dplanner.modules.time_estimates.schedule import write_project
 
 PROJECTS = (("big", "Big"), ("sibling", "Sibling"), ("small", "Small"))
@@ -147,14 +148,34 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
         if index % 11 == 7:
             SetModuleDataCommand(step.id, "step_check", check(True)).redo(library)
         if index % 10 < 6:
+            # Filed, both ways: a category so the Tests tab has headings to fold, and a
+            # sort key so it has a run order inside them. A plan whose tests were all
+            # unfiled would exercise neither, and every render and measurement reads this.
+            category = TEST_CATEGORIES[index % len(TEST_CATEGORIES)][0]
             own = [
-                Test(f"T{100 + 2 * index}", f"Step {index} does the thing", "Given, when, then."),
-                Test(f"T{101 + 2 * index}", f"Step {index} survives a retry"),
+                Test(
+                    f"T{100 + 2 * index}",
+                    f"Step {index} does the thing",
+                    "Given, when, then.",
+                    category=category,
+                    sort_key=TEST_SORT_KEYS[index % len(TEST_SORT_KEYS)],
+                ),
+                Test(
+                    f"T{101 + 2 * index}",
+                    f"Step {index} survives a retry",
+                    category=category,
+                    sort_key=TEST_SORT_KEYS[(index + 1) % len(TEST_SORT_KEYS)],
+                ),
             ]
             test_ids.extend(test.id for test in own)
             SetModuleDataCommand(step.id, "testing", tests(own)).redo(library)
         library.set_text(step.id, "step_description", DESCRIPTION.format(n=index))
 
+    SetModuleDataCommand(
+        project.id,
+        "testing",
+        write_catalog(project, [Category(name, icon) for name, icon in TEST_CATEGORIES]),
+    ).redo(library)
     SetModuleDataCommand(project.id, "testing", runs.write(project, _runs(test_ids))).redo(library)
     SetModuleDataCommand(project.id, NOTES_ID, write_log(_notes(steps))).redo(library)
 
@@ -164,6 +185,22 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
             continue
         x, y = placed[step.id]
         SetModuleDataCommand(step.id, EDITOR_ID, write_position(x, y)).redo(library)
+
+
+# What the synthetic plan files its tests under: a catalogue with glyphs, and the sort keys
+# that order each category — the two axes a Tests tab is read by.
+TEST_CATEGORIES = (
+    ("Set up a new customer", "star"),
+    ("Import measurements", "layers"),
+    ("Reporting", "table"),
+    ("Permissions", "shield"),
+)
+TEST_SORT_KEYS = (
+    "Customer list view",
+    "Customer detail view",
+    "Import wizard",
+    "Report designer",
+)
 
 
 def _title(index: int) -> str:

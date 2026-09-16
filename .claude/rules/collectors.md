@@ -27,8 +27,35 @@ paths:
   reader picks a grouping, after which their answer stands. `TestsTable` draws a spanned
   heading wherever the group changes; **a category heading folds** (`Table.add_heading`'s
   `key`, the whole row the target) and the collector headings do not.
+- **A test is filed under a category, and ordered inside it by a sort key.** The sort key
+  (`modules/testing/filing.py`) is free text with **no catalogue and no editor**, because
+  it is an ergonomic rather than a vocabulary: tests sharing one are executed together, so
+  somebody working down a roster stays in one place at a time. It **always sorts**, inside
+  whatever group is current — *Ergonomic order* on the Tests strip is on by default and is
+  there to turn **off**, and a project with no sort keys is ordered identically either way
+  (`ergonomic_order`: alphabetical, keyless last). It is a **column**, never a second layer
+  of headings: the rows are already adjacent once sorted, and `Table` groups flat. Verbs:
+  `test add|set --sort-key`, `test list --sort-key|--flat`, and **`dplanner test file`** —
+  many tests, both filing fields, one call, which is what reorganising a roster is made of
+  and which replaced `test-category assign` (`test set` is one test with many fields).
+  In the window: the step panel's editable combo (offering the keys in use, so one view is
+  not spelled three ways) and `Step ▸ Test Sort Key ▸ …`, whose last entry mints a new key
+  because there is no editor to send anybody to. `ARCHITECTURE.md`'s *The sort key is an
+  ergonomic* has the reasoning.
+- **A test is run from the Test panel, and a double-click in a Tests tab opens the test.**
+  `modules/testing/panel.py`, a `PanelSpec` in the right area under Project and Step: the
+  test rendered (not edited — authoring is the step panel's Tests tab, and *Show Step* is
+  the door), its last result, the four result verbs from the registry, and Previous/Next.
+  **The double-click is the one deliberate exception to *double-clicking a step anywhere
+  runs `steps.details`*** — in this table a row *is* a test, its step is a column — and
+  `test.details` only *reveals* the panel, which was already following the context. **Next
+  and Previous move the table's selection**, never the panel's own (a panel publishes no
+  selection), and it is the *tab's* order they walk, greyed with the reason when no tab is
+  open. Register the panel **after** the action specs: the dock builds it on registration
+  and its strip asks the registry for the result verbs. `ARCHITECTURE.md`'s *A test is run
+  from a panel* has the reasoning.
 - **A test is filed under a category, and its words are the key.** Free text, open
-  vocabulary, catalogued beside the *project* (`modules/testing/categories.py`: a `name` and
+  vocabulary, catalogued beside the *project* (`modules/testing/filing.py`: a `name` and
   an `icon` from the curated `ICONS`), and a test stores the category's **words** — there is
   no minted id, so `test set T100 --category Import` is the whole story and renaming is a
   **refactor** that rewrites every test carrying the old words, in one undoable step
@@ -39,8 +66,8 @@ paths:
   a typo is a group of one rather than a test that fell out of every list. `category_of` is
   the one derivation (what it stored, or *Uncategorised*); `lint`'s `test.category` is the
   one raw reader, and it stays quiet until the project has categories at all. Verbs:
-  `test-category list|add|set|remove|assign` (`assign` moves a **batch**, which is what
-  reorganising a roster is made of), `test add|set --category`, `step add --test-category`.
+  `test-category list|add|set|remove`, `test add|set --category`, `test file` for a batch,
+  `step add --test-category`.
   In the window: `Project ▸ Test Categories…` (the modal editor, also on the Tests strip and
   in the index's right-click, which renders the Project menu), `Step ▸ Test Category ▸ …` (a
   `DataMenuSpec`, so the categories are data rebuilt on open — and what a right-click on a
@@ -54,12 +81,12 @@ paths:
   safe: it says how many tests are about to move. Removing a category unfiles its tests
   rather than deleting them, and says so. The icon is **picked from a grid**, never typed;
   the same `ICONS` tuple is what `--icon` refuses against.
-- **The tests table has six columns, and two were taken out rather than narrowed.** *Covered
+- **The tests table has seven columns, and two were taken out rather than narrowed.** *Covered
   by* is the Covers tab's whole subject and was a comma-separated list nobody compared down
   the page; *When* dated the last run, which is exactly the fact a test outlives. Both are
   still in the step panel and in `dplanner test show`. The Category column stands down while
   the rows are already grouped by category — a column repeating its own heading is noise
-  twice — and, like Audience, while no test in scope names one.
+  twice — and, like Audience and Sort key, while no test in scope names one.
 - **Exporting the tests is what the tab is showing.** `File ▸ Export ▸ Tests…` writes the
   project's Tests tab's current scope, audience filter and archived switch, read back
   through `TestsActivity.showing()` — which `New Test Run` reads too, so "narrow it, then

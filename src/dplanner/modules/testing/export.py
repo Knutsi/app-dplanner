@@ -36,7 +36,13 @@ from dplanner.modules.testing.aspect import (
     for_audiences,
     project_tests,
 )
-from dplanner.modules.testing.categories import Category, catalog, category_of
+from dplanner.modules.testing.filing import (
+    Category,
+    catalog,
+    category_of,
+    category_places,
+    ergonomic_order,
+)
 
 # What `--format` takes, and the suffix each one writes. Ordered as they are offered.
 FORMATS: Final[tuple[str, ...]] = ("md", "html")
@@ -133,21 +139,30 @@ def _result_words(exported: Exported, test: Test) -> str:
 
 
 def _filed(exported: Exported) -> list[tuple[Category, list[tuple[Step, Test]]]]:
-    """The tests grouped under their categories, in the catalogue's order.
+    """The tests grouped under their categories, each group in its ergonomic order.
 
     A group nobody filed anything into is left out — the catalogue is a plan for where
     tests will go, and an export is a record of where they are. *Uncategorised* sorts last,
-    where ``catalog()`` puts everything it does not name.
+    where ``catalog()`` puts everything it does not name. Inside a group the sort key
+    orders them, because an exported list is a **run sheet**: the whole point of writing it
+    out is that somebody works down it, and the tests that share a view belong together.
     """
-    known = {category.name.casefold(): category for category in catalog(exported.project)}
-    places = {name: index for index, name in enumerate(known)}
+    entries = catalog(exported.project)
+    known = {category.name.casefold(): category for category in entries}
+    places = category_places(entries)
     held: dict[str, list[tuple[Step, Test]]] = {}
     for step, test in exported.pairs:
         held.setdefault(category_of(test), []).append((step, test))
     ordered = sorted(
         held, key=lambda name: (places.get(name.casefold(), len(places)), name.casefold())
     )
-    return [(known.get(name.casefold(), Category(name)), held[name]) for name in ordered]
+    return [
+        (
+            known.get(name.casefold(), Category(name)),
+            sorted(held[name], key=lambda pair: ergonomic_order(pair[1])),
+        )
+        for name in ordered
+    ]
 
 
 # -- markdown ---------------------------------------------------------------------------
@@ -165,6 +180,7 @@ def _markdown(exported: Exported) -> str:
             out.append(f"### {test.id} — {test.title or 'Untitled test'}")
             out.append("")
             facts = [
+                *([f"Sort key: {test.sort_key}"] if test.sort_key else []),
                 f"Step: {step.title or 'Untitled step'}",
                 f"Audience: {audience_words(test)}",
                 f"Result: {_result_words(exported, test)}",
@@ -243,7 +259,11 @@ def _html(exported: Exported) -> str:
 
 def _html_test(exported: Exported, step: Step, test: Test) -> str:
     status = _status(exported, test)
-    meta = [f"Step: {step.title or 'Untitled step'}", audience_words(test)]
+    meta = [
+        *([test.sort_key] if test.sort_key else []),
+        f"Step: {step.title or 'Untitled step'}",
+        audience_words(test),
+    ]
     if test.archived:
         meta.append("Archived")
     body = markdown(test.body)

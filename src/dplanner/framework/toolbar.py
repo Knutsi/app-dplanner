@@ -679,6 +679,17 @@ class Toolbar(QWidget):
 
     # -- the words -----------------------------------------------------------------------
 
+    def set_tip(self, action: QAction, tip: str) -> None:
+        """Change what a host verb has to say under its words, after it was added.
+
+        A registry-fed verb gets this from its ``ActionState`` on every context change
+        (:meth:`_state`); a host's own verb had no way to say *why it is greyed right now*,
+        and writing onto ``action.setToolTip`` does not work — ``_retip`` composes that
+        string from the words, the key and this, and runs again on the next ``changed``.
+        """
+        self._tips[action] = tip
+        self._retip(action)
+
     def _retip(self, action: QAction) -> None:
         """The verb's words and its key, and what else it has to say under them.
 

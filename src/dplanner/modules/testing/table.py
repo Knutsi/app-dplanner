@@ -11,8 +11,9 @@ spanned heading — written in a milestone's shade when the group is a milestone
 by milestone reads as the same sequence the calendar and the graph show. **A column of
 blanks is hidden rather than shown.**
 
-**Six columns, because a roster is read down a column and not across one.** What a test
-checks, whose step it is, what it is filed under, who it is for, and how it did. Two columns
+**Seven columns, because a roster is read down a column and not across one.** What a test
+checks, whose step it is, what it is filed under and in what order, who it is for, and how
+it did. Two columns
 were taken out rather than narrowed: *Covered by* named the collectors behind a test, which
 is the Covers tab's whole subject and was a comma-separated list nobody compared down the
 page; and *When* dated the last run, which is exactly the fact a test outlives — these are
@@ -37,7 +38,7 @@ from dplanner.domain.model import Step, StepId
 from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.table import Cell, Column, Selection, Table
 from dplanner.modules.testing.aspect import Test, audience_words
-from dplanner.modules.testing.categories import category_of
+from dplanner.modules.testing.filing import category_of
 from dplanner.modules.testing.view import FAILED_ROW_TINT, tint, word
 from dplanner.theme.icons import glyph_icon
 from dplanner.theme.tokens import SECONDARY_ALPHA
@@ -47,6 +48,7 @@ COLUMNS = (
     Column("Project"),
     Column("Step"),
     Column("Category"),
+    Column("Sort key"),
     Column("Audience"),
     Column("Result"),
 )
@@ -55,9 +57,10 @@ COLUMNS = (
     PROJECT_COLUMN,
     STEP_COLUMN,
     CATEGORY_COLUMN,
+    SORT_KEY_COLUMN,
     AUDIENCE_COLUMN,
     RESULT_COLUMN,
-) = range(6)
+) = range(7)
 
 # A test's own line can be long; past this the column stops growing and elides.
 TEST_MAX_WIDTH = 340
@@ -153,6 +156,7 @@ class TestsTable(Table):
         self.setColumnHidden(
             CATEGORY_COLUMN, not show_category or not any(row.test.category for row in rows)
         )
+        self.setColumnHidden(SORT_KEY_COLUMN, not any(row.test.sort_key for row in rows))
         # On the test's *stored* audiences, not on what it reads as: `audience_words` never
         # answers blank, so a project nobody has classified would otherwise grow a column
         # saying "Other" all the way down.
@@ -184,6 +188,9 @@ class TestsTable(Table):
                 Cell(row.step.title or "Untitled step", secondary=True, tooltip=tip),
                 # What it *reads* as, so an unfiled test says so rather than showing a hole.
                 Cell(category_of(row.test), secondary=True, tooltip=tip),
+                # The stored key, which is blank for most tests and is the point of the
+                # blank-column rule: the column appears the day a project starts using one.
+                Cell(row.test.sort_key, secondary=True, tooltip=tip),
                 Cell(audience_words(row.test), secondary=True, tooltip=tip),
                 # The one place a colour is asserted: a status means the same on every theme.
                 Cell(word(row.status), ink=tint(row.status), tooltip=tip),

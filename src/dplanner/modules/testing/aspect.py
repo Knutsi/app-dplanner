@@ -26,12 +26,13 @@ A test may carry several; one that carries none reads as ``other`` through
 :func:`audiences_of`, which is what let the field arrive without migrating anybody's plan.
 ``project lint`` asks for the explicit answer instead, a test at a time.
 
-**And it says what kind of thing it is** — its ``category``, one line of free text naming a
-group a person would file it under. Unlike the audience the list is *open*, because nobody
-can write down every kind of test a project will grow; the catalogue beside the project is
-:mod:`dplanner.modules.testing.categories`, and a test names a category by its words rather
-than by a minted id, so renaming one is an explicit refactor over the tests that carry it.
-A test that names none reads as *Uncategorised*, the same tolerance the audience shows.
+**And it says how it is filed** — its ``category``, one line of free text naming a group a
+person would file it under, and its ``sort_key``, which orders it *inside* that group.
+Unlike the audience both are *open*, because nobody can write down every kind of test a
+project will grow; :mod:`dplanner.modules.testing.filing` owns them, and a test names a
+category by its words rather than by a minted id, so renaming one is an explicit refactor
+over the tests that carry it. A test that names no category reads as *Uncategorised*, the
+same tolerance the audience shows; one with no sort key simply sorts last in its group.
 """
 
 import dataclasses
@@ -74,14 +75,18 @@ def _to_format_2(data: dict[str, Any]) -> dict[str, Any]:
 
 
 def _to_format_3(data: dict[str, Any]) -> dict[str, Any]:
-    """Format 2 shapes are valid format 3 shapes: the bump exists for a test's ``category``
-    and for the project entry's ``categories`` catalogue.
+    """Format 2 shapes are valid format 3 shapes: the bump exists for how a test is filed —
+    its ``category`` and ``sort_key``, and the project entry's ``categories`` catalogue.
 
     The same pass-through, for the same reason and with the same caveat as
     :func:`_to_format_2`: the stamp records that the entry may carry keys an older build
-    does not know, and nothing enforces it. An uncategorised test is what a format-2 plan
-    reads as, which is a real state rather than a missing one — ``project lint``'s
+    does not know, and nothing enforces it. An unfiled test is what a format-2 plan reads
+    as, which is a real state rather than a missing one — ``project lint``'s
     ``test.category`` is what carries a plan over a test at a time.
+
+    One format for both keys because they arrived together and neither has ever been on
+    anybody's disk alone; a second pass-through migration would record nothing a reader
+    could act on.
     """
     return dict(data)
 
@@ -135,9 +140,13 @@ class Test:
     # `other` through `audiences_of` and is what `lint`'s `test.audience` asks about.
     audiences: tuple[str, ...] = ()
     # What it is filed under, by its words. Open vocabulary, catalogued beside the project
-    # (`categories.py`); empty reads as *Uncategorised* and is what `lint`'s `test.category`
+    # (`filing.py`); empty reads as *Uncategorised* and is what `lint`'s `test.category`
     # asks about.
     category: str = ""
+    # What orders it *inside* its category — the view it exercises, the data set it needs.
+    # Open, uncatalogued and optional: it is an ergonomic, not a vocabulary. Empty sorts
+    # last, and a project that never uses one is ordered exactly as it was.
+    sort_key: str = ""
 
 
 def read(step: Step) -> list[Test]:
@@ -153,6 +162,7 @@ def read(step: Step) -> list[Test]:
             archived=bool(entry.get("archived")),
             audiences=_audiences_in(entry.get("audiences")),
             category=str(entry.get("category", "")).strip(),
+            sort_key=str(entry.get("sort_key", "")).strip(),
         )
         for entry in raw
         if isinstance(entry, dict) and isinstance(entry.get("id"), str)
@@ -171,6 +181,7 @@ def _entry(test: Test) -> dict[str, Any]:
         **({"archived": True} if test.archived else {}),
         **({"audiences": list(audiences)} if audiences else {}),
         **({"category": test.category} if test.category else {}),
+        **({"sort_key": test.sort_key} if test.sort_key else {}),
     }
 
 

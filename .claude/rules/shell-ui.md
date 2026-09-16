@@ -69,6 +69,11 @@ paths:
   remembered by row number would spring every group open on the next keystroke. A heading
   with no key is the plain spanned rule it always was; `glyph` puts the group's own picture
   in front of its words. `ARCHITECTURE.md`'s *The category headings fold* has the reasoning.
+- **A host's own verb on a strip says why it is greyed through `Toolbar.set_tip`**, never
+  `action.setToolTip`: `_retip` composes that string from the verb's words, its key and its
+  standing explanation, and runs again on the next `changed` — so anything written straight
+  onto the action is gone by the next `setEnabled`. A registry-fed verb gets the same thing
+  from its `ActionState` on every context change.
 - **A filter button's face says what is chosen.** `FilterButton` goes accent while anything
   is on, which tells a reader something is hidden and not *what* — so the face carries the
   answer: the label while nothing is picked, the one filter's words when one is, and

@@ -22,7 +22,7 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.store import FilesFor
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import audience_words, read
-from dplanner.modules.testing.categories import category_of
+from dplanner.modules.testing.filing import category_of
 
 TABLE_ID = "tests"
 NOT_RUN = "not run"

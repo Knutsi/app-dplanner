@@ -10,11 +10,12 @@ An agent is expected to be the one *executing* tests and reporting back, so ``te
 mark`` is the verb this file is really shaped around: terse, idempotent, and safe to run in
 a batch where some of the marks are already what they should be.
 
-It is also expected to be the one *filing* them, which is what ``test-category`` is shaped
-around: lay the categories out from the spec before the tests exist (``test-category add``),
-then file each test as it is written (``test add --category``) — and when the roster has
-outgrown its filing, reorganise it wholesale with ``test-category assign``, which moves a
-batch in one call rather than one invocation per test.
+It is also expected to be the one *filing* them: lay the categories out from the spec before
+the tests exist (``test-category add``), then file each test as it is written (``test add
+--category --sort-key``) — and when the roster has outgrown its filing, reorganise it
+wholesale with ``test file``, which moves a batch in one call rather than one invocation per
+test. ``test set`` is one test with many fields; ``test file`` is many tests with the two
+fields that say where a test goes.
 """
 
 import dataclasses
@@ -48,7 +49,7 @@ from dplanner.modules.testing.aspect import (
     replace,
     write,
 )
-from dplanner.modules.testing.categories import (
+from dplanner.modules.testing.filing import (
     ICONS,
     UNCATEGORISED,
     Category,
@@ -56,6 +57,7 @@ from dplanner.modules.testing.categories import (
     check_icon,
     check_name,
     counts,
+    filed_order,
     read_catalog,
     refiled,
     renamed,
@@ -65,7 +67,7 @@ from dplanner.modules.testing.categories import (
 
 # The stored list plus whatever a test names by itself — what a refusal reads, where
 # `read_catalog` is the stored half and is what gets written back.
-from dplanner.modules.testing.categories import catalog as all_categories
+from dplanner.modules.testing.filing import catalog as all_categories
 
 _STATUS_GLYPH = {"ok": "✓", "failed": "✗", "skipped": "-", "pending": " "}
 
@@ -73,9 +75,10 @@ _STATUS_GLYPH = {"ok": "✓", "failed": "✗", "skipped": "-", "pending": " "}
 # "off" needs a word for returning to it — `estimate clear` and `describe clear` are the
 # same idea as verbs; here one repeatable flag covers both directions.
 NO_AUDIENCE = "none"
-# And the same word for `--category`, for the same reason and spelled the same way: a flag
-# that can only ever set is a mistake a terminal cannot undo.
+# And the same word for `--category` and `--sort-key`, for the same reason and spelled the
+# same way: a flag that can only ever set is a mistake a terminal cannot undo.
 NO_CATEGORY = "none"
+NO_SORT_KEY = "none"
 
 # -- what `test review` is handed ------------------------------------------------------
 
@@ -121,6 +124,24 @@ def _category_argument(parser: ArgumentParser, *, purpose: str) -> None:
         metavar="NAME",
         help=f"{purpose}. `dplanner test-category list` names the ones this project has.",
     )
+
+
+def _sort_key_argument(parser: ArgumentParser, *, purpose: str) -> None:
+    """The ``--sort-key`` a test verb takes. Free text, uncatalogued — an ergonomic."""
+    parser.add_argument(
+        "--sort-key",
+        metavar="KEY",
+        help=f"{purpose}. Tests sharing one are executed together; `test list` names the "
+        "keys in use.",
+    )
+
+
+def _wanted_sort_key(args: Namespace, was: str = "") -> str:
+    """What ``--sort-key`` leaves behind: the key given, nothing, or what was there."""
+    named = getattr(args, "sort_key", None)
+    if named is None:
+        return was
+    return "" if named.strip().casefold() == NO_SORT_KEY else named.strip()
 
 
 def _wanted_category(args: Namespace, was: str = "") -> str:
@@ -244,6 +265,18 @@ def commands(*, status_for: Callable[[Step], str], notes_for: NotesFor) -> list[
                 "dplanner test list",
                 "dplanner test list widget --scope 'Pre-release check'",
                 "dplanner test list --archived --json",
+            ),
+        ),
+        CliCommand(
+            path=("test", "file"),
+            summary="File tests: their category, their sort key, or both — several at once, "
+            "which is what reorganising a roster is made of.",
+            configure=_configure_file,
+            run=_file,
+            examples=(
+                "dplanner test file T100 T101 T104 --category Import",
+                "dplanner test file T100 T101 --sort-key 'Customer list view'",
+                "dplanner test file T100 --category none",
             ),
         ),
         CliCommand(
@@ -371,17 +404,6 @@ def commands(*, status_for: Callable[[Step], str], notes_for: NotesFor) -> list[
             run=_category_remove,
             examples=("dplanner test-category remove Smoke",),
         ),
-        CliCommand(
-            path=("test-category", "assign"),
-            summary="File tests under a category — several at once, which is what "
-            "reorganising a roster is made of.",
-            configure=_configure_category_assign,
-            run=_category_assign,
-            examples=(
-                "dplanner test-category assign Import T100 T101 T104",
-                "dplanner test-category assign none T100",
-            ),
-        ),
     ]
 
 
@@ -399,6 +421,7 @@ def _configure_add(parser: ArgumentParser) -> None:
     parser.add_argument("title", help="what the test is called, in the roster and in a run")
     _audience_argument(parser, purpose="who the test is for")
     _category_argument(parser, purpose="what to file the test under")
+    _sort_key_argument(parser, purpose="what orders it inside that category")
     _body_arguments(parser)
 
 
@@ -417,6 +440,7 @@ def _add(context: CliContext, args: Namespace) -> int:
         body=_body(args),
         audiences=_wanted_audiences(args),
         category=_wanted_category(args),
+        sort_key=_wanted_sort_key(args),
     )
     _save(context, step, [*read(step), added])
     context.report(
@@ -427,6 +451,7 @@ def _add(context: CliContext, args: Namespace) -> int:
             "body": added.body,
             "audiences": list(added.audiences),
             "category": added.category,
+            "sort_key": added.sort_key,
         },
         f"{added.id}  {added.title}  ({step.title})",
     )
@@ -442,6 +467,9 @@ def _configure_set(parser: ArgumentParser) -> None:
     _category_argument(
         parser, purpose=f"file the test under this; {NO_CATEGORY!r} leaves it unfiled"
     )
+    _sort_key_argument(
+        parser, purpose=f"order it inside its category by this; {NO_SORT_KEY!r} takes it away"
+    )
     _body_arguments(parser)
 
 
@@ -453,9 +481,12 @@ def _set(context: CliContext, args: Namespace) -> int:
         and args.text is None
         and not args.audience
         and args.category is None
+        and args.sort_key is None
     )
     if nothing:
-        raise CliError("nothing to change — pass --title, --file, --text, --audience or --category")
+        raise CliError(
+            "nothing to change — pass --title, --file, --text, --audience, --category or --sort-key"
+        )
     body = test.body if (args.file is None and args.text is None) else _body(args)
     changed = dataclasses.replace(
         test,
@@ -463,6 +494,7 @@ def _set(context: CliContext, args: Namespace) -> int:
         body=body,
         audiences=_replacement_audiences(args, test),
         category=_wanted_category(args, test.category),
+        sort_key=_wanted_sort_key(args, test.sort_key),
     )
     _save(context, step, replace(read(step), changed))
     context.report(
@@ -473,6 +505,7 @@ def _set(context: CliContext, args: Namespace) -> int:
             "body": changed.body,
             "audiences": list(changed.audiences),
             "category": changed.category,
+            "sort_key": changed.sort_key,
         },
         f"{changed.id}  {changed.title}",
     )
@@ -507,13 +540,14 @@ def _show(context: CliContext, args: Namespace) -> int:
         # What it *stored*, so a caller can tell a test nobody filed from one deliberately
         # left unfiled — `category_of` is what says what it reads as.
         "category": test.category,
+        "sort_key": test.sort_key,
         "step": step.id,
         "step_title": step.title,
         "latest": _outcome_data(outcome),
     }
     lines = [
         f"{test.id}  {test.title}",
-        f"  in {category_of(test)}",
+        f"  in {category_of(test)}" + (f" · {test.sort_key}" if test.sort_key else ""),
         f"  for {audience_words(test)}",
         f"  on {step.title}",
         f"  {_outcome_text(outcome)}",
@@ -573,6 +607,12 @@ def _configure_list(parser: ArgumentParser) -> None:
         metavar="NAME",
         help=f"only the tests filed under this; {UNCATEGORISED!r} for the ones filed nowhere",
     )
+    parser.add_argument("--sort-key", metavar="KEY", help="only the tests carrying this sort key")
+    parser.add_argument(
+        "--flat",
+        action="store_true",
+        help="the plan's own order, rather than filed by category and sort key",
+    )
 
 
 def _list(context: CliContext, args: Namespace) -> int:
@@ -584,6 +624,14 @@ def _list(context: CliContext, args: Namespace) -> int:
         pairs = covered(context.library, project, scope.id, archived=args.archived)
     pairs = for_audiences(pairs, _wanted_audiences(args))
     pairs = _in_category(pairs, args.category)
+    if args.sort_key:
+        wanted_key = args.sort_key.strip().casefold()
+        pairs = [pair for pair in pairs if pair[1].sort_key.casefold() == wanted_key]
+    if not args.flat:
+        # The order somebody would execute them in: filed, then ergonomic inside the filing.
+        # Printed that way by default because a list an agent hands to a person is a run
+        # sheet, and `--flat` is there for the reader who wants the plan's own order.
+        pairs = filed_order(project, pairs)
     outcomes = runs.latest_results(runs.read(project))
     data = {
         "project": project.id,
@@ -596,6 +644,7 @@ def _list(context: CliContext, args: Namespace) -> int:
                 # has classified from one somebody deliberately filed under `other`.
                 "audiences": list(test.audiences),
                 "category": test.category,
+                "sort_key": test.sort_key,
                 "step": step.id,
                 "step_title": step.title,
                 "latest": _outcome_data(outcomes.get(test.id)),
@@ -605,15 +654,20 @@ def _list(context: CliContext, args: Namespace) -> int:
     }
     width = max((len(test.title) for _step, test in pairs), default=0)
     for_width = max((len(audience_words(test)) for _step, test in pairs), default=0)
-    in_width = max((len(category_of(test)) for _step, test in pairs), default=0)
+    in_width = max((len(_filed_words(test)) for _step, test in pairs), default=0)
     lines = [
         f"{_STATUS_GLYPH[_status(outcomes, test)]} {test.id:<4} {test.title:<{width}}  "
-        f"{category_of(test):<{in_width}}  {audience_words(test):<{for_width}}  {step.title}"
+        f"{_filed_words(test):<{in_width}}  {audience_words(test):<{for_width}}  {step.title}"
         + ("  (archived)" if test.archived else "")
         for step, test in pairs
     ]
     context.report(data, "\n".join(lines) if lines else _nothing_listed(args))
     return 0
+
+
+def _filed_words(test: Test) -> str:
+    """Where a test sits, in one cell: its category, and its sort key after a dot."""
+    return category_of(test) + (f" · {test.sort_key}" if test.sort_key else "")
 
 
 def _in_category(pairs: Sequence[tuple[Step, Test]], named: str | None) -> list[tuple[Step, Test]]:
@@ -626,6 +680,8 @@ def _in_category(pairs: Sequence[tuple[Step, Test]], named: str | None) -> list[
 
 
 def _nothing_listed(args: Namespace) -> str:
+    if args.sort_key:
+        return f"No test carries the sort key {args.sort_key!r}."
     if args.category:
         return f"No test is filed under {args.category!r}."
     if args.audience:
@@ -636,6 +692,59 @@ def _nothing_listed(args: Namespace) -> str:
 def _status(outcomes: dict[str, runs.Outcome], test: Test) -> str:
     outcome = outcomes.get(test.id)
     return outcome.result.status if outcome else "pending"
+
+
+# -- test file ------------------------------------------------------------------------
+
+
+def _configure_file(parser: ArgumentParser) -> None:
+    parser.add_argument("tests", nargs="+", metavar="TEST", help="test ids, or parts of titles")
+    _category_argument(
+        parser, purpose=f"file them under this category; {NO_CATEGORY!r} unfiles them"
+    )
+    _sort_key_argument(
+        parser, purpose=f"order them under this key; {NO_SORT_KEY!r} takes the key away"
+    )
+
+
+def _file(context: CliContext, args: Namespace) -> int:
+    """Both axes, many tests, one call — the verb an agent reorganises a roster with."""
+    project = context.project
+    if args.category is None and args.sort_key is None:
+        raise CliError("nothing to file — pass --category, --sort-key, or both")
+    category = None if args.category is None else _wanted_category(args)
+    if category:
+        # Refuse a typo rather than minting a category from it: `test-category add` is
+        # where a category comes into being, and it is one more line to type.
+        _find_category(project, category)
+    sort_key = None if args.sort_key is None else _wanted_sort_key(args)
+    found = [find_test(context.library, needle, project) for needle in args.tests]
+    by_step: dict[StepId, set[str]] = {}
+    for _project, step, test in found:
+        by_step.setdefault(step.id, set()).add(test.id)
+    for step_id, test_ids in by_step.items():
+        step = context.library.step(step_id)
+        context.apply(
+            SetModuleDataCommand(
+                step_id,
+                MODULE_ID,
+                write(refiled(read(step), test_ids, category=category, sort_key=sort_key)),
+            )
+        )
+    ids = sorted(test.id for _p, _s, test in found)
+    said = [
+        part
+        for part in (
+            None if category is None else f"category {category or UNCATEGORISED}",
+            None if sort_key is None else f"sort key {sort_key or 'none'}",
+        )
+        if part is not None
+    ]
+    context.report(
+        {"tests": ids, "category": category, "sort_key": sort_key},
+        f"{len(ids)} test{'' if len(ids) == 1 else 's'} → {', '.join(said)}",
+    )
+    return 0
 
 
 # -- test export ----------------------------------------------------------------------
@@ -743,13 +852,6 @@ def _configure_category_set(parser: ArgumentParser) -> None:
         help="new words for it — every test filed under the old ones moves with it",
     )
     _icon_argument(parser)
-
-
-def _configure_category_assign(parser: ArgumentParser) -> None:
-    parser.add_argument(
-        "name", help=f"the category to file them under, or {NO_CATEGORY!r} to unfile them"
-    )
-    parser.add_argument("tests", nargs="+", metavar="TEST", help="test ids, or parts of titles")
 
 
 def _find_category(project: Project, name: str) -> Category:
@@ -879,28 +981,6 @@ def _category_remove(context: CliContext, args: Namespace) -> int:
     context.report(
         {"name": entry.name, "unfiled": unfiled},
         f"{entry.name}: removed — {unfiled} test{'' if unfiled == 1 else 's'} now unfiled",
-    )
-    return 0
-
-
-def _category_assign(context: CliContext, args: Namespace) -> int:
-    project = context.project
-    name = "" if args.name.strip().casefold() == NO_CATEGORY else check_name(args.name)
-    if name:
-        _find_category(project, name)  # Refuse a typo rather than minting a category from it.
-    found = [find_test(context.library, needle, project) for needle in args.tests]
-    wanted: dict[StepId, set[str]] = {}
-    for _project, step, test in found:
-        wanted.setdefault(step.id, set()).add(test.id)
-    for step_id, test_ids in wanted.items():
-        step = context.library.step(step_id)
-        context.apply(
-            SetModuleDataCommand(step_id, MODULE_ID, write(refiled(read(step), test_ids, name)))
-        )
-    ids = sorted(test.id for _p, _s, test in found)
-    context.report(
-        {"category": name, "tests": ids},
-        f"{len(ids)} test{'' if len(ids) == 1 else 's'} → {name or UNCATEGORISED}",
     )
     return 0
 

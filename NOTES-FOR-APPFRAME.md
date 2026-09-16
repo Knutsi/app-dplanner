@@ -4009,3 +4009,19 @@ read from the menu at open time so it cannot go stale. That is exactly what `_in
 and getting a different answer) is the shape the rename prevents.
 
 **Upstream?** Yes.
+
+### `framework/toolbar.py` — `Toolbar.set_tip`
+
+**What.** A host may now change what one of its own verbs has to say under its words, after
+`add_verb` has returned it.
+
+**Why.** A registry-fed verb carries its reason in `ActionState.label`, restated on every
+context change; a verb the host wired itself had no way to say *why it is greyed right now*.
+Writing `action.setToolTip` does not work and fails silently, which is the part worth
+carrying upstream: `_retip` **composes** that string from the verb's words, its key and its
+standing explanation, and it runs again on the action's next `changed` — so a tooltip set by
+hand survives until the very next `setEnabled`, which is to say never. Three lines, and it
+closes a hole a host will otherwise fall into once per host. The Test panel's Next/Previous
+are what found it.
+
+**Upstream?** Yes.

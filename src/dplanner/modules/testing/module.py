@@ -48,10 +48,12 @@ from dplanner.framework.dictation import DictationService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
+from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.project_list_segment import LeadingRow, ProjectListSegment
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
+from dplanner.framework.window import PanelHost
 from dplanner.modules.testing import export, runs
 from dplanner.modules.testing.activity import (
     ALL_TESTS_KIND,
@@ -73,8 +75,15 @@ from dplanner.modules.testing.aspect import (
     read,
     write,
 )
-from dplanner.modules.testing.categories import UNCATEGORISED, catalog, category_of, refiled
 from dplanner.modules.testing.categories_dialog import CategoriesDialog
+from dplanner.modules.testing.filing import (
+    UNCATEGORISED,
+    catalog,
+    category_of,
+    refiled,
+    sort_keys,
+)
+from dplanner.modules.testing.panel import PANEL_ID, TestPanel, Walk
 from dplanner.modules.testing.section import CoversSection, TestsSection
 from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.theme.icons import (
@@ -100,6 +109,9 @@ RESULT_GLYPHS = {
     "pending": eraser_icon,
 }
 NO_RUN = "start a test run first (Project ▸ New Test Run)"
+# What the sort-key menu calls "no key at all". Not a category's `Uncategorised`: a test
+# with no sort key is not filed anywhere odd, it simply sorts last in its group.
+NO_SORT_KEY = "No sort key"
 
 
 def _no_color(_step_id: str) -> str:
@@ -117,6 +129,10 @@ class TestsDeps:
     debounce: DebounceService
     sections: InspectorSectionRegistry
     segments: IndexSegmentRegistry
+    panels: PanelRegistry
+    # Switching the Test panel on is how a double-click puts it on screen; nothing else
+    # here touches the window's chrome.
+    chrome: PanelHost
     theme: ThemeService
     parent: QWidget  # confirm()'s and the run dialog's parent, as the delete verb's is.
     # Every kind of collector this build knows: a check, a feature, a milestone. Each says
@@ -207,6 +223,25 @@ class TestsModule:
         )
         for spec in self._action_specs():
             deps.actions.register(spec)
+        # After the specs, never before: the dock builds a panel the moment it is
+        # registered, and this one's strip asks the registry for the result verbs.
+        # Order 30 puts it under Project (10) and Step (20), which is the shape of the
+        # thing — a test hangs off a step, which is part of a project.
+        deps.panels.register(
+            PanelSpec(
+                id=PANEL_ID,
+                title="Test",
+                factory=lambda: TestPanel(
+                    deps.library,
+                    deps.actions,
+                    deps.context,
+                    walk=Walk(go=self._walk_to, can=self._can_walk),
+                    files=deps.files,
+                ),
+                area=PanelArea.RIGHT,
+                order=30,
+            )
+        )
         deps.actions.register_data_menu(
             DataMenuSpec(
                 id="test.category",
@@ -218,6 +253,16 @@ class TestsModule:
                 fill=self._fill_categories,
             )
         )
+        deps.actions.register_data_menu(
+            DataMenuSpec(
+                id="test.sort_key",
+                menu="Step",
+                group="classify",
+                title="Test Sort Key",
+                order=600,  # The 600s: the sixth child menu of the classify band.
+                fill=self._fill_sort_keys,
+            )
+        )
 
     def _tests_factory(self, target: str | None) -> TestsActivity:
         assert target is not None
@@ -225,7 +270,7 @@ class TestsModule:
 
     def _all_factory(self, _target: str | None) -> AllTestsActivity:
         deps = self._deps
-        return AllTestsActivity(deps.library, deps.context, self._open_details, deps.debounce)
+        return AllTestsActivity(deps.library, deps.context, self._open_test, deps.debounce)
 
     def _segment(self, root: QTreeWidgetItem) -> ProjectListSegment:
         """A row per project, under an *All Projects* row: tests are the one surface that is
@@ -354,6 +399,18 @@ class TestsModule:
                 palette=False,  # The same verb's second seat, on the Step menu.
                 state=self._on_a_project,
                 run=self._open_tests,
+            ),
+            ActionSpec(
+                id="test.details",
+                label="Test &Details",
+                menu="Step",
+                group="open",
+                order=45,  # Beside Show Tests, which opens the list this came from.
+                tip="Show the picked test in the Test panel — what it checks, and the "
+                "verbs to run it",
+                icon=beaker_icon,
+                state=self._one_test,
+                run=self._show_test,
             ),
             ActionSpec(
                 id="tests.categories",
@@ -615,6 +672,49 @@ class TestsModule:
             )
         )
 
+    # -- one test, in the panel --------------------------------------------------------------
+
+    def _one_test(self, context: Context) -> ActionState:
+        """Exactly one test picked. `selected_entity`'s rule, which is also what the panel
+        shows itself for, so the verb and the panel cannot disagree."""
+        return DISABLED if context.selected_entity("test") is None else ActionState()
+
+    def _show_test(self, _context: Context) -> None:
+        """Put the Test panel on screen. The panel is already following the context, so
+        this is only the *reveal* — which is what makes a double-click feel like opening
+        something while a single click merely updates what is already open."""
+        self._deps.chrome.set_panel_visible(PANEL_ID, True)
+
+    def _neighbour(self, test_id: str, offset: int) -> tuple[TestsActivity, str] | None:
+        """The tab showing ``test_id``, and the test ``offset`` places along *its* list.
+
+        The tab's order, not the project's: what "next" means is what the reader has in
+        front of them — their scope, their audience filter, their ergonomic order — and no
+        other list would land on the row they are looking at. A tab that is showing the
+        test but has no neighbour that way answers None rather than falling through to
+        another tab, which would jump the reader into a list they are not in.
+        """
+        for activity in self._deps.tabs.activities():
+            if not isinstance(activity, TestsActivity):
+                continue
+            shown = activity.ordered_tests()
+            if test_id not in shown:
+                continue
+            at = shown.index(test_id) + offset
+            return (activity, shown[at]) if 0 <= at < len(shown) else None
+        return None
+
+    def _can_walk(self, test_id: str, offset: int) -> bool:
+        return self._neighbour(test_id, offset) is not None
+
+    def _walk_to(self, test_id: str, offset: int) -> bool:
+        found = self._neighbour(test_id, offset)
+        if found is None:
+            return False
+        activity, wanted = found
+        activity.pick_test(wanted)
+        return True
+
     # -- categories ------------------------------------------------------------------------
 
     def _fill_categories(self, menu: QMenu) -> None:
@@ -640,26 +740,73 @@ class TestsModule:
                 if entry.icon:
                     action.setIcon(glyph_icon(entry.icon, ink))
                 action.triggered.connect(
-                    lambda _checked=False, name=entry.name: self._file_under(name)
+                    lambda _checked=False, name=entry.name: self._file(category=name)
                 )
             none = menu.addAction(UNCATEGORISED)
             none.setCheckable(True)
             none.setChecked(held == {UNCATEGORISED})
-            none.triggered.connect(lambda _checked=False: self._file_under(""))
+            none.triggered.connect(lambda _checked=False: self._file(category=""))
         menu.addSeparator()
         append_action(menu, self._deps.actions, self._deps.context, "tests.categories")
 
-    def _file_under(self, category: str) -> None:
-        """File every picked test under ``category`` — "" files them under none."""
+    def _fill_sort_keys(self, menu: QMenu) -> None:
+        """The sort keys already in use, and a way to type a new one.
+
+        The same shape as the categories menu, with one difference that is the whole design:
+        a sort key has no catalogue, so the offered list is simply *what is already in use*
+        and the last entry mints a new one. There is nothing to maintain, because a sort key
+        is an ergonomic rather than a vocabulary.
+        """
         context = self._deps.context.current()
-        pairs = [pair for pair in self._selected_tests(context) if pair[1].category != category]
+        project = self._focused_project(context)
+        picked = self._selected_tests(context)
+        if project is None or not picked:
+            menu.addAction("Pick a test first").setEnabled(False)
+            return
+        held = {test.sort_key for _step, test in picked}
+        for key in sort_keys(project):
+            action = menu.addAction(key)
+            action.setCheckable(True)
+            action.setChecked(held == {key})
+            action.triggered.connect(lambda _checked=False, named=key: self._file(sort_key=named))
+        none = menu.addAction(NO_SORT_KEY)
+        none.setCheckable(True)
+        none.setChecked(held == {""})
+        none.triggered.connect(lambda _checked=False: self._file(sort_key=""))
+        menu.addSeparator()
+        menu.addAction("New Sort Key…").triggered.connect(
+            lambda _checked=False: self._new_sort_key()
+        )
+
+    def _new_sort_key(self) -> None:
+        """Ask for a key and put the picked tests under it — the menu's creation path."""
+        typed = LinePrompt.ask(
+            self._deps.parent,
+            "New Sort Key",
+            "What orders these tests inside their category — the view they exercise, say",
+            "File",
+            validate=lambda text: None if text.strip() else "A sort key needs some words",
+        )
+        if typed is not None:
+            self._file(sort_key=typed.strip())
+
+    def _file(self, *, category: str | None = None, sort_key: str | None = None) -> None:
+        """Refile every picked test. ``None`` leaves an axis alone; "" clears it."""
+        context = self._deps.context.current()
+        pairs = [
+            pair
+            for pair in self._selected_tests(context)
+            if (category is not None and pair[1].category != category)
+            or (sort_key is not None and pair[1].sort_key != sort_key)
+        ]
         if not pairs:
             return
         wanted = {test.id for _step, test in pairs}
         by_step: dict[StepId, list[Test]] = {
-            step.id: refiled(read(step), wanted, category) for step, _test in pairs
+            step.id: refiled(read(step), wanted, category=category, sort_key=sort_key)
+            for step, _test in pairs
         }
-        self._push_many(by_step, "Set Test Category")
+        self._push_many(by_step, "Set Test Category" if sort_key is None else "Set Test Sort Key")
 
     def _edit_categories(self, context: Context) -> None:
         project = self._focused_project(context)
@@ -743,16 +890,15 @@ class TestsModule:
         project = self._deps.library.project_of(step_id)
         self.open(project.id, scope=step_id)
 
-    def _open_details(self, step_id: StepId) -> None:
-        """Double-clicking a test opens its step, here as everywhere else in the window.
+    def _open_test(self, test_id: str) -> None:
+        """Double-clicking a test in the roll call shows that test, as in a project's tab.
 
         The roll call spans projects, so it cannot publish a selection the way a
         project-scoped tab does; the context is synthesised for exactly this row instead —
-        the same thing the progression board does for a card's own verb.
+        the same thing the progression board does for a card's own verb. The panel then
+        follows it like any other context change.
         """
-        if not self._deps.library.has(step_id):
-            return
-        self._deps.actions.run(
-            "steps.details",
-            Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
+        self._deps.context.set_scope(
+            SCOPE_SELECTION, (ContextNode(selection_uri("test", test_id)),)
         )
+        self._deps.actions.run("test.details", self._deps.context.current())

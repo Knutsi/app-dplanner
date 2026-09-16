@@ -146,23 +146,97 @@ def test_removing_a_category_unfiles_its_tests_rather_than_deleting_them(cli):
     assert data(cli("test-category", "list", "widget", "--json"))["categories"] == []
 
 
-def test_assigning_moves_a_batch_in_one_call(cli):
+def test_filing_moves_a_batch_in_one_call(cli):
     cli("test-category", "add", "Import", "--project", "widget")
     for title in ("One", "Two", "Three"):
         cli("test", "add", "Fix list flicker", title)
 
-    cli("test-category", "assign", "Import", "T100", "T102", "--project", "widget")
+    cli("test", "file", "T100", "T102", "--category", "Import", "--project", "widget")
     filed = {t["id"]: t["category"] for t in data(cli("test", "list", "widget", "--json"))["tests"]}
     assert filed == {"T100": "Import", "T101": "", "T102": "Import"}
 
-    cli("test-category", "assign", "none", "T100", "--project", "widget")
+    cli("test", "file", "T100", "--category", "none", "--project", "widget")
     assert data(cli("test", "show", "T100", "--json"))["category"] == ""
 
 
-def test_assigning_to_a_category_that_does_not_exist_is_refused_not_minted(cli):
+def test_filing_sets_both_axes_in_one_call(cli):
+    cli("test-category", "add", "Import", "--project", "widget")
+    cli("test", "add", "Fix list flicker", "One")
+    cli(
+        "test",
+        "file",
+        "T100",
+        "--category",
+        "Import",
+        "--sort-key",
+        "Customer list view",
+        "--project",
+        "widget",
+    )
+    shown = data(cli("test", "show", "T100", "--json"))
+    assert (shown["category"], shown["sort_key"]) == ("Import", "Customer list view")
+
+
+def test_filing_nothing_is_refused_rather_than_done_silently(cli):
+    cli("test", "add", "Fix list flicker", "One")
+    with pytest.raises(AssertionError, match="nothing to file"):
+        cli("test", "file", "T100", "--project", "widget")
+
+
+def test_filing_under_a_category_that_does_not_exist_is_refused_not_minted(cli):
     cli("test", "add", "Fix list flicker", "One")
     with pytest.raises(AssertionError, match="no category"):
-        cli("test-category", "assign", "Improt", "T100", "--project", "widget")
+        cli("test", "file", "T100", "--category", "Improt", "--project", "widget")
+
+
+# -- the sort key, through the CLI ---------------------------------------------------------
+
+
+def test_a_sort_key_needs_no_catalogue_and_lists_what_is_in_use(cli):
+    cli("test", "add", "Fix list flicker", "One", "--sort-key", "Customer list")
+    cli("test", "add", "Fix list flicker", "Two", "--sort-key", "Detail view")
+    cli("test", "add", "Fix list flicker", "Three")
+
+    listed = data(cli("test", "list", "widget", "--json"))["tests"]
+    assert [t["sort_key"] for t in listed] == ["Customer list", "Detail view", ""]
+    only = data(cli("test", "list", "widget", "--sort-key", "Detail view", "--json"))["tests"]
+    assert [t["id"] for t in only] == ["T101"]
+
+
+def test_a_list_is_a_run_sheet_by_default_and_flat_on_request(cli):
+    """Filed, then ergonomic inside the filing — the order somebody works down."""
+    cli("test-category", "add", "Import", "--project", "widget")
+    cli("test", "add", "Fix list flicker", "Loose")
+    cli(
+        "test",
+        "add",
+        "Fix list flicker",
+        "Second view",
+        "--category",
+        "Import",
+        "--sort-key",
+        "Detail view",
+    )
+    cli(
+        "test",
+        "add",
+        "Fix list flicker",
+        "First view",
+        "--category",
+        "Import",
+        "--sort-key",
+        "Customer list",
+    )
+
+    ordered = [t["id"] for t in data(cli("test", "list", "widget", "--json"))["tests"]]
+    assert ordered == ["T102", "T101", "T100"]  # Import (by key), then the unfiled one.
+    flat = [t["id"] for t in data(cli("test", "list", "widget", "--flat", "--json"))["tests"]]
+    assert flat == ["T100", "T101", "T102"]  # The plan's own order.
+
+
+def test_a_sort_key_goes_away_with_the_same_word_a_category_does(cli):
+    cli("test", "add", "Fix list flicker", "One", "--sort-key", "Customer list")
+    assert data(cli("test", "set", "T100", "--sort-key", "none", "--json"))["sort_key"] == ""
 
 
 def test_setting_a_category_back_to_none_is_a_word_the_terminal_has(cli):
@@ -939,8 +1013,12 @@ def test_a_step_two_features_both_wait_on_is_filed_under_both(services, make_pro
     assert "Feature: One and Two" in laid
 
 
-def test_double_clicking_a_test_anywhere_opens_its_step(services, make_project, monkeypatch):
-    """The one gesture across every table: a row opens `steps.details` on its own step."""
+def test_double_clicking_a_test_opens_the_test_not_its_step(services, make_project, monkeypatch):
+    """The one exception to *a double-click runs `steps.details`*: here a row **is** a test.
+
+    True in the roll call too, which publishes no selection of its own and so hands the
+    verb a context naming exactly the row.
+    """
     from dplanner.modules.testing.activity import ALL_TESTS_KIND
 
     project = make_project("Widget")
@@ -952,11 +1030,11 @@ def test_double_clicking_a_test_anywhere_opens_its_step(services, make_project, 
     monkeypatch.setattr(
         services.actions,
         "run",
-        lambda action_id, context: opened.append(f"{action_id}:{context.focus_entity('step')}"),
+        lambda action_id, context: opened.append(f"{action_id}:{context.focus_entity('test')}"),
     )
     activity = services.tabs.open(ALL_TESTS_KIND)
     activity.page.table.cellActivated.emit(0, 0)
-    assert opened == [f"steps.details:{step.id}"]
+    assert opened == ["test.details:T100"]
 
 
 def test_the_tables_preview_line_reads_as_prose_not_markdown_source():
@@ -1158,7 +1236,7 @@ def select_project(services, project):
 
 
 def categorise(services, project, *catalog):
-    from dplanner.modules.testing.categories import Category, write_catalog
+    from dplanner.modules.testing.filing import Category, write_catalog
 
     found = services.document.project(project.id)
     services.document.set_module_data(
@@ -1251,7 +1329,7 @@ def test_a_category_heading_folds_and_stays_folded_across_a_rebuild(services, ma
 
 
 def test_a_category_is_set_from_the_step_menus_data_child(services, project, step):
-    from dplanner.modules.testing.categories import category_of
+    from dplanner.modules.testing.filing import category_of
 
     categorise(services, project, ("Import",))
     step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
@@ -1287,6 +1365,204 @@ def test_right_clicking_a_category_heading_picks_the_whole_group(services, make_
     table = services.tabs.open(TESTS_KIND, project.id).page.table
     assert table.tests_under(0) == ["T100", "T101"]
     assert table.tests_under(1) == []  # A test row is not a group.
+
+
+# -- the sort key in the window ------------------------------------------------------------
+
+
+def keyed(services, step, *triples):
+    services.document.set_module_data(
+        step.id,
+        MODULE_ID,
+        write(
+            [
+                Test(test_id, test_id, category=category, sort_key=key)
+                for test_id, category, key in triples
+            ]
+        ),
+    )
+
+
+def test_a_category_is_ordered_by_its_tests_sort_keys(services, make_project):
+    from dplanner.modules.testing.activity import TESTS_KIND
+    from dplanner.modules.testing.table import SORT_KEY_COLUMN
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    categorise(services, project, ("Import",))
+    keyed(
+        services,
+        work,
+        ("T100", "Import", "Detail view"),
+        ("T101", "Import", "Customer list"),
+        ("T102", "Import", ""),
+        ("T103", "Import", "Customer list"),
+    )
+
+    table = services.tabs.open(TESTS_KIND, project.id).page.table
+    shown = [table.test_at(row) for row in range(table.rowCount()) if table.test_at(row)]
+    # Adjacency is the win: both customer-list tests together, and the keyless one last.
+    assert shown == ["T101", "T103", "T100", "T102"]
+    assert not table.isColumnHidden(SORT_KEY_COLUMN)
+    assert table.item(1, SORT_KEY_COLUMN).text() == "Customer list"
+
+
+def test_ergonomic_order_is_on_by_default_and_can_be_switched_off(services, make_project):
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    keyed(services, work, ("T100", "", "Zebra"), ("T101", "", "Apple"))
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    table = activity.page.table
+    assert activity.ergonomic.isChecked()
+    assert [table.test_at(row) for row in range(2)] == ["T101", "T100"]
+
+    activity.ergonomic.trigger()  # A checkable verb toggles and fires its slot.
+    assert not activity.ergonomic.isChecked()
+    assert [table.test_at(row) for row in range(2)] == ["T100", "T101"]  # The plan's order.
+
+
+def test_the_sort_key_column_appears_the_day_a_project_uses_one(services, make_project):
+    from dplanner.modules.testing.activity import TESTS_KIND
+    from dplanner.modules.testing.table import SORT_KEY_COLUMN
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    give(services, work, "T100")
+
+    table = services.tabs.open(TESTS_KIND, project.id).page.table
+    assert table.isColumnHidden(SORT_KEY_COLUMN)
+
+
+def test_a_sort_key_is_set_from_the_step_menus_data_child(services, project, step):
+    categorise(services, project, ("Import",))
+    keyed(services, step, ("T100", "Import", "Customer list"), ("T101", "Import", ""))
+    select(services, step, tests=("T101",))
+
+    menu = services.window.dynamic_menubar.data_menu("test.sort_key")
+    entries = [action.text() for action in menu.actions() if action.text()]
+    # What is already in use, then the way to take it away, then the way to mint one.
+    assert entries == ["Customer list", "No sort key", "New Sort Key…"]
+    menu.actions()[0].trigger()
+    assert [test.sort_key for test in read(services.document.step(step.id))] == [
+        "Customer list",
+        "Customer list",
+    ]
+
+
+def test_the_step_panel_offers_the_keys_in_use_and_commits_a_typed_one(
+    services, project, step, section
+):
+    other = Step(title="Other")
+    AddNodeCommand(project.id, other).redo(services.document)
+    keyed(services, other, ("T200", "", "Customer list"))
+    keyed(services, step, ("T100", "", ""))
+    section.show_target(step.id)
+
+    picker = section.detail.sort_key
+    assert [picker.itemText(i) for i in range(picker.count())] == ["Customer list"]
+    picker.setEditText("Detail view")
+    section.detail._commit_sort_key()
+    assert read(services.document.step(step.id))[0].sort_key == "Detail view"
+
+
+# -- the Test panel ---------------------------------------------------------------------------
+
+
+def the_panel(services):
+    from dplanner.modules.testing.panel import PANEL_ID
+
+    return services.window.dock.widget_for(PANEL_ID)
+
+
+def pick_test(services, test_id):
+    from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+
+    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("test", test_id)),))
+    return services.context.current()
+
+
+def test_the_panel_shows_one_picked_test_and_steps_aside_for_none(services, project, step):
+    step.module_data[MODULE_ID] = write(
+        [Test("T100", "Signs in", body="1. Open it.\n2. It must work.", category="Smoke")]
+    )
+    panel = the_panel(services)
+
+    assert panel.show_context(pick_test(services, "T100"))
+    assert panel.title.text() == "Signs in"
+    assert "Smoke" in panel.filed.text() and "Fix list flicker" in panel.filed.text()
+    # Rendered, not printed: a numbered list is a numbered list on a surface you run from.
+    assert "<ol" in panel.body.toHtml() or "<li" in panel.body.toHtml()
+
+    from dplanner.framework.context import Context
+
+    assert not panel.show_context(Context({}))
+
+
+def test_the_panel_steps_aside_when_several_tests_are_picked(services, project, step):
+    step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
+    select(services, step, tests=("T100", "T101"))
+    assert not the_panel(services).show_context(services.context.current())
+
+
+def test_show_step_opens_the_step_this_test_hangs_off(services, project, step, monkeypatch):
+    step.module_data[MODULE_ID] = write([Test("T100", "One")])
+    panel = the_panel(services)
+    panel.show_context(pick_test(services, "T100"))
+
+    opened: list[str] = []
+    monkeypatch.setattr(
+        services.actions,
+        "run",
+        lambda action_id, context: opened.append(f"{action_id}:{context.focus_entity('step')}"),
+    )
+    panel.step_verb.trigger()
+    assert opened == [f"steps.details:{step.id}"]
+
+
+def test_next_moves_the_tables_selection_so_a_run_can_be_worked_down(services, make_project):
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    keyed(services, work, ("T100", "", "Apple"), ("T101", "", "Banana"))
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    activity.on_activated()
+    panel = the_panel(services)
+    panel.show_context(pick_test(services, "T100"))
+
+    assert panel.next_verb.isEnabled() and not panel.previous_verb.isEnabled()
+    panel.next_verb.trigger()
+    # The *table* moved, which is what published the new selection.
+    assert activity.page.table.selected_tests() == ["T101"]
+    panel.show_context(services.context.current())
+    assert panel.title.text() == "T101"
+    assert not panel.next_verb.isEnabled()  # The end of the list says so.
+
+
+def test_stepping_through_is_greyed_with_its_reason_when_no_tab_is_open(services, project, step):
+    step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
+    panel = the_panel(services)
+    panel.show_context(pick_test(services, "T100"))
+    assert not panel.next_verb.isEnabled()
+    assert "Tests tab" in panel.next_verb.toolTip()
+
+
+def test_double_clicking_a_row_reveals_the_panel(services, make_project):
+    from dplanner.modules.testing.activity import TESTS_KIND
+    from dplanner.modules.testing.panel import PANEL_ID
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    give(services, work, "T100")
+    services.window.set_panel_visible(PANEL_ID, False)
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    activity.on_activated()  # A real double-click activates the pane before it lands.
+    activity.page.table.cellActivated.emit(0, 0)
+    assert services.window.is_panel_visible(PANEL_ID)
 
 
 # -- the category editor -------------------------------------------------------------------
@@ -1379,13 +1655,13 @@ def test_removing_a_category_in_the_editor_unfiles_its_tests(services, make_proj
     dialog._save()
 
     assert read(services.document.step(work.id))[0].category == ""
-    from dplanner.modules.testing.categories import read_catalog
+    from dplanner.modules.testing.filing import read_catalog
 
     assert read_catalog(services.document.project(project.id)) == []
 
 
 def test_a_categorys_icon_is_picked_from_the_offered_set(services, make_project):
-    from dplanner.modules.testing.categories import ICONS
+    from dplanner.modules.testing.filing import ICONS
 
     project = make_project("Widget")
     categorise(services, project, ("Import",))
@@ -1393,7 +1669,7 @@ def test_a_categorys_icon_is_picked_from_the_offered_set(services, make_project)
     dialog._set_icon(dialog._rows[0], ICONS[0])
     dialog._save()
 
-    from dplanner.modules.testing.categories import read_catalog
+    from dplanner.modules.testing.filing import read_catalog
 
     assert read_catalog(services.document.project(project.id))[0].icon == ICONS[0]
 
