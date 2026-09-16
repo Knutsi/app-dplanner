@@ -1,7 +1,10 @@
 [project]
 name = "dplanner"
 version = "0.1.0"
-description = "An application built on app-framework"
+description = "A development project planner: plans as plain files, driven by people and coding agents alike"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Knut Åbjørsbråten" }]
 requires-python = ">=3.13,<3.15"
 dependencies = [
     "PySide6-Essentials>=6.9,<7",

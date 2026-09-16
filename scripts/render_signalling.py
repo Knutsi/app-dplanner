@@ -35,7 +35,7 @@ from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
 REPOS = [
-    DirtyRepoRow(label="~/Code/app-dplanner-planning · 7 files — DPlanner, Adcuris"),
+    DirtyRepoRow(label="~/Code/app-dplanner-planning · 7 files — DPlanner, Roadmap"),
     DirtyRepoRow(label="~/Code/widget · 2 files — Search Rewrite"),
     DirtyRepoRow(label="~/Code/billing · 1 file — Billing"),
 ]

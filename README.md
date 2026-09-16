@@ -502,3 +502,15 @@ on that repo at runtime — the code here is complete and editable — but
 `git -C app-framework diff <revision> -- template/` will show what has changed upstream
 since the fork. `CLAUDE.md` lists the places DPlanner deliberately changed the framework,
 each of which is a candidate to carry back.
+
+## Licence
+
+Copyright © 2026 Knut Åbjørsbråten. DPlanner is free software under the
+[GNU General Public License, version 3 or later](LICENSE): use it, sell it, change it, ship
+it — and whatever you ship that is built from it stays under the same terms, source
+included. Tabler Icons (MIT) and the third-party packages are each under their own licence;
+*Help ▸ About* lists them.
+
+This repository is a personal case study first and a product second. It is published so the
+work can be read, run and built on, not as a promise of maintenance: issues and pull requests
+may sit, and a fork that goes its own way is welcome.
