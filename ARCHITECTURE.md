@@ -3622,6 +3622,39 @@ main checkout (`core/storage/git.py::main_checkout`, which the skill's worktree 
 reads too). The agent's `dplanner` calls therefore land where the person is looking, and
 the branch's copy of the plan is never touched, so a merge never has to reconcile it.
 
+### An agent may be opened with nothing to do
+
+Every launch above hands the agent a briefing. The planning that comes *before* the plan
+has none to hand: a spec has been imported, the graph is empty, and what the person wants
+is an agent sitting in the code with its own prompt, so they can talk it into a set of
+steps. Running that through *Run Agent* is impossible twice over — there is no step to be
+about, and Claude Code's briefed command opens in **plan mode**, which is exactly the mode
+a session that is about to write a plan file must not be in.
+
+So *Project ▸ Open Agent in Code* is its own verb, on the project rather than a step, and
+it is the same machinery with two things taken away: no briefing, and a different
+invocation. It offers the same launch profiles in the same child menu, opens in the same
+place a step's agent would (the code checkout, else the plan's own repository), and
+exports the same `DPLANNER_PROJECT`, so the agent's first `dplanner step add` lands in the
+project it was opened on.
+
+**The bare invocation is written down, never derived.** `AgentHarness.open_command` sits
+beside `command`: `claude`, `codex`, `opencode`. The tempting alternative is to take the
+briefed command and drop its `{prompt}` — and for Claude that leaves `--permission-mode
+plan` behind, which is the one thing this launch exists to avoid. A flag's purpose is the
+vendor's fact and not a string operation, so each harness states both invocations and a
+command nothing here knows (a hand-written one) greys the entry with that as its reason,
+rather than being guessed at.
+
+**Nothing to hand over is a launch shape, not a special case.** `launcher.prepare` called
+with no prompt text writes no `prompt.md` and gives the wrapper no opening line, so one
+code path still writes the script, prepares nothing, exports the project and spawns the
+terminal. The run has no step, so — like the Problems panel's and the conflict hand-over's
+— it is not tracked, claims nothing *in progress*, and gets no usage row. And it has no
+prompt, which is the one place it differs from them on screen: a launch that opens no
+terminal ends in a notice rather than the prompt fallback, because there is no briefing to
+put in the person's hands.
+
 ### Which terminal opens is a table, not a chain
 
 The platform `if`-chain that used to resolve a terminal is one table now, `TERMINALS`:

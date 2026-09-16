@@ -172,6 +172,12 @@ the status bar says, with the tokens the run consumed once its CLI's record has 
 Agents…* lists every run this window launched, with the command that picks an ended one
 up again; *Step ▸ Show Agent Terminal* brings its window or pane back.
 
+**And before there are steps to run, there is *Project ▸ Open Agent in Code*.** The same
+profiles, in the same terminals, opening where the project's code is — with no briefing at
+all and none of the modes a briefed run picks: a plain session waiting on the first thing
+you type. It is what the start of a project looks like, a spec imported and the graph still
+empty, with an agent standing in the right directory to talk the steps out of it.
+
 **Both writers may be live.** An agent can work while a window is open on the same folder:
 the window reloads when it owes nothing, and neither side ever overwrites a file it has not
 seen. See `FORMAT.md`.

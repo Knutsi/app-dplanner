@@ -4,6 +4,9 @@
 (``ses_…``) is minted by OpenCode and cannot be chosen up front; ``opencode -s <id>``
 continues one, so a run is resumable once its id is known.
 
+**Opening it bare.** ``opencode`` without ``--prompt``: the same interactive session with
+nothing seeded into it — what *Open Agent in Code* opens.
+
 **Finding the run afterwards.** OpenCode keeps its sessions in one SQLite database —
 ``$OPENCODE_DB``, else ``$XDG_DATA_HOME/opencode/opencode.db``, else
 ``~/.local/share/opencode/opencode.db`` — whose ``session`` table records each session's
@@ -120,6 +123,7 @@ HARNESS = AgentHarness(
     id="opencode",
     label="OpenCode",
     command="opencode --prompt {prompt}",
+    open_command="opencode",
     resume="opencode -s {session}",
     shell_markers=("OPENCODE", "OPENCODE_PID"),
     report=report,
