@@ -7,6 +7,17 @@ run with the reason when that run's terminal cannot be raised; an ended row keep
 until dismissed, with what the run consumed on its status line once the harness's record was
 read, and the command that picks the agent up again as a note under it.
 
+**The list is what is happening now, newest first.** The runs still going are on top, in the
+order a person would look for them — the one just launched at the eye's first stop — and the
+ones that are over are not listed at all until *Show ended* asks for them, under the live
+ones. A browser that kept every run this machine ever launched made the live ones something
+to scroll for, and a clear that has to be remembered is a list that is never clean; this way
+the default list empties itself. Each group is ordered by the very stamp its rows print,
+so the times read down the list.
+
+**Clearing is offered where the rows are.** *Clear ended* comes up with *Show ended* and is
+greyed without it: a verb that deletes what the list is not showing acts blind.
+
 The status line's tone is the run's mood: busy while it runs, ok once it finished, the error
 tone when it failed or was lost, plain when its terminal was closed. Every edit here is live,
 so the footer is Close and nothing wears the accent.
@@ -15,7 +26,7 @@ so the footer is Close and nothing wears the accent.
 from collections.abc import Callable
 from datetime import datetime
 
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QCheckBox, QWidget
 
 from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.row_well import RowWell, WellRow
@@ -26,6 +37,8 @@ from dplanner.modules.step_agent_run.usage import brief_words
 
 BROWSER_SIZE = (560, 400)
 NO_RUNS = "No agent has been launched from this window."
+SHOW_ENDED = "Show ended"
+SHOW_ENDED_TIP = "List the runs that are over, under the ones still running"
 # An ended run's mood by its outcome; a run whose directory is gone is lost, which is an error.
 ENDED_TONES: dict[str, Tone] = {"finished": "ok", "failed": "error", CLOSED: "info"}
 
@@ -36,6 +49,32 @@ def _clock(stamp: str) -> str:
         return datetime.fromisoformat(stamp).astimezone().strftime("%H:%M")
     except ValueError:
         return ""
+
+
+def listed(runs: list[AgentRun], show_ended: bool) -> list[AgentRun]:
+    """What the browser lists, top to bottom: the live runs newest first, then the ended
+    ones — only where they were asked for — newest first under them.
+
+    Each group is sorted on the stamp its own rows show, ``since`` for a live run and ``at``
+    for one that is over, so a reader going down the list is going back in time.
+    """
+    live = sorted((run for run in runs if run.live), key=lambda run: run.launched, reverse=True)
+    if not show_ended:
+        return live
+    over = sorted((run for run in runs if not run.live), key=lambda run: run.ended, reverse=True)
+    return live + over
+
+
+def empty_words(live: int, ended: int, show_ended: bool) -> str:
+    """What stands where the well would be when it lists nothing: this window has launched
+    no agent, or none is running and the ended ones were not asked for — an empty state per
+    filter, naming the switch that has the rest."""
+    if live or (show_ended and ended):
+        return ""
+    if not ended:
+        return NO_RUNS
+    which = "the run that ended" if ended == 1 else f"the {ended} that ended"
+    return f"No agent is running — tick {SHOW_ENDED} for {which}."
 
 
 def status_of(run: AgentRun, state: str) -> tuple[str, Tone]:
@@ -102,7 +141,8 @@ class AgentRow(WellRow):
 
 
 class AgentBrowserDialog(DialogFrame):
-    """Live and ended runs as rows kept by run."""
+    """The live runs as rows kept by run, newest first, and the ended ones under them
+    where *Show ended* asks for them."""
 
     def __init__(
         self,
@@ -113,6 +153,7 @@ class AgentBrowserDialog(DialogFrame):
         reveal: Callable[[AgentRun], None],
         forget: Callable[[AgentRun], None],
         clear_ended: Callable[[], None],
+        relist: Callable[[], None],
     ) -> None:
         super().__init__("Agents", parent, size=BROWSER_SIZE)
         self.setObjectName("AgentBrowserDialog")
@@ -121,6 +162,12 @@ class AgentBrowserDialog(DialogFrame):
         self._show_terminal = show_terminal
         self._reveal = reveal
         self._forget = forget
+        # The switch stands over the list, and stays there while the empty state has the
+        # well's place: what it says is how a person gets the rest of the runs back.
+        self.show_ended = QCheckBox(SHOW_ENDED, self.body)
+        self.show_ended.setToolTip(SHOW_ENDED_TIP)
+        self.show_ended.toggled.connect(lambda _on: relist())
+        self.body_layout.addWidget(self.show_ended)
         self.well = RowWell(self.body)
         self.body_layout.addWidget(self.well, 1)
         self.empty = EmptyState(NO_RUNS, self.body, stands_in_for=self.well)
@@ -145,7 +192,8 @@ class AgentBrowserDialog(DialogFrame):
         resume_of: Callable[[AgentRun], str],
         usage_of: Callable[[AgentRun], str] = lambda _run: "",
     ) -> None:
-        by_key = {run.key: run for run in runs}
+        showing_ended = self.show_ended.isChecked()
+        by_key = {run.key: run for run in listed(runs, showing_ended)}
 
         def build(key: str) -> AgentRow:
             return AgentRow(
@@ -164,7 +212,12 @@ class AgentBrowserDialog(DialogFrame):
         self.well.reconcile(list(by_key), build, update)
         live = sum(1 for run in runs if run.live)
         ended = len(runs) - live
+        # The counts are of everything this window launched, listed or not: an ended run the
+        # switch is keeping off screen is still a run, and the footer is where it is said.
         parts = ([f"{live} running"] if live else []) + ([f"{ended} ended"] if ended else [])
         self.status.say(" · ".join(parts))
-        self.empty.say("" if runs else NO_RUNS)
-        self.clear_button.setEnabled(ended > 0)
+        self.empty.say(empty_words(live, ended, showing_ended))
+        self.clear_button.setEnabled(ended > 0 and showing_ended)
+        self.clear_button.setToolTip(
+            "" if showing_ended else f"Tick {SHOW_ENDED} to clear the runs that are over"
+        )

@@ -8,9 +8,10 @@ nothing here hand-wires a view the window would build differently: the Tests tab
 roll call of every project's tests, the Coverage tab, the Assets tab over pictures attached
 to steps, the Implementation notes tab, the bulk Estimates tab, the Time tab, the task
 browser over tasks in each state, the Agents browser over a live, a finished and a failed
-run, and the command palette open, filtered and with nothing to show. A tab is rendered at
-its own size — lifted off the tab host for the grab — and again with a row picked, which is
-where a table's edge over the quiet ground is read.
+run (with *Show ended* ticked, which is what lists the last two), and the command palette
+open, filtered and with nothing to show. A tab is rendered at its own size — lifted off the
+tab host for the grab — and again with a row picked, which is where a table's edge over the
+quiet ground is read.
 """
 
 import argparse
@@ -168,6 +169,9 @@ def render_agents(
     runs._open_browser()
     browser = runs._browser
     assert browser is not None
+    # The browser lists the live runs alone by default; the render is of all three moods,
+    # which is what Show ended has — the switch itself is in the grab, ticked.
+    browser.show_ended.setChecked(True)
     browser.resize(*BROWSER_SIZE)
     save(browser, out, f"{prefix}agents", theme, app)
     browser.hide()

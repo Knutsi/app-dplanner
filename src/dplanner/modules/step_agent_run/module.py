@@ -22,7 +22,10 @@ half of a launch — **the shell is a peer this window keeps an eye on**:
 - A status-bar button ("Agent on “X”", "2 agents running") opens the Agents browser —
   View ▸ Agents… does the same — where every run this machine launched is a row with its
   state or outcome, *Show Terminal*, *Reveal* and a dismiss — and, once it has ended, the
-  command that picks the agent up again where it stopped, as the wrapper recorded it.
+  command that picks the agent up again where it stopped, as the wrapper recorded it. **It
+  lists the live runs newest first and keeps the ended ones off screen** until *Show ended*
+  asks for them, under the live ones, which is also what *Clear ended* waits for; the
+  footer counts both either way, so nothing hidden goes unsaid.
 - Tools ▸ Agent List is the quick switch: a data child menu listing the live runs, each
   entry raising its terminal. Availability is per run (``terminal.focus_reason`` — a tmux
   pane is reachable on a desktop whose bare windows are not), and a run that cannot be
@@ -130,6 +133,7 @@ class StepAgentRunModule:
             reveal=lambda run: deps.reveal(run.step_id),
             forget=self._forget,
             clear_ended=self._clear_ended,
+            relist=self._refresh,  # Show ended changes what is listed, not what is known.
         )
         self._timer = QTimer(self._button)
         self._timer.setInterval(POLL_MS)

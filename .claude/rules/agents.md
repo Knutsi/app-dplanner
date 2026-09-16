@@ -91,8 +91,18 @@ paths:
   reason, **per run** (`terminal.focus_reason` — a tmux, herdr or WezTerm pane is
   reachable on a desktop whose bare windows are not; the wrapper records each
   multiplexer's own name for the pane); *Clear Agent Run* is the window's twin of
-  `agent-state clear`. `ARCHITECTURE.md`'s *The peer reports back through its run
-  directory* has the reasoning.
+  `agent-state clear`.
+  **The browser lists what is happening now, newest first.** The live runs are on top in
+  launch order reversed — the one just launched at the eye's first stop — and the ended
+  ones are not listed at all until *Show ended* asks for them, under the live ones and
+  by when they ended: each group is sorted on the very stamp its rows print, so the times
+  read down the list. The default list empties itself, which is what replaced a *Clear
+  ended* somebody had to remember; that verb now comes up with the switch and is greyed
+  without it, because a verb that deletes what the list is not showing acts blind. Nothing
+  kept off screen goes unsaid: the footer counts the live and the ended either way, and
+  the empty state names the switch that has the rest — an empty state per filter.
+  `ARCHITECTURE.md`'s *The peer reports back through its run directory* has the
+  reasoning.
 - **What a run consumed is read back when it ends, and kept on the step.** The run
   remembers its harness and its session (`AgentRun.harness`, `.session`); when the
   shell ends the tracker asks the harness's `report` and writes a row — harness,
