@@ -1,5 +1,9 @@
 """Debug module: developer-facing diagnostics — the LLM Calls tab and the Telemetry tab —
-the design system's living reference, Debug ▸ Design Example, and Debug ▸ Windows Check."""
+the design system's living reference, Debug ▸ Design Examples, and Debug ▸ Windows Check.
+
+The examples are one child menu rather than a row of near-identical entries: what a
+developer opens is *the* reference and then the page of it they want, and a new example
+costs a line here and appears in the list beside the rest."""
 
 import subprocess
 import sys
@@ -23,9 +27,13 @@ from dplanner.modules.debug.design_example import (
     DesignExampleDialog,
     DesignExampleToolbars,
 )
+from dplanner.modules.debug.design_rows import DESIGN_ROWS_KIND, DesignExampleRows
 from dplanner.modules.debug.telemetry_view import TELEMETRY_KIND, TelemetryActivity
 from dplanner.modules.debug.view import LLM_CALLS_KIND, LLMCallsActivity
 from dplanner.modules.debug.windows_check import DESKTOP_COMMAND, command, probe
+
+# The child menu every design example hangs from: the list of them, in one seat.
+DESIGN_EXAMPLES = "Design Examples"
 
 
 def launch_desktop(argv: tuple[str, ...]) -> None:
@@ -114,8 +122,9 @@ class DebugModule:
         deps.actions.register(
             ActionSpec(
                 id="debug.design_example",
-                label="Design &Example…",
+                label="&Modal…",
                 menu="Debug",
+                submenu=DESIGN_EXAMPLES,
                 group="design",
                 order=10,
                 tip="The design system on one modal — a form, a table and every signalling "
@@ -135,8 +144,9 @@ class DebugModule:
         deps.actions.register(
             ActionSpec(
                 id="debug.design_table",
-                label="Design Example &Table",
+                label="&Table",
                 menu="Debug",
+                submenu=DESIGN_EXAMPLES,
                 group="design",
                 order=20,
                 tip="The design system's table on a tab: a control strip, the Updating "
@@ -220,13 +230,36 @@ class DebugModule:
         deps.actions.register(
             ActionSpec(
                 id="debug.design_toolbars",
-                label="Design Example Tool&bars",
+                label="Tool&bars",
                 menu="Debug",
+                submenu=DESIGN_EXAMPLES,
                 group="design",
                 order=30,
                 tip="Every shape a strip of verbs comes in: the flat strip, a tool "
                 "palette's named bands, the same palette folding for want of room, and "
                 "the dense strip that answers a question rather than offering verbs",
                 run=run_open_design_toolbars,
+            )
+        )
+
+        def design_rows_factory(_target: str | None) -> DesignExampleRows:
+            return DesignExampleRows(deps.context)
+
+        deps.tabs.register_factory(DESIGN_ROWS_KIND, design_rows_factory)
+
+        def run_open_design_rows(_context: Context) -> None:
+            deps.tabs.open(DESIGN_ROWS_KIND)
+
+        deps.actions.register(
+            ActionSpec(
+                id="debug.design_rows",
+                label="&Rows",
+                menu="Debug",
+                submenu=DESIGN_EXAMPLES,
+                group="design",
+                order=40,
+                tip="What a picked row wears in a list, a tree and a table — and the block "
+                "that is not one: Qt's focus frame, which starts part-way across the glyph",
+                run=run_open_design_rows,
             )
         )

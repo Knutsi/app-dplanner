@@ -60,6 +60,21 @@ paths:
   (the task and Agents browsers). A strip control that comes and goes is
   `Toolbar.set_shown`, never `hide()`, which the next reflow undoes.
   `ARCHITECTURE.md`'s *A roster has three shapes* has the reasoning.
+- **A picked row is one ground across the whole row, and nothing else marks it.** The indent,
+  the disclosure chevron, the glyph and the words, with the accent inside the left edge where
+  the primitive draws one — the same mark in a `Table`, a `RichList` and any tree on
+  `TwoLineDelegate`. **Both delegates strip `State_HasFocus` in `initStyleOption`**, and a new
+  one owes the same line: Qt draws its focus frame round `SE_ItemViewItemText`, a rect that
+  starts where the *style* would have put the text rather than where a delegate that reserves
+  its own glyph slot draws it, so on Fusion — whose focus frame is a filled translucent rect,
+  not a dotted outline — a frame left on is a washed block beginning half way across the glyph
+  and reads as a *cell* picked inside the row. One missing line in the base class was that
+  defect in nine surfaces at once, which is why the rule is the primitive's and never a view's.
+  A regression is caught by scanning the pixels under the row's two lines for one colour
+  (`tests/framework/test_list_rows.py`); the sub-rects are each correct on their own, so
+  nothing short of the render sees it. Debug ▸ Design Examples ▸ Rows keeps the wrong one
+  beside the right ones, and is the only place in the application that renders a defect
+  deliberately.
 - **A group heading may fold, and the table remembers by key.** `Table.add_heading(text,
   key=…)` makes the rows after it a collapsible group: a disclosure chevron (drawn, not
   vendored — it is a picture of *state*, like the key badge and the filter funnel), and the
@@ -131,7 +146,7 @@ paths:
   verb goes in the band it is *about*, as a widget — the layout picker names the arrangement,
   so it sits at the end of Arrange and hides rather than folding. **A checked verb's glyph
   takes `$ON_ACCENT`** (the palette's `BrightText`, which is what carries the theme's
-  `on_accent`), which is what retired the worded switches. Debug ▸ Design Example Toolbars is
+  `on_accent`), which is what retired the worded switches. Debug ▸ Design Examples ▸ Toolbars is
   every one of these shapes on one page.
 - **A family of verbs is one toolbar button and its arrow; a band of the menus is one
   face.** `CanvasToolbar.MENUS` names the `(menu, submenu)` a button drops down — Sort,

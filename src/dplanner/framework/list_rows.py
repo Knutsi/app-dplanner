@@ -97,6 +97,16 @@ def text_left(option: QStyleOptionViewItem) -> int:
 class TwoLineDelegate(QStyledItemDelegate):
     """Two lines per row: the name, then what kind of thing it is or how it stands."""
 
+    def initStyleOption(  # noqa: N802 - Qt override
+        self, option: QStyleOptionViewItem, index: QModelIndex | Any
+    ) -> None:
+        super().initStyleOption(option, index)
+        # No focus frame, as on the table: Qt draws one round the item's *text* sub-rect,
+        # which starts where the style would have put the text — not where this delegate
+        # draws it, past its own icon slot — so the frame cuts across the glyph and reads
+        # as a cell picked inside the row. The picked ground is what says which row it is.
+        option.state &= ~QStyle.StateFlag.State_HasFocus
+
     def paint(
         self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | Any
     ) -> None:
@@ -198,14 +208,6 @@ class _EdgedRowDelegate(TwoLineDelegate):
     item hands the selection back to the style, which lays its own gradient under the ground
     the stylesheet asked for.
     """
-
-    def initStyleOption(  # noqa: N802 - Qt override
-        self, option: QStyleOptionViewItem, index: QModelIndex | Any
-    ) -> None:
-        super().initStyleOption(option, index)
-        # No focus frame, as on the table: the style draws one round the current item, and a
-        # second mark on the picked row is a second vocabulary for what the edge says.
-        option.state &= ~QStyle.StateFlag.State_HasFocus
 
     def paint(
         self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | Any

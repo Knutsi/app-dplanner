@@ -46,8 +46,8 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
   suggest it.
 - Only add comments that carry durable value for future developers and agents. Otherwise,
   make the code self-documenting.
-- `DESIGN.md` is the standard for all UI work here, and **Debug ▸ Design Example…** with its
-  table tab (`modules/debug/design_example.py`, rendered under
+- `DESIGN.md` is the standard for all UI work here, and **Debug ▸ Design Examples**
+  (`modules/debug/design_example.py` and `design_rows.py`, rendered under
   `docs/screenshots/f1-design-example/`) is what it looks like. Its *Primitives* table maps
   what you are building — a dialog, a table, a strip of verbs, a filter, a busy state, an
   empty page — to the primitive in `framework/` and the render to compare against; build
