@@ -13,13 +13,62 @@ paths:
 
 # Collectors — scopes, features, citations, tests, documentation and notes
 
-- **Tests can be read grouped by what collects them.** The Tests tab's third selector groups
-  rows by feature, milestone or check, filled by `scope.gatherers()` in the one place rows
-  are ordered (`TestsActivity._rows`); `TestsTable` draws a spanned heading wherever the key
-  changes, and a step nothing gathers lands under *Not in any feature* — the same steps
-  `dplanner project lint` reports as `scope.ungathered`. A step two features both wait on
-  gets one **joint** heading rather than two rows: a test listed twice is a test marked
-  twice.
+- **Tests can be read grouped, and one selector holds every way of grouping them.** By
+  category, by feature, by milestone or by check are four answers to *what is this test one
+  of*, so they are four entries in one box. `_Grouping` (`TestsActivity`) is two functions
+  over `(step, test)` — where a row sorts, what heading it lands under — because the
+  collectors are a fact about a test's **step** and the category is a fact about the
+  **test**; the collector half is filled by `scope.gatherers()`, and a step nothing gathers
+  lands under *Not in any feature*, the same steps `dplanner project lint` reports as
+  `scope.ungathered`. A step two features both wait on gets one **joint** heading rather
+  than two rows: a test listed twice is a test marked twice. **Category leads and is the
+  default while the project has one** — a flat roster of two hundred is unreadable, and a
+  project with no categories would open on one heading saying *Uncategorised* — until the
+  reader picks a grouping, after which their answer stands. `TestsTable` draws a spanned
+  heading wherever the group changes; **a category heading folds** (`Table.add_heading`'s
+  `key`, the whole row the target) and the collector headings do not.
+- **A test is filed under a category, and its words are the key.** Free text, open
+  vocabulary, catalogued beside the *project* (`modules/testing/categories.py`: a `name` and
+  an `icon` from the curated `ICONS`), and a test stores the category's **words** — there is
+  no minted id, so `test set T100 --category Import` is the whole story and renaming is a
+  **refactor** that rewrites every test carrying the old words, in one undoable step
+  (`test-category set --rename`, and the editor's Save). **The catalogue is stored so it can
+  be laid out before the tests** — the agent reading a spec files the groups the tests will
+  arrive into — and **membership is never stored**: `counts()` walks them, and a category a
+  test names that the catalogue does not is appended by `catalog()`, unglyphed and last, so
+  a typo is a group of one rather than a test that fell out of every list. `category_of` is
+  the one derivation (what it stored, or *Uncategorised*); `lint`'s `test.category` is the
+  one raw reader, and it stays quiet until the project has categories at all. Verbs:
+  `test-category list|add|set|remove|assign` (`assign` moves a **batch**, which is what
+  reorganising a roster is made of), `test add|set --category`, `step add --test-category`.
+  In the window: `Project ▸ Test Categories…` (the modal editor, also on the Tests strip and
+  in the index's right-click, which renders the Project menu), `Step ▸ Test Category ▸ …` (a
+  `DataMenuSpec`, so the categories are data rebuilt on open — and what a right-click on a
+  category heading acts on, because the heading selects its whole group first), and the step
+  panel's picker beside the audience boxes. `ARCHITECTURE.md`'s *A test is filed under a
+  category* has the reasoning, including why two writers share one project entry.
+- **The category editor is a modal that writes on Save.** `categories_dialog.py` edits a
+  copy — each row remembering the name it started with — and lands the whole refactor as one
+  undo step when it closes, because renaming per keystroke would rebuild the Tests tab under
+  the reader's hands. Every row carries its **count**, which is what makes a blind rename
+  safe: it says how many tests are about to move. Removing a category unfiles its tests
+  rather than deleting them, and says so. The icon is **picked from a grid**, never typed;
+  the same `ICONS` tuple is what `--icon` refuses against.
+- **The tests table has six columns, and two were taken out rather than narrowed.** *Covered
+  by* is the Covers tab's whole subject and was a comma-separated list nobody compared down
+  the page; *When* dated the last run, which is exactly the fact a test outlives. Both are
+  still in the step panel and in `dplanner test show`. The Category column stands down while
+  the rows are already grouped by category — a column repeating its own heading is noise
+  twice — and, like Audience, while no test in scope names one.
+- **Exporting the tests is what the tab is showing.** `File ▸ Export ▸ Tests…` writes the
+  project's Tests tab's current scope, audience filter and archived switch, read back
+  through `TestsActivity.showing()` — which `New Test Run` reads too, so "narrow it, then
+  act on it" is one gesture and not a second dialog asking the same questions. `dplanner
+  test export --format md|html --audience … --scope …` is the terminal's half, which has no
+  tab to read. `modules/testing/export.py` is Qt-free and is **not** the report: `cli/report/`
+  publishes the plan and names each test in a line, this writes the tests filed by category
+  with every body in full, HTML as one self-contained page of `<details>`. Neither inlines
+  pictures.
 - **What reaches a step is computed, never stored** — `notes/reach.py` is one function
   with three readers (the Agent tab's Notes pane, `dplanner note index`, the briefing).
   Same rule as the ordering, and the reasoning is in `ARCHITECTURE.md`'s *What reaches a

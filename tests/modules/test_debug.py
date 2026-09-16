@@ -187,7 +187,13 @@ def test_the_filter_narrows_the_table_and_a_theme_change_repaints_it(services):
     assert activity.filter.face.property("active") is True
     activity.filter.clear_button.click()
     assert activity.table.rowCount() == everything and not activity.filter.active()
-    activity.group.setCurrentIndex(1)  # Flat: the headings go, the rows stay.
+    activity.group.setCurrentIndex(1)  # The same headings, folding.
+    assert activity.table.rowCount() == everything
+    assert activity.table.group_at(0)
+    activity.table.toggle_group(activity.table.group_at(0))
+    assert activity.table.isRowHidden(1)
+
+    activity.group.setCurrentIndex(2)  # Flat: the headings go, the rows stay.
     assert activity.table.rowCount() == everything - 2
     services.theme.set_theme("light")  # A repaint, not a change: the count holds.
     assert activity.table.rowCount() == everything - 2

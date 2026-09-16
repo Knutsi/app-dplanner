@@ -10,41 +10,54 @@ body, the result in its own tone, a failed row washed in the failure's, and a gr
 spanned heading — written in a milestone's shade when the group is a milestone, so grouping
 by milestone reads as the same sequence the calendar and the graph show. **A column of
 blanks is hidden rather than shown.**
+
+**Six columns, because a roster is read down a column and not across one.** What a test
+checks, whose step it is, what it is filed under, who it is for, and how it did. Two columns
+were taken out rather than narrowed: *Covered by* named the collectors behind a test, which
+is the Covers tab's whole subject and was a comma-separated list nobody compared down the
+page; and *When* dated the last run, which is exactly the fact a test outlives — these are
+kept and re-run long after the step that added them shipped, so the run that last touched
+one says little about whether it still holds. Both are still one click away, in the step
+panel and in ``dplanner test show``.
+
+**A category heading folds.** Grouped by category the headings are collapsible, because
+that is the reading the grouping is for: two hundred tests become a dozen lines, and you
+open the one you are working on. The table primitive owns the mechanics and remembers what
+is shut by key, so a rebuild between two keystrokes does not spring every group open.
 """
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-from PySide6.QtCore import QItemSelectionModel
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QEvent, QItemSelectionModel
+from PySide6.QtGui import QColor, QIcon, QPalette
 from PySide6.QtWidgets import QTableWidgetItem, QWidget
 
 from dplanner.domain.model import Step, StepId
 from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.table import Cell, Column, Selection, Table
 from dplanner.modules.testing.aspect import Test, audience_words
-from dplanner.modules.testing.runs import Outcome
+from dplanner.modules.testing.categories import category_of
 from dplanner.modules.testing.view import FAILED_ROW_TINT, tint, word
+from dplanner.theme.icons import glyph_icon
 from dplanner.theme.tokens import SECONDARY_ALPHA
 
 COLUMNS = (
     Column("Test", detail=True, resize="interactive"),
     Column("Project"),
     Column("Step"),
-    Column("Covered by"),
+    Column("Category"),
     Column("Audience"),
     Column("Result"),
-    Column("When"),
 )
 (
     TEST_COLUMN,
     PROJECT_COLUMN,
     STEP_COLUMN,
-    COVERED_COLUMN,
+    CATEGORY_COLUMN,
     AUDIENCE_COLUMN,
     RESULT_COLUMN,
-    WHEN_COLUMN,
-) = range(7)
+) = range(6)
 
 # A test's own line can be long; past this the column stops growing and elides.
 TEST_MAX_WIDTH = 340
@@ -53,6 +66,21 @@ TEST_ROLE = HOST_ROLE
 STEP_ROLE = HOST_ROLE + 1
 
 ARCHIVED_TIP = "Archived — off the roster and out of new runs"
+
+
+@dataclass(frozen=True)
+class Heading:
+    """One group's spanned row: what it says, and how it is drawn.
+
+    ``key`` is what the table folds by — a category's name — and "" is a heading that does
+    not fold, which is what grouping by feature or milestone still draws. ``glyph`` is the
+    group's own picture, ``ink`` a milestone's shade.
+    """
+
+    title: str = ""  # Empty is *no heading*: a flat list gives every row one of these.
+    key: str = ""
+    ink: str = ""
+    glyph: str = ""
 
 
 @dataclass(frozen=True)
@@ -66,18 +94,13 @@ class Row:
     test: Test
     step: Step
     project: str = ""
-    covered_by: tuple[str, ...] = ()
-    outcome: Outcome | None = None
     status: str = "pending"  # This run's result in run mode; the latest one otherwise.
-    # What this test is filed under when the reader asked for grouping — a feature's title,
-    # or the fallback for one nothing gathers. Empty on every row means no grouping, and
-    # the table draws no headings at all. Whoever orders the rows also fills this in:
-    # rows of one group must arrive together, and there is one place that orders them.
-    group: str = ""
-    # The heading's own colour when the group is a milestone: its shade of the project's
-    # colour map. "" for a feature heading and for the ungathered fallback — a feature is
-    # not dealt a shade, and nothing is not a thing.
-    group_color: str = ""
+    # What this test is filed under when the reader asked for grouping — a category's name,
+    # a feature's title, or the fallback for one nothing gathers. Empty on every row means
+    # no grouping, and the table draws no headings at all. Whoever orders the rows also
+    # fills this in: rows of one group must arrive together, and there is one place that
+    # orders them.
+    heading: Heading = field(default_factory=Heading)
 
 
 class TestsTable(Table):
@@ -88,24 +111,52 @@ class TestsTable(Table):
         # run is made of.
         super().__init__(COLUMNS, selection=selection, parent=parent)
         self._sized = False
+        # What it was last shown, so a palette change can draw the headings' glyphs again
+        # in the new ink — a colour taken out of the palette goes stale (``CLAUDE.md``).
+        self._shown: tuple[Sequence[Row], bool, bool] = ((), False, True)
 
-    def show_rows(self, rows: Sequence[Row], *, show_project: bool = False) -> None:
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        """The headings' glyphs again, in the new theme's ink.
+
+        ``getattr``, not a plain read: Qt delivers a PaletteChange from inside
+        ``QTableWidget.__init__``, before this class's own state exists.
+        """
+        shown = getattr(self, "_shown", None)
+        if event.type() == QEvent.Type.PaletteChange and shown is not None and shown[0]:
+            self.show_rows(shown[0], show_project=shown[1], show_category=shown[2])
+        super().changeEvent(event)
+
+    def show_rows(
+        self,
+        rows: Sequence[Row],
+        *,
+        show_project: bool = False,
+        show_category: bool = True,
+    ) -> None:
+        self._shown = (list(rows), show_project, show_category)
         keep = self.selected_tests()
         self.clear_rows()
         for entry in _with_headings(rows):
             if isinstance(entry, Row):
                 self._add(entry)
             else:
-                title, color = entry
-                self.add_heading(title, ink=_shade(color))
+                self.add_heading(
+                    entry.title,
+                    ink=_shade(entry.ink),
+                    glyph=self._glyph(entry.glyph),
+                    key=entry.key,
+                )
         # A column of blanks is noise: hide what this scope has nothing to say about.
         self.setColumnHidden(PROJECT_COLUMN, not show_project)
-        self.setColumnHidden(COVERED_COLUMN, not any(row.covered_by for row in rows))
+        # And a column that repeats the heading over every row under it is noise twice: the
+        # category column stands down while the rows are already filed by category.
+        self.setColumnHidden(
+            CATEGORY_COLUMN, not show_category or not any(row.test.category for row in rows)
+        )
         # On the test's *stored* audiences, not on what it reads as: `audience_words` never
         # answers blank, so a project nobody has classified would otherwise grow a column
         # saying "Other" all the way down.
         self.setColumnHidden(AUDIENCE_COLUMN, not any(row.test.audiences for row in rows))
-        self.setColumnHidden(WHEN_COLUMN, not any(row.outcome for row in rows))
         self._reselect(keep)
         if not self._sized:
             # Once, on the first rows: the test column is interactive so the reader's own
@@ -113,6 +164,14 @@ class TestsTable(Table):
             self.fit_columns()
             self.setColumnWidth(TEST_COLUMN, min(self.columnWidth(TEST_COLUMN), TEST_MAX_WIDTH))
             self._sized = bool(rows)
+
+    def _glyph(self, name: str) -> QIcon | None:
+        """A heading's glyph in the strip's own tone, painted now — see ``changeEvent``."""
+        if not name:
+            return None
+        ink = self.palette().color(QPalette.ColorRole.Text)
+        ink.setAlpha(SECONDARY_ALPHA)
+        return glyph_icon(name, ink)
 
     def _add(self, row: Row) -> None:
         tip = ARCHIVED_TIP if row.test.archived else ""
@@ -123,11 +182,11 @@ class TestsTable(Table):
                 ),
                 Cell(row.project, secondary=True, tooltip=tip),
                 Cell(row.step.title or "Untitled step", secondary=True, tooltip=tip),
-                Cell(", ".join(row.covered_by), secondary=True, tooltip=tip),
+                # What it *reads* as, so an unfiled test says so rather than showing a hole.
+                Cell(category_of(row.test), secondary=True, tooltip=tip),
                 Cell(audience_words(row.test), secondary=True, tooltip=tip),
                 # The one place a colour is asserted: a status means the same on every theme.
                 Cell(word(row.status), ink=tint(row.status), tooltip=tip),
-                Cell(_when(row), secondary=True, tooltip=tip),
             ),
             tint=FAILED_ROW_TINT if row.status == "failed" else None,
             data={TEST_ROLE: row.test.id, STEP_ROLE: row.step.id},
@@ -154,6 +213,28 @@ class TestsTable(Table):
             for row in sorted({index.row() for index in self.selectedIndexes()})
             if (found := self.step_at(row)) is not None
         ]
+
+    def tests_under(self, row: int) -> list[str]:
+        """Every test filed under the heading at ``row`` — what a right-click there acts on.
+
+        A heading names a group and a group is a set of tests, so making the thing under
+        the cursor current means selecting them, which is what lets the Step menu's verbs
+        act on a whole category without a verb of their own.
+        """
+        key = self.group_at(row)
+        if not key:
+            return []
+        found = []
+        for below in range(row + 1, self.rowCount()):
+            if self.is_heading(below):
+                break  # The next heading: the group ends here.
+            if (test_id := self.test_at(below)) is not None:
+                found.append(test_id)
+        return found
+
+    def select_tests(self, test_ids: Sequence[str]) -> None:
+        """Pick exactly these tests, by id — a rebuild's rows are new objects."""
+        self._reselect(test_ids)
 
     def _reselect(self, test_ids: Sequence[str]) -> None:
         """Keep the selection across a rebuild, by test id — the rows are new objects.
@@ -188,20 +269,19 @@ def _role_at(item: QTableWidgetItem | None, role: int) -> str | None:
     return str(found) if found is not None else None
 
 
-def _with_headings(rows: Sequence[Row]) -> list[Row | tuple[str, str]]:
+def _with_headings(rows: Sequence[Row]) -> list[Row | Heading]:
     """The rows with a heading wherever the group changes; unchanged when nothing groups.
 
-    A heading is ``(title, colour)`` — the colour is the first row's, since every row of a
-    group names the same collector.
+    The heading is the first row's — every row of a group carries the same one.
     """
-    if not any(row.group for row in rows):
+    if not any(row.heading.title for row in rows):
         return list(rows)
-    laid: list[Row | tuple[str, str]] = []
-    current = None
+    laid: list[Row | Heading] = []
+    current: str | None = None
     for row in rows:
-        if row.group != current:
-            current = row.group
-            laid.append((current, row.group_color))
+        if row.heading.title != current:
+            current = row.heading.title
+            laid.append(row.heading)
         laid.append(row)
     return laid
 
@@ -213,11 +293,3 @@ def _preview(body: str) -> str:
         if text:
             return text
     return ""
-
-
-def _when(row: Row) -> str:
-    if row.outcome is None:
-        return ""
-    label = row.outcome.run.label or row.outcome.run.id
-    stamp = row.outcome.run.closed or row.outcome.run.opened
-    return f"{label} · {stamp[:10]}" if stamp else label

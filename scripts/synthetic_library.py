@@ -155,7 +155,7 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
             SetModuleDataCommand(step.id, "testing", tests(own)).redo(library)
         library.set_text(step.id, "step_description", DESCRIPTION.format(n=index))
 
-    SetModuleDataCommand(project.id, "testing", runs.write(_runs(test_ids))).redo(library)
+    SetModuleDataCommand(project.id, "testing", runs.write(project, _runs(test_ids))).redo(library)
     SetModuleDataCommand(project.id, NOTES_ID, write_log(_notes(steps))).redo(library)
 
     placed = layered_flow(library, project)

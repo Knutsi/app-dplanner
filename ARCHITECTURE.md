@@ -4688,6 +4688,107 @@ its words, and a pick matches one value at a time. The options are built from th
 a plan with nothing blocked no longer offers *Blocked* — which the hard-coded four always
 did.
 
+## A test is filed under a category, and its words are the key
+
+The audience above is one axis and it is closed. The axis a roster of two hundred tests
+actually needs is the other one — *what kind of thing is this test* — and it cannot be
+closed, because *Import*, *Permissions*, *Print layout* and *Rate limiting* are this
+project's words and the next project's are different ones. So a test carries a **category**:
+one line of free text, catalogued beside the project.
+
+**The words are the key.** There is no minted id. `dplanner test set T100 --category
+'Import'` is the whole story; a diff says which group a test moved to; an agent that has
+never seen this plan can file a test from the catalogue it just printed. The alternative —
+a stable `c3` with a label beside it — buys exactly one thing, a free rename, and charges
+for it in every other place: a CLI nobody can type, a JSON nobody can read, and a label that
+drifts from its id the first time two agents disagree. The price of the choice is that a
+rename **is** a rewrite of every test carrying the old words, and that price is paid where
+it is visible: `test-category set --rename` and the editor's Save both do it in one undoable
+step, and the editor's row says how many tests it is about to move before it moves them.
+
+**The catalogue is stored; membership is derived.** `{"categories": [{"name": …, "icon": …}]}`
+beside the project, in the order somebody wrote them. It is stored for one reason that
+matters: an agent reading a spec can lay the groups out *before* the tests that will fill
+them, which is what makes the tests arrive filed instead of arriving and then being sorted.
+What is *in* a category is never stored — `counts()` walks the tests, the same rule the
+topological order keeps. And a category a test names that the catalogue does not is still a
+real category: `catalog()` appends it, unglyphed, after the ones that were written down. A
+typo therefore shows up as a group of one rather than as a test that has quietly fallen out
+of every list, and the editor is where it gets merged.
+
+**Absence reads as *Uncategorised*, and the lint asks anyway** — the audience's rule, one
+vocabulary over, with one difference: `test.category` stays quiet until the project has any
+categories at all. A plan that has not started filing its tests is not behind on anything;
+the check exists to catch the test added *after* the filing was laid out, which is the one
+an agent's next `test add` forgets.
+
+### Two writers, one project entry
+
+`runs` and `categories` are both project-level keys under the module id `testing`, and
+`SetModuleDataCommand` stores an entry **whole**. Each writer returning a dict built from
+its own half would therefore have silently deleted the other's key — a run started after
+the categories were laid out would have taken them with it. `aspect.project_entry()` is the
+one composer, both writers go through it, and `runs.write()` grew a `project` parameter so
+it could. The generalisation is worth stating, because the module system invites the bug:
+*one module id may name several shapes, and every writer of a shared entry must compose it
+from what is on disk.* `FORMAT.md`'s "one module id, two shapes" paragraph is the same fact
+seen from the data's side.
+
+### Grouping is one selector, and the tests' own vocabulary leads it
+
+The Tests tab already grouped by feature, milestone or check. Category could have been a
+second control beside that one — and would have been wrong: *by feature*, *by milestone*,
+*by check* and *by category* are four answers to one question, so they are four entries in
+one box. Making that true meant generalising what grouped the rows, because the three that
+existed are facts about a test's **step** and the new one is a fact about the **test** — a
+step's three tests are often three different kinds of thing, which is most of why the
+category exists at all. `_Grouping` is two functions, *where does this row sort* and *what
+heading does it land under*, both taking `(step, test)`; the collector grouping ignores the
+test and the category grouping ignores the step. One shape asked twice, rather than two
+mechanisms that will one day disagree about what a heading is.
+
+Category leads the list and is the default *while the project has one*, because filing by
+what a test is beats a flat roster and a project with no categories would otherwise open on
+a single heading saying *Uncategorised*. The default stands only until the reader picks a
+grouping themselves; after that their answer is the answer.
+
+### The category headings fold, and the table remembers by key
+
+Grouping two hundred tests is only half the reading. The other half is folding twelve of
+the thirteen groups shut, which is what turns the roster into a page. So `Table.add_heading`
+takes a `key`, and a keyed heading wears a disclosure chevron and swallows the click that
+toggles it — the **whole row** is the target, because a heading selects nothing and runs
+nothing else, so there is no second thing a click there could have meant and a seven-pixel
+triangle is not a target.
+
+What is folded is remembered **by key, inside the table, across `clear_rows`**. That is the
+part that had to be got right: a host rebuilds a grouped table wholesale on every refresh,
+and a fold remembered by row number would spring every group open on the next keystroke
+anywhere in the project. The key is the host's own word — a category's name — so folding
+*Smoke* folds the same group after a rebuild, after a rename that kept the name, and after
+the tab is reopened over the same rows. The collector groupings pass no key and so do not
+fold: a feature's tests are already few, and a reader who asked to see them beside each
+other did not ask to unfold them one at a time.
+
+### Export is what the tab is showing
+
+"Narrow it to QA, then hand that to the QA team" is one gesture, so `File ▸ Export ▸ Tests`
+writes what the project's Tests tab is *currently showing* — its scope, its audience filter,
+whether the archived are in — rather than opening a second dialog asking the same three
+questions the strip has already been answering. `TestsActivity.showing()` is the one reader
+of that, and `New Test Run` uses it too: the old `_narrowed_to` was the same walk for the
+scope alone, and generalising it was cheaper than a near-copy beside it. With no tab open
+the verb exports the project's whole roster, which is the honest reading of "no narrowing".
+The CLI takes the narrowing as flags, because a terminal has no tab to read.
+
+The two formats are deliberate and neither is the report. `cli/report/` publishes *the plan*
+and names each test in one line; this writes *the tests*, filed under their categories, with
+every body in full. Markdown is what a repository keeps and what the next agent converts
+into whatever TestRail wants; HTML is one self-contained page whose every test is a
+`<details>` that opens on its body, which is what makes a hundred of them scannable. Neither
+inlines pictures: a test body's images live in the step's file area, and embedding them
+would make this a publication, which is the report's job.
+
 ## A test goes stale when the step under it moves
 
 Eleven tests on one real plan contradicted the product and lint said nothing about any of

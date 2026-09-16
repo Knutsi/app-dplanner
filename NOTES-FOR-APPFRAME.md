@@ -3938,3 +3938,74 @@ its first caller to forget the copy.
 **Upstream?** Yes, all three. None of them knows anything about agents or plans: `warn` is a
 gap any application's tone vocabulary has, and the band is the notice primitive the template
 would ship, made to carry what it is for. The `#NoticePercent` rule goes with it.
+
+## 48. From the tests-view pass
+
+### `framework/table.py` — a group heading that folds, and the table remembers what is shut
+
+**What.** `Table.add_heading` gained three keyword arguments: `glyph` (a `QIcon` in front of
+the heading's words), `ink` it already had, and `key`. A heading with a `key` is
+**collapsible**: the rows added after it belong to it, `set_collapsed(key, folded)` /
+`toggle_group(key)` hide and show them, `collapsed()` says which are shut, `group_at(row)`
+answers *is this row a heading, and of what*, and `is_heading(row)` answers the weaker
+question a host asks when it walks a filled table. The delegate draws a disclosure triangle
+for a keyed heading and the glyph after it; `mousePressEvent` toggles on a press anywhere in
+the heading row and consumes it. Two roles were added to `list_rows.py`, `GROUP_ROLE` and
+`COLLAPSED_ROLE`.
+
+**Why.** Grouping a roster is only half of making a long one readable; folding twelve of the
+thirteen groups is the other half. The part worth carrying upstream is not the folding but
+**where the folded set lives**: inside the table, keyed by the host's own word, and surviving
+`clear_rows`. A host rebuilds a grouped table wholesale on every refresh — that is the
+pattern this framework's `Debounced` views are built on — so a fold remembered by row number
+springs every group open on the next keystroke anywhere in the model, and a host asked to
+remember it itself will get it wrong once per host. The whole row is the click target rather
+than the triangle, because a heading selects nothing and runs nothing else, so there is no
+second thing a click there could have meant.
+
+The chevron is drawn rather than vendored, which is the existing rule for the key badge, the
+colour strip, the spinner and the filter funnel: it is a picture of *state*, and its two
+forms are one triangle turned.
+
+**Upstream?** Yes. It is a general table capability, it is five methods, and the remembering
+is the part a host cannot be trusted with.
+
+### `framework/table.py` — `TextEditor`
+
+**What.** A third `CellEditor` beside `NumberEditor` and `DateEditor`: a `QLineEdit` in the
+cell, `blank_text` for an empty value, `placeholder` while it is open.
+
+**Why.** The primitive had editors for the two hard cases and none for the easy one, so a
+roster of *names* — which is what a vocabulary editor is — had no way to be edited in place
+without planting a widget in a cell, which the rules forbid. Twenty lines.
+
+**Upstream?** Yes, plainly.
+
+### `framework/toolbar.py` — a filter button's face says what is chosen
+
+**What.** `FilterButton`'s face text is now the label while nothing is picked, the single
+picked filter's own words when one is, and `<label> · <n>` past that. The tooltip still
+carries the full list.
+
+**Why.** The accent wash and the filled funnel say *something is being hidden*. They do not
+say what, so a reader who wants to know opens the menu — a lookup the button can simply
+answer, and one they pay every time they glance at the surface. The cut-off at two is the
+width: three names in a row outgrow a strip that also carries verbs and selectors, and a
+reader counting them has learnt nothing the number did not say. The one thing a host now
+owes: the face changes width with the pick, so nothing may be laid out beside it at a fixed
+offset. The docstring's old claim that it "stays the same size whatever is on" was about the
+glyph's slot and is now wrong about the face, so it was rewritten rather than trimmed.
+
+**Upstream?** Yes.
+
+### `framework/action_menu.py` — `_ink` is `menu_ink`
+
+**What.** Renamed, unchanged.
+
+**Why.** A `DataMenuSpec`'s `fill` paints its own rows' glyphs — a test category's, an
+agent profile's — and must paint them in the same ink as the registered verbs beside them,
+read from the menu at open time so it cannot go stale. That is exactly what `_ink` did for
+`_decorate`, and a fill reaching for a private name (or, worse, reading the palette itself
+and getting a different answer) is the shape the rename prevents.
+
+**Upstream?** Yes.

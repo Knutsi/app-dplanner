@@ -831,12 +831,21 @@ class FilterButton(QWidget):
     """``[funnel] Filter`` with a clear button beside it: the filters in a popup, an
     indicator while any is on, and a second button that clears them.
 
-    DESIGN.md's *Toolbars*. The face drops a menu of checkable filters down and stays the
-    same size whatever is on: the indicator is the glyph itself — an outline funnel, or a
-    filled one with a dot in the slot before it — and the accent washes the face's ground
-    and colours its border and glyph, so the words stay legible and the state reads as a
-    filter being on, not a mode being pressed. The clear button beside it is greyed until
-    a filter is on, never hidden. ``changed`` says when the set of active filters changed.
+    DESIGN.md's *Toolbars*. The face drops a menu of checkable filters down; the indicator
+    is the glyph itself — an outline funnel, or a filled one with a dot in the slot before
+    it — and the accent washes the face's ground and colours its border and glyph, so the
+    words stay legible and the state reads as a filter being on, not a mode being pressed.
+    The clear button beside it is greyed until a filter is on, never hidden. ``changed``
+    says when the set of active filters changed.
+
+    **The face says what is chosen, not what could be.** A funnel that has gone accent
+    tells a reader that something is being hidden and not *what*, so they open the menu to
+    find out — which is a lookup the button can simply answer. One filter puts its own
+    words on the face (*QA*); several put the label and the count (*Audience · 2*), because
+    three names in a row outgrow the strip and a reader counting them has learnt nothing the
+    number did not say. The full list stays in the tooltip either way. The face therefore
+    changes width with the pick, which is why nothing may be laid out beside it at a fixed
+    offset.
     """
 
     def __init__(self, parent: QWidget | None = None, *, label: str = "Filter") -> None:
@@ -891,6 +900,12 @@ class FilterButton(QWidget):
     def clear(self) -> None:
         self.set_active(set())
 
+    def _face_words(self, names: Sequence[str]) -> str:
+        """What the face says for this pick — see the class docstring for the rule."""
+        if not names:
+            return self._label
+        return names[0] if len(names) == 1 else f"{self._label} · {len(names)}"
+
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
         if event.type() == QEvent.Type.PaletteChange:
             self._show_state()  # The glyphs carry the ink they were painted in.
@@ -906,6 +921,7 @@ class FilterButton(QWidget):
         self.clear_button.setIcon(close_icon(secondary.name()))
         self.clear_button.setEnabled(active)
         names = [self._actions[key].text() for key in on]
+        self.face.setText(self._face_words(names))
         self.face.setToolTip(f"{self._label} — {', '.join(names)}" if names else self._label)
         if self.face.property("active") != active:
             self.face.setProperty("active", active)

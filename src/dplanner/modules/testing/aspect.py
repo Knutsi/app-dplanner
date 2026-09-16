@@ -25,6 +25,13 @@ than by the composition root because nothing outside testing has an opinion abou
 A test may carry several; one that carries none reads as ``other`` through
 :func:`audiences_of`, which is what let the field arrive without migrating anybody's plan.
 ``project lint`` asks for the explicit answer instead, a test at a time.
+
+**And it says what kind of thing it is** — its ``category``, one line of free text naming a
+group a person would file it under. Unlike the audience the list is *open*, because nobody
+can write down every kind of test a project will grow; the catalogue beside the project is
+:mod:`dplanner.modules.testing.categories`, and a test names a category by its words rather
+than by a minted id, so renaming one is an explicit refactor over the tests that carry it.
+A test that names none reads as *Uncategorised*, the same tolerance the audience shows.
 """
 
 import dataclasses
@@ -66,7 +73,20 @@ def _to_format_2(data: dict[str, Any]) -> dict[str, Any]:
     return dict(data)
 
 
-DATA_FORMAT = ModuleDataFormat(MODULE_ID, 2, (_to_format_2,))
+def _to_format_3(data: dict[str, Any]) -> dict[str, Any]:
+    """Format 2 shapes are valid format 3 shapes: the bump exists for a test's ``category``
+    and for the project entry's ``categories`` catalogue.
+
+    The same pass-through, for the same reason and with the same caveat as
+    :func:`_to_format_2`: the stamp records that the entry may carry keys an older build
+    does not know, and nothing enforces it. An uncategorised test is what a format-2 plan
+    reads as, which is a real state rather than a missing one — ``project lint``'s
+    ``test.category`` is what carries a plan over a test at a time.
+    """
+    return dict(data)
+
+
+DATA_FORMAT = ModuleDataFormat(MODULE_ID, 3, (_to_format_2, _to_format_3))
 
 # Ids people say out loud and write in a bug report: T100, T101, … Three digits from
 # the start so every id in a project is the same width, and high enough that nobody
@@ -114,6 +134,10 @@ class Test:
     # Who it is written for, in AUDIENCES order. Empty is *nobody has said*, which reads as
     # `other` through `audiences_of` and is what `lint`'s `test.audience` asks about.
     audiences: tuple[str, ...] = ()
+    # What it is filed under, by its words. Open vocabulary, catalogued beside the project
+    # (`categories.py`); empty reads as *Uncategorised* and is what `lint`'s `test.category`
+    # asks about.
+    category: str = ""
 
 
 def read(step: Step) -> list[Test]:
@@ -128,6 +152,7 @@ def read(step: Step) -> list[Test]:
             body=str(entry.get("body", "")),
             archived=bool(entry.get("archived")),
             audiences=_audiences_in(entry.get("audiences")),
+            category=str(entry.get("category", "")).strip(),
         )
         for entry in raw
         if isinstance(entry, dict) and isinstance(entry.get("id"), str)
@@ -145,6 +170,7 @@ def _entry(test: Test) -> dict[str, Any]:
         **({"body": test.body} if test.body else {}),
         **({"archived": True} if test.archived else {}),
         **({"audiences": list(audiences)} if audiences else {}),
+        **({"category": test.category} if test.category else {}),
     }
 
 
@@ -153,6 +179,32 @@ def write(tests: Sequence[Test]) -> dict[str, Any]:
     if not tests:
         return {}
     return stamped({"tests": [_entry(test) for test in tests]}, DATA_FORMAT.version)
+
+
+# What the entry beside a *project* may hold. One module id, two shapes (``FORMAT.md``):
+# beside a step it is the step's tests, beside the project it is the runs and the category
+# catalogue — two keys with two owners in one file, which is why neither may write an entry
+# built from its own half alone.
+PROJECT_KEYS: Final = ("runs", "categories")
+
+
+def project_entry(project: Project, **replaced: object) -> dict[str, Any]:
+    """The project's whole testing entry with some keys replaced — the one writer of it.
+
+    ``runs.write`` and ``categories.write`` both produce a *whole* entry, and a whole entry
+    is what ``SetModuleDataCommand`` stores, so either one composing its own dict would
+    silently drop the other's key. A falsy value removes its key, and an entry left with
+    nothing but its stamp removes the file (:func:`~dplanner.core.module_data.stamped`).
+    """
+    unknown = set(replaced) - set(PROJECT_KEYS)
+    if unknown:
+        raise ValueError(f"not a project-level testing key: {', '.join(sorted(unknown))}")
+    entry = {
+        key: value
+        for key, value in {**project.module_data.get(MODULE_ID, {}), **replaced}.items()
+        if key in PROJECT_KEYS and value
+    }
+    return stamped(entry, DATA_FORMAT.version)
 
 
 def _audiences_in(raw: object) -> tuple[str, ...]:
@@ -177,6 +229,20 @@ def audiences_of(test: Test) -> tuple[str, ...]:
     theirs is the other question: *has anybody actually said?*
     """
     return test.audiences or (DEFAULT_AUDIENCE,)
+
+
+def for_audiences(
+    pairs: Sequence[tuple[Step, "Test"]], wanted: Sequence[str]
+) -> list[tuple[Step, "Test"]]:
+    """``pairs`` narrowed to the tests written for any of ``wanted``; all of them when it is
+    empty. Read through :func:`audiences_of`, so an unclassified test answers to `other`.
+
+    The one filter, because three readers wanted it: ``test list``, ``test export`` and the
+    window's export. The tab's own filter is a `FilterButton` over the same derivation.
+    """
+    if not wanted:
+        return list(pairs)
+    return [pair for pair in pairs if set(audiences_of(pair[1])) & set(wanted)]
 
 
 def audience_words(test: Test) -> str:

@@ -88,7 +88,7 @@ COLUMNS = (
     Column("Status"),
 )
 FILTERS = (("agent", "Agent steps"), ("milestone", "Milestones"), ("done", "Done"))
-GROUPINGS = ("Grouped by milestone", "Flat")
+GROUPINGS = ("Grouped by milestone", "Folding groups", "Flat")
 
 # A glyph painter: the colour in, the icon out.
 GlyphPainter = Callable[[QColor], QIcon]
@@ -210,15 +210,21 @@ def fill_sample(
     groups: Groups | None = None,
     *,
     grouped: bool = True,
+    folding: bool = False,
 ) -> None:
-    """The sample rows, narrowed by the active ``FILTERS`` keys, under their headings or flat."""
+    """The sample rows, narrowed by the active ``FILTERS`` keys, under their headings or flat.
+
+    ``folding`` gives each heading a ``key``, which is what makes it collapsible: a chevron,
+    the whole row as the target, and what is shut remembered by key across this very
+    rebuild. A long roster is read by folding the groups you are not in.
+    """
     table.clear_rows()
     for heading, rows in groups if groups is not None else sample_groups():
         shown = [row for row in rows if matches(row, active)]
         if not shown:
             continue
         if grouped:
-            table.add_heading(heading)
+            table.add_heading(heading, key=heading if folding else "")
         for row in shown:
             tint = (
                 recoloured(HIGHLIGHT_FILL, sample_shade(row)) if row.kind == "milestone" else None
@@ -482,7 +488,8 @@ class DesignExampleActivity(ActivityBase):
             ink_of(self.widget),
             set(self.filter.active()),
             self._groups,
-            grouped=self.group.currentIndex() == 0,
+            grouped=self.group.currentIndex() < 2,
+            folding=self.group.currentIndex() == 1,
         )
         self._reword_verbs()
 

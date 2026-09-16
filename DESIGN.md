@@ -494,10 +494,17 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
   milestone is known by across the graph. The second line then says what the row gathers,
   not the key again.
 - **A group heading is a spanned row nobody can pick**: bold secondary words at a plain
-  row's height, no hover, no edge (`add_heading`). Nothing else separates the groups; the
-  heading is the separator.
+  row's height, no hover, no edge (`add_heading`), with the group's own glyph before them
+  where it has one. Nothing else separates the groups; the heading is the separator.
+- **A heading may fold, and then the whole row is the target.** `add_heading(…, key=…)`
+  gives it a disclosure chevron and makes the rows under it collapsible; a press anywhere
+  in the heading toggles it, because a heading selects nothing and runs nothing else and a
+  seven-pixel triangle is not a target. Fold a roster that is read by finding one group in
+  a dozen — the Tests tab filed by category — and leave a short one open, because a reader
+  who asked to see a feature's tests beside each other did not ask to unfold them. What is
+  shut is remembered by key, so the host's next rebuild does not spring every group open.
 - **A value set in the row is the column's**, never a widget planted in a cell: one column
-  carries an editor (`NumberEditor`, `DateEditor`) that a double-click, F2 or a typed key
+  carries an editor (`NumberEditor`, `DateEditor`, `TextEditor`) that a double-click, F2 or a typed key
   opens over the cell — a picked row aims its keys at it — and a commit lands in the cell
   and is announced once, through `Table.edited`, which the host turns into its command.
 - **A column's usual values are chips**, when seeing them matters as much as setting them
@@ -590,13 +597,19 @@ Example Table wears one.
   pointer. Its arrow is the theme's own SVG (`theme/__init__.py`'s `drop_arrow_url`): a
   border-drawn triangle flattens into a bar at a 2× scale.
 - **A filter is one control with two buttons** (`FilterButton`): a face — the funnel
-  glyph and the word — that drops the filters down as a menu of checkable entries stacked
+  glyph and the words — that drops the filters down as a menu of checkable entries stacked
   vertically, which stays open while they are toggled, and a clear button joined to its
   right, greyed until a filter is on and never hidden. **The indicator is the glyph**: an
   outline funnel while nothing is on, a filled one with a dot in the slot before it while
-  something is, so the face never changes size; the face then wears a wash of the accent
-  over its ground (`$ACCENT_WASH`) and the accent on its border and glyph, never a fill —
-  a filter being on is a state, not a mode being pressed — and the tooltip names what is on.
+  something is; the face then wears a wash of the accent over its ground (`$ACCENT_WASH`)
+  and the accent on its border and glyph, never a fill — a filter being on is a state, not
+  a mode being pressed.
+- **And the face says *what* is chosen**, because the wash says only that something is.
+  The label while nothing is picked (*Audience*), the one filter's own words when one is
+  (*QA*), and the label with a count past that (*Audience · 2*) — three names in a row
+  outgrow a strip that also carries verbs, and a reader counting them learns nothing the
+  number did not say. The tooltip names them all either way. The face therefore changes
+  width with the pick: lay nothing beside it at a fixed offset.
 - **A verb whose work is running turns its glyph** — a `Spinner` attached to the verb's
   action (*Signalling*, Working); the example's Refresh does so while its rebuild is owed.
 - On a real surface the verbs come from the registry — `ActionToolbar` over registered

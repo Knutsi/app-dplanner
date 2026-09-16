@@ -96,8 +96,11 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # step can be several things at once, and each aspect's tab follows its toggle), then
     # Status, then Test. They are one group because a rule between two adjacent child menus
     # separates nothing: the names already do. A child menu sits at its first entry's order,
-    # which is why the four claim bands of it — Type the 10s, Status the 200s, Test the
-    # 300s, Estimate the 400s — and ``order`` still only ranks inside this one group.
+    # which is why the five claim bands of it — Type the 10s, Status the 200s, Test the
+    # 300s, Estimate the 400s, Test Category the 500s — and ``order`` still only ranks
+    # inside this one group. Test Category is a *data* child menu (the project's own
+    # categories, rebuilt on open) and so sits beside Test rather than inside it: a
+    # `DataMenuSpec` is placed at its menu's top level, never nested in a submenu.
     # "test_result" feeds that same Test submenu with what a run *recorded*, so the rule
     # between what a test is and what it did is drawn inside the child menu — and, holding
     # no top-level entry of its own, the group adds no rule to the menu itself.

@@ -17,18 +17,21 @@ these are.
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from dataclasses import replace as replace_fields
+from pathlib import Path
 
-from PySide6.QtWidgets import QTreeWidgetItem, QWidget
+from PySide6.QtWidgets import QFileDialog, QMenu, QTreeWidgetItem, QWidget
 
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.scope import ScopeKind, kind_of
 from dplanner.domain.store import FilesFor
+from dplanner.framework.action_menu import append_action, menu_ink
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
     ActionSpec,
     ActionState,
+    DataMenuSpec,
 )
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
@@ -49,14 +52,16 @@ from dplanner.framework.project_list_segment import LeadingRow, ProjectListSegme
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.modules.testing import runs
+from dplanner.modules.testing import export, runs
 from dplanner.modules.testing.activity import (
     ALL_TESTS_KIND,
     TESTS_KIND,
     AllTestsActivity,
+    Shown,
     TestsActivity,
 )
 from dplanner.modules.testing.aspect import (
+    AUDIENCES,
     DATA_FORMAT,
     MODULE_ID,
     SPEC,
@@ -68,6 +73,8 @@ from dplanner.modules.testing.aspect import (
     read,
     write,
 )
+from dplanner.modules.testing.categories import UNCATEGORISED, catalog, category_of, refiled
+from dplanner.modules.testing.categories_dialog import CategoriesDialog
 from dplanner.modules.testing.section import CoversSection, TestsSection
 from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.theme.icons import (
@@ -75,6 +82,9 @@ from dplanner.theme.icons import (
     check_icon,
     close_icon,
     eraser_icon,
+    external_icon,
+    folder_icon,
+    glyph_icon,
     list_icon,
     play_icon,
     project_icon,
@@ -197,6 +207,17 @@ class TestsModule:
         )
         for spec in self._action_specs():
             deps.actions.register(spec)
+        deps.actions.register_data_menu(
+            DataMenuSpec(
+                id="test.category",
+                menu="Step",
+                group="classify",
+                title="Test Category",
+                # The 500s: the fifth child menu of the classify band. See dplanner/menus.py.
+                order=500,
+                fill=self._fill_categories,
+            )
+        )
 
     def _tests_factory(self, target: str | None) -> TestsActivity:
         assert target is not None
@@ -333,6 +354,33 @@ class TestsModule:
                 palette=False,  # The same verb's second seat, on the Step menu.
                 state=self._on_a_project,
                 run=self._open_tests,
+            ),
+            ActionSpec(
+                id="tests.categories",
+                label="Test &Categories…",
+                menu="Project",
+                group="tests",
+                order=30,
+                tip="Rename, re-icon and reorganise what this project files its tests under",
+                icon=folder_icon,
+                state=self._on_a_project,
+                run=self._edit_categories,
+            ),
+            # File ▸ Export ▸ Tests. It writes *what the Tests tab is showing* — the scope,
+            # the audience filter and whether the archived are in — because "narrow it, then
+            # export it" is one gesture and a second dialog asking the same questions again
+            # is a form. With no tab open it is the project's whole roster.
+            ActionSpec(
+                id="tests.export",
+                label="&Tests (Markdown or HTML)…",
+                menu="File",
+                group="export",
+                submenu="Export",
+                order=15,  # Between the order list (10) and the plan report (20).
+                tip="Write the tests this project's Tests tab is showing to Markdown or HTML",
+                icon=external_icon,
+                state=self._export_state,
+                run=self._export,
             ),
         ]
 
@@ -474,7 +522,7 @@ class TestsModule:
             SetModuleDataCommand(
                 project_id,
                 MODULE_ID,
-                runs.write(runs.replaced(records, run)),
+                runs.write(project, runs.replaced(records, run)),
                 label=f"Mark {word(status)}",
             )
         )
@@ -492,18 +540,22 @@ class TestsModule:
     def _new_run(self, context: Context) -> None:
         project = self._focused_project(context)
         if project is not None:
-            self.start_run(project.id, self._narrowed_to(project.id))
+            self.start_run(project.id, self._showing(project.id).scope)
 
-    def _narrowed_to(self, project_id: NodeId) -> StepId:
-        """The collector the project's Tests tab is narrowed to, or "": a run opened from its
-        strip covers what the tab is showing."""
+    def _showing(self, project_id: NodeId) -> Shown:
+        """What the project's Tests tab is narrowed to, or nothing when none is open.
+
+        A run opened from its strip covers what the tab is showing, and so does an export
+        — one reader for both, because the alternative is two near-copies of this walk
+        that will one day disagree about what "showing" means.
+        """
         return next(
             (
-                activity.scope
+                activity.showing()
                 for activity in self._deps.tabs.activities()
                 if isinstance(activity, TestsActivity) and activity.project_id == project_id
             ),
-            "",
+            Shown(),
         )
 
     def start_run(self, project_id: NodeId, scope: StepId) -> None:
@@ -536,7 +588,9 @@ class TestsModule:
             records, [test.id for _step, test in pairs], label=label.strip(), scope=scope
         )
         deps.undo.push(
-            SetModuleDataCommand(project_id, MODULE_ID, runs.write(started), label="Start Test Run")
+            SetModuleDataCommand(
+                project_id, MODULE_ID, runs.write(project, started), label="Start Test Run"
+            )
         )
 
     def _close_run_state(self, context: Context) -> ActionState:
@@ -556,9 +610,123 @@ class TestsModule:
             SetModuleDataCommand(
                 project.id,
                 MODULE_ID,
-                runs.write(runs.replaced(records, runs.closed(run))),
+                runs.write(project, runs.replaced(records, runs.closed(run))),
                 label="Close Test Run",
             )
+        )
+
+    # -- categories ------------------------------------------------------------------------
+
+    def _fill_categories(self, menu: QMenu) -> None:
+        """What the picked tests are filed under, as a child menu of data.
+
+        Rebuilt on every open, so a category added in the editor is offered without anybody
+        having registered anything. It renders the whole story including the empty one: a
+        disabled line when nothing is picked or the project has no categories yet, and the
+        editor's own verb at the end — through ``append_action``, never a copy of it.
+        """
+        context = self._deps.context.current()
+        project = self._focused_project(context)
+        picked = self._selected_tests(context)
+        if project is None or not picked:
+            menu.addAction("Pick a test first").setEnabled(False)
+        else:
+            held = {category_of(test) for _step, test in picked}
+            ink = menu_ink(menu)
+            for entry in catalog(project):
+                action = menu.addAction(entry.name)
+                action.setCheckable(True)
+                action.setChecked(held == {entry.name})
+                if entry.icon:
+                    action.setIcon(glyph_icon(entry.icon, ink))
+                action.triggered.connect(
+                    lambda _checked=False, name=entry.name: self._file_under(name)
+                )
+            none = menu.addAction(UNCATEGORISED)
+            none.setCheckable(True)
+            none.setChecked(held == {UNCATEGORISED})
+            none.triggered.connect(lambda _checked=False: self._file_under(""))
+        menu.addSeparator()
+        append_action(menu, self._deps.actions, self._deps.context, "tests.categories")
+
+    def _file_under(self, category: str) -> None:
+        """File every picked test under ``category`` — "" files them under none."""
+        context = self._deps.context.current()
+        pairs = [pair for pair in self._selected_tests(context) if pair[1].category != category]
+        if not pairs:
+            return
+        wanted = {test.id for _step, test in pairs}
+        by_step: dict[StepId, list[Test]] = {
+            step.id: refiled(read(step), wanted, category) for step, _test in pairs
+        }
+        self._push_many(by_step, "Set Test Category")
+
+    def _edit_categories(self, context: Context) -> None:
+        project = self._focused_project(context)
+        if project is None:
+            return
+        dialog = CategoriesDialog(
+            self._deps.library, self._deps.undo, project.id, self._deps.parent
+        )
+        dialog.exec()
+        dialog.deleteLater()
+
+    # -- export ------------------------------------------------------------------------------
+
+    def _export_state(self, context: Context) -> ActionState:
+        project = self._focused_project(context)
+        if project is None:
+            return DISABLED
+        if not project_tests(project, archived=True):
+            return ActionState(enabled=False, label="Tests — this project has no tests yet")
+        return ActionState()
+
+    def _export(self, context: Context) -> None:
+        project = self._focused_project(context)
+        if project is None:
+            return
+        shown = self._showing(project.id)
+        deps = self._deps
+        scope = project.step(shown.scope) if shown.scope else None
+        pairs = export.narrowed(
+            deps.library,
+            project,
+            scope=shown.scope if scope is not None else "",
+            audiences=shown.audiences,
+            archived=shown.archived,
+        )
+        name = project.title or "Untitled project"
+        filters = [
+            f"{export.FORMAT_LABELS[kind]} (*{export.SUFFIXES[kind]})" for kind in export.FORMATS
+        ]
+        chosen, picked = QFileDialog.getSaveFileName(
+            deps.parent,
+            "Export Tests",
+            str(Path.home() / f"{name} tests{export.SUFFIXES[export.FORMATS[0]]}"),
+            ";;".join(filters),
+        )
+        if not chosen:
+            return
+        # The format is the *filter* the user picked, not a guess at the suffix they typed:
+        # a name with no suffix at all is the common case, and the dropdown already said it.
+        kind = export.FORMATS[filters.index(picked)] if picked in filters else export.FORMATS[0]
+        path = Path(chosen)
+        if path.suffix.lower() != export.suffix_for(kind):
+            path = path.with_suffix(export.suffix_for(kind))
+        audiences = [a.label for a in AUDIENCES if a.id in shown.audiences]
+        path.write_text(
+            export.render(
+                export.Exported(
+                    project=project,
+                    pairs=pairs,
+                    outcomes=runs.latest_results(runs.read(project)),
+                    audiences=audiences,
+                    archived=shown.archived,
+                    scope=(scope.title or "Untitled step") if scope is not None else "",
+                ),
+                kind,
+            ),
+            encoding="utf-8",
         )
 
     # -- navigation ------------------------------------------------------------------------

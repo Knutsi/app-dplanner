@@ -18,12 +18,13 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import ContextService
 
 
-def _ink(target: QMenu) -> QColor:
+def menu_ink(target: QMenu) -> QColor:
     """The colour a glyph is painted in: this menu's own text colour, read now.
 
     A pop-up is built fresh every time it opens, so the colour cannot go stale — which is
     why an action's glyph is a pop-up presenter's business and not the menu bar's, whose
-    QActions outlive every theme change.
+    QActions outlive every theme change. Public because a ``DataMenuSpec``'s fill paints
+    its own rows' glyphs and must paint them in the same ink as the verbs beside them.
     """
     return QColor(target.palette().text().color())
 
@@ -35,7 +36,7 @@ def _decorate(entry: QAction, spec: ActionSpec, state: ActionState, target: QMen
         entry.setCheckable(True)
         entry.setChecked(state.checked)
     if spec.icon is not None:
-        entry.setIcon(spec.icon(_ink(target)))
+        entry.setIcon(spec.icon(menu_ink(target)))
 
 
 def append_action(

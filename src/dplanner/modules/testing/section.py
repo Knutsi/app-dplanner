@@ -29,6 +29,7 @@ from PySide6.QtGui import QResizeEvent
 from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -70,6 +71,7 @@ from dplanner.modules.testing.aspect import (
     replace,
     write,
 )
+from dplanner.modules.testing.categories import UNCATEGORISED, catalog
 from dplanner.modules.testing.view import StatusChip, outcome_line, tint, word
 
 BLOCK_GAP = 12
@@ -492,27 +494,40 @@ class _TestDetail(QWidget):
             header.addWidget(corner)
         layout.addLayout(header)
 
-        # Who the test is for. Three independent toggles rather than the roster's fourth
-        # column: this is the tightest surface in the application, and a test may be for
-        # more than one reader. They say what is *stored*, so an unclassified test shows
-        # three empty boxes and the note below says what it reads as instead — ticking
-        # `Other` through `audiences_of` would render a box that could not be unticked.
-        self.audiences = QWidget(self)
-        audience_row = QHBoxLayout(self.audiences)
-        audience_row.setContentsMargins(0, 0, 0, 0)
-        audience_row.setSpacing(FIELD_GAP)
-        caption = QLabel("Audience", self.audiences)
+        # One row saying what kind of thing this test is, rather than what it proves: who
+        # it is for, and what it is filed under.
+        #
+        # The audience is three independent toggles rather than the roster's fourth column:
+        # this is the tightest surface in the application, and a test may be for more than
+        # one reader. They say what is *stored*, so an unclassified test shows three empty
+        # boxes and the note below says what it reads as instead — ticking `Other` through
+        # `audiences_of` would render a box that could not be unticked. The category is one
+        # value out of a list the project keeps, so it is a picker; the list itself is
+        # edited in Project ▸ Test Categories…, never here, because a panel that let you
+        # rename a category would be renaming it for every other test too.
+        self.classification = QWidget(self)
+        row = QHBoxLayout(self.classification)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(FIELD_GAP)
+        caption = QLabel("Audience", self.classification)
         caption.setObjectName("InspectorCaption")
-        audience_row.addWidget(caption)
+        row.addWidget(caption)
         self.audience_boxes: dict[str, QCheckBox] = {}
         for audience in AUDIENCES:
-            box = QCheckBox(audience.label, self.audiences)
+            box = QCheckBox(audience.label, self.classification)
             box.setToolTip(audience.meaning)
             box.toggled.connect(partial(self._commit_audience, audience.id))
-            audience_row.addWidget(box)
+            row.addWidget(box)
             self.audience_boxes[audience.id] = box
-        audience_row.addStretch(1)
-        layout.addWidget(self.audiences)
+        row.addStretch(1)
+        category_caption = QLabel("Category", self.classification)
+        category_caption.setObjectName("InspectorCaption")
+        row.addWidget(category_caption)
+        self.category = QComboBox(self.classification)
+        self.category.setToolTip("What this test is filed under in the Tests tab")
+        self.category.currentIndexChanged.connect(self._commit_category)
+        row.addWidget(self.category)
+        layout.addWidget(self.classification)
 
         # A plain expanding text well: the detail pane is not a card in a scrolling stack,
         # so the editor may simply take the room and scroll like any other document.
@@ -570,7 +585,7 @@ class _TestDetail(QWidget):
             self.identity,
             self.title,
             self.chip,
-            self.audiences,
+            self.classification,
             self.body,
             self.result,
         ):
@@ -590,6 +605,7 @@ class _TestDetail(QWidget):
         if not self.title.hasFocus():
             self.title.setText(test.title)
         self.chip.show_status(outcome.result.status if outcome else "pending")
+        self._show_category(test)
         for audience_id, box in self.audience_boxes.items():
             # Blocked, or setting the boxes to match the record would push a command back.
             box.blockSignals(True)
@@ -609,8 +625,58 @@ class _TestDetail(QWidget):
             )
         )
 
+    def _show_category(self, test: Test) -> None:
+        """The picker's entries, and the one this test carries.
+
+        Rebuilt rather than diffed: a project's categories are few, and the list can have
+        gained one since the last look — the category editor's Save is exactly that.
+        *Uncategorised* is the first entry and carries no name, so the picker can always
+        say what an unfiled test is without the catalogue having to hold a word for it.
+        """
+        entries = [(UNCATEGORISED, "")]
+        if self._step_id is not None and self._library.has(self._step_id):
+            project = self._library.project_of(self._step_id)
+            entries += [(entry.name, entry.name) for entry in catalog(project)]
+        # A test filed under something the catalogue lost still shows it: the value is the
+        # test's, and a picker that quietly moved it to Uncategorised would be an edit.
+        if test.category and test.category not in [name for _label, name in entries]:
+            entries.append((test.category, test.category))
+        self.category.blockSignals(True)
+        if [
+            (self.category.itemText(i), self.category.itemData(i))
+            for i in range(self.category.count())
+        ] != entries:
+            self.category.clear()
+            for label, value in entries:
+                self.category.addItem(label, value)
+        found = self.category.findData(test.category)
+        self.category.setCurrentIndex(found if found >= 0 else 0)
+        self.category.blockSignals(False)
+
     def dispose(self) -> None:
         self.body.dispose()
+
+    def _commit_category(self, _index: int) -> None:
+        """One pick, one undoable command — ``_commit_audience``'s rule for a picker."""
+        if self._step_id is None or not self._library.has(self._step_id):
+            return
+        step = self._library.step(self._step_id)
+        test = find(read(step), self._test_id)
+        wanted = str(self.category.currentData() or "")
+        if test is None or test.category == wanted:
+            return
+        changed = dataclasses.replace(test, category=wanted)
+        self._undo.push(
+            SetModuleDataCommand(
+                step.id,
+                MODULE_ID,
+                write(replace(read(step), changed)),
+                label=f"Set Test {test.id} Category",
+            )
+        )
+        # A pick is a finished gesture, as a click on an audience box is: the label is the
+        # merge key, so without this two picks on one test would fold into one undo step.
+        self._undo.break_coalescing()
 
     def _commit_audience(self, audience_id: str, on: bool) -> None:
         """One toggle, one undoable command.

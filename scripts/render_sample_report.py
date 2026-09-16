@@ -158,7 +158,8 @@ def _tests(library: Library, project_id: str, steps: list[Step]) -> None:
     opened = runs.started([], ["T100", "T101", "T102"], label="Sprint 3")[-1]
     opened = runs.marked(opened, "T100", "ok")
     opened = runs.marked(opened, "T101", "failed", "hangs on shard 7")
-    SetModuleDataCommand(project_id, "testing", runs.write([opened])).redo(library)
+    project = library.project(project_id)
+    SetModuleDataCommand(project_id, "testing", runs.write(project, [opened])).redo(library)
 
 
 def _gradient() -> bytes:

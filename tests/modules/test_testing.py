@@ -83,6 +83,165 @@ def test_archiving_is_idempotent_so_a_batch_survives(cli):
     assert "already archived" in cli("test", "archive", "T100")
 
 
+# -- test categories, through the CLI ------------------------------------------------------
+
+
+def test_categories_are_laid_out_before_the_tests_that_will_fill_them(cli):
+    """The agent's order of work: read the spec, file the groups, then write the tests."""
+    cli("test-category", "add", "Import", "--icon", "layers", "--project", "widget")
+    cli("test-category", "add", "Smoke", "--project", "widget")
+    listed = data(cli("test-category", "list", "widget", "--json"))
+    assert [(c["name"], c["icon"], c["tests"]) for c in listed["categories"]] == [
+        ("Import", "layers", 0),
+        ("Smoke", "", 0),
+    ]
+    added = data(
+        cli("test", "add", "Fix list flicker", "No flicker", "--category", "Import", "--json")
+    )
+    assert added["category"] == "Import"
+    assert data(cli("test-category", "list", "widget", "--json"))["categories"][0]["tests"] == 1
+
+
+def test_adding_a_category_twice_is_that_category_so_a_retry_survives(cli):
+    cli("test-category", "add", "Import", "--project", "widget")
+    assert "already there" in cli("test-category", "add", "import", "--project", "widget")
+    assert len(data(cli("test-category", "list", "widget", "--json"))["categories"]) == 1
+
+
+def test_an_unknown_icon_is_refused_naming_the_set(cli):
+    with pytest.raises(AssertionError, match="no such icon"):
+        cli("test-category", "add", "Import", "--icon", "spaceship", "--project", "widget")
+
+
+def test_renaming_a_category_moves_every_test_filed_under_it(cli):
+    cli("test-category", "add", "Import", "--project", "widget")
+    cli("test", "add", "Fix list flicker", "One", "--category", "Import")
+    cli("test", "add", "Pre-release check", "Two", "--category", "Import")
+
+    moved = data(
+        cli(
+            "test-category",
+            "set",
+            "Import",
+            "--rename",
+            "Import and export",
+            "--json",
+            "--project",
+            "widget",
+        )
+    )
+    assert moved["moved"] == 2
+    listed = data(cli("test", "list", "widget", "--json"))["tests"]
+    assert {test["category"] for test in listed} == {"Import and export"}
+
+
+def test_removing_a_category_unfiles_its_tests_rather_than_deleting_them(cli):
+    cli("test-category", "add", "Import", "--project", "widget")
+    cli("test", "add", "Fix list flicker", "One", "--category", "Import")
+
+    assert "1 test" in cli("test-category", "remove", "Import", "--project", "widget")
+    listed = data(cli("test", "list", "widget", "--json"))["tests"]
+    assert [test["category"] for test in listed] == [""]
+    # Off the list *and* off the tests: one a test still named would come straight back.
+    assert data(cli("test-category", "list", "widget", "--json"))["categories"] == []
+
+
+def test_assigning_moves_a_batch_in_one_call(cli):
+    cli("test-category", "add", "Import", "--project", "widget")
+    for title in ("One", "Two", "Three"):
+        cli("test", "add", "Fix list flicker", title)
+
+    cli("test-category", "assign", "Import", "T100", "T102", "--project", "widget")
+    filed = {t["id"]: t["category"] for t in data(cli("test", "list", "widget", "--json"))["tests"]}
+    assert filed == {"T100": "Import", "T101": "", "T102": "Import"}
+
+    cli("test-category", "assign", "none", "T100", "--project", "widget")
+    assert data(cli("test", "show", "T100", "--json"))["category"] == ""
+
+
+def test_assigning_to_a_category_that_does_not_exist_is_refused_not_minted(cli):
+    cli("test", "add", "Fix list flicker", "One")
+    with pytest.raises(AssertionError, match="no category"):
+        cli("test-category", "assign", "Improt", "T100", "--project", "widget")
+
+
+def test_setting_a_category_back_to_none_is_a_word_the_terminal_has(cli):
+    cli("test-category", "add", "Import", "--project", "widget")
+    cli("test", "add", "Fix list flicker", "One", "--category", "Import")
+    assert data(cli("test", "set", "T100", "--category", "none", "--json"))["category"] == ""
+
+
+def test_a_test_list_narrows_to_one_category_including_the_unfiled(cli):
+    cli("test-category", "add", "Import", "--project", "widget")
+    cli("test", "add", "Fix list flicker", "One", "--category", "Import")
+    cli("test", "add", "Fix list flicker", "Two")
+
+    filed = data(cli("test", "list", "widget", "--category", "Import", "--json"))["tests"]
+    assert [test["id"] for test in filed] == ["T100"]
+    loose = data(cli("test", "list", "widget", "--category", "Uncategorised", "--json"))["tests"]
+    assert [test["id"] for test in loose] == ["T101"]
+
+
+def test_the_category_lint_stays_quiet_until_the_project_has_categories(cli):
+    def checks():
+        found = data(cli("project", "lint", "widget", "--json", expect=1))["findings"]
+        return [finding for finding in found if finding["check"] == "test.category"]
+
+    cli("test", "add", "Fix list flicker", "One", "--text", "1. Look")
+    # A project that has not started filing its tests is not behind on anything.
+    assert checks() == []
+
+    cli("test-category", "add", "Import", "--project", "widget")
+    unfiled = checks()
+    assert len(unfiled) == 1 and "Import" in unfiled[0]["message"]
+
+
+def test_a_new_step_can_arrive_with_its_first_test_already_filed(cli):
+    cli("test-category", "add", "Import", "--project", "widget")
+    cli(
+        "step",
+        "add",
+        "widget",
+        "Export CSV",
+        "--test",
+        "Writes a file",
+        "--test-category",
+        "Import",
+    )
+    assert data(cli("test", "show", "T100", "--json"))["category"] == "Import"
+
+
+# -- exporting the roster ------------------------------------------------------------------
+
+
+def test_exporting_writes_the_tests_filed_by_category(cli, tmp_path):
+    cli("test-category", "add", "Import", "--icon", "layers", "--project", "widget")
+    cli("test", "add", "Fix list flicker", "One", "--category", "Import", "--text", "1. Look")
+    cli("test", "add", "Fix list flicker", "Two")
+
+    out = tmp_path / "tests.md"
+    cli("test", "export", "widget", "-o", str(out))
+    text = out.read_text()
+    assert text.index("## Import") < text.index("## Uncategorised")
+    assert "1. Look" in text
+
+
+def test_exporting_html_gives_one_page_of_expandable_tests(cli, tmp_path):
+    cli("test", "add", "Fix list flicker", "One", "--text", "1. Look")
+    out = tmp_path / "tests.html"
+    cli("test", "export", "widget", "--format", "html", "-o", str(out))
+    page = out.read_text()
+    assert page.startswith("<!doctype html>") and "<details>" in page
+
+
+def test_exporting_for_one_audience_says_so_in_the_document(cli):
+    cli("test", "add", "Fix list flicker", "By hand", "--audience", "qa")
+    cli("test", "add", "Fix list flicker", "Mechanism", "--audience", "technical")
+    printed = cli("test", "export", "widget", "--audience", "qa")
+    assert "Audience: QA" in printed
+    assert "By hand" in printed and "Mechanism" not in printed
+
+
 def test_an_archived_test_is_out_of_the_roster_until_asked_for(cli):
     cli("test", "add", "Fix list flicker", "No flicker")
     cli("test", "archive", "T100")
@@ -325,6 +484,25 @@ def step(services, project):
     return step
 
 
+def test_the_list_verbs_sit_where_a_reader_would_look_for_them(services):
+    """Export beside the other exports, the editor beside the project's other test verbs."""
+    export_spec = services.actions.spec("tests.export")
+    assert (export_spec.menu, export_spec.group, export_spec.submenu) == (
+        "File",
+        "export",
+        "Export",
+    )
+    editor_spec = services.actions.spec("tests.categories")
+    assert (editor_spec.menu, editor_spec.group) == ("Project", "tests")
+    # And a data child menu of Step's classify band, so the categories are never a copy.
+    data_menu = next(spec for spec in services.actions.data_menus() if spec.id == "test.category")
+    assert (data_menu.menu, data_menu.group, data_menu.title) == (
+        "Step",
+        "classify",
+        "Test Category",
+    )
+
+
 def test_the_type_toggles_sit_beside_release_and_agent(services):
     for action_id, order in (("test.toggle", 50), ("check.toggle", 60)):
         spec = services.actions.spec(action_id)
@@ -372,7 +550,9 @@ def test_a_result_verb_with_no_run_open_is_greyed_and_says_why(services, step):
 def test_marking_a_selection_records_every_one_as_a_single_undo_step(services, project, step):
     step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
     started = runs.started([], ["T100", "T101"], label="P3")
-    SetModuleDataCommand(project.id, MODULE_ID, runs.write(started)).redo(services.document)
+    SetModuleDataCommand(project.id, MODULE_ID, runs.write(project, started)).redo(
+        services.document
+    )
 
     select(services, step, tests=("T100", "T101"))
     services.actions.run("test.result_ok", services.context.current())
@@ -440,7 +620,9 @@ def test_the_tab_lists_every_test_and_details_the_first(services, project, step,
     section.show_target(step.id)
     started = runs.started([], ["T100", "T101"], label="P3")
     started[-1] = runs.marked(started[-1], "T100", "failed", "still flickers")
-    SetModuleDataCommand(project.id, MODULE_ID, runs.write(started)).redo(services.document)
+    SetModuleDataCommand(project.id, MODULE_ID, runs.write(project, started)).redo(
+        services.document
+    )
     section.show_target(step.id)
 
     assert rows(section) == [("T100", "One"), ("T101", "Two")]
@@ -844,7 +1026,7 @@ def test_the_strip_offers_the_run_verbs_greyed_with_their_reason(services, proje
     assert new_run.isEnabled() and not new_run.icon().isNull()
 
     started = runs.started([], ["T100", "T101"], label="P3")
-    services.undo.push(SetModuleDataCommand(project.id, MODULE_ID, runs.write(started)))
+    services.undo.push(SetModuleDataCommand(project.id, MODULE_ID, runs.write(project, started)))
     activity.page.table.selectAll()
     # The count says the verb is about to act on more than the eye is on.
     assert ok.isEnabled() and ok.defaultAction().text() == "Mark 2 Tests Ok"
@@ -964,6 +1146,301 @@ def test_the_audience_filter_narrows_the_table_and_the_lead_says_so(services, ma
     assert "shown" not in activity.page.detail.text()
 
 
+# -- categories in the window --------------------------------------------------------------
+
+
+def select_project(services, project):
+    from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+
+    services.context.set_scope(
+        SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
+    )
+
+
+def categorise(services, project, *catalog):
+    from dplanner.modules.testing.categories import Category, write_catalog
+
+    found = services.document.project(project.id)
+    services.document.set_module_data(
+        project.id, MODULE_ID, write_catalog(found, [Category(*entry) for entry in catalog])
+    )
+
+
+def filed(services, step, *pairs):
+    services.document.set_module_data(
+        step.id,
+        MODULE_ID,
+        write([Test(test_id, test_id, category=category) for test_id, category in pairs]),
+    )
+
+
+def test_the_tests_tab_opens_filed_by_category_once_the_project_has_any(services, make_project):
+    from dplanner.modules.testing.activity import BY_CATEGORY, TESTS_KIND
+    from dplanner.modules.testing.table import CATEGORY_COLUMN
+
+    project = make_project("Widget")
+    work, other = chain(services, project, "Work", "Other")
+    categorise(services, project, ("Import", "layers"), ("Smoke",))
+    filed(services, work, ("T100", "Import"), ("T101", ""))
+    filed(services, other, ("T102", "Smoke"))
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    table = activity.page.table
+    assert activity.group_box.currentData() == BY_CATEGORY
+    laid = [table.item(row, 0).text() for row in range(table.rowCount())]
+    # The catalogue's own order, with the unfiled last — never alphabetical.
+    assert laid == ["Import", "T100", "Smoke", "T102", "Uncategorised", "T101"]
+    # The column would repeat the heading over every row under it.
+    assert table.isColumnHidden(CATEGORY_COLUMN)
+
+
+def test_a_project_with_no_categories_opens_flat_rather_than_on_one_empty_heading(
+    services, make_project
+):
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    give(services, work, "T100")
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    assert activity.group_box.currentData() == ""
+    assert activity.page.table.rowCount() == 1  # No heading.
+
+
+def test_a_grouping_the_reader_picked_survives_the_project_gaining_categories(
+    services, make_project
+):
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    categorise(services, project, ("Import",))
+    filed(services, work, ("T100", "Import"))
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    activity.group_box.setCurrentIndex(activity.group_box.findData(""))  # Flat, deliberately.
+    assert activity.group_box.currentData() == ""
+
+    categorise(services, project, ("Import",), ("Smoke",))
+    activity._refresh()
+    assert activity.group_box.currentData() == ""  # Their answer stands.
+
+
+def test_a_category_heading_folds_and_stays_folded_across_a_rebuild(services, make_project):
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    categorise(services, project, ("Import",))
+    filed(services, work, ("T100", "Import"), ("T101", "Import"))
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    table = activity.page.table
+    assert table.group_at(0) == "Import"
+    assert not table.isRowHidden(1)
+
+    table.toggle_group("Import")
+    assert table.isRowHidden(1) and table.isRowHidden(2)
+    assert not table.isRowHidden(0)  # The heading is what you open it again with.
+
+    # A rebuild is what a host does on every change; a fold kept by row number would go.
+    SetFieldCommand(work.id, "title", "Renamed").redo(services.document)
+    activity._refresh()
+    assert table.collapsed() == {"Import"} and table.isRowHidden(1)
+
+
+def test_a_category_is_set_from_the_step_menus_data_child(services, project, step):
+    from dplanner.modules.testing.categories import category_of
+
+    categorise(services, project, ("Import",))
+    step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
+    select(services, step, tests=("T100", "T101"))
+
+    menu = services.window.dynamic_menubar.data_menu("test.category")
+    entries = [action.text() for action in menu.actions() if action.text()]
+    assert entries[:2] == ["Import", "Uncategorised"]
+    menu.actions()[0].trigger()
+
+    filed_now = [category_of(test) for test in read(services.document.step(step.id))]
+    assert filed_now == ["Import", "Import"]
+    assert services.undo.can_undo()  # One step, both tests.
+
+
+def test_the_category_menu_says_so_when_nothing_is_picked(services, project, step):
+    categorise(services, project, ("Import",))
+    menu = services.window.dynamic_menubar.data_menu("test.category")
+    entries = [(action.text(), action.isEnabled()) for action in menu.actions() if action.text()]
+    assert ("Pick a test first", False) in entries
+    # The editor's verb is rendered, never copied.
+    assert any("Categories" in text for text, _on in entries)
+
+
+def test_right_clicking_a_category_heading_picks_the_whole_group(services, make_project):
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    categorise(services, project, ("Import",))
+    filed(services, work, ("T100", "Import"), ("T101", "Import"), ("T102", ""))
+
+    table = services.tabs.open(TESTS_KIND, project.id).page.table
+    assert table.tests_under(0) == ["T100", "T101"]
+    assert table.tests_under(1) == []  # A test row is not a group.
+
+
+# -- the category editor -------------------------------------------------------------------
+
+
+def editor(services, project, **kwargs):
+    from dplanner.modules.testing.categories_dialog import CategoriesDialog
+
+    return CategoriesDialog(services.document, services.undo, project.id, **kwargs)
+
+
+def test_the_editor_counts_what_each_category_holds_before_anything_moves(services, make_project):
+    from dplanner.modules.testing.categories_dialog import COUNT_COLUMN, NAME_COLUMN
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    categorise(services, project, ("Import",), ("Smoke",))
+    filed(services, work, ("T100", "Import"), ("T101", "Import"), ("T102", ""))
+
+    dialog = editor(services, project)
+    rows = [
+        (dialog.table.item(row, NAME_COLUMN).text(), dialog.table.item(row, COUNT_COLUMN).text())
+        for row in range(dialog.table.rowCount())
+    ]
+    assert rows == [("Import", "2"), ("Smoke", "0"), ("Uncategorised", "1")]
+    dialog.deleteLater()
+
+
+def test_the_editor_writes_nothing_until_it_is_saved(services, make_project):
+    from dplanner.modules.testing.categories_dialog import NAME_COLUMN
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    categorise(services, project, ("Import",))
+    filed(services, work, ("T100", "Import"))
+
+    dialog = editor(services, project)
+    dialog.table.edited.emit(0, NAME_COLUMN, "Import and export")
+    # Still on disk as it was: the edit is on the copy, so no view rebuilds behind it.
+    assert read(services.document.step(work.id))[0].category == "Import"
+
+    dialog._save()
+    assert read(services.document.step(work.id))[0].category == "Import and export"
+    assert not services.undo.can_redo()
+
+
+def test_saving_a_rename_is_one_undo_step_over_every_step_it_touched(services, make_project):
+    from dplanner.modules.testing.categories_dialog import NAME_COLUMN
+
+    project = make_project("Widget")
+    work, other = chain(services, project, "Work", "Other")
+    categorise(services, project, ("Import",))
+    filed(services, work, ("T100", "Import"))
+    filed(services, other, ("T101", "Import"))
+
+    dialog = editor(services, project)
+    dialog.table.edited.emit(0, NAME_COLUMN, "In")
+    dialog._save()
+
+    services.undo.undo()
+    assert read(services.document.step(work.id))[0].category == "Import"
+    assert read(services.document.step(other.id))[0].category == "Import"
+
+
+def test_the_editor_refuses_a_save_that_would_leave_two_categories_sharing_a_name(
+    services, make_project
+):
+    from dplanner.modules.testing.categories_dialog import NAME_COLUMN
+
+    project = make_project("Widget")
+    categorise(services, project, ("Import",), ("Smoke",))
+    dialog = editor(services, project)
+    dialog.table.edited.emit(1, NAME_COLUMN, "import")
+
+    assert dialog.primary() is not None and not dialog.primary().isEnabled()
+    assert "share a name" in dialog.status.text()
+    dialog.deleteLater()
+
+
+def test_removing_a_category_in_the_editor_unfiles_its_tests(services, make_project):
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    categorise(services, project, ("Import",))
+    filed(services, work, ("T100", "Import"))
+
+    dialog = editor(services, project)
+    dialog.table.selectRow(0)
+    dialog._rows[0].removed = True  # What Remove does once the question is answered.
+    dialog._fill()
+    dialog._save()
+
+    assert read(services.document.step(work.id))[0].category == ""
+    from dplanner.modules.testing.categories import read_catalog
+
+    assert read_catalog(services.document.project(project.id)) == []
+
+
+def test_a_categorys_icon_is_picked_from_the_offered_set(services, make_project):
+    from dplanner.modules.testing.categories import ICONS
+
+    project = make_project("Widget")
+    categorise(services, project, ("Import",))
+    dialog = editor(services, project)
+    dialog._set_icon(dialog._rows[0], ICONS[0])
+    dialog._save()
+
+    from dplanner.modules.testing.categories import read_catalog
+
+    assert read_catalog(services.document.project(project.id))[0].icon == ICONS[0]
+
+
+# -- exporting from the window -------------------------------------------------------------
+
+
+def test_the_export_verb_writes_what_the_tab_is_showing(
+    services, make_project, tmp_path, monkeypatch
+):
+    from PySide6.QtWidgets import QFileDialog
+
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    services.document.set_module_data(
+        work.id,
+        MODULE_ID,
+        write(
+            [
+                Test("T100", "By hand", audiences=("qa",)),
+                Test("T101", "Mechanism", audiences=("technical",)),
+            ]
+        ),
+    )
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    activity.page.audience.set_active(["qa"])
+
+    out = tmp_path / "tests.md"
+    monkeypatch.setattr(
+        QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(out), "Markdown (*.md)"))
+    )
+    select_project(services, project)
+    services.actions.run("tests.export", services.context.current())
+
+    text = out.read_text()
+    assert "Audience: QA" in text
+    assert "By hand" in text and "Mechanism" not in text
+
+
+def test_the_export_verb_is_greyed_with_its_reason_on_a_project_with_no_tests(services, project):
+    select_project(services, project)
+    state = services.actions.spec("tests.export").state(services.context.current())
+    assert not state.enabled and "no tests yet" in (state.label or "")
+
+
 def test_an_unclassified_test_answers_to_other_and_hides_the_column(services, make_project):
     from dplanner.modules.testing.activity import TESTS_KIND
     from dplanner.modules.testing.table import AUDIENCE_COLUMN
@@ -978,6 +1455,35 @@ def test_an_unclassified_test_answers_to_other_and_hides_the_column(services, ma
     assert table.isColumnHidden(AUDIENCE_COLUMN)
     activity.page.audience.set_active(["other"])
     assert table.rowCount() == 1  # It still answers the filter: it is what it reads as.
+
+
+def test_the_step_panel_files_a_test_from_the_projects_own_categories(
+    services, project, step, section
+):
+    categorise(services, project, ("Import",), ("Smoke",))
+    step.module_data[MODULE_ID] = write([Test("T100", "One")])
+    section.show_target(step.id)
+
+    picker = section.detail.category
+    assert [picker.itemText(i) for i in range(picker.count())] == [
+        "Uncategorised",
+        "Import",
+        "Smoke",
+    ]
+    picker.setCurrentIndex(picker.findData("Smoke"))
+    assert read(services.document.step(step.id))[0].category == "Smoke"
+
+    services.undo.undo()
+    assert read(services.document.step(step.id))[0].category == ""
+
+
+def test_a_test_filed_under_something_the_catalogue_lost_still_shows_it(
+    services, project, step, section
+):
+    """The value is the test's; a picker that quietly moved it would be an edit."""
+    step.module_data[MODULE_ID] = write([Test("T100", "One", category="Gone")])
+    section.show_target(step.id)
+    assert section.detail.category.currentText() == "Gone"
 
 
 def test_ticking_an_audience_is_one_undoable_step_per_test(services, step, section):

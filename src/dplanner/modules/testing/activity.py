@@ -17,16 +17,25 @@ view — which tests, which run's results, how they are grouped, whether the arc
 run's results, and which of those is a dropdown rather than hidden state. Marking is
 possible only in the open run, which is the same rule the verbs are gated on: a project has
 at most one open run, so "mark this ok" never has to ask which.
+
+**Grouping is one selector, and the category is one of its answers.** Filing by category,
+by feature, by milestone or by check are four ways of asking the same question — *what is
+this test one of?* — so they are four entries in one box rather than a second control
+beside it. Category leads, and a project that has any categories opens on it: it is the
+only grouping that is the tests' own vocabulary rather than the graph's, and it is the one
+that makes a roster of two hundred readable. Its headings fold; the graph's do not, because
+a feature's tests are already few and the reader asked to see them beside each other.
 """
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
-from dplanner.domain.scope import gatherers, kind_of
+from dplanner.domain.scope import ScopeKind, gatherers, kind_of
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.activity import ActivityBase, EntityActivity, follow_project
 from dplanner.framework.context import (
@@ -45,8 +54,15 @@ from dplanner.framework.table import Selection
 from dplanner.framework.toolbar import FilterButton, Toolbar
 from dplanner.framework.widgets import EmptyState, captioned, note
 from dplanner.modules.testing import runs
-from dplanner.modules.testing.aspect import AUDIENCES, audiences_of, covered, project_tests
-from dplanner.modules.testing.table import Row, TestsTable
+from dplanner.modules.testing.aspect import (
+    AUDIENCES,
+    Test,
+    audiences_of,
+    covered,
+    project_tests,
+)
+from dplanner.modules.testing.categories import UNCATEGORISED, catalog, category_of
+from dplanner.modules.testing.table import Heading, Row, TestsTable
 from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.theme.cards import title_font
 from dplanner.theme.icons import archive_icon
@@ -65,10 +81,16 @@ AUDIENCE_TIP = "Show only the tests written for these"
 NO_MATCH = "No test here is written for those audiences. Clear the filter to see them all."
 # Creation first, then what acts on the picked tests (DESIGN.md's *Tables*).
 RUN_VERBS = ("tests.new_run", "tests.close_run", *(f"test.result_{s}" for s in RESULT_ORDER))
+# The band after them: what acts on the *list* rather than on the tests picked in it.
+LIST_VERBS = ("tests.categories", "tests.export")
 
 ROSTER = "Latest results"
 ALL_TESTS = "All tests"
 NO_GROUPING = "Flat list"
+# The grouping that is the tests' own vocabulary rather than the graph's. Not a `ScopeKind`
+# id — those name steps that collect tests, and a category names nothing on the graph — so
+# it is a word of its own in the same selector.
+BY_CATEGORY = "category"
 # A test on a step nothing collects: work that reaches no release. `dplanner project lint`
 # reports the same steps as `scope.ungathered`, so the two surfaces say one thing.
 UNGATHERED = "Not in any feature"
@@ -170,6 +192,33 @@ class _TestsPage(QWidget):
         self.lead(answer, " · ".join(part for part in (narrowed, detail) if part))
 
 
+@dataclass(frozen=True)
+class _Grouping:
+    """How the rows are filed: where each one sorts, and the heading it lands under.
+
+    Two functions rather than a map, because the category is a fact about a *test* and a
+    collector is a fact about its *step* — one shape asked twice is what keeps the four
+    entries in the Group by box from becoming two mechanisms.
+    """
+
+    place: Callable[[Step, Test], tuple[int, str]]
+    heading: Callable[[Step, Test], Heading]
+
+
+@dataclass(frozen=True)
+class Shown:
+    """What one project's Tests tab is narrowed to right now.
+
+    A run opened from the strip covers what the tab is showing, and so does an export —
+    which is the whole reason the audience filter is worth reading back rather than asking
+    for again in a dialog.
+    """
+
+    scope: StepId = ""
+    audiences: tuple[str, ...] = ()
+    archived: bool = False
+
+
 class TestsActivity(EntityActivity):
     """One project's tests: the roster, the runs, and the marking."""
 
@@ -181,6 +230,11 @@ class TestsActivity(EntityActivity):
         self._scope: StepId = ""
         self._run_id: str = ""
         self._group: str = ""
+        # Whether the reader has picked a grouping themselves. Until they have, the tab
+        # opens on the category once the project has one — and a project that gains its
+        # first category while the tab is open files itself, which is the gesture the
+        # category editor's Save *is*. After a pick, their answer stands.
+        self._picked_group = False
         # The runs the tab has already seen: a run opened since the last look is the one to
         # show, since marking in it is what the person just asked for.
         self._runs_seen: set[str] | None = None
@@ -188,6 +242,11 @@ class TestsActivity(EntityActivity):
         self.page = _TestsPage("Tests", TAB_HINT, selection="extended")
         controls = self.page.controls
         for action_id in RUN_VERBS:
+            controls.add_action(deps.actions, deps.context, action_id)
+        controls.add_divider()
+        # What acts on the list rather than on the tests picked in it: how it is filed,
+        # and writing it out.
+        for action_id in LIST_VERBS:
             controls.add_action(deps.actions, deps.context, action_id)
         controls.add_divider()
         self.scope_box = _selector(
@@ -256,6 +315,14 @@ class TestsActivity(EntityActivity):
         """The collector the tab is narrowed to, or "" — what a run opened from here covers."""
         return self._scope
 
+    def showing(self) -> Shown:
+        """Everything the tab is narrowed to — what a run and an export are both cut to."""
+        return Shown(
+            scope=self._scope,
+            audiences=tuple(self.page.audience.active()),
+            archived=self.archived.isChecked(),
+        )
+
     def on_activated(self) -> None:
         super().on_activated()
         self._on_selection()
@@ -282,6 +349,7 @@ class TestsActivity(EntityActivity):
 
     def _on_group(self, _index: int) -> None:
         self._group = str(self.group_box.currentData() or "")
+        self._picked_group = True
         self._refresh()
 
     # -- internals -----------------------------------------------------------------------
@@ -295,89 +363,107 @@ class TestsActivity(EntityActivity):
     def _current_run(self) -> runs.Run | None:
         return runs.find(self._records(), self._run_id) if self._run_id else None
 
-    def _rows(self) -> list[Row]:
-        project = self._project()
+    def _pairs(self, project: Project) -> list[tuple[Step, Test]]:
+        """The tests this tab covers, before the audience filter: the scope's, the open
+        run's if one is being read, and the archived only while they are asked for."""
         archived = self.archived.isChecked()
         if self._scope and project.step(self._scope) is not None:
             pairs = covered(self._library, project, self._scope, archived=archived)
         else:
             pairs = project_tests(project, archived=archived)
-        records = self._records()
         run = self._current_run()
-        outcomes = runs.latest_results(records)
-        scopes = self._scope_titles(project, records)
-        if run is not None:
-            pairs = [pair for pair in pairs if pair[1].id in run.tests]
-        groups = self._groups(project)
+        return pairs if run is None else [pair for pair in pairs if pair[1].id in run.tests]
+
+    def _rows(self) -> list[Row]:
+        project = self._project()
+        pairs = self._pairs(project)
+        run = self._current_run()
+        outcomes = runs.latest_results(self._records())
+        filing = self._grouping(project)
         rows = [
             Row(
                 test=test,
                 step=step,
-                covered_by=scopes.get(test.id, ()),
-                outcome=outcomes.get(test.id),
                 status=(
                     run.result(test.id).status
                     if run is not None
                     else (outcomes[test.id].result.status if test.id in outcomes else "pending")
                 ),
-                group=groups[step.id][1] if groups else "",
-                group_color=groups[step.id][2] if groups else "",
+                heading=Heading() if filing is None else filing.heading(step, test),
             )
             for step, test in pairs
         ]
-        if not groups:
+        if filing is None:
             return rows
-        # Stable, so within a group the rows keep the project order they arrived in. The
-        # sort key is where the collector sits in that same order, which is why an
-        # ungathered row sorts last rather than alphabetically among the named ones.
-        return sorted(rows, key=lambda row: groups[row.step.id][0])
+        # Stable, so within a group the rows keep the project order they arrived in.
+        return sorted(rows, key=lambda row: filing.place(row.step, row.test))
 
-    def _groups(self, project: Project) -> dict[StepId, tuple[int, str, str]]:
-        """Each step's heading, where it sorts and what colour it is written in — empty
-        when nothing is being grouped.
+    def _grouping(self, project: Project) -> "_Grouping | None":
+        """How the rows are filed right now, or None while the list is read flat."""
+        if self._group == BY_CATEGORY:
+            return self._by_category(project)
+        kind = next((found for found in self._deps.scopes if found.id == self._group), None)
+        return None if kind is None else self._by_collector(project, kind)
+
+    def _by_category(self, project: Project) -> "_Grouping":
+        """Filed under what each test says it is — the tests' own vocabulary.
+
+        Per *test*, where every other grouping is per step: a step's three tests may be
+        three different kinds of thing, which is most of why the category exists. The
+        catalogue's order is the headings' order, and *Uncategorised* is always last.
+        """
+        known = {entry.name.casefold(): entry for entry in catalog(project)}
+        places = {name: index for index, name in enumerate(known)}
+        last = len(places)
+
+        def place(_step: Step, test: Test) -> tuple[int, str]:
+            name = category_of(test)
+            if name == UNCATEGORISED:
+                return last + 1, ""
+            return places.get(name.casefold(), last), name.casefold()
+
+        def heading(_step: Step, test: Test) -> Heading:
+            name = category_of(test)
+            found = known.get(name.casefold())
+            # Keyed by the category's own words, so what the reader folded shut survives a
+            # rebuild — and so folding *Smoke* here folds the same group next time.
+            return Heading(name, key=name, glyph=found.icon if found else "")
+
+        return _Grouping(place, heading)
+
+    def _by_collector(self, project: Project, kind: ScopeKind) -> "_Grouping":
+        """Filed under what collects each test's step — a feature, a milestone, a check.
 
         A step two features both wait on is filed under *both at once*, as one joint
         heading, rather than duplicated into each: a test listed twice would be marked
         twice and counted twice. ``dplanner project lint`` reports the same steps as
         ``scope.shared`` so the ambiguity is nameable rather than merely visible.
         """
-        kind = next((found for found in self._deps.scopes if found.id == self._group), None)
-        if kind is None:
-            return {}
         owners = gatherers(
             self._library, project, carried_by=kind.carried_by, stops_at=kind.stops_at
         )
         places = {step.id: index for index, step in enumerate(project.steps)}
         last = len(places)
-        found: dict[StepId, tuple[int, str, str]] = {}
+        found: dict[StepId, tuple[int, Heading]] = {}
         for step in project.steps:
             held = [project.step(owner) for owner in owners.get(step.id, ())]
             named = [owner for owner in held if owner is not None]
             if not named:
-                found[step.id] = (last, UNGATHERED, "")
+                found[step.id] = (last, Heading(UNGATHERED))
                 continue
             # The kind is named once, however many owners there are: "Feature: Import and
             # Search", not the label twice.
             names = " and ".join(owner.title or "Untitled step" for owner in named)
-            title = f"{kind.label}: {names}"
             # A joint heading takes the first owner's colour — the same one it sorts by, so
             # the heading a reader sees is the milestone the group is filed under.
             found[step.id] = (
                 places[named[0].id],
-                title,
-                self._deps.milestone_color(named[0].id),
+                Heading(f"{kind.label}: {names}", ink=self._deps.milestone_color(named[0].id)),
             )
-        return found
-
-    def _scope_titles(
-        self, project: Project, _records: Sequence[runs.Run]
-    ) -> dict[str, tuple[str, ...]]:
-        """Which checks and releases each test sits behind — the *Covered by* column."""
-        found: dict[str, list[str]] = {}
-        for step in self._scope_steps(project):
-            for _owner, test in covered(self._library, project, step.id, archived=True):
-                found.setdefault(test.id, []).append(step.title or "Untitled step")
-        return {test_id: tuple(titles) for test_id, titles in found.items()}
+        return _Grouping(
+            lambda step, _test: (found[step.id][0], ""),
+            lambda step, _test: found[step.id][1],
+        )
 
     def _scope_steps(self, project: Project) -> list[Step]:
         return [step for step in project.steps if kind_of(self._deps.scopes, step) is not None]
@@ -391,7 +477,7 @@ class TestsActivity(EntityActivity):
         self._sync_grouping(project)
         gathered = self._rows()
         rows = self.page.keep_for_audience(gathered)
-        self.page.table.show_rows(rows)
+        self.page.table.show_rows(rows, show_category=self._group != BY_CATEGORY)
         run = self._current_run()
         self.page.lead_filtered(
             len(rows), len(gathered), *headline([row.status for row in rows], run=run)
@@ -430,12 +516,24 @@ class TestsActivity(EntityActivity):
         return kind.label if kind is not None else ""
 
     def _sync_grouping(self, project: Project) -> None:
-        """Only kinds this project actually has: a selector offering nothing teaches nothing."""
-        entries = [(NO_GROUPING, "")] + [
-            (f"By {kind.label.lower()}", kind.id)
-            for kind in self._deps.scopes
-            if any(kind.carried_by(step) for step in project.steps)
-        ]
+        """Only kinds this project actually has: a selector offering nothing teaches nothing.
+
+        Category leads the list and is the default *while the project has any* — filing by
+        what a test is beats a flat roster, and a project with no categories yet would
+        otherwise open on one heading saying *Uncategorised*, which teaches nothing either.
+        """
+        filed = bool(catalog(project))
+        entries = (
+            [(NO_GROUPING, "")]
+            + ([("By category", BY_CATEGORY)] if filed else [])
+            + [
+                (f"By {kind.label.lower()}", kind.id)
+                for kind in self._deps.scopes
+                if any(kind.carried_by(step) for step in project.steps)
+            ]
+        )
+        if not self._group and not self._picked_group and filed:
+            self._group = BY_CATEGORY
         self._reload(self.group_box, entries, self._group)
         self._group = str(self.group_box.currentData() or "")
         # A project with nothing to group by shows no control at all, rather than one with
@@ -487,11 +585,21 @@ class TestsActivity(EntityActivity):
         )
 
     def _on_context_menu(self, position: QPoint) -> None:
+        """Make what is under the cursor current, then render the Step menu over it.
+
+        On a category heading that means picking the whole group: a heading names a set of
+        tests, so *Test ▸ Category ▸ …* over it refiles the category — which is the gesture
+        the editor's rename is not, and the one a reader reaches for first.
+        """
         table = self.page.table
         row = table.rowAt(position.y())
-        if table.test_at(row) is None:
+        under = table.tests_under(row)
+        if under:
+            table.select_tests(under)
+            self._on_selection()
+        elif table.test_at(row) is None:
             return
-        if table.test_at(row) not in table.selected_tests():
+        elif table.test_at(row) not in table.selected_tests():
             table.selectRow(row)
         menu = build_menu(self._deps.actions, self._deps.context, "Step", table)
         menu.exec(table.viewport().mapToGlobal(position))
@@ -564,11 +672,12 @@ class AllTestsActivity(ActivityBase):
                         test=test,
                         step=step,
                         project=project.title or "Untitled project",
-                        outcome=outcome,
                         status=outcome.result.status if outcome else "pending",
                     )
                 )
         shown = self.page.keep_for_audience(rows)
+        # Never grouped by category: the roll call spans projects, and two projects' *Smoke*
+        # are two categories that happen to share a word. The column says which is which.
         self.page.table.show_rows(shown, show_project=True)
         self.page.lead_filtered(len(shown), len(rows), *headline([row.status for row in shown]))
         self.page.say(self._nothing_to_show(rows, shown))
