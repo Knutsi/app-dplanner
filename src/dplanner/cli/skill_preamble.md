@@ -171,14 +171,19 @@ difference from a description, and it is the one thing to get right:
   building it. It outlives the step, and it is run again and again.
 
 A step carries **several tests**, each its own record with its own result in a run. Write
-one test per thing that can independently break, not one lumpy test per step. Each is
-markdown; keep it to numbered steps somebody can follow without asking you anything:
+one test per thing that can independently break, not one lumpy test per step.
 
-```
-dplanner test add 'Fix list flicker' 'No flicker on render' --text '1. Open the list in
-the bench view with 200+ rows.
-2. It must not flicker when it first renders, nor when data updates underneath.'
-```
+**How a body is written is `dplanner test format`** — preconditions as bullets, then
+numbered steps, how a screenshot is attached and annotated, and what concurrent use asks of
+a roster. It is the house default and what the user asks for wins over it, but read it
+first: `test add` and `test set` refuse until you have, once on this machine.
+
+**Where more than one person or process touches the same data, a roster is half-written.**
+Every single-actor test passes while the concurrency bug ships — one reviewer signs a
+document that is already open, unsigned, on another's screen, and the second signature is
+the thing nobody tested. On any such system go through the tests and say which need a
+multi-user sibling; where the user has not said whether concurrency matters, **propose it
+rather than deciding for them**. `test format` has the four shapes it usually takes.
 
 **Say who each test is for.** Every test carries one or more audiences — `qa` for
 something somebody executes by hand, `technical` for an engineer proving the mechanism,
@@ -186,7 +191,7 @@ something somebody executes by hand, `technical` for an engineer proving the mec
 whole roster, so `dplanner project lint` asks about any test that does not say:
 
 ```
-dplanner test add 'Fix list flicker' 'No flicker on render' --audience qa --text '1. …'
+dplanner test add 'Fix list flicker' 'No flicker on render' --audience qa --file -
 dplanner test set T100 --audience qa --audience technical
 dplanner test list --audience qa
 dplanner test-run start --audience qa --label 'QA pass'

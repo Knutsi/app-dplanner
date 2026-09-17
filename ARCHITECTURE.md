@@ -5002,6 +5002,90 @@ did, and its body rendered. The Test panel puts its verb strip between them and 
 puts nothing there, and that is the whole difference; written twice, one of them would have
 grown a fact the other lacked by the second change.
 
+## The test format is read before a test is written
+
+A test is executed by a stranger — a year later, by a person with no memory of the work or
+by an agent with no context at all — and the thing that makes one executable is dull and
+uniform: **what must already be true**, then **what to do**, under those two headings.
+Nothing said so anywhere, so every plan invented its own answer — and an unexecutable test
+always fails the same way: a paragraph of narrative with the setup implied and the pass
+condition buried at the end of it.
+
+So there is a house format (`modules/testing/format.md`), and it is delivered exactly the
+way the default graph shape is (*The default shape rides through the same door*): **printed
+by one verb, never stored in a plan, and behind a gate.** Each of the three is the same
+decision as its cousin one level up.
+
+**Printed, never stored.** The obvious move is a project-level convention seeded at
+`project create`, and it is the same trap: a plan's own prose reaches every agent briefing,
+so a house document written into one is paid for again on every step anybody ever executes.
+`dplanner test format` prints it, `test add`/`test set` refuse until it has been read, and a
+briefing never carries a word of it — which a test pins.
+
+**Behind a gate, because the skill is Claude's alone.** The shape could have been three more
+paragraphs in `SKILL.md`. That reaches Claude and not Codex or OpenCode, and it is paid for
+in every session including the ones that never write a test. The gate inverts both: the
+document costs nothing until an agent is about to write a test body, and then it is
+unavoidable, whichever agent CLI is driving. It cost 6.7 KB of document, 567 bytes of skill
+(the concern, not the shape) and a `‡` on two verbs in the command index.
+
+**The door is narrow on purpose.** Only the two verbs that write a body declare
+`reads_guide` — `test add` and `test set`. Reading, filing, archiving, exporting and
+`test-run mark` do not, so an agent handed a roster to *execute* never meets the gate;
+neither does `step add --test`, which names a test and writes no body. The gate is for the
+agent that is about to write prose somebody else will have to follow.
+
+**One record, two doors.** The topology gate already had the mechanism — a per-user,
+per-machine file of digests under `core/config_dir.py` — so the file became `reads.json`
+(from `topology-read.json`, a name that stopped describing it), holding namespaced keys:
+`topology:<project id>` per project, `guide:test format` per document. `ReadRecord` is the
+file and the digest comparison; `TopologyGate` and `GuideGate` are the two sentences written
+over it; `gated()` puts whichever the verb declared in front of its handler. The difference
+between them is what the digest is *of*: a topology is the project's own text, so the record
+is per project, and the format is this build's, so one reading covers the machine — and
+changing `format.md` in a release un-reads it for everybody, which is the intent.
+
+### Screenshots were a convention, not a feature
+
+The ask was for screenshots in a test with a sequence and annotations, and the honest answer
+is that the mechanism already shipped: `dplanner test attach` copies an image into the
+step's file area and prints the `assets/…` link, content-addressed like every other asset,
+and a test body is markdown. What was missing was only what nobody had written down.
+
+The feature that was *not* built is worth recording, because it looks right. A structured
+list on the test record — an ordered array of `{asset, caption}` — would give a renderer a
+real sequence to draw and a place to hang a caption. It would also mean a schema migration,
+a second way to put an image in a body beside the markdown link that already works, an
+editor in the step panel to maintain it, and a decision in every renderer (the tab, the Test
+panel, the export, the report) about what to do when the two disagree. That is a feature's
+worth of surface for something the body already expresses: **the step number is the
+sequence, and the alt text is the annotation.** `![2 — the signing dialog; Sign stays
+disabled until a name is typed](assets/…)` sorts itself, renders everywhere markdown
+renders, survives an export that carries no images, and needs no format bump. The rule the
+document adds is that a picture goes on its step's line rather than in a gallery at the end,
+which is what makes a body read as a sequence at all.
+
+### Concurrency is a question the document asks, not a check lint runs
+
+A test roster written against one actor on a freshly-loaded screen passes completely while
+the expensive bugs ship: one reviewer signs a document that is already open, unsigned, on
+another reviewer's screen, and nothing in the plan ever said what the second Sign should do.
+The format document names the four shapes this takes — a stale screen then a write, two
+writers at once, isolation between tenants or roles, and work happening behind the user —
+and says how a concurrent test is written: the actors and what each session has loaded go in
+the preconditions, and every step names its actor.
+
+It is deliberately **a question, not a rule**. Whether a product is concurrent at all is not
+derivable from a plan — no aspect says so, and a single-user tool with a roster of
+single-actor tests is correct, not incomplete — so a `project lint` check would fire on
+plans that are right, which is the one thing lint may not do (*Two shape checks, and only
+one of them earned lint*). What the document asks for instead is that the agent raise it:
+go through the roster on any system where more than one person or process touches the same
+data, say which tests need a concurrent sibling, and where the user has not said whether
+concurrency matters, propose rather than decide. The concern — not the shape — is in the
+skill too, in one short paragraph, because the agent who should raise it may be the one
+planning rather than the one writing, and never open this document at all.
+
 ## A test goes stale when the step under it moves
 
 Eleven tests on one real plan contradicted the product and lint said nothing about any of
@@ -5819,7 +5903,10 @@ half-applied run.
 
 "Has read" is a **digest, not a flag**. `topology show` records the sha256 of the text it
 printed, per project, in a per-user, per-machine file under `core/config_dir.py` (Qt-free,
-because `cli/` must reach it) — never in the plan, which is shared. The gate compares that
+because `cli/` must reach it) — never in the plan, which is shared. That file is
+`reads.json`, and it holds more than topologies now: the house format of a test body is read
+through the same record under a key of its own (*The test format is read before a test is
+written*), which is why `ReadRecord` is a shape separate from the gate written over it. The gate compares that
 with the text as it is now, so a topology that changed since it was read is unread again with
 no version stamp and no migration: the comparison is the check, the same shape as a compiled
 document's staleness. A project with no topology refuses too — the first thing to do with a

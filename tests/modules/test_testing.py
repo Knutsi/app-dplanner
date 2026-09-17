@@ -1989,6 +1989,16 @@ def test_typing_in_the_body_keeps_the_audience(services, step, section):
     assert read(step)[0].audiences == ("qa",)
 
 
+def test_the_empty_editor_teaches_the_shape_the_cli_gates_on():
+    """Two surfaces, one vocabulary: `dplanner test format` is the document a test body is
+    refused without, and the window's placeholder must not show a different shape."""
+    from dplanner.modules.testing.format import guide
+    from dplanner.modules.testing.section import BODY_PLACEHOLDER
+
+    for heading in ("## Preconditions", "## Steps"):
+        assert heading in BODY_PLACEHOLDER and heading in guide()
+
+
 # -- tests that have gone stale -----------------------------------------------------------
 
 

@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 
     from dplanner.cli import CliCommand
     from dplanner.cli.checklist import MachineCheck
-    from dplanner.cli.gate import TopologyGate
+    from dplanner.cli.gate import ReadRecord
     from dplanner.cli.lint import LintCheck
     from dplanner.cli.report.parts import ReportSource
     from dplanner.domain.agents import AgentHarness
@@ -2662,7 +2662,7 @@ def at_work_board() -> "AtWorkBoard":
 
 
 def default_cli_commands(
-    gate: "TopologyGate | None" = None, board: "AtWorkBoard | None" = None
+    reads: "ReadRecord | None" = None, board: "AtWorkBoard | None" = None
 ) -> list["CliCommand"]:
     """Every ``dplanner <noun> <verb>``, from the same modules the window is built from.
 
@@ -2670,18 +2670,20 @@ def default_cli_commands(
     nothing else — no ``module.py``, no Qt — which is what lets ``dplanner project list``
     start in milliseconds and run where a graphics stack does not exist.
 
-    ``gate`` is the topology gate every graph-editing verb runs behind; None builds the
-    real one over the user's config directory. The test suite's shared registry passes a
-    gate with no record file, so no test ever writes the per-user file. ``board`` is the
-    same arrangement for the *at work* claims — None builds :func:`at_work_board`, and a
-    test hands in one over its own directory.
+    ``reads`` is what this machine has read: the record both gates stand on — the topology
+    every graph-editing verb waits for, and the house format a test body is written in —
+    and None builds the real one over the user's config directory. The test suite's shared
+    registry passes a record with no file, which refuses nothing and writes nothing, so no
+    test ever writes the per-user file. ``board`` is the same arrangement for the *at work*
+    claims — None builds :func:`at_work_board`, and a test hands in one over its own
+    directory.
     """
     from dplanner.cli.aspects import commands as aspect_commands
     from dplanner.cli.assets import catalog_commands
     from dplanner.cli.checklist import commands as checklist_commands
     from dplanner.cli.command import CliRegistry
     from dplanner.cli.desktop import commands as desktop_commands
-    from dplanner.cli.gate import RECORD_FILE, TopologyGate, gated
+    from dplanner.cli.gate import RECORD_FILE, GuideGate, ReadRecord, TopologyGate, gated
     from dplanner.cli.install import commands as install_commands
     from dplanner.cli.lint import commands as lint_commands
     from dplanner.cli.report.commands import commands as report_commands
@@ -2723,13 +2725,21 @@ def default_cli_commands(
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_ticket import cli as ticket_cli
     from dplanner.modules.testing import cli as testing_cli
+    from dplanner.modules.testing.format import FORMAT_SUBJECT, FORMAT_VERB
+    from dplanner.modules.testing.format import guide as test_format
     from dplanner.modules.time_estimates import cli as time_cli
 
     specs = aspect_specs()
     scopes = _scope_kinds(check_read, is_feature, milestone_read)
     sources = _asset_sources()
-    if gate is None:
-        gate = TopologyGate(record_path=config_dir() / RECORD_FILE, topology_of=read_topology)
+    if reads is None:
+        reads = ReadRecord(config_dir() / RECORD_FILE)
+    gate = TopologyGate(reads=reads, topology_of=read_topology)
+    # The second door: the house shape of a test body, read once per machine rather than
+    # once per project, because the document is this build's own and not any plan's.
+    format_gate = GuideGate(
+        reads=reads, text=test_format(), verb=FORMAT_VERB, subject=FORMAT_SUBJECT
+    )
     if board is None:
         board = at_work_board()
     commands = [
@@ -2772,7 +2782,11 @@ def default_cli_commands(
         *feature_cli.commands(anchor=spec_cli.anchor_sources, key_of=_step_key),
         # `test review` reads a step's status and the notes made on it — both through
         # their modules' Qt-free readers, handed over here so no cli.py imports another's.
-        *testing_cli.commands(status_for=step_status, notes_for=_unsettling_notes),
+        # `test format` tells the gate what it printed, the way `topology show` does; the
+        # gate is built here, so the testing module never learns where the record lives.
+        *testing_cli.commands(
+            status_for=step_status, notes_for=_unsettling_notes, note_read=format_gate.record
+        ),
         *check_cli.commands(),
         # What any collector gathers is one derivation asked three ways, so it is one verb
         # rather than one per aspect. The kinds and the coverage walk arrive as arguments,
@@ -2832,9 +2846,10 @@ def default_cli_commands(
         # this list.
         *lint_commands(checks=list(_lint_checks())),
     ]
-    # Every verb that declared it reshapes a graph runs behind the topology gate. Wrapped
-    # before the skill reads the registry, so the skill describes the gated verbs.
-    commands = [gated(command, gate) for command in commands]
+    # Every verb that declared a door runs behind it — the topology for a graph edit, the
+    # house format for a test body. Wrapped before the skill reads the registry, so the
+    # skill marks the gated verbs.
+    commands = [gated(command, gate, {FORMAT_VERB: format_gate}) for command in commands]
     # The desktop launcher's verbs: no module's, and no library's — the skill lists them.
     commands += desktop_commands()
     # The skill describes the registry it is registered into, so the loop is closed here

@@ -425,7 +425,8 @@ src/dplanner/
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll
 │   │                        call, the Test panel a run is worked down from, the preview a
-│   │                        reference in one body opens onto another, and the exports
+│   │                        reference in one body opens onto another, the exports, and the
+│   │                        house shape of a test body (format.md, `dplanner test format`)
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │

@@ -25,6 +25,7 @@ READ_SITES = (
     "dplanner/assets/icons/dplanner-256.png",  # assets/__init__.py:17   files("dplanner.assets")
     "dplanner/cli/skill_preamble.md",  # cli/skill.py:45         Path(__file__).parent
     "dplanner/cli/shaping.md",  # cli/shaping.py:24       Path(__file__).parent
+    "dplanner/modules/testing/format.md",  # modules/testing/format.py:26  Path(__file__).parent
     "dplanner/cli/report/report.css",  # cli/report/website.py:141
     "dplanner/cli/report/report.js",  # cli/report/page.py:308
     "dplanner/cli/report/about.md",  # cli/report/page.py:308
