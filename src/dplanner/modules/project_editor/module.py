@@ -202,6 +202,11 @@ class ProjectEditorDeps:
     # What the project tab hosts beside the canvas — see side_panel.py. None means this
     # build has nothing to put there, and the toggle is hidden rather than greyed.
     side_panel: SidePanel | None = None
+    # Selection kinds narrower than a project that have a panel of their own: while exactly
+    # one of them is picked, the project form steps aside so the area holds the answer to
+    # the question the reader asked. Named by the composition root, which is the one place
+    # that knows every panel — this module learns nobody else's vocabulary.
+    narrower_kinds: tuple[str, ...] = ()
 
 
 class ProjectActivity(EntityActivity):
@@ -872,13 +877,17 @@ class ProjectEditorModule:
             return ProjectActivity(deps, target, self._verbs, self._layout_verbs, self._look)
 
         deps.tabs.register_factory(PROJECT_KIND, factory)
-        # Order 10: above the step panel, because a project is what a step is part of.
+        # Order 10: above the Test panel, because a project is what a test is ultimately of.
         deps.panels.register(
             PanelSpec(
                 id=PANEL_ID,
                 title="Project",
                 factory=lambda: ProjectPanel(
-                    deps.library, deps.undo, cards=deps.cards.sections(), theme=deps.theme
+                    deps.library,
+                    deps.undo,
+                    cards=deps.cards.sections(),
+                    theme=deps.theme,
+                    narrower_kinds=deps.narrower_kinds,
                 ),
                 area=PanelArea.RIGHT,
                 order=10,

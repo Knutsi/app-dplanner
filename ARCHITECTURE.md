@@ -987,8 +987,8 @@ precondition rule every other presenter follows.
 
 The window has a centre — the tab groups — and three areas around it: **left, right and
 bottom**. Anything anchored in one is a `PanelSpec` in `services.panels`, and the framework's
-`PanelDock` puts it there. The index tree is one; the step detail panel and the project form
-are two more. Right-clicking a panel's header moves it between areas or hides it, and
+`PanelDock` puts it there. The index tree is one; the project form, the Problems panel and the
+Test panel are more. Right-clicking a panel's header moves it between areas or hides it, and
 *View ▸ Panels* switches it back on.
 
 **One panel, not one per tab.** This is the whole reason the dock exists, and it was learned by
@@ -996,7 +996,9 @@ getting it wrong: the step detail panel used to be built *inside* `ProjectActivi
 a second project built a second panel with a second set of aspect editors, and splitting the
 window put both on screen at once. Two copies of one editor is not a richer window — it is the
 same 360 pixels spent twice, and it raises a question with no good answer ("which one is the
-real one?"). So a panel belongs to the window.
+real one?"). So a panel belongs to the window. (That editor has since left the areas
+altogether — *The step editor is a modal* — but the rule it taught governs every panel
+there is.)
 
 **It follows the user by reading the context, not by being told.** A panel that cares implements
 `ContextPanel.show_context(context) -> bool`; the dock calls it on every context change and
@@ -1007,8 +1009,8 @@ That one decision is what makes "follow the focused tab" cost nothing. The rule 
 active pane may write to the selection scope* already existed, for a different reason; a panel
 that reads the scope therefore shows the active pane's selection by construction, and
 `ProjectActivity` **lost** its `_panel` field rather than gaining an "am I the visible one?"
-check. It also means a surface nobody planned for gets the panel for free: the order table
-publishes step selections and never had a detail panel, and now has one without a line of code.
+check. It also means a surface nobody planned for gets a panel for free: the Tests tab
+publishes a test selection and never had to know the Test panel exists.
 
 **Areas, not draggable docks.** `QDockWidget` gives floating windows, tear-off drags and a
 serialized layout blob nobody can read or reason about. What this needs is "put that over
@@ -1016,9 +1018,10 @@ there" — three fixed places and a menu — so that is what it has, and where e
 three legible `QSettings` keys under `layout/`.
 
 **An area with nothing in it takes no space.** An empty right side is a wider canvas, not a
-blank column, which is what lets two panels share one area and be mutually exclusive: the step
-panel shows while exactly one step is selected, the project form shows the rest of the time,
-and neither has heard of the other.
+blank column, which is what lets two panels share one area and be mutually exclusive: the Test
+panel shows while exactly one test is picked, the project form shows the rest of the time, and
+neither has heard of the other — which of them yields is a `narrower_kinds` tuple the
+composition root names, so neither learns the other's vocabulary either.
 
 ## A seam belongs to the splitter, and only a split window marks a pane
 
@@ -1232,26 +1235,26 @@ per remaining aspect — Ticket, Agent, Milestone — and nothing in it knows an
 Two seams do that, and they are worth naming because they answer every "feature A needs
 feature B" question this application will have.
 
-**Nobody hosts the panel.** `step_properties` owns it and registers it into `services.panels`;
-where it sits is the dock's business and what it shows is the context's. Before the dock existed
-this was a *consumer-owned Protocol* — `project_editor` declared `widget`/`show_step`/`dispose`
-and the composition root handed it a factory — which worked, and cost a panel per tab. Anchoring
-it deleted the Protocol, the `detail_panel` dependency, and the question of who owns the one
-that is on screen. The Protocol-plus-factory shape is still the right answer when one module
-needs a *widget* from another; it stopped being the right answer here when the answer to "how
-many are there" became one.
+**Nobody hosts the panel.** `step_properties` owns it, and `steps.details` is where it
+appears; what it shows is the step the verb was run on. Before the dock existed this was a
+*consumer-owned Protocol* — `project_editor` declared `widget`/`show_step`/`dispose` and the
+composition root handed it a factory — which worked, and cost a panel per tab. Anchoring it
+deleted the Protocol, the `detail_panel` dependency, and the question of who owns the one that
+is on screen; making it a modal (below) deleted the anchor too. The Protocol-plus-factory shape
+is still the right answer when one module needs a *widget* from another; it stopped being the
+right answer here when the answer to "how many are there" became one.
 
 **A registry for the contributors.** Aspect modules register an `InspectorSection` into
 `services.inspector_sections`; the panel reads that registry when it is *built*, not when the
 modules load, so a contributor's position in the composition root is free — its position
 *ahead* of `step_properties` is not, and the root says so.
 
-The composition root is the only place that knows both, and the wiring it used to need between
-the two panel modules is gone:
+The composition root is the only place that knows both, and the wiring the two panel modules
+used to need between them is gone:
 
 ```python
 step_properties = StepPropertiesModule(
-    StepPropertiesDeps(..., panels=services.panels, sections=services.inspector_sections)
+    StepPropertiesDeps(..., sections=services.inspector_sections)
 )
 project_editor = ProjectEditorModule(ProjectEditorDeps(..., panels=services.panels))
 projects = ProjectsModule(ProjectsDeps(..., open_project=project_editor.open))
@@ -1274,24 +1277,51 @@ way, which is the evidence that the shape survives a second host and a third.)
 and making the project form a peer of the aspects would force every aspect editor to answer
 "what if this is a project?" and hide itself — a second target vocabulary smuggled into every
 editor. (`shown_for` is not that: it hides a section per *step*, inside the one vocabulary.)
-It is a peer of the *panel* instead: a second panel in the same area, with its
-own answer to `show_context`. Both ask `Context.selected_entity("step")`, so "there is exactly
-one step in front of the user" has one definition rather than two that can drift apart.
+It is a panel instead, with its own answer to `show_context` — see *The step editor is a
+modal* below for what it now shares the area with.
 
-**The same panel, briefly modal.** `steps.details` puts a second `StepPanel` in a dialog —
-what every view's double-click on a step runs. That is not a breach of "one panel, not one
-per tab": the rule forbids a panel *per surface*, where N tabs meant N copies on screen at
-once; the dialog is one transient host the user summoned, disposed when it closes. Building
-a second stack is the section contract's sanctioned use — one extension instance per host —
-and the project panel's cards were already the proof. The dialog never reads the context:
-it is opened *about* a step and stays on it, driven by `show_step` directly, which is what
-lets a table row open it for the row under the cursor even when that pane's publish was
-suppressed. The double-click the tables used to spend on reveal-in-graph moved to the Step
-menu as `steps.reveal`, where every view's right-click already renders it. The dialog
-carries no buttons: every edit inside it is already applied and already on the undo stack,
-so there is nothing to confirm and nothing to cancel, and Escape closes it. It is also
-where a fresh step is configured — New and the canvas double-click open it on the step
-they just made, with the name field focused and selected.
+## The step editor is a modal
+
+`steps.details` puts a `StepPanel` in a dialog, and that is the **only** place a step's
+aspects are edited. It used to be a panel as well, anchored in the window's right area and
+following the selection; both seats existed until the Tests roster made it plain that one of
+them was wrong.
+
+**What the anchored seat cost.** A step's aspects are a page of tabs — Details, Ticket, Docs,
+Tests, Covers, Agent, Feature, Milestone, GitHub — and a page of tabs in a 360 px column is an
+editor in which nobody finishes a sentence: the tab bar already needs scroll buttons and
+elided labels to hold nine, five of the aspect bar's ten toggles fold into its `…`, the Tests
+tab's list and its editor stack instead of sitting side by side, and every prose field is a
+slot. The dialog is 900×850 and has none of those problems. Worse, the panel *competed*: it
+appears on a selection, so working down a Tests roster put a step editor above the Test panel
+the reader had actually opened, answering a question nobody had asked with the aspects of the
+step the test happened to hang off. Two editors of different things in one column, and the one
+somebody summoned underneath.
+
+**What replaced it is what was already there.** Every view's double-click on a step already
+ran `steps.details` (`CLAUDE.md`), so the gesture did not change and nothing moved — one spec
+was deleted from `services.panels` and the surface kept its one host. The dialog never reads
+the context: it is opened *about* a step and stays on it, driven by `show_step` directly,
+which is what lets a table row open it for the row under the cursor even when that pane's
+publish was suppressed. It carries no buttons but Close: every edit inside it is already
+applied and already on the undo stack, so there is nothing to confirm and nothing to cancel.
+It is also where a fresh step is configured — New and the canvas double-click open it on the
+step they just made, with the name field focused and selected.
+
+**And the project form stopped standing aside for it.** It used to return False from
+`show_context` whenever exactly one step was selected, because the step panel wanted the area;
+with nothing to hand the area to, that rule would have left the right side blank on every
+canvas click. So the kinds it yields to are named rather than assumed — `narrower_kinds` on
+`ProjectEditorDeps`, `("test",)` from the composition root, the same wiring `_scope_kinds()`
+and `_unsettling_notes()` use. A picked *test* has a panel of its own; a picked step does not.
+Which means the Tests roster now reads as one thing: the Test panel, and nothing above it.
+
+**Why the dialog is not a breach of "one panel, not one per tab".** That rule forbids a panel
+*per surface*, where N tabs meant N copies on screen at once. The dialog is one transient host
+the user summoned, disposed when it closes, and building a second stack of extensions is the
+section contract's sanctioned use — one extension instance per host — which the project
+panel's cards had already proved. A test drives it the way the application does, through the
+`step_editor` fixture, because there is no anchored panel left to reach for.
 
 **The project panel hosts the same contract, as cards.** A module with something to say about
 a *project* registers an `InspectorSection` into `services.detail_cards` — the registry type
@@ -4838,9 +4868,11 @@ one-line preview and the only way to read a test in full was to open its **step*
 is the wrong thing twice over, because it is a page about the work rather than about what
 you are checking, and because it is a modal that takes the list away every time.
 
-So there is a **Test panel**, in the window's right area beside Project and Step: the test's
+So there is a **Test panel**, in the window's right area under the project form: the test's
 id and title, where it is filed, its last result, the four result verbs, *Show Step*, and
-Previous/Next. Three things about it are the design.
+Previous/Next. While a test is picked it is the *only* thing in that area — the form yields
+to it (`narrower_kinds`) and the step editor has no seat there at all, which is what *The
+step editor is a modal* settled. Four things about it are the design.
 
 **It renders the body rather than editing it.** A numbered list is a numbered list here,
 not `1.` and a full stop. Authoring stays in the step panel's Tests tab, where the editor,
@@ -4858,6 +4890,18 @@ verb a constructed context naming exactly that row. The verb (`test.details`) on
 it and a double-click is what puts it on screen. That is also why there is no preference
 for any of this: a panel is already something the user switches on and off, in one place,
 for every panel there is.
+
+**A test is named with its step, never on its own.** Ids are minted per *project*
+(`modules/testing/aspect.py`), so `T101` names a different test in every project in the
+library, and this panel spent its first week looking one up by id across the whole library —
+which answered with whichever project sorted first, so a reader working down the third
+project's roster was shown the first project's namesakes. There is no fixing that at the
+lookup: an id is not an address. Every view that picks a test therefore publishes
+`selection/step/<id>` beside `selection/test/<id>` — the project tab's selection did already,
+and the roll call, which is the one view holding several projects at once, now does too —
+`test.details` is greyed without the pair, and the panel reads the test out of that one step.
+`TestsModule._selected_tests` had the rule from the start, one step along: it narrows to the
+context's project before it matches an id.
 
 **Next and Previous move the table's selection, never the panel's own.** A panel may not
 publish a selection — it follows the context, and writing to it would fight whatever else
@@ -5971,26 +6015,29 @@ does not scale with the project at all; it is a constant paid per gesture.
 
 *the first open of the process pays the imports.
 
-**What the click costs, and why it is flat.** A click publishes the selection, the dock
-asks every context panel to `show_context`, and `StepPanel.show_step` calls `show_target`
-on **all nine of its sections whether or not their tab is visible**
-(`modules/step_properties/panel.py`, `_show_in_extensions`). The profile at 100 steps puts
-the whole click in that loop: the Agent tab rebinds two editors (`TextBinding`, a
-`setPlainText` of the whole document each) and assembles the inherited briefing **three
-times per click** (`_mark_prompt_stale` from `show_target`, from `_refresh_derived` and
-from the follow); the Covers tab runs two `cone` walks, parses the run history and
-builds a card widget per gathered test — eighteen widgets per click on the synthetic
-project; the GitHub tab starts a fetch; every prose tab rebinds. The user's journal has
-the same slot at **30 to 105 ms** thirty times over four days, and the details dialog
-is the same cost twice: `StepDetailsDialog` builds a second full panel (nine sections,
-four Details blocks, about thirteen widget trees and fifteen subscriptions — 185
-`addLayout` calls and sixteen thousand calls into the Python `styleHint` override of
-`theme/style.py` per open) and then shows the step in it, while the docked panel keeps
-listening beside it. Construction is **80 to 125 ms**, flat until the largest size; the
-first show is 20 to 30 ms headless, and the journal's three `steps.details` stalls of
-**~350 ms** are the same open with real painting behind it. Picking twenty cards costs
-twenty publishes, because the scene announces `setSelected` one item at a time and every
-announcement runs the whole chain.
+**What the click costs, and why it is flat.** *Measured while the step editor was still a
+panel in the right area; the row above is that arrangement's and the table is kept as
+measured.* A click published the selection, the dock asked every context panel to
+`show_context`, and `StepPanel.show_step` called `show_target` on **all nine of its
+sections whether or not their tab was visible** (`modules/step_properties/panel.py`,
+`_show_in_extensions`). The profile at 100 steps put the whole click in that loop: the
+Agent tab rebinds two editors (`TextBinding`, a `setPlainText` of the whole document each)
+and assembles the inherited briefing **three times** (`_mark_prompt_stale` from
+`show_target`, from `_refresh_derived` and from the follow); the Covers tab runs two `cone`
+walks, parses the run history and builds a card widget per gathered test — eighteen widgets
+on the synthetic project; the GitHub tab starts a fetch; every prose tab rebinds. The
+user's journal has the same slot at **30 to 105 ms** thirty times over four days. *The step
+editor is a modal* moved every one of those costs off the click and onto the double-click
+that asks for them, which is the one gesture that wants them paid — so the click is now the
+remaining panels' `show_context`, and the figures below are what a `steps.details` costs.
+`StepDetailsDialog` builds a full panel (nine sections, four Details blocks, about thirteen
+widget trees and fifteen subscriptions — 185 `addLayout` calls and sixteen thousand calls
+into the Python `styleHint` override of `theme/style.py` per open) and then shows the step
+in it. Construction is **80 to 125 ms**, flat until the largest size; the first show is 20
+to 30 ms headless, and the journal's three `steps.details` stalls of **~350 ms** are the
+same open with real painting behind it. Picking twenty cards costs twenty publishes,
+because the scene announces `setSelected` one item at a time and every announcement runs
+the whole chain.
 
 **The second wave is real, and it is the recorder.** An estimate, a status, a link, a
 birth or a deletion settles at ~1000 ms where a title settles at ~700 ms, and the journal
@@ -6175,7 +6222,8 @@ gesture found it, which is what the next `c` needs.
 states, and the dock only ever asks for the first. A card bound to a project that is not
 on screen costs nothing; a card torn down and rebuilt costs the whole widget tree, twice
 per gesture, and throws away every text binding's caret. The step panel already had this
-rule in its unchanged-id early return; the project panel now has it too.
+rule in its unchanged-id early return; the project panel has it too, and keeps it now that
+what it steps aside for is a picked test rather than a picked step.
 
 **How it stays fixed.** `scripts/measure_scaling.py --scenarios connect,paste` drives
 the two gestures over the synthetic library with a step selected and reports, beside

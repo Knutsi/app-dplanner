@@ -605,17 +605,15 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     # Three modules constructed before the list, because what each one hands the others
     # reads better as wiring than as ordering:
     #
-    #   step_properties  anchors THE step detail panel in the window's right area
-    #   project_editor   anchors the project form beside it, and opens projects into tabs
+    #   step_properties  owns THE step editor — `steps.details`, a modal and nothing else
+    #   project_editor   anchors the project form, and opens projects into tabs
     #   projects         puts projects in the index and opens them through the editor
     #   estimation       owns the estimate, the start date and the bulk Estimates tab; the
     #                    order view hosts its bar
     #
-    # None of them imports any other, and the two panel modules do not even wire to each
-    # other: each registers a panel and the dock decides what is on screen, so neither knows
-    # the other is in the same area. Construction is side-effect-free, so ordering here is
+    # None of them imports any other. Construction is side-effect-free, so ordering here is
     # about legibility; what matters at run time is that the aspect modules have registered
-    # their sections before step_properties builds the panel, which is a position in the list
+    # their sections before step_properties builds a dialog, which is a position in the list
     # below.
     step_properties = StepPropertiesModule(
         StepPropertiesDeps(
@@ -661,7 +659,6 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             ),
             library=library,
             undo=services.undo,
-            panels=services.panels,
             actions=services.actions,
             parent=services.window,
             sections=services.inspector_sections,
@@ -761,6 +758,13 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             # fixed. The editor never learns whose widget it is — only that it may carry
             # a reading for the button that opens it.
             side_panel=SidePanel("Problems", problem_icon, problems.create_panel),
+            # What the project form steps aside for: a picked test, which the Test panel is
+            # already showing in the same area. Named here because this is the one place
+            # that knows both panels — the editor learns no other module's vocabulary, the
+            # same seam _scope_kinds() and _unsettling_notes() go through. A picked *step*
+            # is deliberately not on this list: its editor is a modal now, so standing
+            # aside for one would leave the area empty.
+            narrower_kinds=("test",),
         )
     )
 
@@ -1476,8 +1480,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         # -- the step aspects --------------------------------------------------------------
         # Each registers one tab into the step detail panel — or, for the estimate and
         # description, a block into its Details tab (services.step_details). They must
-        # come before step_properties, which builds the panel from whatever has
-        # registered by then.
+        # come before step_properties, which reads the registry when it opens a dialog.
         estimation,
         StepTicketModule(
             StepTicketDeps(

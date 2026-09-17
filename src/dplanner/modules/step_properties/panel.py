@@ -8,11 +8,11 @@ The bar across the top is the same seam one presenter along: it renders the Step
 submenu on its right, and the templates it words on its left are named by the composition
 root.
 
-**Nor does it learn who is looking at a step.** There is one panel in the window and it reads
-the context: whichever pane the user is in publishes a step selection, and this shows it. A
-canvas, a table and anything added later reach it the same way, and none of them is its host.
-The bar, though, is handed a context naming *this panel's* step — the panel inside the
-details dialog shows a step nobody selected, and its toggles must act on what is on screen.
+**Nor does it learn who is looking at a step.** It is driven by ``show_step`` and shows
+exactly what it was opened about, which is what lets a table row open it for the row under
+the cursor. The bar is handed a context naming *this panel's* step, for the same reason: the
+panel shows a step nobody selected, and its toggles must act on what is on screen. It reads
+no context of its own and follows no selection — the dialog (``dialog.py``) is its one host.
 
 The name is not here: it is the first block of the Details tab, registered by this module
 like any other block, so the control stack reads top-down from the one field every step has.
@@ -44,7 +44,7 @@ from dplanner.theme.tokens import CAPTION_GAP, PANEL_MARGIN, SECTION_GAP
 
 
 class StepPanel(QWidget):
-    """THE step detail panel, anchored in one of the window's areas.
+    """THE step detail panel, hosted by the details dialog.
 
     Its own state is one step id; everything else belongs to a contributing module (the tabs).
     """
@@ -127,22 +127,14 @@ class StepPanel(QWidget):
             self._unsubscribes.append(theme.changed.connect(paint))
             paint(theme.current)
 
-    # -- what the context says ---------------------------------------------------------------
-
-    def show_context(self, context: Context) -> bool:
-        """One selected step is something to edit; none or several is not.
-
-        The panel says so by going off screen rather than by showing a placeholder — an area
-        with nothing in it is a wider canvas, not a blank column.
-        """
-        self.show_step(context.selected_entity("step"))
-        return self._step_id is not None
+    # -- what it is showing ---------------------------------------------------------------
 
     def show_step(self, step_id: StepId | None) -> None:
         """Show one step, or nothing.
 
-        The empty path runs *before* the unchanged-id early return: deselecting has to get
-        through every time, or the last step stays on screen after the user clicks away.
+        The empty path runs *before* the unchanged-id early return: a step deleted under an
+        open dialog has to get through every time, or it stays on screen as an editor over
+        something that no longer exists.
         """
         if step_id is None or not self._product.has(step_id):
             self._step_id = None

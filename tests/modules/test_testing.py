@@ -1477,10 +1477,13 @@ def the_panel(services):
     return services.window.dock.widget_for(PANEL_ID)
 
 
-def pick_test(services, test_id):
-    from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+def pick_test(services, step, test_id):
+    """A test picked the way every view picks one: with the step it hangs off.
 
-    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("test", test_id)),))
+    Never the test alone — an id is minted per project, so ``T100`` on its own names one
+    test in each of them and the panel has nothing to choose by.
+    """
+    select(services, step, tests=(test_id,))
     return services.context.current()
 
 
@@ -1490,7 +1493,7 @@ def test_the_panel_shows_one_picked_test_and_steps_aside_for_none(services, proj
     )
     panel = the_panel(services)
 
-    assert panel.show_context(pick_test(services, "T100"))
+    assert panel.show_context(pick_test(services, step, "T100"))
     assert panel.title.text() == "Signs in"
     assert "Smoke" in panel.filed.text() and "Fix list flicker" in panel.filed.text()
     # Rendered, not printed: a numbered list is a numbered list on a surface you run from.
@@ -1510,7 +1513,7 @@ def test_the_panel_steps_aside_when_several_tests_are_picked(services, project, 
 def test_show_step_opens_the_step_this_test_hangs_off(services, project, step, monkeypatch):
     step.module_data[MODULE_ID] = write([Test("T100", "One")])
     panel = the_panel(services)
-    panel.show_context(pick_test(services, "T100"))
+    panel.show_context(pick_test(services, step, "T100"))
 
     opened: list[str] = []
     monkeypatch.setattr(
@@ -1531,7 +1534,7 @@ def test_next_moves_the_tables_selection_so_a_run_can_be_worked_down(services, m
     activity = services.tabs.open(TESTS_KIND, project.id)
     activity.on_activated()
     panel = the_panel(services)
-    panel.show_context(pick_test(services, "T100"))
+    panel.show_context(pick_test(services, work, "T100"))
 
     assert panel.next_verb.isEnabled() and not panel.previous_verb.isEnabled()
     panel.next_verb.trigger()
@@ -1545,9 +1548,114 @@ def test_next_moves_the_tables_selection_so_a_run_can_be_worked_down(services, m
 def test_stepping_through_is_greyed_with_its_reason_when_no_tab_is_open(services, project, step):
     step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
     panel = the_panel(services)
-    panel.show_context(pick_test(services, "T100"))
+    panel.show_context(pick_test(services, step, "T100"))
     assert not panel.next_verb.isEnabled()
     assert "Tests tab" in panel.next_verb.toolTip()
+
+
+def test_a_picked_test_leaves_the_right_area_holding_only_the_test_panel(services, project, step):
+    """The area answers the question that was asked and no other. The project form yields
+    (`narrower_kinds`), and the step editor has no seat here at all — a roster read one test
+    at a time is the surface that made both of those true."""
+    from dplanner.framework.panels import PanelArea
+    from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
+    from dplanner.modules.testing.activity import TESTS_KIND
+    from dplanner.modules.testing.panel import PANEL_ID as TEST_PANEL_ID
+
+    step.module_data[MODULE_ID] = write([Test("T100", "Signs in", body="1. Open it.")])
+    dock = services.window.dock
+    services.tabs.open(TESTS_KIND, project.id).on_activated()
+
+    select(services, step)  # No test yet: the form is what the area has to say.
+    assert dock.is_panel_showing(PROJECT_PANEL_ID)
+
+    # Every panel the build registered, not a named few: the claim is that nothing else is
+    # up there, which a list of two ids could not make.
+    select(services, step, tests=("T100",))
+    right = [
+        spec.id
+        for spec in services.panels.panels()
+        if dock.area_of(spec.id) is PanelArea.RIGHT and dock.is_panel_showing(spec.id)
+    ]
+    assert right == [TEST_PANEL_ID]
+
+
+def test_the_panel_shows_the_picked_projects_test_and_not_another_projects(services, make_project):
+    """The bug this fixture is built for: ids are minted per *project*, so `T100` names a
+    test in every one of them. A panel that looked a test up by id alone showed whichever
+    project the library happened to list first, whatever the reader had double-clicked."""
+    first = make_project("Alpha")
+    second = make_project("Beta")
+    (early,) = chain(services, first, "Alpha work")
+    (late,) = chain(services, second, "Beta work")
+    services.document.set_module_data(early.id, MODULE_ID, write([Test("T100", "Alpha's test")]))
+    services.document.set_module_data(late.id, MODULE_ID, write([Test("T100", "Beta's test")]))
+
+    panel = the_panel(services)
+    assert panel.show_context(pick_test(services, late, "T100"))
+    assert panel.title.text() == "Beta's test"
+    assert panel.show_context(pick_test(services, early, "T100"))
+    assert panel.title.text() == "Alpha's test"
+
+
+def test_a_test_with_no_step_beside_it_is_nothing_to_show(services, project, step):
+    """And the verb agrees, so a reveal can never put an empty panel on screen."""
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+
+    step.module_data[MODULE_ID] = write([Test("T100", "One")])
+    alone = Context({SCOPE_SELECTION: (ContextNode(selection_uri("test", "T100")),)})
+    assert not the_panel(services).show_context(alone)
+    assert not services.actions.spec("test.details").state(alone).enabled
+
+
+def test_double_clicking_a_row_names_the_rows_own_step(services, make_project):
+    """A row is a test and its step is a column, so the double-click publishes the pair —
+    which is what makes the panel show that row rather than a namesake elsewhere."""
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    work, other = chain(services, project, "Work", "Other")
+    give(services, work, "T100")
+    give(services, other, "T101")
+
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    activity.on_activated()
+    row = next(
+        index
+        for index in range(activity.page.table.rowCount())
+        if activity.page.table.test_at(index) == "T101"
+    )
+    activity.page.table.cellActivated.emit(row, 0)
+
+    current = services.context.current()
+    assert current.selected_entity("test") == "T101"
+    assert current.selected_entity("step") == other.id
+    assert the_panel(services).title.text() == "T101"
+
+
+def test_the_roll_call_names_the_rows_step_too(services, make_project):
+    """The one view holding several projects at once, so it is the one that cannot get
+    away with naming a test alone."""
+    from dplanner.modules.testing.activity import ALL_TESTS_KIND
+
+    first = make_project("Alpha")
+    second = make_project("Beta")
+    (early,) = chain(services, first, "Alpha work")
+    (late,) = chain(services, second, "Beta work")
+    services.document.set_module_data(early.id, MODULE_ID, write([Test("T100", "Alpha's test")]))
+    services.document.set_module_data(late.id, MODULE_ID, write([Test("T100", "Beta's test")]))
+
+    activity = services.tabs.open(ALL_TESTS_KIND)
+    activity.on_activated()
+    row = next(
+        index
+        for index in range(activity.page.table.rowCount())
+        if activity.page.table.step_at(index) == late.id
+    )
+    activity.page.table.cellActivated.emit(row, 0)
+
+    assert services.context.current().selected_entity("step") == late.id
+    assert the_panel(services).title.text() == "Beta's test"
 
 
 def test_double_clicking_a_row_reveals_the_panel(services, make_project):

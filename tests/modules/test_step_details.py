@@ -8,11 +8,9 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
 from dplanner.modules.spec.aspect import SpecAttachment, write_step_entry
 from dplanner.modules.step_properties.details import DetailsSection
-from dplanner.modules.step_properties.module import PANEL_ID
 
 
 @pytest.fixture
@@ -24,9 +22,8 @@ def step(services, make_project):
 
 
 @pytest.fixture
-def details(services, step):
-    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
-    panel = services.window.dock.widget_for(PANEL_ID)
+def details(step_editor, step):
+    panel = step_editor(step.id)
     labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
     return panel._pages.widget(labels.index("Details"))
 

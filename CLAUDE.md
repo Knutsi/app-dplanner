@@ -200,7 +200,7 @@ modules/<name>/
 ├── harness.py   for an agent CLI provider: HARNESS, and nothing else  ← imports no Qt
 ├── checks.py    what this machine needs for it: checks()              ← imports no Qt
 ├── themes.py    for a theme provider: the ThemeProvider it offers        ← imports no Qt
-└── section.py   the editor it puts in the step detail panel
+└── section.py   the editor it puts in the step detail panel (Step Details…)
 ```
 
 The Qt-free files are checked by **name** — see `HEADLESS_FILES` in
@@ -304,19 +304,23 @@ reasoning.
 - **Only the active pane speaks for the user.** The window can show two or three tab groups
   side by side, and there is still exactly one context. An activity that publishes a
   selection must do it only while it is the current one — see `ProjectActivity._is_active`.
-- **One panel per surface, not one per tab.** A detail panel is anchored in a window area and
-  reads the context; an activity never holds one. Building it inside the tab is what made the
-  step editor appear twice in a split window, and the fix deleted code rather than adding a
-  visibility check — because "only the active pane publishes" already says which selection a
-  panel should be showing. `ARCHITECTURE.md`'s *Where a panel goes* has the rest.
-- **Double-clicking a step anywhere runs `steps.details`** — a modal dialog hosting a second
-  `StepPanel`, disposed on close. It is the one gesture across canvas, order, progression and
-  estimates; a table runs it against a context naming exactly the row's step. Reveal-in-graph
-  is the `steps.reveal` verb in the Step menu, not a double-click. `ARCHITECTURE.md`'s *The
-  same panel, briefly modal* has the reasoning. **The one exception is a table whose row is
-  not a step**: in the Tests tabs a row *is* a test and its step is a column, so a
-  double-click runs `test.details` and reveals the Test panel — `ARCHITECTURE.md`'s *A test
-  is run from a panel*.
+- **One panel per surface, not one per tab — and a page of tabs is a modal, not a panel.** A
+  panel is anchored in a window area and reads the context; an activity never holds one.
+  Building it inside the tab is what made the step editor appear twice in a split window, and
+  the fix deleted code rather than adding a check, because "only the active pane publishes"
+  already says which selection a panel should show. That editor then left the areas entirely:
+  `steps.details` is the *only* place a step's aspects are edited, since nine tabs do not fit
+  a 360 px column and an editor appearing on a selection sat above whichever panel the reader
+  had opened. So an area holds what is worth watching *while* you work — the project form,
+  Problems, the Test panel — and the form yields to a picked **test**, not a picked step
+  (`narrower_kinds`, named by the root). `ARCHITECTURE.md`'s *Where a panel goes* and *The
+  step editor is a modal* have the rest.
+- **Double-clicking a step anywhere runs `steps.details`.** It is the one gesture across
+  canvas, order, progression and estimates; a table runs it against a context naming exactly
+  the row's step. Reveal-in-graph is `steps.reveal` in the Step menu, not a double-click.
+  **The one exception is a table whose row is not a step**: in the Tests tabs a row *is* a
+  test and its step is a column, so a double-click runs `test.details` and reveals the Test
+  panel — `ARCHITECTURE.md`'s *A test is run from a panel*.
 - **A canvas key names action ids; it is never an `ActionSpec.shortcut`.** A bare `h` on a
   menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
   `modules/project_editor/keymap.py`, where a key names the verbs it means in order and the
