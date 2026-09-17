@@ -99,6 +99,9 @@ class AppWindow(QMainWindow):
     def is_area_collapsed(self, area: PanelArea) -> bool:
         return self.dock.is_area_collapsed(area)
 
+    def area_of(self, panel_id: str) -> PanelArea | None:
+        return self.dock.area_of(panel_id)
+
     # -- unsaved changes (UnsavedChangesHost) -------------------------------------------------
 
     def set_unsaved(self, unsaved: bool, summary: str = "") -> None:

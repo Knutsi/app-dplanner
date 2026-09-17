@@ -19,16 +19,18 @@ made through the host, so this panel still publishes no selection of its own.
 only when the body says something shaped like one, because this refreshes on every model
 change and the answer is a walk of the project.
 
-**It is a panel, not a modal**, for the reason every panel is: a modal over a table is a
-thing you open and shut twenty times in a run, and each time it takes the list away. This
-stays beside the list, follows the selection, and a double-click on a row is what puts it on
-screen (``test.details`` — see ``module.py``).
+**It is a panel beside the roster, not a modal**, for the reason every panel is: a modal
+over a table is a thing you open and shut twenty times in a run, and each time it takes
+the list away. It stands inside the Tests tab (``framework/side_panel.py``), one per tab,
+fed by that tab's own pick — so a tab in the background never follows the tab in front —
+and a double-click on a row is what puts it on screen (``test.details`` — see
+``module.py``).
 
 **Next and Previous move the *table's* selection, never the panel's own.** A panel may not
 publish a selection (``section.py``'s rule; ``ARCHITECTURE.md``'s *Where a panel goes*), so
-these ask the Tests tab to pick the next row and then simply follow the context like any
-other change. With no Tests tab open for the project there is nothing to walk, and both are
-greyed saying so — which is also honest: "next" has no meaning without a list.
+these ask the tab to pick the neighbouring row and then simply follow what it feeds back.
+It is the tab's own order they walk, and at either end of it they are greyed saying so —
+which is also honest: "next" has no meaning past the end of the list.
 
 **A test is named with the step it hangs off, and that pair is what this resolves.** A test
 id is minted per *project* (``aspect.py``), so ``T101`` names a different test in every
@@ -48,6 +50,7 @@ from dplanner.domain.model import Library, Step, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import Context, ContextService
+from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import note
 from dplanner.modules.testing import runs
@@ -63,25 +66,24 @@ from dplanner.modules.testing.view import (
 from dplanner.theme.icons import chevron_left_icon, chevron_right_icon, step_icon
 from dplanner.theme.tokens import PANEL_MARGIN, SECTION_GAP
 
-PANEL_ID = "testing.test"
 # The result verbs, as the strip renders them: the same ids the Step ▸ Test menu holds, so
 # a result recorded here and one recorded from the table are one verb with one state gate.
 RESULT_VERBS = tuple(f"test.result_{status}" for status in RESULT_ORDER)
-NOTHING = "No test picked. Double-click one in a Tests tab."
-NO_LIST = "open the project's Tests tab to step through them"
+NOTHING = "No test picked. Pick one in the table."
+AT_END = "no test that way in this list"
 
 
 @dataclass(frozen=True)
 class Walk:
     """How the panel steps through a list it does not own.
 
-    ``go`` is handed the test to move from and which way; it answers whether it moved. The
-    module implements it by asking the project's Tests tab for its rows and telling it to
-    pick the neighbour, so the *table* publishes the selection and the panel follows.
+    ``go`` is handed which way; it answers whether it moved. The tab hosting the panel
+    implements it over its own rows, picking the neighbour of the row it has selected, so
+    the *table* owns the selection and the panel follows what the tab feeds it.
     """
 
-    go: Callable[[str, int], bool]
-    can: Callable[[str, int], bool]
+    go: Callable[[int], bool]
+    can: Callable[[int], bool]
 
 
 class TestPanel(QWidget):
@@ -96,6 +98,7 @@ class TestPanel(QWidget):
         walk: Walk | None = None,
         files: FilesFor | None = None,
         open_test: Callable[[StepId, str], None] | None = None,
+        debounce: DebounceService | None = None,
     ) -> None:
         super().__init__()
         self._library = library
@@ -116,8 +119,8 @@ class TestPanel(QWidget):
         layout.addWidget(self.head)
 
         # Dense: these are read and aimed at as **one set** — mark it, go to the next — and
-        # at the verb strip's metrics the last of them folds into a `…` menu in the 360 px
-        # dock this panel lives in, which is the one thing a run must not have to do.
+        # at the verb strip's metrics the last of them folds into a `…` menu at the 360 px
+        # this panel opens at, which is the one thing a run must not have to do.
         self.controls = Toolbar(self, dense=True)
         layout.addWidget(self.controls)
         for action_id in RESULT_VERBS:
@@ -143,9 +146,13 @@ class TestPanel(QWidget):
         self.empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.empty, 1)
 
+        # After a quiet spell: there is one of these per Tests tab now, and a refresh
+        # renders markdown, so a burst of edits is one render per tab rather than one per
+        # signal per tab.
+        self._refresh_soon = Debounced(self._refresh, parent=self, service=debounce)
         self._unsubscribes = [
-            library.module_data_changed.connect(lambda *_a: self._refresh()),
-            library.structure_changed.connect(lambda *_a: self._refresh()),
+            library.module_data_changed.connect(lambda *_a: self._refresh_soon.trigger()),
+            library.structure_changed.connect(lambda *_a: self._refresh_soon.trigger()),
         ]
         self._show(None)
 
@@ -167,6 +174,7 @@ class TestPanel(QWidget):
         return bool(self._found())
 
     def dispose(self) -> None:
+        self._refresh_soon.cancel()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
@@ -235,13 +243,13 @@ class TestPanel(QWidget):
         """
         for verb, offset in ((self.previous_verb, -1), (self.next_verb, 1)):
             walk = self._walk
-            can = bool(self._test_id) and walk is not None and walk.can(self._test_id, offset)
+            can = bool(self._test_id) and walk is not None and walk.can(offset)
             verb.setEnabled(can)
-            self.controls.set_tip(verb, "" if can else NO_LIST)
+            self.controls.set_tip(verb, "" if can else AT_END)
 
     def _step_through(self, offset: int) -> None:
         if self._walk is not None and self._test_id:
-            self._walk.go(self._test_id, offset)
+            self._walk.go(offset)
 
     def _show_step(self) -> None:
         """The door back to the editor. A constructed context, because the user picked a

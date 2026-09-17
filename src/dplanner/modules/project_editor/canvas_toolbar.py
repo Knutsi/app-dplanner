@@ -20,7 +20,7 @@ The **first** band is the panel beside the canvas, alone. It leads the strip bec
 is wrong with the plan is the thing you want to know before you start looking at it, and
 it stands apart because it is a reading and not a verb like its neighbours: the button
 carries the panel's own count beside its glyph, which is why it is a widget
-(:mod:`.panel_button`) where every other seat on the strip is an action.
+(``framework/side_panel.py``'s ``PanelButton``) where every other seat on the strip is an action.
 
 The layout picker sits **in** the Arrange band, at its end. It is not a verb — it names
 the arrangement the canvas is showing — so it is added as a *widget*, which means it hides

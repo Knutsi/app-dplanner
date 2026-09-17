@@ -45,6 +45,14 @@ def test_the_tabs_come_back(session, services, project, library_file):
     assert open_uris(session) == [activity_uri(PROJECT_KIND, project.id)]
 
 
+def test_a_dashboard_tab_comes_back_too(session, services, project, library_file):
+    from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND
+
+    services.tabs.open(DASHBOARD_KIND, project.id)
+    assert session.reload()
+    assert open_uris(session) == [activity_uri(DASHBOARD_KIND, project.id)]
+
+
 def test_the_tab_the_user_was_on_is_the_one_they_come_back_to(
     session, services, project, make_project
 ):

@@ -59,6 +59,10 @@ class PanelHost(Protocol):
 
     def is_area_collapsed(self, area: PanelArea) -> bool: ...
 
+    def area_of(self, panel_id: str) -> PanelArea | None:
+        """Where the user has the panel now — the spec's area is only the default."""
+        ...
+
 
 class UnsavedChangesHost(Protocol):
     """Window chrome for "you have unsaved changes": the headline flag and a veto on quit.

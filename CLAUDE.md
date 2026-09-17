@@ -237,7 +237,8 @@ to that tuple; a file the rule cannot see is a rule that is only a habit.
    *View ▸ Panels*, so the area on the spec is a default, not a decision. A panel that should
    appear only sometimes implements `ContextPanel.show_context(context) -> bool`; the dock
    calls it on every context change and takes the panel off screen when it answers False.
-   **Never build a panel inside an activity** — see the mechanical fact below.
+   **A panel that belongs to one tab is a `SidePanel` the tab hosts** through
+   `framework/side_panel.py`, never a `PanelSpec` (`shell-ui.md`).
 7. If it has verbs, add `cli.py` with a `commands()` function returning `CliCommand`s, and
    list it in `default_cli_commands()`. Keep it Qt-free. When `commands()` needs a
    cross-module fact, take it as a **keyword-only parameter and close over it in one inner
@@ -304,23 +305,22 @@ reasoning.
 - **Only the active pane speaks for the user.** The window can show two or three tab groups
   side by side, and there is still exactly one context. An activity that publishes a
   selection must do it only while it is the current one — see `ProjectActivity._is_active`.
-- **One panel per surface, not one per tab — and a page of tabs is a modal, not a panel.** A
-  panel is anchored in a window area and reads the context; an activity never holds one.
-  Building it inside the tab is what made the step editor appear twice in a split window, and
-  the fix deleted code rather than adding a check, because "only the active pane publishes"
-  already says which selection a panel should show. That editor then left the areas entirely:
-  `steps.details` is the *only* place a step's aspects are edited, since nine tabs do not fit
-  a 360 px column and an editor appearing on a selection sat above whichever panel the reader
-  had opened. So an area holds what is worth watching *while* you work — the project form,
-  Problems, the Test panel — and the form yields to a picked **test**, not a picked step
-  (`narrower_kinds`, named by the root). `ARCHITECTURE.md`'s *Where a panel goes* and *The
-  step editor is a modal* have the rest.
+- **One dock panel per window, one side panel per tab — and a page of tabs is a modal.** A
+  dock panel is anchored in a window area and follows the window by reading the context:
+  one instance however many tabs are open. A side panel is built by the tab and follows
+  *that* tab's rows (Problems beside the canvas, the Test panel beside a roster), so two
+  Tests tabs each carry one. The step editor left the areas entirely — `steps.details` is
+  the *only* place a step's aspects are edited, since nine tabs do not fit a 360 px column
+  — and the project's own form is the **Dashboard tab** (`modules/project_dashboard/`),
+  opened about one project like the modal about one step. The areas hold the index alone,
+  and an area no panel stands in hides its View toggle. `ARCHITECTURE.md`'s *Where a panel
+  goes* and the sections it points at have the rest.
 - **Double-clicking a step anywhere runs `steps.details`.** It is the one gesture across
   canvas, order, progression and estimates; a table runs it against a context naming exactly
   the row's step. Reveal-in-graph is `steps.reveal` in the Step menu, not a double-click.
   **The one exception is a table whose row is not a step**: in the Tests tabs a row *is* a
   test and its step is a column, so a double-click runs `test.details` and reveals the Test
-  panel — `ARCHITECTURE.md`'s *A test is run from a panel*.
+  panel beside that tab's roster — `ARCHITECTURE.md`'s *A test is run from a panel*.
 - **A canvas key names action ids; it is never an `ActionSpec.shortcut`.** A bare `h` on a
   menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
   `modules/project_editor/keymap.py`, where a key names the verbs it means in order and the
@@ -372,9 +372,9 @@ reasoning.
   `GraphScene.select_steps` announces once (it reconciles Qt's selection item by item
   behind a `_reselecting` guard); a verb that needs a selection the user did not make is
   handed a **constructed `Context`** (`_on_link_requested`) rather than having the canvas
-  select for it; and **a panel that steps aside keeps its content** (`ProjectPanel`
-  returns False for a selected step without clearing its cards — clearing tore down and
-  rebuilt every card twice per gesture). **No subprocess in an action state or a structure
+  select for it; and **a panel that steps aside keeps its content** (clearing the project
+  form's cards on every selection tore them down and rebuilt them twice per gesture; a side
+  panel is fed while hidden for the same reason). **No subprocess in an action state or a structure
   listener**: `origin_url` is memoised on the config file's mtime, and the sync module
   asks git about membership only when the *library's* children change. **And no walk
   over a project in an action state**: a state runs on every announce, so a derivation

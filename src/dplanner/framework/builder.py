@@ -239,7 +239,7 @@ class AppBuilder:
             index_segments=index_segments,
             panels=panels,
             inspector_sections=InspectorSectionRegistry(),
-            detail_cards=InspectorSectionRegistry(),
+            project_cards=InspectorSectionRegistry(),
             step_details=InspectorSectionRegistry(),
             settings_sections=SettingsSectionRegistry(),
             theme=theme,

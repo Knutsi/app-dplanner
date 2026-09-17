@@ -505,7 +505,7 @@ QSplitter::handle:vertical:pressed {
     background-color: $BG_ELEVATED;
 }
 
-/* A panel inside a tab, beside the canvas (project_editor/side_panel.py): a panel area's
+/* A panel inside a tab, beside the canvas (framework/side_panel.py): a panel area's
    ground and, like one, no edge of its own — the seam beside it is the splitter's. */
 #SidePanel {
     background-color: $BG_ELEVATED;
@@ -611,7 +611,7 @@ QProgressBar::chunk {
  * ground, or its shape is one faint border. Elevated, so the #ToolCard rows inside sit
  * on the surface that well was designed against — see DESIGN.md §Cards. No colour here,
  * for #ToolCard's reason: it would cascade onto every label inside. */
-#ProgressionLane {
+#CardLane {
     background-color: $BG_ELEVATED;
     border: 1px solid $BORDER;
     border-radius: ${RADIUS_MD}px;

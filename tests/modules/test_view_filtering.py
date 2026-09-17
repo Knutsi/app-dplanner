@@ -20,6 +20,7 @@ from dplanner.modules.estimation.bulk import ESTIMATE_KIND, BulkEstimateActivity
 from dplanner.modules.notes.activity import NOTES_KIND
 from dplanner.modules.progression.module import PROGRESSION_KIND, ProgressionActivity
 from dplanner.modules.project_assets.activity import ASSETS_KIND, AssetsActivity
+from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND, DashboardActivity
 from dplanner.modules.project_editor.module import PROJECT_KIND, ProjectActivity
 from dplanner.modules.step_order.module import ORDER_KIND, OrderActivity
 
@@ -36,11 +37,12 @@ VIEWS = [
     pytest.param(DOCS_KIND, DocsActivity, "_refresh", id="docs"),
     pytest.param(ASSETS_KIND, AssetsActivity, "_refresh", id="assets"),
     pytest.param(ESTIMATE_KIND, BulkEstimateActivity, "_refresh", id="estimates"),
+    pytest.param(DASHBOARD_KIND, DashboardActivity, "_refresh", id="dashboard"),
 ]
 
 # Where each view keeps its indicator, from the activity the tab host hands back. The canvas
-# has none: it settles once per event-loop turn, and its settle for prose almost never
-# changes a card.
+# and the dashboard have none: each settles once per event-loop turn, and a settle there
+# almost never changes what is on screen.
 INDICATORS = [
     pytest.param(ORDER_KIND, "updating", id="order"),
     pytest.param(TIME_KIND, "updating", id="time"),

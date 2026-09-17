@@ -12,7 +12,8 @@ from the first commit; touching an existing surface includes bringing it up to t
 checklist). The rules are kept by shared **primitives**, and the primitives are shown by
 **Debug ▸ Design Examples**, one entry per page of it — the table below says which page
 shows which primitive and where to see it rendered. When a rule here is ambiguous, match the
-example; for a panel, match the Test panel in `modules/testing/panel.py`, and for a page of
+example; for a panel, match the Test panel in `modules/testing/panel.py` (hosted beside the
+roster through `framework/side_panel.py`), and for a page of
 controls the Step Details dialog. `CLAUDE.md` points agents here; `ARCHITECTURE.md`'s *A
 primitive carries the rule* is why a rule lives in a primitive rather than in a stylesheet
 entry per surface.
@@ -45,6 +46,8 @@ styling one surface by name.
 | busy, ok, warn, error or plain information in words | `StatusLine` | `framework/signalling.py` | the modal's *Signalling* block |
 | a list of facts about this machine | one `StatusLine` per row, grouped | `modules/checklist/dialog.py` | `docs/screenshots/f13-checklist/` |
 | a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
+| a stack of module-owned features on a page | `ToolCard`s in a `CardStack`, on a `#CardLane` | `framework/cards.py` | the Project Dashboard tab |
+| a panel a tab hosts beside its surface | `SidePanel`, `HostedSidePanel` | `framework/side_panel.py` | `s16-tests-view/test-panel-*` |
 | a caption over a block, a remark under it | `caption()`, `captioned()`, `note()`, `block()` | `framework/widgets.py` | the modal's form |
 | a settings page | `settings_page()`, then `block()`s — no margin of its own | `framework/settings_registry.py` | `s16-dialogs/settings-*` |
 | a verb in a dialog's or a page's body | `quiet()`; `GlyphButton` when it carries a glyph | `framework/widgets.py` | `s16-dialogs/settings-openai-*`, `project-colocated-*` |
@@ -229,7 +232,7 @@ still spacing.
 - That contrast assumes **elevated ground**. On a tab page — which is `$BG_BASE`, the same
   colour as the well — a bare card is one faint border and the list has no shape. Give the
   list its own ground first: a *lane* (`$BG_ELEVATED`, 1 px `$BORDER`, `RADIUS_MD`) with
-  the cards inside. `#ProgressionLane` is the worked example.
+  the cards inside. `#CardLane` is the worked example.
 - 12 px padding inside; one `#InspectorCaption` header (with the feature's glyph in
   `$TEXT_SECONDARY`, repainted on theme change) and 8 px to the body; 12 px between
   cards; the stack keeps the panel's 16 px margins.

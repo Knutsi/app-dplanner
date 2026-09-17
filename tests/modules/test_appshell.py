@@ -122,6 +122,22 @@ def test_the_area_toggles_live_in_views_areas_group(services):
     assert not services.window.is_area_collapsed(PanelArea.LEFT)
 
 
+def test_an_area_toggle_is_hidden_while_nothing_stands_in_that_area(services):
+    """HIDDEN is for a capability absent from this build: a side with no panel in it has
+    nothing to fold. Where a panel *stands* is asked, not where its spec put it, so moving
+    the one panel across brings the other side's toggle with it."""
+    from dplanner.framework.builder import INDEX_PANEL_ID
+    from dplanner.framework.panels import PanelArea
+
+    left, right = "appshell.toggle_left_panels", "appshell.toggle_right_panels"
+    assert state(services, left).visible  # The index stands there.
+
+    services.window.dock.move_panel(INDEX_PANEL_ID, PanelArea.RIGHT)
+    assert not state(services, left).visible and state(services, right).visible
+    services.window.dock.move_panel(INDEX_PANEL_ID, PanelArea.LEFT)
+    assert state(services, left).visible
+
+
 def test_toggling_an_area_flips_its_checkmark(services):
     toggle = "appshell.toggle_left_panels"
     assert state(services, toggle).checked

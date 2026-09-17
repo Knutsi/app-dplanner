@@ -40,7 +40,7 @@ def section(services, step):
 @pytest.fixture
 def card(services):
     spec = next(
-        s for s in services.detail_cards.sections() if s.id == "step_agent_instruction.card"
+        s for s in services.project_cards.sections() if s.id == "step_agent_instruction.card"
     )
     card = spec.factory()
     yield card
@@ -258,39 +258,39 @@ def test_the_card_and_the_tab_edit_one_field_over_one_undo_stack(services, step,
     assert card.edit.toPlainText() == "House rules."
 
 
-def test_the_card_registers_into_detail_cards(services):
-    assert any(s.id == "step_agent_instruction.card" for s in services.detail_cards.sections())
+def test_the_card_registers_into_project_cards(services):
+    assert any(s.id == "step_agent_instruction.card" for s in services.project_cards.sections())
 
 
-def test_typing_in_the_panels_card_survives_context_republishes(services, step):
-    """A model edit can republish the context mid-typing; the panel must not re-target its
-    cards then — a rebind resets the editor's cursor and typing comes out scrambled."""
+def test_typing_in_the_dashboards_card_survives_context_republishes(services, step):
+    """A model edit can republish the context mid-typing; the page is opened about one
+    project and never re-targeted, so a rebind that would reset the editor's cursor cannot
+    happen — by construction now, where the dock panel had to guard for it."""
     from PySide6.QtTest import QTest
 
+    from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND
     from dplanner.modules.step_agent_instruction.section import ProjectInstructionCard
 
     project = services.document.project_of(step.id)
-    services.tabs.open("project", project.id)
+    page = services.tabs.open(DASHBOARD_KIND, project.id).page
+    card = next(e for e in page.extensions if isinstance(e, ProjectInstructionCard))
+
+    QTest.keyClicks(card.edit, "hello world")
     services.context.set_scope(
         SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
     )
-    panel = services.window.dock.widget_for("project_editor.project")
-    card = next(e for e in panel._extensions if isinstance(e, ProjectInstructionCard))
-
-    QTest.keyClicks(card.edit, "hello world")
+    services.context.refresh()
     assert card.edit.toPlainText() == "hello world"
     assert project.module_text[MODULE_ID] == "hello world"
     assert card.edit.textCursor().position() == len("hello world")
 
 
-def test_the_project_panel_shows_the_agent_card(services, step):
+def test_the_dashboard_shows_the_agent_card(services, step):
+    from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND
+
     project = services.document.project_of(step.id)
-    services.context.set_scope(
-        SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
-    )
-    panel = services.window.dock.widget_for("project_editor.project")
-    titles = [c.title.text() for c in panel._cards]
-    assert "Agent" in titles
+    page = services.tabs.open(DASHBOARD_KIND, project.id).page
+    assert "Agent" in [c.title.text() for c in page.cards]
 
 
 # -- the preview -------------------------------------------------------------------------------

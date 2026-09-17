@@ -185,7 +185,7 @@ class _TestListSection(QWidget):
         # A lane, so the cards read as wells on elevated ground rather than as one faint
         # border each on a tab page that is already $BG_BASE — DESIGN.md's Cards section.
         self.lane = QWidget()
-        self.lane.setObjectName("ProgressionLane")
+        self.lane.setObjectName("CardLane")
         self.lane_layout = QVBoxLayout(self.lane)
         self.lane_layout.setContentsMargins(LANE_PADDING, LANE_PADDING, LANE_PADDING, LANE_PADDING)
         self.lane_layout.setSpacing(STACK_SPACING)

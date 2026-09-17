@@ -29,7 +29,7 @@ def tab(services, project):
 
 
 def panel(tab) -> ProblemsPanel:
-    content = tab._panel_frame.content
+    content = tab._side_panel.frame.content
     assert isinstance(content, ProblemsPanel)
     return content
 
@@ -79,14 +79,14 @@ def test_a_clean_plan_says_so_and_the_list_stands_down(services, make_project):
 def test_the_reading_is_the_count_and_the_strip_button_wears_it(tab):
     view = panel(tab)
     assert view.reading() == f"({len(view.findings())})"
-    button = tab._panel_button
+    button = tab._side_panel.button
     assert button is not None and button.text() == view.reading()
 
 
 def test_the_reading_follows_the_plan(services, tab, project):
     """A count read, never probed: the panel recomputes on its own settled rebuild and the
     button reads what it last said."""
-    view, button = panel(tab), tab._panel_button
+    view, button = panel(tab), tab._side_panel.button
     before = len(view.findings())
     orphan = next(step for step in project.steps if step.title == "Orphan")
     SetEdgesCommand(orphan.id, "requires", [project.steps[0].id]).redo(services.document)

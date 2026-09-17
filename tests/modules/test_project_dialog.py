@@ -469,9 +469,10 @@ def test_publish_runs_for_a_plan_repository_without_an_origin_and_is_greyed_afte
 
 
 def _card(services, project):
-    select(services, project.id)
-    panel = services.window.dock.widget_for("project_editor.project")
-    return next(c for c in panel._cards if c.title.text() == "Repositories").body
+    from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND
+
+    page = services.tabs.open(DASHBOARD_KIND, project.id).page
+    return next(c for c in page.cards if c.title.text() == "Repositories").body
 
 
 def test_the_card_states_both_repositories_and_follows_the_facts(

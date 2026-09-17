@@ -308,6 +308,11 @@ class AppShellModule:
         # with every panel's own on/off untouched underneath.
         def register_area_toggle(area: PanelArea, label: str, shortcut: str, order: int) -> None:
             def area_state(_context: Context) -> ActionState:
+                # An area nothing stands in is a capability this build lacks, and the
+                # documented case for HIDDEN: a verb that folds nothing teaches nothing. It
+                # comes back the moment a panel is moved there (`panels_changed` refreshes).
+                if not any(deps.chrome.area_of(spec.id) is area for spec in deps.panels.panels()):
+                    return ActionState(visible=False, enabled=False)
                 return ActionState(checked=not deps.chrome.is_area_collapsed(area))
 
             def run_area(_context: Context) -> None:
@@ -329,7 +334,9 @@ class AppShellModule:
 
         register_area_toggle(PanelArea.LEFT, "Left Side Panel", "Ctrl+B", 10)
         register_area_toggle(PanelArea.RIGHT, "Right Side Panel", "Ctrl+Alt+B", 20)
-        # BOTTOM has no registered panels yet; Ctrl+J is reserved for its toggle when one exists.
+        # Nothing targets RIGHT by default any more — the project form is the Dashboard tab
+        # and the Test panel stands inside the Tests tab — so Ctrl+Alt+B is hidden until a
+        # panel is moved there. BOTTOM has no registered panels either; Ctrl+J is reserved.
         # Collapse also flips when a gesture reveals a panel, so the checkmarks re-read here.
         deps.chrome.areas_changed.connect(lambda _area: deps.context.refresh())
 

@@ -48,19 +48,23 @@ from typing import TYPE_CHECKING
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMenu, QVBoxLayout, QWidget
 
-from dplanner.domain.model import Library, NodeId, Project, Step, StepId
+from dplanner.domain.model import NodeId, Project, Step, StepId
 from dplanner.domain.scope import ScopeKind, gatherers, kind_of
 from dplanner.framework.action_menu import fill_menu
+from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import ActivityBase, EntityActivity, follow_project
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
+    SCOPE_SELECTION,
+    Context,
     ContextNode,
     ContextService,
     Uri,
     activity_uri,
     selection_uri,
 )
-from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.debounce import Debounced
+from dplanner.framework.side_panel import HostedSidePanel, SidePanel
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.table import Selection
 from dplanner.framework.toolbar import FilterButton, Toolbar
@@ -80,10 +84,11 @@ from dplanner.modules.testing.filing import (
     category_places,
     ergonomic_order,
 )
+from dplanner.modules.testing.panel import TestPanel, Walk
 from dplanner.modules.testing.table import Heading, Row, TestsTable
 from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.theme.cards import title_font
-from dplanner.theme.icons import archive_icon, sort_icon
+from dplanner.theme.icons import archive_icon, beaker_icon, sort_icon
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
@@ -91,6 +96,12 @@ if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forwar
 
 TESTS_KIND = "tests"
 ALL_TESTS_KIND = "all_tests"
+
+# The Test panel beside the roster: the verb that stands it, and the width it opens at —
+# the dock's old right-area width, where its seven dense glyphs and two dividers fit
+# without folding into `…`, which is the one thing a run must not have to do.
+SIDE_PANEL_ACTION = "tests.side_panel"
+TEST_PANEL_WIDTH = 360
 
 TAB_HINT = "Everything this project verifies, and how it last did."
 ALL_HINT = "Every test in every project in this library, and how it last did."
@@ -148,9 +159,19 @@ def _selector(parent: QWidget, tip: str) -> QComboBox:
 
 
 class _TestsPage(QWidget):
-    """The shared page: the caption, the answer, the strip, then the table."""
+    """The shared page: the caption, the answer, the strip, then the roster with the Test
+    panel beside it."""
 
-    def __init__(self, caption: str, hint: str, *, selection: Selection) -> None:
+    def __init__(
+        self,
+        caption: str,
+        hint: str,
+        *,
+        selection: Selection,
+        panel: TestPanel,
+        actions: ActionRegistry,
+        context: ContextService,
+    ) -> None:
         super().__init__()
         layout = QVBoxLayout(self)
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
@@ -171,6 +192,23 @@ class _TestsPage(QWidget):
         self.strip.setSpacing(FIELD_GAP)
         self.controls = Toolbar(self)
         self.strip.addWidget(self.controls, 1)
+        # The roster: the table, or the words for why it is empty.
+        roster = QWidget(self)
+        rows = QVBoxLayout(roster)
+        rows.setContentsMargins(0, 0, 0, 0)
+        rows.setSpacing(SECTION_GAP)
+        # The Test panel stands beside the roster, inside this tab: one per tab, fed by this
+        # table's own pick (``feed_panel``), so a tab in the background never follows the
+        # tab in front. Its seat leads the strip, as the Problems list's does on the canvas.
+        self.side_panel = HostedSidePanel(
+            SidePanel("Test", beaker_icon, lambda: panel, width=TEST_PANEL_WIDTH),
+            roster,
+            toggle=SIDE_PANEL_ACTION,
+            actions=actions,
+            context=context,
+        )
+        self.controls.add_widget(self.side_panel.button)
+        self.controls.add_divider()
         # Built here so both tabs offer the same filter with the same words. It is added to
         # the strip by whoever wants it, in the order that tab reads best.
         self.audience = FilterButton(label="Audience")
@@ -181,10 +219,17 @@ class _TestsPage(QWidget):
         self.updating = UpdatingIndicator(self)
         self.strip.addWidget(self.updating)
 
-        self.table = TestsTable(self, selection=selection)
-        layout.addWidget(self.table, 1)
-        self.empty = EmptyState(parent=self, stands_in_for=self.table)
-        layout.addWidget(self.empty, 1)
+        self.table = TestsTable(roster, selection=selection)
+        rows.addWidget(self.table, 1)
+        self.empty = EmptyState(parent=roster, stands_in_for=self.table)
+        rows.addWidget(self.empty, 1)
+        layout.addWidget(self.side_panel.split, 1)
+
+    def feed_panel(self, nodes: Sequence[ContextNode]) -> None:
+        """Point the panel at what this table has picked — a constructed context, never
+        the window's, and fed whether or not the panel is on screen, so it is right the
+        moment it is stood (off screen keeps its content)."""
+        self.side_panel.show_context(Context({SCOPE_SELECTION: tuple(nodes)}))
 
     def say(self, message: str) -> None:
         """A tab cannot go off screen the way a panel does, so it says so in words."""
@@ -212,6 +257,37 @@ class _TestsPage(QWidget):
         """
         narrowed = f"{shown} of {total} shown" if shown != total else ""
         self.lead(answer, " · ".join(part for part in (narrowed, detail) if part))
+
+
+def reveal_test(deps: "TestsDeps", step_id: StepId, test_id: str) -> None:
+    """Pick a test in its project's Tests tab — what the preview's *Show in Tests* does.
+
+    Through the tab rather than by publishing, because the table is what owns that
+    selection: a preview is a thing you read, and changing what is selected is the *tab's*
+    gesture even when something else asked for it.
+    """
+    if not deps.library.has(step_id):
+        return
+    project = deps.library.project_of(step_id)
+    activity = deps.tabs.open(TESTS_KIND, project.id)
+    if isinstance(activity, TestsActivity):
+        activity.reveal(test_id)
+
+
+def _neighbour_row(table: TestsTable, offset: int) -> int | None:
+    """The row ``offset`` tests along from the one picked, in *this* table's order.
+
+    The tab's order, not the project's: what "next" means is what the reader has in front
+    of them — their scope, their filter, their ergonomic order. By row rather than by id,
+    because the roll call holds several projects and an id is unique inside one; and None
+    unless exactly one row is picked, since "next" has no meaning from a set.
+    """
+    rows = [row for row in range(table.rowCount()) if table.test_at(row) is not None]
+    picked = sorted({index.row() for index in table.selectedIndexes()})
+    if len(picked) != 1 or picked[0] not in rows:
+        return None
+    at = rows.index(picked[0]) + offset
+    return rows[at] if 0 <= at < len(rows) else None
 
 
 @dataclass(frozen=True)
@@ -245,7 +321,7 @@ class Shown:
 class TestsActivity(EntityActivity):
     """One project's tests: the roster, the runs, and the marking."""
 
-    def __init__(self, deps: "TestsDeps", project_id: NodeId) -> None:
+    def __init__(self, deps: "TestsDeps", project_id: NodeId, *, side_panel: bool = False) -> None:
         super().__init__(deps.context, "project", project_id)
         self._deps = deps
         self._library = deps.library
@@ -262,7 +338,22 @@ class TestsActivity(EntityActivity):
         # show, since marking in it is what the person just asked for.
         self._runs_seen: set[str] | None = None
 
-        self.page = _TestsPage("Tests", TAB_HINT, selection="extended")
+        self.page = _TestsPage(
+            "Tests",
+            TAB_HINT,
+            selection="extended",
+            panel=TestPanel(
+                deps.library,
+                deps.actions,
+                deps.context,
+                walk=Walk(go=self._walk, can=self._can_walk),
+                files=deps.files,
+                open_test=lambda step_id, test_id: reveal_test(deps, step_id, test_id),
+                debounce=deps.debounce,
+            ),
+            actions=deps.actions,
+            context=deps.context,
+        )
         controls = self.page.controls
         for action_id in RUN_VERBS:
             controls.add_action(deps.actions, deps.context, action_id)
@@ -324,6 +415,7 @@ class TestsActivity(EntityActivity):
             ),
         ]
         self._refresh()
+        self.page.side_panel.set_shown(side_panel)
 
     # -- the activity contract -----------------------------------------------------------
 
@@ -397,11 +489,16 @@ class TestsActivity(EntityActivity):
         super().on_activated()
         self._on_selection()
 
+    def set_side_panel(self, shown: bool) -> None:
+        """The user's preference changed — every Tests tab hears it, this one here."""
+        self.page.side_panel.set_shown(shown)
+
     def close(self) -> None:
         self._refresh_soon.cancel()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
+        self.page.side_panel.dispose()
         self.page.controls.dispose()
 
     def show_scope(self, step_id: StepId) -> None:
@@ -657,6 +754,18 @@ class TestsActivity(EntityActivity):
             ContextNode(selection_uri("test", test_id)) for test_id in tests
         )
         self.publish_selection(nodes)
+        self.page.feed_panel(nodes)
+
+    def _can_walk(self, offset: int) -> bool:
+        return _neighbour_row(self.page.table, offset) is not None
+
+    def _walk(self, offset: int) -> bool:
+        row = _neighbour_row(self.page.table, offset)
+        test_id = None if row is None else self.page.table.test_at(row)
+        if test_id is None:
+            return False
+        self.pick_test(test_id)
+        return True
 
     def _on_activated(self, row: int, _column: int) -> None:
         """Double-clicking a row here opens the **test**, not its step.
@@ -730,31 +839,45 @@ class AllTestsActivity(ActivityBase):
     and no entity to follow. Deliberately read-only for now; a run belongs to a project.
     """
 
-    def __init__(
-        self,
-        library: Library,
-        context: ContextService,
-        open_test: Callable[[str, StepId], None],
-        debounce: DebounceService,
-    ) -> None:
+    def __init__(self, deps: "TestsDeps", *, side_panel: bool = False) -> None:
         super().__init__()
+        library = deps.library
+        self._deps = deps
         self._library = library
-        self._context = context
-        self._open_test = open_test
+        self._context = deps.context
+        # A background pane does not speak for the user (``EntityActivity``'s rule, kept
+        # by hand here because there is no entity to follow).
+        self._is_active = False
         self.uri = activity_uri(ALL_TESTS_KIND)
         self.title = "Tests — All Projects"
 
-        self.page = _TestsPage("Tests", ALL_HINT, selection="single")
+        self.page = _TestsPage(
+            "Tests",
+            ALL_HINT,
+            selection="single",
+            panel=TestPanel(
+                library,
+                deps.actions,
+                deps.context,
+                walk=Walk(go=self._walk, can=self._can_walk),
+                files=deps.files,
+                open_test=lambda step_id, test_id: reveal_test(deps, step_id, test_id),
+                debounce=deps.debounce,
+            ),
+            actions=deps.actions,
+            context=deps.context,
+        )
         self.page.controls.add_widget(self.page.audience)
         self.archived = self.page.controls.add_verb(
             "Show archived", archive_icon, self._refresh, checkable=True, tip=ARCHIVED_TIP
         )
+        self.page.table.itemSelectionChanged.connect(self._on_selection)
         self.page.table.cellActivated.connect(self._on_activated)
         self.widget = self.page
 
         # After a quiet spell: the roll call walks every project's tests and hears the whole
         # library, so a burst of edits anywhere is one rebuild rather than one per signal.
-        self._refresh_soon = Debounced(self._refresh, parent=self.page, service=debounce)
+        self._refresh_soon = Debounced(self._refresh, parent=self.page, service=deps.debounce)
         self.updating = self.page.updating
         self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
@@ -767,15 +890,25 @@ class AllTestsActivity(ActivityBase):
         ]
         self._unsubscribes.append(self.page.audience.changed.connect(self._refresh_soon.trigger))
         self._refresh()
+        self.page.side_panel.set_shown(side_panel)
 
     def on_activated(self) -> None:
+        self._is_active = True
         self._context.set_scope(SCOPE_ACTIVITY, (ContextNode(self.uri),))
+        self._on_selection()
+
+    def on_deactivated(self) -> None:
+        self._is_active = False
+
+    def set_side_panel(self, shown: bool) -> None:
+        self.page.side_panel.set_shown(shown)
 
     def close(self) -> None:
         self._refresh_soon.cancel()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
+        self.page.side_panel.dispose()
         self.page.controls.dispose()
 
     def _refresh(self) -> None:
@@ -809,16 +942,50 @@ class AllTestsActivity(ActivityBase):
             "No tests in this library yet. Open a project and mark a step with Step ▸ Type ▸ Test."
         )
 
-    def _on_activated(self, row: int, _column: int) -> None:
-        """The same gesture as the project tab's: a row is a test, so it opens the test.
+    def _picked(self) -> tuple[ContextNode, ...]:
+        """The one picked row as the pair every view publishes: the row's step goes with
+        its test, because an id is unique inside its project and this is the view holding
+        several projects at once."""
+        table = self.page.table
+        picked = sorted({index.row() for index in table.selectedIndexes()})
+        if len(picked) != 1:
+            return ()
+        test_id = table.test_at(picked[0])
+        step_id = table.step_at(picked[0])
+        if test_id is None or step_id is None:
+            return ()
+        return (
+            ContextNode(selection_uri("step", step_id)),
+            ContextNode(selection_uri("test", test_id)),
+        )
 
-        The roll call publishes no selection of its own — it spans projects — so the verb
-        is handed a constructed context naming exactly this row, which is the documented
-        way to run a verb on something the user did not select (``CLAUDE.md``). The row's
-        step goes with its test: an id is unique inside its project, and this is the view
-        holding several projects at once.
-        """
-        test_id = self.page.table.test_at(row)
-        step_id = self.page.table.step_at(row)
-        if test_id is not None and step_id is not None:
-            self._open_test(test_id, step_id)
+    def _on_selection(self) -> None:
+        nodes = self._picked()
+        if self._is_active:
+            self._context.set_scope(SCOPE_SELECTION, nodes)
+        self.page.feed_panel(nodes)
+
+    def _can_walk(self, offset: int) -> bool:
+        return _neighbour_row(self.page.table, offset) is not None
+
+    def _walk(self, offset: int) -> bool:
+        row = _neighbour_row(self.page.table, offset)
+        if row is None:
+            return False
+        table = self.page.table
+        table.selectRow(row)
+        if (item := table.item(row, 0)) is not None:
+            table.scrollToItem(item)
+        return True
+
+    def _on_activated(self, row: int, _column: int) -> None:
+        """The same gesture as the project tab's: a row is a test, so it opens the test."""
+        table = self.page.table
+        if table.test_at(row) is None:
+            return
+        if {index.row() for index in table.selectedIndexes()} != {row}:
+            table.selectRow(row)
+        # Published unconditionally, as the project tab does: a selection made while this
+        # pane was in the background never reached the context.
+        self._on_selection()
+        self._deps.actions.run("test.details", self._context.current())

@@ -6,13 +6,13 @@ the graph editor is for — an index answers "what is in this workspace", and a 
 position in a graph, which a list of rows cannot show. An entry is different: it is a door
 into a project-scoped surface (its specs, say), not a copy of the project's content.
 
-The segment publishes what is selected and opens what is activated. A project row is a
-folder: double-clicking it folds and unfolds (Qt's own double-click behaviour — activation
-adds nothing, so nothing here fights it). What *opens* is an entry row, through the
-``entry.open`` callback the composition root supplied; the segment never learns what an
-editor is. A plain click on an entry opens the same surface as a *preview* tab through
-``entry.open_preview`` — the glance that VS Code's next glance replaces — and activation
-is what keeps it.
+The segment publishes what is selected and opens what is activated. A project row opens
+the project's home — its Dashboard — through the ``open_dashboard`` callback the
+composition root supplied, and an entry row opens its own surface through ``entry.open``;
+the segment never learns what an editor is. A plain click opens the same surface as a
+*preview* tab — the glance that VS Code's next glance replaces — and activation is what
+keeps it. Double-clicking a project row also folds it (Qt's own double-click behaviour,
+which nothing here fights): the tab is kept and the folder closes.
 """
 
 from collections.abc import Callable, Sequence
@@ -90,8 +90,12 @@ class ProjectsSegment:
         entries: tuple[ProjectEntry, ...] = (),
         problems: Callable[[], list[ProjectProblem]] = list,
         debounce: DebounceService | None = None,
+        open_dashboard: Callable[[NodeId, bool], None] | None = None,
     ) -> None:
         self._root = root
+        # (project id, preview) — the project row's own door; None is a build with no home
+        # tab, where a click on the row only selects it.
+        self._open_dashboard = open_dashboard
         # After a quiet spell, not per signal: the whole folder is redrawn. No Qt parent —
         # a segment is not a widget — so the service's cancel_all is what disarms it.
         self._rebuild_soon = Debounced(self.rebuild, parent=None, service=debounce)
@@ -145,23 +149,24 @@ class ProjectsSegment:
         return [ContextNode(uri) for uri in uris]
 
     def clicked(self, item: QTreeWidgetItem) -> None:
-        kind, _node_id = self._identity(item)
+        kind, node_id = self._identity(item)
         if kind == "entry":
             entry = self._entry_of(item)
             project_id = self._entry_project(item)
             if entry and project_id and entry.open_preview is not None:
                 entry.open_preview(project_id)
-        # A project row: a click selects it, and that is the whole gesture.
+        elif kind == "project" and node_id and self._open_dashboard is not None:
+            self._open_dashboard(node_id, True)  # A glance at the project's home.
 
     def activated(self, item: QTreeWidgetItem) -> None:
-        kind, _node_id = self._identity(item)
+        kind, node_id = self._identity(item)
         if kind == "entry":
             entry = self._entry_of(item)
             project_id = self._entry_project(item)
             if entry and project_id:
                 entry.open(project_id)
-        # A project row deliberately does nothing here: double-click already folds it, and
-        # opening a surface is what its entry rows are for.
+        elif kind == "project" and node_id and self._open_dashboard is not None:
+            self._open_dashboard(node_id, False)  # Kept; Qt folds the row as well.
 
     def context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
         kind, _node_id = self._identity(item)

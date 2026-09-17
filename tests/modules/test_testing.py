@@ -1555,10 +1555,17 @@ def test_the_step_panel_offers_the_keys_in_use_and_commits_a_typed_one(
 # -- the Test panel ---------------------------------------------------------------------------
 
 
-def the_panel(services):
-    from dplanner.modules.testing.panel import PANEL_ID
+def open_tests_tab(services, project):
+    """The project's Tests tab, current — where its Test panel lives."""
+    from dplanner.modules.testing.activity import TESTS_KIND
 
-    return services.window.dock.widget_for(PANEL_ID)
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    activity.on_activated()
+    return activity
+
+
+def the_panel(activity):
+    return activity.page.side_panel.content
 
 
 def pick_test(services, step, test_id):
@@ -1575,7 +1582,7 @@ def test_the_panel_shows_one_picked_test_and_steps_aside_for_none(services, proj
     step.module_data[MODULE_ID] = write(
         [Test("T100", "Signs in", body="1. Open it.\n2. It must work.", category="Smoke")]
     )
-    panel = the_panel(services)
+    panel = the_panel(open_tests_tab(services, project))
 
     assert panel.show_context(pick_test(services, step, "T100"))
     assert panel.head.title.text() == "Signs in"
@@ -1590,13 +1597,14 @@ def test_the_panel_shows_one_picked_test_and_steps_aside_for_none(services, proj
 
 def test_the_panel_steps_aside_when_several_tests_are_picked(services, project, step):
     step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
+    panel = the_panel(open_tests_tab(services, project))
     select(services, step, tests=("T100", "T101"))
-    assert not the_panel(services).show_context(services.context.current())
+    assert not panel.show_context(services.context.current())
 
 
 def test_show_step_opens_the_step_this_test_hangs_off(services, project, step, monkeypatch):
     step.module_data[MODULE_ID] = write([Test("T100", "One")])
-    panel = the_panel(services)
+    panel = the_panel(open_tests_tab(services, project))
     panel.show_context(pick_test(services, step, "T100"))
 
     opened: list[str] = []
@@ -1610,64 +1618,38 @@ def test_show_step_opens_the_step_this_test_hangs_off(services, project, step, m
 
 
 def test_next_moves_the_tables_selection_so_a_run_can_be_worked_down(services, make_project):
-    from dplanner.modules.testing.activity import TESTS_KIND
-
     project = make_project("Widget")
     (work,) = chain(services, project, "Work")
     keyed(services, work, ("T100", "", "Apple"), ("T101", "", "Banana"))
-    activity = services.tabs.open(TESTS_KIND, project.id)
-    activity.on_activated()
-    panel = the_panel(services)
-    panel.show_context(pick_test(services, work, "T100"))
+    activity = open_tests_tab(services, project)
+    panel = the_panel(activity)
+    activity.pick_test("T100")
 
     assert panel.next_verb.isEnabled() and not panel.previous_verb.isEnabled()
     panel.next_verb.trigger()
-    # The *table* moved, which is what published the new selection.
+    # The *table* moved, and the tab fed the panel what it picked.
     assert activity.page.table.selected_tests() == ["T101"]
-    panel.show_context(services.context.current())
     assert panel.head.title.text() == "T101"
     assert not panel.next_verb.isEnabled()  # The end of the list says so.
+    assert "list" in panel.next_verb.toolTip()
 
 
-def test_stepping_through_is_greyed_with_its_reason_when_no_tab_is_open(services, project, step):
-    step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
-    panel = the_panel(services)
-    panel.show_context(pick_test(services, step, "T100"))
-    assert not panel.next_verb.isEnabled()
-    assert "Tests tab" in panel.next_verb.toolTip()
+def test_the_test_panel_stands_in_the_tests_tab_not_in_the_window(services, project, step):
+    """A panel that belongs to a tab: one per Tests tab, fed by that tab's own pick, so a
+    tab in the background never follows the tab in front. The dock offers no copy, so
+    View ▸ Panels has no entry for it either."""
+    from dplanner.modules.testing.panel import TestPanel
+
+    activity = open_tests_tab(services, project)
+    assert isinstance(the_panel(activity), TestPanel)
+    assert not any(spec.id.startswith("testing.") for spec in services.panels.panels())
+    with pytest.raises(KeyError):
+        services.actions.spec("appshell.panel_testing.test")
 
 
-def test_a_picked_test_leaves_the_right_area_holding_only_the_test_panel(services, project, step):
-    """The area answers the question that was asked and no other. The project form yields
-    (`narrower_kinds`), and the step editor has no seat here at all — a roster read one test
-    at a time is the surface that made both of those true."""
-    from dplanner.framework.panels import PanelArea
-    from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
-    from dplanner.modules.testing.activity import TESTS_KIND
-    from dplanner.modules.testing.panel import PANEL_ID as TEST_PANEL_ID
-
-    step.module_data[MODULE_ID] = write([Test("T100", "Signs in", body="1. Open it.")])
-    dock = services.window.dock
-    services.tabs.open(TESTS_KIND, project.id).on_activated()
-
-    select(services, step)  # No test yet: the form is what the area has to say.
-    assert dock.is_panel_showing(PROJECT_PANEL_ID)
-
-    # Every panel the build registered, not a named few: the claim is that nothing else is
-    # up there, which a list of two ids could not make.
-    select(services, step, tests=("T100",))
-    right = [
-        spec.id
-        for spec in services.panels.panels()
-        if dock.area_of(spec.id) is PanelArea.RIGHT and dock.is_panel_showing(spec.id)
-    ]
-    assert right == [TEST_PANEL_ID]
-
-
-def test_the_panel_shows_the_picked_projects_test_and_not_another_projects(services, make_project):
-    """The bug this fixture is built for: ids are minted per *project*, so `T100` names a
-    test in every one of them. A panel that looked a test up by id alone showed whichever
-    project the library happened to list first, whatever the reader had double-clicked."""
+def test_two_projects_tests_tabs_each_carry_their_own_panel(services, make_project):
+    """Ids are minted per *project*, so `T100` names a test in every one of them — and a
+    tab's panel shows its own tab's pick, whichever tab is in front."""
     first = make_project("Alpha")
     second = make_project("Beta")
     (early,) = chain(services, first, "Alpha work")
@@ -1675,11 +1657,62 @@ def test_the_panel_shows_the_picked_projects_test_and_not_another_projects(servi
     services.document.set_module_data(early.id, MODULE_ID, write([Test("T100", "Alpha's test")]))
     services.document.set_module_data(late.id, MODULE_ID, write([Test("T100", "Beta's test")]))
 
-    panel = the_panel(services)
-    assert panel.show_context(pick_test(services, late, "T100"))
-    assert panel.head.title.text() == "Beta's test"
-    assert panel.show_context(pick_test(services, early, "T100"))
-    assert panel.head.title.text() == "Alpha's test"
+    alpha = open_tests_tab(services, first)
+    beta = open_tests_tab(services, second)
+    beta.pick_test("T100")
+    assert the_panel(beta).head.title.text() == "Beta's test"
+
+    services.tabs.focus(alpha)
+    alpha.pick_test("T100")
+    assert the_panel(alpha).head.title.text() == "Alpha's test"
+    assert the_panel(beta).head.title.text() == "Beta's test"  # A background tab keeps its own.
+
+
+def test_switching_tabs_takes_the_panel_with_the_tab_and_brings_it_back(services, make_project):
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    give(services, work, "T100")
+    tests = open_tests_tab(services, project)
+    tests.pick_test("T100")
+    services.actions.run("test.details", services.context.current())
+    frame = tests.page.side_panel.frame
+    assert frame.isVisibleTo(services.window)
+
+    graph = services.tabs.open("project", project.id)
+    assert services.tabs.current_activity() is graph
+    assert not frame.isVisibleTo(services.window)  # Gone with its tab …
+    assert the_panel(tests).head.title.text() == "T100"  # … and keeping its content.
+
+    services.tabs.focus(tests)
+    assert frame.isVisibleTo(services.window)
+
+
+def test_the_panel_preference_is_one_answer_for_every_tests_tab(services, make_project):
+    """Remembered per user, like the graph's: a Tests tab opened later stands as this one
+    does, and the panel's own way out is the same verb, so it is written once."""
+    from dplanner.framework.user_config import get_global
+
+    first = make_project("Alpha")
+    second = make_project("Beta")
+    spec = services.actions.spec("tests.side_panel")
+    assert (spec.menu, spec.group) == ("Project", "tests")
+
+    alpha = open_tests_tab(services, first)
+    assert alpha.page.side_panel.frame.isHidden()
+    assert not spec.state(services.context.current()).checked
+
+    services.actions.run("tests.side_panel", services.context.current())
+    assert not alpha.page.side_panel.frame.isHidden()
+    assert spec.state(services.context.current()).checked
+    assert alpha.page.side_panel.button.isChecked()
+    assert get_global(MODULE_ID, "side_panel") is True
+
+    beta = open_tests_tab(services, second)
+    assert not beta.page.side_panel.frame.isHidden()
+
+    alpha.page.side_panel.frame.close_button.click()
+    assert alpha.page.side_panel.frame.isHidden() and beta.page.side_panel.frame.isHidden()
+    assert get_global(MODULE_ID, "side_panel") is False
 
 
 def test_a_test_with_no_step_beside_it_is_nothing_to_show(services, project, step):
@@ -1688,22 +1721,19 @@ def test_a_test_with_no_step_beside_it_is_nothing_to_show(services, project, ste
 
     step.module_data[MODULE_ID] = write([Test("T100", "One")])
     alone = Context({SCOPE_SELECTION: (ContextNode(selection_uri("test", "T100")),)})
-    assert not the_panel(services).show_context(alone)
+    assert not the_panel(open_tests_tab(services, project)).show_context(alone)
     assert not services.actions.spec("test.details").state(alone).enabled
 
 
 def test_double_clicking_a_row_names_the_rows_own_step(services, make_project):
     """A row is a test and its step is a column, so the double-click publishes the pair —
     which is what makes the panel show that row rather than a namesake elsewhere."""
-    from dplanner.modules.testing.activity import TESTS_KIND
-
     project = make_project("Widget")
     work, other = chain(services, project, "Work", "Other")
     give(services, work, "T100")
     give(services, other, "T101")
 
-    activity = services.tabs.open(TESTS_KIND, project.id)
-    activity.on_activated()
+    activity = open_tests_tab(services, project)
     row = next(
         index
         for index in range(activity.page.table.rowCount())
@@ -1714,12 +1744,12 @@ def test_double_clicking_a_row_names_the_rows_own_step(services, make_project):
     current = services.context.current()
     assert current.selected_entity("test") == "T101"
     assert current.selected_entity("step") == other.id
-    assert the_panel(services).head.title.text() == "T101"
+    assert the_panel(activity).head.title.text() == "T101"
 
 
-def test_the_roll_call_names_the_rows_step_too(services, make_project):
+def test_the_roll_call_names_the_rows_step_too_and_hosts_its_own_panel(services, make_project):
     """The one view holding several projects at once, so it is the one that cannot get
-    away with naming a test alone."""
+    away with naming a test alone — and a single click there feeds its own panel."""
     from dplanner.modules.testing.activity import ALL_TESTS_KIND
 
     first = make_project("Alpha")
@@ -1731,30 +1761,44 @@ def test_the_roll_call_names_the_rows_step_too(services, make_project):
 
     activity = services.tabs.open(ALL_TESTS_KIND)
     activity.on_activated()
-    row = next(
-        index
-        for index in range(activity.page.table.rowCount())
-        if activity.page.table.step_at(index) == late.id
-    )
-    activity.page.table.cellActivated.emit(row, 0)
-
+    table = activity.page.table
+    row = next(index for index in range(table.rowCount()) if table.step_at(index) == late.id)
+    table.selectRow(row)
     assert services.context.current().selected_entity("step") == late.id
-    assert the_panel(services).head.title.text() == "Beta's test"
+    assert the_panel(activity).head.title.text() == "Beta's test"
+
+    table.cellActivated.emit(row, 0)
+    assert not activity.page.side_panel.frame.isHidden()
 
 
 def test_double_clicking_a_row_reveals_the_panel(services, make_project):
-    from dplanner.modules.testing.activity import TESTS_KIND
-    from dplanner.modules.testing.panel import PANEL_ID
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    give(services, work, "T100")
+
+    activity = open_tests_tab(services, project)  # A real double-click activates the pane first.
+    frame = activity.page.side_panel.frame
+    assert frame.isHidden()  # Off until asked for.
+    activity.page.table.cellActivated.emit(0, 0)
+    assert not frame.isHidden()
+
+
+def test_test_details_from_another_tab_opens_the_projects_tests_tab_and_its_panel(
+    services, make_project
+):
+    """The panel lives in the Tests tab, so the verb run from anywhere else goes there."""
+    from dplanner.modules.testing.activity import TestsActivity
 
     project = make_project("Widget")
     (work,) = chain(services, project, "Work")
     give(services, work, "T100")
-    services.window.set_panel_visible(PANEL_ID, False)
+    services.tabs.open("project", project.id)
 
-    activity = services.tabs.open(TESTS_KIND, project.id)
-    activity.on_activated()  # A real double-click activates the pane before it lands.
-    activity.page.table.cellActivated.emit(0, 0)
-    assert services.window.is_panel_visible(PANEL_ID)
+    services.actions.run("test.details", pick_test(services, work, "T100"))
+    current = services.tabs.current_activity()
+    assert isinstance(current, TestsActivity) and current.project_id == project.id
+    assert current.page.table.selected_tests() == ["T100"]
+    assert not current.page.side_panel.frame.isHidden()
 
 
 # -- the category editor -------------------------------------------------------------------

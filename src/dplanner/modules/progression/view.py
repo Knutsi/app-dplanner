@@ -315,14 +315,14 @@ class StepCard(QFrame):
 class StatusColumn(QFrame):
     """One vertical list: a caption, its cards, and words when there are none.
 
-    A lane, not a bare stack: the ``#ProgressionLane`` rule paints it ``$BG_ELEVATED``,
+    A lane, not a bare stack: the ``#CardLane`` rule paints it ``$BG_ELEVATED``,
     which is what gives the list a shape on a tab page — and puts the ``#ToolCard`` rows
     inside on the elevated ground that well was designed for (DESIGN.md §Cards).
     """
 
     def __init__(self, caption: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setObjectName("ProgressionLane")
+        self.setObjectName("CardLane")
         self.setFrameShape(QFrame.Shape.NoFrame)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(LANE_PADDING, LANE_PADDING, LANE_PADDING, LANE_PADDING)
