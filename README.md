@@ -8,6 +8,31 @@ with uv, running on Linux, macOS and Windows.
 It has two front doors, and they are equals: a desktop window, and a `dplanner` command that
 any coding agent can drive.
 
+> **DPlanner is in development.** Its file formats and its feature set change without
+> notice, and nothing about compatibility between versions — of the files a plan is kept
+> in, or of the features that write them — is guaranteed in any way.
+
+## Installing
+
+The quickest way is to hand it to your coding agent: give it the skill that installs
+DPlanner, then ask it to. The skill says what the line above says before it touches
+anything, installs git and uv with this machine's package manager, clones the repository
+and runs the one install command.
+
+| Agent | Getting the skill |
+|---|---|
+| Claude Code | `/plugin marketplace add Knutsi/app-dplanner`, then `/plugin install dplanner@dplanner` |
+| Codex | ask `$skill-installer` for the `dplanner-install` skill from `github.com/Knutsi/app-dplanner` |
+| Any agent | tell it to read <https://raw.githubusercontent.com/Knutsi/app-dplanner/main/plugins/dplanner/skills/dplanner-install/SKILL.md> and follow it |
+
+(The community `npx skills add Knutsi/app-dplanner` finds the same file; nothing here
+depends on it.) By hand it is git and uv, a clone, and one command from inside it:
+
+```bash
+git clone https://github.com/Knutsi/app-dplanner && cd app-dplanner
+uv run dplanner install all    # the `dplanner` command, a launcher in the applications menu, the agent skill
+```
+
 ## What a plan is
 
 ```
@@ -115,12 +140,16 @@ from a terminal, over the same file.
 
 ```bash
 uv run dplanner install all            # the skill, with the command and the launcher
-uv run dplanner skill install --repo   # ./.claude/skills/dplanner/, so it travels
+uv run dplanner skill install --repo   # ./.claude/skills/ and ./.agents/skills/, so it travels
 ```
 
 The skill is **generated from the command registry**, so it cannot describe a command that
-does not exist; `dplanner install status` says whether the installed copy matches the build,
-and *Tools ▸ Install DPlanner…* does the same from the window.
+does not exist, and it is **written to every home an agent reads** — `SKILL.md` is an open
+format, so the one file serves Claude Code and OpenCode (`~/.claude/skills/dplanner/`) and
+Codex (`~/.agents/skills/dplanner/`) alike. `dplanner install status` says whether every
+installed copy matches the build, and *Tools ▸ Install DPlanner…* does the same from the
+window. The skill that installs DPlanner itself is the one hand-written exception, under
+`plugins/dplanner/` — see *Installing* above.
 
 Commands find the current project by walking up from the working directory for
 `project.dproj`, so an agent already sitting in the repository needs no configuration. A
@@ -288,6 +317,7 @@ src/dplanner/
 ├── scripts/windows/              what it drives — the throwaway box, the guest provisioning, and its README
 ├── dplanner.spec                 the frozen build: onedir, two executables, one analysis (LGPL — see the docstring)
 ├── freeze/                       what PyInstaller is handed: the entry point, and the manifest of shipped files
+├── plugins/dplanner/             the Claude Code plugin: the hand-written skill that installs DPlanner — .claude-plugin/marketplace.json lists it
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub
