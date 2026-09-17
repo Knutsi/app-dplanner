@@ -161,8 +161,10 @@ paths:
   what it is.
 - **A module's project-level editor is a card, registered into `services.project_cards`.**
   Same `InspectorSection` contract as a step tab, with a project id in `show_target`; the
-  Dashboard tab (`modules/project_dashboard/`) renders the stack, opened about one project
-  and never re-targeted. Register before `project_dashboard` in `default_modules()` — a
-  tab reads the registry when it opens, and `reopen_tabs` opens tabs at startup. The agent
-  instruction's card is the example; `ARCHITECTURE.md`'s *The dashboard hosts the same
-  contract, as cards* has the reasoning.
+  Dashboard tab (`modules/project_dashboard/`) renders them, opened about one project and
+  never re-targeted, flowing as many across as the width allows; a section's `stretch`
+  says whether its card takes the page's leftover height (a prose editor does, with a
+  *minimum* height rather than a fixed one). Register before `project_dashboard` in
+  `default_modules()` — a tab reads the registry when it opens, and `reopen_tabs` opens
+  tabs at startup. The agent instruction's card is the example; `ARCHITECTURE.md`'s *The
+  dashboard hosts the same contract, as cards* has the reasoning.

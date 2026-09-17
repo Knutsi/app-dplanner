@@ -69,7 +69,9 @@ class DashboardPage(QWidget):
         for section, extension in zip(self._sections, self.extensions, strict=True):
             card = ToolCard(section.label, extension.widget)
             self.cards.append(card)
-            self._flow.add_card(card)
+            # A section's stretch is who gets the leftover height, here as on the Details
+            # tab: a prose editor grows into the page, a list of facts stays its size.
+            self._flow.add_card(card, grows=section.stretch > 0)
 
         # The form's captions over its fields (DESIGN.md's *Forms*), held to a readable
         # measure; then the cards on a lane of their own — a bare card on a tab page's

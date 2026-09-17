@@ -347,6 +347,7 @@ class StepAgentInstructionModule:
                     id=f"{MODULE_ID}.card",
                     label="Agent",
                     order=20,
+                    stretch=1,  # A prose editor: it takes the page's leftover height.
                     factory=lambda: ProjectInstructionCard(
                         deps.library, deps.undo, deps.files, deps.pick_assets, deps.dictation
                     ),

@@ -70,7 +70,7 @@ class ToolCard(QFrame):
         layout.addLayout(header)
 
         self.body = body
-        layout.addWidget(body)
+        layout.addWidget(body, 1)  # Height a host gives the card goes to the feature.
 
     def set_glyph(self, icon: QIcon | None) -> None:
         """Colour-parameterised glyphs are repainted by the host on theme change."""
@@ -88,8 +88,10 @@ class CardFlow(QScrollArea):
     The column count is read from this widget's own width, not the content's: a vertical
     scroll bar appearing takes a few pixels off the viewport, and a count taken from there
     could flip back and forth on the scroll bar it just caused. Cards keep their order,
-    filling row by row, each aligned to the top of its row so a short card beside a tall
-    one is not stretched to match.
+    filling row by row. A card that ``grows`` takes the leftover height of the page — a
+    prose editor wants it; a row holding one stretches, and the cards in it that do not
+    grow stay at their own height, aligned to the top, so a list of three facts is never a
+    tall empty box beside an editor.
     """
 
     def __init__(self, parent: QWidget | None = None, *, min_card_width: int = CARD_MIN_WIDTH):
@@ -102,7 +104,7 @@ class CardFlow(QScrollArea):
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Tab goes straight to card controls.
         self._min_card_width = min_card_width
         # Our own list of what is in the grid: a layout is never read back (CLAUDE.md).
-        self._cards: list[ToolCard] = []
+        self._cards: list[tuple[ToolCard, bool]] = []
         self._columns = 1
 
         content = QWidget()
@@ -116,8 +118,8 @@ class CardFlow(QScrollArea):
         self.viewport().setAutoFillBackground(False)
         content.setAutoFillBackground(False)
 
-    def add_card(self, card: ToolCard) -> None:
-        self._cards.append(card)
+    def add_card(self, card: ToolCard, *, grows: bool = False) -> None:
+        self._cards.append((card, grows))
         self._place()
 
     def columns(self) -> int:
@@ -140,12 +142,20 @@ class CardFlow(QScrollArea):
         while self._grid.takeAt(0) is not None:
             pass
         columns = self._columns
-        for index, card in enumerate(self._cards):
-            self._grid.addWidget(card, index // columns, index % columns, Qt.AlignmentFlag.AlignTop)
-        # Equal columns, and the leftover height below the last row rather than between rows.
-        # Stretches set for a wider layout are taken back, or an empty column keeps its share.
+        rows = (len(self._cards) + columns - 1) // columns
+        growing_rows = {
+            index // columns for index, (_card, grows) in enumerate(self._cards) if grows
+        }
+        for index, (card, grows) in enumerate(self._cards):
+            alignment = Qt.AlignmentFlag(0) if grows else Qt.AlignmentFlag.AlignTop
+            self._grid.addWidget(card, index // columns, index % columns, alignment)
+        # Equal columns. The leftover height goes to the rows that grow, or below the last
+        # row when none does — never between rows. Stretches set for a wider layout are
+        # taken back, or an empty column keeps its share.
         for column in range(max(columns, self._grid.columnCount())):
             self._grid.setColumnStretch(column, 1 if column < columns else 0)
-        rows = (len(self._cards) + columns - 1) // columns
         for row in range(max(rows + 1, self._grid.rowCount())):
-            self._grid.setRowStretch(row, 1 if row == rows else 0)
+            if growing_rows:
+                self._grid.setRowStretch(row, 1 if row in growing_rows else 0)
+            else:
+                self._grid.setRowStretch(row, 1 if row == rows else 0)

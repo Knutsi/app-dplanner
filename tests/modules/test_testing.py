@@ -1555,6 +1555,16 @@ def test_the_step_panel_offers_the_keys_in_use_and_commits_a_typed_one(
 # -- the Test panel ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _the_panel_preference_is_left_as_found():
+    """`tests.side_panel` is a per-user setting in the session's one QSettings, so a test
+    that stands the panel would leave it standing for the next test in this worker."""
+    yield
+    from dplanner.framework.user_config import set_global
+
+    set_global(MODULE_ID, "side_panel", False)
+
+
 def open_tests_tab(services, project):
     """The project's Tests tab, current — where its Test panel lives."""
     from dplanner.modules.testing.activity import TESTS_KIND

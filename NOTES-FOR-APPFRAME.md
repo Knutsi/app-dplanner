@@ -4204,7 +4204,9 @@ as the width allows, one at a panel's width, each card aligned to the top of its
 column count is read from the scroll area's own width rather than the content's, because a
 vertical scroll bar appearing takes pixels off the viewport and a count taken there flips
 back and forth on the scroll bar it just caused. It keeps its own list of cards and
-empties the grid with `takeAt` — a layout is never read back.
+empties the grid with `takeAt` — a layout is never read back. A card added with `grows`
+takes the page's leftover height (its row stretches; a neighbour that does not grow stays
+its own height, top-aligned), and `ToolCard` hands the height it is given to its body.
 
 **Upstream?** Yes: the template's `example_editor` renders the same stack, and a wide
 window is the case it did not have.
