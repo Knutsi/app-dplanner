@@ -237,6 +237,7 @@ class TestsModule:
                     deps.context,
                     walk=Walk(go=self._walk_to, can=self._can_walk),
                     files=deps.files,
+                    open_test=self._reveal_test,
                 ),
                 area=PanelArea.RIGHT,
                 order=30,
@@ -712,6 +713,20 @@ class TestsModule:
 
     def _can_walk(self, test_id: str, offset: int) -> bool:
         return self._neighbour(test_id, offset) is not None
+
+    def _reveal_test(self, step_id: StepId, test_id: str) -> None:
+        """Pick a test in its project's Tests tab — what the preview's *Show in Tests* does.
+
+        Through the tab rather than by publishing here, because the table is what owns that
+        selection: a preview is a thing you read, and changing what is selected is the
+        *tab's* gesture even when something else asked for it.
+        """
+        if not self._deps.library.has(step_id):
+            return
+        project = self._deps.library.project_of(step_id)
+        activity = self._deps.tabs.open(TESTS_KIND, project.id)
+        if isinstance(activity, TestsActivity):
+            activity.reveal(test_id)
 
     def _walk_to(self, test_id: str, offset: int) -> bool:
         found = self._neighbour(test_id, offset)

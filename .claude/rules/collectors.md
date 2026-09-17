@@ -49,13 +49,29 @@ paths:
   It is the only thing in that area while a test is picked — the project form yields to it
   (`narrower_kinds`, wired in the root) and the step editor is a modal with no seat there at
   all. **The double-click is the one deliberate exception to *double-clicking a step anywhere
-  runs `steps.details`*** — in this table a row *is* a test, its step is a column — and
-  `test.details` only *reveals* the panel, which was already following the context. **Next
+  runs `steps.details`*** — in this table a row *is* a test, and the step is not even a
+  column any more — and `test.details` only *reveals* the panel, which was already
+  following the context. **Next
   and Previous move the table's selection**, never the panel's own (a panel publishes no
   selection), and it is the *tab's* order they walk, greyed with the reason when no tab is
   open. Register the panel **after** the action specs: the dock builds it on registration
   and its strip asks the registry for the result verbs. `ARCHITECTURE.md`'s *A test is run
   from a panel* has the reasoning.
+- **A test body's reference to another test is a link, and a link opens a preview.** A body
+  that says *after T101 passes* is pointing somewhere, and picking that test in the table
+  loses the one being read with nothing to go back to. So `modules/testing/references.py`
+  (Qt-free) links every bare `T<n>` the **same project** has minted — never one it has not
+  (a dead link is worse than none) and never inside `<a>`, `<code>` or `<pre>`, since code
+  quotes the shape of an id rather than uses one — and it does that to the **rendered
+  HTML**, where `core/markdown.py` has already escaped every piece of user text, so the only
+  `<` left opens one of our own tags. A click opens `preview_dialog.py`: the test read over
+  what you were reading, its own references linked with **Back** walking the trail, *Close*
+  putting you back where you were, and *Show in Tests* the one deliberate move —
+  `TestsActivity.reveal`, which widens the tab's scope, audience filter and archived switch
+  **only** when they are what is hiding the test, and opens the category it is folded under.
+  The preview and the panel are the same two widgets (`view.py`'s `TestHead` and
+  `TestBody`), so a test read in one reads as it does in the other. `ARCHITECTURE.md`'s
+  *A reference is a link, and a link is a preview* has the reasoning.
 - **A test is always named with its step, never on its own.** Ids are minted per *project*
   (`aspect.py`), so `T101` names a different test in every project in the library and a
   lookup by id alone answers with whichever project sorts first — which is exactly what the
@@ -82,8 +98,10 @@ paths:
   In the window: `Project ▸ Test Categories…` (the modal editor, also on the Tests strip and
   in the index's right-click, which renders the Project menu), `Step ▸ Test Category ▸ …` (a
   `DataMenuSpec`, so the categories are data rebuilt on open — and what a right-click on a
-  category heading acts on, because the heading selects its whole group first), and the step
-  panel's picker beside the audience boxes. `ARCHITECTURE.md`'s *A test is filed under a
+  category heading acts on, because the heading selects its whole group first; a right-click
+  in a Tests tab renders the result band and the Step menu as a `Step` child, so that path
+  is the same one the menu bar prints), and the step panel's picker beside the audience
+  boxes. `ARCHITECTURE.md`'s *A test is filed under a
   category* has the reasoning, including why two writers share one project entry.
 - **The category editor is a modal that writes on Save.** `categories_dialog.py` edits a
   copy — each row remembering the name it started with — and lands the whole refactor as one
@@ -92,12 +110,15 @@ paths:
   safe: it says how many tests are about to move. Removing a category unfiles its tests
   rather than deleting them, and says so. The icon is **picked from a grid**, never typed;
   the same `ICONS` tuple is what `--icon` refuses against.
-- **The tests table has seven columns, and two were taken out rather than narrowed.** *Covered
-  by* is the Covers tab's whole subject and was a comma-separated list nobody compared down
-  the page; *When* dated the last run, which is exactly the fact a test outlives. Both are
-  still in the step panel and in `dplanner test show`. The Category column stands down while
-  the rows are already grouped by category — a column repeating its own heading is noise
-  twice — and, like Audience and Sort key, while no test in scope names one.
+- **The tests table has seven columns, and three were taken out rather than narrowed.**
+  *Covered by* is the Covers tab's whole subject and was a comma-separated list nobody
+  compared down the page; *When* dated the last run, which is exactly the fact a test
+  outlives; and *Step* gave its seat to the **Id**, because a body that says *after T101
+  passes* is pointing at a test the roster never named, and a reader with no id column opens
+  tests until they find the one meant. The step is still the Test panel's filed line and its
+  *Show Step*, and all three are in `dplanner test show`. The Category column stands down
+  while the rows are already grouped by category — a column repeating its own heading is
+  noise twice — and, like Audience and Sort key, while no test in scope names one.
 - **Exporting the tests is what the tab is showing.** `File ▸ Export ▸ Tests…` writes the
   project's Tests tab's current scope, audience filter and archived switch, read back
   through `TestsActivity.showing()` — which `New Test Run` reads too, so "narrow it, then

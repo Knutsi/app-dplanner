@@ -5,7 +5,8 @@
 Every surface is the real one, built by a whole application over
 ``scripts/synthetic_library.py``'s plan, so nothing here hand-wires a view the window would
 build differently: the Tests tab filed by category, the same tab with a category folded
-shut, the Test panel a run is worked down from, and the category editor.
+shut, the Test panel a run is worked down from, the preview a reference in a body opens,
+and the category editor.
 """
 
 import argparse
@@ -31,6 +32,8 @@ from dplanner.modules.testing.activity import TESTS_KIND
 from dplanner.modules.testing.aspect import project_tests
 from dplanner.modules.testing.categories_dialog import CategoriesDialog
 from dplanner.modules.testing.panel import PANEL_ID
+from dplanner.modules.testing.preview_dialog import PREVIEW_SIZE, TestPreview
+from dplanner.modules.testing.references import mentions
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
@@ -123,6 +126,20 @@ def render_panel(services: AppServices, out: Path, theme: Theme, app: QApplicati
     save(frame, out, "test-panel", theme, app)
 
 
+def render_preview(services: AppServices, out: Path, theme: Theme, app: QApplication) -> None:
+    """The preview a reference opens — over the test whose body points at another."""
+    project = services.document.projects[0]
+    wanted = next((test.id for _step, test in project_tests(project) if mentions(test.body)), None)
+    if wanted is None:
+        return
+    dialog = TestPreview(services.document, project.id, wanted, None)
+    dialog.resize(*PREVIEW_SIZE)
+    dialog.show()
+    save(dialog, out, "test-preview", theme, app)
+    dialog.reject()
+    discard(dialog)
+
+
 def render_editor(services: AppServices, out: Path, theme: Theme, app: QApplication) -> None:
     project = services.document.projects[0]
     dialog = CategoriesDialog(services.document, services.undo, project.id)
@@ -148,6 +165,7 @@ def render(app: QApplication, theme: Theme, out: Path, root: Path) -> None:
 
     render_tab(services, out, theme, app)
     render_panel(services, out, theme, app)
+    render_preview(services, out, theme, app)
     render_editor(services, out, theme, app)
     session.close()
 

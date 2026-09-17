@@ -10,6 +10,15 @@ So the body is **rendered markdown, read only**: a numbered list is a numbered l
 not `1.` and a full stop. *Show Step* is the door back to the editor, which is also where a
 test's pictures are attached.
 
+**A reference to another test is a link, and it opens a preview rather than moving.** A
+body that says *run this after T101* is pointing somewhere, and picking T101 in the table
+would lose the test being read with nothing to go back to. So a click opens
+``preview_dialog.py`` over this panel, and *Show in Tests* there is the deliberate move —
+made through the host, so this panel still publishes no selection of its own.
+:mod:`.references` says what counts as a reference; the ids it may resolve are asked for
+only when the body says something shaped like one, because this refreshes on every model
+change and the answer is a walk of the project.
+
 **It is a panel, not a modal**, for the reason every panel is: a modal over a table is a
 thing you open and shut twenty times in a run, and each time it takes the list away. This
 stays beside the list, follows the selection, and a double-click on a row is what puts it on
@@ -33,30 +42,26 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QDesktopServices
-from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QTextBrowser,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from dplanner.core.markdown import render as markdown
 from dplanner.domain.model import Library, Step, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.toolbar import Toolbar
-from dplanner.framework.widgets import caption, note
+from dplanner.framework.widgets import note
 from dplanner.modules.testing import runs
-from dplanner.modules.testing.aspect import MODULE_ID, Test, audience_words, find, read
-from dplanner.modules.testing.filing import category_of
-from dplanner.modules.testing.view import RESULT_ORDER, StatusChip, outcome_line
-from dplanner.theme.cards import title_font
+from dplanner.modules.testing.aspect import Test, find, read, test_ids
+from dplanner.modules.testing.preview_dialog import preview
+from dplanner.modules.testing.references import mentions
+from dplanner.modules.testing.view import (
+    RESULT_ORDER,
+    TestBody,
+    TestHead,
+    test_images,
+)
 from dplanner.theme.icons import chevron_left_icon, chevron_right_icon, step_icon
-from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
+from dplanner.theme.tokens import PANEL_MARGIN, SECTION_GAP
 
 PANEL_ID = "testing.test"
 # The result verbs, as the strip renders them: the same ids the Step ▸ Test menu holds, so
@@ -64,7 +69,6 @@ PANEL_ID = "testing.test"
 RESULT_VERBS = tuple(f"test.result_{status}" for status in RESULT_ORDER)
 NOTHING = "No test picked. Double-click one in a Tests tab."
 NO_LIST = "open the project's Tests tab to step through them"
-NO_BODY = "This test has no body yet — nobody can execute it. Show Step to write one."
 
 
 @dataclass(frozen=True)
@@ -91,6 +95,7 @@ class TestPanel(QWidget):
         *,
         walk: Walk | None = None,
         files: FilesFor | None = None,
+        open_test: Callable[[StepId, str], None] | None = None,
     ) -> None:
         super().__init__()
         self._library = library
@@ -98,6 +103,7 @@ class TestPanel(QWidget):
         self._context = context
         self._walk = walk
         self._files = files
+        self._open_test = open_test
         # The pair the context named: a test id alone does not identify a test.
         self._test_id = ""
         self._step_id: StepId = ""
@@ -106,27 +112,8 @@ class TestPanel(QWidget):
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
         layout.setSpacing(SECTION_GAP)
 
-        head = QVBoxLayout()
-        layout.addLayout(head)  # Before it is filled: a parentless layout leaks its items.
-        head.setSpacing(CAPTION_GAP)
-        self.identity = caption("", self)
-        head.addWidget(self.identity)
-        self.title = QLabel(self)
-        self.title.setFont(title_font(self.title.font()))
-        self.title.setWordWrap(True)
-        head.addWidget(self.title)
-        self.filed = note("", self)
-        self.filed.setWordWrap(True)
-        head.addWidget(self.filed)
-
-        where = QHBoxLayout()
-        layout.addLayout(where)
-        where.setSpacing(FIELD_GAP)
-        self.chip = StatusChip(self)
-        where.addWidget(self.chip)
-        self.outcome = note("", self)
-        self.outcome.setWordWrap(True)
-        where.addWidget(self.outcome, 1)
+        self.head = TestHead(self)
+        layout.addWidget(self.head)
 
         # Dense: these are read and aimed at as **one set** — mark it, go to the next — and
         # at the verb strip's metrics the last of them folds into a `…` menu in the 360 px
@@ -147,11 +134,8 @@ class TestPanel(QWidget):
             "Next Test", chevron_right_icon, lambda: self._step_through(1)
         )
 
-        self.body = QTextBrowser(self)
-        self.body.setObjectName("TestBody")
-        self.body.setFrameShape(QFrame.Shape.NoFrame)
-        self.body.setOpenLinks(False)
-        self.body.anchorClicked.connect(QDesktopServices.openUrl)
+        self.body = TestBody(self)
+        self.body.reference.connect(self._preview)
         layout.addWidget(self.body, 1)
 
         self.empty = note(NOTHING, self)
@@ -209,7 +193,7 @@ class TestPanel(QWidget):
 
     def _show(self, found: tuple[Step, Test] | None) -> None:
         showing = found is not None
-        for widget in (self.identity, self.title, self.filed, self.chip, self.outcome, self.body):
+        for widget in (self.head, self.body):
             widget.setVisible(showing)
         self.controls.setVisible(showing)
         self.empty.setVisible(not showing)
@@ -217,40 +201,28 @@ class TestPanel(QWidget):
             self._sync_walk()
             return
         step, test = found
-        outcome = runs.latest(runs.read(self._library.project_of(step.id)), test.id)
-        self.identity.setText(test.id)
-        self.title.setText(test.title or "Untitled test")
-        self.filed.setText(
-            " · ".join(
-                part
-                for part in (
-                    category_of(test),
-                    test.sort_key,
-                    audience_words(test),
-                    step.title or "Untitled step",
-                    "Archived" if test.archived else "",
-                )
-                if part
-            )
-        )
-        self.chip.show_status(outcome.result.status if outcome else "pending")
-        self.outcome.setText(outcome_line(outcome))
-        self.body.setHtml(markdown(test.body, image_src=self._image) or f"<p>{NO_BODY}</p>")
+        project = self._library.project_of(step.id)
+        self.head.show_test(step, test, runs.latest(runs.read(project), test.id))
+        # The ids a reference may name, asked for only when the body says something shaped
+        # like one: this refreshes on every model change, and resolving them is a walk of
+        # the whole project, which most bodies would pay for nothing.
+        known = test_ids(project) - {test.id} if mentions(test.body) else ()
+        self.body.show_body(test.body, image_src=test_images(self._files, step.id), known=known)
         self._sync_walk()
 
-    def _image(self, source: str) -> str | None:
-        """A body's picture, as a path this browser can load.
+    def _preview(self, test_id: str) -> None:
+        """A reference in the body, read where the reader is — see ``preview_dialog.py``.
 
-        The images are the *step's* — `dplanner test attach` has always written them there
-        — so they are resolved against the step's own area rather than left as the relative
-        link the editor stores, which nothing outside the plan directory could follow.
+        The test is looked up inside *this* project, because that is the only place its id
+        means anything; *Show in Tests* is what turns a glance into a move, and it goes
+        through the host so this panel still publishes no selection of its own.
         """
-        files = self._files
-        if files is None or not self._step_id or "://" in source:
-            return source or None
-        name = source.split("/")[-1]
-        found = files(self._step_id, MODULE_ID).absolute(name)
-        return found.as_uri() if found.is_file() else None
+        if not self._library.has(self._step_id):
+            return
+        project = self._library.project_of(self._step_id)
+        picked = preview(self._library, project.id, test_id, self, files=self._files)
+        if picked is not None and self._open_test is not None:
+            self._open_test(*picked)
 
     # -- stepping through ---------------------------------------------------------------------
 

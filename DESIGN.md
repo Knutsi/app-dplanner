@@ -496,6 +496,13 @@ once, its delegate painting what a row wears. Debug ▸ Design Example Table is 
 - **A group heading is a spanned row nobody can pick**: bold secondary words at a plain
   row's height, no hover, no edge (`add_heading`), with the group's own glyph before them
   where it has one. Nothing else separates the groups; the heading is the separator.
+- **And the rows under it hang under it.** A grouped row's first column is inset by the
+  chevron's slot (`GROUP_INDENT`), so its name begins past the disclosure triangle rather
+  than under it — a tree's shape, which is what says the rows are the group's rather than
+  merely following it. The indent is the name's, not the row's: the
+  picked row's accent edge and its hover wash still run the full width, and no other column
+  moves, because a second set of column positions for half the rows is what a table is for
+  not having. A table with no headings is drawn exactly as it was.
 - **A heading may fold, and then the whole row is the target.** `add_heading(…, key=…)`
   gives it a disclosure chevron and makes the rows under it collapsible; a press anywhere
   in the heading toggles it, because a heading selects nothing and runs nothing else and a

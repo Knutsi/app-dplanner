@@ -279,6 +279,23 @@ def find(tests: Sequence[Test], test_id: str) -> Test | None:
     return next((test for test in tests if test.id == test_id), None)
 
 
+def find_in_project(project: Project, test_id: str) -> tuple[Step, Test] | None:
+    """The test of this id and the step it hangs off, or None.
+
+    The project, never the library: an id is minted per project, so a lookup that is not
+    inside one answers with whichever project sorts first. Archived tests included — one
+    taken off the roster is still one a body can point at.
+    """
+    return next(
+        (pair for pair in project_tests(project, archived=True) if pair[1].id == test_id), None
+    )
+
+
+def test_ids(project: Project) -> set[str]:
+    """Every id this project has minted — what a reference in a body may legitimately name."""
+    return {test.id for _step, test in project_tests(project, archived=True)}
+
+
 def replace(tests: Sequence[Test], test: Test) -> list[Test]:
     """``tests`` with the record of the same id swapped out, keeping its position."""
     return [test if existing.id == test.id else existing for existing in tests]

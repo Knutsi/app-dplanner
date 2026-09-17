@@ -158,6 +158,50 @@ def test_a_keyed_heading_folds_the_rows_under_it(table):
     assert not any(table.isRowHidden(row) for row in range(5))
 
 
+def test_a_row_under_a_heading_hangs_under_it(table):
+    """The indent is what says the rows belong to the group, folded or not."""
+    from PySide6.QtCore import QRect
+    from PySide6.QtWidgets import QStyleOptionViewItem
+
+    from dplanner.framework.table import GLYPH_SLOT, GROUP_INDENT
+
+    table.add_row(["Charge the battery"])
+    table.add_heading("Smoke", key="Smoke")
+    table.add_row(["Charge the battery"])
+
+    delegate = table.delegate
+    flat = table.model().index(0, 0)
+    grouped = table.model().index(2, 0)
+    assert delegate.indent(flat) == 0
+    assert delegate.indent(grouped) == GROUP_INDENT
+    # The first column only: indenting the rest would be a second set of column positions.
+    assert delegate.indent(table.model().index(2, 1)) == 0
+    # It is added to where the column's words would otherwise start — past the padding and
+    # the glyph slot this column reserves — never instead of it.
+    box = QRect(10, 0, 200, 30)
+    assert delegate.text_left(0, box) + delegate.indent(grouped) == (
+        10 + table.padding() + GLYPH_SLOT + ICON_GAP + GROUP_INDENT
+    )
+    # And what a column sized to its contents allows for is what will be painted.
+    option = QStyleOptionViewItem()
+    table.initViewItemOption(option)
+    widths = (delegate.sizeHint(option, flat).width(), delegate.sizeHint(option, grouped).width())
+    assert widths[1] - widths[0] == GROUP_INDENT
+
+
+def test_an_ungrouped_rebuild_takes_the_indent_back(table):
+    """``_grouped`` is per fill: a host that drops its grouping draws a flat list again."""
+    from dplanner.framework.table import GROUP_INDENT
+
+    table.add_heading("Smoke", key="Smoke")
+    table.add_row(["under it"])
+    assert table.delegate.indent(table.model().index(1, 0)) == GROUP_INDENT
+
+    table.clear_rows()
+    table.add_row(["on its own"])
+    assert table.delegate.indent(table.model().index(0, 0)) == 0
+
+
 def test_a_heading_with_no_key_is_the_plain_rule_it_always_was(table):
     table.add_heading("Later")
     table.add_row(["a"])

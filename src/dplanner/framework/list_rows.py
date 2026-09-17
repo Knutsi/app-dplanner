@@ -65,6 +65,9 @@ VALUE_ROLE = int(Qt.ItemDataRole.UserRole) + 10
 # a disclosure chevron and swallows a click. See ``framework/table.py``'s ``add_heading``.
 GROUP_ROLE = int(Qt.ItemDataRole.UserRole) + 11
 COLLAPSED_ROLE = int(Qt.ItemDataRole.UserRole) + 12
+# Set on a row that landed under a group heading, whether or not that heading folds: its
+# first column hangs under the heading's words, so a group reads as holding its rows.
+GROUPED_ROLE = int(Qt.ItemDataRole.UserRole) + 13
 # Where a *host's* own roles start — the step id on a row, which milestone it is. Everything
 # below this belongs to the delegates here, and a view that numbered its own roles from
 # ``UserRole + 1`` had the order table draw its milestone label as a second line and grey

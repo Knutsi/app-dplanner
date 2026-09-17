@@ -4841,6 +4841,18 @@ the tab is reopened over the same rows. The collector groupings pass no key and 
 fold: a feature's tests are already few, and a reader who asked to see them beside each
 other did not ask to unfold them one at a time.
 
+The rows under a heading are **indented**, and that is the half of the reading the fold
+does not give you. Every row starting at the heading's own x leaves a collapsed group and
+an expanded one differing by nothing but the direction of a triangle, so a reader part way
+down a roster has to hold in their head which heading they are under. Inset the rows by the
+chevron's slot and the answer is on the page: the names begin past the disclosure triangle
+rather than under it, which is the shape of every tree anybody has read.
+It is **the name's indent, not the row's** — only the first column moves, and the picked
+row's accent edge and hover wash still run the full width. Indenting the row itself would
+give half the table a second set of column positions, so a column's values would no longer
+line up down the page, and the selection edge would step in and out between groups; the
+whole reason a roster is a table is that a column can be read down.
+
 ### Export is what the tab is showing
 
 "Narrow it to QA, then hand that to the QA team" is one gesture, so `File ▸ Export ▸ Tests`
@@ -4883,7 +4895,8 @@ the link the editor stores is relative to a directory nothing outside the plan c
 
 **Double-clicking a row in a Tests tab opens the test, not its step.** That is the one
 deliberate exception to *double-clicking a step anywhere runs `steps.details`*, and the
-reason is that in this table a row **is** a test — its step is a column. The roll call does
+reason is that in this table a row **is** a test — the step is not even a column, and the
+row's own id is. The roll call does
 the same, and because it spans projects and publishes no selection of its own, it hands the
 verb a constructed context naming exactly that row. The verb (`test.details`) only
 *reveals* the panel; the panel was already following the context, so a single click updates
@@ -4911,6 +4924,83 @@ order that "next" means, not the project's: the reader's scope, their audience f
 their ergonomic order are what put the next test where they are looking. With no Tests tab
 open there is nothing to walk, and both verbs are greyed saying so — which is honest rather
 than defensive, because "next" has no meaning without a list.
+
+## A right-click on a test leads with the result
+
+A row in a Tests tab **is** a test, and for a while its right-click rendered the whole Step
+menu: four verbs about the thing under the cursor among twenty about something else. What
+somebody reaches for over a test is the result, so the popup leads with it — the *Test*
+child menu's `test_result` band, rendered flat — and everything about the step the test
+hangs off is one level down, as a `Step` child.
+
+**The child is the Step menu, not a copy of it.** `fill_menu` fills a menu it is given, so
+the composition is two renders of the registry through the same context every other
+presenter reads: the Step menu's order, its own child menus, its data menus, its greyed
+entries and their reasons, all of them, and a verb somebody adds to it tomorrow appears
+here without anybody editing the Tests tab. *A right-click renders a menu, never a copy of
+one* is a rule about entries, and it says nothing against a right-click rendering two.
+
+**It is not a menu of its own in `MENU_STRUCTURE`.** An entry in that table is a place
+verbs are *registered into*, and nothing registers here — this surface offers verbs that
+already have homes, in an order of its own. Giving it a table entry would mean either
+moving the result verbs out of `Step ▸ Test`, which is where the menu bar wants them, or
+registering four second seats, which is four specs to keep in step with four others. The
+composition is six lines and names no verb.
+
+**Naming a `group` with a `submenu` is what makes the first half one render.** Two groups
+feed the `Test` child menu — what a test *is* (Add, Archive, Put Back) and what a run
+*recorded* — with the rule between them drawn inside it. A surface whose subject is one of
+those bands asks for that band: `fill_menu(…, "Step", submenu="Test", group="test_result")`.
+The alternative was to render the whole child flat and accept *Add Test* above the results,
+or to reorder the groups in `MENU_STRUCTURE` and change the menu bar for every reader of
+it — both worse than teaching one filter to compose with another it already ran beside.
+
+## A reference is a link, and a link is a preview
+
+Test bodies point at each other. *Run this after T101 passes*, *the fixture T104 leaves
+behind* — a roster is a sequence, and prose is how it says so. The reader had the id and
+nothing to do with it: ids are minted per project and the table printed every fact about a
+test except the word it is called by, so following a reference meant opening tests until
+the right one turned up. The **Id column** is half the answer and the link is the other.
+
+**What counts as a reference is decided by the project, not by the pattern.** `T` and
+digits on their own word boundaries is only a candidate; it becomes a link when the project
+has minted that id and not otherwise. An unminted `T999` staying plain words is the point
+rather than a shortcoming: a body may legitimately quote an id from a spec whose tests are
+not written, and a link that goes nowhere is a worse answer than no link. An id inside a
+code span or inside a link that already points somewhere is left alone too — code is how a
+body writes *about* the shape of an id.
+
+**The linking is done to the rendered HTML.** `core/markdown.py` escapes every piece of
+user text and lifts code spans, links and images out before anything else runs, so by the
+time a body is HTML the only `<` in it opens one of our own tags — which is what makes a
+walk of it exact rather than a guess. Over the markdown instead, the same pass would put
+an anchor inside a fenced block, inside a URL, and inside the text of somebody's link.
+
+**Following the link opens a modal, and that is the design rather than a compromise.**
+Picking T101 in the table is a move: it loses the test being read, and a plan has no back
+button. So a click opens a preview over what you were reading — glance, shut it, and you
+are exactly where you were — and *Show in Tests* is the deliberate move, a button rather
+than the only thing a click could have meant. The preview links its own references and
+keeps a **trail**, because a preview that dead-ends at the first reference has the defect
+it exists to fix; **Back** is a list and one button, and without it the second reference is
+the one nobody follows.
+
+**Show in Tests widens the tab only when the tab is what is hiding the test.** A Tests tab
+can be scoped to a collector, filtered by audience, hiding the archived, and folded shut by
+category — any of which can be why the asked-for test is not on the page. Answering that
+request with nothing would be the worst of the three options; widening every time would
+throw away a narrowing the reader made. So `TestsActivity.reveal` checks first, and only
+then takes the narrowing off, and `TestsTable.reveal` opens the group the row is folded
+under and scrolls to it. Opening the fold is deliberately *not* part of `select_tests`,
+which runs on every rebuild to keep the selection: unfolding there would spring a group
+open the moment the reader shut one holding the row they had picked.
+
+**The preview and the panel are the same two widgets.** `view.py`'s `TestHead` and
+`TestBody` are the test as it is *read* — what it is called, where it is filed, how it last
+did, and its body rendered. The Test panel puts its verb strip between them and the preview
+puts nothing there, and that is the whole difference; written twice, one of them would have
+grown a fact the other lacked by the second change.
 
 ## A test goes stale when the step under it moves
 
