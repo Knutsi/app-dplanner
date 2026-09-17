@@ -172,6 +172,12 @@ the status bar says, with the tokens the run consumed once its CLI's record has 
 Agents…* lists every run this window launched, with the command that picks an ended one
 up again; *Step ▸ Show Agent Terminal* brings its window or pane back.
 
+**And before there are steps to run, there is *Project ▸ Open Agent in Code*.** The same
+profiles, in the same terminals, opening where the project's code is — with no briefing at
+all and none of the modes a briefed run picks: a plain session waiting on the first thing
+you type. It is what the start of a project looks like, a spec imported and the graph still
+empty, with an agent standing in the right directory to talk the steps out of it.
+
 **Both writers may be live.** An agent can work while a window is open on the same folder:
 the window reloads when it owes nothing, and neither side ever overwrites a file it has not
 seen. See `FORMAT.md`.
@@ -274,7 +280,7 @@ src/dplanner/
 ├── scripts/rules.py               which of the area rule files under .claude/rules/ govern a path, or a branch's diff
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 ├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
-├── scripts/render_design_example.py  Debug ▸ Design Example — the modal, the table and the toolbars — both themes, to PNG
+├── scripts/render_design_example.py  Debug ▸ Design Examples — the modal, the table, the toolbars and the rows — both themes, to PNG
 ├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 ├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
@@ -424,7 +430,9 @@ src/dplanner/
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll
-│   │                        call, the Test panel a run is worked down from, and the exports
+│   │                        call, the Test panel a run is worked down from, the preview a
+│   │                        reference in one body opens onto another, the exports, and the
+│   │                        house shape of a test body (format.md, `dplanner test format`)
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
@@ -480,8 +488,10 @@ src/dplanner/
 │   ├── theme_system/           staged theme and the person's own; the desktop's dark or light on macOS,
 │   │                           Windows, GNOME and KDE (`theme/providers.py` is the contract)
 │   ├── appshell/  sync/  settings/  taskcenter/
-│   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Example,
-│   │                        the design system built from the primitives, to be looked at and copied from
+│   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Examples,
+│   │                        the design system built from the primitives, to be looked at and copied from:
+│   │                        design_example.py is the modal, the table and the toolbars; design_rows.py
+│   │                        is what a picked row wears, beside the block that is not one
 │   ├── llm/  openai/  anthropic/  — the LLM picker, and the two vendor modules: each an LLM
 │   │                        provider, a settings page and the *Add API key…* wizard; openai's
 │   │                        dictation.py is also two dictation providers on the same key

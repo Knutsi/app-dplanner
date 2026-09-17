@@ -1272,6 +1272,38 @@ def test_the_tests_tab_opens_filed_by_category_once_the_project_has_any(services
     assert table.isColumnHidden(CATEGORY_COLUMN)
 
 
+def test_the_roster_prints_the_id_a_body_would_quote(services, make_project):
+    """Without it the table named every fact about a test but the word it is called by."""
+    from dplanner.modules.testing.activity import TESTS_KIND
+    from dplanner.modules.testing.table import ID_COLUMN
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    give(services, work, "T100")
+
+    table = services.tabs.open(TESTS_KIND, project.id).page.table
+    assert not table.isColumnHidden(ID_COLUMN)
+    assert table.item(0, ID_COLUMN).text() == "T100"
+    # The step it hangs off is still on every cell, because the selection is that pair.
+    assert table.step_at(0) == work.id
+
+
+def test_a_row_under_a_category_heading_is_indented_under_it(services, make_project):
+    """The reading a folding heading is for: which group the row you are on belongs to."""
+    from dplanner.framework.table import GROUP_INDENT
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    project = make_project("Widget")
+    (work,) = chain(services, project, "Work")
+    categorise(services, project, ("Import", "layers"))
+    filed(services, work, ("T100", "Import"))
+
+    table = services.tabs.open(TESTS_KIND, project.id).page.table
+    assert table.is_heading(0) and not table.is_heading(1)
+    assert table.delegate.indent(table.model().index(0, 0)) == 0  # The heading itself.
+    assert table.delegate.indent(table.model().index(1, 0)) == GROUP_INDENT
+
+
 def test_a_project_with_no_categories_opens_flat_rather_than_on_one_empty_heading(
     services, make_project
 ):
@@ -1352,6 +1384,58 @@ def test_the_category_menu_says_so_when_nothing_is_picked(services, project, ste
     assert ("Pick a test first", False) in entries
     # The editor's verb is rendered, never copied.
     assert any("Categories" in text for text, _on in entries)
+
+
+def menu_shape(popup):
+    """The popup's shape: separators as "|", child menus as (title, [their entries])."""
+    rendered: list[object] = []
+    for action in popup.actions():
+        if action.isSeparator():
+            rendered.append("|")
+        elif action.menu() is not None:
+            rendered.append((action.text(), menu_shape(action.menu())))
+        else:
+            rendered.append(action.text())
+    return rendered
+
+
+def test_a_right_click_on_a_test_leads_with_the_results_and_offers_the_step_menu(
+    services, project, step
+):
+    """A row here is a test: the verbs about *it* lead, and the step's are one level down."""
+    from dplanner.framework.action_menu import build_menu
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    step.module_data[MODULE_ID] = write([Test("T100", "Signs in")])
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    table = activity.page.table
+    select(services, step, tests=("T100",))
+
+    def rendered(**where):
+        return menu_shape(build_menu(services.actions, services.context, "Step", table, **where))
+
+    band = rendered(submenu="Test", group="test_result")
+    assert band[0].startswith("Mark Ok")  # What a run records, in the strip's own order.
+
+    shape = menu_shape(activity._test_menu(table))
+    assert shape[: len(band)] == band
+    assert shape[len(band)] == "|"
+    title, under = shape[len(band) + 1]
+    # And the child *is* the Step menu — the same render the canvas's right-click gets.
+    assert title == "Step" and under == rendered()
+    assert len(shape) == len(band) + 2  # Nothing else: this popup is those two things.
+
+
+def test_a_greyed_result_still_says_why_in_the_menu_a_right_click_renders(services, project, step):
+    """Disabled, never hidden, with the reason in the label — the one presenter policy."""
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    step.module_data[MODULE_ID] = write([Test("T100", "Signs in")])
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    select(services, step, tests=("T100",))
+
+    first = activity._test_menu(activity.page.table).actions()[0]
+    assert not first.isEnabled() and "start a test run first" in first.text()
 
 
 def test_right_clicking_a_category_heading_picks_the_whole_group(services, make_project):
@@ -1494,8 +1578,8 @@ def test_the_panel_shows_one_picked_test_and_steps_aside_for_none(services, proj
     panel = the_panel(services)
 
     assert panel.show_context(pick_test(services, step, "T100"))
-    assert panel.title.text() == "Signs in"
-    assert "Smoke" in panel.filed.text() and "Fix list flicker" in panel.filed.text()
+    assert panel.head.title.text() == "Signs in"
+    assert "Smoke" in panel.head.filed.text() and "Fix list flicker" in panel.head.filed.text()
     # Rendered, not printed: a numbered list is a numbered list on a surface you run from.
     assert "<ol" in panel.body.toHtml() or "<li" in panel.body.toHtml()
 
@@ -1541,7 +1625,7 @@ def test_next_moves_the_tables_selection_so_a_run_can_be_worked_down(services, m
     # The *table* moved, which is what published the new selection.
     assert activity.page.table.selected_tests() == ["T101"]
     panel.show_context(services.context.current())
-    assert panel.title.text() == "T101"
+    assert panel.head.title.text() == "T101"
     assert not panel.next_verb.isEnabled()  # The end of the list says so.
 
 
@@ -1593,9 +1677,9 @@ def test_the_panel_shows_the_picked_projects_test_and_not_another_projects(servi
 
     panel = the_panel(services)
     assert panel.show_context(pick_test(services, late, "T100"))
-    assert panel.title.text() == "Beta's test"
+    assert panel.head.title.text() == "Beta's test"
     assert panel.show_context(pick_test(services, early, "T100"))
-    assert panel.title.text() == "Alpha's test"
+    assert panel.head.title.text() == "Alpha's test"
 
 
 def test_a_test_with_no_step_beside_it_is_nothing_to_show(services, project, step):
@@ -1630,7 +1714,7 @@ def test_double_clicking_a_row_names_the_rows_own_step(services, make_project):
     current = services.context.current()
     assert current.selected_entity("test") == "T101"
     assert current.selected_entity("step") == other.id
-    assert the_panel(services).title.text() == "T101"
+    assert the_panel(services).head.title.text() == "T101"
 
 
 def test_the_roll_call_names_the_rows_step_too(services, make_project):
@@ -1655,7 +1739,7 @@ def test_the_roll_call_names_the_rows_step_too(services, make_project):
     activity.page.table.cellActivated.emit(row, 0)
 
     assert services.context.current().selected_entity("step") == late.id
-    assert the_panel(services).title.text() == "Beta's test"
+    assert the_panel(services).head.title.text() == "Beta's test"
 
 
 def test_double_clicking_a_row_reveals_the_panel(services, make_project):
@@ -1903,6 +1987,16 @@ def test_typing_in_the_body_keeps_the_audience(services, step, section):
     section.show_target(step.id)
     section.detail.body.edit.setPlainText("1. Look at it.")
     assert read(step)[0].audiences == ("qa",)
+
+
+def test_the_empty_editor_teaches_the_shape_the_cli_gates_on():
+    """Two surfaces, one vocabulary: `dplanner test format` is the document a test body is
+    refused without, and the window's placeholder must not show a different shape."""
+    from dplanner.modules.testing.format import guide
+    from dplanner.modules.testing.section import BODY_PLACEHOLDER
+
+    for heading in ("## Preconditions", "## Steps"):
+        assert heading in BODY_PLACEHOLDER and heading in guide()
 
 
 # -- tests that have gone stale -----------------------------------------------------------

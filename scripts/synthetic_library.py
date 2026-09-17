@@ -156,7 +156,9 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
                 Test(
                     f"T{100 + 2 * index}",
                     f"Step {index} does the thing",
-                    "Given, when, then.",
+                    # One body points at the test beside it, so the plan exercises the
+                    # references a rendered body links and the preview they open.
+                    f"Given, when, then. Run it after T{101 + 2 * index} passes.",
                     category=category,
                     sort_key=TEST_SORT_KEYS[index % len(TEST_SORT_KEYS)],
                 ),

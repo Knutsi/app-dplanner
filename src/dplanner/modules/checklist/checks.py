@@ -1,8 +1,17 @@
-"""The rows no feature owns: git, a reachable internet, and the Azure CLI.
+"""The rows no feature owns: git, the PATH, a reachable internet, and the Azure CLI.
 
 **git is required.** A plan lives in a git repository and DPlanner derives the repository
 root of every project, so a machine without git cannot open a plan at all. It is also
 cheap enough to ask at every start, which is what ``required`` costs a machine.
+
+**The PATH row is the one that explains the other rows.** A window opened from a desktop
+launcher inherits the session launcher's PATH, and on macOS that is four directories with no
+``gh``, no ``uv`` and no agent CLI in them — so every tool row reads *not installed* on a
+machine where all of them work from a terminal. ``core/user_path.py`` repairs that before the
+window is built; this row says whether it worked, so the answer to "why can DPlanner not see
+my gh" is one line a person can read instead of a mystery. It advises rather than requires:
+a required check exits 1 and runs at every start, and a thin PATH is a degraded window, not
+an unusable one.
 
 **Internet and az advise.** Planning works on a plane; only the GitHub and Confluence
 features want the network, and they say so where they bite. ``az`` is here because a
@@ -20,6 +29,7 @@ import urllib.request
 from collections.abc import Callable
 
 from dplanner.cli.checklist import MachineCheck, Reading, Remedy
+from dplanner.core import user_path
 
 Which = Callable[[str], str | None]
 Runner = Callable[[list[str]], "subprocess.CompletedProcess[str]"]
@@ -68,6 +78,11 @@ def _git(which: Which, run: Runner) -> Reading:
     return Reading(ok=bool(said), detail=said or "installed, but would not say its version")
 
 
+def _path_repair() -> Reading:
+    ok, detail = user_path.reading(user_path.last())
+    return Reading(ok=ok, detail=detail)
+
+
 def _internet(reach: Reach) -> Reading:
     why = reach()
     return Reading(
@@ -107,6 +122,21 @@ def checks(
                 packages={"": "git", "windows": "Git.Git"},
             ),
             required=True,
+        ),
+        MachineCheck(
+            id="path.repair",
+            group="Other tools",
+            label="PATH from your shell",
+            probe=_path_repair,
+            remedy=Remedy(
+                # No command and no packages: there is nothing to install. What a person
+                # cannot guess is the fact itself — that a window opened from a launcher
+                # starts with a different PATH than their terminal has — so the words carry
+                # that and the one thing that always works.
+                words="A window opened from a launcher starts with the session's PATH, not "
+                "your shell's, so DPlanner takes yours from your login shell as it opens. "
+                "Opening DPlanner from a terminal always works.",
+            ),
         ),
         MachineCheck(
             id="network.internet",

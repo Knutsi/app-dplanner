@@ -91,7 +91,11 @@ SORT_KEY_TIP = (
     "What orders this test inside its category — the view it exercises, say. Tests sharing "
     "one are executed together in the Tests tab."
 )
-BODY_PLACEHOLDER = "1. Do this.\n2. This must be true."
+# The house shape, cut to a placeholder: `modules/testing/format.md` is the document the
+# CLI gates a test body on, and the two surfaces must not teach different shapes.
+BODY_PLACEHOLDER = (
+    "## Preconditions\n- Signed in as …\n\n## Steps\n1. Do this.\n2. This must be true."
+)
 # Neutral about *what* the step is: a check, a feature and a milestone are scopes in
 # exactly the same way, and this tab appears on all three. Neutral about the *reading*
 # too — the mode switch says whether this is what the step adds or everything behind it,

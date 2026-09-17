@@ -1,7 +1,8 @@
-# Debug ▸ Design Example, rendered
+# Debug ▸ Design Examples, rendered
 
-The design system's three reference surfaces (`src/dplanner/modules/debug/design_example.py`),
-rendered offscreen in the dark and the light theme by `scripts/render_design_example.py`:
+The design system's reference surfaces (`src/dplanner/modules/debug/design_example.py` and
+`design_rows.py`), rendered offscreen in the dark and the light theme by
+`scripts/render_design_example.py`:
 
 ```
 uv run python scripts/render_design_example.py --out docs/screenshots/f1-design-example
@@ -24,3 +25,4 @@ which primitive.
 | `table-empty-*` | the empty state trading places with the table, its verb under the line |
 | `toolbars-*` | the toolbars tab: a flat strip of verbs, a tool palette in named bands of squares, the same palette cut short so a band folds, and the dense strip that answers a question rather than offering verbs |
 | `toolbars-folded-*` | what a folded band looks like in the `…` menu: glyph *and* words, a rule where each band begins |
+| `rows-*` | the rows tab: a picked row in a list and in a tree — one ground across the whole row, the glyph inside it — and, last, the block that is not one, Qt's focus frame starting part-way across the glyph |

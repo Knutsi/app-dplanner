@@ -201,6 +201,19 @@ def quiet(button: QPushButton) -> QPushButton:
     return button
 
 
+def well(view: QWidget) -> QWidget:
+    """A read-only text view in a dialog's body: content, not a field.
+
+    DESIGN.md's *Dialogs* gives a body's line and text edits the panel field's look with
+    the accent saying where the keyboard is. A view nobody can type in must not wear it: a
+    bordered box that lights up when focused says *type here* about something that will
+    never take a character. Qt has no read-only selector for a text edit, so the widget
+    says so with a property — the same mechanism ``quiet`` uses, and for the same reason.
+    """
+    view.setProperty("well", True)
+    return view
+
+
 class GlyphButton(QPushButton):
     """A quiet verb whose glyph follows the theme.
 

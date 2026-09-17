@@ -56,6 +56,21 @@ paths:
   `launcher.current_command` reads a stale one as the harness. The skill and the
   briefing's preamble both say *never kill by name or pattern*.
   `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
+- **An agent may be opened with nothing to do, and that is a second invocation.**
+  *Project ▸ Open Agent in Code* is the same profiles in the same child menu, opening a
+  shell where a step's agent would work (the code checkout, else the plan's repository)
+  with the harness's `open_command` — `claude`, `codex`, `opencode` — and **no briefing at
+  all**: no `prompt.md`, no opening line, no worktree. It is the planning before the plan,
+  when a spec has landed and there is no step to be about yet. The bare command is the
+  harness's own fact, never the briefed one with its `{prompt}` dropped: that would leave
+  Claude's `--permission-mode plan` behind, which is the one mode a session about to write
+  a plan must not be in, so a command nothing here knows greys the entry with that as its
+  reason. In the launcher it is one shape and no special case — `prepare` with empty prompt
+  text writes no prompt file and gives the script no opening line. The run has no step, so
+  nothing is tracked, nothing is claimed *in progress* and no usage row is written, as for
+  the Problems panel's run; unlike those, it also has no prompt, so a launch that opens no
+  terminal ends in a **notice** rather than the prompt fallback.
+  `ARCHITECTURE.md`'s *An agent may be opened with nothing to do* has the reasoning.
 - **A worktree is the step's decision, and the run is named after the step.** Whether the
   agent gets a fresh git worktree is the agent aspect's `worktree` (absent = on; the Agent
   tab's checkbox, `dplanner agent worktree <step> off`, `step add --no-worktree`) — a fact

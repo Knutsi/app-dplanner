@@ -12,14 +12,19 @@ by milestone reads as the same sequence the calendar and the graph show. **A col
 blanks is hidden rather than shown.**
 
 **Seven columns, because a roster is read down a column and not across one.** What a test
-checks, whose step it is, what it is filed under and in what order, who it is for, and how
-it did. Two columns
-were taken out rather than narrowed: *Covered by* named the collectors behind a test, which
-is the Covers tab's whole subject and was a comma-separated list nobody compared down the
-page; and *When* dated the last run, which is exactly the fact a test outlives — these are
-kept and re-run long after the step that added them shipped, so the run that last touched
-one says little about whether it still holds. Both are still one click away, in the step
-panel and in ``dplanner test show``.
+checks, **its id**, what it is filed under and in what order, who it is for, and how it did.
+Three columns were taken out rather than narrowed: *Covered by* named the collectors behind
+a test, which is the Covers tab's whole subject and was a comma-separated list nobody
+compared down the page; *When* dated the last run, which is exactly the fact a test outlives
+— these are kept and re-run long after the step that added them shipped, so the run that
+last touched one says little about whether it still holds; and *Step* gave up its seat to
+the id. All three are one click away, in the Test panel and in ``dplanner test show``.
+
+**The id is a column because a test body quotes one.** A test that says *after T101 passes*
+is pointing somewhere, and until this column existed the roster printed every fact about a
+test except the one word it is called by — so the reader had to open tests until they found
+the right one. The Test panel's *Show Step* is the door to whose step a test is, which is
+what this column was before, and the step is still on the panel's filed line.
 
 **A category heading folds.** Grouped by category the headings are collapsible, because
 that is the reading the grouping is for: two hundred tests become a dozen lines, and you
@@ -46,7 +51,7 @@ from dplanner.theme.tokens import SECONDARY_ALPHA
 COLUMNS = (
     Column("Test", detail=True, resize="interactive"),
     Column("Project"),
-    Column("Step"),
+    Column("Id"),
     Column("Category"),
     Column("Sort key"),
     Column("Audience"),
@@ -55,7 +60,7 @@ COLUMNS = (
 (
     TEST_COLUMN,
     PROJECT_COLUMN,
-    STEP_COLUMN,
+    ID_COLUMN,
     CATEGORY_COLUMN,
     SORT_KEY_COLUMN,
     AUDIENCE_COLUMN,
@@ -107,7 +112,7 @@ class Row:
 
 
 class TestsTable(Table):
-    """Every test in scope: what it checks, whose step it is, and how it did."""
+    """Every test in scope: what it checks, what it is called, and how it did."""
 
     def __init__(self, parent: QWidget | None = None, *, selection: Selection = "extended") -> None:
         # Extended on the project tab, because marking twelve tests at once is the gesture a
@@ -185,7 +190,9 @@ class TestsTable(Table):
                     row.test.title or "Untitled test", detail=_preview(row.test.body), tooltip=tip
                 ),
                 Cell(row.project, secondary=True, tooltip=tip),
-                Cell(row.step.title or "Untitled step", secondary=True, tooltip=tip),
+                # The id a reader has to be able to find: a body quoting *T101* is a
+                # reference to somewhere, and this is the column they look down for it.
+                Cell(row.test.id, secondary=True, tooltip=tip),
                 # What it *reads* as, so an unfiled test says so rather than showing a hole.
                 Cell(category_of(row.test), secondary=True, tooltip=tip),
                 # The stored key, which is blank for most tests and is the point of the
@@ -242,6 +249,23 @@ class TestsTable(Table):
     def select_tests(self, test_ids: Sequence[str]) -> None:
         """Pick exactly these tests, by id — a rebuild's rows are new objects."""
         self._reselect(test_ids)
+
+    def reveal(self, test_id: str) -> None:
+        """Bring one test's row on screen: open the group it is under, and scroll to it.
+
+        Deliberately not part of ``select_tests``, which runs on every rebuild to keep the
+        selection: unfolding there would spring a group open again the moment the reader
+        shut one holding the row they had picked.
+        """
+        row = next(
+            (found for found in range(self.rowCount()) if self.test_at(found) == test_id), None
+        )
+        if row is None:
+            return
+        if key := self.group_of(row):
+            self.set_collapsed(key, False)
+        if (item := self.item(row, TEST_COLUMN)) is not None:
+            self.scrollToItem(item)
 
     def _reselect(self, test_ids: Sequence[str]) -> None:
         """Keep the selection across a rebuild, by test id — the rows are new objects.

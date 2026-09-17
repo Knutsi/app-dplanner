@@ -71,10 +71,15 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "features" the feature module's: the catalogue of what it delivers, placed or not.
     # "tests" is the test run's two verbs — a run belongs to a project, spans its
     # steps, and there is at most one open at a time.
+    # "agent" is Open Agent in Code: the same launch profiles Run Agent offers, opening an
+    # agent in the project's code with no briefing at all. It is the project's and not a
+    # step's because it is what the planning *before* the steps needs — a spec has landed,
+    # the graph is empty, and there is no step for the verb to be about.
     # "docs" is Compile Out of Date: one agent per document in this project whose fragments
     # have moved on. It is the project's because it is about all of them at once — the
-    # per-collector launch is a Step verb, beside Run Agent.
-    "Project": ("edit", "documents", "docs", "features", "tests", "open"),
+    # per-collector launch is a Step verb, beside Run Agent. It is a band of its own below
+    # the one above: bringing a set of documents up to date is not opening a terminal.
+    "Project": ("edit", "documents", "agent", "docs", "features", "tests", "open"),
     # The canvas the plan is drawn on: how it is arranged and how it is looked at. Every
     # verb here steers the graph editor and nothing else, which is what makes it a menu
     # rather than a group inside View — and what tells the next person where to add one.
@@ -115,8 +120,9 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "runs" is the Agent List — the live shells this window launched, a data child menu
     # rebuilt on open — above "install", what this machine has of DPlanner itself.
     "Tools": ("runs", "install"),
-    # "design" is the design system's living reference — Design Example… and its table
-    # tab — what a developer bringing a surface up opens beside their own (DESIGN.md).
+    # "design" is the design system's living reference — the Design Examples child menu,
+    # one entry per page of it — what a developer bringing a surface up opens beside their
+    # own (DESIGN.md). A new example is a line in modules/debug/module.py and nothing here.
     "Debug": ("llm", "telemetry", "design", "windows"),
     "Help": ("about",),
 }

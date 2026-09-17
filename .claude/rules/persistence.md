@@ -165,5 +165,11 @@ paths:
   way; a line with nothing to name says what is missing rather than standing blank. Every
   verb of a column is an entry in its **⋯ menu**, built when it opens (a glyph carries the
   colour it was painted in) and greyed *with its reason in its words* rather than dropped,
-  so the list to learn never changes shape. `ARCHITECTURE.md`'s *The Project dialog is two
-  columns, not three fields* has the reasoning.
+  so the list to learn never changes shape. **Create mode is the same vocabulary over
+  fields**: both repositories are picked rather than typed, each with the ⋯ of the other
+  ways in beside it, and the code field lists what this library already plans — picking one
+  brings the checkout this machine has for it, because a second plan for one repository
+  needs no second clone. Both modes run the same verbs (`_code_url`, `_set_repository`,
+  `_record_checkout`), answering into the form's fields or into the model.
+  `ARCHITECTURE.md`'s *The Project dialog is two columns, not three fields* has the
+  reasoning.

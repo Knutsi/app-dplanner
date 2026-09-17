@@ -1,5 +1,5 @@
-"""Debug ▸ Design Example: the design system built from its primitives, to be looked at
-and copied from.
+"""Debug ▸ Design Examples ▸ Modal, Table and Toolbars: the design system built from its
+primitives, to be looked at and copied from.
 
 Three surfaces over sample data, nothing saved. The *modal* is a :class:`DialogFrame` —
 title in the body, a footer band — carrying a form (captions over fields, a hint glyph, a
@@ -16,7 +16,8 @@ that answers a question rather than offering verbs.
 
 A developer bringing a surface up (DESIGN.md's *Bringing a surface up*) opens these beside
 their own and copies what differs; ``docs/screenshots/f1-design-example/`` holds them
-rendered in both themes. Neither reads the model, so neither follows a project.
+rendered in both themes. None reads the model, so none follows a project. ``design_rows.py``
+is the fourth page, and the one that also shows a defect on purpose.
 """
 
 from collections.abc import Callable

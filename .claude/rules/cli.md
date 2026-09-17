@@ -2,6 +2,7 @@
 paths:
   - "src/dplanner/entry.py"
   - "src/dplanner/cli/**"
+  - "src/dplanner/core/user_path.py"
   - "src/dplanner/modules/*/{cli,checks,report}.py"
   - "src/dplanner/modules/{install,checklist,reporting}/**"
   - "tests/cli/**"
@@ -28,6 +29,31 @@ paths:
   app bundle, a Start Menu shortcut through PowerShell) behind one contract, each testable
   on every other platform. Neither word reaches the skill. `ARCHITECTURE.md`'s *The window
   is a word* has the reasoning.
+- **The window repairs its PATH; the CLI never does.** A window opened from a desktop
+  launcher is started by the session launcher, not a shell, so it inherits launchd's
+  `/usr/bin:/bin:/usr/sbin:/sbin` on macOS — and every one of the ~26 `shutil.which` call
+  sites then answers `None` for `gh`, `uv`, `git` and every agent CLI, on a machine where all
+  of them work from a terminal. `core/user_path.py`'s `repair()` puts the user's PATH back
+  once, in `entry.py`'s window branch and nowhere else: a verb is always run from a shell
+  that already has it, and a login-shell subprocess per invocation is a real cost to the
+  agent driving the CLI. **The word is what tells the two apart** — one more thing the
+  window-is-a-word dispatch is good for. Four rules keep the repair safe: it asks `$SHELL -lc`
+  and never `-lic` (a login shell reads the `.zprofile` `brew shellenv` wrote itself into; an
+  *interactive* one also sources nvm, pyenv and a prompt framework, seconds for an answer it
+  already has); it **appends and never reorders or shortens**, so a path the process was
+  given deliberately still wins and calling twice does nothing; a missing `$SHELL`, a
+  non-zero exit and a timeout are all the same answer, falling through to `KNOWN_PREFIXES`
+  rather than failing; and **the prefix list is an argument**, because half of it is absolute
+  and exists on the machine running the suite. `cli/desktop.py`'s `bundle_script()` is the
+  same fix one layer out and **quotes twice** — the hand-over is a `-c` argument inside a
+  script, so a home directory with an apostrophe ends the inner string early when it is
+  quoted once. The checklist's *PATH from your shell* row **reports the repair, never the
+  tools**: `repair()` remembers what it did and the probe reads that (no subprocess, the
+  Problems count's arrangement), because each tool that matters already has a row and a
+  second list of the same names is two rows able to disagree about one fact. Its only
+  failing state is the one worth a row — a launcher started the window and the login shell
+  would not answer — and it **advises rather than requires**, since a thin PATH is a degraded
+  window, not an unusable one, and `required` means exit 1 and a probe at every start.
 - **Installing is one act, and the pieces stay.** The command, the desktop launcher and the
   agent skill go in together — `dplanner install all`, `install status`, `install remove`
   and *Tools ▸ Install DPlanner…*, all four over `cli/install.py`'s one reader (`items`,
@@ -76,8 +102,8 @@ paths:
   topology set|show`; the Specs tab's pinned first row; `modules/spec.md`) says how its
   graph is shaped, and every CLI verb that reshapes a graph declares `edits_graph` on its
   `CliCommand` — `cli/gate.py` then refuses until `topology show` has recorded the current
-  text's digest in the per-user `config_dir()/topology-read.json`, and refuses again when
-  the text changes or when there is none. The skill marks those verbs; the window is never
+  text's digest in the per-user `config_dir()/reads.json`, and refuses again when the text
+  changes or when there is none. The skill marks those verbs; the window is never
   gated; the test suite's registry runs behind a gate with no record file. Declare it on a
   verb that changes shape, never on one that changes content.
   **And `topology show` prints the house default beside the project's text** — one start,
@@ -91,6 +117,19 @@ paths:
   prints it alone, and the recorded digest stays the project's text — hashing the default
   would un-read every project on the day `shaping.md` gained a comma.
   `ARCHITECTURE.md`'s *The topology is read before the graph is edited* has the reasoning.
+- **A house document is read before what it governs is written, through the same record.**
+  The second door `cli/gate.py` holds: a verb that writes in a document's shape declares
+  `reads_guide` naming the `<noun> <verb>` that prints it — `test add` and `test set` name
+  `test format` (`modules/testing/format.md`), and the skill marks them `‡` — and the
+  composition root builds the `GuideGate` and hands the printing verb `note_read`, exactly
+  as it hands `topology show` the topology gate's ear. `ReadRecord` is the one per-user
+  file both doors stand on (`reads.json`, keys namespaced `topology:<project id>` and
+  `guide:<verb>`); a record with no file refuses nothing, which is what the suite runs
+  behind. The difference from the topology is what the digest is *of*: a project's own text
+  is read per project, a build's own document once per machine. Declare it on a verb that
+  writes prose somebody else must follow, never on one that reads, files or records a
+  result. `ARCHITECTURE.md`'s *The test format is read before a test is written* has the
+  reasoning, including why screenshots stayed a markdown convention.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.
@@ -99,8 +138,10 @@ paths:
   in `cli/shaping.md` and reach an agent through `topology show`, not through the skill.
   What stays is an executing agent's, safety rules included.
   **Its command list is an index: one line per noun naming its verbs**, a `†` on the ones
-  that read the topology first and one legend line — because a summary per verb was a third
-  of a file loaded every session and said what `reference.md` and `--help` both already say.
+  that read the topology first, a `‡` on the ones that read a house format first, and a
+  legend line per mark — all three projected from the registry — because a summary per verb
+  was a third of a file loaded every session and said what `reference.md` and `--help` both
+  already say.
   A verb the skill must not teach carries **`in_skill=False`**, the CLI twin of
   `ActionSpec.in_menus`: registered, runnable, described by `--help` like any other, named
   by no generated file. The region verbs are what it exists for. `ARCHITECTURE.md`'s *The

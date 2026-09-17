@@ -10,8 +10,11 @@ answers is a :class:`PlanTarget` — a root, whether it still has to be initiali
 the GitHub name to publish it under afterwards — and it never touches the model. A clone
 runs off the GUI thread and lands in the repositories folder.
 
-:class:`RepoAction`, :func:`menu_of` and :func:`menu_button` are the ⋯ vocabulary the
-Project dialog's repository columns share with the picker.
+:class:`RepoAction`, :func:`menu_of`, :func:`menu_button` and :func:`popup_menu` are the ⋯
+vocabulary the Project dialog's repository columns and its code repository field share with
+the picker; :func:`tool_button` and :func:`field_row` are the field-and-glyph-button pair
+every one of these surfaces is built from; and :class:`GhRepoListDialog` is the listing
+they all pick a repository from — to clone here, or to name as the code a plan is about.
 """
 
 import re
@@ -49,7 +52,7 @@ from dplanner.modules.projects.repositories_folder import (
     repositories_folder,
 )
 from dplanner.theme.icons import ICON_SIZE, clone_icon, external_icon, folder_icon, plus_icon
-from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP
+from dplanner.theme.tokens import CAPTION_GAP, CONTROL_HEIGHT, FIELD_GAP
 
 LAST_ROOT_KEY = "last_plan_root"
 GH_LIST_SIZE = (440, 380)
@@ -122,13 +125,34 @@ def github_name_problem(name: str) -> str | None:
 
 
 def tool_button(tip: str, name: str, parent: QWidget) -> QToolButton:
-    """A glyph button beside a field: the quiet bordered look, the verb in its tooltip."""
+    """A glyph button beside a field: the quiet bordered look, the verb in its tooltip,
+    and the height of the field it stands beside.
+
+    ``CONTROL_HEIGHT`` each way, set in code for the reason DESIGN.md gives for a strip: a
+    glyph button, a worded one and a combo box disagree by pixels under the style — nine of
+    them between the ⋯ and the combo it belongs to — and a row whose button is shorter than
+    its field reads as two rows. A square is also what centres the glyph.
+    """
     button = QToolButton(parent)
     button.setObjectName(name)
     button.setProperty("repoTool", True)
     button.setToolTip(tip)
     button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+    button.setFixedSize(CONTROL_HEIGHT, CONTROL_HEIGHT)
     return button
+
+
+def field_row(field: QWidget, button: QWidget, parent: QWidget) -> QWidget:
+    """A field with its glyph button beside it: the field takes the width, the button its
+    own square, ``FIELD_GAP`` apart. One row rather than five hand-built ones, which is
+    also what keeps the gap the same in every dialog that asks."""
+    row = QWidget(parent)
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(FIELD_GAP)
+    layout.addWidget(field, 1)
+    layout.addWidget(button)
+    return row
 
 
 def menu_button(tip: str, parent: QWidget) -> QToolButton:
@@ -137,6 +161,14 @@ def menu_button(tip: str, parent: QWidget) -> QToolButton:
     button.setText(ELLIPSIS)
     button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
     return button
+
+
+def popup_menu(button: QToolButton, entries: Sequence[Entry], ink: str) -> None:
+    """Drop a ⋯ button's menu under it, built for this opening and dropped after it — the
+    one way every ⋯ in these surfaces opens, so no surface grows a placement of its own."""
+    menu = menu_of(entries, ink, button)
+    menu.exec(button.mapToGlobal(button.rect().bottomLeft()))
+    menu.deleteLater()
 
 
 class RepoPicker(QWidget):
@@ -173,11 +205,7 @@ class RepoPicker(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(CAPTION_GAP)
-        row = QHBoxLayout()
-        layout.addLayout(row)
-        row.setSpacing(FIELD_GAP)
-        row.addWidget(self.combo, 1)
-        row.addWidget(self.menu_button)
+        layout.addWidget(field_row(self.combo, self.menu_button, self))
         layout.addWidget(self.note)
 
         # The repository last picked leads, and is offered even when no library project
@@ -230,13 +258,8 @@ class RepoPicker(QWidget):
             ]
         return found
 
-    def menu(self) -> QMenu:
-        return menu_of(self.entries(), self._ink(), self)
-
     def popup(self) -> None:
-        menu = self.menu()
-        menu.exec(self.menu_button.mapToGlobal(self.menu_button.rect().bottomLeft()))
-        menu.deleteLater()
+        popup_menu(self.menu_button, self.entries(), self._ink())
 
     def _ink(self) -> str:
         """Read when the menu opens, never stored: a pop-up cannot go stale."""
@@ -340,19 +363,27 @@ class RepoPicker(QWidget):
 
 
 class GhRepoListDialog(DialogFrame):
-    """The person's GitHub repositories, filtered as they type; one is cloned.
+    """The person's GitHub repositories, filtered as they type; one is chosen.
 
-    *Clone* is the primary, greyed directly rather than through ``refuse()`` — the
-    footer's status slot is the listing's: busy while gh answers, the count or the
-    error afterwards.
+    What the choice is *for* is the caller's — a clone of a plan repository, or the code a
+    new plan is about — so the window's name and its primary's verb are given, and the
+    dialog itself only lists and answers. The primary is greyed directly rather than
+    through ``refuse()``: the footer's status slot is the listing's, busy while gh answers
+    and the count or the error afterwards.
     """
 
     _listed = QtSignal(object, str)  # (repos, error) — queued from the listing body.
 
     def __init__(
-        self, services: RepositoryServices, tasks: TaskService, parent: QWidget | None = None
+        self,
+        services: RepositoryServices,
+        tasks: TaskService,
+        parent: QWidget | None = None,
+        *,
+        title: str = "Clone from GitHub",
+        verb: str = "Clone",
     ) -> None:
-        super().__init__("Clone from GitHub", parent, size=GH_LIST_SIZE)
+        super().__init__(title, parent, size=GH_LIST_SIZE)
         self._repos: list[str] = []
         self._runner = TaskRunner(tasks, parent=self)
         self._listed.connect(self._on_listed)
@@ -373,9 +404,9 @@ class GhRepoListDialog(DialogFrame):
         layout.addWidget(self.list, 1)
 
         self.add_dismiss()
-        self.clone_button = self.set_primary("Clone", self.accept)
-        self.clone_button.setEnabled(False)
-        self.list.currentRowChanged.connect(lambda row: self.clone_button.setEnabled(row >= 0))
+        self.choose_button = self.set_primary(verb, self.accept)
+        self.choose_button.setEnabled(False)
+        self.list.currentRowChanged.connect(lambda row: self.choose_button.setEnabled(row >= 0))
         self.status.say("Listing your repositories…", "busy")
 
         def body_() -> None:

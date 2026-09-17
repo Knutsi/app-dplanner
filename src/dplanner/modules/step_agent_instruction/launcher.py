@@ -15,6 +15,13 @@ dropdown that pre-fills an editable command instead of a bare field the user wou
 to research, and the first harness is the default. ``{prompt}`` in the command becomes
 the opening line (quoted); a command without the placeholder gets it appended.
 
+**A launch with nothing to hand over opens the agent bare.** :func:`prepare` called with
+no prompt text writes no ``prompt.md`` and gives the script no opening line, and the
+command it should be given is then the harness's own :func:`open_command` — the CLI with
+nothing to do, rather than the briefed invocation, whose flags are all about a briefing
+that does not exist. That is *Project ▸ Open Agent in Code*: the planning that comes
+before there are steps to brief.
+
 **Which terminal opens is a table.** ``TERMINALS`` is one table of the known terminals
 and multiplexers per platform — Ghostty, iTerm, Terminal and WezTerm on macOS; Ghostty,
 Windows Terminal and the Command Prompt on Windows; Ghostty, kitty, Alacritty, foot,
@@ -191,6 +198,18 @@ def resume_command(agent_command: str, session: str, harnesses: tuple[AgentHarne
     return harness.resume.replace("{session}", session)
 
 
+def open_command(agent_command: str, harnesses: tuple[AgentHarness, ...]) -> str:
+    """How the agent behind ``agent_command`` opens with nothing to do, or "" when nothing
+    here knows — a custom command, or a CLI this build cannot open bare.
+
+    Never guessed from the briefed command by dropping its ``{prompt}``: that would leave
+    Claude's plan mode behind, and a launch whose whole purpose is an ordinary session
+    must not open a planning one. The harness writes both invocations down.
+    """
+    harness = harness_of(agent_command, harnesses)
+    return harness.open_command if harness is not None else ""
+
+
 def new_session() -> str:
     """A run's session id: a UUID, which is what ``claude --session-id`` accepts."""
     return str(uuid.uuid4())
@@ -337,6 +356,9 @@ class LaunchFiles:
     exit_file: Path
     title: str  # The terminal window's title, as the script sets it.
     session: str = ""  # The run's session id, as the agent command names it.
+    # The one line the agent starts with — a pointer at the briefing; "" when the run
+    # hands over nothing and the agent opens bare, with ``prompt_file`` never written.
+    opening: str = ""
     # What the briefing came to, measured where it was written: the run tracker keeps it, so
     # the Agents browser and the step's usage row can say what this run was handed.
     prompt_chars: int = 0
@@ -386,9 +408,18 @@ def _agent_line(
     harnesses: tuple[AgentHarness, ...],
 ) -> str:
     """The command with the opening prompt, the session and the run directory
-    substituted; the prompt is appended when no placeholder names it."""
+    substituted; the prompt is appended when no placeholder names it.
+
+    An empty ``prompt_expansion`` is a run with nothing to hand over — the agent opens
+    bare — so nothing is appended and a placeholder written in the command expands to
+    nothing rather than to an empty argument the CLI would read as a first word.
+    """
     command = current_command(agent_command, harnesses)
-    if "{prompt}" not in command:
+    if not prompt_expansion:
+        # A placeholder written into the command goes with the space before it, rather
+        # than leaving the CLI an empty first argument to read as an instruction.
+        command = command.replace(" {prompt}", "")
+    elif "{prompt}" not in command:
         command += " {prompt}"
     return (
         command.replace("{prompt}", prompt_expansion)
@@ -429,6 +460,11 @@ def prepare(
     the shell as ``$DPLANNER_PROJECT``, so every ``dplanner`` call the agent makes is
     scoped to its project — two projects may plan the code repository it works in.
     ``harnesses`` is what ``agent_command`` is read against: blank means the first one.
+
+    **An empty ``prompt_text`` is a run with nothing to hand over**: no ``prompt.md`` is
+    written and the script gives the agent no opening line, so the CLI comes up on its own
+    prompt and waits. ``agent_command`` should then be the harness's :func:`open_command`,
+    whose flags are not about a briefing that does not exist.
     """
     if directory is None:
         directory = new_run_dir()
@@ -436,7 +472,8 @@ def prepare(
     # utf-8 and LF said out loud: a briefing is prose, this project's prose is full of em
     # dashes, and Windows would otherwise write it in the console code page. Every agent
     # CLI reads the file as utf-8 on every platform.
-    prompt_file.write_text(prompt_text, encoding="utf-8", newline="\n")
+    if prompt_text:
+        prompt_file.write_text(prompt_text, encoding="utf-8", newline="\n")
     files = LaunchFiles(
         directory=directory,
         prompt_file=prompt_file,
@@ -445,6 +482,7 @@ def prepare(
         exit_file=directory / EXIT_FILE,
         title=window_title(step_title),
         session=session or new_session(),
+        opening=opening_prompt(prompt_file) if prompt_text else "",
         prompt_chars=len(prompt_text),
     )
     # newline="": each builder already ends its lines the way its interpreter needs them —
@@ -529,7 +567,7 @@ def _posix_script(
     lines += [
         _agent_line(
             agent_command,
-            shlex.quote(opening_prompt(files.prompt_file)),
+            shlex.quote(files.opening) if files.opening else "",
             files.session,
             shlex.quote(str(files.directory)),
             harnesses,
@@ -586,7 +624,7 @@ def _windows_script(
         ]
     agent = _agent_line(
         agent_command,
-        _powershell_quoted(opening_prompt(files.prompt_file)),
+        _powershell_quoted(files.opening) if files.opening else "",
         files.session,
         _powershell_quoted(str(files.directory)),
         harnesses,

@@ -211,9 +211,25 @@ def icns_bytes() -> bytes:
 
 
 def bundle_script(executable: Path) -> str:
-    """The bundle's executable: a shell script that hands over to ``dpw``. Finder runs it
-    with no shell profile behind it, which is why the path is absolute."""
-    return f'#!/bin/sh\nexec {shlex.quote(str(executable))} "$@"\n'
+    """The bundle's executable: a shell script that hands over to ``dpw``.
+
+    Finder runs it with no shell profile behind it, which is why the path is absolute — and
+    why the hand-over goes through the user's **login** shell when there is one. Without
+    that the process inherits launchd's four-directory PATH and finds no gh, no uv and no
+    agent CLI; ``core/user_path.py`` repairs that from inside as well, and this is the same
+    fix one layer out, where it costs nothing. ``$SHELL`` unset, or a shell that fails, falls
+    through to running the executable directly: a window that opens with a thin PATH beats
+    one that does not open.
+    """
+    handover = f'exec {shlex.quote(str(executable))} "$@"'
+    # Quoted twice on purpose: once for this script, and once more to survive being a `-c`
+    # argument inside it. A home directory with an apostrophe in it ends the inner string
+    # early otherwise, and the bundle then execs nothing.
+    return (
+        "#!/bin/sh\n"
+        f'[ -n "$SHELL" ] && exec "$SHELL" -lc {shlex.quote(handover)} -- "$@"\n'
+        f"{handover}\n"
+    )
 
 
 _BUNDLE_EXEC = re.compile(r'^exec (.+) "\$@"$', re.MULTILINE)

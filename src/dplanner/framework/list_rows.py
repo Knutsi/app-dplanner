@@ -65,6 +65,9 @@ VALUE_ROLE = int(Qt.ItemDataRole.UserRole) + 10
 # a disclosure chevron and swallows a click. See ``framework/table.py``'s ``add_heading``.
 GROUP_ROLE = int(Qt.ItemDataRole.UserRole) + 11
 COLLAPSED_ROLE = int(Qt.ItemDataRole.UserRole) + 12
+# Set on a row that landed under a group heading, whether or not that heading folds: its
+# first column hangs under the heading's words, so a group reads as holding its rows.
+GROUPED_ROLE = int(Qt.ItemDataRole.UserRole) + 13
 # Where a *host's* own roles start — the step id on a row, which milestone it is. Everything
 # below this belongs to the delegates here, and a view that numbered its own roles from
 # ``UserRole + 1`` had the order table draw its milestone label as a second line and grey
@@ -96,6 +99,16 @@ def text_left(option: QStyleOptionViewItem) -> int:
 
 class TwoLineDelegate(QStyledItemDelegate):
     """Two lines per row: the name, then what kind of thing it is or how it stands."""
+
+    def initStyleOption(  # noqa: N802 - Qt override
+        self, option: QStyleOptionViewItem, index: QModelIndex | Any
+    ) -> None:
+        super().initStyleOption(option, index)
+        # No focus frame, as on the table: Qt draws one round the item's *text* sub-rect,
+        # which starts where the style would have put the text — not where this delegate
+        # draws it, past its own icon slot — so the frame cuts across the glyph and reads
+        # as a cell picked inside the row. The picked ground is what says which row it is.
+        option.state &= ~QStyle.StateFlag.State_HasFocus
 
     def paint(
         self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | Any
@@ -198,14 +211,6 @@ class _EdgedRowDelegate(TwoLineDelegate):
     item hands the selection back to the style, which lays its own gradient under the ground
     the stylesheet asked for.
     """
-
-    def initStyleOption(  # noqa: N802 - Qt override
-        self, option: QStyleOptionViewItem, index: QModelIndex | Any
-    ) -> None:
-        super().initStyleOption(option, index)
-        # No focus frame, as on the table: the style draws one round the current item, and a
-        # second mark on the picked row is a second vocabulary for what the edge says.
-        option.state &= ~QStyle.StateFlag.State_HasFocus
 
     def paint(
         self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex | Any

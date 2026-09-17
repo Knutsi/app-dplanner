@@ -7,6 +7,10 @@ preference and secret. ``APP_NAME`` is what a person reads.
 
 The framework imports this and nothing else from the package root, so window titles, the
 splash, the About box and the secret store all agree without any of them importing the app.
+
+``APP_VERSION`` is **the** version: ``pyproject.toml`` declares it dynamic and hatchling
+reads the line below, so a build, ``--version``, About and a release tag cannot disagree.
+``scripts/release.py`` rewrites it; nothing else should.
 """
 
 from typing import Final

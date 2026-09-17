@@ -68,6 +68,8 @@ from dplanner.modules.testing.filing import (
 # The stored list plus whatever a test names by itself — what a refusal reads, where
 # `read_catalog` is the stored half and is what gets written back.
 from dplanner.modules.testing.filing import catalog as all_categories
+from dplanner.modules.testing.format import FORMAT_VERB
+from dplanner.modules.testing.format import guide as format_guide
 
 _STATUS_GLYPH = {"ok": "✓", "failed": "✗", "skipped": "-", "pending": " "}
 
@@ -223,20 +225,39 @@ def _save_runs(context: CliContext, project: Project, records: list[runs.Run]) -
 # -- the verbs ------------------------------------------------------------------------
 
 
-def commands(*, status_for: Callable[[Step], str], notes_for: NotesFor) -> list[CliCommand]:
+def commands(
+    *, status_for: Callable[[Step], str], notes_for: NotesFor, note_read: Callable[[], None]
+) -> list[CliCommand]:
+    """The test verbs. ``note_read`` is the gate's ear: ``test format`` calls it once it has
+    printed the house shape, so the read is recorded where the gate will look."""
+
     def review(context: CliContext, args: Namespace) -> int:
         return _review(context, args, status_for, notes_for)
 
+    def show_format(context: CliContext, _args: Namespace) -> int:
+        text = format_guide()
+        context.report({"format": text}, text.rstrip())
+        note_read()
+        return 0
+
     return [
+        CliCommand(
+            path=("test", "format"),
+            summary="How a test is written here: preconditions, numbered steps, screenshots "
+            "and what concurrency asks of a roster. `test add` and `test set` read it first.",
+            run=show_format,
+            needs_library=False,
+            examples=("dplanner test format",),
+        ),
         CliCommand(
             path=("test", "add"),
             summary="Add a test to a step: what must keep being true once the work is done.",
             configure=_configure_add,
             run=_add,
+            reads_guide=FORMAT_VERB,
             examples=(
-                "dplanner test add 'Fix list flicker' 'No flicker on render' "
-                "--text '1. Open the list. 2. It must not flicker.'",
-                "dplanner test add 'Fix list flicker' 'Rotation' --file steps.md",
+                "dplanner test add 'Fix list flicker' 'No flicker on render' --file steps.md",
+                "dplanner test add 'Fix list flicker' 'Rotation' --audience qa --file -",
             ),
         ),
         CliCommand(
@@ -244,6 +265,7 @@ def commands(*, status_for: Callable[[Step], str], notes_for: NotesFor) -> list[
             summary="Change a test's title or its body.",
             configure=_configure_set,
             run=_set,
+            reads_guide=FORMAT_VERB,
             examples=(
                 "dplanner test set T100 --file rewritten.md",
                 "dplanner test set T100 --title 'No flicker on data update'",

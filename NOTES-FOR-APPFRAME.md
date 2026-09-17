@@ -3941,6 +3941,56 @@ would ship, made to carry what it is for. The `#NoticePercent` rule goes with it
 
 ## 48. From the tests-view pass
 
+### `framework/table.py` — a row under a group heading hangs under it
+
+**What.** `add_row` stamps `GROUPED_ROLE` (new in `list_rows.py`) on the first cell of every
+row that lands after an `add_heading` in the same fill, and `TableDelegate.indent(index)`
+turns that into `GROUP_INDENT` — `CHEVRON_W + ICON_GAP` — added to where the first column's
+words and glyph are drawn, and to what `sizeHint` measures so a `contents` column still fits
+them. `clear_rows` takes the flag back, so a host that drops its grouping draws a flat list
+again with nothing to reset.
+
+**Why.** Grouping and folding were already here; what was missing was the *tree's* shape.
+With every row starting at the same x as the heading above it, a collapsed group and an
+expanded one differ only by the chevron's direction, and a reader scanning a two-hundred-row
+roster has to keep in their head which heading they are under. The indent says it: the rows
+begin past the disclosure triangle rather than under it. The part worth
+carrying upstream is that it is **the name's indent, not the row's** — only the first column
+moves, and the picked row's accent edge and hover wash still run the full width, because
+indenting the row itself would give half a table a second set of column positions and make
+the selection edge jump between groups.
+
+**Upstream?** Yes — it is three lines beside the folding it completes.
+
+### `framework/widgets.py` — `well()`, and `theme.qss`'s read-only well rule
+
+**What.** A sibling of `quiet()`: `well(view)` sets a `well` property, and `theme.qss` gains
+`#DialogBody QTextEdit[well="true"], #DialogBody QPlainTextEdit[well="true"]` — no frame, no
+padding, no accent — outranking the body's field rule by one property.
+
+**Why.** The body's field rule matches on type, and `QTextBrowser` **is** a `QTextEdit`, so
+the first read-only view put in a dialog body came up wearing the panel field's frame and
+lighting up with the accent when the dialog focused it. A box that lights up says *type
+here* about something that will never take a character. Qt has no read-only selector for a
+text edit, so the widget has to say so, and a property rather than an id means the next
+read-only view in a dialog needs no rule of its own — which is the trap `quiet()` was
+written for, one widget type along.
+
+**Upstream?** Yes: any application that puts a rendered document in a dialog hits this on
+its first try.
+
+### `framework/table.py` — `Table.group_of`
+
+**What.** The other half of `group_at`: that one answers *does this row head a group, and
+which*, this one answers *which group is this row under*.
+
+**Why.** A host that brings one row on screen — the Tests tab landing on a test somebody
+followed a reference to — has to open whatever is hiding it first, and the table was the
+only thing that knew. Without it the host reaches into `_row_group`, which is the shape of
+a private accessor that becomes public by accident a release later.
+
+**Upstream?** Yes.
+
 ### `framework/table.py` — a group heading that folds, and the table remembers what is shut
 
 **What.** `Table.add_heading` gained three keyword arguments: `glyph` (a `QIcon` in front of
@@ -4025,3 +4075,89 @@ closes a hole a host will otherwise fall into once per host. The Test panel's Ne
 are what found it.
 
 **Upstream?** Yes.
+
+### `framework/list_rows.py` — `TwoLineDelegate` strips Qt's focus frame
+
+**What.** `TwoLineDelegate.initStyleOption` clears `State_HasFocus`. The identical override on
+`_EdgedRowDelegate` went with it — the rule is the base class's now, so every list on the
+two-line row gets it and the `RichList` subclass adds only its accent edge.
+
+**Why.** A bug report worth carrying upstream whole, because any delegate that reserves a
+glyph slot of its own has it. Qt draws the focus frame round `SE_ItemViewItemText`, and that
+rect starts where the *style* would have put the text — past the item's decoration, at the
+style's own margins — not where the delegate draws it, past `ROW_PADDING_H` plus its icon
+plus `ICON_GAP`. The two disagree by about fourteen pixels, so on Fusion (whose focus frame
+is a filled translucent rounded rect, not a dotted outline) a picked row showed a washed
+bordered block that began half way across the glyph and ran to the row's right edge: it read
+as a *cell* picked inside the row rather than as the row. In a tree it was worse — the frame
+also stopped at the item rect, so the indent and the disclosure chevron sat outside it.
+
+`framework/table.py` already stripped the flag and said why in a comment; the list delegate
+it was modelled on never did, and that one missing line was the same defect in nine surfaces
+at once (the Specs tree, Problems, Open Project, the browse page, the repositories folder,
+the feature editor's passages, the Documentation tab, the picker and so the command palette).
+That is the argument for the rule living in the primitive: it was never one list's bug.
+
+Two things the template should keep alongside the fix. The assertion that catches a
+regression is a **pixel scan under the row's two lines** — one colour from the row's left
+edge to its right (`tests/framework/test_list_rows.py`); a sub-rect assertion cannot see it,
+because both rects are individually correct. And the render is kept as a deliberate wrong:
+`modules/debug/design_rows.py` puts `State_HasFocus` back on one tree beside three right
+ones, so the next person sent at "a weird block that crosses the icon" has the picture.
+
+**Upstream?** Yes — the fix, the test and (if the template grows an examples page) the
+side-by-side.
+
+---
+
+## 49. From the distribution pass: a desktop launch does not inherit the user's PATH
+
+**What we added.** `core/user_path.py` — `login_path()`, `repair()`, `existing_prefixes()`
+and `reading()` — called once from `entry.py`'s window branch, plus a login-shell hand-over
+in `cli/desktop.py`'s `bundle_script()`.
+
+**The bug it closes, which the template shares.** A window started by Finder, the Dock,
+Spotlight or a `.desktop` entry is started by the *session launcher*, not by a shell, so it
+inherits that launcher's environment. On macOS that is launchd's
+`/usr/bin:/bin:/usr/sbin:/sbin`. `shutil.which` reads `os.environ["PATH"]`, so every tool a
+developer installed — `/opt/homebrew/bin/gh`, `~/.local/bin/uv`, the agent CLIs, whisper —
+answers `None`. DPlanner has about twenty-six `which` call sites and every one of them
+reported, correctly and uselessly, that the machine had no GitHub CLI on a machine where
+`gh` works perfectly from a terminal. It reproduces only from a launcher, never from a
+terminal, which is why it survived as long as it did.
+
+**The shape of the fix, and why this shape.** It is one repair to the environment before the
+window is built, not a change to any caller: nothing is wrong with the callers. Rules that
+came out of it, and would apply to any application the template produces:
+
+- **Ask a login shell, not an interactive one.** `brew shellenv`, uv's installer and every
+  version manager write into `.zprofile`/`.profile`, which `-lc` reads. `-lic` also drags in
+  nvm, pyenv, direnv and a prompt framework — seconds of startup for an answer `-lc` already
+  has.
+- **Append, never reorder, and never shorten.** A path the process was deliberately given
+  must keep winning, which also makes the repair idempotent and safe to call before anything
+  has read the environment.
+- **Degrade rather than fail.** A missing `$SHELL`, a non-zero exit and a timeout are the
+  same answer — ask something else — and a short list of known prefixes
+  (`/opt/homebrew/bin`, `~/.local/bin`, …) is most of the value for none of the risk.
+- **The window repairs and the CLI does not.** A verb is always run from a shell that already
+  has the real PATH, and a login-shell subprocess per invocation is a real cost to an agent
+  driving the CLI. DPlanner's window-is-a-word dispatch makes that distinction free; a
+  template with two entry points has the same seam.
+- **Make the prefix list an argument.** Half of it is absolute and exists on the machine
+  running the suite, so a test that cannot control the set leaks the developer's machine into
+  every assertion about what a repair added. Found by three tests failing for that reason.
+- **The status row reports the repair, not the tools.** The first version re-probed `gh`,
+  `git` and `uv` and reported what was missing — which is what the tool rows already say, in
+  the same words, from the same `which`. Two rows able to disagree about one fact. What only
+  this row knows is what the repair *did*, so `repair()` returns and remembers a small
+  `Repair` and the probe reads it: no subprocess, and the row's one failing state is the one
+  that matters (a launcher started the window and the login shell would not answer).
+- **The bundle script quotes twice.** The hand-over is a `-c` argument inside a shell script,
+  so `shlex.quote` is applied to the whole inner command as well as to the path. Quoted once,
+  a home directory with an apostrophe in it ends the inner string early and the bundle execs
+  nothing.
+
+**Upstream?** Yes, and close to verbatim. `core/user_path.py` names nothing of this
+application, and `bundle_script`'s hand-over is a fix to template code that is wrong in the
+template too. The checklist row that reports it is ours, because the checklist is.

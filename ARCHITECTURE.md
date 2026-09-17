@@ -1142,7 +1142,7 @@ named `ProjectDialog`.
 **Why the reference is a Debug surface and not a document.** A rule is read once; a
 surface is opened beside the one being built and compared, in both themes, with every
 state on it — the refused primary, the tinted row while picked, the indicator while a
-rebuild is owed. Debug ▸ Design Example… and its table tab are that, over sample data,
+rebuild is owed. Debug ▸ Design Examples is that, a page at a time over sample data,
 and `docs/screenshots/f1-design-example/` keeps them rendered so a pull request can show the difference
 it made. Every later step that touches a surface points at them; DESIGN.md's *Bringing a
 surface up* is the list of what to compare.
@@ -3652,6 +3652,39 @@ main checkout (`core/storage/git.py::main_checkout`, which the skill's worktree 
 reads too). The agent's `dplanner` calls therefore land where the person is looking, and
 the branch's copy of the plan is never touched, so a merge never has to reconcile it.
 
+### An agent may be opened with nothing to do
+
+Every launch above hands the agent a briefing. The planning that comes *before* the plan
+has none to hand: a spec has been imported, the graph is empty, and what the person wants
+is an agent sitting in the code with its own prompt, so they can talk it into a set of
+steps. Running that through *Run Agent* is impossible twice over — there is no step to be
+about, and Claude Code's briefed command opens in **plan mode**, which is exactly the mode
+a session that is about to write a plan file must not be in.
+
+So *Project ▸ Open Agent in Code* is its own verb, on the project rather than a step, and
+it is the same machinery with two things taken away: no briefing, and a different
+invocation. It offers the same launch profiles in the same child menu, opens in the same
+place a step's agent would (the code checkout, else the plan's own repository), and
+exports the same `DPLANNER_PROJECT`, so the agent's first `dplanner step add` lands in the
+project it was opened on.
+
+**The bare invocation is written down, never derived.** `AgentHarness.open_command` sits
+beside `command`: `claude`, `codex`, `opencode`. The tempting alternative is to take the
+briefed command and drop its `{prompt}` — and for Claude that leaves `--permission-mode
+plan` behind, which is the one thing this launch exists to avoid. A flag's purpose is the
+vendor's fact and not a string operation, so each harness states both invocations and a
+command nothing here knows (a hand-written one) greys the entry with that as its reason,
+rather than being guessed at.
+
+**Nothing to hand over is a launch shape, not a special case.** `launcher.prepare` called
+with no prompt text writes no `prompt.md` and gives the wrapper no opening line, so one
+code path still writes the script, prepares nothing, exports the project and spawns the
+terminal. The run has no step, so — like the Problems panel's and the conflict hand-over's
+— it is not tracked, claims nothing *in progress*, and gets no usage row. And it has no
+prompt, which is the one place it differs from them on screen: a launch that opens no
+terminal ends in a notice rather than the prompt fallback, because there is no briefing to
+put in the person's hands.
+
 ### Which terminal opens is a table, not a chain
 
 The platform `if`-chain that used to resolve a terminal is one table now, `TERMINALS`:
@@ -3989,8 +4022,20 @@ exception that proves it — it has a spec, and the dialog reaches it through th
 callback the module hands in, which is the very function `projects.move` runs, so the
 menu and the card cannot mean different things by it.
 
-Create mode keeps its form: with nothing on disk yet there is no log to read and no verb
-to run, so the fields *are* the answer.
+**Create mode keeps its form, and its fields carry the same ⋯.** With nothing on disk yet
+there is no log to read, so the fields *are* the answer — but *picking* a repository is a
+verb, and "no verb to run" was the reading that left one field without one. The plan
+repository always had its `RepoPicker`; the code repository had a bare combo box, so the
+only way to name it was to choose a checkout and let its origin back-fill the field — a
+discovery a person makes by accident, not a design. It now carries the ⋯ the code column
+has, over the two verbs that mean anything before a project exists (*Pick from GitHub…*,
+*Clone into Repositories Folder*), and it lists the code this library already plans;
+picking one of those brings that project's checkout with it through `known_checkout`, the
+seam the Open Project wizard already had for the same question. The two modes share the
+verbs rather than paralleling them — `_code_url`, `_set_repository` and `_record_checkout`
+answer into the form's fields or into the model, so neither mode can grow a behaviour the
+other lacks, and the checkout that disagrees with the repository named is asked about in
+both.
 
 **A plan repository holds several projects for several people.** Its root carries the
 `.dplanner` index (`FORMAT.md`), which is what lets *Open Project…* and `dplanner library
@@ -4841,6 +4886,18 @@ the tab is reopened over the same rows. The collector groupings pass no key and 
 fold: a feature's tests are already few, and a reader who asked to see them beside each
 other did not ask to unfold them one at a time.
 
+The rows under a heading are **indented**, and that is the half of the reading the fold
+does not give you. Every row starting at the heading's own x leaves a collapsed group and
+an expanded one differing by nothing but the direction of a triangle, so a reader part way
+down a roster has to hold in their head which heading they are under. Inset the rows by the
+chevron's slot and the answer is on the page: the names begin past the disclosure triangle
+rather than under it, which is the shape of every tree anybody has read.
+It is **the name's indent, not the row's** — only the first column moves, and the picked
+row's accent edge and hover wash still run the full width. Indenting the row itself would
+give half the table a second set of column positions, so a column's values would no longer
+line up down the page, and the selection edge would step in and out between groups; the
+whole reason a roster is a table is that a column can be read down.
+
 ### Export is what the tab is showing
 
 "Narrow it to QA, then hand that to the QA team" is one gesture, so `File ▸ Export ▸ Tests`
@@ -4883,7 +4940,8 @@ the link the editor stores is relative to a directory nothing outside the plan c
 
 **Double-clicking a row in a Tests tab opens the test, not its step.** That is the one
 deliberate exception to *double-clicking a step anywhere runs `steps.details`*, and the
-reason is that in this table a row **is** a test — its step is a column. The roll call does
+reason is that in this table a row **is** a test — the step is not even a column, and the
+row's own id is. The roll call does
 the same, and because it spans projects and publishes no selection of its own, it hands the
 verb a constructed context naming exactly that row. The verb (`test.details`) only
 *reveals* the panel; the panel was already following the context, so a single click updates
@@ -4911,6 +4969,167 @@ order that "next" means, not the project's: the reader's scope, their audience f
 their ergonomic order are what put the next test where they are looking. With no Tests tab
 open there is nothing to walk, and both verbs are greyed saying so — which is honest rather
 than defensive, because "next" has no meaning without a list.
+
+## A right-click on a test leads with the result
+
+A row in a Tests tab **is** a test, and for a while its right-click rendered the whole Step
+menu: four verbs about the thing under the cursor among twenty about something else. What
+somebody reaches for over a test is the result, so the popup leads with it — the *Test*
+child menu's `test_result` band, rendered flat — and everything about the step the test
+hangs off is one level down, as a `Step` child.
+
+**The child is the Step menu, not a copy of it.** `fill_menu` fills a menu it is given, so
+the composition is two renders of the registry through the same context every other
+presenter reads: the Step menu's order, its own child menus, its data menus, its greyed
+entries and their reasons, all of them, and a verb somebody adds to it tomorrow appears
+here without anybody editing the Tests tab. *A right-click renders a menu, never a copy of
+one* is a rule about entries, and it says nothing against a right-click rendering two.
+
+**It is not a menu of its own in `MENU_STRUCTURE`.** An entry in that table is a place
+verbs are *registered into*, and nothing registers here — this surface offers verbs that
+already have homes, in an order of its own. Giving it a table entry would mean either
+moving the result verbs out of `Step ▸ Test`, which is where the menu bar wants them, or
+registering four second seats, which is four specs to keep in step with four others. The
+composition is six lines and names no verb.
+
+**Naming a `group` with a `submenu` is what makes the first half one render.** Two groups
+feed the `Test` child menu — what a test *is* (Add, Archive, Put Back) and what a run
+*recorded* — with the rule between them drawn inside it. A surface whose subject is one of
+those bands asks for that band: `fill_menu(…, "Step", submenu="Test", group="test_result")`.
+The alternative was to render the whole child flat and accept *Add Test* above the results,
+or to reorder the groups in `MENU_STRUCTURE` and change the menu bar for every reader of
+it — both worse than teaching one filter to compose with another it already ran beside.
+
+## A reference is a link, and a link is a preview
+
+Test bodies point at each other. *Run this after T101 passes*, *the fixture T104 leaves
+behind* — a roster is a sequence, and prose is how it says so. The reader had the id and
+nothing to do with it: ids are minted per project and the table printed every fact about a
+test except the word it is called by, so following a reference meant opening tests until
+the right one turned up. The **Id column** is half the answer and the link is the other.
+
+**What counts as a reference is decided by the project, not by the pattern.** `T` and
+digits on their own word boundaries is only a candidate; it becomes a link when the project
+has minted that id and not otherwise. An unminted `T999` staying plain words is the point
+rather than a shortcoming: a body may legitimately quote an id from a spec whose tests are
+not written, and a link that goes nowhere is a worse answer than no link. An id inside a
+code span or inside a link that already points somewhere is left alone too — code is how a
+body writes *about* the shape of an id.
+
+**The linking is done to the rendered HTML.** `core/markdown.py` escapes every piece of
+user text and lifts code spans, links and images out before anything else runs, so by the
+time a body is HTML the only `<` in it opens one of our own tags — which is what makes a
+walk of it exact rather than a guess. Over the markdown instead, the same pass would put
+an anchor inside a fenced block, inside a URL, and inside the text of somebody's link.
+
+**Following the link opens a modal, and that is the design rather than a compromise.**
+Picking T101 in the table is a move: it loses the test being read, and a plan has no back
+button. So a click opens a preview over what you were reading — glance, shut it, and you
+are exactly where you were — and *Show in Tests* is the deliberate move, a button rather
+than the only thing a click could have meant. The preview links its own references and
+keeps a **trail**, because a preview that dead-ends at the first reference has the defect
+it exists to fix; **Back** is a list and one button, and without it the second reference is
+the one nobody follows.
+
+**Show in Tests widens the tab only when the tab is what is hiding the test.** A Tests tab
+can be scoped to a collector, filtered by audience, hiding the archived, and folded shut by
+category — any of which can be why the asked-for test is not on the page. Answering that
+request with nothing would be the worst of the three options; widening every time would
+throw away a narrowing the reader made. So `TestsActivity.reveal` checks first, and only
+then takes the narrowing off, and `TestsTable.reveal` opens the group the row is folded
+under and scrolls to it. Opening the fold is deliberately *not* part of `select_tests`,
+which runs on every rebuild to keep the selection: unfolding there would spring a group
+open the moment the reader shut one holding the row they had picked.
+
+**The preview and the panel are the same two widgets.** `view.py`'s `TestHead` and
+`TestBody` are the test as it is *read* — what it is called, where it is filed, how it last
+did, and its body rendered. The Test panel puts its verb strip between them and the preview
+puts nothing there, and that is the whole difference; written twice, one of them would have
+grown a fact the other lacked by the second change.
+
+## The test format is read before a test is written
+
+A test is executed by a stranger — a year later, by a person with no memory of the work or
+by an agent with no context at all — and the thing that makes one executable is dull and
+uniform: **what must already be true**, then **what to do**, under those two headings.
+Nothing said so anywhere, so every plan invented its own answer — and an unexecutable test
+always fails the same way: a paragraph of narrative with the setup implied and the pass
+condition buried at the end of it.
+
+So there is a house format (`modules/testing/format.md`), and it is delivered exactly the
+way the default graph shape is (*The default shape rides through the same door*): **printed
+by one verb, never stored in a plan, and behind a gate.** Each of the three is the same
+decision as its cousin one level up.
+
+**Printed, never stored.** The obvious move is a project-level convention seeded at
+`project create`, and it is the same trap: a plan's own prose reaches every agent briefing,
+so a house document written into one is paid for again on every step anybody ever executes.
+`dplanner test format` prints it, `test add`/`test set` refuse until it has been read, and a
+briefing never carries a word of it — which a test pins.
+
+**Behind a gate, because the skill is Claude's alone.** The shape could have been three more
+paragraphs in `SKILL.md`. That reaches Claude and not Codex or OpenCode, and it is paid for
+in every session including the ones that never write a test. The gate inverts both: the
+document costs nothing until an agent is about to write a test body, and then it is
+unavoidable, whichever agent CLI is driving. It cost 6.7 KB of document, 567 bytes of skill
+(the concern, not the shape) and a `‡` on two verbs in the command index.
+
+**The door is narrow on purpose.** Only the two verbs that write a body declare
+`reads_guide` — `test add` and `test set`. Reading, filing, archiving, exporting and
+`test-run mark` do not, so an agent handed a roster to *execute* never meets the gate;
+neither does `step add --test`, which names a test and writes no body. The gate is for the
+agent that is about to write prose somebody else will have to follow.
+
+**One record, two doors.** The topology gate already had the mechanism — a per-user,
+per-machine file of digests under `core/config_dir.py` — so the file became `reads.json`
+(from `topology-read.json`, a name that stopped describing it), holding namespaced keys:
+`topology:<project id>` per project, `guide:test format` per document. `ReadRecord` is the
+file and the digest comparison; `TopologyGate` and `GuideGate` are the two sentences written
+over it; `gated()` puts whichever the verb declared in front of its handler. The difference
+between them is what the digest is *of*: a topology is the project's own text, so the record
+is per project, and the format is this build's, so one reading covers the machine — and
+changing `format.md` in a release un-reads it for everybody, which is the intent.
+
+### Screenshots were a convention, not a feature
+
+The ask was for screenshots in a test with a sequence and annotations, and the honest answer
+is that the mechanism already shipped: `dplanner test attach` copies an image into the
+step's file area and prints the `assets/…` link, content-addressed like every other asset,
+and a test body is markdown. What was missing was only what nobody had written down.
+
+The feature that was *not* built is worth recording, because it looks right. A structured
+list on the test record — an ordered array of `{asset, caption}` — would give a renderer a
+real sequence to draw and a place to hang a caption. It would also mean a schema migration,
+a second way to put an image in a body beside the markdown link that already works, an
+editor in the step panel to maintain it, and a decision in every renderer (the tab, the Test
+panel, the export, the report) about what to do when the two disagree. That is a feature's
+worth of surface for something the body already expresses: **the step number is the
+sequence, and the alt text is the annotation.** `![2 — the signing dialog; Sign stays
+disabled until a name is typed](assets/…)` sorts itself, renders everywhere markdown
+renders, survives an export that carries no images, and needs no format bump. The rule the
+document adds is that a picture goes on its step's line rather than in a gallery at the end,
+which is what makes a body read as a sequence at all.
+
+### Concurrency is a question the document asks, not a check lint runs
+
+A test roster written against one actor on a freshly-loaded screen passes completely while
+the expensive bugs ship: one reviewer signs a document that is already open, unsigned, on
+another reviewer's screen, and nothing in the plan ever said what the second Sign should do.
+The format document names the four shapes this takes — a stale screen then a write, two
+writers at once, isolation between tenants or roles, and work happening behind the user —
+and says how a concurrent test is written: the actors and what each session has loaded go in
+the preconditions, and every step names its actor.
+
+It is deliberately **a question, not a rule**. Whether a product is concurrent at all is not
+derivable from a plan — no aspect says so, and a single-user tool with a roster of
+single-actor tests is correct, not incomplete — so a `project lint` check would fire on
+plans that are right, which is the one thing lint may not do (*Two shape checks, and only
+one of them earned lint*). What the document asks for instead is that the agent raise it:
+go through the roster on any system where more than one person or process touches the same
+data, say which tests need a concurrent sibling, and where the user has not said whether
+concurrency matters, propose rather than decide. The concern — not the shape — is in the
+skill too, in one short paragraph, because the agent who should raise it may be the one
+planning rather than the one writing, and never open this document at all.
 
 ## A test goes stale when the step under it moves
 
@@ -5729,7 +5948,10 @@ half-applied run.
 
 "Has read" is a **digest, not a flag**. `topology show` records the sha256 of the text it
 printed, per project, in a per-user, per-machine file under `core/config_dir.py` (Qt-free,
-because `cli/` must reach it) — never in the plan, which is shared. The gate compares that
+because `cli/` must reach it) — never in the plan, which is shared. That file is
+`reads.json`, and it holds more than topologies now: the house format of a test body is read
+through the same record under a key of its own (*The test format is read before a test is
+written*), which is why `ReadRecord` is a shape separate from the gate written over it. The gate compares that
 with the text as it is now, so a topology that changed since it was read is unread again with
 no version stamp and no migration: the comparison is the check, the same shape as a compiled
 document's staleness. A project with no topology refuses too — the first thing to do with a

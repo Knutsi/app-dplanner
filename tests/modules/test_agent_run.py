@@ -1775,3 +1775,177 @@ def test_the_prompt_fallback_is_a_frame_that_says_when_the_prompt_was_copied(app
         assert dialog.status.words() == "Prompt copied" and dialog.status.tone() == "ok"
     finally:
         dialog.deleteLater()
+
+
+# -- opening an agent with nothing to do -------------------------------------------------------
+
+
+def focus_project(services, project):
+    from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+
+    services.context.set_scope(
+        SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
+    )
+
+
+def _captured_launches(monkeypatch):
+    """Every ``LaunchFiles`` the real ``prepare`` produced, so a test can read the wrapper
+    it wrote rather than guessing at one."""
+    made: list[LaunchFiles] = []
+    real = launcher.prepare
+
+    def capture(*args, **kwargs):
+        files = real(*args, **kwargs)
+        made.append(files)
+        return files
+
+    monkeypatch.setattr(launcher, "prepare", capture)
+    return made
+
+
+def test_a_harness_writes_its_bare_invocation_down_rather_than_stripping_the_briefed_one():
+    """Dropping ``{prompt}`` from Claude's command would leave ``--permission-mode plan``
+    behind — the one thing a launch that exists to open an ordinary session must not
+    bring — so the bare command is the harness's own fact, and unknown for anything else."""
+    claude = HARNESSES[0]
+    assert launcher.open_command(claude.command, HARNESSES) == "claude"
+    for harness in HARNESSES:
+        assert harness.open_command and "{prompt}" not in harness.open_command
+    assert "--permission-mode" not in claude.open_command
+    # A text the harness shipped earlier is still that harness; a custom command is nobody's.
+    assert launcher.open_command(claude.superseded[0], HARNESSES) == "claude"
+    assert launcher.open_command("my-agent {prompt}", HARNESSES) == ""
+
+
+@SH
+def test_a_launch_with_nothing_to_hand_over_writes_no_prompt_and_no_opening_line(tmp_path):
+    files = prepare("", tmp_path, agent_command="claude", platform="linux")
+    assert not files.prompt_file.exists()
+    assert files.opening == "" and files.prompt_chars == 0
+    script = files.script.read_text()
+    assert "\nclaude\n" in script  # The command alone: no opening line was appended.
+    assert "prompt.md" not in script
+
+
+def test_the_windows_wrapper_opens_a_bare_agent_the_same_way(tmp_path):
+    files = prepare("", tmp_path, agent_command="codex", platform="win32")
+    assert not files.prompt_file.exists()
+    assert "; codex; exit $LASTEXITCODE" in files.script.read_text()
+
+
+@SH
+def test_a_placeholder_in_a_command_with_nothing_to_hand_over_leaves_no_empty_argument(tmp_path):
+    """An empty first argument is one the CLI would read as an instruction to do nothing."""
+    files = prepare("", tmp_path, agent_command="my-agent --flag {prompt}", platform="linux")
+    assert "\nmy-agent --flag\n" in files.script.read_text()
+
+
+def test_open_agent_in_code_is_greyed_without_a_project_and_says_so(services):
+    state = services.actions.spec("agent.open").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label is not None and "no project is open" in state.label
+
+
+@SH
+def test_opening_an_agent_runs_the_bare_command_where_the_code_is(
+    services, step, tmp_path, monkeypatch
+):
+    """No briefing, no plan mode, no worktree and no step: the CLI comes up on its own
+    prompt in the project's code, which is what the planning before the steps needs."""
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.commands import SetFieldCommand
+
+    code = init_repo(tmp_path / "widget")
+    project = services.document.project_of(step.id)
+    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    services.repo.set_checkout(project.id, code)
+    focus_project(services, project)
+    assert services.actions.spec("agent.open").state(services.context.current()).enabled
+
+    prepared = _captured_launches(monkeypatch)
+    calls: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+    services.actions.run("agent.open", services.context.current())
+
+    ((_command, cwd),) = calls
+    assert cwd == code
+    (files,) = prepared
+    script = files.script.read_text()
+    assert not files.prompt_file.exists()
+    assert "\nclaude\n" in script and "--permission-mode plan" not in script
+    assert "git worktree add" not in script
+    # Every `dplanner` call the agent makes is still scoped to the project it opened on.
+    assert f"export DPLANNER_PROJECT={shlex.quote(project.id)}" in script
+
+
+def test_the_open_project_is_what_the_verb_acts_on(services, step, monkeypatch):
+    """No selection needed: the graph tab publishes the project it is about, and the
+    Project menu reads the same context every other presenter does."""
+    project = services.document.project_of(step.id)
+    services.tabs.open("project", project.id)
+    assert services.actions.spec("agent.open").state(services.context.current()).enabled
+
+    calls = _fake_terminal(monkeypatch)
+    services.actions.run("agent.open", services.context.current())
+    assert calls == [["fake-term"]]
+
+
+def test_opening_an_agent_leaves_the_plans_steps_alone(services, step, monkeypatch):
+    """A run with no step stamps none: nothing is claimed in progress and no chip appears,
+    because nobody has been told to do anything yet."""
+    from dplanner.modules.step_agent_run.aspect import MODULE_ID as RUN_ID
+    from dplanner.modules.step_agent_run.aspect import read as run_state
+
+    focus_project(services, services.document.project_of(step.id))
+    _fake_terminal(monkeypatch)
+    services.actions.run("agent.open", services.context.current())
+    assert run_state(services.document.step(step.id)) == ""
+    assert next(m for m in services.modules if m.id == RUN_ID).runs() == []
+
+
+def test_a_project_whose_code_is_not_checked_out_here_greys_opening_and_says_so(
+    services, step, tmp_path
+):
+    from dplanner.domain.commands import SetFieldCommand
+
+    project = services.document.project_of(step.id)
+    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    focus_project(services, project)
+    state = services.actions.spec("agent.open").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label is not None and "not checked out" in state.label
+
+
+def test_a_custom_agent_command_cannot_be_opened_bare_and_the_entry_says_why(
+    services, step, monkeypatch
+):
+    """Nothing here knows which of a hand-written command's flags are about its briefing,
+    and guessing is how an "open a session" verb would open a planning one instead."""
+    from dplanner.modules.step_agent_instruction.profiles import Profile, write_profiles
+
+    write_profiles([Profile("Mine", "my-agent {prompt}")])
+    focus_project(services, services.document.project_of(step.id))
+    state = services.actions.spec("agent.open").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label is not None and "custom one" in state.label
+
+    calls = _fake_terminal(monkeypatch)
+    services.actions.run("agent.open", services.context.current())
+    assert calls == []
+
+
+def test_no_terminal_says_so_rather_than_offering_a_prompt_nobody_wrote(
+    services, step, monkeypatch
+):
+    """Every briefed launch ends in the prompt fallback; this one has no prompt to hand
+    over, so the refusal is a notice."""
+    import dplanner.modules.step_agent_instruction.module as agent_module
+
+    said: list[tuple[str, str]] = []
+    monkeypatch.setattr(agent_module, "notice", lambda _p, title, text: said.append((title, text)))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: None)
+    focus_project(services, services.document.project_of(step.id))
+    services.actions.run("agent.open", services.context.current())
+    ((title, text),) = said
+    assert title == "Open Agent in Code" and "No terminal opened" in text

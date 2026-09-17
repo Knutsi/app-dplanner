@@ -6,6 +6,9 @@ no way to name a session up front: the thread id is minted by Codex itself. Its 
 reads anywhere, so the briefing outside the checkout needs no extra flag; ``--add-dir``
 on Codex grants *write* access and is not wanted.
 
+**Opening it bare.** ``codex`` with no positional argument: the same interactive session,
+waiting on the first thing the person types — what *Open Agent in Code* opens.
+
 **Finding the run afterwards.** Codex records every session as a rollout file,
 ``$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<local time>-<thread id>.jsonl`` (the day is
 local time), whose first line is ``session_meta`` with the ``cwd`` it started in and its
@@ -170,6 +173,7 @@ HARNESS = AgentHarness(
     id="codex",
     label="Codex",
     command="codex {prompt}",
+    open_command="codex",
     resume="codex resume {session}",
     shell_markers=("CODEX_THREAD_ID", "CODEX_SESSION_ID"),
     report=report,
