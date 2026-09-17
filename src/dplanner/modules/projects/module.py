@@ -195,6 +195,7 @@ class ProjectsModule:
             deps.tasks,
             deps.theme,
             move=self.move_plan,
+            known_checkout=self._checkout_of,
             mode=CREATE,
             parent=deps.parent,
         )
@@ -241,7 +242,8 @@ class ProjectsModule:
 
     def _checkout_of(self, remote: str) -> Path | None:
         """Where this machine already has ``remote`` checked out, if some other project
-        here plans the same code — what the link page offers rather than cloning again."""
+        here plans the same code — what the link page and New Project offer rather than
+        cloning again."""
         deps = self._deps
         facts = [deps.repos.facts_of(project.id) for project in deps.library.projects]
         return find_checkout([(found.repository, found.checkout) for found in facts], remote)

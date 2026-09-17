@@ -21,8 +21,10 @@ from dplanner.domain.relocate import Moved
 from dplanner.domain.repositories import ACCEPTED, repository_facts
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.framework.dialog import LinePrompt
+from dplanner.modules.projects import project_dialog
 from dplanner.modules.projects import repositories_folder as folders
 from dplanner.modules.projects.project_dialog import CREATE, ProjectDialog
+from dplanner.modules.projects.repo_picker import menu_of
 from dplanner.modules.projects.repos import (
     MOVE_PLAN,
     SET_UP_PLAN,
@@ -31,9 +33,12 @@ from dplanner.modules.projects.repos import (
     RepoLog,
     RepositoryServices,
     candidate_repositories_folders,
+    shown_path,
 )
+from dplanner.theme.tokens import CONTROL_HEIGHT
 
 CODE_URL = "https://github.com/acme/widget"
+INK = "#808080"  # A menu is painted in the ink its surface hands it; any will do here.
 
 
 def commit_now():
@@ -230,7 +235,7 @@ def test_the_move_entry_is_worded_as_the_offer_this_project_needs(
 def test_the_menu_renders_what_the_entries_say(dialog):
     """The pop-up is the entries, rendered: the greyed rows are the ones with a reason,
     the separator is there, and every row carries a glyph."""
-    menu = dialog.code_column.menu()
+    menu = menu_of(dialog.code_column.entries(), INK, dialog)
     try:
         rows = [
             (action.text(), action.isEnabled(), not action.icon().isNull())
@@ -239,7 +244,8 @@ def test_the_menu_renders_what_the_entries_say(dialog):
         ]
         assert [action.isSeparator() for action in menu.actions()].count(True) == 1
         assert rows[0] == ("Set Code Repository…", True, True)
-        assert rows[1] == ("Open on GitHub — not a GitHub repository", False, True)
+        assert rows[1] == ("Pick from GitHub…", True, True)
+        assert rows[2] == ("Open on GitHub — not a GitHub repository", False, True)
         assert all(icon for _text, _enabled, icon in rows)
     finally:
         menu.deleteLater()
@@ -555,13 +561,11 @@ def test_opening_says_which_plan_lives_inside_its_code(app, library_file, librar
 # -- create mode --------------------------------------------------------------------------------
 
 
-def test_create_mode_answers_a_spec_once_a_name_and_a_home_are_given(
-    services, fakes, tmp_path, monkeypatch
-):
-    """The same dialog, nothing to edit: a name, a plan repository, a folder — the folder
-    follows the name until it is typed in — and the code fields ride along."""
-    import subprocess
-
+def creating(services, fakes, monkeypatch=None, known=None):
+    """*File ▸ New Project…*: the same dialog in create mode, wired as the module wires it
+    — over the library it already has, and over the checkouts this machine already has for
+    the code in it. Built by the test rather than by a fixture, because what the library
+    holds when the dialog opens is half of what these tests are about."""
     repos, _calls, _state = fakes
     dialog = ProjectDialog(
         services.document,
@@ -570,9 +574,43 @@ def test_create_mode_answers_a_spec_once_a_name_and_a_home_are_given(
         services.tasks,
         services.theme,
         move=lambda _pid: None,
+        known_checkout=(known or {}).get,
         mode=CREATE,
         parent=services.window,
     )
+    if monkeypatch is not None:
+        inline(dialog, monkeypatch)
+    return dialog
+
+
+def listing(repo, asked):
+    """Stands in for the GitHub listing at the name the dialog reads; answers one
+    repository and records how it was asked for."""
+
+    class Fake:
+        def __init__(self, _services, _tasks, _parent=None, *, title="", verb=""):
+            asked.update(title=title, verb=verb)
+
+        def exec(self):
+            return 1
+
+        def chosen(self):
+            return repo
+
+        def deleteLater(self):  # noqa: N802 - Qt's name
+            pass
+
+    return Fake
+
+
+def test_create_mode_answers_a_spec_once_a_name_and_a_home_are_given(
+    services, fakes, tmp_path, monkeypatch
+):
+    """The same dialog, nothing to edit: a name, a plan repository, a folder — the folder
+    follows the name until it is typed in — and the code fields ride along."""
+    import subprocess
+
+    dialog = creating(services, fakes)
     assert dialog.plan_picker is not None and dialog.folder_edit is not None
     assert dialog.repository_combo is not None and dialog.checkout_edit is not None
     assert not dialog.create_button.isEnabled()
@@ -617,42 +655,22 @@ def test_the_settings_dialog_carries_close_alone_and_create_mode_a_primary(servi
 
     assert isinstance(dialog, DialogFrame) and dialog.primary() is None
     assert [b.text() for b in dialog.footer_buttons()] == ["Close"]
-    repos, _calls, _state = fakes
-    creating = ProjectDialog(
-        services.document,
-        services.undo,
-        repos,
-        services.tasks,
-        services.theme,
-        move=lambda _pid: None,
-        mode=CREATE,
-        parent=services.window,
-    )
+    new = creating(services, fakes)
     try:
-        assert creating.windowTitle() == "New Project"
-        assert [b.text() for b in creating.footer_buttons()] == ["Create", "Cancel"]
-        assert creating.create_button.isDefault()
-        assert not creating.plan_column.isVisibleTo(creating)
+        assert new.windowTitle() == "New Project"
+        assert [b.text() for b in new.footer_buttons()] == ["Create", "Cancel"]
+        assert new.create_button.isDefault()
+        assert not new.plan_column.isVisibleTo(new)
     finally:
-        creating.deleteLater()
+        new.deleteLater()
 
 
 def test_the_picker_offers_the_other_ways_in_as_one_menu(services, fakes, dialog):
     """Four glyph buttons became one ⋯ (DESIGN.md's *Buttons*): the same list in every
     dialog that asks, an entry greyed with its reason rather than dropped."""
-    repos, _calls, _state = fakes
-    creating = ProjectDialog(
-        services.document,
-        services.undo,
-        repos,
-        services.tasks,
-        services.theme,
-        move=lambda _pid: None,
-        mode=CREATE,
-        parent=services.window,
-    )
+    new = creating(services, fakes)
     try:
-        picker = creating.plan_picker
+        picker = new.plan_picker
         assert picker is not None
         assert labels(picker) == [
             "Another folder…",
@@ -663,10 +681,119 @@ def test_the_picker_offers_the_other_ways_in_as_one_menu(services, fakes, dialog
         ]
         picker._cloning = True
         assert entry(picker, "Clone from GitHub…").reason == "a clone is still running"
-        menu = picker.menu()
+        menu = menu_of(picker.entries(), INK, new)
         try:
             assert [a.isSeparator() for a in menu.actions()].count(True) == 1
         finally:
             menu.deleteLater()
     finally:
-        creating.deleteLater()
+        new.deleteLater()
+
+
+def test_the_code_repository_offers_what_this_library_already_plans(
+    services, fakes, project, tmp_path
+):
+    """A second plan for code somebody here already works on is the common case, so the
+    field lists it — and picking it brings the checkout this machine has along, because a
+    team's second plan for one repository needs no second clone."""
+    code = separate(services, project, tmp_path)
+    new = creating(services, fakes, known={CODE_URL: code})
+    try:
+        combo = new.repository_combo
+        assert [combo.itemText(row) for row in range(combo.count())] == [CODE_URL]
+        # Nothing is named until somebody names it: an editable combo opened on its first
+        # row would answer a question nobody asked.
+        assert combo.currentText() == "" and new.checkout_edit.text() == ""
+        combo.setCurrentIndex(0)
+        combo.activated.emit(0)
+        assert combo.currentText() == CODE_URL
+        assert new.checkout_edit.text() == shown_path(code)
+    finally:
+        new.deleteLater()
+
+
+def test_the_code_repository_can_be_picked_from_github_rather_than_typed(
+    services, fakes, monkeypatch
+):
+    """The ⋯ beside the field, which the code column has had all along: the person's own
+    repositories, listed and filtered, and the one chosen is the code this plan is about."""
+    asked: dict[str, str] = {}
+    monkeypatch.setattr(project_dialog, "GhRepoListDialog", listing("acme/widget", asked))
+    new = creating(services, fakes, monkeypatch)
+    try:
+        ways = new._create_code_entries()
+        assert [way.label for way in ways] == [
+            "Pick from GitHub…",
+            "Clone into Repositories Folder",
+        ]
+        assert ways[1].reason == "no code repository named"  # Nothing to clone yet.
+        ways[0].run()
+        # The listing is one dialog wearing the caller's words: this one chooses, it does
+        # not clone.
+        assert asked == {"title": "Code Repository", "verb": "Choose"}
+        assert new.repository_combo.currentText() == CODE_URL
+        assert new._create_code_entries()[1].reason == ""
+    finally:
+        new.deleteLater()
+
+
+def test_cloning_the_code_in_create_mode_fills_the_field_and_writes_nothing(
+    services, fakes, tmp_path, monkeypatch
+):
+    """The code column's own verb, answered into the form: there is no project yet to
+    record a checkout onto, so the clone lands in the field Create reads."""
+    _repos, calls, _state = fakes
+    folders.set_repositories_folder(tmp_path / "Code")
+    new = creating(services, fakes, monkeypatch)
+    try:
+        new.repository_combo.setEditText(CODE_URL)
+        new._create_code_entries()[1].run()
+        assert calls["clone"] == [(CODE_URL, tmp_path / "Code" / "widget")]
+        assert new.checkout_edit.text() == shown_path(tmp_path / "Code" / "widget")
+        assert services.document.projects == []  # Nothing reached the library.
+    finally:
+        new.deleteLater()
+
+
+def test_a_checkout_that_disagrees_with_the_named_code_is_asked_about(
+    services, fakes, tmp_path, monkeypatch
+):
+    """The same question both modes ask: keeping either answer silently would leave the
+    repository and the checkout naming different code."""
+    import subprocess
+
+    code = init_repo(tmp_path / "widget")
+    subprocess.run(["git", "-C", str(code), "remote", "add", "origin", CODE_URL], check=True)
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code))
+    asked: list[str] = []
+
+    def refuse(_parent, _title, question, **_kwargs):
+        asked.append(question)
+        return False
+
+    monkeypatch.setattr(project_dialog, "confirm", refuse)
+    new = creating(services, fakes, monkeypatch)
+    try:
+        new.repository_combo.setEditText("https://github.com/acme/other")
+        new.browse_button.click()
+        assert new.checkout_edit.text() == shown_path(code)  # The checkout is what was picked.
+        assert len(asked) == 1 and CODE_URL in asked[0]
+        assert new.repository_combo.currentText() == "https://github.com/acme/other"  # Refused.
+    finally:
+        new.deleteLater()
+
+
+def test_a_glyph_button_stands_as_tall_as_the_field_it_is_beside(services, fakes):
+    """DESIGN.md's *Forms*: the controls of one row are one height — the ⋯ beside the plan
+    repository stood nine pixels short of the combo box it belongs to."""
+    new = creating(services, fakes)
+    try:
+        new.show()
+        for field, button in (
+            (new.plan_picker.combo, new.plan_picker.menu_button),
+            (new.repository_combo, new.code_menu),
+            (new.checkout_edit, new.browse_button),
+        ):
+            assert field.height() == button.height() == CONTROL_HEIGHT
+    finally:
+        new.deleteLater()

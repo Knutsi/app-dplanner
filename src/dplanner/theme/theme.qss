@@ -966,12 +966,6 @@ QToolButton[repoTool="true"]:hover {
     color: $TEXT_PRIMARY;
 }
 
-/* The ⋯ that carries a column's verbs: the glyph-button look, with the character centred
- * where an icon would be. */
-#RepoMenuButton {
-    padding: 2px 6px;
-}
-
 /* ---- Tables (framework/table.py) --------------------------------------------------- */
 
 /* A well on the window colour; no grid, the alignment is the structure. The delegate
@@ -1087,6 +1081,14 @@ QPushButton[quiet="true"]:disabled {
     background: transparent;
     border: none;
     padding: 0px;
+}
+
+/* A one-line field stands as tall as the combo box and the glyph button beside it: the
+   same 18 px of content, the same padding, the same hairline. A row whose controls
+   disagree by a few pixels reads as several rows (DESIGN.md's *Forms*). A minimum and not
+   a fixed height, because a field may carry a larger font — the Project dialog's name. */
+#DialogBody QLineEdit {
+    min-height: 18px;
 }
 
 /* An editable combo's own line edit is a field inside a field: the combo draws the frame,

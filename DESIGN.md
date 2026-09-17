@@ -305,7 +305,9 @@ would not; the Covers tab's New/Cumulative switch is the worked example.
   words*, says all of them at once and costs one control. Build the menu when it opens
   (a glyph carries the colour it was painted in) and grey what cannot run right now, with
   the reason in the entry's own words — never drop it, or the list changes shape and stops
-  being learnable. The Project dialog's repository columns are the worked example.
+  being learnable. The Project dialog's repository columns are the worked example, and the
+  `⋯` beside a *field* is the same thing one surface down: a field whose only way in is the
+  keyboard asks a person to type from memory what the application could list.
 
 ## Dialogs
 
@@ -369,6 +371,11 @@ Every dialog is a `DialogFrame` (`framework/dialog.py`), and its anatomy is the 
   gap, which is what `#InspectorCaption` does everywhere else. `caption()` and `note()` in
   `framework/widgets.py` make the two labels.
 - **The unit lives in the field** — a suffix, a placeholder — never in a line under it.
+- **A field and the glyph button beside it are one height** — `CONTROL_HEIGHT`, set in code
+  (`repo_picker.tool_button`), for the reason a strip's controls are: a line edit, a combo
+  box and a glyph button disagree by a few pixels under the style — nine of them between a
+  `⋯` and the combo it belongs to — and a row whose controls do not line up reads as two
+  rows. The button is square, which is also what puts its glyph in the middle.
 - **Validation**: the primary is refused while a value is wrong or missing, and the reason
   goes under the field it is about, in the error tone, present only while it is wrong
   (`LinePrompt.problem`); a reason that belongs to no one field goes in the footer's
@@ -802,8 +809,9 @@ Dialogs:
   its own and built from `settings_page` and `block` — captions over fields, the standing
   explanations behind the caption's glyph.
 - *(done — S16)* `ProjectDialog` — Close alone in settings mode; create mode a form of
-  captioned blocks whose Create is refused in words; what a request came to in the footer's
-  status slot, and the plan column's set-up offer the verb of an `EmptyState`.
+  captioned blocks whose Create is refused in words, both repository fields carrying the
+  `⋯` of the ways in beside them; what a request came to in the footer's status slot, and
+  the plan column's set-up offer the verb of an `EmptyState`.
 - *(done — S16)* `OpenProjectDialog`, `MovePlanDialog`, `RepositoriesFolderDialog`,
   `GhRepoListDialog` — on the frame; the repository picker's four glyph buttons one ⋯
   menu and its note a `StatusLine`; the GitHub list captioned, its listing in the status

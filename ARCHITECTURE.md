@@ -4022,8 +4022,20 @@ exception that proves it — it has a spec, and the dialog reaches it through th
 callback the module hands in, which is the very function `projects.move` runs, so the
 menu and the card cannot mean different things by it.
 
-Create mode keeps its form: with nothing on disk yet there is no log to read and no verb
-to run, so the fields *are* the answer.
+**Create mode keeps its form, and its fields carry the same ⋯.** With nothing on disk yet
+there is no log to read, so the fields *are* the answer — but *picking* a repository is a
+verb, and "no verb to run" was the reading that left one field without one. The plan
+repository always had its `RepoPicker`; the code repository had a bare combo box, so the
+only way to name it was to choose a checkout and let its origin back-fill the field — a
+discovery a person makes by accident, not a design. It now carries the ⋯ the code column
+has, over the two verbs that mean anything before a project exists (*Pick from GitHub…*,
+*Clone into Repositories Folder*), and it lists the code this library already plans;
+picking one of those brings that project's checkout with it through `known_checkout`, the
+seam the Open Project wizard already had for the same question. The two modes share the
+verbs rather than paralleling them — `_code_url`, `_set_repository` and `_record_checkout`
+answer into the form's fields or into the model, so neither mode can grow a behaviour the
+other lacks, and the checkout that disagrees with the repository named is asked about in
+both.
 
 **A plan repository holds several projects for several people.** Its root carries the
 `.dplanner` index (`FORMAT.md`), which is what lets *Open Project…* and `dplanner library
