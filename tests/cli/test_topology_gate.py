@@ -1,17 +1,17 @@
 """The topology gate: a graph-editing verb runs only after the topology has been read.
 
-The shared ``registry`` fixture carries a gate with no record file, so every other CLI
-test adds steps freely. This file builds the real thing over a record under ``tmp_path``
-— the only place the record is ever written by the suite.
+The shared ``registry`` fixture carries a read record with no file, so every other CLI test
+adds steps freely. The ``gated_cli`` fixture (``tests/cli/conftest.py``) is the real thing,
+over a record under ``tmp_path``; the house format behind the same record is
+``test_test_format.py``.
 """
 
 import json
-from io import StringIO
 
 import pytest
 from tests.cli.skill_helpers import noun_verbs
 
-from dplanner.cli.gate import TopologyGate, digest
+from dplanner.cli.gate import ReadRecord, TopologyGate, digest
 
 
 def data(text):
@@ -26,28 +26,32 @@ def test_digest_is_stable_and_short():
     assert digest("abc") != digest("abd")
 
 
-def test_a_gate_with_no_record_refuses_nothing_and_writes_nothing(tmp_path):
+def test_a_record_with_no_file_refuses_nothing_and_writes_nothing(tmp_path):
     from dplanner.domain.model import Project
 
-    gate = TopologyGate(record_path=None, topology_of=lambda _project: "")
+    gate = TopologyGate(reads=ReadRecord(None), topology_of=lambda _project: "")
     assert gate.refusal(Project(title="P")) is None
     gate.record("p", "text")
     assert list(tmp_path.iterdir()) == []
 
 
-def test_the_record_is_one_digest_per_project(tmp_path):
+def test_the_record_is_one_digest_per_project_under_its_own_door(tmp_path):
+    """One file serves both doors, so a key says which one it was read through."""
     from dplanner.domain.model import Project
 
-    record = tmp_path / "deep" / "topology-read.json"
+    record = tmp_path / "deep" / "reads.json"
     texts = {"p1": "Shape one.", "p2": ""}
-    gate = TopologyGate(record_path=record, topology_of=lambda project: texts[project.id])
+    gate = TopologyGate(reads=ReadRecord(record), topology_of=lambda project: texts[project.id])
     one, two = Project(title="One"), Project(title="Two")
     one.id, two.id = "p1", "p2"
     assert "has not been read" in (gate.refusal(one) or "")
     assert "no topology yet" in (gate.refusal(two) or "")
     gate.record("p1", "Shape one.")
     assert gate.refusal(one) is None
-    assert json.loads(record.read_text()) == {"format": 1, "read": {"p1": digest("Shape one.")}}
+    assert json.loads(record.read_text()) == {
+        "format": 2,
+        "read": {"topology:p1": digest("Shape one.")},
+    }
     texts["p1"] = "Shape one, revised."
     assert "changed since you read it" in (gate.refusal(one) or "")
 
@@ -55,48 +59,13 @@ def test_the_record_is_one_digest_per_project(tmp_path):
 def test_a_corrupt_record_reads_as_nothing_read(tmp_path):
     from dplanner.domain.model import Project
 
-    record = tmp_path / "topology-read.json"
+    record = tmp_path / "reads.json"
     record.write_text("not json")
-    gate = TopologyGate(record_path=record, topology_of=lambda _project: "Shape.")
+    gate = TopologyGate(reads=ReadRecord(record), topology_of=lambda _project: "Shape.")
     assert "has not been read" in (gate.refusal(Project(title="P")) or "")
 
 
 # -- the verbs behind it -----------------------------------------------------------------------
-
-
-@pytest.fixture
-def gated_cli(workspace, cli_library, tmp_path):
-    """The CLI over a real gate whose record lives under this test's ``tmp_path``."""
-    from dplanner.cli.command import CliRegistry
-    from dplanner.cli.main import run
-    from dplanner.modules import default_cli_commands, default_module_formats
-    from dplanner.modules.spec.aspect import read_topology
-
-    gate = TopologyGate(record_path=tmp_path / "gate" / "record.json", topology_of=read_topology)
-    registry = CliRegistry()
-    registry.register_all(default_cli_commands(gate=gate))
-
-    def invoke(*argv, expect=0, stdin=""):
-        import sys
-
-        out, err = StringIO(), StringIO()
-        real = sys.stdin
-        sys.stdin = StringIO(stdin)
-        try:
-            code = run(
-                registry,
-                default_module_formats(),
-                ["--library", str(cli_library), *argv],
-                out,
-                err,
-            )
-        finally:
-            sys.stdin = real
-        assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
-        return out.getvalue() + err.getvalue()
-
-    invoke("project", "create", "Discovery", "--dir", str(workspace / "discovery"))
-    return invoke
 
 
 GATED = [

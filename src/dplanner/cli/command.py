@@ -126,6 +126,11 @@ class CliCommand:
     # that says so, and the generated skill marks them; a verb that edits content — a
     # description, an estimate, a title — leaves it None and is never refused.
     edits_graph: Callable[[CliContext, Namespace], Project] | None = None
+    # Set on a verb that writes in the shape of a house document — a test body, for one:
+    # the ``<noun> <verb>`` that prints that document. Its sibling above says the shape of
+    # the *graph* is read first; this one says the shape of what is written inside a step
+    # is. The same gate refuses until it has been read, and the skill marks them too.
+    reads_guide: str | None = None
 
     @property
     def id(self) -> str:

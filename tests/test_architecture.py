@@ -57,6 +57,7 @@ HEADLESS_FILES = (
     "aspect.py",
     "categories.py",
     "export.py",
+    "format.py",
     "clipboard.py",
     "positions.py",
     "placement.py",

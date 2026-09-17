@@ -76,8 +76,8 @@ paths:
   topology set|show`; the Specs tab's pinned first row; `modules/spec.md`) says how its
   graph is shaped, and every CLI verb that reshapes a graph declares `edits_graph` on its
   `CliCommand` — `cli/gate.py` then refuses until `topology show` has recorded the current
-  text's digest in the per-user `config_dir()/topology-read.json`, and refuses again when
-  the text changes or when there is none. The skill marks those verbs; the window is never
+  text's digest in the per-user `config_dir()/reads.json`, and refuses again when the text
+  changes or when there is none. The skill marks those verbs; the window is never
   gated; the test suite's registry runs behind a gate with no record file. Declare it on a
   verb that changes shape, never on one that changes content.
   **And `topology show` prints the house default beside the project's text** — one start,
@@ -91,6 +91,19 @@ paths:
   prints it alone, and the recorded digest stays the project's text — hashing the default
   would un-read every project on the day `shaping.md` gained a comma.
   `ARCHITECTURE.md`'s *The topology is read before the graph is edited* has the reasoning.
+- **A house document is read before what it governs is written, through the same record.**
+  The second door `cli/gate.py` holds: a verb that writes in a document's shape declares
+  `reads_guide` naming the `<noun> <verb>` that prints it — `test add` and `test set` name
+  `test format` (`modules/testing/format.md`), and the skill marks them `‡` — and the
+  composition root builds the `GuideGate` and hands the printing verb `note_read`, exactly
+  as it hands `topology show` the topology gate's ear. `ReadRecord` is the one per-user
+  file both doors stand on (`reads.json`, keys namespaced `topology:<project id>` and
+  `guide:<verb>`); a record with no file refuses nothing, which is what the suite runs
+  behind. The difference from the topology is what the digest is *of*: a project's own text
+  is read per project, a build's own document once per machine. Declare it on a verb that
+  writes prose somebody else must follow, never on one that reads, files or records a
+  result. `ARCHITECTURE.md`'s *The test format is read before a test is written* has the
+  reasoning, including why screenshots stayed a markdown convention.
 - **The skill is generated, never written.** `dplanner skill install` renders `SKILL.md` and
   `reference.md` from the command registry, so they cannot describe a command that does not
   exist. Edit `cli/skill_preamble.md` for the hand-written half; never the output.
@@ -99,8 +112,10 @@ paths:
   in `cli/shaping.md` and reach an agent through `topology show`, not through the skill.
   What stays is an executing agent's, safety rules included.
   **Its command list is an index: one line per noun naming its verbs**, a `†` on the ones
-  that read the topology first and one legend line — because a summary per verb was a third
-  of a file loaded every session and said what `reference.md` and `--help` both already say.
+  that read the topology first, a `‡` on the ones that read a house format first, and a
+  legend line per mark — all three projected from the registry — because a summary per verb
+  was a third of a file loaded every session and said what `reference.md` and `--help` both
+  already say.
   A verb the skill must not teach carries **`in_skill=False`**, the CLI twin of
   `ActionSpec.in_menus`: registered, runnable, described by `--help` like any other, named
   by no generated file. The region verbs are what it exists for. `ARCHITECTURE.md`'s *The

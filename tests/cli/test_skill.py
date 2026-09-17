@@ -6,7 +6,7 @@ import sys
 from io import StringIO
 
 import pytest
-from tests.cli.skill_helpers import noun_verbs
+from tests.cli.skill_helpers import bare, noun_verbs
 from tests.platforms import set_home
 
 from dplanner.cli.install import install_command, path_hint, worktree_warning
@@ -39,7 +39,7 @@ def test_every_noun_is_one_line_naming_its_verbs(registry, files):
             assert noun not in verbs  # A noun with nothing to offer is not a noun here.
             continue
         # A set, not a containment check: a verb printed twice is as wrong as one missing.
-        assert {verb.removesuffix("†") for verb in verbs[noun]} == offered
+        assert {bare(verb) for verb in verbs[noun]} == offered
 
 
 def test_the_command_index_is_an_index(files):

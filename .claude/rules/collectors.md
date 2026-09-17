@@ -13,6 +13,19 @@ paths:
 
 # Collectors — scopes, features, citations, tests, documentation and notes
 
+- **How a test body is written is a house document, read through a gate.**
+  `modules/testing/format.md` — preconditions as bullets, then numbered steps, a screenshot
+  on the step it belongs to with the alt text as its annotation, and the four shapes a
+  concurrent test takes — is printed by `dplanner test format` and never stored in a plan,
+  because a plan's prose reaches every briefing. `test add` and `test set` declare
+  `reads_guide` and refuse until it has been read on this machine (`cli/gate.py`, and
+  `.claude/rules/cli.md` for the mechanism); nothing that reads, files, exports or marks a
+  test is gated, and `step add --test` names a test without writing a body. **Concurrency is
+  asked, never enforced**: no aspect says whether a product has concurrent users, so the
+  document tells the agent to raise it and propose — a lint check would fire on plans that
+  are right. Edit the document, not a copy: the skill carries the concern in two lines and
+  the shape in none. `ARCHITECTURE.md`'s *The test format is read before a test is written*
+  has the reasoning.
 - **Tests can be read grouped, and one selector holds every way of grouping them.** By
   category, by feature, by milestone or by check are four answers to *what is this test one
   of*, so they are four entries in one box. `_Grouping` (`TestsActivity`) is two functions

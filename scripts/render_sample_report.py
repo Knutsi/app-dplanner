@@ -23,7 +23,7 @@ from pathlib import Path
 
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.discovery import open_library
-from dplanner.cli.gate import TopologyGate
+from dplanner.cli.gate import ReadRecord
 from dplanner.cli.main import run
 from dplanner.core.png import encode_rgb
 from dplanner.core.storage.locations import init_repo
@@ -38,7 +38,6 @@ from dplanner.modules.feature.aspect import FeatureSource
 from dplanner.modules.feature.aspect import write as feature_marker
 from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
 from dplanner.modules.notes.log import Note, write_log
-from dplanner.modules.spec.aspect import read_topology
 from dplanner.modules.step_milestone.aspect import write as milestone
 from dplanner.modules.step_status.aspect import write as status
 from dplanner.modules.step_ticket.aspect import Ticket
@@ -182,8 +181,9 @@ def main() -> None:
     library_file, project_dir = build(root)
 
     registry = CliRegistry()
-    gate = TopologyGate(record_path=None, topology_of=read_topology)
-    registry.register_all(default_cli_commands(gate=gate))
+    # A read record with no file: the sample is built by a script, and neither door has
+    # anything to teach it.
+    registry.register_all(default_cli_commands(reads=ReadRecord(None)))
     formats = default_module_formats()
 
     def dplanner(*argv: str) -> None:
