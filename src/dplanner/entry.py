@@ -17,6 +17,11 @@ The dispatch happens **before** anything Qt is imported, so the CLI path never p
 toolkit it does not use — and works on a machine that has none. Qt's own ``-style`` and
 ``-platform`` follow the word, because the first word is the decision.
 
+**The window repairs its PATH and the CLI does not.** A window may have been opened by a
+desktop launcher, which hands it the session launcher's environment — see
+``core/user_path.py`` — while a verb is always run from a shell that already has the user's.
+The word is what tells the two apart, which is one more thing it is good for.
+
 **And never from inside an agent's shell.** A window started from a shell an agent CLI
 runs is that agent's background process: it ends when the agent's turn does, and every
 agent launched from it inherits the shell's session markers and becomes a *child* session
@@ -32,6 +37,7 @@ from collections.abc import Mapping
 
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import WINDOW_WORD, run
+from dplanner.core import user_path
 from dplanner.core.telemetry import Telemetry, install, journal_path
 from dplanner.modules import (
     agent_harnesses,
@@ -121,6 +127,14 @@ def main(argv: list[str] | None = None) -> int:
     # and both write to the same file: a CLI run's row lands beside the window's.
     install(Telemetry(journal_path(), surface="window" if window else "cli"))
     if window:
+        # A window may have been opened by a desktop launcher, which hands it the session
+        # launcher's PATH rather than the user's — on macOS, four directories with no gh,
+        # no uv and no agent CLI in them. Repaired here and nowhere else: the CLI is always
+        # started from a shell that already has the real one, and asking a login shell on
+        # every agent verb would be a subprocess per call for nothing. After the refusal,
+        # so a window that is not going to open pays nothing either.
+        user_path.repair()
+
         from dplanner.app import main as gui_main
 
         return gui_main([sys.argv[0], *window_arguments(arguments)])

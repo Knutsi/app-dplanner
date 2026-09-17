@@ -4107,3 +4107,57 @@ ones, so the next person sent at "a weird block that crosses the icon" has the p
 
 **Upstream?** Yes — the fix, the test and (if the template grows an examples page) the
 side-by-side.
+
+---
+
+## 49. From the distribution pass: a desktop launch does not inherit the user's PATH
+
+**What we added.** `core/user_path.py` — `login_path()`, `repair()`, `existing_prefixes()`
+and `reading()` — called once from `entry.py`'s window branch, plus a login-shell hand-over
+in `cli/desktop.py`'s `bundle_script()`.
+
+**The bug it closes, which the template shares.** A window started by Finder, the Dock,
+Spotlight or a `.desktop` entry is started by the *session launcher*, not by a shell, so it
+inherits that launcher's environment. On macOS that is launchd's
+`/usr/bin:/bin:/usr/sbin:/sbin`. `shutil.which` reads `os.environ["PATH"]`, so every tool a
+developer installed — `/opt/homebrew/bin/gh`, `~/.local/bin/uv`, the agent CLIs, whisper —
+answers `None`. DPlanner has about twenty-six `which` call sites and every one of them
+reported, correctly and uselessly, that the machine had no GitHub CLI on a machine where
+`gh` works perfectly from a terminal. It reproduces only from a launcher, never from a
+terminal, which is why it survived as long as it did.
+
+**The shape of the fix, and why this shape.** It is one repair to the environment before the
+window is built, not a change to any caller: nothing is wrong with the callers. Rules that
+came out of it, and would apply to any application the template produces:
+
+- **Ask a login shell, not an interactive one.** `brew shellenv`, uv's installer and every
+  version manager write into `.zprofile`/`.profile`, which `-lc` reads. `-lic` also drags in
+  nvm, pyenv, direnv and a prompt framework — seconds of startup for an answer `-lc` already
+  has.
+- **Append, never reorder, and never shorten.** A path the process was deliberately given
+  must keep winning, which also makes the repair idempotent and safe to call before anything
+  has read the environment.
+- **Degrade rather than fail.** A missing `$SHELL`, a non-zero exit and a timeout are the
+  same answer — ask something else — and a short list of known prefixes
+  (`/opt/homebrew/bin`, `~/.local/bin`, …) is most of the value for none of the risk.
+- **The window repairs and the CLI does not.** A verb is always run from a shell that already
+  has the real PATH, and a login-shell subprocess per invocation is a real cost to an agent
+  driving the CLI. DPlanner's window-is-a-word dispatch makes that distinction free; a
+  template with two entry points has the same seam.
+- **Make the prefix list an argument.** Half of it is absolute and exists on the machine
+  running the suite, so a test that cannot control the set leaks the developer's machine into
+  every assertion about what a repair added. Found by three tests failing for that reason.
+- **The status row reports the repair, not the tools.** The first version re-probed `gh`,
+  `git` and `uv` and reported what was missing — which is what the tool rows already say, in
+  the same words, from the same `which`. Two rows able to disagree about one fact. What only
+  this row knows is what the repair *did*, so `repair()` returns and remembers a small
+  `Repair` and the probe reads it: no subprocess, and the row's one failing state is the one
+  that matters (a launcher started the window and the login shell would not answer).
+- **The bundle script quotes twice.** The hand-over is a `-c` argument inside a shell script,
+  so `shlex.quote` is applied to the whole inner command as well as to the path. Quoted once,
+  a home directory with an apostrophe in it ends the inner string early and the bundle execs
+  nothing.
+
+**Upstream?** Yes, and close to verbatim. `core/user_path.py` names nothing of this
+application, and `bundle_script`'s hand-over is a fix to template code that is wrong in the
+template too. The checklist row that reports it is ours, because the checklist is.
