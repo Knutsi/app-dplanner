@@ -1381,9 +1381,10 @@ a context republished mid-typing from rebinding every card and throwing the curs
 yield-to-a-narrower-pick rule. Neither can happen to a page that is never re-targeted.
 
 **A page has the room a column never had.** Three cards of prose and repository facts in a
-360 px column were a scroll; on a tab they sit at a readable measure with the form's
-captions over its fields, on a lane of their own because a bare card on a tab page's ground
-is one faint border (`DESIGN.md`'s *Cards*). The right area is empty by default as a result,
+360 px column were a scroll; on a tab the form's captions sit over its fields at a readable
+measure, and the cards flow into as many columns as the page is wide (`CardFlow`, one column
+at a panel's width) on a lane of their own, because a bare card on a tab page's ground is
+one faint border (`DESIGN.md`'s *Cards*). The right area is empty by default as a result,
 and its whole-side toggle hides until a panel is moved there.
 
 **The index's project row got a door of its own.** A click on a project used to select it

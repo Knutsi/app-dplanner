@@ -4197,6 +4197,18 @@ teaches nothing. A move already announces `panels_changed`, so the state re-read
 
 **Upstream?** Yes.
 
+### `framework/cards.py` — `CardStack` is `CardFlow`
+
+**What we changed.** The stack of cards became a grid that reflows: as many equal columns
+as the width allows, one at a panel's width, each card aligned to the top of its row. The
+column count is read from the scroll area's own width rather than the content's, because a
+vertical scroll bar appearing takes pixels off the viewport and a count taken there flips
+back and forth on the scroll bar it just caused. It keeps its own list of cards and
+empties the grid with `takeAt` — a layout is never read back.
+
+**Upstream?** Yes: the template's `example_editor` renders the same stack, and a wide
+window is the case it did not have.
+
 ### `framework/services.py`, `builder.py` — `detail_cards` is `project_cards`
 
 **What we changed.** A rename only. "Detail" named the retired detail panel; the host is

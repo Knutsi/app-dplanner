@@ -173,36 +173,36 @@ class _TestsPage(QWidget):
         context: ContextService,
     ) -> None:
         super().__init__()
-        layout = QVBoxLayout(self)
+        # Everything the tab says — caption, answer, strip and roster — is one column, and
+        # the Test panel stands beside the whole of it: the seam runs the full height of
+        # the tab, as the Problems list's does beside the canvas.
+        main = QWidget(self)
+        layout = QVBoxLayout(main)
         layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
         layout.setSpacing(SECTION_GAP)
 
         head = QVBoxLayout()
         layout.addLayout(head)  # Before it is filled: a parentless layout leaks its items.
         head.setSpacing(CAPTION_GAP)
-        head.addWidget(captioned(caption, self, hint=hint))
-        self.answer = QLabel(self)
+        head.addWidget(captioned(caption, main, hint=hint))
+        self.answer = QLabel(main)
         self.answer.setFont(title_font(self.answer.font()))
         head.addWidget(self.answer)
-        self.detail = note("", self)
+        self.detail = note("", main)
         head.addWidget(self.detail)
 
         self.strip = QHBoxLayout()
         layout.addLayout(self.strip)
         self.strip.setSpacing(FIELD_GAP)
-        self.controls = Toolbar(self)
+        self.controls = Toolbar(main)
         self.strip.addWidget(self.controls, 1)
-        # The roster: the table, or the words for why it is empty.
-        roster = QWidget(self)
-        rows = QVBoxLayout(roster)
-        rows.setContentsMargins(0, 0, 0, 0)
-        rows.setSpacing(SECTION_GAP)
-        # The Test panel stands beside the roster, inside this tab: one per tab, fed by this
-        # table's own pick (``feed_panel``), so a tab in the background never follows the
-        # tab in front. Its seat leads the strip, as the Problems list's does on the canvas.
+        # The Test panel stands beside this column, inside this tab: one per tab, fed by
+        # this table's own pick (``feed_panel``), so a tab in the background never follows
+        # the tab in front. Its seat leads the strip, as the Problems list's does on the
+        # canvas.
         self.side_panel = HostedSidePanel(
             SidePanel("Test", beaker_icon, lambda: panel, width=TEST_PANEL_WIDTH),
-            roster,
+            main,
             toggle=SIDE_PANEL_ACTION,
             actions=actions,
             context=context,
@@ -216,14 +216,17 @@ class _TestsPage(QWidget):
         for audience in AUDIENCES:
             self.audience.add_filter(audience.id, audience.label)
         # Outside the strip, so folding the verbs into … can never take it.
-        self.updating = UpdatingIndicator(self)
+        self.updating = UpdatingIndicator(main)
         self.strip.addWidget(self.updating)
 
-        self.table = TestsTable(roster, selection=selection)
-        rows.addWidget(self.table, 1)
-        self.empty = EmptyState(parent=roster, stands_in_for=self.table)
-        rows.addWidget(self.empty, 1)
-        layout.addWidget(self.side_panel.split, 1)
+        self.table = TestsTable(main, selection=selection)
+        layout.addWidget(self.table, 1)
+        self.empty = EmptyState(parent=main, stands_in_for=self.table)
+        layout.addWidget(self.empty, 1)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self.side_panel.split, 1)
 
     def feed_panel(self, nodes: Sequence[ContextNode]) -> None:
         """Point the panel at what this table has picked — a constructed context, never

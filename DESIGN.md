@@ -46,7 +46,7 @@ styling one surface by name.
 | busy, ok, warn, error or plain information in words | `StatusLine` | `framework/signalling.py` | the modal's *Signalling* block |
 | a list of facts about this machine | one `StatusLine` per row, grouped | `modules/checklist/dialog.py` | `docs/screenshots/f13-checklist/` |
 | a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
-| a stack of module-owned features on a page | `ToolCard`s in a `CardStack`, on a `#CardLane` | `framework/cards.py` | the Project Dashboard tab |
+| module-owned features on a page, as many across as fit | `ToolCard`s in a `CardFlow`, on a `#CardLane` | `framework/cards.py` | the Project Dashboard tab |
 | a panel a tab hosts beside its surface | `SidePanel`, `HostedSidePanel` | `framework/side_panel.py` | `s16-tests-view/test-panel-*` |
 | a caption over a block, a remark under it | `caption()`, `captioned()`, `note()`, `block()` | `framework/widgets.py` | the modal's form |
 | a settings page | `settings_page()`, then `block()`s — no margin of its own | `framework/settings_registry.py` | `s16-dialogs/settings-*` |
@@ -223,7 +223,8 @@ away joins its neighbours directly.
 ## Cards
 
 The one sanctioned box. A panel that hosts *independent features contributed by different
-modules* gives each feature a card (`framework/cards.py`: `ToolCard` in a `CardStack`).
+modules* gives each feature a card (`framework/cards.py`: `ToolCard` in a `CardFlow`, which
+flows them into as many equal columns as the width allows — one at a panel's width).
 Cards separate features from each other; they never group one form's fields — that is
 still spacing.
 

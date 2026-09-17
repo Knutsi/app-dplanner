@@ -25,11 +25,11 @@ from PySide6.QtWidgets import QFrame, QLineEdit, QVBoxLayout, QWidget
 
 from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.model import Library, NodeId
-from dplanner.framework.cards import CardStack, ToolCard
+from dplanner.framework.cards import CardFlow, ToolCard
 from dplanner.framework.inspector import InspectorExtension, InspectorSection
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import EDITOR_MEASURE, block, caption, centered_column
+from dplanner.framework.widgets import EDITOR_MEASURE, block, caption
 from dplanner.theme.themes import Theme
 from dplanner.theme.tokens import PANEL_MARGIN, SECTION_GAP
 
@@ -64,34 +64,35 @@ class DashboardPage(QWidget):
         self.extensions: list[InspectorExtension] = [
             section.factory() for section in self._sections
         ]
-        self._stack = CardStack(self)
+        self._flow = CardFlow(self)
         self.cards: list[ToolCard] = []
         for section, extension in zip(self._sections, self.extensions, strict=True):
             card = ToolCard(section.label, extension.widget)
             self.cards.append(card)
-            self._stack.add_card(card)
+            self._flow.add_card(card)
 
-        # A readable column: the form's captions over their fields (DESIGN.md's *Forms*),
-        # then the cards on a lane of their own — a bare card on a tab page's ground is one
-        # faint border (DESIGN.md's *Cards*).
-        column = QWidget(self)
-        fields = QVBoxLayout(column)
+        # The form's captions over its fields (DESIGN.md's *Forms*), held to a readable
+        # measure; then the cards on a lane of their own — a bare card on a tab page's
+        # ground is one faint border (DESIGN.md's *Cards*) — flowing into as many columns
+        # as the page is wide, so a wide screen is used rather than a column down its middle.
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
+        layout.setSpacing(SECTION_GAP)
+        form = QWidget(self)
+        form.setMaximumWidth(EDITOR_MEASURE)
+        fields = QVBoxLayout(form)
         fields.setContentsMargins(0, 0, 0, 0)
         fields.setSpacing(SECTION_GAP)
-        block(fields, caption("Name", column), self.title_edit)
-        block(fields, caption("Summary", column), self.summary_edit)
-        lane = QFrame(column)
+        block(fields, caption("Name", form), self.title_edit)
+        block(fields, caption("Summary", form), self.summary_edit)
+        layout.addWidget(form)
+        lane = QFrame(self)
         lane.setObjectName("CardLane")
         lane.setFrameShape(QFrame.Shape.NoFrame)
         lane_column = QVBoxLayout(lane)
         lane_column.setContentsMargins(0, 0, 0, 0)
-        lane_column.addWidget(self._stack)
-        fields.addWidget(lane, 1)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
-        layout.setSpacing(0)
-        layout.addWidget(centered_column(column, EDITOR_MEASURE), 1)
+        lane_column.addWidget(self._flow)
+        layout.addWidget(lane, 1)
 
         def paint_glyphs(current: Theme) -> None:
             for section, card in zip(self._sections, self.cards, strict=True):

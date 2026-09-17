@@ -1,17 +1,19 @@
 """Card chrome for panels that host independent features side by side.
 
 A :class:`ToolCard` frames one module-owned feature — a caption (with an optional glyph)
-over the feature's own widget — and a :class:`CardStack` lays cards out top to bottom
-inside a vertical scroll area, so a panel keeps working at its narrowest width and on
-short screens as features accumulate. The host decides what goes in a card and when a
-card shows; the card never knows what it holds. Metrics follow the Cards section of
+over the feature's own widget — and a :class:`CardFlow` lays cards out in as many columns
+as the width allows inside a vertical scroll area, so a panel keeps working at its
+narrowest width and a wide page is not a column down its middle. The host decides what
+goes in a card and when a card shows; the card never knows what it holds. Metrics follow
+the Cards section of
 ``DESIGN.md``; the box itself is painted by the ``#ToolCard`` stylesheet rule.
 """
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QResizeEvent
 from PySide6.QtWidgets import (
     QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QScrollArea,
@@ -25,6 +27,7 @@ CARD_PADDING = 12  # Inside the card, all four sides.
 CARD_HEADER_GAP = 8  # Caption to body.
 STACK_MARGIN = 16  # Panel metrics per DESIGN.md.
 STACK_SPACING = 12  # Between cards.
+CARD_MIN_WIDTH = 360  # A panel's width: what every card was designed at.
 
 
 def card_rule(parent: QWidget | None = None, *, vertical: bool = False) -> QFrame:
@@ -78,29 +81,71 @@ class ToolCard(QFrame):
         self.glyph.show()
 
 
-class CardStack(QScrollArea):
-    """Cards top to bottom; scrolls vertically, never horizontally."""
+class CardFlow(QScrollArea):
+    """Cards in as many equal columns as the width allows — one at a panel's width, three
+    across a wide screen — scrolling vertically, never horizontally.
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    The column count is read from this widget's own width, not the content's: a vertical
+    scroll bar appearing takes a few pixels off the viewport, and a count taken from there
+    could flip back and forth on the scroll bar it just caused. Cards keep their order,
+    filling row by row, each aligned to the top of its row so a short card beside a tall
+    one is not stretched to match.
+    """
+
+    def __init__(self, parent: QWidget | None = None, *, min_card_width: int = CARD_MIN_WIDTH):
         super().__init__(parent)
-        self.setObjectName("CardStack")
+        self.setObjectName("CardFlow")
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setWidgetResizable(True)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # Tab goes straight to card controls.
+        self._min_card_width = min_card_width
+        # Our own list of what is in the grid: a layout is never read back (CLAUDE.md).
+        self._cards: list[ToolCard] = []
+        self._columns = 1
 
         content = QWidget()
-        self._layout = QVBoxLayout(content)
-        self._layout.setContentsMargins(STACK_MARGIN, STACK_MARGIN, STACK_MARGIN, STACK_MARGIN)
-        self._layout.setSpacing(STACK_SPACING)
-        self._layout.addStretch(1)
+        self._grid = QGridLayout(content)
+        self._grid.setContentsMargins(STACK_MARGIN, STACK_MARGIN, STACK_MARGIN, STACK_MARGIN)
+        self._grid.setHorizontalSpacing(STACK_SPACING)
+        self._grid.setVerticalSpacing(STACK_SPACING)
         self.setWidget(content)
-        # The hosting panel paints the background; a scroll area's viewport and widget
+        # The hosting surface paints the background; a scroll area's viewport and widget
         # both default to filling with the palette's Base, which would hide it.
         self.viewport().setAutoFillBackground(False)
         content.setAutoFillBackground(False)
 
     def add_card(self, card: ToolCard) -> None:
-        # The trailing stretch stays last because every insert lands before it.
-        self._layout.insertWidget(self._layout.count() - 1, card)
+        self._cards.append(card)
+        self._place()
+
+    def columns(self) -> int:
+        return self._columns
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
+        super().resizeEvent(event)
+        room = self.width() - 2 * STACK_MARGIN
+        wanted = max(1, (room + STACK_SPACING) // (self._min_card_width + STACK_SPACING))
+        if wanted != self._columns:
+            self._columns = wanted
+            self._place()
+
+    def _place(self) -> None:
+        """Lay every card out again for the current column count.
+
+        ``takeAt`` in a loop that drops each wrapper is the sanctioned way to empty a layout;
+        the cards themselves are ours and keep their parent.
+        """
+        while self._grid.takeAt(0) is not None:
+            pass
+        columns = self._columns
+        for index, card in enumerate(self._cards):
+            self._grid.addWidget(card, index // columns, index % columns, Qt.AlignmentFlag.AlignTop)
+        # Equal columns, and the leftover height below the last row rather than between rows.
+        # Stretches set for a wider layout are taken back, or an empty column keeps its share.
+        for column in range(max(columns, self._grid.columnCount())):
+            self._grid.setColumnStretch(column, 1 if column < columns else 0)
+        rows = (len(self._cards) + columns - 1) // columns
+        for row in range(max(rows + 1, self._grid.rowCount())):
+            self._grid.setRowStretch(row, 1 if row == rows else 0)

@@ -1647,6 +1647,20 @@ def test_the_test_panel_stands_in_the_tests_tab_not_in_the_window(services, proj
         services.actions.spec("appshell.panel_testing.test")
 
 
+def test_the_panel_reaches_the_top_of_the_tab(services, project):
+    """The seam runs the full height of the tab: the panel stands beside the caption and
+    the strip as well as the roster, as the Problems list does beside the canvas."""
+    from PySide6.QtCore import QPoint
+
+    activity = open_tests_tab(services, project)
+    page = activity.page
+    page.resize(1400, 800)
+    services.actions.run("tests.side_panel", services.context.current())
+    page.layout().activate()
+    page.side_panel.split.layout()  # A splitter lays out on activation too.
+    assert page.side_panel.frame.mapTo(page, QPoint(0, 0)).y() == 0
+
+
 def test_two_projects_tests_tabs_each_carry_their_own_panel(services, make_project):
     """Ids are minted per *project*, so `T100` names a test in every one of them — and a
     tab's panel shows its own tab's pick, whichever tab is in front."""
