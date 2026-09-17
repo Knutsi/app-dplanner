@@ -780,3 +780,61 @@ def test_a_multiplexer_that_refuses_is_no_shell_at_all(services, step, monkeypat
     select(services, step)
     services.actions.run("agent.run", services.context.current())
     assert shown and run_state(services.document.step(step.id)) == ""
+
+
+def test_open_agent_in_code_offers_the_same_profiles_over_the_project(services, step, monkeypatch):
+    """One list of profiles, two child menus: *Open Agent in Code* asks each entry the
+    project's questions instead of the step's, and the entry launches through that
+    profile's agent and terminal exactly as Run Agent's does."""
+    from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+    from dplanner.modules.step_agent_instruction.profiles import Profile, write_profiles
+
+    write_profiles(
+        [
+            Profile("Claude in Ghostty", "", "ghostty -e {script}"),
+            Profile("Codex in herdr", "codex {prompt}", launcher.HERDR_COMMAND),
+        ]
+    )
+    monkeypatch.setattr(
+        launcher,
+        "template_refusal",
+        lambda t, *a, **k: "herdr is not installed" if t == launcher.HERDR_COMMAND else "",
+    )
+    project = services.document.project_of(step.id)
+    services.context.set_scope(
+        SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
+    )
+    menu = services.window.dynamic_menubar.data_menu("agent.open_with")
+    assert [a.text() for a in menu.actions()] == [
+        "Claude in Ghostty (default)",
+        "Codex in herdr — herdr is not installed",
+        "",  # The rule before the way to Settings.
+        "&Manage Agent Profiles…",
+    ]
+    assert menu.actions()[0].isEnabled() and not menu.actions()[1].isEnabled()
+    # The verb's seat is the child menu: it is not listed flat beside it.
+    project_menu = services.window.dynamic_menubar._menus["Project"]
+    flat = [a.text() for a in project_menu.actions() if not a.isSeparator()]
+    assert "&Open Agent in Code…" not in flat and "Open Agent in Code" in flat
+
+    monkeypatch.setattr(launcher, "template_refusal", lambda *a, **k: "")
+    launched: list[list[str]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda command, _cwd, **_kw: launched.append(command))
+    prepared: list[LaunchFiles] = []
+    real = launcher.prepare
+
+    def capture(*args, **kwargs):
+        prepared.append(files := real(*args, **kwargs))
+        return files
+
+    monkeypatch.setattr(launcher, "prepare", capture)
+    menu = services.window.dynamic_menubar.data_menu("agent.open_with")
+    menu.actions()[1].trigger()
+    ((command),) = launched
+    assert command[:3] == ["herdr", "workspace", "create"]
+    # Codex's bare invocation, in the wrapper the real launcher wrote for this host, and
+    # no briefing anywhere near it.
+    (files,) = prepared
+    assert not files.prompt_file.exists() and files.opening == ""
+    script = files.script.read_text(encoding="utf-8")
+    assert "codex" in script and "Read your briefing" not in script

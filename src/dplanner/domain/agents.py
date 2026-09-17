@@ -28,6 +28,14 @@ which is also what makes such a run resumable after the fact — and a :class:`U
 never an error: the formats are the vendors' own, undocumented, and change between their
 releases, so a reader is tolerant by construction.
 
+**A briefed run and a bare one are two invocations, and neither is derived from the
+other.** ``command`` opens a session on a briefing and carries whatever mode a hand-over
+wants; ``open_command`` is the same CLI with nothing to do — no opening line, no mode of
+ours — which is what *Open Agent in Code* launches for the planning that happens before
+there are steps to brief. Dropping Claude's ``{prompt}`` from the first would leave its
+plan mode behind, and a launch that exists to open a *working* session must not open a
+planning one, so each is written down.
+
 **One meaning of input and output across harnesses**, so two agents' numbers can be
 added on one step: ``input`` is everything sent to the model — uncached, cache reads and
 cache writes alike — and ``output`` everything it generated, reasoning included. The
@@ -82,6 +90,10 @@ class AgentHarness:
     # The command the wrapper runs: {prompt} becomes the opening line (quoted), {session}
     # the run's session id and {run_dir} the run's directory (quoted).
     command: str
+    # The same CLI opened with nothing to do — no briefing and none of the modes a briefed
+    # run picks. {session} and {run_dir} substitute as in ``command``; "" for a CLI this
+    # build cannot open bare, which greys *Open Agent in Code* with that as the reason.
+    open_command: str = ""
     # How a run is picked up again, over its {session} — the one the launcher named, or
     # the one ``report`` found afterwards; "" when the CLI cannot resume by id.
     resume: str = ""

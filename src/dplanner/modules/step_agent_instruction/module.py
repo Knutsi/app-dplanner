@@ -14,6 +14,12 @@ TaskRunner task — see ``launcher.py``. Preview Prompt and the no-terminal fall
 the same assembled text, because the prompt is the library and the terminal was only one
 way to hand it over.
 
+**And an agent may be opened with nothing to do.** *Project ▸ Open Agent in Code* runs
+the same launch profiles in the same terminals, in the project's code, with no briefing
+and none of the modes a briefed run picks — the harness's own ``open_command``. It is
+what the planning *before* the plan needs: a spec has been imported, there are no steps
+to brief yet, and the agent's first instruction is the one the person types.
+
 **It runs one agent per chosen step, up to a limit.** The verb reads the selection the way
 Delete does, so lassoing three agent steps is *Run 3 Agents…* and one gesture; past
 *Settings ▸ Agent profiles*'s limit (four by default) the count itself is the refusal, greyed with
@@ -57,6 +63,7 @@ from dplanner.framework.settings_registry import (
 )
 from dplanner.framework.step_selection import chosen_steps, focused_step
 from dplanner.framework.undo import UndoService
+from dplanner.framework.widgets import notice
 from dplanner.framework.window import StatusHost
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.aspect import (
@@ -107,6 +114,11 @@ PLACEHOLDER = "How to carry this step out: which files, which conventions, what 
 # is its seat; the two verbs name it as their submenu so the palette says where they live.
 RUN_MENU_ID = "agent.run_with"
 RUN_MENU_TITLE = "Run Agent"
+# The Project menu's Open Agent child: the same profiles, opening the agent where the code
+# is with nothing to do. It is the *project's* verb and not a step's because it is what the
+# planning before the steps needs — there is no step to be about yet.
+OPEN_MENU_ID = "agent.open_with"
+OPEN_MENU_TITLE = "Open Agent in Code"
 SETTINGS_SECTION = f"{MODULE_ID}.launch"
 
 PREVIEW_NOTE = (
@@ -131,14 +143,14 @@ def _all_done(_step: Step) -> str:
 
 
 def _workdir(facts: RepositoryFacts) -> Path | None:
-    """Where an agent on the step works: the code checkout when the project records a
-    code repository, else the plan's own repository — the older shape, a plan kept beside
-    its code. None when neither is here."""
+    """Where an agent on this project works — a step's, or one opened with nothing to do:
+    the code checkout when the project records a code repository, else the plan's own
+    repository, the older shape of a plan kept beside its code. None when neither is here."""
     return facts.checkout if facts.repository else facts.plan_root
 
 
 def _workdir_refusal(facts: RepositoryFacts) -> str:
-    """Why Run Agent cannot open a shell for the step; "" when it can."""
+    """Why no shell can open where this project's agent would work; "" when one can."""
     if facts.repository:
         if facts.checkout is None:
             return "the code repository is not checked out on this machine — Project ▸ Settings…"
@@ -395,6 +407,33 @@ class StepAgentInstructionModule:
                 run=lambda _context: deps.open_settings(SETTINGS_SECTION),
             )
         )
+        # Opening one with nothing to do: the project's verb, seated in its own child menu
+        # of the same profiles. No step, so none of the step's questions are asked.
+        deps.actions.register(
+            ActionSpec(
+                id="agent.open",
+                label="&Open Agent in Code…",
+                menu="Project",
+                group="agent",
+                submenu=OPEN_MENU_TITLE,
+                order=10,
+                in_menus=False,
+                tip="Open a terminal with the agent in this project's code, briefed on"
+                " nothing — for the planning that comes before there are steps",
+                state=self._can_open,
+                run=self._open,
+            )
+        )
+        deps.actions.register_data_menu(
+            DataMenuSpec(
+                id=OPEN_MENU_ID,
+                menu="Project",
+                group="agent",
+                title=OPEN_MENU_TITLE,
+                order=10,
+                fill=self._fill_open_profiles,
+            )
+        )
         deps.actions.register(
             ActionSpec(
                 id="agent.preview",
@@ -603,15 +642,32 @@ class StepAgentInstructionModule:
         return True, claim_started and deps.mark_started(step.id)
 
     def _fill_profiles(self, menu: QMenu) -> None:
-        """Step ▸ Run Agent: one entry per profile, the default first and marked, each
-        greyed with its own reason — a profile's terminal may be missing where another's
-        is not — and rebuilt every time the menu opens, so a profile added in Settings
-        is offered at once. Under a rule, the way to Settings — the same child menu the
-        progression board's *Run Agents* button drops down."""
+        """Step ▸ Run Agent: the profiles over the step the context names — the same child
+        menu the progression board's *Run Agents* button drops down."""
+        self._fill_with(menu, self._can_run, self._run)
+
+    def _fill_open_profiles(self, menu: QMenu) -> None:
+        """Project ▸ Open Agent in Code: the same profiles over the project."""
+        self._fill_with(menu, self._can_open, self._open)
+
+    def _fill_with(
+        self,
+        menu: QMenu,
+        state_of: Callable[[Context, Profile], ActionState],
+        run: Callable[[Context, Profile], None],
+    ) -> None:
+        """One entry per launch profile, the default first and marked, each greyed with its
+        own reason — a profile's terminal may be missing where another's is not — and
+        rebuilt every time the menu opens, so a profile added in Settings is offered at
+        once. Under a rule, the way to Settings.
+
+        Both agent child menus fill through here: *Run Agent* and *Open Agent in Code* offer
+        the one list of profiles and differ only in what each entry asks and does.
+        """
         deps = self._deps
         context = deps.context.current()
         for index, profile in enumerate(read_profiles()):
-            state = self._can_run(context, profile)
+            state = state_of(context, profile)
             name = f"{profile.name} (default)" if index == 0 else profile.name
             reason = ""
             if not state.enabled and state.label:
@@ -619,7 +675,7 @@ class StepAgentInstructionModule:
             entry = menu.addAction(f"{name} — {reason}" if reason else name)
             entry.setEnabled(state.enabled)
             entry.triggered.connect(
-                lambda _checked=False, p=profile: self._run(deps.context.current(), p)
+                lambda _checked=False, p=profile: run(deps.context.current(), p)
             )
         menu.addSeparator()
         append_action(menu, deps.actions, deps.context, "agent.profiles")
@@ -673,6 +729,72 @@ class StepAgentInstructionModule:
         dialog.deleteLater()
         return accepted
 
+    # -- opening an agent with nothing to do ---------------------------------------------------
+
+    def _can_open(self, context: Context, profile: Profile | None = None) -> ActionState:
+        """Whether an agent can be opened in this project's code, greyed with the reason.
+
+        Run Agent's questions without the step's: where a shell opens, whether the profile's
+        terminal is there, and whether this build knows how to open that agent with nothing
+        to do. No graph gate and no limit — one terminal, and nothing is claimed in progress,
+        because nobody has been told to do anything yet. The cheap questions come first: a
+        project's repositories cost git, and a missing terminal refuses either way.
+        """
+        deps = self._deps
+        project_id = context.focus_entity("project")
+        if not project_id or not deps.library.has(project_id):
+            return ActionState(enabled=False, label=f"{OPEN_MENU_TITLE} — no project is open")
+        if refusal := launcher.template_refusal(launch_command(profile)):
+            return ActionState(enabled=False, label=f"{OPEN_MENU_TITLE} — {refusal}")
+        if not self._open_command(profile):
+            return ActionState(
+                enabled=False,
+                label=f"{OPEN_MENU_TITLE} — this profile's agent command is a custom one,"
+                " and nothing here knows how to open it with no briefing",
+            )
+        if refusal := _workdir_refusal(deps.facts_for(project_id)):
+            return ActionState(enabled=False, label=f"{OPEN_MENU_TITLE} — {refusal}")
+        return ENABLED
+
+    def _open(self, context: Context, profile: Profile | None = None) -> None:
+        """Open the profile's terminal where the project's code is, with the agent briefed
+        on nothing: no prompt, no worktree, no run recorded and no step claimed.
+
+        There is nothing to hand over when no terminal opens, so the refusal is a notice
+        rather than the prompt fallback every briefed launch ends in.
+        """
+        deps = self._deps
+        project_id = context.focus_entity("project")
+        if not project_id or not deps.library.has(project_id):
+            return
+        profile = profile or default_profile()
+        if not self._open_command(profile):
+            return  # The state gate already prevents this; stay honest.
+        title = deps.library.project(project_id).title or "Untitled project"
+        spawned, _files = self._launch(
+            "",
+            launcher.new_run_dir(),
+            "",
+            _workdir(deps.facts_for(project_id)),
+            profile,
+            project_id=project_id,
+            subject=title,
+        )
+        if spawned:
+            deps.status.show_status(f"Agent opened in “{title}”", 4000)
+        else:
+            notice(
+                deps.parent,
+                OPEN_MENU_TITLE,
+                f"No terminal opened for “{title}” — check this profile's terminal in"
+                " Settings ▸ Agent profiles.",
+            )
+
+    def _open_command(self, profile: Profile | None) -> str:
+        """How this profile's agent opens with nothing to do; "" when nothing here knows."""
+        deps = self._deps
+        return launcher.open_command(agent_command(deps.harnesses, profile), deps.harnesses)
+
     def _launch(
         self,
         text: str,
@@ -700,12 +822,19 @@ class StepAgentInstructionModule:
         working on: a plan-wide fix has none, so it gets no chip, no end-of-shell watch
         and no usage row. That is a gap said out loud rather than a zero invented.
 
+        **A launch with no ``text`` opens the agent bare.** Nothing is written to hand over,
+        and the command is the harness's own ``open_command`` rather than the briefed one,
+        whose flags — an opening line, a permission mode — are all about a briefing that
+        does not exist.
+
         What the status bar says, and whether the step is claimed in progress, is the
         **caller's**: one launch names its step, a run over a selection counts what opened
         and claims each step as it goes, and neither is true of the other."""
         deps = self._deps
         workdir = (workdir or Path()).expanduser()
         command_text = agent_command(deps.harnesses, profile)
+        if not text:
+            command_text = launcher.open_command(command_text, deps.harnesses)
         # A launch is a span of its own under the action's, not a detail on it: one gesture
         # opens a shell per chosen step, so three launches are three sizes and could never
         # be one key on the parent — and a verb cannot reach the enclosing span anyway,

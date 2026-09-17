@@ -7,6 +7,11 @@ another option and never before ``{prompt}``, which it would swallow — and the
 named up front (``--session-id``, a UUID the launcher mints), which is what makes
 ``claude --resume`` work afterwards.
 
+**Opening it bare.** ``claude`` on its own: an interactive session in the default
+permission mode with nothing said to it, which is what *Open Agent in Code* opens — the
+briefed command's flags are all about a briefing it does not have, and its plan mode is
+the one thing that launch must not bring.
+
 **The shell markers.** What Claude Code sets in every shell it runs (``CLAUDECODE``, the
 parent's session id, the child-session flag that turns transcript persistence off, its
 pid, the effort, the agent flag) and what it scrubs itself before a session that must
@@ -134,6 +139,7 @@ HARNESS = AgentHarness(
     id="claude",
     label="Claude Code",
     command="claude --add-dir {run_dir} --permission-mode plan --session-id {session} {prompt}",
+    open_command="claude",
     resume="claude --resume {session}",
     superseded=(
         "claude --permission-mode plan --session-id {session} {prompt}",
