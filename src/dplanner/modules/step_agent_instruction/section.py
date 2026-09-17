@@ -702,7 +702,8 @@ class ProjectInstructionCard(ProseSection):
         )
         self._files = files
         self._pick_assets = pick_assets
-        self.edit.setFixedHeight(self.edit.fontMetrics().lineSpacing() * 6 + 16)
+        # Six lines at least; the page the card is on gives it more when it has more.
+        self.edit.setMinimumHeight(self.edit.fontMetrics().lineSpacing() * 6 + 16)
         layout = self.layout()
         if layout is not None:
             layout.setContentsMargins(0, 0, 0, 0)  # The hosting card carries the margins.

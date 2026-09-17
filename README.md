@@ -8,6 +8,11 @@ with uv, running on Linux, macOS and Windows.
 It has two front doors, and they are equals: a desktop window, and a `dplanner` command that
 any coding agent can drive.
 
+![The step graph, with Run Agent open on three picked steps](docs/screenshots/readme/graph-editor-run-agent.png)
+
+*A plan is a graph of steps. Pick some, and Run Agent hands each one to a coding agent in
+the terminal you chose — Claude Code, Codex or OpenCode, in herdr, Ghostty or on its own.*
+
 > **DPlanner is in development.** Its file formats and its feature set change without
 > notice, and nothing about compatibility between versions — of the files a plan is kept
 > in, or of the features that write them — is guaranteed in any way.
@@ -71,8 +76,8 @@ save`), both sides picked in its strip — the plan then, the plan now with the 
 between them, what actually landed, and how much work the plan came to on each recorded
 day; `dplanner progress show` prints the same, with the steps and estimates that moved it.
 What a project learns along the way — decisions, handoffs, spec changes, what was
-deferred — is one labelled log beside it (`dplanner note add`, the project panel's Notes
-card), and every agent's briefing carries an index of the notes that reach its step — the
+deferred — is one labelled log beside it (`dplanner note add`, the Implementation notes
+tab), and every agent's briefing carries an index of the notes that reach its step — the
 ones made on the work it builds on, capped per label — with the ones addressed to it in full.
 
 ## Running
@@ -376,6 +381,8 @@ src/dplanner/
 │
 ├── framework/             ── from the template, and evolved here. The Qt machinery.
 │   ├── panels.py            the window's left/right/bottom areas, and what modules anchor there
+│   ├── side_panel.py        a panel a tab hosts beside its own surface: the frame, the strip
+│   │                        button with its reading, and the splitter between them
 │   ├── index_panel.py       the index tree: folders from whoever registered them
 │   ├── inspector.py         what a module registers to appear in a detail panel
 │   ├── aspect_bar.py        one submenu's toggles as a bar — templates worded left, every toggle glyphed right, » overflow
@@ -412,12 +419,14 @@ src/dplanner/
 │   ├── projects/            the Projects folder in the index, the project verbs, New Project…, Open
 │   │                        Projects…, the Project dialog (a column per repository: log, facts, ⋯ menu),
 │   │                        the Repositories card, Move Plan, and the repositories folder clones land in
+│   ├── project_dashboard/   the project's home tab: its name and summary, and a card per module with
+│   │                        something to say about the project (Repositories, Agent, Compilation
+│   │                        instructions) — what a click on the project's row in the index opens
 │   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, regions, resize) and renderers,
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid,
 │   │                        the side panel; ground.py paints the background)
 │   │                        (canvas_toolbar.py is the strip in named bands; find.py the rows Find offers;
-│   │                        side_panel.py what the tab stands beside the canvas — the Problems list,
-│   │                        with the count its strip button shows; panel_button.py is that button)
+│   │                        the Problems list stands beside the canvas through framework/side_panel.py)
 │   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's
 │   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone)
 │   │                        (its panel also hosts the modules' project-level cards)
@@ -460,7 +469,7 @@ src/dplanner/
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll
-│   │                        call, the Test panel a run is worked down from, the preview a
+│   │                        call, the Test panel beside each roster that a run is worked down from, the preview a
 │   │                        reference in one body opens onto another, the exports, and the
 │   │                        house shape of a test body (format.md, `dplanner test format`)
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where

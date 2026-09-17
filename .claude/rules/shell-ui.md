@@ -1,12 +1,12 @@
 ---
 paths:
   - "src/dplanner/menus.py"
-  - "src/dplanner/framework/{action_registry,action_menu,menubar,toolbar,palette,picker,list_rows,panels,tabs,main_window,window,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service,user_config,zoom}.py"
+  - "src/dplanner/framework/{action_registry,action_menu,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,main_window,window,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service,user_config,zoom}.py"
   - "src/dplanner/theme/**"
   - "src/dplanner/modules/{appshell,appearance,theme_omarchy,theme_system,reopen_tabs,settings,debug}/**"
   - "src/dplanner/modules/project_editor/canvas_toolbar.py"
   - "tests/test_theme.py"
-  - "tests/framework/test_{action_menu,actions,menubar,toolbar,palette,picker,list_rows,panels,tabs,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service}.py"
+  - "tests/framework/test_{action_menu,actions,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service}.py"
   - "tests/modules/test_{appshell,appearance,theme_providers,reopen_tabs,debug}.py"
   - "scripts/{vendor_tabler_icons,import_omarchy_themes,render_design_example,render_about,render_icon,render_signalling}.py"
 ---
@@ -130,12 +130,28 @@ paths:
 - **A single click in the index opens a preview tab** (`tabs.open(..., preview=True)`): at
   most one preview exists, the next preview replaces it, and a deliberate act — activation,
   or moving the tab — pins it. A preview-open of anything already open is a plain focus.
+  A project's own row previews its Dashboard (`open_dashboard` on `ProjectsDeps`, the
+  `open_steps` seam one level up); its entry rows preview their surfaces.
   `ARCHITECTURE.md`'s *A click is a glance* has the rules and why no timer is involved.
+- **A panel inside a tab is a `SidePanel`, hosted through `HostedSidePanel`**
+  (`framework/side_panel.py`). A dock panel follows the *window* — one instance, retargeted
+  by the context; a panel inside a tab follows *that tab* — one per tab, handed a
+  **constructed** `Context` by the tab (its own project, its own picked row), never the
+  window's, so a tab in the background never follows the tab in front. The framework
+  writes the hosting once: the frame with the dock's header and a way out, the strip's
+  `PanelButton` wearing a `ReadingPanel`'s count, the splitter whose seam is every
+  splitter's, and the spec's `width` given when the seam is closed. The host owns three
+  things — the `SidePanel` the root names for it, a preference verb the button and the
+  close both run (`canvas.side_panel` on `Look`; `tests.side_panel`, one bool for every
+  Tests tab), and `dispose()` with the tab. Feed the panel while it is hidden too: off
+  screen keeps its content. `ARCHITECTURE.md`'s *A panel inside a tab follows the tab* has
+  the reasoning.
 - **View is the window; Graph is the canvas.** The graph editor's own verbs are a
   top-level **Graph** menu — `arrange` (Sort, Layout, Divide), `regions`, `look` (Frame,
   Mark, Snap to Grid, Background — the band the strip's *Options* face renders whole) and
   `panels` (what stands beside the canvas inside the tab) — not a group inside View, which
-  is about panels *around the tabs*, tabs, theme and zoom. What is *about a step* stays on Step even though it runs on the canvas:
+  is about panels *around the tabs*, tabs, theme and zoom; `Project ▸ tests` holds the
+  Tests tabs' own panel toggle for the same reason. What is *about a step* stays on Step even though it runs on the canvas:
   Connect, Link, Unlink, Isolate, Redirect and Lasso, which is also what keeps them on the
   canvas's right-click (it renders the Step menu). `ARCHITECTURE.md`'s *View is the window;
   Graph is the canvas* has the reasoning.

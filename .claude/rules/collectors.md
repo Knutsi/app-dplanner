@@ -55,20 +55,22 @@ paths:
   not spelled three ways) and `Step ▸ Test Sort Key ▸ …`, whose last entry mints a new key
   because there is no editor to send anybody to. `ARCHITECTURE.md`'s *The sort key is an
   ergonomic* has the reasoning.
-- **A test is run from the Test panel, and a double-click in a Tests tab opens the test.**
-  `modules/testing/panel.py`, a `PanelSpec` in the right area under the project form: the
-  test rendered (not edited — authoring is the step panel's Tests tab, and *Show Step* is
-  the door), its last result, the four result verbs from the registry, and Previous/Next.
-  It is the only thing in that area while a test is picked — the project form yields to it
-  (`narrower_kinds`, wired in the root) and the step editor is a modal with no seat there at
-  all. **The double-click is the one deliberate exception to *double-clicking a step anywhere
-  runs `steps.details`*** — in this table a row *is* a test, and the step is not even a
-  column any more — and `test.details` only *reveals* the panel, which was already
-  following the context. **Next
-  and Previous move the table's selection**, never the panel's own (a panel publishes no
-  selection), and it is the *tab's* order they walk, greyed with the reason when no tab is
-  open. Register the panel **after** the action specs: the dock builds it on registration
-  and its strip asks the registry for the result verbs. `ARCHITECTURE.md`'s *A test is run
+- **A test is run from the Test panel beside the roster, and a double-click in a Tests tab
+  opens it.** `modules/testing/panel.py`, hosted inside each Tests tab and the roll call
+  through `framework/side_panel.py`: the test rendered (not edited — authoring is the step
+  panel's Tests tab, and *Show Step* is the door), its last result, the four result verbs
+  from the registry, and Previous/Next. One panel per tab, fed by that tab's own pick as a
+  constructed `Context` carrying the (step, test) pair, so a tab in the background never
+  follows the tab in front. Whether it stands is one per-user bool (`tests.side_panel`,
+  *Project ▸ Test Panel*, the button leading the strip and the frame's close), fanned to
+  every Tests tab like the graph's `Look`. **The double-click is the one deliberate
+  exception to *double-clicking a step anywhere runs `steps.details`*** — in this table a
+  row *is* a test, and the step is not even a column any more — and `test.details` stands
+  the *current* tab's panel, first opening the project's Tests tab on the test when run
+  from anywhere else. **Next and Previous move the table's selection**, never the panel's
+  own (a panel publishes no selection), by offset over *this tab's* rows, greyed with the
+  reason at either end. The tab builds its panel when it opens, long after every spec is
+  registered — nothing in `register()` orders on it. `ARCHITECTURE.md`'s *A test is run
   from a panel* has the reasoning.
 - **A test body's reference to another test is a link, and a link opens a preview.** A body
   that says *after T101 passes* is pointing somewhere, and picking that test in the table

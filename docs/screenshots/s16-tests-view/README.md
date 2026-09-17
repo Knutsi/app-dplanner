@@ -15,7 +15,7 @@ the reference preview or the category editor.
 |---|---|
 | `tests-filed-*` | the Tests tab filed by category: the catalogue's own order, a category's glyph beside its heading, the Sort key column, and the rows sharing a key adjacent because *Ergonomic order* (the lit verb at the right of the strip) is on |
 | `tests-folded-*` | the same tab with a category shut: the chevron turned, its rows gone, the next heading up where you can reach it — what folding is for on a roster of two hundred |
-| `test-panel-*` | the Test panel a run is worked down from: what the test is filed under, its last result, the four result verbs, *Show Step*, and Previous/Next — with the body **rendered**, because a numbered list is a numbered list on a surface you execute from, and alone in the area, because the project form yields to a picked test and the step editor is a modal |
+| `test-panel-*` | the Test panel a run is worked down from: what the test is filed under, its last result, the four result verbs, *Show Step*, and Previous/Next — with the body **rendered**, because a numbered list is a numbered list on a surface you execute from, and beside the roster, inside the Tests tab, because the tab is what feeds it and a tab in the background must never follow the tab in front |
 | `test-preview-*` | the preview a reference in a body opens: the referenced test read over what you were reading, **Back** for the trail when it references another, *Close* putting you back where you were, and *Show in Tests* as the one deliberate move |
 | `category-editor-*` | the modal that renames, re-icons and reorganises: a count on every row saying how many tests a rename is about to move, *Uncategorised* last and never editable, and nothing written until Save |
 

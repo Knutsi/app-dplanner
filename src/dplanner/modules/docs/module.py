@@ -212,6 +212,7 @@ class DocsModule:
                     id=f"{MODULE_ID}.card",
                     label="Compilation instructions",
                     order=30,
+                    stretch=1,  # A prose editor: it takes the page's leftover height.
                     factory=lambda: InstructionsCard(
                         deps.library, deps.undo, deps.files, deps.pick_assets, deps.dictation
                     ),

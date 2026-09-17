@@ -2,13 +2,14 @@
 paths:
   - "src/dplanner/modules/step_{properties,description,milestone,check,status,ticket}/**"
   - "src/dplanner/modules/project_assets/**"
+  - "src/dplanner/modules/project_dashboard/**"
   - "src/dplanner/modules/*/{aspect,section}.py"
   - "src/dplanner/framework/{aspect_bar,aspect_toggle,inspector,module_data_section,prose_edit,prose_section,markdown_toolbar,markdown_highlight,markdown_view,text_binding,text_dialog,asset_gallery,asset_picker,mime_files,image_preview,cards,step_selection}.py"
   - "src/dplanner/domain/{aspects,assets,shelf,migrations}.py"
   - "src/dplanner/core/{module_data,formats}.py"
   - "src/dplanner/cli/{aspects,assets}.py"
   - "tests/framework/test_{aspect_bar,prose_edit,markdown_toolbar,markdown_highlight,text_dialog,asset_gallery,asset_picker,image_preview}.py"
-  - "tests/modules/test_{step_properties,step_details,aspect_editors,aspects,asset_sources,project_assets,step_description_section,step_milestone,step_status}.py"
+  - "tests/modules/test_{step_properties,step_details,aspect_editors,aspects,asset_sources,project_assets,step_description_section,step_milestone,step_status,project_dashboard}.py"
   - "tests/domain/test_{shelf,assets}.py"
   - "tests/cli/test_asset_verbs.py"
   - "scripts/render_step_details.py"
@@ -158,9 +159,12 @@ paths:
   left is every toggle, as a glyph. **Step ▸ New is one verb**: a step is born plain, titled "New
   step", and the details dialog opens on it with the name selected, where the bar says
   what it is.
-- **A module's project-level editor is a card, registered into `services.detail_cards`.**
+- **A module's project-level editor is a card, registered into `services.project_cards`.**
   Same `InspectorSection` contract as a step tab, with a project id in `show_target`; the
-  project panel renders the stack. Register before `project_editor` in `default_modules()` —
-  the panel is built from whatever has registered by then. The agent instruction's card is
-  the example; `ARCHITECTURE.md`'s *The project panel hosts the same contract, as cards*
-  has the reasoning.
+  Dashboard tab (`modules/project_dashboard/`) renders them, opened about one project and
+  never re-targeted, flowing as many across as the width allows; a section's `stretch`
+  says whether its card takes the page's leftover height (a prose editor does, with a
+  *minimum* height rather than a fixed one). Register before `project_dashboard` in
+  `default_modules()` — a tab reads the registry when it opens, and `reopen_tabs` opens
+  tabs at startup. The agent instruction's card is the example; `ARCHITECTURE.md`'s *The
+  dashboard hosts the same contract, as cards* has the reasoning.

@@ -1,13 +1,14 @@
 """Projects: the folder in the index, what you can do to a project, and where it lives.
 
-The tab a project opens into belongs to ``project_editor``; this module never learns what
-an activity is. It is handed an ``open_project`` callback and calls it, which is the same
-seam the plan tree used before it and the reason two features can render the same thing
-without meeting.
+The tabs a project opens into belong to ``project_dashboard`` (its home) and
+``project_editor`` (its graph); this module never learns what an activity is. It is handed
+``open_dashboard`` and ``open_steps`` callbacks and calls them, which is the same seam the
+plan tree used before it and the reason two features can render the same thing without
+meeting.
 
 Where a project lives is this module's other subject: the Project dialog (a column per
 repository — its log, what it is and where it is here, and a ⋯ menu of everything that
-changes either), the Repositories card on the project panel, Move Plan, and the *Settings
+changes either), the Repositories card on the Dashboard tab, Move Plan, and the *Settings
 ▸ Repositories* page. Git and GitHub reach it only through the :class:`RepositoryServices`
 the composition root fills in.
 
@@ -79,12 +80,14 @@ class ProjectsDeps:
     autosave: AutosaveService
     switcher: SessionControl
     settings_sections: SettingsSectionRegistry
-    # The project panel's card registry: the Repositories card goes there.
+    # The Dashboard tab's card registry: the Repositories card goes there.
     cards: InspectorSectionRegistry
-    # Show a project — the "Open Project" verb's callback, wired by the composition root
-    # to the project editor, which this module never imports. In the tree, opening the
-    # graph is the Steps entry's job, not the project row's.
-    open_project: Callable[[NodeId], None]
+    # Show a project's graph — the "Show Steps" verb's and the Steps row's callback, wired
+    # by the composition root to the project editor, which this module never imports.
+    open_steps: Callable[[NodeId], None]
+    # Show a project's Dashboard, as a preview tab or for keeps — what a click on the
+    # project's own row in the index asks for. Wired by the composition root.
+    open_dashboard: Callable[[NodeId, bool], None]
     # The store's half of Remove from Library, wired by the composition root.
     detach: Callable[[ProjectId], None]
     # Its other half: attach a directory (with the code checkout, when known) and add
@@ -137,7 +140,7 @@ class ProjectsModule:
             library=deps.library,
             undo=deps.undo,
             parent=deps.parent,
-            open_project=deps.open_project,
+            open_steps=deps.open_steps,
             detach=deps.detach,
             settings=self.show_project,
             move=self.move_plan,
@@ -171,6 +174,7 @@ class ProjectsModule:
                 entries=deps.entries,
                 problems=deps.problems,
                 debounce=deps.debounce,
+                open_dashboard=deps.open_dashboard,
             )
 
         deps.segments.register(

@@ -36,11 +36,8 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import (
-    SCOPE_SELECTION,
     Context,
-    ContextNode,
     ContextService,
-    selection_uri,
 )
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.dialog import LinePrompt
@@ -48,19 +45,20 @@ from dplanner.framework.dictation import DictationService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
-from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.project_list_segment import LeadingRow, ProjectListSegment
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.framework.window import PanelHost
+from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.testing import export, runs
 from dplanner.modules.testing.activity import (
     ALL_TESTS_KIND,
+    SIDE_PANEL_ACTION,
     TESTS_KIND,
     AllTestsActivity,
     Shown,
     TestsActivity,
+    reveal_test,
 )
 from dplanner.modules.testing.aspect import (
     AUDIENCES,
@@ -83,7 +81,6 @@ from dplanner.modules.testing.filing import (
     refiled,
     sort_keys,
 )
-from dplanner.modules.testing.panel import PANEL_ID, TestPanel, Walk
 from dplanner.modules.testing.section import CoversSection, TestsSection
 from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.theme.icons import (
@@ -112,6 +109,7 @@ NO_RUN = "start a test run first (Project ▸ New Test Run)"
 # What the sort-key menu calls "no key at all". Not a category's `Uncategorised`: a test
 # with no sort key is not filed anywhere odd, it simply sorts last in its group.
 NO_SORT_KEY = "No sort key"
+SIDE_PANEL_KEY = "side_panel"
 
 
 def _no_color(_step_id: str) -> str:
@@ -129,10 +127,6 @@ class TestsDeps:
     debounce: DebounceService
     sections: InspectorSectionRegistry
     segments: IndexSegmentRegistry
-    panels: PanelRegistry
-    # Switching the Test panel on is how a double-click puts it on screen; nothing else
-    # here touches the window's chrome.
-    chrome: PanelHost
     theme: ThemeService
     parent: QWidget  # confirm()'s and the run dialog's parent, as the delete verb's is.
     # Every kind of collector this build knows: a check, a feature, a milestone. Each says
@@ -161,6 +155,10 @@ class TestsModule:
 
     def __init__(self, deps: TestsDeps) -> None:
         self._deps = deps
+        # Whether the Test panel stands beside the roster: one per-user answer for every
+        # Tests tab, the graph's `Look.side_panel` arrangement. Off until a double-click
+        # asks for it.
+        self._side_panel = bool(get_global(MODULE_ID, SIDE_PANEL_KEY, False))
 
     # -- opening ---------------------------------------------------------------------------
 
@@ -223,26 +221,6 @@ class TestsModule:
         )
         for spec in self._action_specs():
             deps.actions.register(spec)
-        # After the specs, never before: the dock builds a panel the moment it is
-        # registered, and this one's strip asks the registry for the result verbs.
-        # Order 30 puts it under Project (10) and Step (20), which is the shape of the
-        # thing — a test hangs off a step, which is part of a project.
-        deps.panels.register(
-            PanelSpec(
-                id=PANEL_ID,
-                title="Test",
-                factory=lambda: TestPanel(
-                    deps.library,
-                    deps.actions,
-                    deps.context,
-                    walk=Walk(go=self._walk_to, can=self._can_walk),
-                    files=deps.files,
-                    open_test=self._reveal_test,
-                ),
-                area=PanelArea.RIGHT,
-                order=30,
-            )
-        )
         deps.actions.register_data_menu(
             DataMenuSpec(
                 id="test.category",
@@ -267,11 +245,10 @@ class TestsModule:
 
     def _tests_factory(self, target: str | None) -> TestsActivity:
         assert target is not None
-        return TestsActivity(self._deps, target)
+        return TestsActivity(self._deps, target, side_panel=self._side_panel)
 
     def _all_factory(self, _target: str | None) -> AllTestsActivity:
-        deps = self._deps
-        return AllTestsActivity(deps.library, deps.context, self._open_test, deps.debounce)
+        return AllTestsActivity(self._deps, side_panel=self._side_panel)
 
     def _segment(self, root: QTreeWidgetItem) -> ProjectListSegment:
         """A row per project, under an *All Projects* row: tests are the one surface that is
@@ -407,11 +384,23 @@ class TestsModule:
                 menu="Step",
                 group="open",
                 order=45,  # Beside Show Tests, which opens the list this came from.
-                tip="Show the picked test in the Test panel — what it checks, and the "
-                "verbs to run it",
+                tip="Show the picked test in the Test panel beside the roster — what it "
+                "checks, and the verbs to run it",
                 icon=beaker_icon,
                 state=self._one_test,
                 run=self._show_test,
+            ),
+            ActionSpec(
+                id=SIDE_PANEL_ACTION,
+                label="Test &Panel",
+                menu="Project",
+                group="tests",
+                order=40,  # After the roster's own verbs: a way of reading them.
+                tip="Stand the Test panel beside the roster in every Tests tab",
+                icon=beaker_icon,
+                # A preference, never greyed: it is about how every Tests tab reads.
+                state=lambda _context: ActionState(checked=self._side_panel),
+                run=lambda _context: self._set_side_panel(not self._side_panel),
             ),
             ActionSpec(
                 id="tests.categories",
@@ -686,55 +675,32 @@ class TestsModule:
             return DISABLED
         return ActionState()
 
-    def _show_test(self, _context: Context) -> None:
-        """Put the Test panel on screen. The panel is already following the context, so
-        this is only the *reveal* — which is what makes a double-click feel like opening
-        something while a single click merely updates what is already open."""
-        self._deps.chrome.set_panel_visible(PANEL_ID, True)
+    def _show_test(self, context: Context) -> None:
+        """Stand the Test panel beside the roster the picked test is in.
 
-    def _neighbour(self, test_id: str, offset: int) -> tuple[TestsActivity, str] | None:
-        """The tab showing ``test_id``, and the test ``offset`` places along *its* list.
-
-        The tab's order, not the project's: what "next" means is what the reader has in
-        front of them — their scope, their audience filter, their ergonomic order — and no
-        other list would land on the row they are looking at. A tab that is showing the
-        test but has no neighbour that way answers None rather than falling through to
-        another tab, which would jump the reader into a list they are not in.
+        The panel is already following the tab's own pick, so from a Tests tab this is only
+        the *reveal* — which is what makes a double-click feel like opening something while
+        a single click merely updates what is already open. From anywhere else it opens the
+        project's Tests tab on the test first, since the panel lives there.
         """
+        current = self._deps.tabs.current_activity()
+        if not isinstance(current, TestsActivity | AllTestsActivity):
+            step_id = context.selected_entity("step")
+            test_id = context.selected_entity("test")
+            if step_id is None or test_id is None:
+                return
+            reveal_test(self._deps, step_id, test_id)
+        self._set_side_panel(True)
+
+    def _set_side_panel(self, shown: bool) -> None:
+        """Stand or take down the panel in every Tests tab, now and later, and let the
+        toggle re-ask — the graph's `_set_look` arrangement."""
+        self._side_panel = shown
+        set_global(MODULE_ID, SIDE_PANEL_KEY, shown)
         for activity in self._deps.tabs.activities():
-            if not isinstance(activity, TestsActivity):
-                continue
-            shown = activity.ordered_tests()
-            if test_id not in shown:
-                continue
-            at = shown.index(test_id) + offset
-            return (activity, shown[at]) if 0 <= at < len(shown) else None
-        return None
-
-    def _can_walk(self, test_id: str, offset: int) -> bool:
-        return self._neighbour(test_id, offset) is not None
-
-    def _reveal_test(self, step_id: StepId, test_id: str) -> None:
-        """Pick a test in its project's Tests tab — what the preview's *Show in Tests* does.
-
-        Through the tab rather than by publishing here, because the table is what owns that
-        selection: a preview is a thing you read, and changing what is selected is the
-        *tab's* gesture even when something else asked for it.
-        """
-        if not self._deps.library.has(step_id):
-            return
-        project = self._deps.library.project_of(step_id)
-        activity = self._deps.tabs.open(TESTS_KIND, project.id)
-        if isinstance(activity, TestsActivity):
-            activity.reveal(test_id)
-
-    def _walk_to(self, test_id: str, offset: int) -> bool:
-        found = self._neighbour(test_id, offset)
-        if found is None:
-            return False
-        activity, wanted = found
-        activity.pick_test(wanted)
-        return True
+            if isinstance(activity, TestsActivity | AllTestsActivity):
+                activity.set_side_panel(shown)
+        self._deps.context.refresh()
 
     # -- categories ------------------------------------------------------------------------
 
@@ -910,24 +876,3 @@ class TestsModule:
     def _open_scope(self, step_id: StepId) -> None:
         project = self._deps.library.project_of(step_id)
         self.open(project.id, scope=step_id)
-
-    def _open_test(self, test_id: str, step_id: StepId) -> None:
-        """Double-clicking a test in the roll call shows that test, as in a project's tab.
-
-        The roll call spans projects, so it cannot publish a selection the way a
-        project-scoped tab does; the context is synthesised for exactly this row instead —
-        the same thing the progression board does for a card's own verb. The panel then
-        follows it like any other context change.
-
-        The row's step goes in beside its test, as the project tab's selection does: an id
-        is unique inside its project, and the roll call is the one view that has more than
-        one project's in front of it.
-        """
-        self._deps.context.set_scope(
-            SCOPE_SELECTION,
-            (
-                ContextNode(selection_uri("step", step_id)),
-                ContextNode(selection_uri("test", test_id)),
-            ),
-        )
-        self._deps.actions.run("test.details", self._deps.context.current())

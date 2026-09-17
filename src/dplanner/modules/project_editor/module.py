@@ -1,15 +1,14 @@
-"""A project open in a tab: its step graph, a toolbar over it, and the project form beside it.
+"""A project open in a tab: its step graph, a toolbar over it, and the Problems list beside it.
 
 The tab is the canvas and its verbs. What the user selects on it is published into the
-context, and the window's panels — this module's project form, somebody else's step editor —
-follow from there. So the graph does not host anything, and there is one detail panel in the
-window however many projects are open side by side.
+context, and every verb and panel in the window follows from there; the project's own form
+is the Dashboard tab's (``modules/project_dashboard``), and a step's editor is a modal.
 
 Three seams keep this module from knowing about anything else in the application:
 
-- **The panel is anchored, not hosted.** ``register()`` puts :class:`ProjectPanel` in an area
-  through ``deps.panels``; nothing here knows what else is in that area, and nothing there
-  knows this exists.
+- **The panel beside the canvas is hosted, never known.** The composition root hands over a
+  ``SidePanel`` — a name, a glyph and a way to build the widget — and this module stands it
+  in a splitter (``framework/side_panel.py``) without learning whose it is.
 - **The index opens projects through a callback** it is given, and never learns what an
   activity is.
 - **The toolbar names verbs it does not own** — the app shell's undo pair, the order module's
@@ -30,7 +29,7 @@ from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QMenu, QSplitter, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
 
 from dplanner.core.signals import Signal as CoreSignal
 from dplanner.domain.commands import (
@@ -67,9 +66,8 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.debounce import Debounced, DebounceService
-from dplanner.framework.inspector import InspectorSectionRegistry
-from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.picker import PickerDialog
+from dplanner.framework.side_panel import HostedSidePanel, SidePanel
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
@@ -104,7 +102,6 @@ from dplanner.modules.project_editor.modes import (
     RegionCreateMode,
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
-from dplanner.modules.project_editor.panel_button import PanelButton
 from dplanner.modules.project_editor.placement import below, positions
 from dplanner.modules.project_editor.positions import (
     DATA_FORMAT,
@@ -114,7 +111,6 @@ from dplanner.modules.project_editor.positions import (
     write_position,
 )
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
-from dplanner.modules.project_editor.project_panel import ProjectPanel
 from dplanner.modules.project_editor.region_verbs import RegionVerbs
 from dplanner.modules.project_editor.regions import (
     new_region,
@@ -128,19 +124,12 @@ from dplanner.modules.project_editor.selection import (
     CanvasSelection,
     EdgeRef,
 )
-from dplanner.modules.project_editor.side_panel import (
-    SIDE_PANEL_WIDTH,
-    ReadingPanel,
-    SidePanel,
-    SidePanelFrame,
-)
 from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
 
 MODULE_ID = "project_editor"
 # The tab kind stays "project": the module is the editor, but the thing in the tab is still a
 # project, and every `tabs.open("project", …)` in the application keeps working.
 PROJECT_KIND = "project"
-PANEL_ID = f"{MODULE_ID}.project"
 # The per-user key the look is kept under — see look.py.
 LOOK_KEY = "look"
 
@@ -173,7 +162,6 @@ class ProjectEditorDeps:
     undo: UndoService[Library]
     status: StatusHost
     parent: QWidget
-    panels: PanelRegistry
     theme: ThemeService
     debounce: DebounceService
     # Where a step's attachments live, for a copy to carry them.
@@ -194,19 +182,13 @@ class ProjectEditorDeps:
     days_for: Callable[[Step], float | None] = field(default=_no_days)
     # The project panel renders every section registered here as a card — the registry the
     # composition root exposes as services.detail_cards. This module never learns whose.
-    cards: InspectorSectionRegistry = field(default_factory=InspectorSectionRegistry)
     # A copied step carries its attachments: the file areas to read are the asset catalog's
     # sources, and what a copy may not carry is each owner's policy — see clipboard.py.
     file_modules: tuple[str, ...] = ()
     paste_policies: tuple[PastePolicy, ...] = ()
-    # What the project tab hosts beside the canvas — see side_panel.py. None means this
-    # build has nothing to put there, and the toggle is hidden rather than greyed.
+    # What the project tab hosts beside the canvas — see framework/side_panel.py. None
+    # means this build has nothing to put there, and the toggle is hidden rather than greyed.
     side_panel: SidePanel | None = None
-    # Selection kinds narrower than a project that have a panel of their own: while exactly
-    # one of them is picked, the project form steps aside so the area holds the answer to
-    # the question the reader asked. Named by the composition root, which is the one place
-    # that knows every panel — this module learns nobody else's vocabulary.
-    narrower_kinds: tuple[str, ...] = ()
 
 
 class ProjectActivity(EntityActivity):
@@ -239,9 +221,7 @@ class ProjectActivity(EntityActivity):
         )
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
-        self._panel_frame: SidePanelFrame | None = None
-        self._panel_button: PanelButton | None = None
-        self._split: QSplitter | None = None
+        self._side_panel: HostedSidePanel | None = None
         self._page, self._toolbar = self._build_page()
         # After the page, because the side panel is part of the look now; still before the
         # first sync, so a node born dresses for it.
@@ -349,12 +329,8 @@ class ProjectActivity(EntityActivity):
         self._scene.set_spotlight(look.spotlight)
         self._scene.set_snap(look.snap)
         self._view.set_background(look.background)
-        if self._panel_frame is not None:
-            self._panel_frame.setVisible(look.side_panel)
-            if look.side_panel:
-                self._give_the_panel_its_width()
-        if self._panel_button is not None:
-            self._panel_button.refresh()  # Its face follows the verb it runs.
+        if self._side_panel is not None:
+            self._side_panel.set_shown(look.side_panel)
 
     def frame(self) -> None:
         self._view.frame_content()
@@ -388,8 +364,8 @@ class ProjectActivity(EntityActivity):
         self._unsubscribes.clear()
         self._layout_button.dispose()
         self._toolbar.dispose()
-        if self._panel_frame is not None:
-            self._panel_frame.dispose()
+        if self._side_panel is not None:
+            self._side_panel.dispose()
         self._view.modes.dispose()
 
     # -- the page ------------------------------------------------------------------------------
@@ -408,68 +384,26 @@ class ProjectActivity(EntityActivity):
         )
         spec = self._deps.side_panel
         if spec is not None:
-            self._panel_button = PanelButton(
-                PANEL_ACTION, spec.icon, self._deps.actions, self._deps.context
+            # The panel is told which project to show by a context naming **this** tab's —
+            # a tab in the background must not follow the tab in front.
+            self._side_panel = HostedSidePanel(
+                spec,
+                self._view,
+                toggle=PANEL_ACTION,
+                actions=self._deps.actions,
+                context=self._deps.context,
             )
+            self._side_panel.show_context(Context({SCOPE_ACTIVITY: self.activity_nodes()}))
         toolbar = CanvasToolbar(
             self._deps.actions,
             self._deps.context,
             page,
             picker=self._layout_button,
-            panel_button=self._panel_button,
+            panel_button=None if self._side_panel is None else self._side_panel.button,
         )
         column.addWidget(toolbar)
-        column.addWidget(self._beside_the_canvas(page), 1)
+        column.addWidget(self._view if self._side_panel is None else self._side_panel.split, 1)
         return page, toolbar
-
-    def _beside_the_canvas(self, page: QWidget) -> QWidget:
-        """The canvas, and whatever this build stands beside it.
-
-        A splitter, so the seam between them is the one every splitter in the application
-        wears and the panel's width is the user's while the tab is open. The panel is told
-        which project to show by a context naming **this** tab's — a tab in the background
-        must not follow the tab in front.
-        """
-        spec = self._deps.side_panel
-        if spec is None:
-            return self._view
-        content = spec.build()
-        # A panel that has a reading — a count of what is wrong — says so on the strip's
-        # button. One string: this module never learns what is being counted.
-        if isinstance(content, ReadingPanel) and self._panel_button is not None:
-            self._panel_button.set_reading(content.reading())
-            content.reading_changed.connect(self._panel_button.set_reading)
-        self._panel_frame = SidePanelFrame(spec.title, content, self._toggle_side_panel)
-        self._panel_frame.show_context(Context({SCOPE_ACTIVITY: self.activity_nodes()}))
-        split = QSplitter(Qt.Orientation.Horizontal, page)
-        split.addWidget(self._view)
-        split.addWidget(self._panel_frame)
-        split.setStretchFactor(0, 1)
-        split.setStretchFactor(1, 0)
-        split.setCollapsible(1, False)
-        self._split = split
-        self._panel_frame.hide()  # set_look, a line later, is what decides.
-        return split
-
-    def _give_the_panel_its_width(self) -> None:
-        """Open the seam where the splitter has closed it.
-
-        A splitter hands out the width it had when its children were added, and a tab is
-        built before it is on screen — so a panel switched on later would arrive at nought
-        pixels wide and read as nothing having happened.
-        """
-        split = self._split
-        if split is None:
-            return
-        canvas, panel = split.sizes()
-        if panel >= SIDE_PANEL_WIDTH:
-            return
-        room = canvas + panel
-        split.setSizes([max(room - SIDE_PANEL_WIDTH, SIDE_PANEL_WIDTH), SIDE_PANEL_WIDTH])
-
-    def _toggle_side_panel(self) -> None:
-        """The panel's own way out, through the verb — so the preference is written once."""
-        self.run_action("canvas.side_panel")
 
     # -- the graph -----------------------------------------------------------------------------
 
@@ -877,22 +811,6 @@ class ProjectEditorModule:
             return ProjectActivity(deps, target, self._verbs, self._layout_verbs, self._look)
 
         deps.tabs.register_factory(PROJECT_KIND, factory)
-        # Order 10: above the Test panel, because a project is what a test is ultimately of.
-        deps.panels.register(
-            PanelSpec(
-                id=PANEL_ID,
-                title="Project",
-                factory=lambda: ProjectPanel(
-                    deps.library,
-                    deps.undo,
-                    cards=deps.cards.sections(),
-                    theme=deps.theme,
-                    narrower_kinds=deps.narrower_kinds,
-                ),
-                area=PanelArea.RIGHT,
-                order=10,
-            )
-        )
         self._verbs.register_into(deps.actions)
         self._clipboard_verbs.register_into(deps.actions)
         self._canvas_verbs.register_into(deps.actions)

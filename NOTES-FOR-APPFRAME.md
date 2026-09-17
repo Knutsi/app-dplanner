@@ -4161,3 +4161,59 @@ came out of it, and would apply to any application the template produces:
 **Upstream?** Yes, and close to verbatim. `core/user_path.py` names nothing of this
 application, and `bundle_script`'s hand-over is a fix to template code that is wrong in the
 template too. The checklist row that reports it is ours, because the checklist is.
+
+---
+
+## 50. From the tab-panel pass: a panel a tab hosts, and an area's toggle
+
+### `framework/side_panel.py` — `SidePanel`, `SidePanelFrame`, `ReadingPanel`, `PanelButton`, `HostedSidePanel`
+
+**What we added.** Promoted from `modules/project_editor` (`side_panel.py` and
+`panel_button.py`) the day the Tests tab became the second host of a panel inside a tab,
+with the hosting itself — the splitter beside the tab's surface, the frame's close running
+the host's verb, the strip button's reading, and the width given when the seam is closed —
+written once as `HostedSidePanel`. `SidePanel` gained a `width`.
+
+**What it taught.** A dock panel follows the *window*: one instance, retargeted by the
+context on every change. A panel inside a tab follows *that tab*: one per tab, fed a
+constructed `Context` by the tab, so a tab in the background never follows the tab in
+front. The Test panel was a dock panel first and hung around whenever the Tests tab was not
+current, needing the project form to yield to it by name; the moment a second host copied
+the graph tab's hosting, the copy was the signal to promote. Two details worth keeping: a
+splitter hands out the width it had when its children were added, and a tab is built before
+it is on screen — so a panel shown later arrives at nought pixels unless the host opens the
+seam; and a tab's panel has no *View ▸ Panels* entry, so each host keeps a preference of its
+own and the button and the close both run that one verb.
+
+**Upstream?** Yes, nearly verbatim: it names nothing of the planner and reads four tokens
+and one glyph.
+
+### `framework/window.py`, `main_window.py` — `PanelHost.area_of`
+
+**What we added.** Where a panel *stands* now, as opposed to `spec.area`, which is only the
+default. The app shell hides a whole-side toggle while no registered panel stands in that
+area: HIDDEN is for a capability absent from the build, and a verb that folds nothing
+teaches nothing. A move already announces `panels_changed`, so the state re-reads.
+
+**Upstream?** Yes.
+
+### `framework/cards.py` — `CardStack` is `CardFlow`
+
+**What we changed.** The stack of cards became a grid that reflows: as many equal columns
+as the width allows, one at a panel's width, each card aligned to the top of its row. The
+column count is read from the scroll area's own width rather than the content's, because a
+vertical scroll bar appearing takes pixels off the viewport and a count taken there flips
+back and forth on the scroll bar it just caused. It keeps its own list of cards and
+empties the grid with `takeAt` — a layout is never read back. A card added with `grows`
+takes the page's leftover height (its row stretches; a neighbour that does not grow stays
+its own height, top-aligned), and `ToolCard` hands the height it is given to its body.
+
+**Upstream?** Yes: the template's `example_editor` renders the same stack, and a wide
+window is the case it did not have.
+
+### `framework/services.py`, `builder.py` — `detail_cards` is `project_cards`
+
+**What we changed.** A rename only. "Detail" named the retired detail panel; the host is
+the project's Dashboard tab now, and the registry is named for what it holds cards *about*.
+
+**Upstream?** With the registry, if it goes.

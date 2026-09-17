@@ -34,7 +34,6 @@ from dplanner.modules.project_editor.modes import (
     REDIRECT_TO,
     REGION_CREATE,
 )
-from dplanner.modules.project_editor.module import PANEL_ID as PROJECT_PANEL_ID
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped
 from dplanner.modules.project_editor.renderers import (
     BADGE_INSET,
@@ -67,10 +66,6 @@ def tab(services, project):
 def published_steps(services):
     """The step ids the active pane published — what every panel and verb reads."""
     return services.context.current().selected_entities("step")
-
-
-def project_panel(services):
-    return services.window.dock.widget_for(PROJECT_PANEL_ID)
 
 
 def scene(tab):
@@ -211,17 +206,6 @@ def test_selecting_a_node_publishes_the_step(services, project, tab):
     scene(tab).select_step(step.id)
     uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
     assert uris == [f"app://selection/step/{step.id}"]
-
-
-def test_the_project_form_stays_while_a_step_is_picked(services, project, tab):
-    """A picked step has no panel of its own — its editor is a modal — so the form is not
-    standing aside for anything, and the area keeps saying what project this is."""
-    dock = services.window.dock
-    scene(tab).select_step(project.steps[0].id)
-    assert dock.is_panel_showing(PROJECT_PANEL_ID)
-    scene(tab).select_step(None)
-    assert dock.is_panel_showing(PROJECT_PANEL_ID)
-    assert project_panel(services).current_project_id() == project.id
 
 
 def test_only_the_pane_the_user_is_in_publishes(services, project, tab, make_project):
@@ -518,17 +502,7 @@ def test_deleting_the_selected_step_clears_the_selection(app, services, project,
     assert len(project.steps) == 1
 
 
-# -- the project form ---------------------------------------------------------------------------
-
-
-def test_the_project_form_edits_the_project(services, project, tab):
-    panel = project_panel(services)
-    assert panel.current_project_id() == project.id
-    panel.summary_edit.setText("Replace the index")
-    panel.summary_edit.editingFinished.emit()
-    assert project.summary == "Replace the index"
-    services.undo.undo()
-    assert project.summary == ""
+# -- the tab's title ----------------------------------------------------------------------------
 
 
 def test_a_rename_reaches_the_tab_title(services, project, tab):
@@ -1620,7 +1594,7 @@ def test_find_is_ctrl_f_everywhere_and_slash_on_the_canvas(services):
 def test_the_problems_list_stands_in_the_tab_not_in_the_window(services, project, tab):
     """Where a problem is clicked and the canvas moves to it. The window's dock does not
     offer it, so there is no second copy to keep in step."""
-    assert tab._panel_frame is not None
+    assert tab._side_panel is not None
     assert "problems" not in {spec.id for spec in services.panels.panels()}
 
 
@@ -1628,16 +1602,16 @@ def test_the_panel_is_shut_until_it_is_asked_for_and_then_remembered(
     services, project, tab, make_project
 ):
     """A preference, so it outlives the tab: a canvas opened later stands as this one does."""
-    frame = tab._panel_frame
-    assert frame is not None and frame.isHidden()
+    frame = tab._side_panel.frame
+    assert frame.isHidden()
     assert not look_of(services).side_panel
 
     services.actions.run("canvas.side_panel", services.context.current())
     assert not frame.isHidden() and look_of(services).side_panel
-    assert tab._panel_button is not None and tab._panel_button.isChecked()
+    assert tab._side_panel.button.isChecked()
 
     other = services.tabs.open("project", make_project("Later").id)
-    assert other._panel_frame is not None and not other._panel_frame.isHidden()
+    assert other._side_panel is not None and not other._side_panel.frame.isHidden()
 
     # And the panel's own way out is the same verb, so the preference is written once.
     frame.close_button.click()
@@ -1657,8 +1631,8 @@ def test_the_panel_leads_the_strip_in_a_band_of_its_own(services, project, tab):
     the button carries the panel's own count, which is why it is a widget."""
     named = [name for name, _verbs in bands(tab)]
     assert named[0] == "Problems"
-    button = tab._panel_button
-    assert button is not None and button.parent() is not None
+    button = tab._side_panel.button
+    assert button.parent() is not None
     # A widget is not a verb: it never enters the … menu.
     assert button not in [action.parent() for action in tab._toolbar.tools.verbs()]
 

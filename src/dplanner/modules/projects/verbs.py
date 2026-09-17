@@ -41,7 +41,7 @@ class ProjectVerbs:
     library: Library
     undo: UndoService[Library]
     parent: QWidget
-    open_project: Callable[[NodeId], None]
+    open_steps: Callable[[NodeId], None]
     # The store's half of removal, wired by the composition root.
     detach: Callable[[ProjectId], None]
     # The module's dialogs, on a project.
@@ -102,11 +102,11 @@ class ProjectVerbs:
             ),
             ActionSpec(
                 id="projects.open",
-                label="&Open Project",
+                label="Show &Steps",
                 menu="Project",
                 group="open",
-                order=10,
-                tip="Show this project in a tab",
+                order=10,  # After the Dashboard (5), the project's home.
+                tip="Show this project's graph",
                 state=self._on_a_project,
                 run=self._open,
             ),
@@ -156,4 +156,4 @@ class ProjectVerbs:
     def _open(self, context: Context) -> None:
         project = self._focused(context)
         if project is not None:
-            self.open_project(project.id)
+            self.open_steps(project.id)

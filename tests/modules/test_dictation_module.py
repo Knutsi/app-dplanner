@@ -106,8 +106,11 @@ def test_every_prose_editor_in_the_build_wears_a_microphone_greyed_with_the_buil
 ):
     from dplanner.framework.dictation import NO_PROVIDER
     from dplanner.framework.markdown_toolbar import MarkdownToolbar
+    from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND
 
-    make_project("Discovery")
+    project = make_project("Discovery")
+    # The project's prose cards are built with its Dashboard tab, not with the window.
+    services.tabs.open(DASHBOARD_KIND, project.id)
     strips = services.window.findChildren(MarkdownToolbar)
     assert strips, "no strip was built"
     for strip in strips:

@@ -850,21 +850,46 @@ to the agent module through two plain-data callbacks the root wires (the
 is keyed by the step it is working on, so a plan-wide run gets no chip, no end-of-shell
 watch and no usage row. That is a gap said out loud rather than a zero invented.
 
-**A panel inside a tab is not a dock panel**, and the difference is which question it
-follows. A dock panel follows *the window* — one instance, retargeted by the context on
-every change (*Where a panel goes*). A panel inside a tab follows *that tab*: there is one
-per project tab, and each is handed a context naming its own project, so a tab in the
-background never follows the tab in front. That is the same rule as "only the active pane
-speaks for the user", read from the other side.
+**The module never learns whose widget it is.** What goes beside the canvas is named by
+the composition root as a `SidePanel` — a title, a glyph and a way to build the widget —
+and reached through `framework/panels.py`'s existing `ContextPanel` protocol, which the
+features list already satisfied structurally. `project_editor` imports nothing from
+`problems`; `problems` registers no panel and offers a `create_panel()` instead, the
+arrangement `step_properties` already uses for the step panel. How it is stood is the next
+section's.
 
-**The seam belongs to the splitter and the module never learns whose widget it is.** The
-canvas and the panel meet in a `QSplitter`, so the line between them is the one every
-splitter in the application wears and the panel draws no edge of its own. What goes in it
-is named by the composition root as a `SidePanel` — a title, a glyph and a way to build the
-widget — and reached through `framework/panels.py`'s existing `ContextPanel` protocol,
-which the features list already satisfied structurally. `project_editor` imports nothing
-from `feature`; `feature` registers no panel and offers a `create_panel()` instead, the
-arrangement `step_properties` already uses for the step panel.
+### A panel inside a tab follows the tab
+
+A panel inside a tab is not a dock panel, and the difference is which question it follows.
+A dock panel follows *the window* — one instance, retargeted by the context on every change
+(*Where a panel goes*). A panel inside a tab follows *that tab*: there is one per tab, and
+each is handed a context the tab constructs — its own project, its own picked row — so a
+tab in the background never follows the tab in front. That is the same rule as "only the
+active pane speaks for the user", read from the other side.
+
+**The hosting was written once when the second host arrived.** The Problems list was the
+first, and its frame, strip button and splitter lived in `project_editor`. The Test panel
+was the second: as a dock panel it was one instance retargeted by whoever published, so it
+hung around when the Tests tab was not in front and needed the project form to yield to it
+by name. Moving it beside the roster meant a second copy of the same hosting, which is the
+signal to promote — `framework/side_panel.py` now holds `SidePanel`, the frame, the
+`PanelButton` and `HostedSidePanel`, and each host is a handful of lines: name the spec,
+seat the button, feed the panel from its own selection, and run its own preference verb.
+
+**The seam belongs to the splitter, and the width is given when the seam is closed.** The
+tab's surface and the panel meet in a `QSplitter`, so the line between them is the one
+every splitter in the application wears and the panel draws no edge of its own. A splitter
+hands out the width it had when its children were added, and a tab is built before it is
+on screen — so a panel switched on later would arrive at nought pixels wide and read as
+nothing having happened; `set_shown` opens the seam to the spec's width when it finds it
+narrower, and leaves a wider one the user dragged alone.
+
+**Fed while hidden, so it is right the moment it is stood.** The tab feeds its panel on
+every selection change whether or not the frame is on screen — off screen and showing
+nothing are different states, the rule *A panel that steps aside keeps its content*
+learned on the dock. What differs from the dock is the preference: a tab's panel has no
+*View ▸ Panels* entry, so each host keeps its own — a field on the graph's `Look`, one bool
+for every Tests tab — and both the strip button and the frame's close run that one verb.
 
 **Whether it stands is a preference, so it is a field on `Look`.** The marks, the
 spotlight, the ground and the snapping are one value kept per user and fanned to every
@@ -1012,9 +1037,11 @@ precondition rule every other presenter follows.
 
 The window has a centre — the tab groups — and three areas around it: **left, right and
 bottom**. Anything anchored in one is a `PanelSpec` in `services.panels`, and the framework's
-`PanelDock` puts it there. The index tree is one; the project form, the Problems panel and the
-Test panel are more. Right-clicking a panel's header moves it between areas or hides it, and
-*View ▸ Panels* switches it back on.
+`PanelDock` puts it there. The index tree is one — and since the project's form became the
+Dashboard tab and the Test panel moved beside its roster, the only one. Right-clicking a
+panel's header moves it between areas or hides it, and *View ▸ Panels* switches it back on;
+an area no panel stands in hides its whole-side toggle, because HIDDEN is for a capability
+absent from this build and a verb that folds nothing teaches nothing.
 
 **One panel, not one per tab.** This is the whole reason the dock exists, and it was learned by
 getting it wrong: the step detail panel used to be built *inside* `ProjectActivity`, so opening
@@ -1043,10 +1070,13 @@ there" — three fixed places and a menu — so that is what it has, and where e
 three legible `QSettings` keys under `layout/`.
 
 **An area with nothing in it takes no space.** An empty right side is a wider canvas, not a
-blank column, which is what lets two panels share one area and be mutually exclusive: the Test
-panel shows while exactly one test is picked, the project form shows the rest of the time, and
-neither has heard of the other — which of them yields is a `narrower_kinds` tuple the
-composition root names, so neither learns the other's vocabulary either.
+blank column, which is what lets two panels share one area and take turns — each answering
+`show_context` for itself, neither having heard of the other.
+
+**A panel that belongs to a tab is the other thing.** The Problems list beside the canvas
+and the Test panel beside a roster are not dock panels at all: they follow one tab, not the
+window — *A panel inside a tab follows the tab*, under *The Problems list lives in the
+graph*.
 
 ## A seam belongs to the splitter, and only a split window marks a pane
 
@@ -1302,8 +1332,7 @@ way, which is the evidence that the shape survives a second host and a third.)
 and making the project form a peer of the aspects would force every aspect editor to answer
 "what if this is a project?" and hide itself — a second target vocabulary smuggled into every
 editor. (`shown_for` is not that: it hides a section per *step*, inside the one vocabulary.)
-It is a panel instead, with its own answer to `show_context` — see *The step editor is a
-modal* below for what it now shares the area with.
+It is the Dashboard tab's own form instead — *The project's home is a dashboard tab*.
 
 ## The step editor is a modal
 
@@ -1336,10 +1365,11 @@ step they just made, with the name field focused and selected.
 **And the project form stopped standing aside for it.** It used to return False from
 `show_context` whenever exactly one step was selected, because the step panel wanted the area;
 with nothing to hand the area to, that rule would have left the right side blank on every
-canvas click. So the kinds it yields to are named rather than assumed — `narrower_kinds` on
-`ProjectEditorDeps`, `("test",)` from the composition root, the same wiring `_scope_kinds()`
-and `_unsettling_notes()` use. A picked *test* has a panel of its own; a picked step does not.
-Which means the Tests roster now reads as one thing: the Test panel, and nothing above it.
+canvas click. For a while the kinds it yielded to were named instead — a `narrower_kinds`
+tuple from the composition root, `("test",)`, so the Test panel had the area while a test
+was picked. Both halves of that arrangement have since left the areas: the Test panel
+stands inside the Tests tab (*A panel inside a tab follows the tab*) and the form is the
+Dashboard tab (*The project's home is a dashboard tab*), so there is nothing left to yield.
 
 **Why the dialog is not a breach of "one panel, not one per tab".** That rule forbids a panel
 *per surface*, where N tabs meant N copies on screen at once. The dialog is one transient host
@@ -1348,17 +1378,45 @@ section contract's sanctioned use — one extension instance per host — which 
 panel's cards had already proved. A test drives it the way the application does, through the
 `step_editor` fixture, because there is no anchored panel left to reach for.
 
-**The project panel hosts the same contract, as cards.** A module with something to say about
-a *project* registers an `InspectorSection` into `services.detail_cards` — the registry type
+**The dashboard hosts the same contract, as cards.** A module with something to say about
+a *project* registers an `InspectorSection` into `services.project_cards` — the registry type
 is deliberately instantiated twice, because "a module-owned surface that appears when it has
-something to say" turned out to be identical for a panel tab and for a card stacked inside
-one. The project panel renders each as a `ToolCard` and drives the same lifecycle the step
+something to say" turned out to be identical for a panel tab and for a card stacked on a
+page. The Dashboard tab renders each as a `ToolCard` and drives the same lifecycle the step
 panel does, with a project id in `show_target`. That is what retired `project_repo`'s
 provider-and-Protocol handover (`RepoFields` + a `repo_fields` factory on the editor's Deps):
 the moment a second module wanted a project surface, "whoever turns up" became the right
 question, and a registry is for whoever turns up. The `step_agent_instruction` card — the
 project's standing instruction — is the second registrant, and each card must be registered
-before `project_editor` builds the panel, which the composition root's list order says.
+before `project_dashboard` in the composition root's list: a tab reads the registry when it
+opens, and `reopen_tabs` opens tabs at startup.
+
+## The project's home is a dashboard tab
+
+The project's name and summary, and the cards the modules contribute about it, were a dock
+panel in the right area — the form the user saw whenever nothing narrower was picked. It is
+a tab now, `modules/project_dashboard/`, opened by *Project ▸ Show Dashboard* and by a
+click on the project's own row in the index (a preview, pinned by activation, the gesture
+every entry row already had).
+
+**It is opened about one project, like the modal is opened about one step.** The page reads
+no context: the tab names its project once, and that is the whole targeting. Two guards the
+dock panel needed vanish rather than being kept: the unchanged-id early return that stopped
+a context republished mid-typing from rebinding every card and throwing the cursor, and the
+yield-to-a-narrower-pick rule. Neither can happen to a page that is never re-targeted.
+
+**A page has the room a column never had.** Three cards of prose and repository facts in a
+360 px column were a scroll; on a tab the form's captions sit over its fields at a readable
+measure, and the cards flow into as many columns as the page is wide (`CardFlow`, one column
+at a panel's width) on a lane of their own, because a bare card on a tab page's ground is
+one faint border (`DESIGN.md`'s *Cards*). The right area is empty by default as a result,
+and its whole-side toggle hides until a panel is moved there.
+
+**The index's project row got a door of its own.** A click on a project used to select it
+and nothing more, because the form appeared in the area for the selection; with the form a
+tab, the same click glances at the Dashboard, and *Show Steps* — the verb and the first
+entry row — is the graph's. Qt still folds the row on a double-click, so activation both
+pins the tab and closes the folder; it is written down rather than fought.
 
 **The Details tab hosts the same contract, as blocks.** The first thing a step should show —
 what it is, how big it is, what it looks like — was scattered across an Estimate tab and a
@@ -1373,7 +1431,7 @@ that carries attachments (`shown_for`, re-asked on model changes exactly as the 
 re-asks it for tabs). Why a third registry instance and not a `placement` flag on
 `InspectorSection`: a host is addressed by *which registry you register into*. That keeps
 each host's vocabulary greppable, spares every host from filtering every section by a mode
-field, and is the same reasoning that made `detail_cards` a second instance rather than a
+field, and is the same reasoning that made `project_cards` a second instance rather than a
 `kind` — three hosts now, and the dataclass still has no idea. Because the composite is
 just a section, the docked panel and the `steps.details` dialog render it identically for
 free.
@@ -3063,7 +3121,7 @@ it has one from the moment it exists. This deliberately reverses an older decisi
 every tab is always visible; seven tabs on a step that is neither a milestone, an agent
 step nor tracked anywhere taught nothing and buried the four that mattered. Sections
 without a predicate (Estimate, Description, Handoff, GitHub) behave exactly as before,
-and the project panel's cards are exempt — the only card is the project's standing
+and the Dashboard tab's cards are exempt — the only card is the project's standing
 instruction, a project-level fact no step toggle should touch.
 
 ### Every tab follows a toggle, and absence encodes the default
@@ -3379,7 +3437,7 @@ about a terminal the user owns from the moment it opens. The agent reports back 
 CLI instead (`status set`, `note add`), which the two-writers machinery already handles.
 
 The briefing opens with the **project's standing instruction** — the same module's prose on
-the project node, edited in the project panel's Agent card and in the Agent tab's Project
+the project node, edited in the Dashboard tab's Agent card and in the Agent tab's Project
 part (two bindings over one field, one undo stack) — ahead of the step's `## Instructions`
 (its description, unless a separate instruction exists — see *The description is the
 instructions*) and, after it, the notes index.
@@ -4950,11 +5008,11 @@ one-line preview and the only way to read a test in full was to open its **step*
 is the wrong thing twice over, because it is a page about the work rather than about what
 you are checking, and because it is a modal that takes the list away every time.
 
-So there is a **Test panel**, in the window's right area under the project form: the test's
-id and title, where it is filed, its last result, the four result verbs, *Show Step*, and
-Previous/Next. While a test is picked it is the *only* thing in that area — the form yields
-to it (`narrower_kinds`) and the step editor has no seat there at all, which is what *The
-step editor is a modal* settled. Four things about it are the design.
+So there is a **Test panel**, beside the roster inside the Tests tab: the test's id and
+title, where it is filed, its last result, the four result verbs, *Show Step*, and
+Previous/Next. The step editor has no seat beside a roster at all, which is what *The step
+editor is a modal* settled. Four things about it are the design, and one about where it
+stands.
 
 **It renders the body rather than editing it.** A numbered list is a numbered list here,
 not `1.` and a full stop. Authoring stays in the step panel's Tests tab, where the editor,
@@ -4969,10 +5027,21 @@ reason is that in this table a row **is** a test — the step is not even a colu
 row's own id is. The roll call does
 the same, and because it spans projects and publishes no selection of its own, it hands the
 verb a constructed context naming exactly that row. The verb (`test.details`) only
-*reveals* the panel; the panel was already following the context, so a single click updates
-it and a double-click is what puts it on screen. That is also why there is no preference
-for any of this: a panel is already something the user switches on and off, in one place,
-for every panel there is.
+*reveals* the panel; the tab was already feeding it, so a single click updates it and a
+double-click is what puts it on screen — and run from anywhere else, it opens the project's
+Tests tab on the test first, since that is where the panel lives.
+
+**Why it stands inside the tab.** It began as a dock panel in the right area, under the
+project form, with the form yielding to it while a test was picked. A dock panel follows
+the window: one instance, retargeted by whoever publishes — so it followed the pane in front
+rather than the roster being worked, stayed on screen when no Tests tab was current, and
+needed the form to know its name. A roster is worked *in* its tab, so the panel is the
+tab's (*A panel inside a tab follows the tab*): one per Tests tab and one in the roll call,
+fed by that table's own pick, gone with the tab and there again when the tab is. That is
+also where the preference went — a tab's panel has no *View ▸ Panels* entry, so
+`tests.side_panel` is one bool for every Tests tab, written by the strip button, the frame's
+close and the double-click alike — and why Previous/Next walk by offset over *this* tab's
+rows: the reader's own scope, filter and ordering, greyed at either end.
 
 **A test is named with its step, never on its own.** Ids are minted per *project*
 (`modules/testing/aspect.py`), so `T101` names a different test in every project in the
@@ -5430,7 +5499,7 @@ serve none of it.
 
 The project's **compilation instructions** are `modules/docs.md` beside the project — the
 `docs` id spanning node kinds, which `FORMAT.md` sanctions and `step_agent_instruction`
-already does. They have three presenters over one field: the project panel's card, a tab in
+already does. They have three presenters over one field: the Dashboard tab's card, a tab in
 the Documentation view (two bindings, one undo stack, the standing agent instruction's shape),
 and `dplanner docs set/show --for-project`. The CLI half is not a convenience: every compile
 briefing opens with them, so an agent compiling without a window launch must be able to read
@@ -5938,7 +6007,7 @@ kinds were the same thing wearing two shapes. Five decisions:
   notes* tab (the log as rows newest first beside the buttonless live editor with a
   label, a step, addressees, the reach box and the body, *Add Note…* opening on the
   title, Remove in the `⋯`) and the Agent tab's Notes pane, which renders the same
-  blocks the briefing carries. The view lived in the project panel as a card first, one
+  blocks the briefing carries. The view lived in the project form as a card first, one
   widget per note; a plan whose agents had written 344 handoffs made every window
   relayout walk 688 word-wrapped labels, and the always-on panel was the wrong place for
   a log that grows with every run — see *The context is announced once per turn* below
@@ -6437,7 +6506,7 @@ selection *seven* times, synchronously, each publish re-evaluating every action 
 (20 ms for the menu bar alone), and the re-selection cleared before it selected, so the
 selection was empty between publishes: the step panel stepped aside and came back twice
 per gesture, and each swap was `QSplitter.setSizes` at 33–66 ms over the whole widget
-tree. The tree was that heavy because the project panel cleared every card when a step
+tree. The tree was that heavy because the project form cleared every card when a step
 was selected and rebound them when the selection emptied — the Notes card tore down and
 rebuilt 344 rows of two word-wrapped labels each on every swap (`NoteRow.__init__` ran
 1 032 times in one connect), and those 688 labels were what every relayout walked. With
@@ -6469,8 +6538,8 @@ gesture found it, which is what the next `c` needs.
 states, and the dock only ever asks for the first. A card bound to a project that is not
 on screen costs nothing; a card torn down and rebuilt costs the whole widget tree, twice
 per gesture, and throws away every text binding's caret. The step panel already had this
-rule in its unchanged-id early return; the project panel has it too, and keeps it now that
-what it steps aside for is a picked test rather than a picked step.
+rule in its unchanged-id early return; the project form had it too, until it became the
+Dashboard tab and stopped being re-targeted at all.
 
 **How it stays fixed.** `scripts/measure_scaling.py --scenarios connect,paste` drives
 the two gestures over the synthetic library with a step selected and reports, beside

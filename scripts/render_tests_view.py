@@ -26,12 +26,10 @@ from PySide6.QtWidgets import QApplication, QWidget
 from scripts.synthetic_library import build_library
 
 from dplanner.app import configure_application, new_session, set_early_attributes
-from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.framework.services import AppServices
 from dplanner.modules.testing.activity import TESTS_KIND
 from dplanner.modules.testing.aspect import project_tests
 from dplanner.modules.testing.categories_dialog import CategoriesDialog
-from dplanner.modules.testing.panel import PANEL_ID
 from dplanner.modules.testing.preview_dialog import PREVIEW_SIZE, TestPreview
 from dplanner.modules.testing.references import mentions
 from dplanner.theme import apply_theme
@@ -90,7 +88,8 @@ def render_tab(services: AppServices, out: Path, theme: Theme, app: QApplication
 
 
 def render_panel(services: AppServices, out: Path, theme: Theme, app: QApplication) -> None:
-    """The Test panel over the first test the tab is showing — as a double-click leaves it."""
+    """The Test panel beside the roster, over the first test the tab is showing — as a
+    double-click leaves it."""
     project = services.document.projects[0]
     activity = services.tabs.open(TESTS_KIND, project.id)
     services.debounce.flush_all()
@@ -98,32 +97,19 @@ def render_panel(services: AppServices, out: Path, theme: Theme, app: QApplicati
     # synthetic plan gives only half its tests prose.
     wanted = next(
         (
-            (step.id, test.id)
-            for step, test in project_tests(activity._project())
+            test.id
+            for _step, test in project_tests(activity._project())
             if test.body and test.id in set(activity.ordered_tests())
         ),
         None,
     )
     if wanted is None:
         return
-    # The step goes with the test, as every view that picks one publishes it: an id is
-    # minted per project, so the pair is what names a test.
-    step_id, test_id = wanted
-    services.context.set_scope(
-        SCOPE_SELECTION,
-        (
-            ContextNode(selection_uri("step", step_id)),
-            ContextNode(selection_uri("test", test_id)),
-        ),
-    )
-    window = services.window
-    window.set_panel_visible(PANEL_ID, True)
+    # The tab's own pick feeds its panel, and the verb stands the panel — one gesture.
+    activity.pick_test(wanted)
+    services.actions.run("test.details", services.context.current())
     settle(app)
-    panel = window.dock.widget_for(PANEL_ID)
-    if panel is None:
-        return
-    frame = panel.parentWidget() or panel
-    save(frame, out, "test-panel", theme, app)
+    save(activity.page.side_panel.frame, out, "test-panel", theme, app)
 
 
 def render_preview(services: AppServices, out: Path, theme: Theme, app: QApplication) -> None:

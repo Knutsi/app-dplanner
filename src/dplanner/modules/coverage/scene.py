@@ -511,7 +511,7 @@ class LaneItem(QGraphicsObject):
         scene = self.scene()
         palette = scene.palette() if scene is not None else QPalette()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        # The lane: a list on a tab page needs its own ground (DESIGN.md's #ProgressionLane).
+        # The lane: a list on a tab page needs its own ground (DESIGN.md's #CardLane).
         painter.setPen(QPen(QColor(palette.mid().color()), 1.0))
         painter.setBrush(QColor(palette.alternateBase().color()))
         painter.drawRoundedRect(self.boundingRect().adjusted(0.5, 0.5, -0.5, -0.5), RADIUS, RADIUS)

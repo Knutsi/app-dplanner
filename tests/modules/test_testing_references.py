@@ -89,12 +89,14 @@ def pick(services, step, test_id):
 
 
 def panel_showing(services, step, test_id):
-    from dplanner.modules.testing.panel import PANEL_ID
+    """The panel beside the roster of the project's Tests tab, showing ``test_id``."""
+    from dplanner.modules.testing.activity import TESTS_KIND
 
-    panel = services.window.dock.widget_for(PANEL_ID)
-    pick(services, step, test_id)
-    panel.show_context(services.context.current())
-    return panel
+    project = services.document.project_of(step.id)
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    activity.on_activated()
+    activity.pick_test(test_id)
+    return activity.page.side_panel.content
 
 
 def test_the_panel_links_a_reference_in_the_body_it_renders(services, widget):

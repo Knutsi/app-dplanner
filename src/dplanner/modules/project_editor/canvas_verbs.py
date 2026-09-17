@@ -41,6 +41,7 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context
+from dplanner.framework.side_panel import SidePanel
 from dplanner.modules.project_editor.look import BACKGROUNDS, Look
 from dplanner.modules.project_editor.marks import MARK_NAMES
 from dplanner.modules.project_editor.modes import (
@@ -52,7 +53,6 @@ from dplanner.modules.project_editor.modes import (
     mode_uri,
 )
 from dplanner.modules.project_editor.placement import positions
-from dplanner.modules.project_editor.side_panel import SidePanel
 from dplanner.modules.project_editor.verbs import picked_edges
 from dplanner.theme.icons import (
     connect_icon,

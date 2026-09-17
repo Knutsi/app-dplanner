@@ -10,22 +10,17 @@ paths:
 
 # Canvas — the graph editor's modes, gestures, cards and marks
 
-- **A panel the graph tab hosts is not a dock panel.** A dock panel follows the *window* —
-  one instance, retargeted by the context. A panel inside a project tab follows *that tab*:
-  one per tab, handed a context naming its own project, so a background tab never follows
-  the tab in front. The Problems list is the one — beside the canvas, where clicking a
-  problem and landing on its step is a short trip. What goes there is a
-  `SidePanel(title, icon, build)` on `ProjectEditorDeps`, named by the composition root and
-  reached through `framework/panels.py`'s `ContextPanel` protocol, so `project_editor`
+- **The Problems list stands beside the canvas, inside the tab.** Where clicking a problem
+  and landing on its step is a short trip. It is a `SidePanel(title, icon, build)` on
+  `ProjectEditorDeps`, named by the composition root and hosted through
+  `framework/side_panel.py` (`shell-ui.md`'s bullet has the mechanism), so `project_editor`
   imports nothing from `problems` and `problems` registers no panel (it offers
-  `create_panel()`, the `step_properties` arrangement). The seam is the splitter's and the
-  panel draws no edge; whether it stands is a field on `Look`, like every other preference
-  the editor keeps. **A panel may also carry a *reading*** — `ReadingPanel`, one string and
-  a signal — which the strip's leading band shows beside its glyph as `(4)`; that is why
-  that seat is a widget (`panel_button.py`) where every other is an action, and why the
-  count is read from the panel's last settled rebuild rather than probed in a state
-  callback. `ARCHITECTURE.md`'s *The Problems list lives in the graph, not in the window*
-  has the reasoning.
+  `create_panel()`, the `step_properties` arrangement). Whether it stands is a field on
+  `Look`, like every other preference the editor keeps, and `canvas.side_panel` is the verb.
+  **Its reading is the count** — `ReadingPanel`, one string and a signal — which the strip's
+  leading band shows beside its glyph as `(4)`, read from the panel's last settled rebuild
+  rather than probed in a state callback. `ARCHITECTURE.md`'s *The Problems list lives in
+  the graph, not in the window* has the reasoning.
 - **Canvas input is a stack of modes, and Escape pops one.** A mode handles input and has
   power over the view; a hook that returns False lets the event fall through to the canvas
   keymap and then to Qt, which is why `IdleMode` is nine lines and why a mode that claims a
