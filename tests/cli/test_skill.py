@@ -17,7 +17,7 @@ from dplanner.cli.skill import (
     generate,
     install,
     status,
-    target_dir,
+    target_dirs,
     uninstall,
 )
 from dplanner.modules import aspect_specs, default_module_formats
@@ -207,22 +207,43 @@ def test_the_skill_verbs_need_no_library(registry, tmp_path, monkeypatch):
 
 
 def test_installing_reports_stale_then_current(files, tmp_path):
-    assert status(files, tmp_path) == "missing"
-    install(files, tmp_path)
-    assert status(files, tmp_path) == "installed"
+    assert status(files, (tmp_path,)) == "missing"
+    install(files, (tmp_path,))
+    assert status(files, (tmp_path,)) == "installed"
     (tmp_path / SKILL_FILE).write_text("edited by hand\n")
-    assert status(files, tmp_path) == "stale"
+    assert status(files, (tmp_path,)) == "stale"
+
+
+def test_the_skill_is_installed_only_when_every_home_reads_this_build(files, tmp_path):
+    """Codex reads `.agents/skills`, Claude Code and OpenCode `.claude/skills`: one home
+    current and the other behind is a machine where one agent is still driving an old build."""
+    claude, agents = tmp_path / "claude", tmp_path / "agents"
+    assert install(files, (claude, agents)) == [
+        claude / SKILL_FILE,
+        claude / REFERENCE_FILE,
+        agents / SKILL_FILE,
+        agents / REFERENCE_FILE,
+    ]
+    assert status(files, (claude, agents)) == "installed"
+    (agents / SKILL_FILE).write_text("edited by hand\n")
+    assert status(files, (claude, agents)) == "stale"
+    (agents / SKILL_FILE).unlink()
+    assert status(files, (claude, agents)) == "missing"
 
 
 def test_repo_install_travels_with_the_repository(registry, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     invoke(registry, "skill", "install", "--repo")
     assert (tmp_path / ".claude" / "skills" / "dplanner" / SKILL_FILE).is_file()
+    assert (tmp_path / ".agents" / "skills" / "dplanner" / SKILL_FILE).is_file()
 
 
 def test_user_install_goes_to_the_home_directory(tmp_path, monkeypatch):
     set_home(monkeypatch, tmp_path)
-    assert target_dir(user=True) == tmp_path / ".claude" / "skills" / "dplanner"
+    assert target_dirs(user=True) == (
+        tmp_path / ".claude" / "skills" / "dplanner",
+        tmp_path / ".agents" / "skills" / "dplanner",
+    )
 
 
 def test_path_hint_is_quiet_when_the_command_resolves(monkeypatch):
@@ -270,17 +291,17 @@ def test_a_main_checkout_raises_no_worktree_warning(tmp_path):
 
 def test_uninstall_removes_only_what_install_wrote(files, tmp_path):
     directory = tmp_path / "skill"
-    install(files, directory)
+    install(files, (directory,))
     (directory / "notes.md").write_text("mine\n")
 
-    uninstall(files, directory)
+    uninstall(files, (directory,))
 
-    assert status(files, directory) == "missing"
+    assert status(files, (directory,)) == "missing"
     assert (directory / "notes.md").read_text() == "mine\n"
 
     plain = tmp_path / "plain"
-    install(files, plain)
-    uninstall(files, plain)
+    install(files, (plain,))
+    uninstall(files, (plain,))
     assert not plain.exists()
 
 
@@ -289,4 +310,5 @@ def test_uninstall_verb(registry, tmp_path, monkeypatch):
     invoke(registry, "skill", "install", "--repo")
     invoke(registry, "skill", "uninstall", "--repo")
     assert not (tmp_path / ".claude" / "skills" / "dplanner").exists()
+    assert not (tmp_path / ".agents" / "skills" / "dplanner").exists()
     assert "nothing installed" in invoke(registry, "skill", "uninstall", "--repo")

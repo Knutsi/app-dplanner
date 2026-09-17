@@ -68,7 +68,7 @@ def machine(tmp_path, monkeypatch):
     fake = Machine(entry, tmp_path / "skills" / "dplanner", uv_bin)
 
     monkeypatch.setattr("dplanner.cli.install.launcher_for", lambda: entry)
-    monkeypatch.setattr("dplanner.cli.install.target_dir", lambda **_kwargs: fake.skill_dir)
+    monkeypatch.setattr("dplanner.cli.install.target_dirs", lambda **_kwargs: (fake.skill_dir,))
     monkeypatch.setattr("dplanner.cli.install._run", fake.run)
     monkeypatch.setattr("dplanner.cli.install._which", fake.which)
     monkeypatch.setattr("dplanner.cli.install.worktree_warning", lambda: None)

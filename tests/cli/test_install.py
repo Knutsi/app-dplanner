@@ -68,7 +68,7 @@ def main_checkout(monkeypatch):
 
 
 def read(launcher, skill_dir, which=nothing):
-    return items(FILES, launcher=launcher, directory=skill_dir, which=which)
+    return items(FILES, launcher=launcher, directories=(skill_dir,), which=which)
 
 
 def by_id(read_items):
@@ -128,7 +128,7 @@ def test_installing_writes_all_three_in_order(launcher, skill_dir, tmp_path, mai
     (uv_bin / executable_name("dpw")).write_text("")
     runner = Recorder(stdout=f"{uv_bin}\n")
 
-    outcomes = apply(FILES, launcher=launcher, directory=skill_dir, run=runner, which=nothing)
+    outcomes = apply(FILES, launcher=launcher, directories=(skill_dir,), run=runner, which=nothing)
 
     # uv is asked where it puts executables before anything, so the launcher can be aimed
     # at the dpw beside the command rather than the one beside this build.
@@ -148,7 +148,7 @@ def test_a_worktree_build_never_repoints_the_command(launcher, skill_dir, tmp_pa
     (tmp_path / executable_name("dpw")).write_text("")
     runner = Recorder(stdout=f"{tmp_path}\n")
 
-    outcomes = apply(FILES, launcher=launcher, directory=skill_dir, run=runner, which=nothing)
+    outcomes = apply(FILES, launcher=launcher, directories=(skill_dir,), run=runner, which=nothing)
 
     assert install_command() not in runner.calls
     command = next(outcome for outcome in outcomes if outcome.id == COMMAND)
@@ -170,7 +170,7 @@ def test_a_dplanner_uv_did_not_install_is_left_alone(launcher, skill_dir, tmp_pa
     outcomes = apply(
         FILES,
         launcher=launcher,
-        directory=skill_dir,
+        directories=(skill_dir,),
         run=runner,
         which=lambda _name: str(elsewhere),
     )
@@ -197,7 +197,7 @@ def test_uv_naming_its_bin_directory_with_dots_still_owns_the_command(
     outcomes = apply(
         FILES,
         launcher=launcher,
-        directory=skill_dir,
+        directories=(skill_dir,),
         run=runner,
         which=lambda _name: str(uv_bin / PROG),
     )
@@ -217,7 +217,7 @@ def test_a_command_uv_installed_is_updated(launcher, skill_dir, tmp_path, main_c
     apply(
         FILES,
         launcher=launcher,
-        directory=skill_dir,
+        directories=(skill_dir,),
         run=runner,
         which=lambda _name: str(uv_bin / PROG),
     )
@@ -231,7 +231,7 @@ def test_a_failing_piece_does_not_stop_the_others(launcher, skill_dir, main_chec
             return subprocess.CompletedProcess(command, 1, stdout="", stderr="no network\n")
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    outcomes = apply(FILES, launcher=launcher, directory=skill_dir, run=refuse, which=nothing)
+    outcomes = apply(FILES, launcher=launcher, directories=(skill_dir,), run=refuse, which=nothing)
 
     command = next(outcome for outcome in outcomes if outcome.id == COMMAND)
     assert not command.ok and "no network" in command.line
@@ -248,12 +248,12 @@ def test_removing_takes_out_the_launcher_and_the_skill_and_leaves_the_command(
     apply(
         FILES,
         launcher=launcher,
-        directory=skill_dir,
+        directories=(skill_dir,),
         run=Recorder(stdout=f"{tmp_path}\n"),
         which=nothing,
     )
 
-    outcomes = remove(FILES, launcher=launcher, directory=skill_dir)
+    outcomes = remove(FILES, launcher=launcher, directories=(skill_dir,))
 
     assert not launcher.path.exists()
     assert not skill_dir.exists()
@@ -262,7 +262,7 @@ def test_removing_takes_out_the_launcher_and_the_skill_and_leaves_the_command(
 
 
 def test_removing_nothing_says_so(launcher, skill_dir):
-    taken = remove(FILES, launcher=launcher, directory=skill_dir)
+    taken = remove(FILES, launcher=launcher, directories=(skill_dir,))
     outcomes = {outcome.id: outcome.line for outcome in taken}
 
     assert "nothing installed" in outcomes[LAUNCHER]
@@ -299,7 +299,7 @@ def machine(launcher, skill_dir, tmp_path, monkeypatch, main_checkout):
     (uv_bin / executable_name("dpw")).write_text("")
     fake = Machine(uv_bin)
     monkeypatch.setattr(installer, "launcher_for", lambda: launcher)
-    monkeypatch.setattr(installer, "target_dir", lambda **_kwargs: skill_dir)
+    monkeypatch.setattr(installer, "target_dirs", lambda **_kwargs: (skill_dir,))
     monkeypatch.setattr(installer, "_run", fake)
     monkeypatch.setattr(installer, "_which", fake.which)
     # What the suite's own dpw is must not decide whether the launcher reads stale.

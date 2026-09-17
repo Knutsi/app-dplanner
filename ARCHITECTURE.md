@@ -262,6 +262,31 @@ dplanner` uninstalls the program running the verb; that is a deliberate act of i
 the command's line names the one command instead of running it — composed from the same argv
 the installer would use, so the text cannot drift.
 
+**The skill is written where every agent looks.** `SKILL.md` is an open format
+(agentskills.io) that Claude Code, Codex, OpenCode, Cursor and Gemini CLI all read; what
+differs is only the directory each one looks in — Claude Code and OpenCode `.claude/skills`,
+Codex and OpenCode `.agents/skills`. So the generated skill is one file and
+`cli/skill.py`'s `SKILL_HOMES` is one tuple of where it goes, and install, status and
+uninstall run over all of them: the skill is *installed* only when every agent on the
+machine would read this build, because one home current and the other three weeks old is
+exactly the drift the one act exists to make visible. A per-agent flag would have been a
+second question no surface asked.
+
+**The skill that installs DPlanner is hand-written, and it is the one such skill.** Nothing
+can generate it, because it runs before DPlanner exists on the machine. It lives in the
+Claude Code plugin at `plugins/dplanner/skills/dplanner-install/SKILL.md` — one home rather
+than three, because that is the one path a marketplace install (`/plugin marketplace add
+Knutsi/app-dplanner`), Codex's `$skill-installer` pointed at the repository, and any agent
+told to read the raw URL all reach. It opens by telling the user that DPlanner is a work in
+progress with no promise of file compatibility, and stops if they do not want that; then
+git and uv from this machine's package manager (the same families the checklist knows), a
+clone, and `install all`. `tests/test_bootstrap_skill.py` holds it to what the installer
+does — the verbs it names, the managers it covers, the window word it may not name. The
+plugin carries nothing else: the driving skill is generated per build and `install all`
+delivers it, and a committed copy would be a second writer of one file; and its `version`
+is `APP_VERSION`, because Claude Code updates a plugin when its version moves and the
+version is one string.
+
 ### A checklist is a registry of probes, and every module owns its own
 
 The three pieces above are not all a machine needs. DPlanner also wants git, the GitHub CLI

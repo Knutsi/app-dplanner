@@ -1,0 +1,10 @@
+{
+  "name": "dplanner",
+  "description": "Install, update or repair DPlanner on this machine — git, uv, a checkout, then one command.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Knut Åbjørsbråten"
+  },
+  "homepage": "https://github.com/Knutsi/app-dplanner",
+  "repository": "https://github.com/Knutsi/app-dplanner"
+}

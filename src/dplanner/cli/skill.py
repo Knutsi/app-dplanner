@@ -13,6 +13,13 @@ the command list, each command's arguments, the aspects — is rendered from the
 width, so the same command run in two windows would produce two different files; the parsers
 are built at a fixed width instead. The generated files go into version control, and a diff
 that depends on who ran it is a diff nobody reads.
+
+**It is written to every home an agent reads.** ``SKILL.md`` is an open format
+(agentskills.io), so one skill serves Claude Code, Codex, OpenCode and the rest — what differs
+is only the directory each one looks in: Claude Code and OpenCode read ``.claude/skills``,
+Codex and OpenCode ``.agents/skills``. :data:`SKILL_HOMES` names them, and install, status and
+uninstall run over all of them, so a build is installed only when every agent on the machine
+would read the same file.
 """
 
 import contextlib
@@ -25,7 +32,9 @@ from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import EDGE_KINDS
 from dplanner.identity import APP_NAME, APP_VERSION
 
-SKILL_DIR = ".claude/skills/dplanner"
+# Where agents look for a skill, relative to a home directory or a repository root.
+SKILL_HOMES = (".claude/skills", ".agents/skills")
+SKILL_NAME = "dplanner"
 SKILL_FILE = "SKILL.md"
 REFERENCE_FILE = "reference.md"
 
@@ -167,14 +176,19 @@ def _reference(registry: CliRegistry) -> str:
 # which is built from these and from ``cli/desktop.py``'s.
 
 
-def target_dir(*, user: bool, here: Path | None = None) -> Path:
-    """Where the skill goes: this user's home, or the directory being worked in."""
+def target_dirs(*, user: bool, here: Path | None = None) -> tuple[Path, ...]:
+    """Where the skill goes — one directory per home in :data:`SKILL_HOMES`, under this
+    user's home or under the directory being worked in."""
     base = Path.home() if user else (here or Path.cwd())
-    return base / SKILL_DIR
+    return tuple(base / home / SKILL_NAME for home in SKILL_HOMES)
 
 
-def status(files: dict[str, str], directory: Path) -> str:
-    """``installed``, ``stale`` or ``missing`` — what an "Update…" label reads from."""
+# Worst first: what several directories — or the three install items — read as together.
+SEVERITY = ("missing", "stale", "installed")
+
+
+def status_of(files: dict[str, str], directory: Path) -> str:
+    """One directory's ``installed``, ``stale`` or ``missing``."""
     for name, content in files.items():
         path = directory / name
         if not path.is_file():
@@ -184,30 +198,38 @@ def status(files: dict[str, str], directory: Path) -> str:
     return "installed"
 
 
-def install(files: dict[str, str], directory: Path) -> list[Path]:
-    directory.mkdir(parents=True, exist_ok=True)
+def status(files: dict[str, str], directories: Sequence[Path]) -> str:
+    """The worst state across the directories — what an "Update…" label reads from: a build
+    an agent on this machine would read from another build is not installed yet."""
+    states = {status_of(files, directory) for directory in directories}
+    return next((state for state in SEVERITY if state in states), "installed")
+
+
+def install(files: dict[str, str], directories: Sequence[Path]) -> list[Path]:
     written = []
-    for name, content in sorted(files.items()):
-        path = directory / name
-        path.write_text(content, encoding="utf-8", newline="\n")
-        written.append(path)
+    for directory in directories:
+        directory.mkdir(parents=True, exist_ok=True)
+        for name, content in sorted(files.items()):
+            path = directory / name
+            path.write_text(content, encoding="utf-8", newline="\n")
+            written.append(path)
     return written
 
 
-def uninstall(files: dict[str, str], directory: Path) -> list[Path]:
+def uninstall(files: dict[str, str], directories: Sequence[Path]) -> list[Path]:
     """Remove exactly the files install would write — never anything the user added.
 
-    The directory goes too once it is empty; a directory holding somebody's own files
-    survives.
+    A directory goes too once it is empty; one holding somebody's own files survives.
     """
     removed = []
-    for name in sorted(files):
-        path = directory / name
-        if path.is_file():
-            path.unlink()
-            removed.append(path)
-    with contextlib.suppress(OSError):
-        directory.rmdir()
+    for directory in directories:
+        for name in sorted(files):
+            path = directory / name
+            if path.is_file():
+                path.unlink()
+                removed.append(path)
+        with contextlib.suppress(OSError):
+            directory.rmdir()
     return removed
 
 
@@ -229,20 +251,21 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
         return 0
 
     def configure(parser: ArgumentParser) -> None:
+        homes = " and ".join(f"{home}/{SKILL_NAME}" for home in SKILL_HOMES)
         where = parser.add_mutually_exclusive_group()
         where.add_argument(
             "--user",
             action="store_true",
-            help=f"install into ~/{SKILL_DIR} (the default)",
+            help=f"install into ~/{homes} (the default)",
         )
         where.add_argument(
             "--repo",
             action="store_true",
-            help=f"install into ./{SKILL_DIR}, so it travels with the repository",
+            help=f"install into ./{homes}, so it travels with the repository",
         )
 
-    def where(args: Namespace) -> Path:
-        return target_dir(user=not args.repo)
+    def where(args: Namespace) -> tuple[Path, ...]:
+        return target_dirs(user=not args.repo)
 
     def do_install(context: CliContext, args: Namespace) -> int:
         written = install(files(), where(args))
@@ -264,14 +287,20 @@ def commands(aspects: Sequence[AspectSpec], registry: CliRegistry) -> list[CliCo
         # Imported here rather than at the top: cli/install.py reads this module.
         from dplanner.cli.install import path_hint
 
-        directory = where(args)
-        state = status(files(), directory)
+        directories = where(args)
+        state = status(files(), directories)
         hint = path_hint()
-        text = f"{state}  {directory}"
+        text = "\n".join(
+            f"{status_of(files(), directory):<10} {directory}" for directory in directories
+        )
         if hint is not None:
             text += f"\ndplanner is not on PATH — fix with: {hint}"
         context.report(
-            {"status": state, "directory": str(directory), "cli_on_path": hint is None},
+            {
+                "status": state,
+                "directories": [str(directory) for directory in directories],
+                "cli_on_path": hint is None,
+            },
             text,
         )
         return 0

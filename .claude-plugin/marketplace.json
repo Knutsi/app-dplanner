@@ -1,0 +1,16 @@
+{
+  "name": "dplanner",
+  "owner": {
+    "name": "Knut Åbjørsbråten"
+  },
+  "metadata": {
+    "description": "DPlanner, a development planner driven by coding agents: the skill that installs it on this machine."
+  },
+  "plugins": [
+    {
+      "name": "dplanner",
+      "source": "./plugins/dplanner",
+      "description": "Install, update or repair DPlanner on this machine. The skill that drives DPlanner is written by DPlanner itself once it is installed."
+    }
+  ]
+}
