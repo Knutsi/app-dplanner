@@ -68,7 +68,11 @@ paths:
   `clear_rows`** — a host rebuilds a grouped table wholesale on every refresh, and a fold
   remembered by row number would spring every group open on the next keystroke. A heading
   with no key is the plain spanned rule it always was; `glyph` puts the group's own picture
-  in front of its words. `ARCHITECTURE.md`'s *The category headings fold* has the reasoning.
+  in front of its words. **A row that lands under any heading hangs under it** —
+  `GROUP_INDENT`, the chevron's slot, on the first column alone, so a row's name begins
+  past the disclosure triangle rather than under it. The indent is the name's
+  and not the row's: the accent edge and the hover wash still run the full width, and no
+  other column moves. `ARCHITECTURE.md`'s *The category headings fold* has the reasoning.
 - **A host's own verb on a strip says why it is greyed through `Toolbar.set_tip`**, never
   `action.setToolTip`: `_retip` composes that string from the verb's words, its key and its
   standing explanation, and runs again on the next `changed` — so anything written straight

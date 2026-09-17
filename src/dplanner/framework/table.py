@@ -19,6 +19,13 @@ for. What is folded is remembered **by key**, across the wholesale rebuild a hos
 every refresh, because a roster that reopened every group whenever anything changed would be
 unusable — and the key is the host's word (a category's name), never a row number.
 
+**A row that lands under a heading hangs under it.** Its first column is inset by the
+chevron's slot, so the rows begin past the disclosure triangle rather than under it — the
+shape every tree has, and what says the rows are the group's rather than merely following
+it. Nothing else moves: the picked row's accent edge and its hover wash still run the row's
+full width, because what is indented is where a row's name begins and not what counts as
+the row.
+
 A cell may carry an ink of its own — a result's tone, a milestone's shade — and a column may
 carry a :class:`CellEditor`: a double-click, F2 or a typed key opens it over the cell, and a
 committed value lands in the cell and is announced once through ``edited``, which the host
@@ -92,6 +99,7 @@ from dplanner.framework.list_rows import (
     DETAIL_ROLE,
     EMPHASIS_ROLE,
     GROUP_ROLE,
+    GROUPED_ROLE,
     HEADING_ROLE,
     ICON_GAP,
     INK_ROLE,
@@ -119,6 +127,9 @@ from dplanner.theme.tokens import (
 GLYPH_SLOT = KEY_BADGE_W  # Wide enough for a key badge; a glyph sits at its left.
 CHEVRON_W = 12  # The disclosure triangle's slot on a collapsible heading.
 CHEVRON_SIDE = 7.0  # The triangle itself, drawn inside that slot.
+# How far a grouped row's first column hangs under its heading: the chevron's slot, so the
+# rows begin past the disclosure triangle rather than under it.
+GROUP_INDENT = CHEVRON_W + ICON_GAP
 HOVER_ALPHA = 12  # The text colour at ~5 %: a wash that says the row is a target.
 GRID = 4  # Row heights land on the 4-point scale.
 
@@ -369,6 +380,7 @@ class Table(QTableWidget):
         self._heading_rows: dict[int, str] = {}
         self._row_group: dict[int, str] = {}
         self._filling: str = ""  # The key rows are landing under while a table is filled.
+        self._grouped = False  # Whether a heading has been added: rows after one are indented.
         self._edit_on_release: QPersistentModelIndex | None = None
         # A committed edit, as (row, column, value): the host's cue to push its command.
         self.edited: Signal[int, int, object] = Signal("table.edited")
@@ -464,6 +476,10 @@ class Table(QTableWidget):
                 continue
             if tint is not None:
                 item.setData(TINT_ROLE, tint)
+            # Only the first column hangs under the heading: indenting every column would
+            # be a second set of column positions for half the rows in the table.
+            if column == 0 and self._grouped:
+                item.setData(GROUPED_ROLE, True)
             for role, value in (data or {}).items():
                 item.setData(role, value)
         if self._filling:
@@ -506,6 +522,7 @@ class Table(QTableWidget):
         self.setSpan(row, 0, 1, self.columnCount())
         self.setRowHeight(row, row_height(self.font(), rich=False))
         self._filling = key
+        self._grouped = True
         if key:
             self._heading_rows[row] = key
         return row
@@ -532,6 +549,15 @@ class Table(QTableWidget):
     def group_at(self, row: int) -> str:
         """The collapsible group ``row`` is a heading for, or "" — what a click asks."""
         return self._heading_rows.get(row, "")
+
+    def group_of(self, row: int) -> str:
+        """The collapsible group ``row`` is *in*, or "" — what a host asks to open it.
+
+        The other half of ``group_at``: that one asks whether a row heads a group, this
+        one asks which group a row is under, which is what a host bringing one row on
+        screen has to know before it can unfold what is hiding it.
+        """
+        return self._row_group.get(row, "")
 
     def is_heading(self, row: int) -> bool:
         """Whether ``row`` is a group heading rather than one of the things being listed."""
@@ -573,6 +599,7 @@ class Table(QTableWidget):
         self._heading_rows.clear()
         self._row_group.clear()
         self._filling = ""
+        self._grouped = False
         self._hover(None)
         self._hover_chip(None)
 
@@ -669,6 +696,15 @@ class TableDelegate(QStyledItemDelegate):
         if self._table.columns()[column].glyph:
             left += GLYPH_SLOT + ICON_GAP
         return left
+
+    def indent(self, index: QModelIndex | QPersistentModelIndex) -> int:
+        """How far this cell hangs in: a grouped row's first column, and nothing else.
+
+        One answer for the paint and the size hint, so a column sized to its contents has
+        room for the indent it will be drawn with.
+        """
+        grouped = index.column() == 0 and bool(index.data(GROUPED_ROLE))
+        return GROUP_INDENT if grouped else 0
 
     def initStyleOption(  # noqa: N802 - Qt override
         self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
@@ -791,10 +827,11 @@ class TableDelegate(QStyledItemDelegate):
         if heading:
             left = self._paint_heading_marks(painter, opt, index, secondary)
         else:
-            left = self.text_left(column, opt.rect)
+            indent = self.indent(index)
+            left = self.text_left(column, opt.rect) + indent
             glyphed = self._table.columns()[column].glyph
             if glyphed and isinstance(icon, QIcon) and not icon.isNull():
-                slot = self.glyph_rect(opt.rect, metrics)
+                slot = self.glyph_rect(opt.rect, metrics).translated(indent, 0)
                 painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
                 icon.paint(
                     painter, slot, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
@@ -842,7 +879,7 @@ class TableDelegate(QStyledItemDelegate):
         laid = self.chip_layout(index, QRect(0, 0, 0, height)) if not heading else []
         if laid:
             return QSize(laid[-1].rect.right() + 1 + self._table.padding(), height)
-        return QSize(widest + slot + 2 * self._table.padding(), height)
+        return QSize(widest + slot + self.indent(index) + 2 * self._table.padding(), height)
 
     # -- chips -------------------------------------------------------------------------
     # Painted and hit-tested from one layout, so what is clicked is what was drawn. The

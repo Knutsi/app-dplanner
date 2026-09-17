@@ -355,7 +355,28 @@ class TestsActivity(EntityActivity):
         gesture the panel asks for; the panel never publishes (``panel.py``).
         """
         self.page.table.select_tests([test_id])
+        self.page.table.reveal(test_id)
         self._on_selection()
+
+    def reveal(self, test_id: str) -> bool:
+        """Pick one test and put its row on screen, widening the tab if it is hidden.
+
+        What *Show in Tests* asks for. The tab may be scoped to one collector, filtered by
+        audience or hiding the archived, and any of those can be what is keeping the asked
+        for test off the page — so the narrowing is taken off rather than the request
+        quietly answered with nothing. That is a visible change the reader did not make,
+        which is why it happens **only** when the test is not already shown: a reader
+        looking at a filtered list keeps it.
+        """
+        if test_id not in self.ordered_tests():
+            self._scope = ""
+            self.page.audience.clear()
+            self.archived.setChecked(True)
+            self._refresh()
+        if test_id not in self.ordered_tests():
+            return False  # Deleted since it was linked; nothing to show.
+        self.pick_test(test_id)
+        return True
 
     def showing(self) -> Shown:
         """Everything the tab is narrowed to — what a run and an export are both cut to."""
@@ -635,8 +656,8 @@ class TestsActivity(EntityActivity):
 
         The one deliberate exception to *double-clicking a step anywhere runs
         `steps.details`* (``CLAUDE.md``), and the reason is that in this table a row **is**
-        a test: its step is a column. The Test panel's *Show Step* is the door to the step,
-        one click away. ``ARCHITECTURE.md``'s *A test is run from a panel* has the rest.
+        a test — the step is not even a column here. The Test panel's *Show Step* is the
+        door to it. ``ARCHITECTURE.md``'s *A test is run from a panel* has the rest.
         """
         table = self.page.table
         if table.test_at(row) is None:

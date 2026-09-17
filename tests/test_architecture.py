@@ -82,6 +82,7 @@ HEADLESS_FILES = (
     "catalogue.py",
     "trace.py",
     "reach.py",
+    "references.py",
     "migrate.py",
     "prompt.py",
     "launcher.py",

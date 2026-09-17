@@ -1079,6 +1079,16 @@ QPushButton[quiet="true"]:disabled {
     border-color: $ACCENT;
 }
 
+/* A read-only well in a body is the content, not a field (framework/widgets.py's well()):
+   no frame and no accent, because a box that lights up when focused says "type here" about
+   something that will never take a character. Property rather than id, so the next
+   read-only view in a dialog needs no rule of its own. */
+#DialogBody QTextEdit[well="true"], #DialogBody QPlainTextEdit[well="true"] {
+    background: transparent;
+    border: none;
+    padding: 0px;
+}
+
 /* An editable combo's own line edit is a field inside a field: the combo draws the frame,
    so the edit inside it draws none, and the accent goes on the combo. */
 #DialogBody QComboBox QLineEdit {

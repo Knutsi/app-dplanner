@@ -3941,6 +3941,56 @@ would ship, made to carry what it is for. The `#NoticePercent` rule goes with it
 
 ## 48. From the tests-view pass
 
+### `framework/table.py` — a row under a group heading hangs under it
+
+**What.** `add_row` stamps `GROUPED_ROLE` (new in `list_rows.py`) on the first cell of every
+row that lands after an `add_heading` in the same fill, and `TableDelegate.indent(index)`
+turns that into `GROUP_INDENT` — `CHEVRON_W + ICON_GAP` — added to where the first column's
+words and glyph are drawn, and to what `sizeHint` measures so a `contents` column still fits
+them. `clear_rows` takes the flag back, so a host that drops its grouping draws a flat list
+again with nothing to reset.
+
+**Why.** Grouping and folding were already here; what was missing was the *tree's* shape.
+With every row starting at the same x as the heading above it, a collapsed group and an
+expanded one differ only by the chevron's direction, and a reader scanning a two-hundred-row
+roster has to keep in their head which heading they are under. The indent says it: the rows
+begin past the disclosure triangle rather than under it. The part worth
+carrying upstream is that it is **the name's indent, not the row's** — only the first column
+moves, and the picked row's accent edge and hover wash still run the full width, because
+indenting the row itself would give half a table a second set of column positions and make
+the selection edge jump between groups.
+
+**Upstream?** Yes — it is three lines beside the folding it completes.
+
+### `framework/widgets.py` — `well()`, and `theme.qss`'s read-only well rule
+
+**What.** A sibling of `quiet()`: `well(view)` sets a `well` property, and `theme.qss` gains
+`#DialogBody QTextEdit[well="true"], #DialogBody QPlainTextEdit[well="true"]` — no frame, no
+padding, no accent — outranking the body's field rule by one property.
+
+**Why.** The body's field rule matches on type, and `QTextBrowser` **is** a `QTextEdit`, so
+the first read-only view put in a dialog body came up wearing the panel field's frame and
+lighting up with the accent when the dialog focused it. A box that lights up says *type
+here* about something that will never take a character. Qt has no read-only selector for a
+text edit, so the widget has to say so, and a property rather than an id means the next
+read-only view in a dialog needs no rule of its own — which is the trap `quiet()` was
+written for, one widget type along.
+
+**Upstream?** Yes: any application that puts a rendered document in a dialog hits this on
+its first try.
+
+### `framework/table.py` — `Table.group_of`
+
+**What.** The other half of `group_at`: that one answers *does this row head a group, and
+which*, this one answers *which group is this row under*.
+
+**Why.** A host that brings one row on screen — the Tests tab landing on a test somebody
+followed a reference to — has to open whatever is hiding it first, and the table was the
+only thing that knew. Without it the host reaches into `_row_group`, which is the shape of
+a private accessor that becomes public by accident a release later.
+
+**Upstream?** Yes.
+
 ### `framework/table.py` — a group heading that folds, and the table remembers what is shut
 
 **What.** `Table.add_heading` gained three keyword arguments: `glyph` (a `QIcon` in front of
