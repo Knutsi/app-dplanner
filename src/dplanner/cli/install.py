@@ -46,9 +46,9 @@ from dplanner.cli.desktop import (
 )
 from dplanner.cli.desktop import status as launcher_status
 from dplanner.cli.main import PROG
+from dplanner.cli.skill import SEVERITY, status_of, target_dirs
 from dplanner.cli.skill import install as write_skill
 from dplanner.cli.skill import status as skill_status
-from dplanner.cli.skill import target_dir
 from dplanner.cli.skill import uninstall as remove_skill
 from dplanner.core.storage.locations import main_checkout
 from dplanner.domain.aspects import AspectSpec
@@ -63,9 +63,6 @@ LABELS = {
     LAUNCHER: "Desktop launcher",
     SKILL: "Agent skill",
 }
-
-# Worst first: what the one button and the one summary read from.
-_SEVERITY = ("missing", "stale", "installed")
 
 Which = Callable[[str], str | None]
 
@@ -196,38 +193,43 @@ def _launcher_item(launcher: Launcher, executable: Path | None) -> Item:
     return Item(LAUNCHER, LABELS[LAUNCHER], state, launcher.path, note)
 
 
-def _skill_item(files: dict[str, str], directory: Path) -> Item:
-    state = skill_status(files, directory)
-    if state == "missing":
-        note = "Not installed — an agent has nothing telling it how to drive DPlanner."
-    elif state == "stale":
-        note = "Installed from another build — updating rewrites it from this one."
+def _skill_item(files: dict[str, str], directories: Sequence[Path]) -> Item:
+    """The skill is one item over every home an agent reads (`skill.SKILL_HOMES`): the
+    state is the worst of them, and the note names the homes that are not current."""
+    state = skill_status(files, directories)
+    if state == "installed":
+        note = "Matches this build in " + " and ".join(str(d) for d in directories) + "."
     else:
-        note = "Matches this build."
-    return Item(SKILL, LABELS[SKILL], state, directory, note)
+        behind = [d for d in directories if status_of(files, d) == state]
+        where = " and ".join(str(d) for d in behind)
+        if state == "missing":
+            note = f"Not in {where} — an agent reading there cannot drive DPlanner."
+        else:
+            note = f"From another build in {where} — updating rewrites it from this one."
+    return Item(SKILL, LABELS[SKILL], state, directories[0], note)
 
 
 def items(
     files: dict[str, str],
     *,
     launcher: Launcher | None = None,
-    directory: Path | None = None,
+    directories: Sequence[Path] | None = None,
     which: Which | None = None,
 ) -> tuple[Item, ...]:
     """What this machine has of DPlanner, in install order. No subprocess runs."""
     which = which if which is not None else _which
     launcher = launcher if launcher is not None else launcher_for()
-    directory = directory if directory is not None else target_dir(user=True)
+    directories = directories if directories is not None else target_dirs(user=True)
     return (
         _command_item(which),
         _launcher_item(launcher, window_executable()),
-        _skill_item(files, directory),
+        _skill_item(files, directories),
     )
 
 
 def summary(read: Sequence[Item]) -> str:
     """The worst of the three — what one button and one line answer for all of them."""
-    for state in _SEVERITY:
+    for state in SEVERITY:
         if any(item.state == state for item in read):
             return state
     return "installed"
@@ -298,19 +300,19 @@ def _install_launcher_piece(launcher: Launcher, uv_bin: Path | None) -> Outcome:
     return Outcome(LAUNCHER, True, f"{LABELS[LAUNCHER]}: {launcher.path}, opening {executable}")
 
 
-def _install_skill_piece(files: dict[str, str], directory: Path) -> Outcome:
+def _install_skill_piece(files: dict[str, str], directories: Sequence[Path]) -> Outcome:
     try:
-        write_skill(files, directory)
+        write_skill(files, directories)
     except OSError as error:
-        return Outcome(SKILL, False, f"{LABELS[SKILL]}: could not write {directory} — {error}")
-    return Outcome(SKILL, True, f"{LABELS[SKILL]}: {directory}")
+        return Outcome(SKILL, False, f"{LABELS[SKILL]}: could not write the skill — {error}")
+    return Outcome(SKILL, True, f"{LABELS[SKILL]}: " + " and ".join(str(d) for d in directories))
 
 
 def apply(
     files: dict[str, str],
     *,
     launcher: Launcher | None = None,
-    directory: Path | None = None,
+    directories: Sequence[Path] | None = None,
     run: Runner | None = None,
     which: Which | None = None,
 ) -> list[Outcome]:
@@ -321,12 +323,12 @@ def apply(
     run = run if run is not None else _run
     which = which if which is not None else _which
     launcher = launcher if launcher is not None else launcher_for()
-    directory = directory if directory is not None else target_dir(user=True)
+    directories = directories if directories is not None else target_dirs(user=True)
     uv_bin = bin_dir(run)
     return [
         _install_command_piece(uv_bin, which, run),
         _install_launcher_piece(launcher, uv_bin),
-        _install_skill_piece(files, directory),
+        _install_skill_piece(files, directories),
     ]
 
 
@@ -334,7 +336,7 @@ def remove(
     files: dict[str, str],
     *,
     launcher: Launcher | None = None,
-    directory: Path | None = None,
+    directories: Sequence[Path] | None = None,
 ) -> list[Outcome]:
     """Take out the launcher and the skill; name the command's own uninstall, never run it.
 
@@ -342,9 +344,9 @@ def remove(
     of its own, and one line the reader can copy.
     """
     launcher = launcher if launcher is not None else launcher_for()
-    directory = directory if directory is not None else target_dir(user=True)
+    directories = directories if directories is not None else target_dirs(user=True)
     removed_launcher = launcher.remove()
-    removed_files = remove_skill(files, directory)
+    removed_files = remove_skill(files, directories)
     return [
         Outcome(
             COMMAND,
@@ -361,7 +363,7 @@ def remove(
         Outcome(
             SKILL,
             True,
-            f"{LABELS[SKILL]}: {directory}"
+            f"{LABELS[SKILL]}: " + " and ".join(dict.fromkeys(str(p.parent) for p in removed_files))
             if removed_files
             else f"{LABELS[SKILL]}: nothing installed",
         ),

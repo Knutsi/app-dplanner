@@ -8,6 +8,9 @@ paths:
   - "tests/cli/**"
   - "tests/modules/test_{install_dialog,checklist_dialog,module_checks,reporting}.py"
   - "scripts/{render_checklist,render_sample_report,render_topology}.py"
+  - "plugins/**"
+  - ".claude-plugin/**"
+  - "tests/test_bootstrap_skill.py"
 ---
 
 # CLI — the entry word, install, the checklist, the topology gate, the skill and reports
@@ -149,6 +152,19 @@ paths:
   `ActionSpec.in_menus`: registered, runnable, described by `--help` like any other, named
   by no generated file. The region verbs are what it exists for. `ARCHITECTURE.md`'s *The
   skill's command list is an index, not a manual* has the reasoning and the measurement.
+- **The skill is written to every home an agent reads, and the one that installs DPlanner
+  is hand-written.** `SKILL.md` is an open format, so one generated skill serves Claude
+  Code, Codex and OpenCode; `cli/skill.py`'s `SKILL_HOMES` names the directories they read
+  (`.claude/skills`, `.agents/skills`), and install, status and uninstall run over all of
+  them — *installed* means every agent on the machine reads this build. Add a home to the
+  tuple, never a per-agent flag. The bootstrap skill
+  (`plugins/dplanner/skills/dplanner-install/SKILL.md`) is the one exception to *generated,
+  never written*: it runs before DPlanner exists, so it is written by hand, held to the
+  installer by `tests/test_bootstrap_skill.py`, and lives in the Claude Code plugin at
+  `plugins/dplanner` — the one path a marketplace install, Codex's `$skill-installer` and a
+  raw URL all reach. It warns that DPlanner is a work in progress *before* it installs, and
+  the plugin carries nothing else; its `version` is `APP_VERSION`. `ARCHITECTURE.md`'s *The
+  skill is written where every agent looks* has the reasoning.
 - **A cross-feature verb lives in `cli/`, fed by the composition root.** `cli/aspects.py`,
   `cli/lint.py` and `cli/authoring.py` are the examples: the verb owns the shapes and the
   report; a module contributes by exporting Qt-free pieces (an `AspectSpec`, a
