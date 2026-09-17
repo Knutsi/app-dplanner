@@ -181,6 +181,33 @@ def test_a_dplanner_uv_did_not_install_is_left_alone(launcher, skill_dir, tmp_pa
     assert launcher.target() == uv_bin / executable_name("dpw")
 
 
+def test_uv_naming_its_bin_directory_with_dots_still_owns_the_command(
+    launcher, skill_dir, tmp_path, main_checkout
+):
+    """`uv tool dir --bin` answers `~/.local/share/../bin`, and `which` finds the command in
+    `~/.local/bin`: the same directory, which must read as uv's — or the command is "left
+    alone" as somebody else's install and never refreshed, on every machine uv is on."""
+    (tmp_path / "share").mkdir()
+    uv_bin = tmp_path / "uv-bin"
+    uv_bin.mkdir()
+    (uv_bin / executable_name("dpw")).write_text("")
+    with_dots = tmp_path / "share" / ".." / "uv-bin"
+    runner = Recorder(stdout=f"{with_dots}\n")
+
+    outcomes = apply(
+        FILES,
+        launcher=launcher,
+        directory=skill_dir,
+        run=runner,
+        which=lambda _name: str(uv_bin / PROG),
+    )
+
+    assert runner.calls == [tool_bin_command(), install_command()]
+    command = next(outcome for outcome in outcomes if outcome.id == COMMAND)
+    assert command.ok and "Left alone" not in command.line
+    assert launcher.target() == uv_bin / executable_name("dpw")
+
+
 def test_a_command_uv_installed_is_updated(launcher, skill_dir, tmp_path, main_checkout):
     uv_bin = tmp_path / "uv-bin"
     uv_bin.mkdir()

@@ -245,6 +245,24 @@ def test_status_reads_installed_stale_or_missing(tmp_path):
     assert status(entry, Path("/new/dpw")) == "installed"
 
 
+def test_one_directory_spelled_two_ways_is_one_directory(tmp_path):
+    """`uv tool dir --bin` says `~/.local/share/../bin`; `which` and `sys.argv[0]` say
+    `~/.local/bin`. The launcher was written with the first, read against the second, and
+    reported stale on every machine — and Update rewrote the same spelling."""
+    (tmp_path / "share").mkdir()
+    clean = tmp_path / "bin"
+    clean.mkdir()
+    (clean / "dpw").write_text("")
+    with_dots = tmp_path / "share" / ".." / "bin"
+
+    entry = DesktopEntry(tmp_path / "dplanner.desktop", Recorder(), nothing)
+    entry.write(with_dots / "dpw")
+    assert status(entry, clean / "dpw") == "installed"
+
+    found = window_executable([with_dots], platform="linux", which=nothing)
+    assert found is not None and found == clean / "dpw" and ".." not in found.parts
+
+
 def test_dpw_is_found_in_a_named_directory_then_beside_dplanner_then_on_path(tmp_path):
     beside = tmp_path / "bin"
     beside.mkdir()
