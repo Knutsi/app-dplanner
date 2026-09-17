@@ -73,6 +73,15 @@ paths:
   past the disclosure triangle rather than under it. The indent is the name's
   and not the row's: the accent edge and the hover wash still run the full width, and no
   other column moves. `ARCHITECTURE.md`'s *The category headings fold* has the reasoning.
+- **A right-click may render more than one menu, and still copies none.** `fill_menu`
+  fills a menu it is *given*, so a surface whose subject is narrower than any one menu leads
+  with the band that is about it and offers a whole menu beneath it as a child: the Tests
+  tab's right-click is `Step ▸ Test`'s `test_result` band, a rule, then the Step menu as a
+  `Step` child (`TestsActivity._test_menu`). Naming a `group` **with** a `submenu` means
+  that child menu's band — two groups may feed one child menu, and a surface about one of
+  them offers that one. What the rule forbids is an entry written by hand, not a shape;
+  the composition is not a `MENU_STRUCTURE` entry of its own, because an entry there is a
+  place verbs are *registered into* and nothing registers here.
 - **A host's own verb on a strip says why it is greyed through `Toolbar.set_tip`**, never
   `action.setToolTip`: `_retip` composes that string from the verb's words, its key and its
   standing explanation, and runs again on the next `changed` — so anything written straight

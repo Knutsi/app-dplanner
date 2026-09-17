@@ -4925,6 +4925,36 @@ their ergonomic order are what put the next test where they are looking. With no
 open there is nothing to walk, and both verbs are greyed saying so — which is honest rather
 than defensive, because "next" has no meaning without a list.
 
+## A right-click on a test leads with the result
+
+A row in a Tests tab **is** a test, and for a while its right-click rendered the whole Step
+menu: four verbs about the thing under the cursor among twenty about something else. What
+somebody reaches for over a test is the result, so the popup leads with it — the *Test*
+child menu's `test_result` band, rendered flat — and everything about the step the test
+hangs off is one level down, as a `Step` child.
+
+**The child is the Step menu, not a copy of it.** `fill_menu` fills a menu it is given, so
+the composition is two renders of the registry through the same context every other
+presenter reads: the Step menu's order, its own child menus, its data menus, its greyed
+entries and their reasons, all of them, and a verb somebody adds to it tomorrow appears
+here without anybody editing the Tests tab. *A right-click renders a menu, never a copy of
+one* is a rule about entries, and it says nothing against a right-click rendering two.
+
+**It is not a menu of its own in `MENU_STRUCTURE`.** An entry in that table is a place
+verbs are *registered into*, and nothing registers here — this surface offers verbs that
+already have homes, in an order of its own. Giving it a table entry would mean either
+moving the result verbs out of `Step ▸ Test`, which is where the menu bar wants them, or
+registering four second seats, which is four specs to keep in step with four others. The
+composition is six lines and names no verb.
+
+**Naming a `group` with a `submenu` is what makes the first half one render.** Two groups
+feed the `Test` child menu — what a test *is* (Add, Archive, Put Back) and what a run
+*recorded* — with the rule between them drawn inside it. A surface whose subject is one of
+those bands asks for that band: `fill_menu(…, "Step", submenu="Test", group="test_result")`.
+The alternative was to render the whole child flat and accept *Add Test* above the results,
+or to reorder the groups in `MENU_STRUCTURE` and change the menu bar for every reader of
+it — both worse than teaching one filter to compose with another it already ran beside.
+
 ## A reference is a link, and a link is a preview
 
 Test bodies point at each other. *Run this after T101 passes*, *the fixture T104 leaves

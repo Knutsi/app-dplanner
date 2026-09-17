@@ -3,6 +3,13 @@
 Right-clicking a thing should offer exactly what that thing's menu offers, never a
 hand-maintained copy of it. One builder, reading the same registry through the same
 context, is what keeps four presentations of the same verbs from drifting apart.
+
+A pop-up may be **composed of more than one render** — :func:`fill_menu` fills a menu it is
+given, so a surface whose subject is narrower than any one menu can lead with the band that
+is about it and offer a whole menu beneath it as a child (the Tests tab's right-click: the
+result verbs, then *Step*). What that rules out is an entry written by hand, not a shape;
+every entry in such a pop-up still comes from the registry, so a verb added to the menu
+appears in the child without anybody editing the surface.
 """
 
 from PySide6.QtGui import QAction, QColor
@@ -102,9 +109,12 @@ def fill_menu(
 
     Naming a ``group`` renders just that band of the menu, child menus and all — for a
     toolbar face that stands for one band rather than for one verb (the graph strip's
-    *Options* is *Graph*'s ``look``). It composes with neither ``submenu`` nor the other
-    way about: a band is a run of top-level entries, and a child menu of one of them is
-    already inside it.
+    *Options* is *Graph*'s ``look``). Named **with** a ``submenu`` it means that child
+    menu's band instead, still flat: two groups may feed one child menu — what a test *is*
+    and what it *did* — and a surface whose subject is one of them offers that one
+    (the Tests tab's right-click leads with *Step ▸ Test*'s ``test_result``). A band is
+    otherwise a run of top-level entries, and a child menu of one of them is already
+    inside it, so there is nothing further to filter.
 
     A **data child menu** (`DataMenuSpec`) is placed by the same key and filled when it
     opens, as the bar's is — so a menu's right-click offers *Run Agent* because the

@@ -4,7 +4,7 @@ import pytest
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import QMenu, QWidget
 
-from dplanner.framework.action_menu import build_menu
+from dplanner.framework.action_menu import build_menu, fill_menu
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -213,6 +213,31 @@ def test_a_submenu_popup_gathers_every_group_that_feeds_it(app):
     parent = QWidget()
     popup = build_menu(nested_registry(), ContextService(), "Step", parent, submenu="Test")
     assert entries(popup) == ["add test", "archive test", "|", "mark ok"]
+
+
+def test_a_submenu_popup_may_be_narrowed_to_one_of_the_groups_feeding_it(app):
+    """A surface whose subject is one of the two bands offers that band, not both — the
+    Tests tab's right-click leads with what a run recorded, not with what a test is."""
+    parent = QWidget()
+    popup = build_menu(
+        nested_registry(), ContextService(), "Step", parent, submenu="Test", group="result"
+    )
+    assert entries(popup) == ["mark ok"]
+
+
+def test_a_popup_may_hold_a_whole_menu_as_a_child_of_another_render(app):
+    """Composition, not a copy: what the child holds is whatever the menu holds now."""
+    registry = nested_registry()
+    parent = QWidget()
+    popup = build_menu(registry, ContextService(), "Step", parent, submenu="Test", group="result")
+    fill_menu(popup.addMenu("Step"), registry, ContextService(), "Step")
+    assert entries(popup) == [
+        "mark ok",
+        (
+            "Step",
+            ["rename", "|", ("Test", ["add test", "archive test", "|", "mark ok"]), "|", "details"],
+        ),
+    ]
 
 
 def test_an_entry_wears_the_glyph_its_spec_carries(app, registry):

@@ -26,6 +26,13 @@ only grouping that is the tests' own vocabulary rather than the graph's, and it 
 that makes a roster of two hundred readable. Its headings fold; the graph's do not, because
 a feature's tests are already few and the reader asked to see them beside each other.
 
+**A right-click on a row leads with the result, and the Step menu is one level down.**
+A row here is a test, so the *Test* child menu's result band is what a right-click renders
+first and the whole Step menu follows as a child — rendered, both of them, so the child *is*
+the Step menu and a verb added to it tomorrow is in this popup without anybody editing this
+file. Rendering the Step menu whole, as this used to, put four verbs about the thing under
+the cursor among twenty about something else.
+
 **And inside a group, the sort key is what makes the list ergonomic.** *Ergonomic order* on
 the strip — on by default — orders each group by its tests' sort key, so the tests that
 exercise one view are executed one after another instead of scattered down the page. It is
@@ -39,11 +46,11 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from PySide6.QtCore import QPoint, Qt
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.scope import ScopeKind, gatherers, kind_of
-from dplanner.framework.action_menu import build_menu
+from dplanner.framework.action_menu import fill_menu
 from dplanner.framework.activity import ActivityBase, EntityActivity, follow_project
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
@@ -671,11 +678,11 @@ class TestsActivity(EntityActivity):
         self._deps.actions.run("test.details", self._deps.context.current())
 
     def _on_context_menu(self, position: QPoint) -> None:
-        """Make what is under the cursor current, then render the Step menu over it.
+        """Make what is under the cursor current, then render a test's menu over it.
 
         On a category heading that means picking the whole group: a heading names a set of
-        tests, so *Test ▸ Category ▸ …* over it refiles the category — which is the gesture
-        the editor's rename is not, and the one a reader reaches for first.
+        tests, so *Step ▸ Test Category ▸ …* over it refiles the category — which is the
+        gesture the editor's rename is not, and the one a reader reaches for first.
         """
         table = self.page.table
         row = table.rowAt(position.y())
@@ -687,8 +694,33 @@ class TestsActivity(EntityActivity):
             return
         elif table.test_at(row) not in table.selected_tests():
             table.selectRow(row)
-        menu = build_menu(self._deps.actions, self._deps.context, "Step", table)
+        menu = self._test_menu(table)
         menu.exec(table.viewport().mapToGlobal(position))
+
+    def _test_menu(self, parent: QWidget) -> QMenu:
+        """What a right-click on a row here renders: the results, then the step's menu.
+
+        Two renders, no copy: the *Test* child menu's ``test_result`` band flat, then the
+        Step menu itself as a child. So that child *is* the Step menu — its order, its own
+        child menus, its data menus and its greyed reasons, and a verb added to it
+        tomorrow is here without anybody editing this file. ``CLAUDE.md``'s *a right-click
+        renders a menu, never a copy of one* is a rule about entries and says nothing
+        against rendering **two** menus.
+
+        It is a composition rather than an entry of its own in ``MENU_STRUCTURE``, because
+        an entry there is a place verbs are *registered into* and nothing registers here.
+        ``ARCHITECTURE.md``'s *A right-click on a test leads with the result* has the rest.
+        """
+        actions, context = self._deps.actions, self._deps.context
+        menu = QMenu(parent)
+        fill_menu(menu, actions, context, "Step", submenu="Test", group="test_result")
+        # Only when the band drew something: a rule under nothing is a line the reader has
+        # to account for, and what a state hides is the registry's business, not this
+        # view's to assume.
+        if not menu.isEmpty():
+            menu.addSeparator()
+        fill_menu(menu.addMenu("Step"), actions, context, "Step")
+        return menu
 
 
 class AllTestsActivity(ActivityBase):

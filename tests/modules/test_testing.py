@@ -1386,6 +1386,58 @@ def test_the_category_menu_says_so_when_nothing_is_picked(services, project, ste
     assert any("Categories" in text for text, _on in entries)
 
 
+def menu_shape(popup):
+    """The popup's shape: separators as "|", child menus as (title, [their entries])."""
+    rendered: list[object] = []
+    for action in popup.actions():
+        if action.isSeparator():
+            rendered.append("|")
+        elif action.menu() is not None:
+            rendered.append((action.text(), menu_shape(action.menu())))
+        else:
+            rendered.append(action.text())
+    return rendered
+
+
+def test_a_right_click_on_a_test_leads_with_the_results_and_offers_the_step_menu(
+    services, project, step
+):
+    """A row here is a test: the verbs about *it* lead, and the step's are one level down."""
+    from dplanner.framework.action_menu import build_menu
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    step.module_data[MODULE_ID] = write([Test("T100", "Signs in")])
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    table = activity.page.table
+    select(services, step, tests=("T100",))
+
+    def rendered(**where):
+        return menu_shape(build_menu(services.actions, services.context, "Step", table, **where))
+
+    band = rendered(submenu="Test", group="test_result")
+    assert band[0].startswith("Mark Ok")  # What a run records, in the strip's own order.
+
+    shape = menu_shape(activity._test_menu(table))
+    assert shape[: len(band)] == band
+    assert shape[len(band)] == "|"
+    title, under = shape[len(band) + 1]
+    # And the child *is* the Step menu — the same render the canvas's right-click gets.
+    assert title == "Step" and under == rendered()
+    assert len(shape) == len(band) + 2  # Nothing else: this popup is those two things.
+
+
+def test_a_greyed_result_still_says_why_in_the_menu_a_right_click_renders(services, project, step):
+    """Disabled, never hidden, with the reason in the label — the one presenter policy."""
+    from dplanner.modules.testing.activity import TESTS_KIND
+
+    step.module_data[MODULE_ID] = write([Test("T100", "Signs in")])
+    activity = services.tabs.open(TESTS_KIND, project.id)
+    select(services, step, tests=("T100",))
+
+    first = activity._test_menu(activity.page.table).actions()[0]
+    assert not first.isEnabled() and "start a test run first" in first.text()
+
+
 def test_right_clicking_a_category_heading_picks_the_whole_group(services, make_project):
     from dplanner.modules.testing.activity import TESTS_KIND
 

@@ -98,8 +98,10 @@ paths:
   In the window: `Project ▸ Test Categories…` (the modal editor, also on the Tests strip and
   in the index's right-click, which renders the Project menu), `Step ▸ Test Category ▸ …` (a
   `DataMenuSpec`, so the categories are data rebuilt on open — and what a right-click on a
-  category heading acts on, because the heading selects its whole group first), and the step
-  panel's picker beside the audience boxes. `ARCHITECTURE.md`'s *A test is filed under a
+  category heading acts on, because the heading selects its whole group first; a right-click
+  in a Tests tab renders the result band and the Step menu as a `Step` child, so that path
+  is the same one the menu bar prints), and the step panel's picker beside the audience
+  boxes. `ARCHITECTURE.md`'s *A test is filed under a
   category* has the reasoning, including why two writers share one project entry.
 - **The category editor is a modal that writes on Save.** `categories_dialog.py` edits a
   copy — each row remembering the name it started with — and lands the whole refactor as one
