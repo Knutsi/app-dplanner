@@ -107,7 +107,7 @@ def test_the_selection_survives_a_refresh(services, journal):
     assert [item.text(2) for item in activity.tree.selectedItems()] == ["first"]
 
 
-# -- Debug ▸ Design Example: the design system's living reference ------------------------
+# -- Debug ▸ Design Examples: the design system's living reference -----------------------
 
 
 @pytest.fixture
@@ -324,3 +324,45 @@ def test_watching_the_desktop_runs_omarchys_launcher_and_keeps_the_vm_alive(serv
     # is under test is what the verb does, on every machine, not whether this one has a VM.
     services.actions.spec("debug.windows_desktop").run(Context({}))
     assert launched == [("omarchy-windows-vm", "launch", "--keep-alive")]
+
+
+def test_the_rows_example_shows_a_picked_row_and_the_block_that_is_not_one(services):
+    """DESIGN.md's *Lists of rich items*: the picked ground is the row's whole width.
+
+    Two rosters are right and the last is deliberately wrong, so a reader sent at "a weird
+    block that crosses the icon" has the two beside each other.
+    """
+    from PySide6.QtCore import QPoint
+    from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
+
+    from dplanner.modules.debug.design_rows import DesignExampleRows, _FocusFramedRow
+    from dplanner.theme.tokens import ROW_PADDING_V
+
+    services.actions.run("debug.design_rows", services.context.current())
+    (tab,) = [a for a in services.tabs.activities() if isinstance(a, DesignExampleRows)]
+    tab.widget.resize(860, 800)
+    tab.widget.show()
+
+    def ground(row: int) -> set[str]:
+        """The colours under a row's two lines, where nothing but its ground is painted."""
+        item = tab.tree.topLevelItem(row)
+        assert item is not None
+        rect = tab.tree.visualItemRect(item)
+        image = tab.tree.viewport().grab().toImage()
+        y = rect.bottom() - ROW_PADDING_V // 2
+        return {image.pixelColor(QPoint(x, y)).name() for x in range(rect.left(), rect.right() + 1)}
+
+    # The right one: one colour from the row's left edge to its right, and not the one the
+    # row above it wears. Which colour is the theme's business; that it is one is the rule.
+    picked, plain = ground(1), ground(0)
+    assert len(picked) == 1 and len(plain) == 1 and picked != plain
+
+    # And the wrong one beside it, put back on the picked row and nowhere else.
+    frame = tab.defect.itemDelegate()
+    assert isinstance(frame, _FocusFramedRow)
+    current = tab.defect.currentIndex()
+    shown, other = QStyleOptionViewItem(), QStyleOptionViewItem()
+    frame.initStyleOption(shown, current)
+    frame.initStyleOption(other, current.siblingAtRow(current.row() - 1))
+    assert shown.state & QStyle.StateFlag.State_HasFocus
+    assert not other.state & QStyle.StateFlag.State_HasFocus

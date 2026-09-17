@@ -1142,7 +1142,7 @@ named `ProjectDialog`.
 **Why the reference is a Debug surface and not a document.** A rule is read once; a
 surface is opened beside the one being built and compared, in both themes, with every
 state on it — the refused primary, the tinted row while picked, the indicator while a
-rebuild is owed. Debug ▸ Design Example… and its table tab are that, over sample data,
+rebuild is owed. Debug ▸ Design Examples is that, a page at a time over sample data,
 and `docs/screenshots/f1-design-example/` keeps them rendered so a pull request can show the difference
 it made. Every later step that touches a surface points at them; DESIGN.md's *Bringing a
 surface up* is the list of what to compare.

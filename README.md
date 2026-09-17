@@ -280,7 +280,7 @@ src/dplanner/
 ├── scripts/rules.py               which of the area rule files under .claude/rules/ govern a path, or a branch's diff
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 ├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
-├── scripts/render_design_example.py  Debug ▸ Design Example — the modal, the table and the toolbars — both themes, to PNG
+├── scripts/render_design_example.py  Debug ▸ Design Examples — the modal, the table, the toolbars and the rows — both themes, to PNG
 ├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 ├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
@@ -488,8 +488,10 @@ src/dplanner/
 │   ├── theme_system/           staged theme and the person's own; the desktop's dark or light on macOS,
 │   │                           Windows, GNOME and KDE (`theme/providers.py` is the contract)
 │   ├── appshell/  sync/  settings/  taskcenter/
-│   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Example,
-│   │                        the design system built from the primitives, to be looked at and copied from
+│   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Examples,
+│   │                        the design system built from the primitives, to be looked at and copied from:
+│   │                        design_example.py is the modal, the table and the toolbars; design_rows.py
+│   │                        is what a picked row wears, beside the block that is not one
 │   ├── llm/  openai/  anthropic/  — the LLM picker, and the two vendor modules: each an LLM
 │   │                        provider, a settings page and the *Add API key…* wizard; openai's
 │   │                        dictation.py is also two dictation providers on the same key

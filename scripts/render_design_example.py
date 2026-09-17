@@ -1,12 +1,12 @@
-"""Render Debug ▸ Design Example in the dark and the light theme, to PNG.
+"""Render Debug ▸ Design Examples in the dark and the light theme, to PNG.
 
     uv run python scripts/render_design_example.py --out docs/screenshots/f1-design-example
 
 The images are the design system as rendered — what a pull request that touches a surface
 shows beside its own screenshots, and what ``docs/screenshots/f1-design-example/`` keeps for
-the next developer. Nothing here reads a library: the two surfaces are built directly over
-their sample data, once per theme, and the widgets are sized here because the offscreen
-screen is smaller than a desktop's.
+the next developer. Nothing here reads a library: every surface is built directly over its
+sample data, once per theme, and the widgets are sized here because the offscreen screen is
+smaller than a desktop's.
 """
 
 import argparse
@@ -30,6 +30,7 @@ from dplanner.modules.debug.design_example import (
     DesignExampleDialog,
     DesignExampleToolbars,
 )
+from dplanner.modules.debug.design_rows import DesignExampleRows
 from dplanner.theme import apply_theme
 from dplanner.theme.providers import BUILTIN
 from dplanner.theme.themes import DARK, LIGHT, Theme
@@ -37,6 +38,7 @@ from dplanner.theme.themes import DARK, LIGHT, Theme
 DIALOG_SIZE = (760, 800)
 TABLE_SIZE = (900, 520)
 TOOLBARS_SIZE = (900, 560)
+ROWS_SIZE = (860, 800)
 
 
 def settle(app: QApplication) -> None:
@@ -115,6 +117,15 @@ def render(app: QApplication, theme: Theme, out: Path) -> None:
     more.menu().hide()
     toolbars.close()
     discard(strips)
+
+    rows = DesignExampleRows(ContextService())
+    rosters = rows.widget
+    rosters.resize(*ROWS_SIZE)
+    rosters.show()
+    settle(app)
+    save(rosters, out, "rows", theme, app)
+    rows.close()
+    discard(rosters)
 
 
 def main(argv: list[str]) -> int:

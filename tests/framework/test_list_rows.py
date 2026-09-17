@@ -76,3 +76,59 @@ def test_a_picked_rich_row_wears_the_tables_edge_over_the_quiet_ground(themed, t
         assert image.pixelColor(ground) == QColor(palette.bg_overlay)
     finally:
         made.deleteLater()
+
+
+@pytest.mark.parametrize("theme", ("dark", "light"))
+def test_a_picked_row_wears_one_unbroken_ground_across_its_glyph(themed, theme):
+    """The picked ground is the row's, from edge to edge — never a block that starts
+    part-way across the glyph.
+
+    Qt's focus frame is drawn round the item's *text* sub-rect, which begins where the
+    style would have put the text rather than where this delegate does — past a glyph slot
+    of its own — so leaving it on washed the row from mid-icon rightwards and read as a
+    cell picked inside the row. Sampled under the two lines, where only the ground is
+    painted; a tree, because an indented row is where the two rects differ most.
+    """
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QColor
+    from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
+
+    from dplanner.framework.list_rows import DETAIL_ROLE, TwoLineDelegate
+    from dplanner.theme import apply_theme
+    from dplanner.theme.icons import folder_icon, spec_icon
+    from dplanner.theme.themes import DARK, LIGHT
+    from dplanner.theme.tokens import ROW_PADDING_V
+
+    palette = {"dark": DARK, "light": LIGHT}[theme]
+    apply_theme(themed, palette)
+    made = QTreeWidget()
+    made.setObjectName("SpecTree")
+    made.setHeaderHidden(True)
+    made.setItemDelegate(TwoLineDelegate(made))
+    ink = QColor(palette.text_primary)
+    source = QTreeWidgetItem(["product specs"])
+    source.setData(0, DETAIL_ROLE, "Folder · fetched today")
+    source.setIcon(0, folder_icon(ink))
+    page = QTreeWidgetItem(["Glossary"])
+    page.setData(0, DETAIL_ROLE, "markdown · fetched today")
+    page.setIcon(0, spec_icon(ink))
+    source.addChild(page)
+    made.addTopLevelItem(source)
+    source.setExpanded(True)
+    made.resize(320, 200)
+    made.show()
+    themed.processEvents()
+    try:
+        for item in (source, page):
+            made.setCurrentItem(item)
+            themed.processEvents()
+            rect = made.visualItemRect(item)
+            image = made.viewport().grab().toImage()
+            # Below both lines and above the row's edge: the ground and nothing else.
+            y = rect.bottom() - ROW_PADDING_V // 2
+            found = {
+                image.pixelColor(QPoint(x, y)).name() for x in range(rect.left(), rect.right() + 1)
+            }
+            assert found == {QColor(palette.bg_overlay).name()}
+    finally:
+        made.deleteLater()

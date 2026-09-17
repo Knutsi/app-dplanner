@@ -10,19 +10,21 @@ list applies them from the start. All colours flow through the theme (`$TOKEN`s 
 from the first commit; touching an existing surface includes bringing it up to these rules
 (the boy-scout rule applies to pixels too — *Bringing a surface up*, at the end, is the
 checklist). The rules are kept by shared **primitives**, and the primitives are shown by
-**Debug ▸ Design Example…** and **Debug ▸ Design Example Table** — the table below says
-which is which and where to see it. When a rule here is ambiguous, match the example; for a
-panel, match the Test panel in `modules/testing/panel.py`, and for a page of controls the
-Step Details dialog. `CLAUDE.md` points agents here; `ARCHITECTURE.md`'s *A primitive carries
-the rule* is why a rule lives in a primitive rather than in a stylesheet entry per surface.
+**Debug ▸ Design Examples**, one entry per page of it — the table below says which page
+shows which primitive and where to see it rendered. When a rule here is ambiguous, match the
+example; for a panel, match the Test panel in `modules/testing/panel.py`, and for a page of
+controls the Step Details dialog. `CLAUDE.md` points agents here; `ARCHITECTURE.md`'s *A
+primitive carries the rule* is why a rule lives in a primitive rather than in a stylesheet
+entry per surface.
 
 ## Primitives
 
-What a surface is made of, where the primitive lives, and where to see it. The two example
-surfaces are `modules/debug/design_example.py`; `scripts/render_design_example.py` renders
-them in both themes into `docs/screenshots/f1-design-example/` (its `README.md` names each
-image). Improving the system means changing the primitive and its rule together, then
-re-rendering — never styling one surface by name.
+What a surface is made of, where the primitive lives, and where to see it. The example
+surfaces are **Debug ▸ Design Examples** (`modules/debug/design_example.py` and
+`design_rows.py`); `scripts/render_design_example.py` renders them in both themes into
+`docs/screenshots/f1-design-example/` (its `README.md` names each image). Improving the
+system means changing the primitive and its rule together, then re-rendering — never
+styling one surface by name.
 
 | You are building | Use | In | See it |
 |---|---|---|---|
@@ -47,6 +49,8 @@ re-rendering — never styling one surface by name.
 | a settings page | `settings_page()`, then `block()`s — no margin of its own | `framework/settings_registry.py` | `s16-dialogs/settings-*` |
 | a verb in a dialog's or a page's body | `quiet()`; `GlyphButton` when it carries a glyph | `framework/widgets.py` | `s16-dialogs/settings-openai-*`, `project-colocated-*` |
 | a list of rich items | `RichList` — a `QListWidget` on `TwoLineDelegate` | `framework/list_rows.py` | `s15-tables-and-browsers/notes-*` |
+| a tree of them (a row that nests) | a `QTreeWidget` on `TwoLineDelegate` | `framework/list_rows.py` | the rows tab: `rows-*` |
+| what a picked row wears, and what it must not | — | `framework/list_rows.py`, `framework/table.py` | the rows tab: `rows-*` |
 | a control a strip offers only sometimes | `Toolbar.set_shown` — never `hide()` | `framework/toolbar.py` | the Time tab's day fields |
 | when a rebuild is owed | `Debounced.pending_changed` | `framework/debounce.py` | — |
 | a margin, a gap, a height | a token | `theme/tokens.py` (*Tokens*) | — |
@@ -437,6 +441,14 @@ text that re-lays out on resize, and a selection state that recolours both lines
   glyph sits on the first line, never centred on the pair: it is the name's.
 - **The trailing note** (a date, a count, a shortcut) sits at the right of the first line
   in secondary ink, measured first so the name elides against what is left.
+- **The picked row is one ground across its whole width** — the indent, the disclosure
+  chevron, the glyph and the words — with the accent inside its left edge where the
+  primitive draws one, the table's rule and the same mark. **Qt's focus frame is stripped**
+  in `TwoLineDelegate` for all of them at once: the frame is drawn round the item's *text*
+  sub-rect, which begins where the style would have put the text and not where the delegate
+  draws it past a glyph slot of its own, so a frame left on starts part-way across the glyph
+  and reads as a cell picked inside the row. Debug ▸ Design Examples ▸ Rows shows both, the
+  defect last.
 - **Hairlines only under a pinned row that heads the list**; between ordinary rows the
   padding is the separator.
 - **A row's own verbs sit at its right, and a row that has none keeps their room.** At most
@@ -455,7 +467,7 @@ text that re-lays out on resize, and a selection state that recolours both lines
 ## Tables
 
 Every table is a `Table` (`framework/table.py`): its columns declared, the rules applied
-once, its delegate painting what a row wears. Debug ▸ Design Example Table is the reference.
+once, its delegate painting what a row wears. Debug ▸ Design Examples ▸ Table is the reference.
 
 - **The strip above a table carries its verbs, then its view.** Creation first (*Add
   Step*), then what acts on the picked rows — greyed until a row is picked and worded with
@@ -769,7 +781,7 @@ reaching `theme.qss` as `$NAME` for free. A literal in a layout is a copy that d
 ## Bringing a surface up
 
 The checklist a later step runs over a surface it touches — each answerable yes or no
-from the code or a screenshot, and Debug ▸ Design Example is what *yes* looks like:
+from the code or a screenshot, and Debug ▸ Design Examples is what *yes* looks like:
 
 1. Is every margin, gap and padding a token, never a literal?
 2. Is a dialog a `DialogFrame` and a page a control strip over its content — not a

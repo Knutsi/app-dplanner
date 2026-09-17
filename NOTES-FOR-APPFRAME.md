@@ -4075,3 +4075,35 @@ closes a hole a host will otherwise fall into once per host. The Test panel's Ne
 are what found it.
 
 **Upstream?** Yes.
+
+### `framework/list_rows.py` — `TwoLineDelegate` strips Qt's focus frame
+
+**What.** `TwoLineDelegate.initStyleOption` clears `State_HasFocus`. The identical override on
+`_EdgedRowDelegate` went with it — the rule is the base class's now, so every list on the
+two-line row gets it and the `RichList` subclass adds only its accent edge.
+
+**Why.** A bug report worth carrying upstream whole, because any delegate that reserves a
+glyph slot of its own has it. Qt draws the focus frame round `SE_ItemViewItemText`, and that
+rect starts where the *style* would have put the text — past the item's decoration, at the
+style's own margins — not where the delegate draws it, past `ROW_PADDING_H` plus its icon
+plus `ICON_GAP`. The two disagree by about fourteen pixels, so on Fusion (whose focus frame
+is a filled translucent rounded rect, not a dotted outline) a picked row showed a washed
+bordered block that began half way across the glyph and ran to the row's right edge: it read
+as a *cell* picked inside the row rather than as the row. In a tree it was worse — the frame
+also stopped at the item rect, so the indent and the disclosure chevron sat outside it.
+
+`framework/table.py` already stripped the flag and said why in a comment; the list delegate
+it was modelled on never did, and that one missing line was the same defect in nine surfaces
+at once (the Specs tree, Problems, Open Project, the browse page, the repositories folder,
+the feature editor's passages, the Documentation tab, the picker and so the command palette).
+That is the argument for the rule living in the primitive: it was never one list's bug.
+
+Two things the template should keep alongside the fix. The assertion that catches a
+regression is a **pixel scan under the row's two lines** — one colour from the row's left
+edge to its right (`tests/framework/test_list_rows.py`); a sub-rect assertion cannot see it,
+because both rects are individually correct. And the render is kept as a deliberate wrong:
+`modules/debug/design_rows.py` puts `State_HasFocus` back on one tree beside three right
+ones, so the next person sent at "a weird block that crosses the icon" has the picture.
+
+**Upstream?** Yes — the fix, the test and (if the template grows an examples page) the
+side-by-side.
