@@ -65,7 +65,10 @@ paths:
   **a worktree build never repoints it** (which is what makes the verb safe for an agent to
   run in its own worktree) and **a `dplanner` uv did not install is left alone** (`uv tool
   dir --bin` against the resolved command's directory — uv's answer, never a guess at its
-  layout). Removing takes out the launcher and the skill and names `uv tool uninstall` for
+  layout, and **compared normalised**: uv spells it `~/.local/share/../bin` and `which`
+  says `~/.local/bin`, one directory that `Path` equality calls two; `desktop.normalised`
+  is the one place both spellings go through, and it stays lexical so the launcher keeps
+  pointing at the symlink uv maintains). Removing takes out the launcher and the skill and names `uv tool uninstall` for
   the command rather than uninstalling the program that is running. The command's state is
   `installed` or `missing` and never `stale`: whether the one on PATH came from this build
   cannot be told without running it. `ARCHITECTURE.md`'s *Installing is one act* has the

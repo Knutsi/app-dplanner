@@ -57,6 +57,19 @@ def _run(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
 
+def normalised(path: Path) -> Path:
+    """``path`` absolute and lexically clean, symlinks left alone.
+
+    Two spellings of one directory must compare equal: ``uv tool dir --bin`` answers
+    ``~/.local/share/../bin`` — uv derives its bin directory from its data directory with a
+    literal ``..`` — while ``shutil.which`` and ``sys.argv[0]`` say ``~/.local/bin``, and
+    ``Path`` equality is lexical. Not ``resolve()``: ``~/.local/bin/dpw`` is a symlink into
+    uv's tool directory, and the launcher should keep pointing at the stable name uv
+    maintains; a path that does not exist must still compare.
+    """
+    return Path(os.path.normpath(path.absolute()))
+
+
 class Launcher(Protocol):
     """One platform's way of opening DPlanner from its applications menu."""
 
@@ -399,9 +412,9 @@ def window_executable(
     for directory in (*bin_dirs, beside):
         candidate = directory / name
         if candidate.is_file():
-            return candidate
+            return normalised(candidate)
     found = which(WINDOW_SHORTCUT)
-    return Path(found) if found else None
+    return normalised(Path(found)) if found else None
 
 
 def status(launcher: Launcher, executable: Path | None) -> str:
@@ -410,7 +423,7 @@ def status(launcher: Launcher, executable: Path | None) -> str:
     target = launcher.target()
     if target is None:
         return "missing"
-    if executable is None or target != executable:
+    if executable is None or normalised(target) != normalised(executable):
         return "stale"
     return "installed"
 

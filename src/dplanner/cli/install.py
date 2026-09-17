@@ -41,6 +41,7 @@ from dplanner.cli.desktop import (
     Runner,
     launcher_for,
     missing_executable_hint,
+    normalised,
     window_executable,
 )
 from dplanner.cli.desktop import status as launcher_status
@@ -241,7 +242,9 @@ def bin_dir(run: Runner | None = None) -> Path | None:
     except OSError:  # No uv on this machine.
         return None
     said = result.stdout.strip()
-    return Path(said) if result.returncode == 0 and said else None
+    # uv answers with a literal `..` (`~/.local/share/../bin`); `command_refusal` compares
+    # this against the directory `which` found the command in.
+    return normalised(Path(said)) if result.returncode == 0 and said else None
 
 
 def command_refusal(where: Path | None, uv_bin: Path | None) -> str | None:
