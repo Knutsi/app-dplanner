@@ -8,12 +8,10 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.github import section as section_mod
 from dplanner.modules.github.aspect import MODULE_ID, GithubRefs, read
 from dplanner.modules.github.gh import PrInfo
 from dplanner.modules.github.section import MERGED_COLOUR
-from dplanner.modules.step_properties.module import PANEL_ID
 
 MERGED = PrInfo(number=12, title="Add login flow", state="merged", url="u12", head_ref="feat/login")
 OPEN = PrInfo(number=7, title="Fix crash", state="open", url="u7", head_ref="fix/crash")
@@ -27,11 +25,8 @@ def project(services, make_project):
 
 
 @pytest.fixture
-def editor(services, project):
-    services.context.set_scope(
-        SCOPE_SELECTION, (ContextNode(selection_uri("step", project.steps[0].id)),)
-    )
-    panel = services.window.dock.widget_for(PANEL_ID)
+def editor(step_editor, project):
+    panel = step_editor(project.steps[0].id)
     labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
     return panel._pages.widget(labels.index("GitHub"))
 

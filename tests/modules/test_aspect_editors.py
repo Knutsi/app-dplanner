@@ -9,9 +9,7 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step, TextEdit
-from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.estimation.aspect import read as read_estimate
-from dplanner.modules.step_properties.module import PANEL_ID
 
 
 @pytest.fixture
@@ -22,16 +20,10 @@ def project(services, make_project):
 
 
 @pytest.fixture
-def panel(services, project):
-    """The one step panel the window anchored — there is no other, and the window owns it.
-
-    Pointed at a step the way the application points it: by publishing a selection. Reaching
-    for ``show_step`` instead would be undone by the next context change.
-    """
-    services.context.set_scope(
-        SCOPE_SELECTION, (ContextNode(selection_uri("step", project.steps[0].id)),)
-    )
-    return services.window.dock.widget_for(PANEL_ID)
+def panel(step_editor, project):
+    """The step editor, opened on a step the way a double-click opens it — the one host
+    there is, and the one place these four tabs ever appear together."""
+    return step_editor(project.steps[0].id)
 
 
 # The editors that moved onto the Details tab, by the label the tests know them as.

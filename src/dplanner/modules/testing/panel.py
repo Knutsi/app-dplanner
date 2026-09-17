@@ -20,6 +20,13 @@ publish a selection (``section.py``'s rule; ``ARCHITECTURE.md``'s *Where a panel
 these ask the Tests tab to pick the next row and then simply follow the context like any
 other change. With no Tests tab open for the project there is nothing to walk, and both are
 greyed saying so — which is also honest: "next" has no meaning without a list.
+
+**A test is named with the step it hangs off, and that pair is what this resolves.** A test
+id is minted per *project* (``aspect.py``), so ``T101`` names a different test in every
+project in the library and there is no such thing as looking one up on its own — which is
+exactly what this panel used to do, and why it showed the first project's ``T101`` whatever
+the reader had picked. Every view that picks a test publishes its step beside it, and
+``test.details`` is greyed without both.
 """
 
 from collections.abc import Callable
@@ -44,7 +51,7 @@ from dplanner.framework.context import Context, ContextService
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import caption, note
 from dplanner.modules.testing import runs
-from dplanner.modules.testing.aspect import MODULE_ID, Test, audience_words, project_tests
+from dplanner.modules.testing.aspect import MODULE_ID, Test, audience_words, find, read
 from dplanner.modules.testing.filing import category_of
 from dplanner.modules.testing.view import RESULT_ORDER, StatusChip, outcome_line
 from dplanner.theme.cards import title_font
@@ -91,6 +98,7 @@ class TestPanel(QWidget):
         self._context = context
         self._walk = walk
         self._files = files
+        # The pair the context named: a test id alone does not identify a test.
         self._test_id = ""
         self._step_id: StepId = ""
 
@@ -165,8 +173,12 @@ class TestPanel(QWidget):
         Several is deliberately nothing: the result verbs already act on the whole picked
         set from the table, and a panel showing one of four picked tests would be lying
         about what Mark Ok is going to do.
+
+        The step comes out of the same selection, because a test id alone does not name a
+        test — see the module docstring.
         """
         self._test_id = context.selected_entity("test") or ""
+        self._step_id = context.selected_entity("step") or ""
         self._refresh()
         return bool(self._found())
 
@@ -179,15 +191,18 @@ class TestPanel(QWidget):
     # -- what it is showing ------------------------------------------------------------------
 
     def _found(self) -> tuple[Step, Test] | None:
-        """The picked test and its step, or None. Walked rather than cached: a test moves
-        step only by being cut and pasted, and the walk is what every other reader does."""
-        if not self._test_id:
+        """The picked test, read out of the step the selection named it with, or None.
+
+        Read rather than cached, so an edit to the test lands here on the next signal; and
+        looked up in that one step rather than walked across the library, because an id is
+        only unique inside its project (the module docstring). Archived tests included:
+        a test taken off the roster is still one somebody can open.
+        """
+        if not self._test_id or not self._library.has(self._step_id):
             return None
-        for project in self._library.projects:
-            for step, test in project_tests(project, archived=True):
-                if test.id == self._test_id:
-                    return step, test
-        return None
+        step = self._library.step(self._step_id)
+        test = find(read(step), self._test_id)
+        return None if test is None else (step, test)
 
     def _refresh(self) -> None:
         self._show(self._found())
@@ -199,11 +214,9 @@ class TestPanel(QWidget):
         self.controls.setVisible(showing)
         self.empty.setVisible(not showing)
         if found is None:
-            self._step_id = ""
             self._sync_walk()
             return
         step, test = found
-        self._step_id = step.id
         outcome = runs.latest(runs.read(self._library.project_of(step.id)), test.id)
         self.identity.setText(test.id)
         self.title.setText(test.title or "Untitled test")

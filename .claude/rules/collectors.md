@@ -43,10 +43,12 @@ paths:
   because there is no editor to send anybody to. `ARCHITECTURE.md`'s *The sort key is an
   ergonomic* has the reasoning.
 - **A test is run from the Test panel, and a double-click in a Tests tab opens the test.**
-  `modules/testing/panel.py`, a `PanelSpec` in the right area under Project and Step: the
+  `modules/testing/panel.py`, a `PanelSpec` in the right area under the project form: the
   test rendered (not edited — authoring is the step panel's Tests tab, and *Show Step* is
   the door), its last result, the four result verbs from the registry, and Previous/Next.
-  **The double-click is the one deliberate exception to *double-clicking a step anywhere
+  It is the only thing in that area while a test is picked — the project form yields to it
+  (`narrower_kinds`, wired in the root) and the step editor is a modal with no seat there at
+  all. **The double-click is the one deliberate exception to *double-clicking a step anywhere
   runs `steps.details`*** — in this table a row *is* a test, its step is a column — and
   `test.details` only *reveals* the panel, which was already following the context. **Next
   and Previous move the table's selection**, never the panel's own (a panel publishes no
@@ -54,6 +56,15 @@ paths:
   open. Register the panel **after** the action specs: the dock builds it on registration
   and its strip asks the registry for the result verbs. `ARCHITECTURE.md`'s *A test is run
   from a panel* has the reasoning.
+- **A test is always named with its step, never on its own.** Ids are minted per *project*
+  (`aspect.py`), so `T101` names a different test in every project in the library and a
+  lookup by id alone answers with whichever project sorts first — which is exactly what the
+  Test panel did until it was fixed, showing a namesake whatever the reader double-clicked.
+  So every view that picks a test publishes `selection/step/<id>` beside
+  `selection/test/<id>` — both Tests tabs, and the roll call in particular, which is the one
+  view holding several projects at once — `test.details` is greyed without the pair, and
+  `TestPanel` resolves the test inside that one step. `TestsModule._selected_tests` is the
+  same rule one step along: it narrows to the context's project before matching ids.
 - **A test is filed under a category, and its words are the key.** Free text, open
   vocabulary, catalogued beside the *project* (`modules/testing/filing.py`: a `name` and
   an `icon` from the curated `ICONS`), and a test stores the category's **words** — there is

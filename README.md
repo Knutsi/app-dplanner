@@ -30,7 +30,7 @@ learning anything about it. `dplanner aspect list` says which exist in a build.
 Early, and honest about it. The model, the storage layer, the index tree, the whole CLI, the
 graph editor and the order view are in place and tested. Fourteen aspects ship — estimate,
 ticket, description, agent instruction, agent run, status, milestone, feature, GitHub refs,
-spec figures, tests, checks and the two documentation ones — each with verbs in the CLI and most with an editor in the step panel
+spec figures, tests, checks and the two documentation ones — each with verbs in the CLI and most with an editor in Step Details
 (`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: the order table says what order the
 work goes in and how much of it there is, and `dplanner schedule show` dates it. *Ready to
 start* reads the same graph with the statuses in hand: the execution board and `dplanner
@@ -387,10 +387,10 @@ src/dplanner/
 │   │                        (its panel also hosts the modules' project-level cards)
 │   │                        (geometry.py measures the graph for `dplanner layout show`, `--map`
 │   │                        draws it, `layout shift` is Divide as a verb, `layout tidy` the sixth sort)
-│   ├── step_properties/     THE step detail panel — one in the window, following the context
+│   ├── step_properties/     THE step editor — `steps.details`, a modal and nothing anchored
 │   │                        (its first tab, details.py, stacks whatever registered a Details
-│   │                        block, name.py leading it; and `steps.details`: the same panel as
-│   │                        the double-click's modal, which New opens on a fresh step)
+│   │                        block, name.py leading it; every view's double-click on a step
+│   │                        opens it, and New opens it on the step it just made)
 │   │
 │   │   ── the thirteen aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /

@@ -1,21 +1,24 @@
-"""The module that provides THE step detail panel, and anchors it in the window.
+"""The module that provides THE step editor: ``steps.details``, and nothing anchored.
 
-There is one panel, not one per tab: a panel built inside an activity is duplicated the moment
-the window is split, and two copies of one editor is the same width spent twice. So this
-registers a :class:`~dplanner.framework.panels.PanelSpec` and the dock puts it in an area.
+**The editor is a modal and only a modal.** It used to be a panel in the window's right area
+as well, following the selection, and that second seat is gone: a step's aspects are a page
+of tabs, and a page of tabs in a 360 px column is an editor nobody finishes a sentence in —
+while beside a roster it competed with the panel the reader had actually opened. So a step is
+edited where a double-click puts it, over the view it was picked in, and the area is left to
+the surfaces that are worth watching *while* you work. ``ARCHITECTURE.md``'s *The step editor
+is a modal* has the reasoning.
 
-Two seams keep it from knowing anything else in the application. **It never learns who selected
-a step** — the panel reads the context, so a canvas, a table and anything added later reach it
+Two seams keep it from knowing anything else in the application. **It never learns who picked
+the step** — the verb reads the context, so a canvas, a table and anything added later reach it
 without being its host. **It never learns which aspects exist** — those arrive from
-``sections``, read when the panel is built, so a contributing module's position in the
+``sections``, read when the dialog is built, so a contributing module's position in the
 composition root is free (its position *ahead of this one* is not; see the root's comment).
 The bar across the panel's top renders the Step ▸ Type submenu the same way; the
 *templates* worded on its left — combinations of those toggles — are ``templates``, named
 by the root.
 
-It also owns ``steps.details``: the same panel as a modal dialog, which is what every view's
-double-click on a step runs — and what New opens on the step it just made. One spec, so the
-gesture is in the palette and the Step menu too, and the state gate decides once.
+``steps.details`` is one spec, so the gesture every view's double-click runs is in the palette
+and the Step menu too, and the state gate decides once.
 """
 
 from dataclasses import dataclass
@@ -33,19 +36,16 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.aspect_bar import AspectTemplate
 from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
-from dplanner.framework.panels import PanelArea, PanelRegistry, PanelSpec
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_properties.details import DetailsSection
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
 from dplanner.modules.step_properties.name import NameBlock
-from dplanner.modules.step_properties.panel import StepPanel
 
 MODULE_ID = "step_properties"
 # The kinds a details dialog can be asked to land on, beside the step itself.
 FOCUS_KINDS = ("test", "feature")
 
-PANEL_ID = f"{MODULE_ID}.step"
 NAME_BLOCK_ID = f"{MODULE_ID}.name"
 
 
@@ -53,14 +53,13 @@ NAME_BLOCK_ID = f"{MODULE_ID}.name"
 class StepPropertiesDeps:
     library: Library
     undo: UndoService[Library]
-    panels: PanelRegistry
     actions: ActionRegistry
     parent: QWidget  # The details dialog's parent.
-    # Whoever registered an aspect editor. Read when the panel is built, not here, so a
+    # Whoever registered an aspect editor. Read when a dialog is built, not here, so a
     # contributing module's position in the composition root is free.
     sections: InspectorSectionRegistry
     # Whoever registered a block for the first tab. Read inside the Details factory, so
-    # the same freedom holds — a block registrant only has to come before a panel exists.
+    # the same freedom holds — a block registrant only has to come before a dialog exists.
     details: InspectorSectionRegistry
     theme: ThemeService  # Tab glyphs and the bar's follow the theme's secondary text colour.
     # The templates the bar's dropdown offers — named combinations of Type toggles, each
@@ -98,18 +97,9 @@ class StepPropertiesModule:
                 factory=lambda: DetailsSection(deps.library, deps.details.sections()),
             )
         )
-        # Order 20: below the project form, which is about the thing the step is part of.
-        deps.panels.register(
-            PanelSpec(
-                id=PANEL_ID,
-                title="Step",
-                factory=self._create_panel,
-                area=PanelArea.RIGHT,
-                order=20,
-            )
-        )
-        # The same panel, modally. Every view's double-click runs this one spec, so the
-        # gesture exists in the palette and the Step menu too, and is state-gated once.
+        # The panel, modally — the only seat it has. Every view's double-click runs this one
+        # spec, so the gesture exists in the palette and the Step menu too, and is
+        # state-gated once.
         deps.actions.register(
             ActionSpec(
                 id="steps.details",
@@ -154,13 +144,3 @@ class StepPropertiesModule:
                 break
         dialog.exec()
         dialog.dispose()
-
-    def _create_panel(self) -> StepPanel:
-        return StepPanel(
-            self._deps.library,
-            self._deps.undo,
-            self._deps.actions,
-            sections=self._deps.sections.sections(),
-            templates=self._deps.templates,
-            theme=self._deps.theme,
-        )

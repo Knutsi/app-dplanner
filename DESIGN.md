@@ -11,10 +11,10 @@ from the first commit; touching an existing surface includes bringing it up to t
 (the boy-scout rule applies to pixels too — *Bringing a surface up*, at the end, is the
 checklist). The rules are kept by shared **primitives**, and the primitives are shown by
 **Debug ▸ Design Example…** and **Debug ▸ Design Example Table** — the table below says
-which is which and where to see it. When a rule here is ambiguous, match the example; for
-a panel, match the step detail panel in `modules/step_properties/panel.py`. `CLAUDE.md`
-points agents here; `ARCHITECTURE.md`'s *A primitive carries the rule* is why a rule lives
-in a primitive rather than in a stylesheet entry per surface.
+which is which and where to see it. When a rule here is ambiguous, match the example; for a
+panel, match the Test panel in `modules/testing/panel.py`, and for a page of controls the
+Step Details dialog. `CLAUDE.md` points agents here; `ARCHITECTURE.md`'s *A primitive carries
+the rule* is why a rule lives in a primitive rather than in a stylesheet entry per surface.
 
 ## Primitives
 
@@ -554,9 +554,9 @@ Example Table wears one.
   height, narrower sides, `DENSE_GAP` between them. A strip of *verbs* folds gracefully,
   because losing a verb to the `…` costs a click; a strip that answers a question about the
   thing on screen — the step panel's aspect bar, *what does this step carry* — stops
-  answering it when it folds. Ten toggles at the verb strip's metrics seat five in the width
-  that panel can be; dense seats all ten. It is a mode the primitive offers, never a surface
-  styled by name.
+  answering it when it folds. Ten toggles at the verb strip's metrics seat five in the 360 px
+  a side panel can be; dense seats all ten, which is also what the Test panel's result verbs
+  need in that width. It is a mode the primitive offers, never a surface styled by name.
 - **A divider is the hairline at half strength** (`$BORDER_FAINT`, the border blended
   halfway into the elevated ground), 6 px short of the controls' top and bottom: it parts
   groups without being read as a control.

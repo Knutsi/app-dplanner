@@ -95,15 +95,24 @@ def render_panel(services: AppServices, out: Path, theme: Theme, app: QApplicati
     # synthetic plan gives only half its tests prose.
     wanted = next(
         (
-            test.id
-            for _step, test in project_tests(activity._project())
+            (step.id, test.id)
+            for step, test in project_tests(activity._project())
             if test.body and test.id in set(activity.ordered_tests())
         ),
         None,
     )
     if wanted is None:
         return
-    services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("test", wanted)),))
+    # The step goes with the test, as every view that picks one publishes it: an id is
+    # minted per project, so the pair is what names a test.
+    step_id, test_id = wanted
+    services.context.set_scope(
+        SCOPE_SELECTION,
+        (
+            ContextNode(selection_uri("step", step_id)),
+            ContextNode(selection_uri("test", test_id)),
+        ),
+    )
     window = services.window
     window.set_panel_visible(PANEL_ID, True)
     settle(app)

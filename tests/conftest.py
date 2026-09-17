@@ -394,6 +394,50 @@ def cli_stdin(registry, workspace, cli_library, at_work_board):
     return invoke
 
 
+@pytest.fixture
+def step_editor(services, monkeypatch):
+    """A step's editor, as the application offers it: ``steps.details``, briefly modal.
+
+    There is no anchored step panel to reach for — the editor has one seat and it is this
+    dialog (``ARCHITECTURE.md``'s *The step editor is a modal*) — so a test that drives an
+    aspect editor opens it the way a double-click does and reads ``.panel``. It is opened on
+    a **constructed** context naming one step, which is the documented way to run a verb on
+    something nobody selected, and leaves the window's own selection alone for the tests
+    that assert on it.
+
+    Two things are held off. ``exec`` blocks, so it is stood in for by ``show`` — which is
+    what it does minus the loop, and a dialog that was never shown has no window for a field
+    to take focus in, which is the difference between an editor that ignores the echo of its
+    own write and one that cannot. And ``dispose`` runs the moment ``exec`` returns, which is
+    right in production and useless in a test that wants to type in the editor and watch the
+    model reach it. This fixture disposes what it opened instead.
+    """
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+
+    dispose = StepDetailsDialog.dispose
+    opened = []
+
+    def shown(dialog):
+        dialog.show()
+        opened.append(dialog)
+
+    monkeypatch.setattr(StepDetailsDialog, "exec", shown)
+    monkeypatch.setattr(StepDetailsDialog, "dispose", lambda self: None)
+
+    def open_on(step_id):
+        """The panel of a dialog opened on ``step_id``."""
+        nodes = (ContextNode(selection_uri("step", step_id)),)
+        services.actions.run("steps.details", Context({SCOPE_SELECTION: nodes}))
+        return opened[-1].panel
+
+    yield open_on
+    for dialog in opened:
+        dispose(dialog)
+        dialog.close()
+        dialog.deleteLater()
+
+
 @pytest.fixture(autouse=True)
 def _no_swallowed_slot_errors(request):
     """A listener that raises is logged and skipped by ``Signal.emit`` — right for the

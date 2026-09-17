@@ -1,4 +1,4 @@
-"""The project's own form: what the right side shows when no step is selected.
+"""The project's own form: what the right side shows when no step is picked.
 
 **Why this is a panel and not an aspect section.** An
 :class:`~dplanner.framework.inspector.InspectorExtension`'s whole contract is
@@ -6,14 +6,21 @@
 Estimate and Ticket would force every aspect editor to answer "what if this is a project?" and
 hide itself — a second target vocabulary smuggled into every editor. (A section can hide per
 *step*, via ``shown_for`` — that is one vocabulary answering "nothing to say here".) As a
-panel it is a peer of the *step panel* instead: two surfaces in one area, each deciding from
-the context whether it has anything to show, and neither aware of the other's contents.
+panel it decides from the context whether it has anything to show, the way every other panel
+in the area does, and knows none of their contents.
 
 **The cards are the modules'.** Below its own form the panel renders every
 :class:`InspectorSection` registered into ``services.detail_cards`` as a
 :class:`~dplanner.framework.cards.ToolCard` — the same contract the step panel's tabs use,
 with a card stack as the host instead of a tab bar. This module never learns what a card
 holds; a module with something to say about a *project* registers there and appears here.
+
+**It steps aside for a pick narrower than the project.** One picked step is a step the user
+is about to open (``steps.details``, over the view it was picked in), and one picked test is
+the Test panel's — in both cases the form would be answering a question nobody asked, above
+a surface that is answering the one they did. Which kinds those are is ``narrower_kinds``,
+named by the composition root: this module learns no other module's vocabulary, the same
+seam every cross-module fact here goes through.
 """
 
 from collections.abc import Sequence
@@ -44,12 +51,14 @@ class ProjectPanel(QWidget):
         cards: Sequence[InspectorSection] = (),
         theme: ThemeService | None = None,
         parent: QWidget | None = None,
+        narrower_kinds: Sequence[str] = (),
     ) -> None:
         super().__init__(parent)
         self.setObjectName("InspectorPanel")
         self._product = library
         self._undo = undo
         self._project_id: NodeId | None = None
+        self._narrower_kinds = tuple(narrower_kinds)
 
         self.title_edit = QLineEdit(self)
         self.title_edit.setPlaceholderText("What this project is called")
@@ -110,9 +119,9 @@ class ProjectPanel(QWidget):
     # -- what the context says ---------------------------------------------------------------
 
     def show_context(self, context: Context) -> bool:
-        """The project, unless there is one step to edit — then the step panel has the area."""
-        if context.selected_entity("step") is not None:
-            # The step panel has the area; the cards stay bound. Clearing them here tore
+        """The project, unless something narrower is picked — then that has the area."""
+        if any(context.selected_entity(kind) is not None for kind in self._narrower_kinds):
+            # The narrower panel has the area; the cards stay bound. Clearing them here tore
             # down and rebuilt every card on each selection change (CLAUDE.md's *A panel
             # that steps aside keeps its content*).
             return False

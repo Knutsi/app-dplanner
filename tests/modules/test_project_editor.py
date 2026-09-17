@@ -45,7 +45,6 @@ from dplanner.modules.project_editor.renderers import (
     medallion_end,
 )
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
-from dplanner.modules.step_properties.module import PANEL_ID as STEP_PANEL_ID
 from dplanner.theme import apply_theme
 from dplanner.theme.cards import FILL_ALPHA, LIFT
 from dplanner.theme.themes import DARK, LIGHT
@@ -65,8 +64,9 @@ def tab(services, project):
     return services.tabs.open("project", project.id)
 
 
-def step_panel(services):
-    return services.window.dock.widget_for(STEP_PANEL_ID)
+def published_steps(services):
+    """The step ids the active pane published — what every panel and verb reads."""
+    return services.context.current().selected_entities("step")
 
 
 def project_panel(services):
@@ -205,31 +205,28 @@ def test_an_edge_is_drawn_for_a_link(services, project, tab):
     assert len(scene(tab)._edges) == 1
 
 
-def test_selecting_a_node_publishes_the_step_and_shows_it(services, project, tab):
-    """Publishing *is* how the panel learns: the canvas never reaches for it."""
+def test_selecting_a_node_publishes_the_step(services, project, tab):
+    """Publishing *is* how every panel and verb learns: the canvas never reaches for one."""
     step = project.steps[0]
     scene(tab).select_step(step.id)
     uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
     assert uris == [f"app://selection/step/{step.id}"]
-    assert step_panel(services).current_step_id() == step.id
 
 
-def test_deselecting_returns_the_area_to_the_project_form(services, project, tab):
+def test_the_project_form_stays_while_a_step_is_picked(services, project, tab):
+    """A picked step has no panel of its own — its editor is a modal — so the form is not
+    standing aside for anything, and the area keeps saying what project this is."""
     dock = services.window.dock
     scene(tab).select_step(project.steps[0].id)
-    assert dock.is_panel_showing(STEP_PANEL_ID)
+    assert dock.is_panel_showing(PROJECT_PANEL_ID)
     scene(tab).select_step(None)
-    assert not dock.is_panel_showing(STEP_PANEL_ID)
     assert dock.is_panel_showing(PROJECT_PANEL_ID)
     assert project_panel(services).current_project_id() == project.id
 
 
-def test_two_panes_share_one_detail_panel(services, project, tab, make_project):
-    """The reason the panel is the window's. Two projects side by side is two canvases and
-    one editor — and the editor shows whichever pane the user is in, because only that pane
-    may publish a selection."""
-    # A real project, on disk: the step panel's GitHub section asks the store where the
-    # shown step's project lives, and an in-memory project has no answer for it.
+def test_only_the_pane_the_user_is_in_publishes(services, project, tab, make_project):
+    """Two projects side by side is two canvases, and the window still has exactly one
+    selection — the active pane's, which is what lets every panel and verb read one."""
     other = make_project("Build")
     AddNodeCommand(other.id, Step(title="Ship it")).redo(services.document)
     second = services.tabs.open("project", other.id)
@@ -237,17 +234,17 @@ def test_two_panes_share_one_detail_panel(services, project, tab, make_project):
     assert services.tabs.group_count() == 2
 
     scene(second).select_step(other.steps[0].id)
-    assert step_panel(services).current_step_id() == other.steps[0].id
+    assert published_steps(services) == [other.steps[0].id]
 
     # The user moves to the other pane. Its activation republishes what it has selected.
     second.on_deactivated()
     tab.on_activated()
     scene(tab).select_step(project.steps[0].id)
-    assert step_panel(services).current_step_id() == project.steps[0].id
+    assert published_steps(services) == [project.steps[0].id]
 
-    # And a background pane re-syncing its canvas does not take the panel with it.
+    # And a background pane re-syncing its canvas does not speak over it.
     scene(second).select_step(None)
-    assert step_panel(services).current_step_id() == project.steps[0].id
+    assert published_steps(services) == [project.steps[0].id]
 
 
 # -- the gestures themselves ---------------------------------------------------------------
@@ -478,13 +475,13 @@ def test_a_canvas_nobody_clicked_leaves_the_node_to_the_ambient_layout(
 
 
 def test_a_new_step_is_selected_the_moment_it_exists(services, project, tab, monkeypatch):
-    """New leaves you on what you just made: the panel beside the canvas is already showing
-    it, so naming a step and describing it are one gesture rather than two."""
+    """New leaves you on what you just made: the details dialog it opens is already on it,
+    so naming a step and describing it are one gesture rather than two."""
     silence_details(monkeypatch)
     services.actions.run("steps.new", services.context.current())
     created = project.steps[-1]
     assert list(scene(tab).selection().steps) == [created.id]
-    assert step_panel(services).current_step_id() == created.id
+    assert published_steps(services) == [created.id]
 
 
 def test_two_new_steps_in_a_row_do_not_land_on_one_another(services, project, tab, monkeypatch):
@@ -512,12 +509,12 @@ def test_a_double_click_moves_the_point_on_too(app, services, project, tab, monk
     assert after["y"] > made["y"]
 
 
-def test_deleting_the_shown_step_leaves_the_panel_empty(app, services, project, tab):
+def test_deleting_the_selected_step_clears_the_selection(app, services, project, tab):
     step = project.steps[0]
     scene(tab).select_step(step.id)
     press_key(app, tab, Qt.Key.Key_Delete)
 
-    assert step_panel(services).current_step_id() is None
+    assert published_steps(services) == []
     assert len(project.steps) == 1
 
 
@@ -1276,7 +1273,7 @@ def _announcements(services, monkeypatch):
     return announced, relaid
 
 
-def test_a_connect_announces_the_context_once_and_the_step_panel_stays(
+def test_a_connect_announces_the_context_once_and_the_selection_stands(
     app, services, project, tab, monkeypatch
 ):
     """The gesture publishes the selection more than once on its way — the source pick, the
@@ -1298,10 +1295,10 @@ def test_a_connect_announces_the_context_once_and_the_step_panel_stays(
     assert services.document.step(second.id).edges["requires"] == [first.id]
     assert len(announced) == 1 and relaid == []
     assert scene(tab).selection().steps == (first.id,)
-    assert services.window.dock.is_panel_showing(STEP_PANEL_ID)
+    assert published_steps(services) == [first.id]
 
 
-def test_a_paste_announces_the_context_once_and_the_step_panel_stays(
+def test_a_paste_announces_the_context_once_and_the_selection_stands(
     services, project, tab, monkeypatch
 ):
     first, _second = project.steps
@@ -1316,7 +1313,7 @@ def test_a_paste_announces_the_context_once_and_the_step_panel_stays(
     (copy,) = [step for step in project.steps if step.id not in (first.id, _second.id)]
     assert len(announced) == 1 and relaid == []
     assert scene(tab).selection().steps == (copy.id,)
-    assert services.window.dock.is_panel_showing(STEP_PANEL_ID)
+    assert published_steps(services) == [copy.id]
 
 
 def test_escape_clears_the_pending_step_before_it_leaves(app, services, project, tab):
@@ -1593,7 +1590,12 @@ def test_finding_a_step_puts_the_canvas_on_it(services, project, tab):
     after = tab._view._looking_at().center()
     assert after != before
     node = scene(tab).node(far.id)
-    assert (after - node.body_scene_rect().center()).manhattanLength() < 1.0
+    # Per axis, not as one length: centerOn aims at an integer scroll position, so a
+    # viewport with an odd extent lands half a scene pixel off in that axis — under a pixel
+    # each way is as centred as it gets, and how wide the panel area happens to be is not
+    # this test's subject.
+    residue = after - node.body_scene_rect().center()
+    assert abs(residue.x()) < 1.0 and abs(residue.y()) < 1.0
 
 
 def test_find_is_ctrl_f_everywhere_and_slash_on_the_canvas(services):

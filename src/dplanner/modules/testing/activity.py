@@ -681,7 +681,7 @@ class AllTestsActivity(ActivityBase):
         self,
         library: Library,
         context: ContextService,
-        open_test: Callable[[str], None],
+        open_test: Callable[[str, StepId], None],
         debounce: DebounceService,
     ) -> None:
         super().__init__()
@@ -761,8 +761,11 @@ class AllTestsActivity(ActivityBase):
 
         The roll call publishes no selection of its own — it spans projects — so the verb
         is handed a constructed context naming exactly this row, which is the documented
-        way to run a verb on something the user did not select (``CLAUDE.md``).
+        way to run a verb on something the user did not select (``CLAUDE.md``). The row's
+        step goes with its test: an id is unique inside its project, and this is the view
+        holding several projects at once.
         """
         test_id = self.page.table.test_at(row)
-        if test_id is not None:
-            self._open_test(test_id)
+        step_id = self.page.table.step_at(row)
+        if test_id is not None and step_id is not None:
+            self._open_test(test_id, step_id)

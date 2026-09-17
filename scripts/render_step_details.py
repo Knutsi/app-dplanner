@@ -1,12 +1,13 @@
-"""Render the step detail panel and its dialog in the dark and the light theme, to PNG.
+"""Render the step detail dialog in the dark and the light theme, to PNG.
 
     uv run python scripts/render_step_details.py --out docs/screenshots/s6-step-details
 
 The surfaces S6 reworked: the aspect bar's toggles on the left and the template it amounts
 to on the right, the Details tab stacking from the top whatever is turned off, and the
-dialog on ``DialogFrame`` with one Close in its footer. A whole application is built
-over a throwaway library — the panel is the dock's, so nothing here hand-wires a surface
-the window would build differently — and torn down per theme.
+dialog on ``DialogFrame`` with one Close in its footer. The panel has one host — the dialog
+``steps.details`` opens — so every image here is of that, reached through the verb rather
+than hand-wired, over a whole application built on a throwaway library and torn down per
+theme.
 """
 
 import argparse
@@ -33,11 +34,9 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
-from dplanner.modules.step_properties.module import PANEL_ID
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
-PANEL_SIZE = (480, 760)
 DIALOG_SIZE = (900, 760)
 
 
@@ -78,34 +77,8 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
     settle(app)
 
-    panel = services.window.dock.widget_for(PANEL_ID)
-    frame = panel.parentWidget()
-    panel.setParent(None)
-    panel.resize(*PANEL_SIZE)
-    panel.show()
-    save(panel, out, "panel", theme, app)
-
-    # The bar's own dropdown: what the step could be, with what it is ticked.
-    bar = panel.bar
-    # popup(), never showMenu(): the latter runs its own event loop and never returns here.
-    bar.face.menu().popup(panel.mapToGlobal(bar.face.pos()))
-    settle(app)
-    save(bar.face.menu(), out, "templates", theme, app)
-    bar.face.menu().hide()
-
-    # Every aspect off — the shape this step exists to fix: the blocks stay at the top.
-    for action_id in ("estimate.toggle", "description.toggle"):
-        action = bar.action(action_id)
-        if action.isChecked():
-            action.trigger()
-    settle(app)
-    save(panel, out, "panel-bare", theme, app)
-    for action_id in ("estimate.toggle", "description.toggle"):
-        bar.action(action_id).trigger()  # Put the step back before the dialog.
-    settle(app)
-
-    # The dialog through the verb that opens it, so nothing here re-wires what the window
-    # builds. exec() would block and the verb disposes on the way out, so both stand aside.
+    # Through the verb that opens it, so nothing here re-wires what the window builds.
+    # exec() would block and the verb disposes on the way out, so both stand aside.
     opened: list[StepDetailsDialog] = []
     real_exec, real_dispose = StepDetailsDialog.exec, StepDetailsDialog.dispose
     StepDetailsDialog.exec = lambda self: opened.append(self)  # type: ignore[method-assign]
@@ -118,12 +91,27 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     (dialog,) = opened
     dialog.resize(*DIALOG_SIZE)
     dialog.show()
+    settle(app)
     save(dialog, out, "dialog", theme, app)
-    dialog.dispose()
-    discard(dialog)
 
-    # The panel goes back to the dock, which disposes it with everything else at close.
-    panel.setParent(frame)
+    # The bar's own dropdown: what the step could be, with what it is ticked.
+    bar = dialog.panel.bar
+    # popup(), never showMenu(): the latter runs its own event loop and never returns here.
+    bar.face.menu().popup(dialog.mapToGlobal(bar.face.pos()))
+    settle(app)
+    save(bar.face.menu(), out, "templates", theme, app)
+    bar.face.menu().hide()
+
+    # Every aspect off — the shape this step exists to fix: the blocks stay at the top.
+    for action_id in ("estimate.toggle", "description.toggle"):
+        action = bar.action(action_id)
+        if action.isChecked():
+            action.trigger()
+    settle(app)
+    save(dialog, out, "dialog-bare", theme, app)
+
+    real_dispose(dialog)
+    discard(dialog)
     session.close()
 
 

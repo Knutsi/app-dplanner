@@ -1,9 +1,9 @@
-"""THE step detail panel: what the context puts in it, and what it survives.
+"""THE step detail panel: what a dialog puts in it, and what it survives.
 
-Every test reaches the panel the way the application does — one panel, anchored in the
-window — because the point of that seam is that no *surface* constructs a second one. The
-details dialog is the sanctioned exception: a transient second host of the same sections,
-opened by the ``steps.details`` verb and disposed when it closes.
+Every test reaches the panel the way the application does — through ``steps.details``, the
+one host it has (the ``step_editor`` fixture) — because the point of that seam is that no
+*surface* constructs a second one. It used to be anchored in the window's right area as
+well; ``ARCHITECTURE.md``'s *The step editor is a modal* says why that seat went.
 """
 
 import pytest
@@ -12,7 +12,6 @@ from PySide6.QtWidgets import QDialogButtonBox, QLineEdit
 from dplanner.domain.commands import AddNodeCommand, RemoveNodeCommand, SetFieldCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.step_properties.module import PANEL_ID
 
 
 def select(services, *step_ids):
@@ -30,8 +29,9 @@ def project(services, make_project):
 
 
 @pytest.fixture
-def panel(services, project):
-    return services.window.dock.widget_for(PANEL_ID)
+def panel(step_editor, project):
+    """The editor, open on the project's first step — what a double-click there gives."""
+    return step_editor(project.steps[0].id)
 
 
 def name_edit(panel):
@@ -39,17 +39,14 @@ def name_edit(panel):
     return panel.findChild(QLineEdit, "InspectorTitle")
 
 
-def test_one_step_selected_is_something_to_edit(services, project, panel):
-    """None or several is not — and the panel says so by going off screen rather than by
-    showing a placeholder, which is what lets another panel have the area instead."""
-    dock = services.window.dock
-    select(services, project.steps[0].id)
-    assert dock.is_panel_showing(PANEL_ID)
+def test_the_dialog_opens_on_the_step_it_was_asked_for(project, panel):
     assert panel.current_step_id() == project.steps[0].id
 
-    select(services, *[step.id for step in project.steps])
-    assert not dock.is_panel_showing(PANEL_ID)
-    assert panel.current_step_id() is None
+
+def test_the_editor_is_anchored_nowhere(services):
+    """It has one host, and the dialog is it. A panel in an area is a surface worth watching
+    *while* you work; a page of nine tabs in a 360 px column is not one."""
+    assert [spec.id for spec in services.panels.panels() if "step_properties" in spec.id] == []
 
 
 def visible_labels(panel):
@@ -64,7 +61,6 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
     """A tab follows its aspect: a plain step shows only the always-on sections, and the
     toggleable ones (Ticket, Tests, Covers, Agent, Milestone) stay off screen until the step
     carries them."""
-    select(services, project.steps[0].id)
     all_labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
     expected = [
         "Details",
@@ -108,7 +104,6 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     from dplanner.modules.testing.aspect import write as tests_write
 
     step = project.steps[0]
-    select(services, step.id)
     services.undo.push(SetModuleDataCommand(step.id, MILESTONE_ID, milestone_write("v1")))
     services.undo.push(SetModuleDataCommand(step.id, AGENT_ID, write_state(True)))
     services.undo.push(SetModuleDataCommand(step.id, TICKET_ID, enabled_entry()))
@@ -142,7 +137,6 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
 
 def test_the_name_is_shown_and_edited_undoably(services, project, panel):
     step = project.steps[0]
-    select(services, step.id)
     assert name_edit(panel).text() == "Read the spec"
 
     name_edit(panel).setText("Read the whole spec")
@@ -166,7 +160,6 @@ def type_toggle_ids(services):
 def test_the_bar_words_the_templates_left_and_glyphs_every_toggle_right(services, project, panel):
     """The right half renders the Step ▸ Type submenu and never keeps a list of its own;
     the left half is the composition root's templates, in its order."""
-    select(services, project.steps[0].id)
     assert panel.bar.toggle_ids() == type_toggle_ids(services)
     assert panel.bar.template_labels() == ["Step", "Milestone", "Feature", "Agent", "Check"]
 
@@ -179,7 +172,6 @@ def test_a_plain_step_is_the_step_template_and_a_template_is_one_undo(services, 
     from dplanner.modules.step_milestone.aspect import read as milestone_label
 
     step = project.steps[0]
-    select(services, step.id)
     assert panel.bar.template("Step").isChecked() is True
     assert panel.bar.template("Milestone").isChecked() is False
 
@@ -198,8 +190,6 @@ def test_a_plain_step_is_the_step_template_and_a_template_is_one_undo(services, 
 def test_a_combination_built_by_hand_lights_its_template(services, project, panel):
     """It goes both ways: toggle Feature on and Estimate off by hand, and the Feature
     template reads as selected; add a Ticket, and it is just a Step again."""
-    step = project.steps[0]
-    select(services, step.id)
     panel.bar.action("feature.toggle").trigger()
     assert panel.bar.template("Feature").isChecked() is False  # Still carries an estimate.
     panel.bar.action("estimate.toggle").trigger()
@@ -217,7 +207,6 @@ def test_a_bar_action_runs_the_owning_modules_toggle_and_follows_the_model(
     from dplanner.modules.step_check.aspect import read as check_read
 
     step = project.steps[0]
-    select(services, step.id)
     action = panel.bar.action("check.toggle")
     assert action.isChecked() is False
 
@@ -238,7 +227,6 @@ def test_a_bar_action_runs_the_owning_modules_toggle_and_follows_the_model(
 
 
 def test_the_bar_is_greyed_with_no_step(services, project, panel):
-    select(services, project.steps[0].id)
     panel.show_step(None)
     assert not panel.bar.action("feature.toggle").isEnabled()
 
@@ -256,21 +244,18 @@ def test_deselecting_gets_through_the_unchanged_id_gate(services, project, panel
 
 def test_a_deleted_step_takes_the_panel_back_to_empty(services, project, panel):
     step = project.steps[0]
-    select(services, step.id)
     services.undo.push(RemoveNodeCommand(step.id))
     assert panel.current_step_id() is None
 
 
 def test_a_change_made_elsewhere_reaches_the_name(services, project, panel):
     step = project.steps[0]
-    select(services, step.id)
     services.undo.push(SetFieldCommand(step.id, "title", "Renamed elsewhere"))
     assert name_edit(panel).text() == "Renamed elsewhere"
 
 
 def test_a_disposed_panel_hears_nothing(services, project, panel):
     step = project.steps[0]
-    select(services, step.id)
     panel.dispose()
     services.undo.push(SetFieldCommand(step.id, "title", "After disposal"))
     assert name_edit(panel).text() == "Read the spec"
@@ -291,8 +276,8 @@ def test_details_needs_exactly_one_selected_step(services, project):
 
 
 def test_details_opens_a_dialog_that_is_the_panel_and_disposes_it(services, project, monkeypatch):
-    """The dialog hosts a second StepPanel over the same sections — 1:1 with the anchored
-    one by construction — and stops hearing the model once closed. It carries no buttons:
+    """The dialog hosts a StepPanel over the sections every module registered, and stops
+    hearing the model once closed. It carries no buttons:
     every edit is live and undoable, so there is nothing to confirm, and the Name field is
     focused with its text selected so a fresh step can be named by typing."""
     from dplanner.modules.step_properties.dialog import StepDetailsDialog
@@ -315,8 +300,8 @@ def test_details_opens_a_dialog_that_is_the_panel_and_disposes_it(services, proj
 
 
 def test_the_dialogs_bar_acts_on_the_dialogs_own_step(services, project, monkeypatch):
-    """A panel inside the dialog shows a step nobody selected, and its toggles must act on
-    what is on screen, not on the window's selection."""
+    """The panel shows the step the dialog was opened about, and its toggles must act on
+    what is on screen — the window's selection may have moved on since."""
     from dplanner.modules.feature.aspect import is_feature as feature_read
     from dplanner.modules.step_properties.dialog import StepDetailsDialog
 

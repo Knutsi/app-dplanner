@@ -16,6 +16,12 @@ paths:
 
 # Step panel — aspect toggles, the shelf, Details blocks, prose editors and assets
 
+- **The panel has one host: the `steps.details` modal.** It is not anchored in a window area
+  and does not follow the selection — nine tabs do not fit a 360 px column, and an editor
+  that appeared on a selection sat above whichever panel the reader had opened. It is driven
+  by `show_step`, so it stays on the step it was opened about; a test reaches it through the
+  `step_editor` fixture, which is the application's own path. `ARCHITECTURE.md`'s *The step
+  editor is a modal* has the reasoning.
 - **A toggleable aspect's tab follows the aspect.** Milestone, Feature, Agent, Ticket, Test
   and Check are Step ▸ Type toggles (independent, never a radio group), and each registers its
   `InspectorSection` with a `shown_for` predicate so its tab exists only on a step that

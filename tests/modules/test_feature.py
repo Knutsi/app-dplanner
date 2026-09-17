@@ -171,12 +171,6 @@ def test_the_feature_template_makes_the_step_a_feature(services, project, monkey
 # -- the Feature tab ---------------------------------------------------------------------------
 
 
-def step_panel(services):
-    from dplanner.modules.step_properties.module import PANEL_ID
-
-    return services.window.dock.widget_for(PANEL_ID)
-
-
 def tab_labels(panel):
     return [
         panel.tab_bar.tabText(i)
@@ -185,9 +179,9 @@ def tab_labels(panel):
     ]
 
 
-def test_the_feature_tab_follows_the_marker(services, step):
+def test_the_feature_tab_follows_the_marker(services, step, step_editor):
     select(services, step)
-    panel = step_panel(services)
+    panel = step_editor(step.id)
     assert "Feature" not in tab_labels(panel)
     services.actions.run("feature.toggle", services.context.current())
     assert "Feature" in tab_labels(panel)
@@ -195,12 +189,12 @@ def test_the_feature_tab_follows_the_marker(services, step):
     assert "Feature" not in tab_labels(panel)
 
 
-def test_the_feature_tab_edits_the_steps_own_passages(services, step):
+def test_the_feature_tab_edits_the_steps_own_passages(services, step, step_editor):
     from dplanner.modules.feature.editor import FeatureEditor
 
     select(services, step)
     services.actions.run("feature.toggle", services.context.current())
-    panel = step_panel(services)
+    panel = step_editor(step.id)
     editor = next(e for e in panel._extensions if isinstance(e, FeatureEditor))
     assert editor.cites() == ()
     editor.add_passage.click()

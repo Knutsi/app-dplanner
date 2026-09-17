@@ -675,9 +675,15 @@ class TestsModule:
     # -- one test, in the panel --------------------------------------------------------------
 
     def _one_test(self, context: Context) -> ActionState:
-        """Exactly one test picked. `selected_entity`'s rule, which is also what the panel
-        shows itself for, so the verb and the panel cannot disagree."""
-        return DISABLED if context.selected_entity("test") is None else ActionState()
+        """Exactly one test picked, with the step it hangs off.
+
+        `selected_entity`'s rule, asked for the same pair the panel resolves the test in
+        (`panel.py`), so the verb and the panel cannot disagree — and a test id on its own
+        does not name a test, since ids are minted per project.
+        """
+        if context.selected_entity("test") is None or context.selected_entity("step") is None:
+            return DISABLED
+        return ActionState()
 
     def _show_test(self, _context: Context) -> None:
         """Put the Test panel on screen. The panel is already following the context, so
@@ -890,15 +896,23 @@ class TestsModule:
         project = self._deps.library.project_of(step_id)
         self.open(project.id, scope=step_id)
 
-    def _open_test(self, test_id: str) -> None:
+    def _open_test(self, test_id: str, step_id: StepId) -> None:
         """Double-clicking a test in the roll call shows that test, as in a project's tab.
 
         The roll call spans projects, so it cannot publish a selection the way a
         project-scoped tab does; the context is synthesised for exactly this row instead —
         the same thing the progression board does for a card's own verb. The panel then
         follows it like any other context change.
+
+        The row's step goes in beside its test, as the project tab's selection does: an id
+        is unique inside its project, and the roll call is the one view that has more than
+        one project's in front of it.
         """
         self._deps.context.set_scope(
-            SCOPE_SELECTION, (ContextNode(selection_uri("test", test_id)),)
+            SCOPE_SELECTION,
+            (
+                ContextNode(selection_uri("step", step_id)),
+                ContextNode(selection_uri("test", test_id)),
+            ),
         )
         self._deps.actions.run("test.details", self._deps.context.current())
