@@ -8,6 +8,11 @@ with uv, running on Linux, macOS and Windows.
 It has two front doors, and they are equals: a desktop window, and a `dplanner` command that
 any coding agent can drive.
 
+![The step graph, with Run Agent open on three picked steps](docs/screenshots/readme/graph-editor-run-agent.png)
+
+*A plan is a graph of steps. Pick some, and Run Agent hands each one to a coding agent in
+the terminal you chose — Claude Code, Codex or OpenCode, in herdr, Ghostty or on its own.*
+
 > **DPlanner is in development.** Its file formats and its feature set change without
 > notice, and nothing about compatibility between versions — of the files a plan is kept
 > in, or of the features that write them — is guaranteed in any way.
