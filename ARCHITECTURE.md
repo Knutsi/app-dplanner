@@ -2916,7 +2916,12 @@ The plan is committed and shared, so megabytes of somebody else's repository can
 in it; the checkout goes under `config_dir()`, keyed on url + ref + path, one directory
 per source — sharing one checkout between two sources would mean one fetch's sparse
 pattern applied to the other's tree, which imports the wrong folder and says nothing. The
-harder question was the size guard. A person pointing at a monorepo must be steered to a
+clone door itself — the blobless, shallow, sparse fetch, the listing, the subprocess
+hardening — is `core/storage/sparse.py`'s now, because a project's read-only *locations*
+(*A project names its locations*) are placed in the same cache under the same digest, and
+a source that names a `specs` row (*Add Spec ▸ From Location…*) resolves to the row's
+address at every call, so the row, its managed placement and the source fetched from it
+share one directory. The harder question was the size guard. A person pointing at a monorepo must be steered to a
 subdirectory *before* they wait for it, and git will not report a blob's size without
 fetching the blob — so the guard counts, it does not weigh: `--filter=blob:none` brings
 the commit and all its trees and no content, the listing says how many files and how many
@@ -4027,10 +4032,10 @@ carrying its own heading, and `segments` (origin, heading, chars) plus `chars` o
 The join invariant is untouched — the segment texts still concatenate to exactly the text
 that is sent, which is what lets the Agent tab colour it without ever showing something else.
 
-## Two repositories, two questions
+## A project names its locations
 
-A project answers two questions about repositories, and for a year the code let one
-answer serve both. *Where does the plan live?* was the git repository enclosing the
+A project answers three questions about repositories, and for a year the code let one
+answer serve the first two. *Where does the plan live?* was the git repository enclosing the
 project directory — derived, never stored, and still is. *Which code does it plan?* was
 assumed to be the same repository, and that assumption is what field testing kept
 reporting as "main drifting": *Save* committed plan files to the code repository's
@@ -4039,51 +4044,145 @@ repository swapped the plan under the window. A plan and the code it plans have 
 rhythms — the plan changes on every `dplanner status set`, the code on every merge — and
 one branch cannot carry both without each getting in the other's way.
 
-So the second question became a stored fact. `Project.repository` is the **code
-repository**, the remote URL as git prints it, in `project.dproj` where everyone who opens
-the plan sees it; a repository with no remote is stored as its resolved path — the only
-identity a repository that cannot be shared has. The **plan repository** stays derived:
+So the second question became a stored fact — first as one string, the code repository's
+remote, and then, when a project turned out to be about more than one place, as a
+**table of locations**. A location is a **role**, a **repository** (the remote URL as git
+prints it; a repository with no remote is stored as its resolved path — the only identity
+a repository that cannot be shared has) and a **position**, a directory inside it, with an
+optional ref and a label to tell two rows of one role apart:
+
+| role | repository | position |
+|---|---|---|
+| code | `acme/widget` | `.` |
+| code — *UI* | `acme/widget-ui` | `.` |
+| specs | `acme/specs` | `products/search/` |
+| docs | `acme/widget` | `docs/search/` |
+
+It lives in `project.dproj` where everyone who opens the plan sees it (`FORMAT.md`), and
+the first `code` row is *the* code repository every older reader means — `RepositoryFacts.
+repository` and `.checkout` are that row's, so Run Agent, the GitHub tab, discovery, lint
+and the briefing kept their seams when the string became a table. Three things the table
+decided are worth writing down. **The plan repository stays derived**:
 `find_repo_root(project directory)`, exactly as before, so the plan's history is still the
-repository's history and nothing stored can disagree with git. A third question — *where is
-that code on this machine?* — is per user, per machine, and goes to the library file's
-`checkout` column (`FORMAT.md`), written straight into the file rather than through the
-flush, because the first `dplanner` call from a checkout records it and a read verb's
-transaction must never be refused over a per-machine fact. `domain/repositories.py` is the
-one derivation over the three — `RepositoryFacts`, with three states: **separated**, the
-shape the application wants; **colocated**, the same remote or either checkout inside the
-other; and **legacy**, no code repository recorded, read as colocated so nothing breaks on
-the day the build updates. *Warns* is one predicate — not separated and not accepted —
-asked by lint (`repo.unset`, `repo.colocated`, exit 1), by the briefing's preamble
-(WARNING: leave the plan files alone), by the Project dialog and the Repositories card,
-and by the opening status line; `colocation: "accepted"` silences all of them at once,
-because it is the people on the project saying the shape is on purpose.
+repository's history and nothing stored can disagree with git — and the table lives *in*
+it, which is what lets a clone of the plan set everything else up. **A row has an id**
+(`l1`, `l2`, …), minted per project and kept while the row is edited, because a spec
+source and a step's workplace name a row by it and editing a repository URL must not
+orphan them — the same reason a step's folder name is frozen and its id is its identity.
+And **roles are a registry**: the domain declares `code`, because `cli/discovery.py` must
+find a project from a code checkout without loading a module, and every other role is
+declared by the module that acts on it in a Qt-free `roles.py` (`specs` by the spec
+module, `docs` and `tests` by theirs) that the composition root gathers into one list the
+Add menu, the card, `dplanner location roles`, lint and the briefing all read — a module
+adds a kind of place and every surface learns it. A role this build does not know is
+loaded and written back untouched, the edge-kind rule, because a colleague's build may
+have a module this one lacks.
+
+The third question — *where is each of those on this machine?* — is per user, per
+machine, and goes to the library file's `checkouts` map (`FORMAT.md`), **keyed by
+repository, never by project**. The earlier column was per project, and three places had
+grown a search over other projects' rows for "the checkout somebody else already has of
+this repository" — the tell that the fact was filed under the wrong key. A checkout is
+this machine's fact about a repository; two projects naming one repository share it, a
+second plan for the same code never asks for a second clone, and the three lookups are one
+dictionary read. It is written straight into the file rather than through the flush,
+because the first `dplanner` call from a checkout records it and a read verb's transaction
+must never be refused over a per-machine fact. `domain/locations.place` is the one answer
+to where a row stands, in a fixed order: the recorded checkout; the plan repository itself
+when the row names it; a managed clone for a role that only reads; or nowhere yet, which
+every verb that needs it says in words.
+
+**Whether a location asks for a checkout follows from whether its role writes** — and
+that rule is what keeps opening somebody else's plan from becoming a folder-picking
+session. A worked-in location (code; docs and tests, which are written) needs a checkout
+the person owns, asked once per repository per machine, because a document written there
+is a change somebody commits and pushes on a branch they chose. A read-only location
+(specs) is fetched on demand into a managed clone — the git spec source's blobless, shallow,
+sparse cache under `config_dir()`, keyed as it keys it, so a specs row and the source
+fetched from it share one directory — and never asks. **A managed clone is never
+written**: the application does not commit and push on somebody's behalf from a directory
+they cannot find, so a docs or tests row on a repository nobody has checked out reads as
+*not checked out here* and greys the writing verbs, the standing Run Agent already had for
+a missing code checkout. The consequence for a person opening a shared plan is that they
+are asked about the repositories they will *work in*, and everything read-only is silent.
+
+`domain/repositories.py` is the one derivation over the three — `RepositoryFacts`, every
+row placed, with three states read off the code rows: **separated**, the shape the
+application wants; **colocated**, the same remote or either checkout inside the other; and
+**legacy**, no code location at all, read as colocated so nothing breaks on the day the
+build updates. *Warns* is one predicate — not separated and not accepted — asked by lint
+(`repo.unset`, `repo.colocated`, exit 1; and the table's own `location.invalid`,
+`location.unknown_role`, `location.duplicate`), by the briefing's preamble (WARNING: leave
+the plan files alone), by the Project dialog and the Repositories card, and by the opening
+status line; `colocation: "accepted"` silences all of them at once, because it is the
+people on the project saying the shape is on purpose.
 
 The readers are seams the composition root wires. The agent module is handed
-`facts_for(step)` and decides *where an agent works*: the code checkout for a project
-that records its code, the plan's own repository for one that does not, greyed with the
-reason ("not checked out on this machine — Project ▸ Settings…") until a checkout is
-recorded — and `store.checkout_changed` refreshes the context, since nothing in the
-context graph changed. A conflict handed to an agent is about plan files and opens in the
-plan repository whatever the code is. The github module's `repository_for` is the code
-repository, the plan's origin only for the older shape. `dplanner project show`, `agent
-prompt --json` and the Repositories card print the same facts. Discovery (`cli/discovery.py`)
-gained one rule: a `dplanner` call from a checkout — or a worktree of it — whose `origin`
-is a project's code repository finds that project, spelt however git spells it
-(`canonical_remote`), so an agent in the code needs no configuration; the wrapper script
-also exports `DPLANNER_PROJECT`, so nothing is even looked up.
+`facts_for(step)` and decides *where an agent works*: the checkout of the code location
+the step's `workplace` names — an aspect with a default, the primary, because two code
+repositories in a project means some steps are in one and some in the other, and which is
+a fact about the step exactly as its worktree choice is — the plan's own repository for a
+project that records no code, greyed with the reason ("acme/ui is not checked out on this
+machine — Project ▸ Settings…") until a checkout is recorded — and `store.checkout_changed`
+refreshes the context, since nothing in the context graph changed. A conflict handed to
+an agent is about plan files and opens in the plan repository whatever the code is. The
+github module's `repository_for` is the primary code repository, the plan's origin only
+for the older shape. `dplanner project show`, `location list`, `agent prompt --json` and
+the Repositories card print the same facts, and the briefing tells the agent the table
+in words — which repositories the project is about and where each stands here, so an
+agent never guesses a path. Discovery (`cli/discovery.py`) gained one rule: a `dplanner`
+call from a checkout — or a worktree of it — whose `origin` is one of a project's code
+locations finds that project, spelt however git spells it (`canonical_remote`), so an
+agent in the code needs no configuration; the wrapper script also exports
+`DPLANNER_PROJECT`, so nothing is even looked up.
 
-### The Project dialog is two columns, not three fields
+The alternatives weighed, for the record. *Keep one code repository and let each module
+store its own place* — the spec locator stays private, docs gets a path setting — was the
+status quo extended: three vocabularies become four and no surface can show all the places
+a project is about. *A `locations` module owning the table as module data* fails on the
+first reader: `cli/discovery.py` must read code rows and `cli/` never imports a module.
+*Let a managed clone be written and pushed by Save* was the seductive version of the
+request — docs and tests working on a machine that never chose a folder — and is the
+"main drifting" story again with a different repository. Docs and tests *writing* into
+their locations is the phase this design leaves open; the table is the same either way.
 
-(`DESIGN.md`'s *Facts under the thing they are about* and the `⋯` rule under *Buttons* are
-the standard this settled.)
+### The Project dialog is the Locations table over two log columns
 
-The dialog stated three things above its logs: the plan repository, the code repository,
-and the code's checkout. Nobody could say why there were three, and the reason is that the
-code was allowed two facts — *which code* (shared, in `project.dproj`) and *where it is
-here* (per machine, in the library file) — while the plan was allowed one. The count was
-an artefact of which facts happened to be stored, not of what a reader is asking, and the
-two log columns underneath were already saying the true thing: there are **two**
-repositories.
+(`DESIGN.md`'s *Facts under the thing they are about*, its *Tables* and the `⋯` rule under
+*Buttons* are the standard this settled.)
+
+The dialog once stated three things above its logs: the plan repository, the code
+repository, and the code's checkout. Nobody could say why there were three, and the
+reason is that the code was allowed two facts — *which code* (shared, in `project.dproj`)
+and *where it is here* (per machine, in the library file) — while the plan was allowed one.
+The count was an artefact of which facts happened to be stored, not of what a reader is
+asking, and the two log columns underneath were already saying the true thing: there are
+**two** repositories. When the code became a *table* the same reasoning gave the same
+shape one level up: every row answers the two questions — which repository and position,
+where it is on this machine — and the **Locations table** (`locations_table.py`, the
+`Table` primitive) states them for every row at once, greyed where nothing is here yet,
+under a caption with **Add ▾** rendering the role registry and **⋯** the selected row's
+verbs. A right-click on a row renders the same ⋯ — the row made current first, so the
+menu reads the same selection the button would. Adding or editing a row is one fit dialog
+(`location_dialog.py`): the repository as an editable combo led by the code the project
+already names (docs and tests live with the code more often than not, so the default is
+the answer), the position with a folder picker over the checkout when this machine has
+one and over the remote's tree listing — the git spec source's probe, worn by a position —
+when it does not, so nobody types a subdirectory blind; refused in words while the row
+cannot stand. Nothing about a checkout is asked there: a repository already checked out
+needs none, a read-only role needs none, and a worked-in repository this machine lacks
+shows *not checked out* in the table with *Clone…* in its ⋯ — a decision the person can
+make now or after Create. **Create mode is the same table over a draft** the form holds
+until Create seeds the project, so the two modes cannot word a row differently; a clone
+run from the draft's ⋯ lands in `NewProjectSpec.checkouts`, recorded per repository once
+the project exists. The **Open Project wizard asks after the clone**: its Repositories
+page (`repositories_page.py`) lists the worked-in repositories the joined plan names that
+this machine lacks — clone into the repositories folder, use a checkout I have, or later —
+and never lists a read-only row; *Later* is always allowed, because a plan is readable
+without any of them. That is what let the link page stop asking where the code goes: a
+link needs to name nothing but the plan.
+
+The two log columns kept their reasoning, which is the paragraph below.
 
 So the facts moved under the columns they belong to. Each column now answers the same two
 questions — `repos.code_lines` and `repos.plan_lines`, one derivation with two readers, so
@@ -4129,7 +4228,7 @@ folder*, asked for once from the likely candidates on disk and kept per user.
 
 **Moving a plan is a storage operation that rewrites the working tree**, and so is
 synchronous (below): `domain/relocate.move_project` copies the plan entries, rewrites the
-meta with the code repository it left, maintains both indexes, removes the source,
+meta with the code repository it left as the first code row, maintains both indexes, removes the source,
 re-points the store and commits on both sides, best-effort; the window pauses autosave
 around it and reloads after, because every view that cached a directory is rebuilt rather
 than patched. It is the one place colocation is *refused* rather than warned about: moving

@@ -73,11 +73,24 @@ def uses_worktree(step: Step) -> bool:
     return entry.get("worktree", True) is not False
 
 
-def write_state(on: bool, separate: bool = False, worktree: bool = True) -> dict[str, Any]:
+def workplace(step: Step) -> str:
+    """Which of the project's code locations this step's agent works in, by the row's
+    id; "" means the primary — the project's first code row. A fact about the step, as
+    the worktree choice is: two code repositories in a project means some steps are in
+    one and some in the other."""
+    entry = step.module_data.get(MODULE_ID) or {}
+    found = entry.get("workplace", "")
+    return found if isinstance(found, str) else ""
+
+
+def write_state(
+    on: bool, separate: bool = False, worktree: bool = True, workplace: str = ""
+) -> dict[str, Any]:
     """The aspect's entry: ``{}`` when off (the file disappears), the mark otherwise.
 
-    Only the opt-outs are written — ``separate`` when true, ``worktree`` when false —
-    so a plain agent step's entry stays the bare mark it always was.
+    Only the opt-outs are written — ``separate`` when true, ``worktree`` when false, a
+    ``workplace`` that is not the primary — so a plain agent step's entry stays the bare
+    mark it always was.
     """
     if not on:
         return {}
@@ -86,14 +99,30 @@ def write_state(on: bool, separate: bool = False, worktree: bool = True) -> dict
         entry["separate"] = True
     if not worktree:
         entry["worktree"] = False
+    if workplace:
+        entry["workplace"] = workplace
     return stamped(entry, DATA_FORMAT.version)
 
 
 def with_worktree(step: Step, worktree: bool) -> dict[str, Any]:
-    """The step's entry with only its worktree choice changed — the mark and a stored
-    ``separate`` flag ride along, so flipping one field never loses another."""
+    """The step's entry with only its worktree choice changed — the mark, a stored
+    ``separate`` flag and the workplace ride along, so flipping one field never loses
+    another."""
     entry = step.module_data.get(MODULE_ID) or {}
-    return write_state(True, separate=bool(entry.get("separate")), worktree=worktree)
+    return write_state(
+        True, separate=bool(entry.get("separate")), worktree=worktree, workplace=workplace(step)
+    )
+
+
+def with_workplace(step: Step, location_id: str) -> dict[str, Any]:
+    """The step's entry with only its workplace changed; "" returns it to the primary."""
+    entry = step.module_data.get(MODULE_ID) or {}
+    return write_state(
+        True,
+        separate=bool(entry.get("separate")),
+        worktree=uses_worktree(step),
+        workplace=location_id,
+    )
 
 
 def read_project(project: Project) -> str:

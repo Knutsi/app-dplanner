@@ -35,7 +35,9 @@ from PySide6.QtWidgets import QApplication, QDialog, QPlainTextEdit, QWidget
 from dplanner.app import new_session
 from dplanner.cli.install import COMMAND, LAUNCHER, SKILL, Item, Outcome
 from dplanner.core.storage.locations import init_repo
+from dplanner.core.storage.sparse import Probe
 from dplanner.domain.commands import SetFieldCommand
+from dplanner.domain.locations import CODE, Location, roles_by_id
 from dplanner.domain.project_link import ProjectLink, encode
 from dplanner.domain.relocate import Moved
 from dplanner.domain.repositories import repository_facts
@@ -46,6 +48,7 @@ from dplanner.framework.image_preview import ImagePreviewDialog
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.text_dialog import ExpandedTextDialog
 from dplanner.framework.user_config import set_global
+from dplanner.modules import default_location_roles, managed_for
 from dplanner.modules.install import dialog as install_dialog
 from dplanner.modules.library_watch.view import ConflictDialog
 from dplanner.modules.projects.move_dialog import MovePlanDialog
@@ -461,6 +464,8 @@ def render_bare(app: QApplication, theme: Theme, out: Path) -> None:
 def fake_repositories(services, plans: Path) -> RepositoryServices:  # type: ignore[no-untyped-def]
     """The projects module's seam, over the real store's facts and invented git and gh."""
     store, library = services.repo, services.document
+    roles = roles_by_id(default_location_roles())
+    managed = managed_for(roles)
     now = datetime.now(UTC)
     log = RepoLog(
         branch="main",
@@ -477,9 +482,11 @@ def fake_repositories(services, plans: Path) -> RepositoryServices:  # type: ign
     )
     return RepositoryServices(
         facts_of=lambda pid: repository_facts(
-            library.project(pid), store.project_dir(pid), store.checkout_of(pid)
+            library.project(pid), store.project_dir(pid), store.checkouts(), managed=managed
         ),
+        roles=roles,
         project_dir=store.project_dir,
+        checkout_for=store.checkout_for,
         set_checkout=store.set_checkout,
         checkout_changed=store.checkout_changed,
         plan_roots=lambda: [plans],
@@ -491,6 +498,7 @@ def fake_repositories(services, plans: Path) -> RepositoryServices:  # type: ign
         publish=lambda _root, name: f"https://github.com/acme/{name}",
         create_repository=lambda name, _dest: f"https://github.com/acme/{name}",
         open_prs=lambda _remote: [pr],
+        list_folders=lambda _url, ref: Probe(ref, ()),
         move_project=lambda *_args: Moved(Path(), Path(), False, False, ()),
     )
 
@@ -516,8 +524,18 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
 
     discovery = services.repo.attach(seed_project(workspace / "discovery", "Discovery"))
     services.document.add_child(services.document.id, discovery)
-    services.undo.push(SetFieldCommand(discovery.id, "repository", CODE_URL))
-    services.repo.set_checkout(discovery.id, code)
+    services.undo.push(
+        SetFieldCommand(
+            discovery.id,
+            "locations",
+            (
+                Location("l1", CODE.id, CODE_URL),
+                Location("l2", "specs", "https://github.com/acme/specs", path="products/search"),
+                Location("l3", "docs", CODE_URL, path="docs/search"),
+            ),
+        )
+    )
+    services.repo.set_checkout(CODE_URL, code)
     satellite = services.repo.attach(seed_project(workspace / "satellite", "Satellite"))
     services.document.add_child(services.document.id, satellite)
     settle(app)
@@ -581,7 +599,6 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
         services.theme,
         listed_dirs=[],
         listed_ids=[],
-        known_checkout=lambda _remote: None,
         parent=services.window,
     )
     inline(opening.browse._runner, opening.link._runner)

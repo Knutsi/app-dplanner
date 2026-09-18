@@ -1,13 +1,13 @@
 ---
 paths:
-  - "src/dplanner/domain/{store,library_file,plan_repo,relocate,repositories,migrations,at_work}.py"
+  - "src/dplanner/domain/{store,library_file,plan_repo,relocate,repositories,migrations,at_work,locations}.py"
   - "src/dplanner/core/storage/**"
   - "src/dplanner/core/{fsio,repository}.py"
   - "src/dplanner/framework/{autosave,session,window_watch,project_list_segment}.py"
   - "src/dplanner/modules/{sync,library,library_watch,agent_at_work,projects,github}/**"
   - "src/dplanner/cli/discovery.py"
-  - "tests/domain/test_{store,library_file,plan_repo,relocate,repositories,at_work}*.py"
-  - "tests/core/test_{storage_contract,locations,pointer,remotes}.py"
+  - "tests/domain/test_{store,library_file,plan_repo,relocate,repositories,at_work,project_locations,migration_v3}*.py"
+  - "tests/core/test_{storage_contract,locations,pointer,remotes,sparse}.py"
   - "tests/framework/test_{autosave,session}.py"
   - "tests/modules/test_{sync,library,agent_at_work,projects,project_dialog,open_projects,move_plan,github}*.py"
   - "tests/cli/test_{library_verbs,project_repos,agent_work}.py"
@@ -110,13 +110,15 @@ paths:
 - **There are two ways into a library and a project link is what makes the second one
   possible.** *Open Project…* is a wizard (`modules/projects/open_dialog.py`) over a
   chooser page, a **link** page and a **browse** page — the old Open Projects dialog, now
-  `browse_page.py`. Both pages end at one `Joined(directory, checkout)` on disk and the
-  module connects it, so neither grew a membership path of its own; the chooser remembers
+  `browse_page.py` — and, when the joined plan names repositories this machine lacks, the
+  **Repositories** page. Every way ends at one `Joined(directory, checkouts)` on disk and
+  the module connects it, so none grew a membership path of its own; the chooser remembers
   which way this person uses and a machine that has never chosen opens on the link, the
   only one somebody with no plan repository can act on. *File ▸ Share Project…* writes what
   that page reads. **`domain/project_link.py` is the whole vocabulary** — the document, the
-  `.dlink` file, the `dplanner://project?…` line, and `find_clone`/`find_checkout`, which
-  are what stop the wizard cloning something this machine already has — and no surface
+  `.dlink` file, the `dplanner://project?…` line, and `find_clone`, which with the
+  library's checkouts map is what stops the wizard cloning something this machine already
+  has — and no surface
   parses a link itself. **The window clones and the terminal does not**: the link page runs
   it through `TaskRunner` inside the page the person pressed, while `dplanner project open`
   resolves against known clones and otherwise refuses with the `git clone` line, the rule
@@ -130,20 +132,38 @@ paths:
   remote — writes fresh PR state into the step with the refresher's origin, and enables
   *Open PR* / *Open branch* (`aspect.py`'s `pr_url`/`branch_url`, the recorded URL over
   one built from the number). `dplanner github show` is the terminal's copy.
-- **Two repositories, two questions.** *Where does the plan live?* — the **plan
-  repository** — is derived: `find_repo_root(project dir)`, never stored. *Which code does
-  it plan?* — the **code repository** — is `Project.repository`, the remote URL as git
-  prints it (a resolved path for a remote-less one), shared in `project.dproj`. *Where is
-  that code here?* is the library file's per-machine `checkout`, written straight into the
-  file by `store.set_checkout`. `domain/repositories.py` is the one derivation
-  (`RepositoryFacts`: separated, colocated, legacy; `warns` unless `colocation ==
-  "accepted"`), and every reader asks it — lint's `repo.unset`/`repo.colocated`, the
-  briefing's preamble, the Project dialog, the Repositories card, the opening status line.
-  The root hands the agent module `facts_for` and it decides where an agent works: the
-  code checkout, or the plan's own repository for the older shape; a conflict is settled in
-  the plan repository whatever the code is. `cli/discovery.py` finds the project from a
-  checkout whose `origin` is its code repository (`canonical_remote`) and records the
-  checkout the first time; the wrapper exports `DPLANNER_PROJECT`. A plan repository holds
+- **A project names its locations; the plan repository stays derived.** *Where does the
+  plan live?* — the **plan repository** — is `find_repo_root(project dir)`, never stored.
+  *Which places is it about?* — its **locations** (`domain/locations.py`: a role, a
+  repository as git prints its remote, a position inside it, an optional ref and label,
+  an id minted per project) — is `Project.locations`, shared in `project.dproj`; the
+  first `code` row is the code repository every older reader means. **Roles are a
+  registry**: the domain declares `code` (the CLI must find a project from a checkout
+  without loading a module) and a module declares its own in a Qt-free `roles.py`
+  (`specs`, `docs`, `tests`) that `default_location_roles()` gathers — a role this build
+  does not know is kept and written back untouched. *Where is each on this machine?* is
+  the library file's `checkouts` map, **per repository, never per project**
+  (`store.checkout_for`/`set_checkout`, keyed by `canonical_remote`, written straight into
+  the file), and `locations.place` answers it in one order: the recorded checkout, the plan
+  repository itself when the row names it, a managed clone for a role that does not
+  write (the git spec source's cache, keyed as it keys it), or nowhere. **Whether a
+  location asks for a checkout follows from `LocationRole.writes`**: code, docs and tests
+  need one the person owns, asked once per repository per machine; specs is fetched on
+  demand and never asks; **a managed clone is never written**. `domain/repositories.py` is
+  the one derivation (`RepositoryFacts` over placements, with `code`/`repository`/
+  `checkout` as the primary row's; separated, colocated, legacy; `warns` unless
+  `colocation == "accepted"`), and every reader asks it — lint's `repo.unset`/
+  `repo.colocated` and `location.invalid`/`unknown_role`/`duplicate`, the briefing's
+  preamble and its locations paragraph, the Project dialog, the Repositories card, the
+  opening status line. The root hands the agent module `facts_for` and it decides where
+  an agent works: the checkout of the code location the step's `workplace` names, else
+  the primary's, or the plan's own repository for the older shape; a conflict is settled
+  in the plan repository whatever the code is. `cli/discovery.py` finds the project from a
+  checkout whose `origin` is one of its code locations (`canonical_remote`) and records
+  the checkout the first time; the wrapper exports `DPLANNER_PROJECT`. The verbs are
+  `dplanner location list|roles|add|set|remove|checkout` and `project create --code`,
+  every mutating one a `SetFieldCommand` on `locations` — the table the dialog pushes.
+  A plan repository holds
   several projects for several people under a `.dplanner` index (`FORMAT.md`); *File ▸ New
   Project…* is the Project dialog in create mode over a picked plan repository, *Open
   Projects…* browses one and adds the chosen projects, and *Move Plan…* moves a plan
@@ -156,20 +176,25 @@ paths:
   project move` is the same function from the terminal; the briefing and the skill tell an
   agent to run it when the developer asks and never unasked. Never store a plan root, and
   never compare paths where `RepositoryFacts` already answers.
-  `ARCHITECTURE.md`'s *Two repositories, two questions* has the reasoning.
-- **The Project dialog is two columns, not three fields.** A repository answers two
-  questions — *which repository is it* and *where is it on this machine* — and the dialog
-  asks both of both, under the column each belongs to, parted by the vertical rule that
-  says they are two. `repos.code_lines`/`plan_lines` are the one derivation of those lines
-  and the Repositories card reads them too, so neither surface can word a fact the other
-  way; a line with nothing to name says what is missing rather than standing blank. Every
-  verb of a column is an entry in its **⋯ menu**, built when it opens (a glyph carries the
-  colour it was painted in) and greyed *with its reason in its words* rather than dropped,
-  so the list to learn never changes shape. **Create mode is the same vocabulary over
-  fields**: both repositories are picked rather than typed, each with the ⋯ of the other
-  ways in beside it, and the code field lists what this library already plans — picking one
-  brings the checkout this machine has for it, because a second plan for one repository
-  needs no second clone. Both modes run the same verbs (`_code_url`, `_set_repository`,
-  `_record_checkout`), answering into the form's fields or into the model.
-  `ARCHITECTURE.md`'s *The Project dialog is two columns, not three fields* has the
-  reasoning.
+  `ARCHITECTURE.md`'s *A project names its locations* has the reasoning.
+- **The Project dialog is the Locations table over two log columns.** A location answers
+  two questions — *which repository and position is it* and *where is it on this machine*
+  — and the table (`locations_table.py`, the `Table` primitive) asks both of every row,
+  greyed where nothing is here yet; `repos.location_words` is the one wording, read by the
+  Repositories card too, so neither surface can word a fact the other way. **Add ▾ renders
+  the role registry** and a row's **⋯** its verbs (edit, choose checkout, clone, open,
+  remove), built when they open and greyed *with the reason in their words* rather than
+  dropped; a right-click on a row renders the same ⋯. Adding or editing a row is one fit
+  dialog (`location_dialog.py`): the repository as a combo led by the code the project
+  already names, the position with a folder picker over the checkout when this machine
+  has one and over the remote's tree listing (`RepositoryServices.list_folders`) when it
+  does not, refused in words while the row cannot stand. **Create mode is the same table
+  over a draft** the form holds until Create seeds the project; a clone run from the
+  draft's ⋯ lands in `NewProjectSpec.checkouts`. The two log columns keep the primary
+  code's and the plan's history, and the code column's ⋯ acts on the primary code row
+  through the same `_set_locations`. Every edit is one `SetFieldCommand` on `locations`.
+  **The Open Project wizard asks after the clone**: `repositories_page.py` lists the
+  worked-in repositories the joined plan names that this machine lacks — clone into the
+  repositories folder, use a checkout I have, or later; read-only rows are not listed —
+  so the link page names nothing but the plan. `ARCHITECTURE.md`'s *The Project dialog is
+  the Locations table* has the reasoning.

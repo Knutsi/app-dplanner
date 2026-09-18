@@ -49,6 +49,7 @@ class FakeKind:
     id: str = "fake"
     name: str = "Fake"
     label: str = "Fake Source…"
+    handles_locations: bool = False
     ready: bool = False
     connectable: bool = True
     located: tuple[str, dict[str, str]] | None = ("Auth", {"site": "https://f", "id": "1"})
@@ -174,7 +175,12 @@ def test_the_plus_dropdown_lists_the_kind_after_the_built_ins(fake_kind, service
     entries = [
         entry.text().replace("&", "") for entry in popup.actions() if not entry.isSeparator()
     ]
-    assert entries == ["New Spec Document…", "Import Spec Document…", "Fake Source…"]
+    assert entries == [
+        "New Spec Document…",
+        "Import Spec Document…",
+        "From Location… — no git support here",  # The fake reads no repository.
+        "Fake Source…",
+    ]
     assert not popup.actions()[-1].icon().isNull()
 
 
@@ -573,3 +579,49 @@ def test_connect_is_not_offered_where_connecting_cannot_help(app, fake_kind, ser
     fake_kind.connectable = True
     tab._refresh_source_strip()
     assert not tab.connect_button.isHidden()
+
+
+# -- a source over one of the project's specs locations -----------------------------------------
+
+
+def test_a_specs_location_becomes_a_source_that_follows_the_row(fake_kind, services, project):
+    """*Add Spec ▸ From Location…*: greyed with its reason until the project names a
+    specs location; the source it adds names the row by id, and every call to the kind
+    gets the row's address — edit the row and the source moves with it."""
+    from dplanner.domain.commands import SetFieldCommand
+    from dplanner.domain.locations import Location
+    from dplanner.modules.spec.sourced import resolve_locator
+
+    fake_kind.handles_locations = True
+    context = select(services, project)
+    state = services.actions.spec("spec.add_source.location").state(context)
+    assert not state.enabled and "names no specs location" in (state.label or "")
+
+    row = Location("l1", "specs", "https://github.com/acme/specs", path="products", ref="v2")
+    services.undo.push(SetFieldCommand(project.id, "locations", (row,)))
+    assert services.actions.spec("spec.add_source.location").state(context).enabled
+    services.actions.run("spec.add_source.location", select(services, project))
+
+    index = read_index(services.document.project(project.id))
+    (source,) = index.sources
+    assert source.kind == "fake" and source.title == "Specs"
+    assert source.locator == {"location": "l1"}
+    assert resolve_locator(services.document.project(project.id), source) == {
+        "url": "https://github.com/acme/specs",
+        "ref": "v2",
+        "path": "products",
+    }
+    state = services.actions.spec("spec.add_source.location").state(select(services, project))
+    assert not state.enabled and "already" in (state.label or "")
+
+    moved = Location("l1", "specs", "https://github.com/acme/specs", path="products/v3")
+    services.undo.push(SetFieldCommand(project.id, "locations", (moved,)))
+    assert resolve_locator(services.document.project(project.id), source)["path"] == "products/v3"
+    assert resolve_locator(services.document.project(project.id), source)["ref"] == "HEAD"
+
+    services.undo.push(SetFieldCommand(project.id, "locations", ()))
+    from dplanner.modules import _default_briefing  # noqa: F401 — the module is built.
+
+    module = next(m for m in services.modules if m.id == "spec")
+    status = module.refresher.status(project.id, source)
+    assert not status.ready and "gone from the project" in status.message

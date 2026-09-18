@@ -27,6 +27,7 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | what the CLI must also read: the project library | `core/config_dir.py` + `domain/library_file.py` | no — it is a list of *this machine's* paths |
 | Per user, per machine (Qt-free) | what happened and how long it took: the telemetry journal, and a native crash's stack | `core/telemetry.py` under `config_dir()/telemetry/` — see *The telemetry journal* | no — it is this machine's diagnostics |
 | Per user, per machine (Qt-free) | who is working on a plan right now: an agent's *at work* claim | `domain/at_work.py` under `config_dir()/at-work/` — see *An agent's at-work claim* | no — it is a process that is running here, now |
+| Per user, per machine (Qt-free) | a read-only location's managed clone, and a git spec source's: blobless, shallow, sparse to one folder | `core/storage/sparse.py` under `config_dir()/spec-git/<digest of remote, ref and folder>` | no — disposable: wipe it and the next read pays one tree fetch |
 
 | Per user, per machine (GUI only) | preferences: panel layout, model choices, the agent launch profiles | `framework/user_config.py`'s `get_global` (QSettings) | no |
 | Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
@@ -41,27 +42,32 @@ into another would be nonsense. Anything in the scoped row is written **keyed by
 so a value naming something that has since been deleted restores nothing — which is why
 neither needs a version stamp or a migration.
 
-**A project answers two repository questions, and they go to different rows.** *Where does
-the plan live?* — the **plan repository** — is never stored: it is the git repository
-enclosing the project directory, `find_repo_root`'s answer. *Which code does it plan?* —
-the **code repository** — is `"repository"` in `project.dproj`, the remote URL as git
-prints it (or, for a repository with no remote, its resolved path), shared with everyone
-who opens the plan. *Where is that code on this machine?* is the library file's `checkout`
-column, per user, per machine, below. `ARCHITECTURE.md`'s *Two repositories, two
-questions* has the reasoning; `domain/repositories.py` is the one derivation over the three.
+**A project answers three repository questions, and they go to different rows.** *Where
+does the plan live?* — the **plan repository** — is never stored: it is the git repository
+enclosing the project directory, `find_repo_root`'s answer. *Which places is it about?* —
+its **locations**, each a role, a repository as git prints its remote (or, for one with no
+remote, its resolved path) and a position inside it — is `"locations"` in `project.dproj`,
+shared with everyone who opens the plan. *Where is each of those on this machine?* is the
+library file's `checkouts` map, per user, per machine, below, for a location that is worked
+in; a read-only one is fetched into a managed clone and never asks. `ARCHITECTURE.md`'s *A
+project names its locations* has the reasoning; `domain/repositories.py` is the one
+derivation over the three.
 
 ## The library file
 
 `library.json` records **membership**: which project directories this user is planning —
-and, per project, where this machine has the code that project plans.
+and where this machine has the repositories those projects name.
 
 ```json
 {
-  "format": 2,
+  "format": 3,
   "projects": [
-    {"path": "/home/anna/plans/widget", "checkout": "/home/anna/code/widget"},
+    {"path": "/home/anna/plans/widget"},
     {"path": "/home/anna/code/gadget/planning"}
-  ]
+  ],
+  "checkouts": {
+    "github.com/acme/widget": "/home/anna/code/widget"
+  }
 }
 ```
 
@@ -70,12 +76,18 @@ and, per project, where this machine has the code that project plans.
   another. It is per user and per machine, and never belongs in version control.
 - Paths are absolute (`~` is allowed) and the array order is the order the Projects panel
   shows.
-- `checkout` is optional: where this machine has the project's code repository. It is
-  written by the Project dialog, by `dplanner project set --checkout`, and by the first
-  `dplanner` call that runs inside a checkout whose `origin` is the project's code
-  repository — **straight into the file** (`LibraryStore.set_checkout`, read-modify-write
-  and re-stamp), never through a dirty mark, because a read verb's transaction must never
-  be refused over a per-machine fact. A format-1 file reads as format 2 with no checkouts.
+- `checkouts` is optional: where this machine has each repository, keyed by the
+  repository's canonical spelling (`canonical_remote`: host and path, lowercased, `.git`
+  dropped; a remote-less repository by its resolved path). **Per repository, never per
+  project** — a checkout is this machine's fact about a repository, so two projects naming
+  one repository share it and a second plan for the same code never asks for a second
+  clone. It is written by the Project dialog, by `dplanner location checkout`, by the Open
+  Project wizard's Repositories page, and by the first `dplanner` call that runs inside a
+  checkout whose `origin` is one of a project's code locations — **straight into the file**
+  (`LibraryStore.set_checkout`, read-modify-write and re-stamp), never through a dirty
+  mark, because a read verb's transaction must never be refused over a per-machine fact. A
+  format-2 row carried its project's code checkout instead; reading one files it under the
+  checkout's own origin. A format-1 file reads as format 3 with no checkouts.
 - Reading is tolerant: a malformed row is skipped, and an entry that cannot be opened — the
   folder is gone, holds no `project.dproj`, or is not inside a git repository — becomes an
   *unavailable* row in the panel rather than a refusal, and keeps its place in the file
@@ -197,14 +209,21 @@ for byte. A *user's* plan repository gets no such file: `write_atomic` writing L
 enough there (git's `autocrlf` leaves LF alone on the way in), and writing into somebody
 else's `.gitattributes` is a bigger intrusion than this needs.
 
-**Two keys on the project say where it stands with its code.** `"repository"` is the code
-repository the plan is about, as git names its remote (a resolved path for a remote-less
-one); absent, the project reads as planning the repository it sits in — the older shape,
-warned about by lint, the briefing and the window until it is moved or accepted.
-`"colocation": "accepted"` is that acceptance: the people on the project decided the plan
-stays inside its code on purpose, and every warning stands down. Both are set by the
-Project dialog and `dplanner project set`; `project move` writes the first and drops the
-second as it goes.
+**Two keys on the project say where it stands with its code.** `"locations"` is the table
+of places the project is about — rows of `{"id", "role", "repository", "path", "ref",
+"label"}`, absence encoding the default: no `path` is the root, no `ref` the repository's
+default branch, no `label` the only row of its role, and no `locations` at all a project
+that plans the repository it sits in — the older shape, warned about by lint, the briefing
+and the window until it is moved or accepted. The `id` (`l1`, `l2`, …) is minted per
+project and kept while the row is edited, because a spec source and a step's workplace
+name a row by it; `role` is a word from the registry — the domain's `code`, and `specs`,
+`docs` and `tests` from the modules that act on them — and **a role this build does not
+know is loaded and written back untouched**, the edge-kind rule; the first `code` row is
+*the* code repository every older reader means. `"colocation": "accepted"` is the
+acceptance: the people on the project decided the plan stays inside its code on purpose,
+and every warning stands down. Both are set by the Project dialog and the `dplanner
+location` and `project set` verbs; `project move` adds the first code row and drops the
+second as it goes. Format 3 moved the earlier `"repository"` string into the first row.
 
 **Edges are keyed by kind**: `"edges": {"requires": ["<step id>", …]}`. One line per edge
 rather than an object per edge, and the direction cannot be read the wrong way round —

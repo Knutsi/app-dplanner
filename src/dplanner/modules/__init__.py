@@ -156,7 +156,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.spec_confluence.module import SpecConfluenceDeps, SpecConfluenceModule
     from dplanner.modules.spec_folder.module import SpecFolderKind
     from dplanner.modules.spec_git.module import SpecGitDeps, SpecGitKind
-    from dplanner.modules.spec_git.source import SPEC_GIT_CACHE
+    from dplanner.modules.spec_git.source import SPEC_GIT_CACHE, probe
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_agent_instruction.aspect import read as agent_instruction_read
@@ -342,6 +342,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         publish=publish,
         create_repository=create_repository,
         open_prs=open_prs,
+        # The git spec source's listing, worn by a location's position: folders only,
+        # no file downloaded, into the same per-user cache.
+        list_folders=lambda url, ref: probe(config_dir() / SPEC_GIT_CACHE, url, ref),
         move_project=lambda project_id, target, init: move_project(
             store, project_id, target, init_repo=init
         ),
@@ -882,6 +885,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             debounce=services.debounce,
             rename_references=_rename_spec_references,
             kinds=_source_kinds(spec_folder, spec_git, confluence.page, confluence.folder),
+            roles=roles,
             passages_of=lambda project_id, document: [
                 source.quote
                 for step in library.project(project_id).steps
@@ -3089,8 +3093,11 @@ def default_location_roles() -> tuple["LocationRole", ...]:
     The order is the order the Add menu offers them.
     """
     from dplanner.domain.locations import CODE
+    from dplanner.modules.docs.roles import ROLE as DOCS
+    from dplanner.modules.spec.roles import ROLE as SPECS
+    from dplanner.modules.testing.roles import ROLE as TESTS
 
-    return (CODE,)
+    return (CODE, SPECS, DOCS, TESTS)
 
 
 def managed_for(roles: "Mapping[str, LocationRole]") -> "ManagedFor":

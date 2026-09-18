@@ -45,9 +45,12 @@ from dplanner.modules.spec.aspect import MODULE_ID
 from dplanner.modules.spec.documents import SpecSource, read_index, write_index
 from dplanner.modules.spec.source_kind import DocumentSourceKind, SourceStatus
 from dplanner.modules.spec.sourced import (
+    LOCATION_KEY,
     Applied,
     apply_snapshot,
     known_versions,
+    location_of,
+    resolve_locator,
     source_of,
 )
 
@@ -135,7 +138,15 @@ class SourceRefresher(QObject):
         if refused:
             # A refusal the credential caused is exactly what reconnecting fixes.
             return SourceStatus(False, refused, connectable=True)
-        return kind.status(source.locator)
+        if not self._product.has(project_id):
+            return SourceStatus(False, "the project is gone")
+        project = self._product.project(project_id)
+        named = source.locator.get(LOCATION_KEY)
+        if named and location_of(project, source) is None:
+            return SourceStatus(
+                False, f"its location {named} is gone from the project — Project ▸ Settings…"
+            )
+        return kind.status(resolve_locator(project, source))
 
     def needs_reconnect(self, project_id: NodeId, source_id: str) -> bool:
         return (project_id, source_id) in self._reconnect
@@ -348,13 +359,14 @@ class SourceRefresher(QObject):
         a check decide what they are about to do."""
         if not self._product.has(project_id):
             return []
-        index = read_index(self._product.project(project_id))
+        project = self._product.project(project_id)
+        index = read_index(project)
         return [
             _Target(
                 source_id=source.id,
                 title=source.title,
                 kind=self._kinds[source.kind],
-                locator=dict(source.locator),
+                locator=dict(resolve_locator(project, source)),
                 known=known_versions(index, source.id),
             )
             for source in sources

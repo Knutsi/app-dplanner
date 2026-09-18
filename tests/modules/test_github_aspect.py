@@ -226,7 +226,15 @@ def test_the_projects_code_repository_answers_over_the_directorys_origin(
         return []
 
     monkeypatch.setattr(github_cli, "list_prs", list_prs)
-    cli("project", "set", "Discovery", "--repository", "https://github.com/acme/other")
+    cli(
+        "location",
+        "add",
+        "Discovery",
+        "--role",
+        "code",
+        "--repository",
+        "https://github.com/acme/other",
+    )
     cli("github", "prs", "--project", "Discovery")
     assert asked == ["acme/other"]
 

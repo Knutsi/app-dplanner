@@ -84,6 +84,7 @@ class ConfluenceKind:
     """
 
     name = "Confluence"  # The prose noun: "from Confluence", "Refresh Confluence".
+    handles_locations = False
 
     def __init__(self, module: "SpecConfluenceModule", content: ContentType) -> None:
         self._module = module

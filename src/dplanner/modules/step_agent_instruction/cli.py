@@ -20,6 +20,7 @@ from dplanner.cli.authoring import StepAuthor, StepAuthored
 from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import body_from, find_project, find_step, step_arg
 from dplanner.domain.commands import EditTextCommand, SetModuleDataCommand
+from dplanner.domain.locations import CODE, find_location, of_role
 from dplanner.domain.model import Library, Node, Project, Step, TextEdit
 from dplanner.domain.repositories import repository_facts
 from dplanner.domain.shelf import turn_off, turn_on
@@ -32,7 +33,9 @@ from dplanner.modules.step_agent_instruction.aspect import (
     read_project,
     separate_instruction,
     uses_worktree,
+    with_workplace,
     with_worktree,
+    workplace,
     write_state,
 )
 from dplanner.modules.step_agent_instruction.prompt import Briefing, assemble
@@ -158,6 +161,8 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             "plan": str(facts.plan_root or ""),
             "repository": facts.repository,
             "checkout": str(facts.checkout) if facts.checkout is not None else "",
+            # The step's own workplace, when it names one: where its shell opens.
+            "workplace": workplace(step),
             "prompt": assembled.text,
             # What each block cost, so "where does a briefing's weight go?" is one verb
             # rather than a script somebody writes again. The sizes sum to the prompt's.
@@ -221,6 +226,18 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             examples=("dplanner agent worktree 'Cut the release' off",),
         ),
         CliCommand(
+            path=("agent", "workplace"),
+            summary="Which of the project's code locations this step's agent works in —"
+            " by the location's id or label, or `primary` for the project's first code"
+            " repository (the default).",
+            configure=_configure_workplace,
+            run=_workplace,
+            examples=(
+                "dplanner agent workplace 'Build the login form' code:UI",
+                "dplanner agent workplace 'Build the login form' primary",
+            ),
+        ),
+        CliCommand(
             path=("agent", "prompt"),
             summary="Print the full briefing for a step: instructions, requirements, "
             "branch and inherited context — everything, in one read.",
@@ -266,6 +283,42 @@ def _worktree(context: CliContext, args: Namespace) -> int:
         SetModuleDataCommand(step.id, MODULE_ID, with_worktree(step, wanted), label=label)
     )
     context.report({"step": step.id, "worktree": wanted}, f"{step.title}: {where}")
+    return 0
+
+
+def _configure_workplace(parser: ArgumentParser) -> None:
+    step_arg(parser)
+    parser.add_argument(
+        "location", help="a code location's id (l2), its role and label (code:UI), or primary"
+    )
+
+
+def _workplace(context: CliContext, args: Namespace) -> int:
+    step = find_step(context.library, args.step, context.current)
+    if not enabled(step):
+        raise CliError(
+            f"{step.title!r} is not an agent step — mark it with `dplanner agent on {step.title!r}`"
+        )
+    project = context.library.project_of(step.id)
+    if args.location == "primary":
+        location_id, where = "", "the primary code repository"
+    else:
+        try:
+            location = find_location(of_role(project.locations, CODE.id), args.location)
+        except LookupError as error:
+            raise CliError(str(error)) from error
+        location_id, where = location.id, f"{location.id} ({location.repository_label})"
+    if workplace(step) == location_id:
+        context.report(
+            {"step": step.id, "workplace": location_id}, f"{step.title}: already {where}"
+        )
+        return 0
+    context.apply(
+        SetModuleDataCommand(
+            step.id, MODULE_ID, with_workplace(step, location_id), label="Agent Workplace"
+        )
+    )
+    context.report({"step": step.id, "workplace": location_id}, f"{step.title}: works in {where}")
     return 0
 
 
@@ -329,6 +382,7 @@ def _show(context: CliContext, args: Namespace) -> int:
         "agent": enabled(step),
         "separate": separate_instruction(step),
         "worktree": uses_worktree(step),
+        "workplace": workplace(step),
     }
     if body:
         context.report(data, body)

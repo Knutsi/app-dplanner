@@ -200,7 +200,6 @@ class ProjectsModule:
             deps.tasks,
             deps.theme,
             move=self.move_plan,
-            known_checkout=self._checkout_of,
             mode=CREATE,
             parent=deps.parent,
         )
@@ -234,7 +233,6 @@ class ProjectsModule:
             deps.theme,
             listed_dirs=deps.project_dirs(),
             listed_ids=[project.id for project in deps.library.projects],
-            known_checkout=self._checkout_of,
             parent=deps.parent,
         )
         accepted = bool(dialog.exec())
@@ -249,11 +247,6 @@ class ProjectsModule:
             deps.status.show_status(f"“{title}” added to the library", 4000)
         elif added:
             deps.status.show_status(f"{len(added)} projects added to the library", 4000)
-
-    def _checkout_of(self, remote: str) -> Path | None:
-        """Where this machine already has ``remote`` checked out — the library's map,
-        which is what the link page and New Project offer rather than cloning again."""
-        return self._deps.repos.checkout_for(remote)
 
     def share_project(self, project_id: ProjectId) -> None:
         """*Share Project…*: the link, the file and the code, for one project.

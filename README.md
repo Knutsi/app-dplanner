@@ -416,9 +416,10 @@ src/dplanner/
 ├── modules/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── library/             which library: File ▸ New/Open Project Library, the title; `library …` verbs
-│   ├── projects/            the Projects folder in the index, the project verbs, New Project…, Open
-│   │                        Projects…, the Project dialog (a column per repository: log, facts, ⋯ menu),
-│   │                        the Repositories card, Move Plan, and the repositories folder clones land in
+│   ├── projects/            the Projects folder in the index, the project and `location` verbs, New
+│   │                        Project…, Open Project… (link, browse, then the Repositories page), the Project
+│   │                        dialog (the Locations table over the role registry, a log column per
+│   │                        repository), the Repositories card, Move Plan, and the repositories folder
 │   ├── project_dashboard/   the project's home tab: its name and summary, and a card per module with
 │   │                        something to say about the project (Repositories, Agent, Compilation
 │   │                        instructions) — what a click on the project's row in the index opens
@@ -502,7 +503,7 @@ src/dplanner/
 │   │                        Connect dialog, Settings ▸ Confluence
 │   ├── spec_folder/         a folder on this computer as a spec source: the locator over the
 │   │                        shared walk in domain/document_folder.py
-│   ├── spec_git/            a git repository as a spec source: the subprocess door (client.py),
+│   ├── spec_git/            a git repository as a spec source over core/storage/sparse.py's clone door:
 │   │                        the locator, the blobless shallow sparse fetch and the size guard
 │   │                        (source.py), and the dialog that lists the remote's folders
 │   ├── coverage/            the plan against the spec: milestones → features → passages →

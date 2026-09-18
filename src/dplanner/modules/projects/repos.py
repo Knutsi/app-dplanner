@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dplanner.core.signals import Signal
+from dplanner.core.storage.sparse import Probe
 from dplanner.domain.locations import LocationRole, Placement
 from dplanner.domain.relocate import Moved
 from dplanner.domain.repositories import RepositoryFacts
@@ -85,11 +86,6 @@ class Joined:
     directory: Path
     checkouts: tuple[tuple[str, Path], ...] = ()
 
-    @property
-    def checkout(self) -> Path | None:
-        """The first checkout recorded, for a reader that means the code's."""
-        return self.checkouts[0][1] if self.checkouts else None
-
 
 @dataclass(frozen=True)
 class RepoLines:
@@ -131,26 +127,46 @@ def code_lines(facts: RepositoryFacts) -> RepoLines:
     )
 
 
-def location_lines(placement: Placement, roles: Mapping[str, LocationRole]) -> RepoLines:
-    """One location as a surface states it: which repository and position it is, and
-    where that is on this machine — a checkout, a managed clone fetched on demand, or
-    nothing yet, said in words rather than left blank."""
+@dataclass(frozen=True)
+class LocationWords:
+    """One location as every surface words it: the row of the table, the card's line.
+
+    ``where`` always says something — a checkout, a managed clone fetched on demand, or
+    that nothing is here yet — and ``missing`` is what a reader greys.
+    """
+
+    name: str  # "Code", "Code — UI", "Specs".
+    repository: str  # As a person knows it: "acme/widget".
+    position: str  # "docs/search/", or "" for the root.
+    where: str
+    missing: bool = False
+
+    @property
+    def identity(self) -> str:
+        inside = f" · {self.position}" if self.position else ""
+        return f"{self.name}: {self.repository}{inside}"
+
+
+def location_words(placement: Placement, roles: Mapping[str, LocationRole]) -> LocationWords:
     location = placement.location
-    inside = f" · {location.path}/" if location.path else ""
-    identity = f"{location.name(roles)}: {location.repository_label}{inside}"
+    name, repository = location.name(roles), location.repository_label
+    position = f"{location.path}/" if location.path else ""
     if placement.root is None:
-        return RepoLines(identity, "not checked out on this machine", location_missing=True)
+        return LocationWords(name, repository, position, "not checked out on this machine", True)
     if placement.managed:
         directory = placement.directory
         fetched = directory is not None and directory.is_dir()
-        return RepoLines(
-            identity,
-            "fetched on demand" + ("" if fetched else " — not fetched yet"),
-            location_missing=not fetched,
-        )
+        where = "fetched on demand" + ("" if fetched else " — not fetched yet")
+        return LocationWords(name, repository, position, where, not fetched)
     directory = placement.directory
     assert directory is not None
-    return RepoLines(identity, shown_path(directory))
+    return LocationWords(name, repository, position, shown_path(directory))
+
+
+def location_lines(placement: Placement, roles: Mapping[str, LocationRole]) -> RepoLines:
+    """One location as two lines — which it is, and where it is here."""
+    words = location_words(placement, roles)
+    return RepoLines(words.identity, words.where, location_missing=words.missing)
 
 
 def plan_lines(facts: RepositoryFacts) -> RepoLines:
@@ -212,6 +228,9 @@ class RepositoryServices:
     publish: Callable[[Path, str], str]  # BLOCKING: a root onto GitHub as name -> its origin.
     create_repository: Callable[[str, Path], str]  # BLOCKING: name on GitHub, cloned -> URL.
     open_prs: Callable[[str], list[PullRequest]]  # BLOCKING: a remote's open pull requests.
+    # BLOCKING: the folders a remote holds at a ref, without a file downloaded — what the
+    # position of a location is picked from when this machine has no checkout to browse.
+    list_folders: Callable[[str, str], Probe]
     # Synchronous on purpose: it rewrites the working tree, and the reload that follows
     # discards the build — ARCHITECTURE.md's *Storage operations that rewrite the working
     # tree are synchronous*.

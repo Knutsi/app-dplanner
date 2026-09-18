@@ -1966,3 +1966,73 @@ def test_no_terminal_says_so_rather_than_offering_a_prompt_nobody_wrote(
     services.actions.run("agent.open", services.context.current())
     ((title, text),) = said
     assert title == "Open Agent in Code" and "No terminal opened" in text
+
+
+# -- a step names the code location it works in ---------------------------------------------------
+
+
+def test_a_step_works_in_the_code_location_it_names_else_the_primary(
+    services, step, tmp_path, monkeypatch
+):
+    """Two code repositories in a project: a step's shell opens in the one its
+    ``workplace`` names, the primary for a step that names none — and a named row that
+    is gone falls back to the primary rather than nowhere."""
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.commands import SetFieldCommand, SetModuleDataCommand
+    from dplanner.domain.locations import Location
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, with_workplace
+
+    widget, ui = init_repo(tmp_path / "widget"), init_repo(tmp_path / "ui")
+    project = services.document.project_of(step.id)
+    rows = (
+        Location("l1", "code", "https://github.com/acme/widget"),
+        Location("l2", "code", "https://github.com/acme/ui", label="UI"),
+    )
+    services.undo.push(SetFieldCommand(project.id, "locations", rows))
+    services.repo.set_checkout("https://github.com/acme/widget", widget)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    calls: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    assert calls[-1][1] == widget  # The primary.
+
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, with_workplace(step, "l2")))
+    select(services, step)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert not state.enabled and "acme/ui is not checked out" in (state.label or "")
+    services.repo.set_checkout("https://github.com/acme/ui", ui)
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    assert calls[-1][1] == ui
+
+    services.undo.push(SetFieldCommand(project.id, "locations", rows[:1]))
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    assert calls[-1][1] == widget  # The named row is gone: the primary again.
+
+
+def test_agent_workplace_names_a_code_location_from_the_terminal(cli_stdin):
+    cli_stdin("project", "create", "Discovery", "--code", "https://github.com/acme/widget")
+    cli_stdin(
+        "location",
+        "add",
+        "Discovery",
+        "--role",
+        "code",
+        "--repository",
+        "https://github.com/acme/ui",
+        "--label",
+        "UI",
+    )
+    cli_stdin("step", "add", "Discovery", "Deploy", "--agent")
+    said = cli_stdin("agent", "workplace", "Deploy", "code:UI")
+    assert "works in l2 (acme/ui)" in said
+    row = json.loads(cli_stdin("agent", "show", "Deploy", "--json"))
+    assert row["workplace"] == "l2"
+    assert "already" in cli_stdin("agent", "workplace", "Deploy", "l2")
+    assert "primary" in cli_stdin("agent", "workplace", "Deploy", "primary")
+    assert json.loads(cli_stdin("agent", "show", "Deploy", "--json"))["workplace"] == ""
+    assert "no location" in cli_stdin("agent", "workplace", "Deploy", "l9", expect=1)

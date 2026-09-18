@@ -206,6 +206,13 @@ def write_locations(locations: Iterable[Location]) -> list[dict[str, Any]]:
     return rows
 
 
+def as_locator(location: Location) -> dict[str, str]:
+    """A location as the address a repository-reading kind takes — the git spec source's
+    ``url``, ``ref`` and ``path``. One spelling, here, so a source that names a row and a
+    managed clone placed for the same row land in one cache directory."""
+    return {"url": location.repository, "ref": location.ref or "HEAD", "path": location.path}
+
+
 def of_role(locations: Iterable[Location], role: str) -> tuple[Location, ...]:
     return tuple(location for location in locations if location.role == role)
 

@@ -17,7 +17,7 @@ to the library with the membership origin, off the undo stack — the same rule 
 membership change follows.
 """
 
-from collections.abc import Callable, Collection
+from collections.abc import Collection
 from pathlib import Path
 
 from PySide6.QtCore import Qt
@@ -31,6 +31,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dplanner.domain.locations import Location, read_locations
+from dplanner.domain.plan_repo import read_meta
 from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.list_rows import DETAIL_ROLE, TwoLineDelegate
 from dplanner.framework.tasks import TaskService
@@ -40,6 +42,7 @@ from dplanner.framework.widgets import caption
 from dplanner.modules.projects.browse_page import BrowsePage
 from dplanner.modules.projects.link_page import LinkPage
 from dplanner.modules.projects.repos import MODULE_ID, Joined, RepositoryServices
+from dplanner.modules.projects.repositories_page import RepositoriesPage, missing_repositories
 from dplanner.theme.tokens import CAPTION_GAP
 
 # One size for every page: a dialog on screen never resizes itself (shell-ui.md), so the
@@ -60,16 +63,19 @@ WAYS: tuple[tuple[str, str, str], ...] = (
     ),
 )
 
-CHOOSE, LINK_PAGE, BROWSE_PAGE = 0, 1, 2
+CHOOSE, LINK_PAGE, BROWSE_PAGE, REPOSITORIES_PAGE = 0, 1, 2, 3
 
 
 class OpenProjectDialog(DialogFrame):
-    """A framed wizard: the way in, then the page for it.
+    """A framed wizard: the way in, then the page for it, then — when the projects joined
+    work in repositories this machine lacks — the Repositories page asking about each.
 
     One primary throughout, re-worded per page — *Continue*, then the page's own verb —
     because a wizard has one next step at a time and a second accent button would be a
     second answer to the same question. *Back* joins the footer when there is somewhere to
-    go back to and leaves it on the first page, where it would name nothing.
+    go back to and leaves it on the first page, where it would name nothing. The
+    Repositories page is reached only from a page's answer, never from Back: what it
+    asks about is read off the plan the earlier page put on disk.
     """
 
     def __init__(
@@ -80,11 +86,11 @@ class OpenProjectDialog(DialogFrame):
         *,
         listed_dirs: Collection[Path],
         listed_ids: Collection[str],
-        known_checkout: Callable[[str], Path | None],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__("Open Project", parent, size=DIALOG_SIZE)
         self.setObjectName("OpenProjectDialog")
+        self._services = services
         self._joined: list[Joined] = []
 
         self.choose = QWidget(self.body)
@@ -116,7 +122,6 @@ class OpenProjectDialog(DialogFrame):
             theme,
             listed_dirs=listed_dirs,
             listed_ids=listed_ids,
-            known_checkout=known_checkout,
             parent=self.body,
         )
         self.link.changed.connect(self._revalidate)
@@ -131,9 +136,12 @@ class OpenProjectDialog(DialogFrame):
         )
         self.browse.changed.connect(self._revalidate)
         self.browse.committed.connect(self._advance)
+        self.repositories = RepositoriesPage(services, tasks, parent=self.body)
+        self.repositories.changed.connect(self._revalidate)
+        self.repositories.finished.connect(self._on_repositories)
 
         self.pages = QStackedWidget(self.body)
-        for page in (self.choose, self.link, self.browse):
+        for page in (self.choose, self.link, self.browse, self.repositories):
             self.pages.addWidget(page)
         self.body_layout.addWidget(self.pages, 1)
 
@@ -170,17 +178,20 @@ class OpenProjectDialog(DialogFrame):
             self.link.begin()  # Answers through `finished`; the clone takes as long as it takes.
             self._revalidate()
             return
-        self._joined = [Joined(directory) for directory in self.browse.chosen()]
+        if page == REPOSITORIES_PAGE:
+            self.repositories.begin()
+            self._revalidate()
+            return
         self.browse.remember()
-        self.accept()
+        self._joined_on_disk([Joined(directory) for directory in self.browse.chosen()])
 
     def _back(self) -> None:
         self.show_page(CHOOSE)
 
     def show_page(self, page: int) -> None:
-        """Show one of the three pages, and re-read the footer from it."""
+        """Show one of the pages, and re-read the footer from it."""
         self.pages.setCurrentIndex(page)
-        self.back_button.setVisible(page != CHOOSE)
+        self.back_button.setVisible(page not in (CHOOSE, REPOSITORIES_PAGE))
         if page == LINK_PAGE:
             self.link.link_edit.setFocus()  # The one page that opens on something to type.
         self._revalidate()
@@ -188,7 +199,31 @@ class OpenProjectDialog(DialogFrame):
     def _on_finished(self, ok: bool) -> None:
         joined = self.link.answer()
         if ok and joined is not None:
-            self._joined = [joined]
+            self._joined_on_disk([joined])
+            return
+        self._revalidate()
+
+    def _joined_on_disk(self, joined: list[Joined]) -> None:
+        """The projects are on disk: ask about the repositories they work in that this
+        machine lacks, or finish when there are none."""
+        self._joined = joined
+        locations: list[Location] = []
+        for join in joined:
+            locations += read_locations(read_meta(join.directory).get("locations"))
+        missing = missing_repositories(locations, self._services.roles, self._services.checkout_for)
+        if not missing:
+            self.accept()
+            return
+        self.repositories.show_missing(missing, self._services.roles)
+        self.show_page(REPOSITORIES_PAGE)
+
+    def _on_repositories(self, ok: bool) -> None:
+        if ok:
+            recorded = self.repositories.recorded()
+            self._joined = [
+                Joined(join.directory, recorded) if index == 0 else join
+                for index, join in enumerate(self._joined)
+            ]
             self.accept()
             return
         self._revalidate()
@@ -203,7 +238,13 @@ class OpenProjectDialog(DialogFrame):
             self.primary_button.setText("Continue")
             self.refuse(None)
             return
-        current: LinkPage | BrowsePage = self.link if page == LINK_PAGE else self.browse
+        current: LinkPage | BrowsePage | RepositoriesPage = (
+            self.link
+            if page == LINK_PAGE
+            else self.repositories
+            if page == REPOSITORIES_PAGE
+            else self.browse
+        )
         self.primary_button.setText(current.primary_text())
         self.refuse(current.refusal())
 

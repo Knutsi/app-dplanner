@@ -38,6 +38,7 @@ from PySide6.QtWidgets import QDialog, QMenu, QWidget
 from dplanner.core.telemetry import current
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.locations import Placement
 from dplanner.domain.model import Library, Node, NodeId, Step, StepId
 from dplanner.domain.progression import DONE
 from dplanner.domain.repositories import RepositoryFacts
@@ -75,6 +76,7 @@ from dplanner.modules.step_agent_instruction.aspect import (
     read_project,
     uses_worktree,
     with_worktree,
+    workplace,
     write_state,
 )
 from dplanner.modules.step_agent_instruction.profiles import (
@@ -142,20 +144,35 @@ def _all_done(_step: Step) -> str:
     return DONE
 
 
-def _workdir(facts: RepositoryFacts) -> Path | None:
+def _workdir(facts: RepositoryFacts, step: Step | None = None) -> Path | None:
     """Where an agent on this project works — a step's, or one opened with nothing to do:
-    the code checkout when the project records a code repository, else the plan's own
-    repository, the older shape of a plan kept beside its code. None when neither is here."""
-    return facts.checkout if facts.repository else facts.plan_root
+    the checkout of the code location the step names (its ``workplace``, else the
+    project's primary code row) when the project records one, else the plan's own
+    repository, the older shape of a plan kept beside its code. None when neither is
+    here."""
+    placement = _code_placement(facts, step)
+    if placement is not None:
+        return placement.root if placement.here else None
+    return None if facts.repository else facts.plan_root
 
 
-def _workdir_refusal(facts: RepositoryFacts) -> str:
+def _code_placement(facts: RepositoryFacts, step: Step | None) -> Placement | None:
+    """The code location a step works in, placed: the row its workplace names, else the
+    primary. A named row that is gone falls back to the primary — lint says so."""
+    named = facts.placement(workplace(step)) if step is not None else None
+    return named if named is not None else facts.code
+
+
+def _workdir_refusal(facts: RepositoryFacts, step: Step | None = None) -> str:
     """Why no shell can open where this project's agent would work; "" when one can."""
-    if facts.repository:
-        if facts.checkout is None:
-            return "the code repository is not checked out on this machine — Project ▸ Settings…"
-        if not facts.checkout.expanduser().is_dir():
-            return f"the code checkout is gone from {facts.checkout} — Project ▸ Settings…"
+    placement = _code_placement(facts, step)
+    if placement is not None:
+        label = placement.location.repository_label
+        if not placement.here:
+            return f"{label} is not checked out on this machine — Project ▸ Settings…"
+        assert placement.root is not None
+        if not placement.root.expanduser().is_dir():
+            return f"the checkout of {label} is gone from {placement.root} — Project ▸ Settings…"
         return ""
     if facts.plan_root is None:
         return "the project's folder is not in a git repository"
@@ -514,9 +531,13 @@ class StepAgentInstructionModule:
         by_project: dict[str, str] = {}
         for step in chosen:
             project_id = deps.library.project_of(step.id).id
-            if project_id not in by_project:
-                by_project[project_id] = _workdir_refusal(deps.facts_for(step.id))
-            if reason := self._step_refusal(step) or by_project[project_id]:
+            # A step naming a workplace of its own is asked about on its own.
+            reason = self._step_refusal(step) or (
+                _workdir_refusal(deps.facts_for(step.id), step)
+                if workplace(step)
+                else by_project.setdefault(project_id, _workdir_refusal(deps.facts_for(step.id)))
+            )
+            if reason:
                 named = reason if count == 1 else f"“{_titled(step)}”: {reason}"
                 return ActionState(enabled=False, label=f"{verb} — {named}")
         return ENABLED if count == 1 else ActionState(label=f"Run {count} &Agents…")
@@ -623,7 +644,7 @@ class StepAgentInstructionModule:
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
         worktree = self._run_name(step) if uses_worktree(step) else ""
-        workdir = _workdir(deps.facts_for(step.id))
+        workdir = _workdir(deps.facts_for(step.id), step)
         spawned, prepared = self._launch(
             assembled.text,
             run_dir,

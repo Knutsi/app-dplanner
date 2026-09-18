@@ -58,6 +58,7 @@ class SpecGitKind:
     id = KIND
     name = "Git"
     label = "&Git Repository…"
+    handles_locations = True  # A specs location *is* a url, a ref and a path.
 
     def __init__(self, deps: SpecGitDeps) -> None:
         self._deps = deps

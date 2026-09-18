@@ -46,6 +46,16 @@ paths:
   opened is not checked and wears none. A `SourceStatus` must claim `connectable` for
   Connect to be offered — a malformed locator is a refusal no dialog lifts, and the strip
   gives it the error tone instead.
+- **A specs location is a source waiting to be added.** A project's `specs` rows
+  (`modules/spec/roles.py`, read-only, several) are what *Add Spec ▸ From Location…*
+  offers: the source record names the row by id (`{"location": "l3"}`), and
+  `sourced.resolve_locator` hands the kind the row's address (`domain.locations.as_locator`:
+  `url`, `ref`, `path`) at every call — status, fetch, check, connect, open — so editing
+  the row in Project ▸ Settings… moves the source with it, and a row that is gone is a
+  status in words rather than a kind's refusal. The kind that takes one is the first with
+  `handles_locations` (the git kind); the entry is greyed with its reason while the
+  project names no specs location or every one is a source already. The cache directory
+  is the same digest a managed placement of the row uses, so nothing is cloned twice.
 - **A spec source is a kind the spec module runs, and there are four.** A document may
   come from outside — a **folder** on this computer, a **git repository**, a **Confluence
   page**, a **Confluence folder** — and *where it came from* is a source record in the
