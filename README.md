@@ -325,7 +325,9 @@ src/dplanner/
 ├── plugins/dplanner/             the Claude Code plugin: the hand-written skill that installs DPlanner — .claude-plugin/marketplace.json lists it
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
-│   ├── storage/             three providers behind one protocol: folder, git, GitHub
+│   ├── storage/             three providers behind one protocol: folder, git, GitHub — and two
+│   │                        clone doors: sparse.py (a folder read on demand) and kept.py (a working
+│   │                        clone DPlanner keeps for a verb that needs the repository here)
 │   ├── repository.py        what the framework knows about the model, and no more
 │   ├── formats.py           the format-migration engine
 │   ├── module_data.py       per-module JSON, its versions and takeovers
@@ -419,7 +421,10 @@ src/dplanner/
 │   ├── projects/            the Projects folder in the index, the project and `location` verbs, New
 │   │                        Project…, Open Project… (link, browse, then the Repositories page), the Project
 │   │                        dialog (the Locations table over the role registry, a log column per
-│   │                        repository), the Repositories card, Move Plan, and the repositories folder
+│   │                        repository), the location dialog (location_dialog.py), the Repositories
+│   │                        card, Move Plan, the repositories folder and the clone policy
+│   │                        (repositories_folder.py), and the checkout service a verb gets a
+│   │                        repository on this machine from (checkouts.py)
 │   ├── project_dashboard/   the project's home tab: its name and summary, and a card per module with
 │   │                        something to say about the project (Repositories, Agent, Compilation
 │   │                        instructions) — what a click on the project's row in the index opens

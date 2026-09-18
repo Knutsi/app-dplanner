@@ -4092,19 +4092,53 @@ to where a row stands, in a fixed order: the recorded checkout; the plan reposit
 when the row names it; a managed clone for a role that only reads; or nowhere yet, which
 every verb that needs it says in words.
 
-**Whether a location asks for a checkout follows from whether its role writes** — and
-that rule is what keeps opening somebody else's plan from becoming a folder-picking
-session. A worked-in location (code; reporting, which is written) needs a checkout
-the person owns, asked once per repository per machine, because a document written there
-is a change somebody commits and pushes on a branch they chose. A read-only location
-(spec) is fetched on demand into a managed clone — the git spec source's blobless, shallow,
-sparse cache under `config_dir()`, keyed as it keys it, so a spec row and the source
-fetched from it share one directory — and never asks. **A managed clone is never
-written**: the application does not commit and push on somebody's behalf from a directory
-they cannot find, so a reporting row on a repository nobody has checked out reads as
-*not checked out here* and greys the writing verbs, the standing Run Agent already had for
-a missing code checkout. The consequence for a person opening a shared plan is that they
-are asked about the repositories they will *work in*, and everything read-only is silent.
+**The roles are three, and they are the people around a plan.** A *spec author* commits
+functional specs to a repository and wants the project to read them, without ever managing
+a folder for DPlanner. A *developer* has everything checked out and works with agents in
+those checkouts. A *team lead* reads specs and reports, has nothing checked out, and does
+not want to. So a row is **Code** (what agents change), **Spec** (what DPlanner reads) or
+**Reporting** (the one place DPlanner *writes* for people who read without it: the report
+site on Save, and where the tests export is offered). Docs and Tests as roles of their own
+were a guess about filing; reporting is the act, and it is what they had in common.
+
+**Whether a location needs a working checkout follows from whether its role writes** —
+and whether one is checked out is not the person's problem unless they want it to be. A
+read-only location (spec) is fetched on demand into a managed clone — the git spec
+source's blobless, shallow, sparse cache under `config_dir()`, keyed as it keys it, so a
+spec row and the source fetched from it share one directory — and never asks; **a managed
+clone is never written**. A worked-in location (code; reporting) needs a checkout, and a
+verb that needs one gets it from the projects module's **checkout service**
+(`modules/projects/checkouts.py`): the one this machine recorded, at once, else a clone
+made now on a task and recorded per repository. The **clone policy** beside the
+repositories folder (*Settings ▸ Repositories*) decides *where* that clone lands — kept by
+DPlanner under `config_dir()/checkouts/` (`core/storage/kept.py`, the default: a full
+working clone, hardened only while it is made, never inside a plan repository, a project
+directory or the person's repositories folder) or into the repositories folder, asked
+once — and **never whether the verb runs**. That retired the *not checked out on this
+machine* dead end: Run Agent and Open Agent in Code read *clones acme/widget first* and
+clone before they launch; Save clones a reporting repository before it publishes; the Open
+Project wizard's Repositories page shows only under the folder policy, where a developer
+says *use a checkout I have* before anything lands among their own. A kept clone is a
+checkout like any other — `Placement.kept` changes the wording (*kept by DPlanner at …*)
+and nothing else — and a repository stored as a path is placed there only when a working
+tree is there, so a bare `file://` remote is cloned like any other.
+
+**A reporting location receives the report site in a commit of its own.** The site
+writer takes a *target* (`website.SiteTarget`: the repository whose commit records the
+site, and the directory the pages go in), so the plan's `reports/` and a reporting row's
+position are one layout. Save asks the reporting module for the plan repository's
+publication as before — now leaving out the projects that publish elsewhere — and for one
+*extra* publication per reporting site in another repository, each written, committed
+**scoped to the site** (`repo_storage(root, scopes=(pathspec,))`, so a reporting row on
+the code repository never sweeps up the developer's tree) and pushed, as further rows of
+the save progress. The quit-time save never waits on a clone — a person leaving must not
+— so a project whose reporting repository is not here publishes beside its plan, as it
+always did, and the next in-window Save moves it. `dplanner report site` writes to the same
+target, `--out DIR` anywhere. The flows this settles, end to end: a spec author adds their
+repository from the Specs tab (*Add Spec ▸ From Repository…*, below); a developer opens a
+shared plan with everything checked out and is asked nothing; a team lead opens the same
+plan on an empty machine, is asked nothing, and their first Save clones the reporting
+repository and publishes; Run Agent on code nobody checked out clones and launches.
 
 `domain/repositories.py` is the one derivation over the three — `RepositoryFacts`, every
 row placed, with three states read off the code rows: **separated**, the shape the
@@ -6780,7 +6814,10 @@ the same read the Time tab makes on its 500 ms debounce.
 **Save publishes before it commits.** The sync module asks the reporting module for a
 *publication* per dirty repository before its save task starts — the model is read then,
 on the GUI thread — and runs it inside the task, before `commit(message, also=paths)`, so
-the site lands in the same version as the plan and is never one commit behind. `also` is
+the site lands in the same version as the plan and is never one commit behind. A project
+that names a **reporting location** publishes there instead, as an *extra* publication
+committed scoped to the site in that repository — *A project names its locations* above
+has the shape; the pages are the same, written to a `SiteTarget`. `also` is
 on the storage *protocol* (`VersionedStorage.commit`) because the sync module may not name
 `GitStorage`. The dirty count and the review diff stay scoped to the plan: a stale site is
 never unsaved work, and a publication that raises is logged and the plan saved without it

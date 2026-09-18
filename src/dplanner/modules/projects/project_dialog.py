@@ -97,7 +97,7 @@ from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import EmptyState, block, caption, confirm, note, quiet
 from dplanner.modules.projects.checkouts import CheckoutService
-from dplanner.modules.projects.location_dialog import LocationDialog
+from dplanner.modules.projects.location_dialog import LocationDialog, known_repositories
 from dplanner.modules.projects.locations_table import LocationsTable
 from dplanner.modules.projects.repo_picker import (
     Entry,
@@ -622,21 +622,7 @@ class ProjectDialog(DialogFrame):
         )
 
     def _known_repositories(self) -> list[str]:
-        """The repositories this project and this library already name, each once, the
-        project's primary code first — what the location dialog's combo lists. Read off
-        the model: no disk, no gh, no subprocess."""
-        found: list[str] = []
-        primary = primary_code(self._rows())
-        if primary is not None:
-            found.append(primary.repository)
-        for row in self._rows():
-            if row.repository not in found:
-                found.append(row.repository)
-        for project in self._library.projects:
-            for row in project.locations:
-                if row.repository not in found:
-                    found.append(row.repository)
-        return found
+        return known_repositories(self._rows(), self._library)
 
     def _folder_typed(self, _text: str) -> None:
         self._folder_touched = True  # From here the name no longer dictates the folder.

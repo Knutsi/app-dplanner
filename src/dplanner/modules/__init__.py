@@ -145,6 +145,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.projects.checkouts import CheckoutService
+    from dplanner.modules.projects.location_dialog import ask_location
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.projects.repos import (
         LogEntry,
@@ -914,6 +915,17 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             rename_references=_rename_spec_references,
             kinds=_source_kinds(spec_folder, spec_git, confluence.page, confluence.folder),
             roles=roles,
+            # From Repository…: the projects module's location dialog for a spec row,
+            # so a spec author names their repository from the Specs tab itself.
+            ask_location=lambda project_id, role_id: ask_location(
+                roles[role_id],
+                project=library.project(project_id),
+                library=library,
+                services=repos,
+                tasks=services.tasks,
+                theme=services.theme,
+                parent=services.window,
+            ),
             passages_of=lambda project_id, document: [
                 source.quote
                 for step in library.project(project_id).steps

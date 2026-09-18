@@ -147,9 +147,20 @@ paths:
   the file), and `locations.place` answers it in one order: the recorded checkout, the plan
   repository itself when the row names it, a managed clone for a role that does not
   write (the git spec source's cache, keyed as it keys it), or nowhere. **Whether a
-  location asks for a checkout follows from `LocationRole.writes`**: code and reporting
-  need one the person owns, asked once per repository per machine; spec is fetched on
-  demand and never asks; **a managed clone is never written**. `domain/repositories.py` is
+  location needs a working checkout follows from `LocationRole.writes`**: spec is fetched
+  on demand and never asks, **a managed clone is never written**; code and reporting need
+  one, and **a verb that needs one gets it from `modules/projects/checkouts.py`'s
+  `CheckoutService`** — the recorded checkout at once, else a clone on a task, recorded
+  per repository. **The clone policy decides where, never whether** (`repositories_folder.
+  clone_policy`, Settings ▸ Repositories): `KEPT`, the default, under `config_dir()/
+  checkouts/` through `core/storage/kept.py` — a full working clone, hardened only while
+  made, never in a plan repository, a project directory or the repositories folder — or
+  `FOLDER`, the repositories folder asked once. Run Agent and Open Agent in Code say
+  *clones … first* and clone before launching (`StepAgentInstructionDeps.
+  ensure_checkouts`); Save clones an unplaced reporting repository first
+  (`SyncDeps.prepare_save`), the quit-time save never; the wizard's Repositories page
+  shows under `FOLDER` alone. `Placement.kept` is wording only (*kept by DPlanner at …*);
+  a repository stored as a path is placed there only when a working tree is there. `domain/repositories.py` is
   the one derivation (`RepositoryFacts` over placements, with `code`/`repository`/
   `checkout` as the primary row's; separated, colocated, legacy; `warns` unless
   `colocation == "accepted"`), and every reader asks it — lint's `repo.unset`/
@@ -200,8 +211,9 @@ paths:
   draft's ⋯ lands in `NewProjectSpec.checkouts`. The two log columns keep the primary
   code's and the plan's history, and the code column's ⋯ acts on the primary code row
   through the same `_set_locations`. Every edit is one `SetFieldCommand` on `locations`.
-  **The Open Project wizard asks after the clone**: `repositories_page.py` lists the
-  worked-in repositories the joined plan names that this machine lacks — clone into the
-  repositories folder, use a checkout I have, or later; read-only rows are not listed —
-  so the link page names nothing but the plan. `ARCHITECTURE.md`'s *The Project dialog is
+  **The Open Project wizard asks after the clone, under the folder policy**:
+  `repositories_page.py` lists the worked-in repositories the joined plan names that this
+  machine lacks — clone into the repositories folder, use a checkout I have, or later;
+  read-only rows are not listed — so the link page names nothing but the plan; under the
+  kept policy nothing is asked and the verb that first needs a repository clones it. `ARCHITECTURE.md`'s *The Project dialog is
   the Locations table* has the reasoning.

@@ -18,8 +18,8 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from dplanner.core.fsio import slugify
 from dplanner.core.signals import Signal
-from dplanner.domain.commands import CompositeCommand, SetModuleDataCommand
-from dplanner.domain.locations import Location, LocationRole, of_role
+from dplanner.domain.commands import CompositeCommand, SetFieldCommand, SetModuleDataCommand
+from dplanner.domain.locations import Location, LocationRole, of_role, replaced
 from dplanner.domain.model import Library, NodeId
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import (
@@ -126,6 +126,10 @@ class SpecDeps:
     kinds: Sequence[DocumentSourceKind] = ()
     # Every location role this build knows, by id — what a spec row is captioned with.
     roles: Mapping[str, LocationRole] = field(default_factory=dict)
+    # The location dialog for a new row of a role on a project — the projects module's,
+    # handed across by the root — so *Add Spec ▸ From Repository…* names the repository
+    # here and now. None is a build without it.
+    ask_location: Callable[[NodeId, str], Location | None] | None = None
     # The feature side, handed across by the composition root: which passages of a
     # document features cite (the Cited wash), how to show one in the coverage view, and
     # how to cite a selection. None hides the button — the capability is absent.
@@ -267,7 +271,24 @@ class SpecModule:
                     run=self._add_source_verb(kind),
                 )
             )
-        # The project's own ``specs`` locations, each a source waiting to be added: the
+        # A repository the project does not name yet: the location dialog, then the row
+        # and its source as one undo step — no "set it up in Settings first".
+        deps.actions.register(
+            ActionSpec(
+                id="spec.add_source.repository",
+                label="From &Repository…",
+                menu="Project",
+                group="documents",
+                order=28,
+                submenu=ADD_SUBMENU,
+                icon=branch_icon,
+                tip="A spec repository and a folder in it: named here, added to the project's"
+                " locations and fetched",
+                state=self._on_a_repository,
+                run=self._add_from_repository,
+            )
+        )
+        # The project's own ``spec`` locations, each a source waiting to be added: the
         # one entry that reads the locations table rather than asking for an address.
         deps.actions.register(
             ActionSpec(
@@ -425,6 +446,16 @@ class SpecModule:
                 else "the project names no spec location — Project ▸ Settings…"
             )
             return ActionState(enabled=False, label=f"From &Location… — {reason}")
+        return ENABLED
+
+    def _on_a_repository(self, context: Context) -> ActionState:
+        project_id = context.focus_entity("project")
+        if project_id is None or not self._deps.library.has(project_id):
+            return DISABLED
+        if self._location_kind() is None:
+            return ActionState(enabled=False, label="From &Repository… — no git support here")
+        if self._deps.ask_location is None:
+            return ActionState(enabled=False, label="From &Repository… — no location dialog here")
         return ENABLED
 
     def _location_kind(self) -> DocumentSourceKind | None:
@@ -715,15 +746,49 @@ class SpecModule:
             location = next((row for row in candidates if row.id == picked.strip()), None)
         if location is None:
             return
-        index = read_index(self._deps.library.project(project_id))
-        index, source = location_source(index, location, kind.id)
-        source = replace(source, title=location.name(roles))
-        index = replace(index, sources=[*index.sources[:-1], source])
-        self._deps.undo.push(
-            SetModuleDataCommand(
-                project_id, MODULE_ID, write_index(index), label=f"Add {kind.name} Source"
+        command, source = self._source_from_location(project_id, kind, location)
+        self._deps.undo.push(command)
+        self._show_source(project_id, source)
+
+    def _add_from_repository(self, context: Context) -> None:
+        """The spec author's way in: the location dialog for a new spec row, then the row
+        onto the project's table and the source over it — one undo step, so nothing has
+        to be set up first and Undo takes both away."""
+        deps = self._deps
+        project_id = context.focus_entity("project")
+        kind = self._location_kind()
+        if project_id is None or kind is None or deps.ask_location is None:
+            return
+        if not deps.library.has(project_id):
+            return
+        location = deps.ask_location(project_id, SPECS_ROLE.id)
+        if location is None:
+            return
+        rows = replaced(deps.library.project(project_id).locations, location)
+        command, source = self._source_from_location(project_id, kind, location)
+        deps.undo.push(
+            CompositeCommand(
+                "Add Spec From Repository",
+                [SetFieldCommand(project_id, "locations", rows), command],
             )
         )
+        self._show_source(project_id, source)
+
+    def _source_from_location(
+        self, project_id: NodeId, kind: DocumentSourceKind, location: Location
+    ) -> tuple[SetModuleDataCommand, SpecSource]:
+        """The command that adds ``location`` as a source of ``kind``, and the source."""
+        index = read_index(self._deps.library.project(project_id))
+        index, source = location_source(index, location, kind.id)
+        source = replace(source, title=location.name(self._deps.roles))
+        index = replace(index, sources=[*index.sources[:-1], source])
+        command = SetModuleDataCommand(
+            project_id, MODULE_ID, write_index(index), label=f"Add {kind.name} Source"
+        )
+        return command, source
+
+    def _show_source(self, project_id: NodeId, source: SpecSource) -> None:
+        """The Specs tab on the source just added, fetching when it can."""
         activity = self._deps.tabs.open(SPECS_KIND, project_id)
         assert isinstance(activity, SpecsActivity)
         activity.select_source(source.id)

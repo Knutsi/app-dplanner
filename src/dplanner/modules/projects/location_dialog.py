@@ -41,9 +41,12 @@ from dplanner.domain.locations import (
     Location,
     LocationRole,
     located_folder,
+    next_id,
     normalise_path,
+    primary_code,
     problem,
 )
+from dplanner.domain.model import Library, Project
 from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.signalling import Spinner, StatusLine
 from dplanner.framework.task_runner import TaskRunner
@@ -69,6 +72,55 @@ EXPANDED_DEPTH = 2  # The tree opens this many levels: enough to see, not the wh
 
 # Where a checkout of a repository on this computer is recorded: (repository, root).
 RecordCheckout = Callable[[str, Path], None]
+
+
+def known_repositories(rows: Sequence[Location], library: Library) -> list[str]:
+    """The repositories ``rows`` and the library already name, each once, the primary
+    code first — what the dialog's combo lists. Read off the model: no disk, no gh."""
+    found: list[str] = []
+    primary = primary_code(rows)
+    if primary is not None:
+        found.append(primary.repository)
+    for row in rows:
+        if row.repository not in found:
+            found.append(row.repository)
+    for project in library.projects:
+        for row in project.locations:
+            if row.repository not in found:
+                found.append(row.repository)
+    return found
+
+
+def ask_location(
+    role: LocationRole,
+    *,
+    project: Project,
+    library: Library,
+    services: RepositoryServices,
+    tasks: TaskService,
+    theme: ThemeService,
+    parent: QWidget,
+) -> Location | None:
+    """A new row of ``role`` for ``project``, asked for in the dialog and answered, or
+    None — the one door for a surface that is not the Project dialog (*Add Spec ▸ From
+    Repository…*), so there is no "set it up in Settings first". A checkout the person
+    picks on the way is recorded in the library file."""
+    dialog = LocationDialog(
+        role,
+        location_id=next_id(project.locations),
+        repositories=known_repositories(project.locations, library),
+        location=None,
+        checkout_for=services.checkout_for,
+        record_checkout=services.set_checkout,
+        services=services,
+        tasks=tasks,
+        theme=theme,
+        parent=parent,
+    )
+    accepted = bool(dialog.exec())
+    answer = dialog.answer() if accepted else None
+    dialog.deleteLater()
+    return answer
 
 
 class LocationDialog(DialogFrame):

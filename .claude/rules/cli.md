@@ -188,7 +188,10 @@ paths:
   the page has one selection, and a facet carries the id rather than the module knowing
   the graph. **Save publishes before it commits**: the sync module asks the reporting
   module for a publication per dirty repository, runs it inside the save task and commits
-  with `also=paths`, so `reports/` lands in the plan's own version; a publication that
+  with `also=paths`, so `reports/` lands in the plan's own version; a project naming a
+  **reporting location** publishes there instead — `website.SiteTarget`, an
+  `ExtraPublication` committed scoped to the site in that repository, `dplanner report
+  site` writing to the same target and `--out DIR` anywhere; a publication that
   raises is logged and the plan is saved without it; the switch (Settings ▸ Reports) is per
   user and on by default. **The site index depends only on the project set** (one
   `<script src>` per `reports/<slug>/summary.js`), never on a project's state, so two

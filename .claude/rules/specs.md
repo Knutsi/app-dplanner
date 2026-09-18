@@ -46,7 +46,11 @@ paths:
   opened is not checked and wears none. A `SourceStatus` must claim `connectable` for
   Connect to be offered — a malformed locator is a refusal no dialog lifts, and the strip
   gives it the error tone instead.
-- **A spec location is a source waiting to be added.** A project's `spec` rows
+- **A spec location is a source waiting to be added — and can be named on the spot.**
+  *Add Spec ▸ From Repository…* runs the projects module's location dialog for a `spec`
+  row (`SpecDeps.ask_location`, wired by the root) and pushes the row and its source as
+  **one** `CompositeCommand`, so there is no "set it up in Settings first" and Undo takes
+  both away. A project's `spec` rows
   (`modules/spec/roles.py`, read-only, several) are what *Add Spec ▸ From Location…*
   offers: the source record names the row by id (`{"location": "l3"}`), and
   `sourced.resolve_locator` hands the kind the row's address (`domain.locations.as_locator`:

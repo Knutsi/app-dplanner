@@ -4,7 +4,12 @@
 in the rollout order below; `ARCHITECTURE.md`'s *A project names its locations* is now the
 rule's home and `FORMAT.md` the shapes'. The roles settled as `code`, `spec` and
 `reporting` (not the four named below): reporting is the one place DPlanner *writes* for
-people who read without it, which is what docs and tests turned out to have in common. Written from a full read of the
+people who read without it, which is what docs and tests turned out to have in common.
+The second round added what phase 5 left open, differently: a clone policy and a checkout
+service (a verb that needs a repository clones it, kept by DPlanner or into the
+repositories folder — never refused), the report site published to the reporting location
+in a commit of its own, and *Add Spec ▸ From Repository…* from the Specs tab.
+`ARCHITECTURE.md`'s *A project names its locations* is the rule's home. Written from a full read of the
 code at `main` (1ace237); every file named below is on that commit. It builds on
 `plan-and-code-repositories.md`, which split the plan repository from the code repository
 and is implemented; this one generalises the code side.*

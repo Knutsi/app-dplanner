@@ -24,7 +24,10 @@ each row stands on this machine; `location roles` says what each role is for;
 has a row's repository. `project show` prints the same, and its `--json` keeps
 `repository` and `checkout` for the primary code row. A read-only row (spec) is fetched
 by the window, never by you; a worked-in row (code, reporting) that is *not checked out
-on this machine* is one you must not look for — say so instead. Three rules follow:
+on this machine* is one you must not look for — say so instead — and one *kept by
+DPlanner* is an ordinary checkout under its configuration directory, worked in like any.
+A reporting row is where DPlanner publishes the report site on Save (`dplanner report
+site` writes it too): never write there yourself. Three rules follow:
 
 - **`dplanner` writes to the plan wherever it is run from.** Status, notes, docs, tests,
   GitHub refs: every verb reaches the plan repository. Never create, edit or commit plan
