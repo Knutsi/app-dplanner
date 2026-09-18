@@ -140,15 +140,15 @@ paths:
   first `code` row is the code repository every older reader means. **Roles are a
   registry**: the domain declares `code` (the CLI must find a project from a checkout
   without loading a module) and a module declares its own in a Qt-free `roles.py`
-  (`specs`, `docs`, `tests`) that `default_location_roles()` gathers — a role this build
+  (`spec`, `reporting`) that `default_location_roles()` gathers — a role this build
   does not know is kept and written back untouched. *Where is each on this machine?* is
   the library file's `checkouts` map, **per repository, never per project**
   (`store.checkout_for`/`set_checkout`, keyed by `canonical_remote`, written straight into
   the file), and `locations.place` answers it in one order: the recorded checkout, the plan
   repository itself when the row names it, a managed clone for a role that does not
   write (the git spec source's cache, keyed as it keys it), or nowhere. **Whether a
-  location asks for a checkout follows from `LocationRole.writes`**: code, docs and tests
-  need one the person owns, asked once per repository per machine; specs is fetched on
+  location asks for a checkout follows from `LocationRole.writes`**: code and reporting
+  need one the person owns, asked once per repository per machine; spec is fetched on
   demand and never asks; **a managed clone is never written**. `domain/repositories.py` is
   the one derivation (`RepositoryFacts` over placements, with `code`/`repository`/
   `checkout` as the primary row's; separated, colocated, legacy; `warns` unless

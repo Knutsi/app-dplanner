@@ -197,7 +197,7 @@ modules/<name>/
 ├── aspect.py    for a step aspect: SPEC, DATA_FORMAT, read/write    ← imports no Qt
 ├── report.py    what it says in a report: report_source()           ← imports no Qt
 ├── harness.py   for an agent CLI provider: HARNESS, and nothing else  ← imports no Qt
-├── roles.py     the location role it acts on (specs, docs…): ROLE   ← imports no Qt
+├── roles.py     the location role it acts on (spec, reporting): ROLE   ← imports no Qt
 ├── checks.py    what this machine needs for it: checks()              ← imports no Qt
 ├── themes.py    for a theme provider: the ThemeProvider it offers        ← imports no Qt
 └── section.py   the editor it puts in the step detail panel (Step Details…)

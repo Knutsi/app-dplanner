@@ -32,7 +32,6 @@ from dplanner.modules.projects.repo_picker import (
 )
 from dplanner.modules.projects.repos import location_words
 from dplanner.theme.icons import (
-    beaker_icon,
     code_icon,
     folder_icon,
     plus_icon,
@@ -46,9 +45,8 @@ EMPTY_WORDS = "No locations yet — add the code this project changes."
 # The glyph a role wears, by id; a role this build does not know wears the folder.
 ROLE_GLYPHS: Mapping[str, Callable[[str], QIcon]] = {
     "code": code_icon,
-    "specs": spec_icon,
-    "docs": read_icon,
-    "tests": beaker_icon,
+    "spec": spec_icon,
+    "reporting": read_icon,
 }
 
 

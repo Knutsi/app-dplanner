@@ -216,8 +216,8 @@ default branch, no `label` the only row of its role, and no `locations` at all a
 that plans the repository it sits in — the older shape, warned about by lint, the briefing
 and the window until it is moved or accepted. The `id` (`l1`, `l2`, …) is minted per
 project and kept while the row is edited, because a spec source and a step's workplace
-name a row by it; `role` is a word from the registry — the domain's `code`, and `specs`,
-`docs` and `tests` from the modules that act on them — and **a role this build does not
+name a row by it; `role` is a word from the registry — the domain's `code`, and `spec` and
+`reporting` from the modules that act on them — and **a role this build does not
 know is loaded and written back untouched**, the edge-kind rule; the first `code` row is
 *the* code repository every older reader means. `"colocation": "accepted"` is the
 acceptance: the people on the project decided the plan stays inside its code on purpose,

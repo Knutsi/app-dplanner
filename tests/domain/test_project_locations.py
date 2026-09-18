@@ -25,15 +25,17 @@ from dplanner.domain.locations import (
 )
 
 WIDGET = "https://github.com/acme/widget"
-SPECS = LocationRole("specs", "Specs", "Where the specs come from.", writes=False)
-DOCS = LocationRole("docs", "Docs", "Where the docs go.", writes=True, default_path="docs")
-ROLES = roles_by_id([CODE, SPECS, DOCS])
+SPEC = LocationRole("spec", "Spec", "Where the specs come from.", writes=False)
+REPORTING = LocationRole(
+    "reporting", "Reporting", "Where the reports go.", writes=True, default_path="reports"
+)
+ROLES = roles_by_id([CODE, SPEC, REPORTING])
 
 
 def test_rows_round_trip_and_absence_encodes_the_default():
     rows = (
         Location("l1", "code", WIDGET),
-        Location("l2", "specs", "git@github.com:acme/specs.git", path="products/search", ref="v2"),
+        Location("l2", "spec", "git@github.com:acme/specs.git", path="products/search", ref="v2"),
         Location("l3", "code", "https://github.com/acme/ui", label="UI"),
     )
     written = write_locations(rows)
@@ -47,15 +49,15 @@ def test_reading_is_tolerant_and_deals_ids_where_none_are_written():
     raw = [
         {"role": "code", "repository": WIDGET},
         "junk",
-        {"role": "docs"},  # No repository: skipped.
+        {"role": "reporting"},  # No repository: skipped.
         {"id": "l1", "role": "wiki", "repository": WIDGET, "path": "./notes/"},
-        {"id": "l1", "role": "tests", "repository": WIDGET},  # A duplicate id: dealt anew.
+        {"id": "l1", "role": "reporting", "repository": WIDGET},  # A duplicate id: dealt anew.
     ]
     found = read_locations(raw)
     assert [(row.id, row.role) for row in found] == [
         ("l2", "code"),
         ("l1", "wiki"),
-        ("l3", "tests"),
+        ("l3", "reporting"),
     ]
     assert found[1].path == "notes"  # An unknown role is kept as it is; its path normalised.
     assert read_locations(None) == () and read_locations({"role": "code"}) == ()
@@ -97,12 +99,12 @@ def test_rows_are_named_by_id_or_by_role_and_label():
     rows = (
         Location("l1", "code", WIDGET),
         Location("l2", "code", "https://github.com/acme/ui", label="UI"),
-        Location("l3", "docs", WIDGET, path="docs"),
+        Location("l3", "reporting", WIDGET, path="reports"),
     )
     assert matching(rows, "l2") == (rows[1],)
     assert matching(rows, "code") == rows[:2]
     assert matching(rows, "Code:ui") == (rows[1],)
-    assert find_location(rows, "docs") == rows[2]
+    assert find_location(rows, "reporting") == rows[2]
     with pytest.raises(LookupError, match="names several"):
         find_location(rows, "code")
     with pytest.raises(LookupError, match="no location 'l9'"):
@@ -111,10 +113,10 @@ def test_rows_are_named_by_id_or_by_role_and_label():
 
 
 def test_replacing_and_removing_keep_the_order():
-    rows = (Location("l1", "code", WIDGET), Location("l2", "docs", WIDGET))
+    rows = (Location("l1", "code", WIDGET), Location("l2", "reporting", WIDGET))
     changed = Location("l1", "code", "https://github.com/acme/other")
     assert replaced(rows, changed) == (changed, rows[1])
-    added = Location("l3", "specs", WIDGET)
+    added = Location("l3", "spec", WIDGET)
     assert replaced(rows, added) == (*rows, added)
     assert without(rows, "l1") == (rows[1],)
 
@@ -123,12 +125,12 @@ def test_a_role_named_twice_is_a_duplicate_only_when_it_says_a_project_names_it_
     rows = (
         Location("l1", "code", WIDGET),
         Location("l2", "code", WIDGET, label="again"),
-        Location("l3", "docs", WIDGET),
-        Location("l4", "docs", WIDGET, path="other"),
+        Location("l3", "reporting", WIDGET),
+        Location("l4", "reporting", WIDGET, path="other"),
         Location("l5", "wiki", WIDGET),
         Location("l6", "wiki", WIDGET),
     )
-    assert duplicates(rows, ROLES) == ("docs",)
+    assert duplicates(rows, ROLES) == ("reporting",)
 
 
 def test_a_row_names_itself_by_its_role_and_label():
@@ -156,7 +158,7 @@ def test_a_recorded_checkout_places_the_row_however_the_repository_is_spelt(tmp_
 
 
 def test_the_plan_repository_places_a_row_that_names_it(tmp_path):
-    row = Location("l1", "docs", "https://github.com/acme/plans", path="docs")
+    row = Location("l1", "reporting", "https://github.com/acme/plans", path="reports")
     found = place(
         row, checkouts={}, plan_root=tmp_path / "plans", plan_remote="git@github.com:acme/plans.git"
     )
@@ -172,8 +174,8 @@ def test_a_remote_less_repository_is_placed_at_its_own_path_when_it_is_here(tmp_
 
 
 def test_a_read_only_row_lands_in_its_managed_clone_and_a_writing_one_never_does(tmp_path):
-    specs = Location("l1", "specs", "https://github.com/acme/specs", path="products")
-    docs = Location("l2", "docs", "https://github.com/acme/specs", path="docs")
+    specs = Location("l1", "spec", "https://github.com/acme/specs", path="products")
+    reports = Location("l2", "reporting", "https://github.com/acme/specs", path="reports")
 
     def managed(location: Location) -> Path | None:
         return tmp_path / "cache" / location.id if not ROLES[location.role].writes else None
@@ -181,7 +183,8 @@ def test_a_read_only_row_lands_in_its_managed_clone_and_a_writing_one_never_does
     found = place(specs, checkouts={}, plan_root=None, plan_remote="", managed=managed)
     assert found == Placement(specs, tmp_path / "cache" / "l1", managed=True)
     assert found.directory == tmp_path / "cache" / "l1" / "products" and not found.here
-    assert place(docs, checkouts={}, plan_root=None, plan_remote="", managed=managed).root is None
+    unplaced = place(reports, checkouts={}, plan_root=None, plan_remote="", managed=managed)
+    assert unplaced.root is None
     # A checkout this machine has wins over the managed clone.
     found = place(
         specs,

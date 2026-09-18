@@ -124,7 +124,7 @@ class SpecDeps:
     # The document source kinds this build offers — one + menu entry and one way to
     # fetch each. Named by the composition root; the module runs whatever it is given.
     kinds: Sequence[DocumentSourceKind] = ()
-    # Every location role this build knows, by id — what a specs row is captioned with.
+    # Every location role this build knows, by id — what a spec row is captioned with.
     roles: Mapping[str, LocationRole] = field(default_factory=dict)
     # The feature side, handed across by the composition root: which passages of a
     # document features cite (the Cited wash), how to show one in the coverage view, and
@@ -278,7 +278,7 @@ class SpecModule:
                 order=29,
                 submenu=ADD_SUBMENU,
                 icon=branch_icon,
-                tip="A specs location the project names — a repository and a folder in it",
+                tip="A spec location the project names — a repository and a folder in it",
                 state=self._on_a_specs_location,
                 run=self._add_from_location,
             )
@@ -411,7 +411,7 @@ class SpecModule:
 
     def _on_a_specs_location(self, context: Context) -> ActionState:
         """Greyed with its reason: no kind reads a repository in this build, the project
-        names no specs location, or every one it names is a source already."""
+        names no spec location, or every one it names is a source already."""
         project_id = context.focus_entity("project")
         if project_id is None or not self._deps.library.has(project_id):
             return DISABLED
@@ -420,9 +420,9 @@ class SpecModule:
         if not self._unsourced_locations(project_id):
             project = self._deps.library.project(project_id)
             reason = (
-                "every specs location is a source already"
+                "every spec location is a source already"
                 if of_role(project.locations, SPECS_ROLE.id)
-                else "the project names no specs location — Project ▸ Settings…"
+                else "the project names no spec location — Project ▸ Settings…"
             )
             return ActionState(enabled=False, label=f"From &Location… — {reason}")
         return ENABLED
@@ -690,7 +690,7 @@ class SpecModule:
             self.refresher.refresh(project_id, source.id)
 
     def _add_from_location(self, context: Context) -> None:
-        """One of the project's specs locations as a source: picked from those not yet
+        """One of the project's spec locations as a source: picked from those not yet
         added, one gesture when there is only one to pick."""
         project_id = context.focus_entity("project")
         kind = self._location_kind()

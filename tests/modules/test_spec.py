@@ -190,8 +190,8 @@ def test_the_toolbar_replaced_the_add_button(services, project):
     assert entries == [
         "New Spec Document…",
         "Import Spec Document…",
-        # Greyed with its reason: the project names no specs location yet.
-        "From Location… — the project names no specs location — Project ▸ Settings…",
+        # Greyed with its reason: the project names no spec location yet.
+        "From Location… — the project names no spec location — Project ▸ Settings…",
         "Folder on This Computer…",
         "Git Repository…",
         "Confluence Page…",

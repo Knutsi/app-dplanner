@@ -2,8 +2,9 @@
 
 *Proposal, 2026-09-17. Status: **implemented** on this branch, 2026-09-18 — phases 1 to 4
 in the rollout order below; `ARCHITECTURE.md`'s *A project names its locations* is now the
-rule's home and `FORMAT.md` the shapes'. Phase 5 (docs and tests writing into their
-locations) stays parked, with the open questions below. Written from a full read of the
+rule's home and `FORMAT.md` the shapes'. The roles settled as `code`, `spec` and
+`reporting` (not the four named below): reporting is the one place DPlanner *writes* for
+people who read without it, which is what docs and tests turned out to have in common. Written from a full read of the
 code at `main` (1ace237); every file named below is on that commit. It builds on
 `plan-and-code-repositories.md`, which split the plan repository from the code repository
 and is implemented; this one generalises the code side.*

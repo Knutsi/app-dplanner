@@ -2919,7 +2919,7 @@ pattern applied to the other's tree, which imports the wrong folder and says not
 clone door itself — the blobless, shallow, sparse fetch, the listing, the subprocess
 hardening — is `core/storage/sparse.py`'s now, because a project's read-only *locations*
 (*A project names its locations*) are placed in the same cache under the same digest, and
-a source that names a `specs` row (*Add Spec ▸ From Location…*) resolves to the row's
+a source that names a `spec` row (*Add Spec ▸ From Location…*) resolves to the row's
 address at every call, so the row, its managed placement and the source fetched from it
 share one directory. The harder question was the size guard. A person pointing at a monorepo must be steered to a
 subdirectory *before* they wait for it, and git will not report a blob's size without
@@ -4071,8 +4071,8 @@ source and a step's workplace name a row by it and editing a repository URL must
 orphan them — the same reason a step's folder name is frozen and its id is its identity.
 And **roles are a registry**: the domain declares `code`, because `cli/discovery.py` must
 find a project from a code checkout without loading a module, and every other role is
-declared by the module that acts on it in a Qt-free `roles.py` (`specs` by the spec
-module, `docs` and `tests` by theirs) that the composition root gathers into one list the
+declared by the module that acts on it in a Qt-free `roles.py` (`spec` by the spec
+module, `reporting` by the reporting module) that the composition root gathers into one list the
 Add menu, the card, `dplanner location roles`, lint and the briefing all read — a module
 adds a kind of place and every surface learns it. A role this build does not know is
 loaded and written back untouched, the edge-kind rule, because a colleague's build may
@@ -4094,14 +4094,14 @@ every verb that needs it says in words.
 
 **Whether a location asks for a checkout follows from whether its role writes** — and
 that rule is what keeps opening somebody else's plan from becoming a folder-picking
-session. A worked-in location (code; docs and tests, which are written) needs a checkout
+session. A worked-in location (code; reporting, which is written) needs a checkout
 the person owns, asked once per repository per machine, because a document written there
 is a change somebody commits and pushes on a branch they chose. A read-only location
-(specs) is fetched on demand into a managed clone — the git spec source's blobless, shallow,
-sparse cache under `config_dir()`, keyed as it keys it, so a specs row and the source
+(spec) is fetched on demand into a managed clone — the git spec source's blobless, shallow,
+sparse cache under `config_dir()`, keyed as it keys it, so a spec row and the source
 fetched from it share one directory — and never asks. **A managed clone is never
 written**: the application does not commit and push on somebody's behalf from a directory
-they cannot find, so a docs or tests row on a repository nobody has checked out reads as
+they cannot find, so a reporting row on a repository nobody has checked out reads as
 *not checked out here* and greys the writing verbs, the standing Run Agent already had for
 a missing code checkout. The consequence for a person opening a shared plan is that they
 are asked about the repositories they will *work in*, and everything read-only is silent.
@@ -4142,9 +4142,9 @@ status quo extended: three vocabularies become four and no surface can show all 
 a project is about. *A `locations` module owning the table as module data* fails on the
 first reader: `cli/discovery.py` must read code rows and `cli/` never imports a module.
 *Let a managed clone be written and pushed by Save* was the seductive version of the
-request — docs and tests working on a machine that never chose a folder — and is the
-"main drifting" story again with a different repository. Docs and tests *writing* into
-their locations is the phase this design leaves open; the table is the same either way.
+request — reporting working on a machine that never chose a folder — and is the
+"main drifting" story again with a different repository. The reporting row *receiving*
+the report site is the phase this design leaves open; the table is the same either way.
 
 ### The Project dialog is the Locations table over two log columns
 
@@ -4165,7 +4165,7 @@ under a caption with **Add ▾** rendering the role registry and **⋯** the sel
 verbs. A right-click on a row renders the same ⋯ — the row made current first, so the
 menu reads the same selection the button would. Adding or editing a row is one fit dialog
 (`location_dialog.py`): the repository as an editable combo led by the code the project
-already names (docs and tests live with the code more often than not, so the default is
+already names (a project reports beside its code more often than not, so the default is
 the answer), the position with a folder picker over the checkout when this machine has
 one and over the remote's tree listing — the git spec source's probe, worn by a position —
 when it does not, so nobody types a subdirectory blind; refused in words while the row

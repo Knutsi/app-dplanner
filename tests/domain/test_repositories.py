@@ -91,7 +91,7 @@ def test_every_location_is_placed_and_the_primary_code_row_is_the_repository(tmp
     locations = (
         Location("l1", CODE.id, "https://github.com/acme/widget"),
         Location("l2", CODE.id, "https://github.com/acme/widget-ui", label="UI"),
-        Location("l3", "specs", "https://github.com/acme/specs", path="products/search"),
+        Location("l3", "spec", "https://github.com/acme/specs", path="products/search"),
     )
     project = Project(title="Search", locations=locations)
     checkouts = {"github.com/acme/widget-ui": tmp_path / "ui"}

@@ -487,7 +487,7 @@ src/dplanner/
 │   │                        `dplanner progress show|record|save|list|remove`
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
 │   │                        Project ▸ Preview Report, the publisher that writes `reports/` on every Save,
-│   │                        Settings ▸ Reports
+│   │                        Settings ▸ Reports; the `reporting` location role (roles.py)
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
 │   │                        deferrals — one labelled log (log.py), what reaches a step and the briefing's
 │   │                        capped index (reach.py), how the two retired modules reach it (migrate.py),
@@ -496,7 +496,8 @@ src/dplanner/
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor); and the
 │   │                        documents a *source* fetched (source_kind.py: the kind contract,
-│   │                        sourced.py: applying a snapshot, refresh.py: fetch and check)
+│   │                        sourced.py: applying a snapshot, refresh.py: fetch and check);
+│   │                        the `spec` location role (roles.py)
 │   ├── spec_confluence/     Confluence Cloud as *two* spec source kinds — a page and a folder —
 │   │                        over one client (client.py), storage XHTML to markdown (convert.py),
 │   │                        the walk, its caps and the two content types (source.py), the guided

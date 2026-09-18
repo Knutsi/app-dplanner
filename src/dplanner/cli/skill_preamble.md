@@ -16,14 +16,14 @@ estimate, a ticket, a description — which the graph itself knows nothing about
 
 A project's plan lives in a **plan repository** — a git repository that holds plans and
 nothing else, one folder per project, often several projects for several people — and it
-names the **locations** it is about: a table of rows, each a role (`code`, `specs`,
-`docs`, `tests`), a repository and a position (a folder) inside it. The first `code` row
+names the **locations** it is about: a table of rows, each a role (`code`, `spec`,
+`reporting`), a repository and a position (a folder) inside it. The first `code` row
 is *the* code repository. `dplanner location list <project>` prints the table with where
 each row stands on this machine; `location roles` says what each role is for;
 `location add|set|remove` change it and `location checkout` records where this machine
 has a row's repository. `project show` prints the same, and its `--json` keeps
-`repository` and `checkout` for the primary code row. A read-only row (specs) is fetched
-by the window, never by you; a worked-in row (code, docs, tests) that is *not checked out
+`repository` and `checkout` for the primary code row. A read-only row (spec) is fetched
+by the window, never by you; a worked-in row (code, reporting) that is *not checked out
 on this machine* is one you must not look for — say so instead. Three rules follow:
 
 - **`dplanner` writes to the plan wherever it is run from.** Status, notes, docs, tests,

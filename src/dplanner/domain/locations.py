@@ -2,8 +2,8 @@
 
 A project sits in its **plan repository** — the git repository enclosing its directory,
 derived and never stored — and names the places it is *about* in a table of locations
-shared in ``project.dproj``. A location is a **role** (``code``, ``specs``, ``docs``,
-``tests``…), a **repository** (the remote URL as git prints it, a resolved path for one
+shared in ``project.dproj``. A location is a **role** (``code``, ``spec``,
+``reporting``…), a **repository** (the remote URL as git prints it, a resolved path for one
 with no remote) and a **position** — a directory inside it. The roles are a registry: the
 domain declares :data:`CODE`, because the CLI must find a project from a code checkout
 without loading a module, and every other role is declared by the module that acts on it
@@ -35,12 +35,12 @@ class LocationRole:
     a role that writes needs a working checkout the person owns; one that only reads may be
     served from a managed clone nobody has to pick a folder for."""
 
-    id: str  # "specs" — the row's ``role`` in project.dproj.
-    label: str  # "Specs" — how a row is captioned.
+    id: str  # "spec" — the row's ``role`` in project.dproj.
+    label: str  # "Spec" — how a row is captioned.
     summary: str  # One line for the Add menu and `dplanner location roles`.
     writes: bool
     several: bool = False  # May a project name more than one row of this role?
-    default_path: str = ""  # Offered when a row is added: "docs", "tests".
+    default_path: str = ""  # Offered when a row is added: "reports".
 
 
 CODE = LocationRole(

@@ -2217,7 +2217,9 @@ def _locations_told(facts: "RepositoryFacts") -> str:
         elif placement.managed:
             where = "read-only, fetched by the window into the plan's spec documents"
         elif role is not None and role.writes and location.role != CODE.id:
-            where = f"write there: `{placement.directory}`"
+            where = (
+                f"DPlanner publishes there on Save (`{placement.directory}`) — do not write there"
+            )
         else:
             where = f"`{placement.directory}`"
         told.append(f"{location.name(roles)}: {location.repository_label}{inside} — {where}")
@@ -3093,16 +3095,15 @@ def default_location_roles() -> tuple["LocationRole", ...]:
     The order is the order the Add menu offers them.
     """
     from dplanner.domain.locations import CODE
-    from dplanner.modules.docs.roles import ROLE as DOCS
-    from dplanner.modules.spec.roles import ROLE as SPECS
-    from dplanner.modules.testing.roles import ROLE as TESTS
+    from dplanner.modules.reporting.roles import ROLE as REPORTING
+    from dplanner.modules.spec.roles import ROLE as SPEC
 
-    return (CODE, SPECS, DOCS, TESTS)
+    return (CODE, SPEC, REPORTING)
 
 
 def managed_for(roles: "Mapping[str, LocationRole]") -> "ManagedFor":
     """Where a read-only location's managed clone stands: under the per-user cache the
-    git spec source already keeps, keyed as it keys them, so a specs row and the source
+    git spec source already keeps, keyed as it keys them, so a spec row and the source
     fetched from it share one clone. A role that writes has no such place — a managed
     clone is never written."""
     from dplanner.core.config_dir import config_dir

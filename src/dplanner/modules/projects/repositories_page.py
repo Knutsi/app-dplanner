@@ -2,7 +2,7 @@
 this machine lacks, and what to do about each.
 
 A plan is readable without any of them, so the page never refuses to open a project — it
-lists the worked-in locations (a role that writes: code, docs, tests) whose repository
+lists the worked-in locations (a role that writes: code, reporting) whose repository
 has no checkout here, one row each, with three answers as a combo: *Clone into the
 repositories folder*, *Use a checkout I have…*, *Later*. Read-only rows are not listed;
 a sentence under the list says that specs are fetched when a Specs tab opens. Clones run
@@ -33,7 +33,7 @@ from dplanner.modules.projects.repositories_folder import (
 from dplanner.theme.tokens import SECTION_GAP
 
 CLONE, USE, LATER = "clone", "use", "later"
-READ_ONLY_NOTE = "Read-only locations — specs — are fetched when a Specs tab opens."
+READ_ONLY_NOTE = "A read-only location — a spec repository — is fetched when a Specs tab opens."
 
 
 def repo_folder_name(remote: str) -> str:

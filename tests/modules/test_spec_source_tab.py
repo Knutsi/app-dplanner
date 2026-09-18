@@ -581,12 +581,12 @@ def test_connect_is_not_offered_where_connecting_cannot_help(app, fake_kind, ser
     assert not tab.connect_button.isHidden()
 
 
-# -- a source over one of the project's specs locations -----------------------------------------
+# -- a source over one of the project's spec locations -----------------------------------------
 
 
 def test_a_specs_location_becomes_a_source_that_follows_the_row(fake_kind, services, project):
     """*Add Spec ▸ From Location…*: greyed with its reason until the project names a
-    specs location; the source it adds names the row by id, and every call to the kind
+    spec location; the source it adds names the row by id, and every call to the kind
     gets the row's address — edit the row and the source moves with it."""
     from dplanner.domain.commands import SetFieldCommand
     from dplanner.domain.locations import Location
@@ -595,16 +595,16 @@ def test_a_specs_location_becomes_a_source_that_follows_the_row(fake_kind, servi
     fake_kind.handles_locations = True
     context = select(services, project)
     state = services.actions.spec("spec.add_source.location").state(context)
-    assert not state.enabled and "names no specs location" in (state.label or "")
+    assert not state.enabled and "names no spec location" in (state.label or "")
 
-    row = Location("l1", "specs", "https://github.com/acme/specs", path="products", ref="v2")
+    row = Location("l1", "spec", "https://github.com/acme/specs", path="products", ref="v2")
     services.undo.push(SetFieldCommand(project.id, "locations", (row,)))
     assert services.actions.spec("spec.add_source.location").state(context).enabled
     services.actions.run("spec.add_source.location", select(services, project))
 
     index = read_index(services.document.project(project.id))
     (source,) = index.sources
-    assert source.kind == "fake" and source.title == "Specs"
+    assert source.kind == "fake" and source.title == "Spec"
     assert source.locator == {"location": "l1"}
     assert resolve_locator(services.document.project(project.id), source) == {
         "url": "https://github.com/acme/specs",
@@ -614,7 +614,7 @@ def test_a_specs_location_becomes_a_source_that_follows_the_row(fake_kind, servi
     state = services.actions.spec("spec.add_source.location").state(select(services, project))
     assert not state.enabled and "already" in (state.label or "")
 
-    moved = Location("l1", "specs", "https://github.com/acme/specs", path="products/v3")
+    moved = Location("l1", "spec", "https://github.com/acme/specs", path="products/v3")
     services.undo.push(SetFieldCommand(project.id, "locations", (moved,)))
     assert resolve_locator(services.document.project(project.id), source)["path"] == "products/v3"
     assert resolve_locator(services.document.project(project.id), source)["ref"] == "HEAD"

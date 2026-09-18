@@ -4237,8 +4237,8 @@ composed from stderr and never quoting it); and the subprocess door — `run_git
 process-group kill.
 
 **Why it moved.** `docs/proposals/repository-roles-and-positions.md`: a project is about to
-name several repositories in several *roles*, and the ones it only reads (specs today; docs
-and tests on the table) all want "a repository and a position in it, fetched on demand
+name several repositories in several *roles*, and the ones it only reads (spec today; reporting
+on the table) all want "a repository and a position in it, fetched on demand
 without asking for a folder" — exactly what the spec kind had built for itself, privately.
 It was the largest kind module because the clone door was in it. The module keeps what is
 its own: the locator's shape in the spec index, the walk's rule for what a document is, the

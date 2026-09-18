@@ -530,8 +530,8 @@ def test_the_repositories_page_asks_about_the_worked_in_repositories_the_machine
     origin, link = shared_with_locations(
         tmp_path,
         Location("l1", "code", str(code_origin)),
-        Location("l2", "specs", "https://github.com/acme/specs", path="products"),
-        Location("l3", "docs", str(code_origin), path="docs"),
+        Location("l2", "spec", "https://github.com/acme/specs", path="products"),
+        Location("l3", "reporting", str(code_origin), path="reports"),
     )
     set_repositories_folder(tmp_path / "Code")
     recorded: list[tuple[str, Path]] = []
@@ -542,7 +542,7 @@ def test_the_repositories_page_asks_about_the_worked_in_repositories_the_machine
     assert not dialog.back_button.isVisibleTo(dialog)  # Read off the plan now on disk.
     page = dialog.repositories
     assert page.table.rowCount() == 1  # One repository, however many rows name it.
-    assert page.table.item(0, 1).text() == "Code, Docs"
+    assert page.table.item(0, 1).text() == "Code, Reporting"
     assert dialog.primary_button.text() == "Clone 1 and Finish"
     dialog.primary_button.click()
     assert dialog.result() == QDialog.DialogCode.Accepted

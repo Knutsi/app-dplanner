@@ -241,8 +241,8 @@ def commands(
         ),
         CliCommand(
             path=("location", "list"),
-            summary="The places a project is about — its code, specs, docs and tests, each "
-            "a repository and a position in it — and where each is on this machine.",
+            summary="The places a project is about — its code, its specs, where it reports — "
+            "each a repository and a position in it — and where each is on this machine.",
             configure=project_arg,
             run=partial(_location_list, locating=locating),
             examples=(

@@ -506,14 +506,14 @@ def test_the_card_states_the_plan_and_every_location_and_follows_the_facts(
     # Every row the project names, worded once for the card and the dialog's table.
     rows = (
         *code_row(CODE_URL),
-        Location("l2", "docs", CODE_URL, path="docs/search"),
-        Location("l3", "specs", "https://github.com/acme/specs", path="products"),
+        Location("l2", "reporting", CODE_URL, path="reports/search"),
+        Location("l3", "spec", "https://github.com/acme/specs", path="products"),
     )
     services.undo.push(SetFieldCommand(project.id, "locations", rows))
     assert card.texts() == [
         f"Code: acme/widget — {shown_path(code)}",
-        f"Docs: acme/widget · docs/search/ — {shown_path(code / 'docs' / 'search')}",
-        "Specs: acme/specs · products/ — fetched on demand — not fetched yet",
+        f"Reporting: acme/widget · reports/search/ — {shown_path(code / 'reports' / 'search')}",
+        "Spec: acme/specs · products/ — fetched on demand — not fetched yet",
     ]
 
 
@@ -890,14 +890,14 @@ def test_the_wizard_asks_only_about_worked_in_repositories_the_machine_lacks(tmp
     roles = roles_by_id(
         [
             CODE,
-            LocationRole("specs", "Specs", "", writes=False),
-            LocationRole("docs", "Docs", "", writes=True),
+            LocationRole("spec", "Spec", "", writes=False),
+            LocationRole("reporting", "Reporting", "", writes=True),
         ]
     )
     rows = [
         Location("l1", "code", "https://github.com/acme/widget"),
-        Location("l2", "docs", "git@github.com:acme/widget.git", path="docs"),
-        Location("l3", "specs", "https://github.com/acme/specs"),
+        Location("l2", "reporting", "git@github.com:acme/widget.git", path="reports"),
+        Location("l3", "spec", "https://github.com/acme/specs"),
         Location("l4", "code", "https://github.com/acme/ui", label="UI"),
         Location("l5", "wiki", "https://github.com/acme/wiki"),  # A role this build lacks.
     ]
