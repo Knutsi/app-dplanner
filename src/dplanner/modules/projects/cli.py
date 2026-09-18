@@ -229,11 +229,15 @@ def commands(
         ),
         CliCommand(
             path=("project", "set"),
-            summary="Say that the plan stays inside its code repository on purpose, or "
-            "warn about it again.",
+            summary="Set the primary code repository and where it is checked out here, or "
+            "say that the plan stays inside its code on purpose.",
             configure=_configure_set,
             run=partial(_project_set, locating=locating),
-            examples=("dplanner project set discovery --accept-colocation",),
+            examples=(
+                "dplanner project set discovery --repository https://github.com/acme/widget",
+                "dplanner project set discovery --checkout ~/src/widget",
+                "dplanner project set discovery --accept-colocation",
+            ),
         ),
         CliCommand(
             path=("location", "list"),
@@ -769,6 +773,22 @@ def _project_rename(context: CliContext, args: Namespace, locating: Locating) ->
 
 def _configure_set(parser: ArgumentParser) -> None:
     project_arg(parser)
+    # The primary code row's shorthands, kept from before the table: an agent taught by an
+    # earlier skill still lands, and "the code repository" is a real thing — the first row.
+    parser.add_argument(
+        "--repository",
+        metavar="URL",
+        help="the primary code repository, as git names its remote — the first code "
+        "location; `dplanner location add` names the others",
+    )
+    parser.add_argument(
+        "--checkout", metavar="PATH", help="where this machine has that code checked out"
+    )
+    parser.add_argument(
+        "--forget-checkout",
+        action="store_true",
+        help="drop the checkout recorded on this machine for the primary code repository",
+    )
     parser.add_argument(
         "--accept-colocation",
         action="store_true",
@@ -781,14 +801,30 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 def _project_set(context: CliContext, args: Namespace, locating: Locating) -> int:
     project = find_project(context.library, args.project)
-    if not (args.accept_colocation or args.warn_colocation):
+    asked = (
+        args.repository is not None,
+        bool(args.checkout),
+        args.forget_checkout,
+        args.accept_colocation,
+        args.warn_colocation,
+    )
+    if not any(asked):
         raise CliError(
-            "nothing to set — pass --accept-colocation or --warn-colocation; a repository "
-            "is a location: `dplanner location add|set|checkout`"
+            "nothing to set — pass --repository, --checkout, --forget-checkout, "
+            "--accept-colocation or --warn-colocation; every other location is "
+            "`dplanner location add|set|checkout`"
         )
+    if args.repository is not None:
+        _set_locations(context, project, _with_primary(project.locations, args.repository.strip()))
+    primary = primary_code(project.locations)
+    if args.checkout or args.forget_checkout:
+        if primary is None:
+            raise CliError("the project names no code repository — pass --repository URL too")
+        checkout = Path(args.checkout).expanduser().resolve() if args.checkout else None
+        context.store.set_checkout(primary.repository, checkout)
     if args.accept_colocation:
         context.apply(SetFieldCommand(project.id, "colocation", ACCEPTED))
-    else:
+    elif args.warn_colocation:
         context.apply(SetFieldCommand(project.id, "colocation", ""))
     context.report(
         _project_row(context, project, locating),
@@ -1152,6 +1188,19 @@ def _project_import(context: CliContext, args: Namespace, locating: Locating) ->
         f"Imported {project.title!r} with {len(project.steps)} steps  {project.id}",
     )
     return 0
+
+
+def _with_primary(locations: tuple[Location, ...], url: str) -> tuple[Location, ...]:
+    """The table with its primary code row set to ``url`` — replaced in place, added first
+    when there is none, dropped when ``url`` is empty."""
+    primary = primary_code(locations)
+    if not url:
+        return without(locations, primary.id) if primary is not None else locations
+    if primary is None:
+        return (Location(next_id(locations), CODE.id, url), *locations)
+    return replaced(
+        locations, Location(primary.id, CODE.id, url, primary.path, primary.ref, primary.label)
+    )
 
 
 # -- location verbs -----------------------------------------------------------------------------

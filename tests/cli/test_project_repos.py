@@ -126,6 +126,34 @@ def test_a_location_that_cannot_stand_is_refused_and_the_roles_are_listed(cli):
     assert "code" in cli("location", "roles") and "worked in" in cli("location", "roles")
 
 
+def test_set_keeps_the_primary_code_shorthands(cli, tmp_path):
+    """`project set --repository/--checkout` are the first code row's — an agent taught by
+    an earlier skill still lands, and the row's position and label survive the change."""
+    cli("project", "create", "Discovery")
+    cli(
+        "project",
+        "set",
+        "Discovery",
+        "--repository",
+        "https://github.com/acme/widget",
+        "--checkout",
+        str(tmp_path / "widget"),
+    )
+    row = data(cli("project", "show", "Discovery", "--json"))
+    assert row["repository"] == "https://github.com/acme/widget"
+    assert row["checkout"] == str((tmp_path / "widget").resolve())
+    cli("location", "set", "Discovery", "l1", "--label", "main", "--path", "apps")
+    cli("project", "set", "Discovery", "--repository", "https://github.com/acme/other")
+    (location,) = data(cli("location", "list", "Discovery", "--json"))["locations"]
+    assert (location["repository"], location["label"], location["path"]) == (
+        "https://github.com/acme/other",
+        "main",
+        "apps",
+    )
+    cli("project", "set", "Discovery", "--forget-checkout")
+    assert data(cli("project", "show", "Discovery", "--json"))["checkout"] == ""
+
+
 def test_set_records_the_acceptance(cli):
     cli("project", "create", "Discovery")
     cli("project", "set", "Discovery", "--accept-colocation")
