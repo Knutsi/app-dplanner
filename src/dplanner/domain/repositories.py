@@ -100,6 +100,11 @@ class RepositoryFacts:
     def placement(self, location_id: str) -> Placement | None:
         return next((found for found in self.placements if found.location.id == location_id), None)
 
+    def of_role(self, role_id: str) -> Placement | None:
+        """The first row of ``role_id``, placed — the reporting row, for a reader that
+        asks where a project publishes."""
+        return next((found for found in self.placements if found.location.role == role_id), None)
+
 
 def colocated(
     plan_root: Path | None, plan_remote: str, repository: str, checkout: Path | None

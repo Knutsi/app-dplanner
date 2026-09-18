@@ -183,8 +183,8 @@ def test_report_html_is_the_same_bytes_twice_and_prints_without_out(cli, plan, t
 def test_report_site_lays_the_repository_out_and_its_index_reads_the_set(cli, plan, workspace):
     out = cli("report", "site", "Discovery", "--json")
     written = json.loads(out)["sites"]
-    assert written == [{"root": str(workspace), "projects": ["plan"]}]
     site = workspace / website.REPORTS_DIR
+    assert written == [{"root": str(workspace), "site": str(site), "projects": ["plan"]}]
     assert (site / "plan" / "index.html").is_file()
     summary = website.summary_record((site / "plan" / "summary.js").read_text())
     assert summary["title"] == "Discovery" and summary["slug"] == "plan"
@@ -288,3 +288,37 @@ def test_the_audience_reaches_the_sheets_the_page_exports(cli, plan, tmp_path):
     rows = target.read_text(encoding="utf-8").splitlines()
     assert "Audience" in rows[0]
     assert "QA" in rows[1]
+
+
+def test_report_site_writes_to_the_reporting_location_this_machine_has(
+    cli, plan, workspace, tmp_path
+):
+    """A project that names where it reports publishes there — the row's repository at the
+    row's position — when this machine has that repository; `--out` names any directory."""
+    from dplanner.core.storage.locations import init_repo
+
+    reports = init_repo(tmp_path / "reports-repo")
+    url = "https://github.com/acme/reports"
+    cli(
+        "location",
+        "add",
+        "Discovery",
+        "--role",
+        "reporting",
+        "--repository",
+        url,
+        "--path",
+        "team/search",
+    )
+    # Not checked out here: beside the plan, as always.
+    written = json.loads(cli("report", "site", "Discovery", "--json"))["sites"]
+    assert written[0]["site"] == str(workspace / website.REPORTS_DIR)
+    cli("location", "checkout", "Discovery", "reporting", str(reports))
+    written = json.loads(cli("report", "site", "Discovery", "--json"))["sites"]
+    site = reports / "team" / "search"
+    assert written == [{"root": str(reports), "site": str(site), "projects": ["plan"]}]
+    assert (site / "plan" / "index.html").is_file() and (site / "index.html").is_file()
+    elsewhere = tmp_path / "elsewhere"
+    written = json.loads(cli("report", "site", "Discovery", "--out", str(elsewhere), "--json"))
+    assert written["sites"][0]["site"] == str(elsewhere)
+    assert (elsewhere / "plan" / "index.html").is_file()

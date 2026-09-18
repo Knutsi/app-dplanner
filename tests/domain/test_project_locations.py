@@ -165,12 +165,21 @@ def test_the_plan_repository_places_a_row_that_names_it(tmp_path):
     assert found.root == tmp_path / "plans" and not found.managed
 
 
-def test_a_remote_less_repository_is_placed_at_its_own_path_when_it_is_here(tmp_path):
-    (tmp_path / "local").mkdir()
+def test_a_remote_less_repository_is_placed_at_its_own_path_when_it_is_a_working_tree(tmp_path):
+    """Stored as its path, a repository is where it says — when a working tree is there.
+    A bare repository (a ``file://`` remote) is not somewhere to work: cloned like any."""
+    import subprocess
+
+    from dplanner.core.storage.locations import init_repo
+
+    init_repo(tmp_path / "local")
+    subprocess.run(["git", "init", "-q", "--bare", str(tmp_path / "bare.git")], check=True)
     here = Location("l1", "code", str(tmp_path / "local"))
     gone = Location("l2", "code", str(tmp_path / "gone"))
+    bare = Location("l3", "code", (tmp_path / "bare.git").as_uri())
     assert place(here, checkouts={}, plan_root=None, plan_remote="").root == tmp_path / "local"
     assert place(gone, checkouts={}, plan_root=None, plan_remote="").root is None
+    assert place(bare, checkouts={}, plan_root=None, plan_remote="").root is None
 
 
 def test_a_read_only_row_lands_in_its_managed_clone_and_a_writing_one_never_does(tmp_path):

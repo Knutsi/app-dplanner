@@ -19,6 +19,7 @@ race a checkout that is rewriting the same files.
 import logging
 import time
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from PySide6.QtCore import QObject, Signal
@@ -40,6 +41,17 @@ BRANCH_CACHE_S = 1.0
 # What a repository publishes beside its plan on Save — the reports site: run on the
 # worker, returns the repository-relative paths the commit records with the plan.
 Publication = Callable[[], Sequence[str]]
+
+
+@dataclass(frozen=True)
+class ExtraPublication:
+    """A publication into a repository that is not a plan's — a project's reporting
+    location: written, then committed **scoped to what it wrote** and pushed, as one more
+    row of the save. ``storage`` is a provider over that repository scoped to the site."""
+
+    label: str
+    storage: "RepoGroup"
+    publish: Publication
 
 
 @runtime_checkable
@@ -183,14 +195,18 @@ class SyncService(QObject):
         only: Sequence[RepoGroup] | None = None,
         *,
         publications: Mapping[int, Publication] | None = None,
+        extra: Sequence[ExtraPublication] = (),
     ) -> None:
         """Commit every dirty repository — one commit per repo — pushing where possible.
 
         ``only`` narrows the sweep (the quit dialog's unchecked rows are left dirty).
         ``publications``, keyed by ``id(group)``, is what each repository publishes beside
         its plan — prepared on the GUI thread, run here before the commit, and recorded in
-        the same version. A publication that fails is logged and the plan is saved without
-        it: a report is never a reason to lose a save. Directly testable, no threads.
+        the same version. ``extra`` are the publications into other repositories — the
+        reporting locations — each written, committed scoped to the site and pushed, after
+        the plans, as further rows. A publication that fails is logged and the plan is
+        saved without it: a report is never a reason to lose a save. Directly testable, no
+        threads.
         """
         targets = self._groups if only is None else list(only)
         saved, pushed, unpublished = 0, 0, 0
@@ -216,6 +232,22 @@ class SyncService(QObject):
                     remote.push()
                     pushed += 1
             self.saving.emit(index, SAVED)
+        for offset, published in enumerate(extra):
+            index = len(targets) + offset
+            self.saving.emit(index, PUBLISHING)
+            try:
+                wrote = published.publish()
+            except Exception:
+                logger.exception("Publishing the reports into %s failed", published.label)
+                unpublished += 1
+                self.saving.emit(index, NOTHING)
+                continue
+            self.saving.emit(index, COMMITTING)
+            if published.storage.commit(message or "Publish the report", also=wrote):
+                remote = self._remote(published.storage)
+                if remote is not None:
+                    remote.push()
+            self.saving.emit(index, SAVED)
         self._recount()
         if saved == 0:
             said = "Nothing new to save"
@@ -234,9 +266,11 @@ class SyncService(QObject):
         publications: Mapping[int, Publication] | None = None,
         *,
         only: Sequence[RepoGroup] | None = None,
+        extra: Sequence[ExtraPublication] = (),
     ) -> bool:
         return self._start(
-            SAVE_TASK, lambda: self.save_sync(message, only, publications=publications)
+            SAVE_TASK,
+            lambda: self.save_sync(message, only, publications=publications, extra=extra),
         )
 
     def pull_sync(self) -> None:

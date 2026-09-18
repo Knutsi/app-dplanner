@@ -76,6 +76,10 @@ class ReportingDeps:
     key_of: Callable[[Step], str]
     kind_of: Callable[[Step], str]
     status_for: Callable[[Step], str]
+    # Where a project publishes instead of beside its plan — its reporting location, when
+    # it names one and this machine has that repository — wired by the root; this module
+    # never learns a role id. None means beside the plan, as always.
+    reporting_site: Callable[[ProjectId], website.SiteTarget | None] = lambda _pid: None
 
 
 class _Writer(QObject):
@@ -93,6 +97,10 @@ class _Writer(QObject):
 
 def publish_on_save() -> bool:
     return bool(get_global(MODULE_ID, PUBLISH_KEY, True))
+
+
+def _same(one: Path, other: Path) -> bool:
+    return one.expanduser().resolve() == other.expanduser().resolve()
 
 
 class ReportingModule:
@@ -168,17 +176,62 @@ class ReportingModule:
     def prepare_publication(
         self, repo_root: Path, project_ids: Sequence[ProjectId]
     ) -> Publication | None:
-        """Save's hook: None when the switch is off, else the repository's site to write."""
+        """Save's hook for a plan repository: None when the switch is off or every project
+        publishes elsewhere, else the site to write beside the plan — and any reporting
+        site inside the same repository, recorded in the same commit."""
         if not publish_on_save():
             return None
-        return self._publication(repo_root, project_ids)
+        targets = self._targets(repo_root, project_ids)
+        inside = [(t, ids) for t, ids in targets.items() if _same(t.repo_root, repo_root)]
+        if not inside:
+            return None
+        publications = [self._publication(target, ids) for target, ids in inside]
 
-    def _publication(self, repo_root: Path, project_ids: Sequence[ProjectId]) -> Publication:
+        def publish() -> Sequence[str]:
+            return [spec for one in publications for spec in one()]
+
+        return publish
+
+    def prepare_location_publications(
+        self, project_ids: Sequence[ProjectId]
+    ) -> list[tuple[website.SiteTarget, Publication]]:
+        """Save's other hook: one publication per reporting site in a repository that is
+        not the project's plan's — committed there, scoped to the site."""
+        if not publish_on_save():
+            return []
+        found: list[tuple[website.SiteTarget, Publication]] = []
+        for target, ids in self._targets(None, project_ids).items():
+            plan_roots = {self._deps.repo_root(project_id) for project_id in ids}
+            if any(root is not None and _same(root, target.repo_root) for root in plan_roots):
+                continue
+            found.append((target, self._publication(target, ids)))
+        return found
+
+    def _targets(
+        self, repo_root: Path | None, project_ids: Sequence[ProjectId]
+    ) -> dict[website.SiteTarget, list[ProjectId]]:
+        """Where each project's pages go: its reporting site, else beside its plan."""
         deps = self._deps
-        reports = [
-            (website.slug_for(deps.project_dir(project_id), repo_root), self.build(project_id))
-            for project_id in project_ids
-        ]
+        targets: dict[website.SiteTarget, list[ProjectId]] = {}
+        for project_id in project_ids:
+            target = deps.reporting_site(project_id)
+            if target is None:
+                root = repo_root if repo_root is not None else deps.repo_root(project_id)
+                if root is None:
+                    continue
+                target = website.plan_site(root)
+            targets.setdefault(target, []).append(project_id)
+        return targets
+
+    def _publication(
+        self, target: website.SiteTarget, project_ids: Sequence[ProjectId]
+    ) -> Publication:
+        deps = self._deps
+        reports = []
+        for project_id in project_ids:
+            plan_root = deps.repo_root(project_id) or deps.project_dir(project_id)
+            slug = website.slug_for(deps.project_dir(project_id), plan_root)
+            reports.append((slug, self.build(project_id)))
 
         def publish() -> Sequence[str]:
             pages = [
@@ -189,26 +242,23 @@ class ReportingModule:
                 )
                 for slug, report in reports
             ]
-            return website.write(repo_root, pages)
+            return website.write(target, pages)
 
         return publish
 
     def write_site(self) -> None:
-        """Settings' Write Now: every repository's site, whatever the switch says."""
+        """Settings' Write Now: every site, whatever the switch says — beside each plan,
+        or at a project's reporting location when it has one here."""
         deps = self._deps
-        by_root: dict[Path, list[ProjectId]] = {}
-        for project in deps.library.projects:
-            root = deps.repo_root(project.id)
-            if root is not None:
-                by_root.setdefault(root, []).append(project.id)
-        publications = [(root, self._publication(root, ids)) for root, ids in by_root.items()]
+        targets = self._targets(None, [project.id for project in deps.library.projects])
+        publications = [(target, self._publication(target, ids)) for target, ids in targets.items()]
         writer = self._writer
         assert writer is not None
 
         def body() -> None:
-            for root, publish in publications:
+            for target, publish in publications:
                 publish()
-                writer.written.emit("site", str(root / website.REPORTS_DIR))
+                writer.written.emit("site", str(target.site))
 
         self._run("Writing report sites", body, key="report.site")
 

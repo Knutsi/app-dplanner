@@ -334,10 +334,11 @@ def place(
         return Placement(location, plan_root)
     if Path(canonical).is_absolute():
         # A repository with no remote is stored as its path: on the machine that recorded
-        # it, that path is where it is.
+        # it, that path is where it is — when it is a working tree. A bare repository
+        # (a ``file://`` remote) is not somewhere to work, and is cloned like any remote.
         if plan_root is not None and _nested(plan_root, Path(canonical)):
             return Placement(location, plan_root)
-        if Path(canonical).is_dir():
+        if (Path(canonical) / ".git").exists():
             return Placement(location, Path(canonical))
     if managed is not None:
         cache = managed(location)

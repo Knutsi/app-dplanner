@@ -13,9 +13,10 @@ from pathlib import Path
 import pytest
 from PySide6.QtCore import QObject
 from PySide6.QtCore import Signal as QtSignal
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QMessageBox, QPushButton
 
 from dplanner.cli.report import website
+from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
@@ -242,3 +243,106 @@ def test_write_now_turns_its_own_glyph_while_a_report_is_being_written(app):
         assert not spinner.is_spinning() and button.icon().cacheKey() == idle
     finally:
         page.deleteLater()
+
+
+# -- the reporting location ---------------------------------------------------------------------
+
+
+def reporting_row(url: str, path: str = "reports/search"):
+    from dplanner.domain.locations import Location
+
+    return Location("l9", "reporting", url, path=path)
+
+
+def test_save_publishes_into_the_reporting_location_and_commits_it_scoped(
+    qapp, services, project, library_repo, tmp_path
+):
+    """A project that names where it reports: the site lands at that repository's
+    position — a checkout this machine has — in a commit of its own scoped to the site,
+    and nothing about it is written beside the plan."""
+    from dplanner.domain.commands import SetFieldCommand
+
+    reports = init_repo(tmp_path / "reports-repo")
+    (reports / "README.md").write_text("the team's reports\n")
+    subprocess.run(["git", "-C", str(reports), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(reports), "commit", "-qm", "start"], check=True)
+    (reports / "notes.txt").write_text("somebody's own file, never swept up\n")
+    url = "https://github.com/acme/reports"
+    services.undo.push(SetFieldCommand(project.id, "locations", (reporting_row(url),)))
+    services.repo.set_checkout(url, reports)
+    services.autosave.flush_now()
+    select_project(services, project)
+    services.actions.run("sync.save", services.context.current())
+    wait_for(qapp, lambda: not services.tasks.active())
+
+    site = reports / "reports" / "search"
+    assert (site / "discovery" / "index.html").is_file() and (site / "index.html").is_file()
+    published = committed_paths(reports)
+    assert all(path.startswith("reports/search/") for path in published) and published
+    assert "notes.txt" not in published
+    assert not (library_repo / website.REPORTS_DIR).exists()  # Beside the plan: nothing.
+    assert all(path.startswith("discovery/") for path in committed_paths(library_repo))
+    # Every row of the save is said, the reporting repository's after the plan's.
+    service = sync_service(services)
+    service.refresh()
+    assert not service.dirty_groups()
+
+
+def test_the_terminal_and_the_tests_export_land_at_the_reporting_location_too(
+    services, project, tmp_path, monkeypatch
+):
+    """`Write Now` and the Tests tab's export offer the same place: where colleagues read."""
+    from dplanner.domain.commands import SetFieldCommand
+
+    reports = init_repo(tmp_path / "reports-repo")
+    url = "https://github.com/acme/reports"
+    services.undo.push(SetFieldCommand(project.id, "locations", (reporting_row(url),)))
+    services.repo.set_checkout(url, reports)
+    module = next(m for m in services.modules if m.id == "testing")
+    assert module._deps.reporting_dir(project.id) == reports / "reports" / "search"
+    services.repo.set_checkout(url, None)
+    assert module._deps.reporting_dir(project.id) is None  # Not here: the home directory.
+
+
+@pytest.fixture
+def kept_home(monkeypatch, tmp_path):
+    """The configuration directory, this test's own — where DPlanner keeps clones. Listed
+    before ``services`` wherever it is used, so the session is built over it."""
+    home = tmp_path / "config-home"
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home))
+    return home / "dplanner"
+
+
+def test_save_clones_a_reporting_repository_nobody_has_and_pushes_the_site_there(
+    kept_home, qapp, services, project, library_repo, tmp_path, monkeypatch
+):
+    """The team lead's Save: the reporting repository is not on this machine, so the save
+    clones it first — kept by DPlanner, never in the plan — writes the site at the row's
+    position, commits scoped to it and pushes, and colleagues read it from the remote."""
+    from tests.modules.spec_git_helpers import make_remote
+
+    from dplanner.core.storage.kept import kept_dir
+    from dplanner.domain.commands import SetFieldCommand
+
+    remote = make_remote(tmp_path / "remote", {"README.md": "# Reports\n"})
+    services.undo.push(SetFieldCommand(project.id, "locations", (reporting_row(remote.url),)))
+    services.autosave.flush_now()
+    select_project(services, project)
+    failures: list[str] = []
+    monkeypatch.setattr(QMessageBox, "warning", lambda *args: failures.append(str(args[2])))
+    services.actions.run("sync.save", services.context.current())
+
+    def pushed() -> bool:
+        listed = subprocess.run(
+            ["git", "-C", str(remote.bare), "ls-tree", "-r", "--name-only", "HEAD"],
+            capture_output=True,
+            text=True,
+        ).stdout
+        return "reports/search/discovery/index.html" in listed
+
+    wait_for(qapp, lambda: failures or (pushed() and not services.tasks.active()), timeout=60.0)
+    assert failures == []
+    kept = kept_dir(kept_home, remote.url)
+    assert services.repo.checkout_for(remote.url) == kept and (kept / ".git").is_dir()
+    assert (kept / "reports" / "search" / "index.html").is_file()
+    assert not (library_repo / website.REPORTS_DIR).exists()

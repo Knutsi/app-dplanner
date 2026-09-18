@@ -20,10 +20,13 @@ lines of each function instead of the first lines of the file, and
 ``tests/test_architecture.py`` reads them either way.
 """
 
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from dplanner.core.module_data import ModuleDataFormat
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Container, Mapping, Sequence
@@ -31,11 +34,12 @@ if TYPE_CHECKING:
 
     from PySide6.QtGui import QIcon
 
-    from dplanner.cli import CliCommand
+    from dplanner.cli import CliCommand, CliContext
     from dplanner.cli.checklist import MachineCheck
     from dplanner.cli.gate import ReadRecord
     from dplanner.cli.lint import LintCheck
     from dplanner.cli.report.parts import ReportSource
+    from dplanner.cli.report.website import SiteTarget
     from dplanner.domain.agents import AgentHarness
     from dplanner.domain.aspects import AspectSpec
     from dplanner.domain.assets import AssetSource
@@ -76,6 +80,7 @@ __all__ = [
 def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None) -> list["Module"]:
     from pathlib import Path
 
+    from dplanner.cli.report.website import SiteTarget
     from dplanner.core.config_dir import config_dir
     from dplanner.core.storage.git import GitStorage
     from dplanner.core.storage.github import GitHubStorage
@@ -88,7 +93,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         EditTextCommand,
         SetModuleDataCommand,
     )
-    from dplanner.domain.locations import roles_by_id
+    from dplanner.domain.locations import Placement, roles_by_id
     from dplanner.domain.model import Library, Project, TextEdit
     from dplanner.domain.relocate import move_project
     from dplanner.domain.repositories import RepositoryFacts, repository_facts
@@ -149,6 +154,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     )
     from dplanner.modules.reopen_tabs.module import ReopenTabsDeps, ReopenTabsModule
     from dplanner.modules.reporting.module import ReportingDeps, ReportingModule
+    from dplanner.modules.reporting.roles import ROLE as REPORTING_ROLE
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
     from dplanner.modules.spec.cli import digest_of as spec_digest_of
@@ -194,6 +200,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
+    from dplanner.modules.sync.service import ExtraPublication
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
     from dplanner.modules.testing.aspect import read as tests_read
     from dplanner.modules.testing.module import TestsDeps, TestsModule
@@ -242,6 +249,23 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         with no step (the Problems panel's) has to ask about."""
         node = library.node(node_id)
         return facts_of(node.id if isinstance(node, Project) else library.project_of(node_id).id)
+
+    def reporting_placement(project_id: str) -> "Placement | None":
+        """The project's reporting row placed on this machine — a checkout, the person's
+        or one DPlanner keeps — or None: it names none, or nothing here has it yet."""
+        placement = facts_of(project_id).of_role(REPORTING_ROLE.id)
+        return placement if placement is not None and placement.here else None
+
+    def reporting_site(project_id: str) -> "SiteTarget | None":
+        """Where the project publishes instead of beside its plan, when it does."""
+        placement = reporting_placement(project_id)
+        if placement is None or placement.root is None or placement.directory is None:
+            return None
+        return SiteTarget(placement.root, placement.directory)
+
+    def reporting_dir(project_id: str) -> "Path | None":
+        site = reporting_site(project_id)
+        return site.site if site is not None else None
 
     def repository_for(step_id: str) -> str:
         """Which repository a step's GitHub refs belong to: the code repository the
@@ -1025,12 +1049,14 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             key_of=_step_key,
             kind_of=_step_kind,
             status_for=step_status,
+            reporting_site=reporting_site,
         )
     )
 
     def publication_for(group: object) -> "Publication | None":
         """Save's hook: the reports of every project a repository group covers, written
-        beside the plan in the same commit — or nothing, when the switch is off."""
+        beside the plan in the same commit — or nothing, when the switch is off or every
+        one of them publishes at a reporting location elsewhere."""
         members = [
             project.id for project in library.projects if store.repo_for(project.id) is group
         ]
@@ -1038,6 +1064,42 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         if root is None:
             return None
         return reporting.prepare_publication(root, members)
+
+    def extra_publications() -> "list[ExtraPublication]":
+        """Save's other hook: one publication per reporting location on this machine in
+        a repository that is not the project's plan's — a provider over that repository
+        scoped to the site, so the commit records the site and nothing else there."""
+        found: list[ExtraPublication] = []
+        members = [project.id for project in library.projects]
+        for target, publish in reporting.prepare_location_publications(members):
+            storage = repo_storage(target.repo_root, scopes=(target.pathspec,))
+            assert isinstance(storage, GitStorage)
+            found.append(ExtraPublication(storage.label, storage, publish))
+        return found
+
+    def prepare_save(go: "Callable[[], None]") -> None:
+        """Before an in-window Save: clone the reporting repositories nobody has checked
+        out here, where the clone policy says, then start the save. A clone that fails
+        is logged and that project publishes beside its plan, as it always did."""
+        wanted: list[str] = []
+        for project in library.projects:
+            placement = facts_of(project.id).of_role(REPORTING_ROLE.id)
+            if (
+                placement is not None
+                and placement.root is None
+                and placement.location.repository not in wanted
+            ):
+                wanted.append(placement.location.repository)
+        if not wanted:
+            go()
+            return
+
+        def cloned(_landed: "dict[str, Path]", error: str) -> None:
+            if error:
+                logger.warning("a reporting repository could not be cloned: %s", error)
+            go()
+
+        checkouts.ensure_many(wanted, cloned)
 
     def pick_assets(node_id: str) -> "list[Payload]":
         """Insert from Assets…: the picker over the node's project's whole catalog.
@@ -1305,6 +1367,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 focused_project=focused_project,
                 projects_in=projects_in,
                 publisher=publication_for,
+                extra_publications=extra_publications,
+                prepare_save=prepare_save,
             )
         ),
         # Before the watcher: the banner that says an agent is at work is what makes the
@@ -1652,6 +1716,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 # Grouping by milestone writes each heading in that milestone's own shade,
                 # so the Tests tab reads as the same sequence the calendar does.
                 milestone_color=milestone_color,
+                # An export is offered where colleagues read reports from.
+                reporting_dir=reporting_dir,
             )
         ),
         GithubModule(
@@ -2924,6 +2990,7 @@ def default_cli_commands(
             key_of=_step_key,
             kind_of=_step_kind,
             status_for=step_status,
+            reporting_site=_cli_reporting_site,
         ),
         # The journal both surfaces write, read back: the paths are the process's, handed
         # over here so a test can point the same verbs at a file of its own.
@@ -3118,6 +3185,30 @@ def default_location_roles() -> tuple["LocationRole", ...]:
     from dplanner.modules.spec.roles import ROLE as SPEC
 
     return (CODE, SPEC, REPORTING)
+
+
+def _cli_reporting_site(context: "CliContext", project: "Project") -> "SiteTarget | None":
+    """Where ``dplanner report site`` writes a project's pages instead of beside the plan:
+    its reporting location, when this machine has that repository."""
+    from dplanner.cli.report.website import SiteTarget
+    from dplanner.core.config_dir import config_dir
+    from dplanner.domain.locations import roles_by_id
+    from dplanner.domain.repositories import repository_facts
+    from dplanner.modules.reporting.roles import ROLE as REPORTING_ROLE
+
+    roles = roles_by_id(default_location_roles())
+    facts = repository_facts(
+        project,
+        context.store.project_dir(project.id),
+        context.store.checkouts(),
+        managed=managed_for(roles),
+        kept_root=config_dir(),
+    )
+    placement = facts.of_role(REPORTING_ROLE.id)
+    if placement is None or not placement.here or placement.directory is None:
+        return None
+    assert placement.root is not None
+    return SiteTarget(placement.root, placement.directory)
 
 
 def managed_for(roles: "Mapping[str, LocationRole]") -> "ManagedFor":
