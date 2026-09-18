@@ -132,21 +132,6 @@ def find_clone(roots: Iterable[Path], remote: str) -> Path | None:
     return None
 
 
-def find_checkout(recorded: Iterable[tuple[str, Path | None]], remote: str) -> Path | None:
-    """A checkout of ``remote`` this machine already has, from the ``(code repository,
-    checkout)`` pairs the library holds.
-
-    :func:`find_clone`'s sibling, one repository over: a team's second project in the same
-    code needs no second clone, and offering the checkout they already use is the
-    difference between a wizard that knows this machine and one that asks twice.
-    """
-    wanted = canonical_remote(remote)
-    for repository, checkout in recorded:
-        if checkout is not None and repository and canonical_remote(repository) == wanted:
-            return checkout
-    return None
-
-
 # -- the file -------------------------------------------------------------------------------
 
 

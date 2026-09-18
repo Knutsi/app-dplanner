@@ -5,8 +5,8 @@ thread, and what the person's pick becomes. The engine behind it is covered in
 import pytest
 from tests.modules.spec_git_helpers import clean_git, make_remote, wait_for  # noqa: F401
 
+from dplanner.core.storage import sparse
 from dplanner.domain.document_source import SourceUnavailableError
-from dplanner.modules.spec_git import source
 from dplanner.modules.spec_git.connect import GitSourceDialog
 from dplanner.modules.spec_git.module import NO_GIT, SpecGitDeps, SpecGitKind
 from dplanner.modules.spec_git.source import Folder, Probe
@@ -92,7 +92,7 @@ def test_a_failed_listing_says_one_sentence_and_keeps_the_primary_refused(app, s
 
 
 def test_an_oversized_folder_is_refused_with_the_folder_named(app, dialog, monkeypatch):
-    monkeypatch.setattr(source, "MAX_DOCUMENTS", 1)
+    monkeypatch.setattr(sparse, "MAX_DOCUMENTS", 1)
     dialog.url.setText("https://github.com/acme/handbook.git")
     dialog.list_button.click()
     wait_for(app, lambda: dialog.passed)
@@ -154,7 +154,7 @@ def test_status_answers_without_a_subprocess(kind, monkeypatch):
     def never(*_args, **_kwargs):
         raise AssertionError("status must not start a process")
 
-    monkeypatch.setattr("dplanner.modules.spec_git.client.subprocess.Popen", never)
+    monkeypatch.setattr("dplanner.core.storage.sparse.subprocess.Popen", never)
     good = {"url": "https://github.com/acme/handbook.git", "ref": "main", "path": "docs"}
     for _ in range(50):
         assert kind.status(good).ready

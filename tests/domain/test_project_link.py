@@ -11,6 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import pytest
+from tests.facts import code_facts
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.model import Project
@@ -32,7 +33,6 @@ from dplanner.domain.project_link import (
     read_file,
     relative_path,
 )
-from dplanner.domain.repositories import RepositoryFacts
 
 PLAN_REMOTE = "https://github.com/acme/plans"
 CODE_REMOTE = "https://github.com/acme/widget"
@@ -52,12 +52,8 @@ def link(**overrides):
     return replace(BASE_LINK, **overrides)
 
 
-BASE_FACTS = RepositoryFacts(
-    plan_root=Path("/home/anna/plans"),
-    plan_remote=PLAN_REMOTE,
-    repository=CODE_REMOTE,
-    checkout=None,
-    colocation="",
+BASE_FACTS = code_facts(
+    plan_root=Path("/home/anna/plans"), plan_remote=PLAN_REMOTE, repository=CODE_REMOTE
 )
 
 

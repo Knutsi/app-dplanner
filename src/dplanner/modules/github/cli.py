@@ -20,6 +20,7 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_step, step_arg
 from dplanner.core.storage.locations import origin_url
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.locations import primary_code
 from dplanner.domain.model import Project, Step
 from dplanner.domain.shelf import turn_off
 from dplanner.modules.github.aspect import (
@@ -290,7 +291,10 @@ def _need_gh() -> None:
 def _repo_url(context: CliContext, project: Project) -> str:
     """The remote URL a project's work belongs to: the code repository it records, else —
     the older shape — its own directory's origin, from git."""
-    return project.repository or origin_url(context.store.project_dir(project.id))
+    primary = primary_code(project.locations)
+    if primary is not None:
+        return primary.repository
+    return origin_url(context.store.project_dir(project.id))
 
 
 def _step_repo(context: CliContext, step: Step) -> str | None:

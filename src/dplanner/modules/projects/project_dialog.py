@@ -70,6 +70,7 @@ from dplanner.core.storage.locations import (
 )
 from dplanner.core.storage.provider import StorageError
 from dplanner.domain.commands import SetFieldCommand
+from dplanner.domain.locations import CODE, Location, next_id, primary_code, replaced, without
 from dplanner.domain.model import Library, NodeId, Project
 from dplanner.domain.plan_repo import ago
 from dplanner.domain.repositories import ACCEPTED, LEGACY, SEPARATED, RepositoryFacts
@@ -150,12 +151,23 @@ class NewProjectSpec:
     summary: str
     plan: PlanTarget
     folder: str
-    repository: str
-    checkout: Path | None
+    locations: tuple[Location, ...]
+    # (repository, path): where this machine has a named repository, to record per
+    # repository once the project exists.
+    checkouts: tuple[tuple[str, Path], ...] = ()
 
     @property
     def target(self) -> Path:
         return self.plan.root / self.folder
+
+    @property
+    def repository(self) -> str:
+        primary = primary_code(self.locations)
+        return primary.repository if primary is not None else ""
+
+    @property
+    def checkout(self) -> Path | None:
+        return self.checkouts[0][1] if self.checkouts else None
 
 
 def restyle(widget: QWidget, name: str) -> None:
@@ -614,13 +626,14 @@ class ProjectDialog(DialogFrame):
         if not title or plan is None or not folder:
             return None
         checkout = self.checkout_edit.text().strip()
+        url = self._code_url()
         return NewProjectSpec(
             title=title,
             summary=self.summary_edit.text().strip(),
             plan=plan,
             folder=folder,
-            repository=self._code_url(),
-            checkout=Path(checkout).expanduser() if checkout else None,
+            locations=(Location("l1", CODE.id, url),) if url else (),
+            checkouts=((url, Path(checkout).expanduser()),) if url and checkout else (),
         )
 
     def _known_repositories(self) -> list[str]:
@@ -628,8 +641,9 @@ class ProjectDialog(DialogFrame):
         projects stand in. Read off the model: no disk, no gh, no subprocess."""
         found: list[str] = []
         for project in self._library.projects:
-            if project.repository and project.repository not in found:
-                found.append(project.repository)
+            primary = primary_code(project.locations)
+            if primary is not None and primary.repository not in found:
+                found.append(primary.repository)
         return found
 
     def _offer_checkout(self) -> None:
@@ -906,11 +920,20 @@ class ProjectDialog(DialogFrame):
             self._offer_checkout()
             return
         project = self._project()
-        if project is None or text == project.repository:
+        if project is None:
             return
-        self._undo.push(SetFieldCommand(project.id, "repository", text, view_origin=self))
+        primary = primary_code(project.locations)
+        if primary is not None and text == primary.repository:
+            return
+        self._push_locations(project, _with_code(project.locations, text))
         self._refresh()
         self._request_logs()
+
+    def _push_locations(self, project: Project, locations: tuple[Location, ...]) -> None:
+        """The table, through the undo stack — the fact the whole team shares, written
+        into ``project.dproj``."""
+        if locations != project.locations:
+            self._undo.push(SetFieldCommand(project.id, "locations", locations, view_origin=self))
 
     def _record_checkout(self, root: Path) -> None:
         """Where the code is on this machine: the create form's field, or straight into
@@ -918,9 +941,10 @@ class ProjectDialog(DialogFrame):
         if self.checkout_edit is not None:
             self.checkout_edit.setText(shown_path(root))
             return
-        project = self._project()
-        if project is not None:
-            self._services.set_checkout(project.id, root)
+        # Filed under the repository named, else under what the folder is a clone of —
+        # its origin, or its own path for a repository that has none.
+        key = self._code_url() or origin_url(root) or str(root.resolve())
+        self._services.set_checkout(key, root)
 
     def _pick_repository(self) -> None:
         """One of the person's own repositories on GitHub, chosen from the listing rather
@@ -1118,8 +1142,8 @@ class ProjectDialog(DialogFrame):
             assert isinstance(result, tuple)
             url, dest = str(result[0]), Path(str(result[1]))
             self._say(f"Created {remote_label(url)} and cloned it into {shown_path(dest)}", "ok")
-            self._undo.push(SetFieldCommand(project.id, "repository", url, view_origin=self))
-            self._services.set_checkout(project.id, dest)
+            self._push_locations(project, _with_code(project.locations, url))
+            self._services.set_checkout(url, dest)
         elif what == "publish":
             self._say(f"Published as {remote_label(str(result))}", "ok")
             self._refresh()
@@ -1135,15 +1159,15 @@ class ProjectDialog(DialogFrame):
         if node_id != self._project_id:
             return
         self._refresh()  # Sets only what differs, so an own echo moves no caret.
-        if field == "repository" and origin is not self:
+        if field == "locations" and origin is not self:
             self._request_logs()
 
     def _on_structure(self, _parent_id: NodeId, _origin: object) -> None:
         if self._project_id is not None and not self._library.has(self._project_id):
             self.close()
 
-    def _on_checkout(self, project_id: str) -> None:
-        if project_id == self._project_id:
+    def _on_checkout(self, _repository: str) -> None:
+        if self._project_id is not None:
             self._refresh()
             self._request_logs()
 
@@ -1161,6 +1185,18 @@ class ProjectDialog(DialogFrame):
         self._ink = theme.text_secondary
         for repaint in self._painters:
             repaint(theme.text_secondary)
+
+
+def _with_code(locations: tuple[Location, ...], url: str) -> tuple[Location, ...]:
+    """The table with its primary code row set to ``url`` — replaced in place, added
+    first when there is none, dropped when ``url`` is empty."""
+    primary = primary_code(locations)
+    if not url:
+        return without(locations, primary.id) if primary is not None else locations
+    if primary is None:
+        return (Location(next_id(locations), CODE.id, url), *locations)
+    changed = Location(primary.id, CODE.id, url, primary.path, primary.ref, primary.label)
+    return replaced(locations, changed)
 
 
 def _warning_text(facts: RepositoryFacts) -> str:

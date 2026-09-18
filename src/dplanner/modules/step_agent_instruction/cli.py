@@ -129,7 +129,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
         instruction = briefing.instruction(context.library, step, context.store.files)
         project_instruction = read_project(project)
         directory = context.store.project_dir(project.id)
-        facts = repository_facts(project, directory, context.store.checkout_of(project.id))
+        facts = repository_facts(project, directory, context.store.checkouts())
         if not instruction.body and not instruction.files and not project_instruction:
             raise CliError(
                 f"{step.title!r} has nothing to brief an agent with — describe it with "

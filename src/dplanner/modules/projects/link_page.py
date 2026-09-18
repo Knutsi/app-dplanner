@@ -356,5 +356,7 @@ class LinkPage(QWidget):
             self.changed.emit()
             self.finished.emit(False)
             return
-        self._joined = Joined(Path(directory), Path(checkout) if checkout else None)
+        link = self._link
+        recorded = ((link.code_remote, Path(checkout)),) if checkout and link is not None else ()
+        self._joined = Joined(Path(directory), recorded)
         self.finished.emit(True)

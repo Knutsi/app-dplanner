@@ -26,7 +26,8 @@ from typing import TYPE_CHECKING, Any
 from dplanner.core.module_data import ModuleDataFormat
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Container, Sequence
+    from collections.abc import Callable, Container, Mapping, Sequence
+    from pathlib import Path
 
     from PySide6.QtGui import QIcon
 
@@ -41,6 +42,7 @@ if TYPE_CHECKING:
     from dplanner.domain.at_work import AtWorkBoard
     from dplanner.domain.commands import Command
     from dplanner.domain.dictation import DictationProvider
+    from dplanner.domain.locations import Location, LocationRole, ManagedFor
     from dplanner.domain.model import Library, Project, Step, StepId
     from dplanner.domain.ordering import Placed
     from dplanner.domain.repositories import RepositoryFacts
@@ -85,6 +87,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         EditTextCommand,
         SetModuleDataCommand,
     )
+    from dplanner.domain.locations import roles_by_id
     from dplanner.domain.model import Library, Project, TextEdit
     from dplanner.domain.relocate import move_project
     from dplanner.domain.repositories import RepositoryFacts, repository_facts
@@ -152,7 +155,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.spec.module import open_url as open_in_browser
     from dplanner.modules.spec_confluence.module import SpecConfluenceDeps, SpecConfluenceModule
     from dplanner.modules.spec_folder.module import SpecFolderKind
-    from dplanner.modules.spec_git.module import SPEC_GIT_CACHE, SpecGitDeps, SpecGitKind
+    from dplanner.modules.spec_git.module import SpecGitDeps, SpecGitKind
+    from dplanner.modules.spec_git.source import SPEC_GIT_CACHE
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_agent_instruction.aspect import read as agent_instruction_read
@@ -217,13 +221,17 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     def project_dir_of(step_id: str) -> "Path":
         return store.project_dir(library.project_of(step_id).id)
 
+    roles = roles_by_id(default_location_roles())
+    managed = managed_for(roles)
+
     def facts_of(project_id: str) -> RepositoryFacts:
-        """Both repositories of a project — where the plan lives, which code it plans,
-        where that code is here — the one derivation every seam below reads."""
+        """The plan repository and every location of a project placed against this
+        machine's checkouts — the one derivation every seam below reads."""
         return repository_facts(
             library.project(project_id),
             store.project_dir(project_id),
-            store.checkout_of(project_id),
+            store.checkouts(),
+            managed=managed,
         )
 
     def facts_for(node_id: str) -> RepositoryFacts:
@@ -239,10 +247,10 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         facts = facts_for(step_id)
         return facts.repository or facts.plan_remote
 
-    # A checkout recorded for a project — by the Project dialog, or by an agent's first
-    # `dplanner` call from the code and adopted through the library file — is what turns
-    # Run Agent from greyed to runnable, and nothing in the context graph changed.
-    store.checkout_changed.connect(lambda _project_id: services.context.refresh())
+    # A checkout recorded for a repository — by the Project dialog, or by an agent's
+    # first `dplanner` call from the code and adopted through the library file — is what
+    # turns Run Agent from greyed to runnable, and nothing in the context graph changed.
+    store.checkout_changed.connect(lambda _repository: services.context.refresh())
 
     # -- git and GitHub for the project surfaces ----------------------------------------
     # The Project dialog, the Repositories card, Open Project and Move Plan reach both
@@ -311,16 +319,18 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         GitHubStorage.create(name, dest)
         return origin_url(dest)
 
-    def connect_project(directory: Path, checkout: Path | None) -> Project:
+    def connect_project(directory: Path) -> Project:
         from dplanner.modules.library.membership import LIBRARY_ORIGIN
 
-        project = store.attach(directory, checkout)
+        project = store.attach(directory)
         library.add_child(library.id, project, origin=LIBRARY_ORIGIN)
         return project
 
     repos = RepositoryServices(
         facts_of=facts_of,
+        roles=roles,
         project_dir=store.project_dir,
+        checkout_for=store.checkout_for,
         set_checkout=store.set_checkout,
         checkout_changed=store.checkout_changed,
         plan_roots=plan_roots,
@@ -2171,6 +2181,9 @@ def _agent_preamble(step: "Step", in_worktree: bool, facts: "RepositoryFacts | N
         )
     if facts is not None:
         lines.append(_plan_whereabouts(facts))
+        told = _locations_told(facts)
+        if told:
+            lines.append(told)
     lines.append(
         "Other agents may be working beside you in this repository, each in a worktree"
         " of its own, and their processes carry the same names and paths as yours. Never"
@@ -2178,6 +2191,36 @@ def _agent_preamble(step: "Step", in_worktree: bool, facts: "RepositoryFacts | N
         " kill only by a pid your own shell started."
     )
     return "\n\n".join(lines)
+
+
+def _locations_told(facts: "RepositoryFacts") -> str:
+    """The project's locations, told to the agent: which repositories it is about and
+    where each stands on this machine, so an agent never guesses a path. Root prose
+    because it names the roles every module declared and the verb that prints them
+    again."""
+    from dplanner.domain.locations import CODE, roles_by_id
+
+    if not facts.placements:
+        return ""
+    roles = roles_by_id(default_location_roles())
+    told: list[str] = []
+    for placement in facts.placements:
+        location = placement.location
+        role = roles.get(location.role)
+        inside = f" at `{location.path}/`" if location.path else ""
+        if placement.root is None:
+            where = "not checked out on this machine — do not look for it"
+        elif placement.managed:
+            where = "read-only, fetched by the window into the plan's spec documents"
+        elif role is not None and role.writes and location.role != CODE.id:
+            where = f"write there: `{placement.directory}`"
+        else:
+            where = f"`{placement.directory}`"
+        told.append(f"{location.name(roles)}: {location.repository_label}{inside} — {where}")
+    return (
+        "The project's locations — which repositories it is about, and where each is on"
+        " this machine (`dplanner location list` prints them again): " + "; ".join(told) + "."
+    )
 
 
 def _plan_whereabouts(facts: "RepositoryFacts") -> str:
@@ -2707,6 +2750,7 @@ def default_cli_commands(
     from dplanner.cli.telemetry import commands as telemetry_commands
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
+    from dplanner.domain.locations import roles_by_id
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.coverage import cli as coverage_cli
     from dplanner.modules.docs import cli as docs_cli
@@ -2746,6 +2790,7 @@ def default_cli_commands(
     specs = aspect_specs()
     scopes = _scope_kinds(check_read, is_feature, milestone_read)
     sources = _asset_sources()
+    roles = roles_by_id(default_location_roles())
     if reads is None:
         reads = ReadRecord(config_dir() / RECORD_FILE)
     gate = TopologyGate(reads=reads, topology_of=read_topology)
@@ -2773,6 +2818,10 @@ def default_cli_commands(
             ],
             # The key a row prints is the one the canvas paints: one rule, here.
             key_of=_step_key,
+            # The location roles every module declared, and where a read-only one's
+            # managed clone stands — both cross-module facts, handed in here.
+            roles=roles,
+            managed=managed_for(roles),
         ),
         # `topology show` tells the gate what it printed; the gate is built here, so the
         # spec module never learns where the record lives.
@@ -2858,7 +2907,7 @@ def default_cli_commands(
         # Each module exports what "missing" means for its own aspect; the assembler is
         # shared with the window's Problems panel, which is a second presenter of exactly
         # this list.
-        *lint_commands(checks=list(_lint_checks())),
+        *lint_commands(checks=list(_lint_checks()), roles=roles),
     ]
     # Every verb that declared a door runs behind it — the topology for a graph edit, the
     # house format for a test body. Wrapped before the skill reads the registry, so the
@@ -3029,6 +3078,39 @@ def aspect_summaries(skip: "Container[str]" = ()) -> list[Callable[["Step"], str
     ordered = [specs.pop(aspect_id) for aspect_id in _PHRASE_ORDER if aspect_id in specs]
     ordered += specs.values()
     return [spec.phrase for spec in ordered if spec.id not in skip]
+
+
+def default_location_roles() -> tuple["LocationRole", ...]:
+    """Every kind of place a project can name, first the domain's own ``code``, then one
+    per module that declared a ``roles.py`` — the sibling of :func:`aspect_specs`: the
+    dialog's Add menu, the card, `dplanner location roles`, lint and the briefing all
+    read this one list, so a module adds a role and every surface learns it.
+
+    The order is the order the Add menu offers them.
+    """
+    from dplanner.domain.locations import CODE
+
+    return (CODE,)
+
+
+def managed_for(roles: "Mapping[str, LocationRole]") -> "ManagedFor":
+    """Where a read-only location's managed clone stands: under the per-user cache the
+    git spec source already keeps, keyed as it keys them, so a specs row and the source
+    fetched from it share one clone. A role that writes has no such place — a managed
+    clone is never written."""
+    from dplanner.core.config_dir import config_dir
+    from dplanner.core.storage.sparse import sparse_dir
+    from dplanner.modules.spec_git.source import SPEC_GIT_CACHE
+
+    cache_root = config_dir() / SPEC_GIT_CACHE
+
+    def managed(location: "Location") -> "Path | None":
+        role = roles.get(location.role)
+        if role is None or role.writes:
+            return None
+        return sparse_dir(cache_root, location.repository, location.ref or "HEAD", location.path)
+
+    return managed
 
 
 def default_module_formats() -> list[ModuleDataFormat]:

@@ -32,7 +32,7 @@ from PySide6.QtWidgets import QTreeWidgetItem, QWidget
 from dplanner.core.storage.locations import init_repo
 from dplanner.core.storage.provider import StorageError
 from dplanner.domain.model import Library, NodeId, Project, ProjectId
-from dplanner.domain.project_link import LinkError, find_checkout, link_for
+from dplanner.domain.project_link import LinkError, link_for
 from dplanner.domain.relocate import RelocateError
 from dplanner.domain.seed import seed_project
 from dplanner.domain.store import ProjectProblem
@@ -90,9 +90,10 @@ class ProjectsDeps:
     open_dashboard: Callable[[NodeId, bool], None]
     # The store's half of Remove from Library, wired by the composition root.
     detach: Callable[[ProjectId], None]
-    # Its other half: attach a directory (with the code checkout, when known) and add
-    # the project to the library with the membership origin, off the undo stack.
-    connect_project: Callable[[Path, Path | None], Project]
+    # Its other half: attach a directory and add the project to the library with the
+    # membership origin, off the undo stack. Checkouts are recorded beside it, per
+    # repository, through `repos.set_checkout`.
+    connect_project: Callable[[Path], Project]
     # Every directory the library lists, opened or not — what the wizard greys.
     project_dirs: Callable[[], list[Path]]
     # Library entries that failed to open — shown greyed with the reason.
@@ -212,12 +213,14 @@ class ProjectsModule:
             if spec.plan.init:
                 init_repo(spec.plan.root)
             directory = seed_project(
-                spec.target, spec.title, summary=spec.summary, repository=spec.repository
+                spec.target, spec.title, summary=spec.summary, locations=spec.locations
             )
         except (StorageError, OSError) as error:
             notice(deps.parent, "New Project", f"Nothing was created — {error}")
             return
-        project = deps.connect_project(directory, spec.checkout)
+        project = deps.connect_project(directory)
+        for repository, checkout in spec.checkouts:
+            deps.repos.set_checkout(repository, checkout)
         deps.status.show_status(f"“{project.title or project.folder_name}” created", 4000)
         if spec.plan.publish:
             self._publish(spec.plan.root, spec.plan.publish)
@@ -237,7 +240,10 @@ class ProjectsModule:
         accepted = bool(dialog.exec())
         chosen = dialog.joined() if accepted else []
         dialog.deleteLater()
-        added = [deps.connect_project(join.directory, join.checkout) for join in chosen]
+        added = [deps.connect_project(join.directory) for join in chosen]
+        for join in chosen:
+            for repository, checkout in join.checkouts:
+                deps.repos.set_checkout(repository, checkout)
         if len(added) == 1:
             title = added[0].title or added[0].folder_name
             deps.status.show_status(f"“{title}” added to the library", 4000)
@@ -245,12 +251,9 @@ class ProjectsModule:
             deps.status.show_status(f"{len(added)} projects added to the library", 4000)
 
     def _checkout_of(self, remote: str) -> Path | None:
-        """Where this machine already has ``remote`` checked out, if some other project
-        here plans the same code — what the link page and New Project offer rather than
-        cloning again."""
-        deps = self._deps
-        facts = [deps.repos.facts_of(project.id) for project in deps.library.projects]
-        return find_checkout([(found.repository, found.checkout) for found in facts], remote)
+        """Where this machine already has ``remote`` checked out — the library's map,
+        which is what the link page and New Project offer rather than cloning again."""
+        return self._deps.repos.checkout_for(remote)
 
     def share_project(self, project_id: ProjectId) -> None:
         """*Share Project…*: the link, the file and the code, for one project.

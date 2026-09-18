@@ -95,7 +95,9 @@ class RepositoriesCard(QWidget):
 
         self._unsubscribes = [
             library.field_changed.connect(lambda node_id, _field, _origin: self._changed(node_id)),
-            services.checkout_changed.connect(self._changed),
+            # Carries a repository, not a project: any checkout may be one of this
+            # project's locations, so the card re-reads its facts.
+            services.checkout_changed.connect(lambda _repository: self._refresh()),
         ]
         if theme is not None:
             self._unsubscribes.append(theme.changed.connect(self._paint))

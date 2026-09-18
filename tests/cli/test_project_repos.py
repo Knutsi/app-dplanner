@@ -29,12 +29,12 @@ def test_create_in_a_plan_repository_with_a_code_repository(cli, tmp_path):
         "Search rewrite",
         "--in",
         str(plans),
-        "--repository",
+        "--code",
         "https://github.com/acme/widget",
         "--checkout",
         str(tmp_path / "widget"),
     )
-    assert "Created" in said and "code: acme/widget" in said
+    assert "Created" in said and "Code: acme/widget" in said
     row = data(cli("project", "show", "Search rewrite", "--json"))
     assert row["dir"] == str(plans / "search-rewrite")
     assert row["repository"] == "https://github.com/acme/widget"
@@ -53,7 +53,7 @@ def test_create_needs_exactly_one_place(cli, tmp_path):
 
 def test_create_warns_when_the_code_repository_is_the_plans(cli, workspace):
     _origin(workspace, "https://github.com/acme/widget.git")
-    said = cli("project", "create", "Discovery", "--repository", "git@github.com:acme/widget.git")
+    said = cli("project", "create", "Discovery", "--code", "git@github.com:acme/widget.git")
     assert "inside the code it plans" in said
     assert data(cli("project", "show", "Discovery", "--json"))["state"] == "colocated"
 
@@ -62,41 +62,77 @@ def test_show_prints_both_repositories_and_the_way_out(cli, workspace):
     cli("project", "create", "Discovery")
     said = cli("project", "show", "Discovery")
     assert "plan: widget" in said and "code: not set" in said and "project move" in said
-    assert "checkout: not on this machine" in said
     row = data(cli("project", "show", "Discovery", "--json"))
     assert row["state"] == "legacy" and row["plan_root"] == str(workspace)
 
 
-def test_set_records_the_repository_the_checkout_and_the_acceptance(cli, tmp_path):
+def test_a_location_is_added_checked_out_changed_and_removed(cli, tmp_path):
     cli("project", "create", "Discovery")
-    cli(
-        "project",
-        "set",
+    said = cli(
+        "location",
+        "add",
         "Discovery",
+        "--role",
+        "code",
         "--repository",
         "https://github.com/acme/widget",
         "--checkout",
         str(tmp_path / "widget"),
     )
+    assert "Added to Discovery" in said and "l1  Code: acme/widget" in said
     row = data(cli("project", "show", "Discovery", "--json"))
     assert row["repository"] == "https://github.com/acme/widget"
     assert row["checkout"] == str((tmp_path / "widget").resolve())
+    assert row["locations"][0]["id"] == "l1" and row["locations"][0]["role"] == "code"
 
-    cli("project", "set", "Discovery", "--forget-checkout", "--accept-colocation")
-    row = data(cli("project", "show", "Discovery", "--json"))
-    assert row["checkout"] == "" and row["colocation"] == "accepted"
+    # A second row of a role that allows several, named by its label from then on.
+    cli(
+        "location",
+        "add",
+        "Discovery",
+        "--role",
+        "code",
+        "--repository",
+        "git@github.com:acme/ui.git",
+        "--label",
+        "UI",
+    )
+    said = cli("location", "list", "Discovery")
+    assert "l2  Code — UI: acme/ui — not checked out on this machine" in said
+    said = cli("location", "set", "Discovery", "code:ui", "--path", "./apps/web/", "--ref", "main")
+    assert "acme/ui at apps/web @main" in said
+    assert "nothing to change" in cli("location", "set", "Discovery", "l2", expect=1)
+    assert "names several" in cli(
+        "location", "checkout", "Discovery", "code", str(tmp_path), expect=1
+    )
 
+    cli("location", "checkout", "Discovery", "l1", "--forget")
+    assert data(cli("project", "show", "Discovery", "--json"))["checkout"] == ""
+    cli("location", "remove", "Discovery", "l2")
+    rows = data(cli("location", "list", "Discovery", "--json"))["locations"]
+    assert [row["id"] for row in rows] == ["l1"]
+    assert "no location 'l9'" in cli("location", "remove", "Discovery", "l9", expect=1)
+
+
+def test_a_location_that_cannot_stand_is_refused_and_the_roles_are_listed(cli):
+    cli("project", "create", "Discovery", "--code", "https://github.com/acme/widget")
+    said = cli("location", "add", "Discovery", "--role", "code", "--path", "../out", expect=1)
+    assert "leaves its repository" in said
+    said = cli("location", "add", "Discovery", "--role", "code", "--repository=-x", expect=1)
+    assert "not a repository address" in said
+    # With no repository named, a row is about the project's code.
+    said = cli("location", "add", "Discovery", "--role", "code", "--label", "again")
+    assert "acme/widget" in said
+    assert "code" in cli("location", "roles") and "worked in" in cli("location", "roles")
+
+
+def test_set_records_the_acceptance(cli):
+    cli("project", "create", "Discovery")
+    cli("project", "set", "Discovery", "--accept-colocation")
+    assert data(cli("project", "show", "Discovery", "--json"))["colocation"] == "accepted"
     cli("project", "set", "Discovery", "--warn-colocation")
     assert data(cli("project", "show", "Discovery", "--json"))["colocation"] == ""
     assert "nothing to set" in cli("project", "set", "Discovery", expect=1)
-
-
-def test_set_says_when_a_checkout_is_not_the_projects_code(cli, tmp_path):
-    cli("project", "create", "Discovery", "--repository", "https://github.com/acme/widget")
-    other = init_repo(tmp_path / "other")
-    _origin(other, "https://github.com/acme/other.git")
-    said = cli("project", "set", "Discovery", "--checkout", str(other))
-    assert "not the project's code repository" in said
 
 
 def test_move_takes_the_plan_into_a_plan_repository(cli, workspace, tmp_path):

@@ -5,6 +5,7 @@ spawns no subprocess; the fetched lists are handed to ``_on_lists`` directly.
 """
 
 import pytest
+from tests.facts import code_row
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
@@ -102,7 +103,9 @@ def test_the_projects_code_repository_answers_over_the_plans_origin(services, pr
     from dplanner.domain.commands import SetFieldCommand
 
     assert editor._repository_for(project.steps[0].id) == ""
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/other"))
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/other"))
+    )
     assert editor._repository_for(project.steps[0].id) == "https://github.com/acme/other"
 
 

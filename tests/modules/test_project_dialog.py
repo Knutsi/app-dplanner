@@ -13,9 +13,11 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtWidgets import QFileDialog
+from tests.facts import code_row
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import AddNodeCommand, SetFieldCommand
+from dplanner.domain.locations import CODE, roles_by_id
 from dplanner.domain.model import Step
 from dplanner.domain.relocate import Moved
 from dplanner.domain.repositories import ACCEPTED, repository_facts
@@ -72,9 +74,7 @@ def fakes(services):
 
     def facts_of(project_id):
         return repository_facts(
-            library.project(project_id),
-            store.project_dir(project_id),
-            store.checkout_of(project_id),
+            library.project(project_id), store.project_dir(project_id), store.checkouts()
         )
 
     def history_for(root, scope, limit):
@@ -97,7 +97,9 @@ def fakes(services):
     state: dict[str, object] = {"gh": None, "prs": [PR]}
     services_ = RepositoryServices(
         facts_of=facts_of,
+        roles=roles_by_id([CODE]),
         project_dir=store.project_dir,
+        checkout_for=store.checkout_for,
         set_checkout=store.set_checkout,
         checkout_changed=store.checkout_changed,
         plan_roots=lambda: [],
@@ -148,12 +150,17 @@ def inline(dialog, monkeypatch):
 def separate(services, project, tmp_path):
     """The shape the application wants: the code recorded and checked out elsewhere."""
     code = init_repo(tmp_path / "widget")
-    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
-    services.repo.set_checkout(project.id, code)
+    services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
+    services.repo.set_checkout(CODE_URL, code)
     return code
 
 
 # -- what each column says it is and where it is --------------------------------------------
+
+
+def code_of(project):
+    """The project's code repository as its table names it, "" for none."""
+    return project.locations[0].repository if project.locations else ""
 
 
 def entry(column, label):
@@ -184,7 +191,7 @@ def test_each_column_names_its_repository_and_where_it_is_here(
 
 def test_a_fact_nobody_recorded_is_said_and_greyed(services, dialog, project):
     assert dialog.code_column.identity.objectName() == "RepoLineMissing"
-    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
+    services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
     assert dialog.code_column.identity.objectName() == "RepoIdentity"
     assert dialog.code_column.location.text() == "not checked out on this machine"
     assert dialog.code_column.location.objectName() == "RepoLineMissing"
@@ -203,7 +210,7 @@ def test_both_menus_keep_their_shape_and_grey_what_cannot_run(services, dialog, 
     )
     assert entry(dialog.code_column, "Open on GitHub").reason == "not a GitHub repository"
 
-    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
+    services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
     assert entry(dialog.code_column, "Open on GitHub").reason == ""
     assert entry(dialog.code_column, "Clone into Repositories Folder").reason == ""
     assert entry(dialog.code_column, "Create on GitHub…").reason == (
@@ -266,10 +273,10 @@ def test_set_code_repository_commits_through_the_undo_stack(services, dialog, pr
         "The code this plan is about, as git names it",
         "Set",
     )
-    assert services.document.project(project.id).repository == CODE_URL
-    assert services.undo.undo_text() == "Set Code Repository"
+    assert code_of(services.document.project(project.id)) == CODE_URL
+    assert services.undo.undo_text() == "Change Locations"
     services.undo.undo()
-    assert services.document.project(project.id).repository == ""
+    assert code_of(services.document.project(project.id)) == ""
     assert dialog.code_column.identity.text() == "no code repository recorded"
 
 
@@ -281,7 +288,9 @@ def test_choosing_a_checkout_records_it_in_the_library_file_not_the_undo_stack(
     before = services.undo.undo_text()
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code))
     entry(dialog.code_column, "Choose Checkout…").run()
-    assert services.repo.checkout_of(project.id) == code
+    # No repository recorded and no origin: filed under the folder's own path, which is
+    # the only identity a repository that cannot be shared has.
+    assert services.repo.checkout_for(str(code)) == code
     assert services.undo.undo_text() == before
     assert not services.autosave.has_pending()  # Written directly, nothing left to flush.
 
@@ -296,8 +305,8 @@ def test_a_chosen_checkout_fills_an_empty_code_repository_from_its_origin(
     (code / "src").mkdir()
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code / "src"))
     entry(dialog.code_column, "Choose Checkout…").run()
-    assert services.repo.checkout_of(project.id) == code  # The repository root, not src/.
-    assert services.document.project(project.id).repository == CODE_URL
+    assert services.repo.checkout_for(CODE_URL) == code  # The repository root, not src/.
+    assert code_of(services.document.project(project.id)) == CODE_URL
 
 
 def test_keep_it_here_accepts_the_colocation_and_quiets_the_warning(services, dialog, project):
@@ -381,7 +390,7 @@ def test_a_missing_checkout_is_said_in_the_code_column(services, fakes, dialog, 
     """Pull requests come from GitHub and show without a checkout; with none open, the
     column says what is missing instead of standing empty."""
     _repos, _calls, state = fakes
-    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
+    services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
     assert dialog.code_column.rows() == [("#7 Build the modal", "S1 Read the spec · feat/login")]
     state["prs"] = []
     dialog.show_project(project.id)
@@ -417,10 +426,10 @@ def test_clone_lands_in_the_repositories_folder_and_records_the_checkout(
 ):
     _repos, calls, _state = fakes
     folders.set_repositories_folder(tmp_path / "Code")
-    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
+    services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
     entry(dialog.code_column, "Clone into Repositories Folder").run()
     assert calls["clone"] == [(CODE_URL, tmp_path / "Code" / "widget")]
-    assert services.repo.checkout_of(project.id) == tmp_path / "Code" / "widget"
+    assert services.repo.checkout_for(CODE_URL) == tmp_path / "Code" / "widget"
     assert "Cloned into" in dialog.status.words() and dialog.status.tone() == "ok"
 
 
@@ -432,8 +441,10 @@ def test_a_new_code_repository_is_created_cloned_and_recorded(
     monkeypatch.setattr(LinePrompt, "ask", staticmethod(lambda *a, **k: "widget"))
     entry(dialog.code_column, "Create on GitHub…").run()
     assert calls["create"] == [("widget", tmp_path / "Code" / "widget")]
-    assert services.document.project(project.id).repository == "https://github.com/acme/widget"
-    assert services.repo.checkout_of(project.id) == tmp_path / "Code" / "widget"
+    assert code_of(services.document.project(project.id)) == "https://github.com/acme/widget"
+    assert (
+        services.repo.checkout_for("https://github.com/acme/widget") == tmp_path / "Code" / "widget"
+    )
 
 
 def test_publish_runs_for_a_plan_repository_without_an_origin_and_is_greyed_after(

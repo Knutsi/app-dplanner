@@ -4217,3 +4217,43 @@ window is the case it did not have.
 the project's Dashboard tab now, and the registry is named for what it holds cards *about*.
 
 **Upstream?** With the registry, if it goes.
+
+## 51. From the repository-roles pass: the sparse clone door moves down to `core/storage/`
+
+### `core/storage/sparse.py` — a repository and a folder in it, fetched on demand, read-only
+
+**What we added.** One Qt-free module holding what had been the git spec source's engine
+(`modules/spec_git/source.py` and its `client.py`, now gone): `SparseClone(cache_root, url,
+ref, path)` with `bring_trees()`, `tree()`, `materialise()`, `remote_head()`,
+`local_head()` and `sweep()`; `sparse_dir()` (the cache digest, byte-identical to what the
+module wrote before, so no existing cache is repeated); `parse_url`, `valid_ref`,
+`valid_path` and `split_url` (the address as a security boundary — a dash is an option,
+`ext::` is a shell command, a glob character is a sparse pattern gone wrong, a credential
+is refused at the door); `Folder`, `folders()`, `too_big()` and `Probe` (the size guard,
+counting from the trees before one blob exists — it takes an `is_document` predicate,
+because core knows nothing about documents); `refusal()` (the sentence a person reads,
+composed from stderr and never quoting it); and the subprocess door — `run_git`,
+`hardening`, `environment`, `git_path`, `GitError`, `Ran`, the timeouts and the
+process-group kill.
+
+**Why it moved.** `docs/proposals/repository-roles-and-positions.md`: a project is about to
+name several repositories in several *roles*, and the ones it only reads (specs today; docs
+and tests on the table) all want "a repository and a position in it, fetched on demand
+without asking for a folder" — exactly what the spec kind had built for itself, privately.
+It was the largest kind module because the clone door was in it. The module keeps what is
+its own: the locator's shape in the spec index, the walk's rule for what a document is, the
+Snapshot and Freshness it builds, and the dialog.
+
+**Why `core/storage/` and not a second method on `GitStorage`.** `git.py`'s door is bound
+to one checkout the provider owns and writes; this one is bound to none, never writes, and
+its whole design is the guard that runs before a blob exists. A read-only clone that can be
+wiped is a different object from a working tree with a history, and giving it its own
+module keeps rule 8 honest — features import `sparse`, never a provider.
+
+**Upstream?** Yes, as it stands. It names nothing of the planner; the one product-specific
+phrase (`DPlanner` in three refusal sentences) is a constant's worth of text. Any
+application that reads a folder of somebody else's repository — a handbook, a template
+library, a schema — wants exactly this door, and the traps it closes (the cone-mode sparse
+pattern materialising the levels above the folder, a server that ignores `--filter` and
+downloads everything, `GIT_NO_LAZY_FETCH` as a variable rather than the 2.45+ option, git's
+read-only pack files defeating `rmtree` on Windows) each cost a day here.

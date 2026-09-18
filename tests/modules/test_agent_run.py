@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtWidgets import QSpinBox
+from tests.facts import code_row
 from tests.platforms import POSIX_MODE_BITS, SH, SYMLINKS
 
 from dplanner.modules import agent_harnesses
@@ -171,24 +172,21 @@ def test_the_preflight_says_where_the_plan_lives(services, step):
     on the project accepted the colocation."""
     from dataclasses import replace
 
-    from dplanner.domain.repositories import RepositoryFacts
+    from tests.facts import code_facts
+
     from dplanner.modules import _default_briefing
 
     briefing = _default_briefing()
-    apart = RepositoryFacts(
+    apart = code_facts(
         plan_root=Path("/plans"),
         plan_remote="git@github.com:acme/plans.git",
         repository="https://github.com/acme/widget",
-        checkout=None,
-        colocation="",
     )
     text = briefing.preamble(step, True, apart)
     assert "own repository, acme/plans" in text and "acme/widget" in text
     assert "WARNING" not in text
 
-    inside = RepositoryFacts(
-        plan_root=Path("/widget"), plan_remote="", repository="", checkout=None, colocation=""
-    )
+    inside = code_facts(plan_root=Path("/widget"))
     text = briefing.preamble(step, True, inside)
     assert "WARNING" in text and "do not stage or commit" in text
     assert "dplanner project move" in text and "when the developer asks" in text
@@ -915,8 +913,10 @@ def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_p
 
     code = init_repo(tmp_path / "widget")
     project = services.document.project_of(step.id)
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
-    services.repo.set_checkout(project.id, code)
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
+    )
+    services.repo.set_checkout("https://github.com/acme/widget", code)
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
 
@@ -939,7 +939,9 @@ def test_a_code_repository_not_checked_out_here_greys_run_agent_and_says_so(
 
     project = services.document.project_of(step.id)
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
+    )
     select(services, step)
     state = services.actions.spec("agent.run").state(services.context.current())
     assert state.visible and not state.enabled
@@ -947,7 +949,7 @@ def test_a_code_repository_not_checked_out_here_greys_run_agent_and_says_so(
 
     refreshed: list[bool] = []
     services.context.changed.connect(lambda _context: refreshed.append(True))
-    services.repo.set_checkout(project.id, init_repo(tmp_path / "widget"))
+    services.repo.set_checkout("https://github.com/acme/widget", init_repo(tmp_path / "widget"))
     assert refreshed
     assert services.actions.spec("agent.run").state(services.context.current()).enabled
 
@@ -1680,11 +1682,22 @@ def test_agent_prompt_says_where_the_plan_lives(cli_stdin):
     shown = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))
     assert "WARNING: this plan lives inside the code repository" in shown["prompt"]
 
-    cli_stdin("project", "set", "Discovery", "--repository", "https://github.com/acme/widget")
+    cli_stdin(
+        "location",
+        "add",
+        "Discovery",
+        "--role",
+        "code",
+        "--repository",
+        "https://github.com/acme/widget",
+    )
     shown = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))
     assert "WARNING" not in shown["prompt"]
     assert "apart from the code you are working in (acme/widget)" in shown["prompt"]
     assert shown["repository"] == "https://github.com/acme/widget"
+    # The table is told too, with where each row stands on this machine.
+    assert "Code: acme/widget — not checked out on this machine" in shown["prompt"]
+    assert "`dplanner location list`" in shown["prompt"]
 
 
 def test_a_step_without_a_worktree_is_briefed_to_stay_in_the_checkout(cli_stdin):
@@ -1857,8 +1870,10 @@ def test_opening_an_agent_runs_the_bare_command_where_the_code_is(
 
     code = init_repo(tmp_path / "widget")
     project = services.document.project_of(step.id)
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
-    services.repo.set_checkout(project.id, code)
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
+    )
+    services.repo.set_checkout("https://github.com/acme/widget", code)
     focus_project(services, project)
     assert services.actions.spec("agent.open").state(services.context.current()).enabled
 
@@ -1910,7 +1925,9 @@ def test_a_project_whose_code_is_not_checked_out_here_greys_opening_and_says_so(
     from dplanner.domain.commands import SetFieldCommand
 
     project = services.document.project_of(step.id)
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
+    )
     focus_project(services, project)
     state = services.actions.spec("agent.open").state(services.context.current())
     assert state.visible and not state.enabled

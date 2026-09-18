@@ -14,11 +14,12 @@ which repository it is, and where it is on this machine — and :func:`code_line
 card cannot word the same fact two ways.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from dplanner.core.signals import Signal
+from dplanner.domain.locations import LocationRole, Placement
 from dplanner.domain.relocate import Moved
 from dplanner.domain.repositories import RepositoryFacts
 
@@ -73,7 +74,8 @@ def shown_path(path: Path) -> str:
 @dataclass(frozen=True)
 class Joined:
     """A project the library is about to take in: where it is on this machine, and the
-    code checkout to record beside it.
+    checkouts to record with it — ``(repository, path)`` pairs, per repository, since a
+    checkout is this machine's fact about a repository and not about the project.
 
     The one answer both ways into *Open Project…* end at — a browsed plan repository's
     rows and a project link's clone — so the module that connects them reads one shape
@@ -81,7 +83,12 @@ class Joined:
     """
 
     directory: Path
-    checkout: Path | None = None
+    checkouts: tuple[tuple[str, Path], ...] = ()
+
+    @property
+    def checkout(self) -> Path | None:
+        """The first checkout recorded, for a reader that means the code's."""
+        return self.checkouts[0][1] if self.checkouts else None
 
 
 @dataclass(frozen=True)
@@ -124,6 +131,28 @@ def code_lines(facts: RepositoryFacts) -> RepoLines:
     )
 
 
+def location_lines(placement: Placement, roles: Mapping[str, LocationRole]) -> RepoLines:
+    """One location as a surface states it: which repository and position it is, and
+    where that is on this machine — a checkout, a managed clone fetched on demand, or
+    nothing yet, said in words rather than left blank."""
+    location = placement.location
+    inside = f" · {location.path}/" if location.path else ""
+    identity = f"{location.name(roles)}: {location.repository_label}{inside}"
+    if placement.root is None:
+        return RepoLines(identity, "not checked out on this machine", location_missing=True)
+    if placement.managed:
+        directory = placement.directory
+        fetched = directory is not None and directory.is_dir()
+        return RepoLines(
+            identity,
+            "fetched on demand" + ("" if fetched else " — not fetched yet"),
+            location_missing=not fetched,
+        )
+    directory = placement.directory
+    assert directory is not None
+    return RepoLines(identity, shown_path(directory))
+
+
 def plan_lines(facts: RepositoryFacts) -> RepoLines:
     """The plan repository: its remote or folder name, and its root on this machine."""
     root = facts.plan_root
@@ -163,9 +192,14 @@ class RepositoryServices:
     """Everything the project surfaces do with the model's repositories, git and GitHub."""
 
     facts_of: Callable[[str], RepositoryFacts]
+    # Every kind of place a project can name, by role id — the Add menu's list.
+    roles: Mapping[str, LocationRole]
     project_dir: Callable[[str], Path]
+    # This machine's checkout of a repository, spelt however; and recording one. Keyed by
+    # repository, never by project: a second plan for one repository needs no second clone.
+    checkout_for: Callable[[str], Path | None]
     set_checkout: Callable[[str, Path | None], None]
-    checkout_changed: Signal[str]
+    checkout_changed: Signal[str]  # The canonical repository whose checkout changed.
     plan_roots: Callable[[], list[Path]]
     # PR number -> "S7 Build the modal", for the steps of one project that carry a PR.
     pr_steps: Callable[[str], dict[int, str]]

@@ -55,7 +55,15 @@ def test_a_plan_with_no_code_repository_or_inside_it_is_a_finding_until_accepted
         ["git", "-C", str(workspace), "remote", "add", "origin", "https://github.com/acme/widget"],
         check=True,
     )
-    cli("project", "set", "Discovery", "--repository", "git@github.com:acme/widget.git")
+    cli(
+        "location",
+        "add",
+        "Discovery",
+        "--role",
+        "code",
+        "--repository",
+        "git@github.com:acme/widget.git",
+    )
     checks = checks_in(data(cli("project", "lint", "Discovery", "--json", expect=1)))
     assert "repo.colocated" in checks and "repo.unset" not in checks
 

@@ -18,6 +18,7 @@ from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import QWidget
 
 from dplanner.core.signals import Signal
+from dplanner.core.storage.sparse import git_path
 from dplanner.domain.document_source import (
     Freshness,
     Locator,
@@ -26,7 +27,6 @@ from dplanner.domain.document_source import (
     SourceUnavailableError,
 )
 from dplanner.framework.tasks import TaskService
-from dplanner.modules.spec_git.client import git_path
 from dplanner.modules.spec_git.connect import GitSourceDialog
 from dplanner.modules.spec_git.source import (
     KIND,
@@ -41,7 +41,6 @@ from dplanner.theme.icons import branch_icon
 
 # The directory under the per-user config the composition root hands over. Named here,
 # because the shape of the cache is this module's business and the path is the root's.
-SPEC_GIT_CACHE = "spec-git"
 
 REFUSAL = "this source's address is not a git repository"
 NO_GIT = "git is not installed — a Git repository source needs git on PATH"
