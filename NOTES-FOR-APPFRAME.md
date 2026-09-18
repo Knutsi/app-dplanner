@@ -4257,3 +4257,37 @@ library, a schema — wants exactly this door, and the traps it closes (the cone
 pattern materialising the levels above the folder, a server that ignores `--filter` and
 downloads everything, `GIT_NO_LAZY_FETCH` as a variable rather than the 2.45+ option, git's
 read-only pack files defeating `rmtree` on Windows) each cost a day here.
+
+## 52. From the clone-policy pass: a second clone door, for a working checkout
+
+### `core/storage/kept.py` — a full clone the application keeps
+
+**What we added.** Beside `sparse.py`'s read-only cache, one Qt-free module for the other
+kind of clone a feature needs: a **working checkout** a person or an agent commits and
+pushes in, made for somebody who never chose a folder. `kept_dir(root, url)` names it —
+`<root>/checkouts/<name>-<digest>`, the digest over the canonical remote so two spellings
+of one repository share a clone, one directory per repository whatever ref or position a
+project names; `is_kept(path, root)` tells such a clone from the person's own; and
+`clone_full(url, dest, cancelled)` makes it — a plain `git clone` through `sparse.run_git`,
+the address through `parse_url` first, landed by the same `.partial` rename.
+
+**The trap it closes.** `git clone -c key=value` *writes the setting into the new
+repository's config* — that is the documented behaviour, and it is exactly right for the
+cache, whose `core.hooksPath` pointing at nothing should hold forever. For a working clone
+it is wrong: an agent would find hooks silently disabled and symlinks checked out as text
+files, for reasons nobody can see in the repository. So the clone-time hardening goes
+through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` (git ≥ 2.31), which
+applies to the invocation and nothing after it, with `core.symlinks=false` left out
+because the initial checkout would honour it. The test reads the clone's local config
+back and asserts none of it landed.
+
+**Where it lives.** Under the application's configuration directory, never in a plan
+repository, a project directory or the person's repositories folder: those are theirs, and
+a clone nobody asked for must not appear among them. The window's `CheckoutService`
+(`modules/projects/checkouts.py`) is the one caller, and the *clone policy* beside the
+repositories folder decides between this door and that folder — the destination only,
+never whether a verb runs.
+
+**Upstream?** Yes, with `sparse.py`: the two doors are one story (a repository read on
+demand, a repository worked in on demand), and any application that runs a tool inside
+somebody else's repository wants the second as soon as it has the first.

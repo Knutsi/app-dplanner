@@ -42,6 +42,7 @@ from dplanner.framework.widgets import caption
 from dplanner.modules.projects.browse_page import BrowsePage
 from dplanner.modules.projects.link_page import LinkPage
 from dplanner.modules.projects.repos import MODULE_ID, Joined, RepositoryServices
+from dplanner.modules.projects.repositories_folder import KEPT, clone_policy
 from dplanner.modules.projects.repositories_page import RepositoriesPage, missing_repositories
 from dplanner.theme.tokens import CAPTION_GAP
 
@@ -211,7 +212,10 @@ class OpenProjectDialog(DialogFrame):
         for join in joined:
             locations += read_locations(read_meta(join.directory).get("locations"))
         missing = missing_repositories(locations, self._services.roles, self._services.checkout_for)
-        if not missing:
+        # Under the kept policy nothing is asked: a verb that needs one of these clones it
+        # where DPlanner keeps clones. The page is for the developer who wants to say
+        # *use a checkout I have* before anything lands in their folder.
+        if not missing or clone_policy() == KEPT:
             self.accept()
             return
         self.repositories.show_missing(missing, self._services.roles)

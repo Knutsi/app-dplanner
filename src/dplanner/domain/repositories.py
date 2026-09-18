@@ -131,11 +131,14 @@ def repository_facts(
     checkouts: Mapping[str, Path],
     *,
     managed: ManagedFor | None = None,
+    kept_root: Path | None = None,
 ) -> RepositoryFacts:
     """The facts for one project: its directory's repository, and every location placed
     against this machine's checkouts. ``managed`` says where a read-only location's clone
     stands; the composition root builds it from the roles, and a reader that has no roles
-    to ask (the CLI's read verbs) leaves such a row unplaced."""
+    to ask (the CLI's read verbs) leaves such a row unplaced. ``kept_root`` is the
+    configuration directory, under which a checkout the application keeps is told apart
+    from the person's own."""
     plan_root = find_repo_root(project_dir)
     plan_remote = origin_url(project_dir) if plan_root is not None else ""
     return RepositoryFacts(
@@ -148,6 +151,7 @@ def repository_facts(
                 plan_root=plan_root,
                 plan_remote=plan_remote,
                 managed=managed,
+                kept_root=kept_root,
             )
             for location in project.locations
         ),

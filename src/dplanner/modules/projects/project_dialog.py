@@ -96,6 +96,7 @@ from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import EmptyState, block, caption, confirm, note, quiet
+from dplanner.modules.projects.checkouts import CheckoutService
 from dplanner.modules.projects.location_dialog import LocationDialog
 from dplanner.modules.projects.locations_table import LocationsTable
 from dplanner.modules.projects.repo_picker import (
@@ -431,6 +432,7 @@ class ProjectDialog(DialogFrame):
         tasks: TaskService,
         theme: ThemeService,
         *,
+        checkouts: CheckoutService,
         move: Callable[[NodeId], None],
         mode: str = SETTINGS,
         parent: QWidget | None = None,
@@ -447,6 +449,7 @@ class ProjectDialog(DialogFrame):
         self._library = library
         self._undo = undo
         self._services = services
+        self._checkouts = checkouts
         self._tasks = tasks
         self._theme = theme
         self._move = move
@@ -499,7 +502,6 @@ class ProjectDialog(DialogFrame):
         # a row the other way.
         self._draft: list[Location] = []
         self._draft_checkouts: dict[str, Path] = {}
-        self._cloning = ""  # The repository a clone in flight is of.
         self.locations = LocationsTable(services.roles, self._location_entries, body)
         self.locations.setObjectName("ProjectLocations")
         self.locations.add_requested.connect(self._add_location)
@@ -690,7 +692,14 @@ class ProjectDialog(DialogFrame):
             or (found := self._services.checkout_for(row.repository)) is not None
         }
         return tuple(
-            place(row, checkouts=checkouts, plan_root=None, plan_remote="") for row in self._draft
+            place(
+                row,
+                checkouts=checkouts,
+                plan_root=None,
+                plan_remote="",
+                kept_root=self._checkouts.kept_root,
+            )
+            for row in self._draft
         )
 
     def _show_locations(self) -> None:
@@ -720,7 +729,6 @@ class ProjectDialog(DialogFrame):
         list whatever the row's state, greyed with the reason where a verb cannot run."""
         role = self._services.roles.get(location.role)
         placement = next((p for p in self._placements() if p.location.id == location.id), None)
-        gh = self._gh_reason()
         writes = role is None or role.writes
         return [
             RepoAction("Edit Location…", edit_icon, lambda: self._edit_location(location.id)),
@@ -732,10 +740,10 @@ class ProjectDialog(DialogFrame):
                 "" if writes else "a read-only location is fetched on demand",
             ),
             RepoAction(
-                "Clone into Repositories Folder",
+                f"Clone — {self._checkouts.where(location.repository)}",
                 clone_icon,
                 lambda: self._clone_location(location),
-                gh
+                self._busy()
                 or ("a read-only location is fetched on demand" if not writes else "")
                 or ("already checked out here" if placement is not None and placement.here else ""),
             ),
@@ -885,10 +893,10 @@ class ProjectDialog(DialogFrame):
             None,
             RepoAction("Choose Checkout…", folder_icon, self._browse_checkout),
             RepoAction(
-                "Clone into Repositories Folder",
+                f"Clone — {self._checkouts.where(facts.repository)}",
                 clone_icon,
                 self._clone_checkout,
-                gh or ("" if facts.repository else "no code repository recorded"),
+                self._busy() or ("" if facts.repository else "no code repository recorded"),
             ),
         ]
 
@@ -1123,30 +1131,24 @@ class ProjectDialog(DialogFrame):
         self._clone(self._code_url())
 
     def _clone(self, url: str) -> None:
-        """A repository cloned into the repositories folder — and recorded as this
-        machine's checkout of it, into the draft or into the library file."""
-        if not url:
-            return
-        folder = ensure_repositories_folder(self)
-        if folder is None:
+        """A repository cloned where the clone policy says — through the checkout service,
+        which records it in the library file — and into the draft besides, so create mode
+        answers with it."""
+        if not url or self._working:
             return
         label = remote_label(url)
-        dest = folder / (label.rsplit("/", 1)[-1] or "code")
-        if (dest / ".git").exists():
-            self._record_checkout(dest, url)
-            self._say(f"Using the checkout already at {shown_path(dest)}", "ok")
-            return
-        if dest.exists():
-            self._say(f"{shown_path(dest)} exists and is not a repository", "error")
-            return
-        services = self._services
+        self._working = True
+        self._say(f"Cloning {label}…", "busy")
 
-        def clone() -> str:
-            services.clone(url, dest)
-            return str(dest)
+        def landed(root: Path | None, error: str) -> None:
+            self._working = False
+            if root is None:
+                self._say(error, "error")
+                return
+            self._say(f"Cloned into {shown_path(root)}", "ok")
+            self._record_checkout(root, url)
 
-        self._cloning = url
-        self._work(f"Cloning {label}", "clone", clone, f"Cloning {label} into {shown_path(dest)}…")
+        self._checkouts.ensure(url, landed)
 
     def _new_code_repository(self) -> None:
         project = self._project()
@@ -1222,13 +1224,6 @@ class ProjectDialog(DialogFrame):
         self._working = False
         if error:
             self._say(error, "error")
-            return
-        if what == "clone":
-            # Recorded the way this mode records a checkout: through the store, which
-            # refreshes the columns, or into the draft.
-            landed = Path(str(result))
-            self._say(f"Cloned into {shown_path(landed)}", "ok")
-            self._record_checkout(landed, self._cloning)
             return
         project = self._project()
         if project is None:

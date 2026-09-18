@@ -79,6 +79,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.core.config_dir import config_dir
     from dplanner.core.storage.git import GitStorage
     from dplanner.core.storage.github import GitHubStorage
+    from dplanner.core.storage.kept import clone_full
     from dplanner.core.storage.locations import find_repo_root, origin_url, repo_storage
     from dplanner.core.storage.provider import StorageError, VersionedStorage
     from dplanner.domain.commands import (
@@ -138,6 +139,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     )
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
+    from dplanner.modules.projects.checkouts import CheckoutService
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.projects.repos import (
         LogEntry,
@@ -232,6 +234,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             store.project_dir(project_id),
             store.checkouts(),
             managed=managed,
+            kept_root=config_dir(),
         )
 
     def facts_for(node_id: str) -> RepositoryFacts:
@@ -339,6 +342,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         gh_refusal=gh_refusal,
         list_repositories=GitHubStorage.list_repositories,
         clone=lambda repo, dest: (GitHubStorage.clone(repo, dest), None)[1],
+        clone_url=clone_full,
         publish=publish,
         create_repository=create_repository,
         open_prs=open_prs,
@@ -1171,6 +1175,13 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         )
     )
 
+    # A repository on this machine for a verb that needs one, cloned where the clone
+    # policy says: the projects module's service, built here because Run Agent is handed
+    # it too. Owned by the window, so its task runner outlives every dialog.
+    checkouts = CheckoutService(
+        repos, services.tasks, kept_root=config_dir(), parent=services.window
+    )
+
     # Built ahead of the list too: the library watcher hands an entry two writers changed
     # at once to this module's launcher, and it is listed before this module.
     agent_instruction = StepAgentInstructionModule(
@@ -1194,6 +1205,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             # for a project that records its code repository, the plan's own repository
             # for one that does not.
             facts_for=facts_for,
+            # Code nobody checked out here is cloned before the agent opens in it.
+            ensure_checkouts=checkouts.ensure_many,
             briefing=briefing,
             # The spawned shell goes to the run tracker: it stamps the launch — directly,
             # off the undo stack, since Ctrl+Z cannot un-launch a shell — and watches
@@ -1402,6 +1415,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 # The Repositories card: a card on the Dashboard tab, registered here
                 # before any such tab is built.
                 cards=services.project_cards,
+                checkouts=checkouts,
                 repos=repos,
                 # The index opens a project without knowing what an activity is: a click
                 # on the project's row glances at its Dashboard, and *Show Steps* opens
@@ -2220,6 +2234,10 @@ def _locations_told(facts: "RepositoryFacts") -> str:
             where = (
                 f"DPlanner publishes there on Save (`{placement.directory}`) — do not write there"
             )
+        elif placement.kept:
+            where = (
+                f"`{placement.directory}` — a clone DPlanner keeps; work there as in any checkout"
+            )
         else:
             where = f"`{placement.directory}`"
         told.append(f"{location.name(roles)}: {location.repository_label}{inside} — {where}")
@@ -2828,6 +2846,7 @@ def default_cli_commands(
             # managed clone stands — both cross-module facts, handed in here.
             roles=roles,
             managed=managed_for(roles),
+            kept_root=config_dir(),
         ),
         # `topology show` tells the gate what it printed; the gate is built here, so the
         # spec module never learns where the record lives.

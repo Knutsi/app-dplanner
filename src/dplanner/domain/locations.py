@@ -11,12 +11,13 @@ in a Qt-free ``roles.py`` the composition root gathers.
 
 Where a location *is on this machine* is the second question, and :func:`place` is the one
 answer to it, in a fixed order: the checkout this machine recorded for the repository (the
-library file's per-machine map), the plan repository itself when the location's repository
-is the plan's, a managed clone for a role that only reads, or nowhere yet. Whether a role
-needs a checkout the person can see follows from whether it *writes*: a place an agent
-commits in is asked about once per repository per machine; a place that is only read is
-fetched on demand and never asks. ``ARCHITECTURE.md``'s *A project names its locations*
-has the reasoning.
+library file's per-machine map — the person's own, or one the application *keeps* under its
+configuration directory for a verb that needed the repository here), the plan repository
+itself when the location's repository is the plan's, a managed clone for a role that only
+reads, or nowhere yet. Whether a role needs a working checkout follows from whether it
+*writes*: a place an agent commits in is cloned when a verb first needs it, where the
+person's clone policy says; a place that is only read is fetched on demand and never asks.
+``ARCHITECTURE.md``'s *A project names its locations* has the reasoning.
 """
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -24,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
+from dplanner.core.storage.kept import is_kept
 from dplanner.core.storage.locations import (
     canonical_remote,
     find_repo_root,
@@ -92,7 +94,8 @@ class Placement:
 
     location: Location
     root: Path | None  # The repository's root here; None while nothing has it.
-    managed: bool = False  # A clone the application keeps under config_dir, never written.
+    managed: bool = False  # The read-only sparse cache of a role that only reads.
+    kept: bool = False  # A working clone the application keeps: a checkout nobody chose.
 
     @property
     def directory(self) -> Path | None:
@@ -103,7 +106,8 @@ class Placement:
 
     @property
     def here(self) -> bool:
-        """Whether a person could open a shell there: a checkout, not a managed clone."""
+        """Whether a person could open a shell there: a checkout — their own or one the
+        application keeps — and never the read-only cache."""
         return self.root is not None and not self.managed
 
 
@@ -316,12 +320,16 @@ def place(
     plan_root: Path | None,
     plan_remote: str,
     managed: ManagedFor | None = None,
+    kept_root: Path | None = None,
 ) -> Placement:
-    """Where ``location`` is on this machine, in the order the module docstring gives."""
+    """Where ``location`` is on this machine, in the order the module docstring gives.
+    ``kept_root`` is the configuration directory, so a recorded checkout that is one the
+    application keeps says so."""
     canonical = location.canonical
     checkout = checkouts.get(canonical)
     if checkout is not None:
-        return Placement(location, checkout)
+        kept = kept_root is not None and is_kept(checkout, kept_root)
+        return Placement(location, checkout, kept=kept)
     if plan_root is not None and plan_remote and canonical_remote(plan_remote) == canonical:
         return Placement(location, plan_root)
     if Path(canonical).is_absolute():

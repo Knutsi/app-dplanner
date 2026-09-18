@@ -51,6 +51,7 @@ from dplanner.framework.user_config import set_global
 from dplanner.modules import default_location_roles, managed_for
 from dplanner.modules.install import dialog as install_dialog
 from dplanner.modules.library_watch.view import ConflictDialog
+from dplanner.modules.projects.checkouts import CheckoutService
 from dplanner.modules.projects.location_dialog import LocationDialog
 from dplanner.modules.projects.move_dialog import MovePlanDialog
 from dplanner.modules.projects.open_dialog import (
@@ -496,6 +497,7 @@ def fake_repositories(services, plans: Path) -> RepositoryServices:  # type: ign
         gh_refusal=lambda: None,
         list_repositories=lambda: ["acme/widget", "acme/plans", "acme/website", "anna/dotfiles"],
         clone=lambda _url, dest: dest.mkdir(parents=True),
+        clone_url=lambda _url, dest: dest.mkdir(parents=True),
         publish=lambda _root, name: f"https://github.com/acme/{name}",
         create_repository=lambda name, _dest: f"https://github.com/acme/{name}",
         open_prs=lambda _remote: [pr],
@@ -541,6 +543,9 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
     services.document.add_child(services.document.id, satellite)
     settle(app)
     repos = fake_repositories(services, plans)
+    checkouts = CheckoutService(
+        repos, services.tasks, kept_root=home / "config", parent=services.window
+    )
 
     # -- Settings, on the pages this pass changed most -----------------------------------------
     set_global(
@@ -567,6 +572,7 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
         repos,
         services.tasks,
         services.theme,
+        checkouts=checkouts,
         move=lambda _pid: None,
         parent=services.window,
     )
@@ -584,6 +590,7 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
         repos,
         services.tasks,
         services.theme,
+        checkouts=checkouts,
         move=lambda _pid: None,
         mode=CREATE,
         parent=services.window,

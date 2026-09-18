@@ -160,6 +160,10 @@ def location_words(placement: Placement, roles: Mapping[str, LocationRole]) -> L
         return LocationWords(name, repository, position, where, not fetched)
     directory = placement.directory
     assert directory is not None
+    if placement.kept:
+        return LocationWords(
+            name, repository, position, f"kept by DPlanner at {shown_path(directory)}"
+        )
     return LocationWords(name, repository, position, shown_path(directory))
 
 
@@ -224,7 +228,10 @@ class RepositoryServices:
     # BLOCKING: why gh cannot be used — not installed, not signed in — or None when it can.
     gh_refusal: Callable[[], str | None]
     list_repositories: Callable[[], list[str]]  # BLOCKING: owner/repo, newest first.
-    clone: Callable[[str, Path], None]  # BLOCKING: a URL or owner/repo into a directory.
+    clone: Callable[[str, Path], None]  # BLOCKING: a URL or owner/repo into a directory, by gh.
+    # BLOCKING: any remote git can reach, into a directory, with the person's own git
+    # credentials — what a clone DPlanner keeps is made with (`core/storage/kept.py`).
+    clone_url: Callable[[str, Path], None]
     publish: Callable[[Path, str], str]  # BLOCKING: a root onto GitHub as name -> its origin.
     create_repository: Callable[[str, Path], str]  # BLOCKING: name on GitHub, cloned -> URL.
     open_prs: Callable[[str], list[PullRequest]]  # BLOCKING: a remote's open pull requests.

@@ -5,6 +5,13 @@ dialog go to the same folder, because that is how people keep checkouts — one 
 of repositories under a name that varies by habit (``~/Code``, ``~/src``, ``~/repos``).
 The first clone asks, with the likely folders found on disk as rows and the first of them
 picked; *Settings ▸ Repositories* changes it later. Per user, per machine: ``user_config``.
+
+The **clone policy** is the second fact here, and it decides where a repository a *verb*
+needs — Run Agent on code nobody checked out, a report published to a repository this
+machine lacks — lands: kept by DPlanner under its configuration directory (the default,
+for the person who never wants to manage a folder), or in the repositories folder above
+(for a developer who wants every clone where their others are). It decides the
+destination only, never whether the verb runs.
 """
 
 from collections.abc import Sequence
@@ -25,6 +32,10 @@ from dplanner.modules.projects.repos import (
 from dplanner.theme.tokens import CAPTION_GAP
 
 FOLDER_KEY = "repositories_folder"
+POLICY_KEY = "clone_policy"
+KEPT = "kept"  # DPlanner keeps the clone under config_dir()/checkouts/.
+FOLDER = "folder"  # Into the repositories folder, asked once.
+POLICIES = ((KEPT, "Let DPlanner keep them"), (FOLDER, "Clone into my repositories folder"))
 MIN_WIDTH = 460  # A folder is named by its path, and a path wants the room.
 PATH_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 
@@ -36,6 +47,16 @@ def repositories_folder() -> Path | None:
 
 def set_repositories_folder(folder: Path) -> None:
     set_global(MODULE_ID, FOLDER_KEY, str(folder))
+
+
+def clone_policy() -> str:
+    """Where a repository a verb needs lands: :data:`KEPT` unless the person chose."""
+    raw = str(get_global(MODULE_ID, POLICY_KEY, KEPT))
+    return raw if raw in (KEPT, FOLDER) else KEPT
+
+
+def set_clone_policy(policy: str) -> None:
+    set_global(MODULE_ID, POLICY_KEY, policy if policy in (KEPT, FOLDER) else KEPT)
 
 
 def ensure_repositories_folder(parent: QWidget | None, home: Path | None = None) -> Path | None:

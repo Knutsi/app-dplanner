@@ -13,7 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QComboBox, QFileDialog, QLineEdit
 from tests.facts import code_row
 
 from dplanner.core.storage.locations import init_repo
@@ -69,14 +69,18 @@ def project(services, make_project):
 
 
 @pytest.fixture
-def fakes(services):
-    """A ``RepositoryServices`` over the real store's facts and fake git and gh."""
+def fakes(services, tmp_path):
+    """A ``RepositoryServices`` over the real store's facts and fake git and gh. Clones
+    DPlanner keeps land under the test's own configuration root."""
     calls: dict[str, list[object]] = {"clone": [], "publish": [], "create": [], "history": []}
     store, library = services.repo, services.document
 
     def facts_of(project_id):
         return repository_facts(
-            library.project(project_id), store.project_dir(project_id), store.checkouts()
+            library.project(project_id),
+            store.project_dir(project_id),
+            store.checkouts(),
+            kept_root=tmp_path / "config",
         )
 
     def history_for(root, scope, limit):
@@ -110,6 +114,7 @@ def fakes(services):
         gh_refusal=lambda: str(state["gh"]) if state["gh"] else None,
         list_repositories=lambda: ["acme/widget", "acme/plans"],
         clone=clone,
+        clone_url=clone,
         publish=publish,
         create_repository=create,
         open_prs=lambda remote: list(state["prs"]),  # type: ignore[call-overload]
@@ -120,7 +125,18 @@ def fakes(services):
 
 
 @pytest.fixture
-def dialog(services, fakes, project, monkeypatch):
+def checkouts(services, fakes, tmp_path):
+    """The checkout service over the fakes, keeping clones under the test's own root."""
+    from dplanner.modules.projects.checkouts import CheckoutService
+
+    repos, _calls, _state = fakes
+    return CheckoutService(
+        repos, services.tasks, kept_root=tmp_path / "config", parent=services.window
+    )
+
+
+@pytest.fixture
+def dialog(services, fakes, checkouts, project, monkeypatch):
     repos, _calls, _state = fakes
     moved: list[str] = []
     built = ProjectDialog(
@@ -129,6 +145,7 @@ def dialog(services, fakes, project, monkeypatch):
         repos,
         services.tasks,
         services.theme,
+        checkouts=checkouts,
         move=moved.append,
         parent=services.window,
     )
@@ -146,7 +163,7 @@ def inline(dialog, monkeypatch):
         body()
         return True
 
-    for runner in (dialog._reader, dialog._worker):
+    for runner in (dialog._reader, dialog._worker, dialog._checkouts._runner):
         monkeypatch.setattr(runner, "run", run_now)
 
 
@@ -208,20 +225,22 @@ def test_both_menus_keep_their_shape_and_grey_what_cannot_run(services, dialog, 
     dropped — so the menu is the same list to learn whatever the project's state."""
     before = labels(dialog.code_column)
     assert entry(dialog.code_column, "Create on GitHub…").reason == ""
-    assert entry(dialog.code_column, "Clone into Repositories Folder").reason == (
+    assert entry(dialog.code_column, "Clone — kept by DPlanner").reason == (
         "no code repository recorded"
     )
     assert entry(dialog.code_column, "Open on GitHub").reason == "not a GitHub repository"
 
     services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
     assert entry(dialog.code_column, "Open on GitHub").reason == ""
-    assert entry(dialog.code_column, "Clone into Repositories Folder").reason == ""
+    assert entry(dialog.code_column, "Clone — kept by DPlanner").reason == ""
     assert entry(dialog.code_column, "Create on GitHub…").reason == (
         "this project already records one"
     )
     # Nothing appeared and nothing went: only the reasons changed. (The plan column's
     # first entry is the exception, and it is worded by the offer, not by what exists.)
     assert labels(dialog.code_column) == before
+    folders.set_clone_policy(folders.FOLDER)  # The clone entry says where a clone lands.
+    assert entry(dialog.code_column, "Clone — into the repositories folder").reason == ""
 
 
 def test_a_greyed_entry_carries_its_reason_in_its_words(dialog):
@@ -360,7 +379,7 @@ def test_a_separated_plan_fills_both_columns_and_prs_lead_the_code_column(
 
 
 def test_an_answer_for_a_project_the_dialog_left_is_dropped(
-    services, fakes, project, make_project, monkeypatch
+    services, fakes, checkouts, project, make_project, monkeypatch
 ):
     repos, _calls, _state = fakes
     other = make_project("Satellite")
@@ -370,6 +389,7 @@ def test_an_answer_for_a_project_the_dialog_left_is_dropped(
         repos,
         services.tasks,
         services.theme,
+        checkouts=checkouts,
         move=lambda _pid: None,
         parent=services.window,
     )
@@ -414,26 +434,39 @@ def test_without_gh_every_entry_that_needs_it_is_greyed_and_the_note_says_why(
     assert dialog.gh_note.isVisibleTo(dialog) and "gh not found" in dialog.gh_note.text()
     for column, label in (
         (dialog.code_column, "Create on GitHub…"),
-        (dialog.code_column, "Clone into Repositories Folder"),
         (dialog.plan_column, "Publish to GitHub…"),
     ):
         assert "gh not found" in entry(column, label).reason
+    # A clone is git's, with the person's own credentials: gh is not asked.
+    assert "gh not found" not in entry(dialog.code_column, "Clone — kept by DPlanner").reason
     state["gh"] = None
     dialog.show_project(project.id)
     assert not dialog.gh_note.isVisibleTo(dialog)
     assert entry(dialog.code_column, "Create on GitHub…").reason == ""  # No repository yet.
 
 
-def test_clone_lands_in_the_repositories_folder_and_records_the_checkout(
+def test_clone_lands_where_the_policy_says_and_records_the_checkout(
     services, fakes, dialog, project, tmp_path
 ):
+    """Kept by DPlanner under its own root by default — never in the plan repository or
+    the repositories folder — and in the repositories folder when the person chose so."""
+    from dplanner.core.storage.kept import kept_dir
+
     _repos, calls, _state = fakes
-    folders.set_repositories_folder(tmp_path / "Code")
     services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
-    entry(dialog.code_column, "Clone into Repositories Folder").run()
-    assert calls["clone"] == [(CODE_URL, tmp_path / "Code" / "widget")]
-    assert services.repo.checkout_for(CODE_URL) == tmp_path / "Code" / "widget"
+    entry(dialog.code_column, "Clone — kept by DPlanner").run()
+    kept = kept_dir(tmp_path / "config", CODE_URL)
+    assert calls["clone"] == [(CODE_URL, kept)]
+    assert services.repo.checkout_for(CODE_URL) == kept
     assert "Cloned into" in dialog.status.words() and dialog.status.tone() == "ok"
+    assert dialog.locations.rows()[0][3] == f"kept by DPlanner at {shown_path(kept)}"
+
+    services.repo.set_checkout(CODE_URL, None)
+    folders.set_clone_policy(folders.FOLDER)
+    folders.set_repositories_folder(tmp_path / "Code")
+    entry(dialog.code_column, "Clone — into the repositories folder").run()
+    assert calls["clone"][-1] == (CODE_URL, tmp_path / "Code" / "widget")
+    assert services.repo.checkout_for(CODE_URL) == tmp_path / "Code" / "widget"
 
 
 def test_a_new_code_repository_is_created_cloned_and_recorded(
@@ -587,18 +620,25 @@ def test_opening_says_which_plan_lives_inside_its_code(app, library_file, librar
 # -- create mode --------------------------------------------------------------------------------
 
 
-def creating(services, fakes, monkeypatch=None):
+def creating(services, fakes, monkeypatch=None, checkouts=None):
     """*File ▸ New Project…*: the same dialog in create mode, wired as the module wires it
     — over the library it already has. Built by the test rather than by a fixture,
     because what the library holds when the dialog opens is half of what these tests are
     about."""
+    from dplanner.modules.projects.checkouts import CheckoutService
+
     repos, _calls, _state = fakes
+    if checkouts is None:
+        checkouts = CheckoutService(
+            repos, services.tasks, kept_root=Path("/nowhere"), parent=services.window
+        )
     dialog = ProjectDialog(
         services.document,
         services.undo,
         repos,
         services.tasks,
         services.theme,
+        checkouts=checkouts,
         move=lambda _pid: None,
         mode=CREATE,
         parent=services.window,
@@ -791,7 +831,7 @@ def test_a_row_is_edited_by_activating_it_and_removed_from_its_menu(services, fa
         assert [entry.label for entry in entries if entry is not None] == [
             "Edit Location…",
             "Choose Checkout…",
-            "Clone into Repositories Folder",
+            "Clone — kept by DPlanner",
             "Open on GitHub",
             "Remove Location",
         ]
@@ -807,6 +847,7 @@ def test_cloning_a_location_in_create_mode_lands_in_the_draft_and_writes_nothing
     """A row's own verb, answered into the draft: there is no project yet to record a
     checkout onto, so the clone lands in what Create reads."""
     _repos, calls, _state = fakes
+    folders.set_clone_policy(folders.FOLDER)
     folders.set_repositories_folder(tmp_path / "Code")
     new = creating(services, fakes, monkeypatch)
     try:
@@ -1089,3 +1130,84 @@ def test_the_remote_folders_are_a_tree_and_nothing_is_cloned_to_pick_one(
         assert calls["clone"] == []
     finally:
         dialog.deleteLater()
+
+
+# -- the checkout service -----------------------------------------------------------------------
+
+
+def test_the_checkout_service_answers_at_once_clones_where_the_policy_says_and_records(
+    services, fakes, checkouts, tmp_path, monkeypatch
+):
+    """A recorded checkout is the answer; otherwise a clone lands kept by DPlanner or in
+    the repositories folder, is recorded per repository, and one in flight queues the
+    next. A destination that already holds a repository is adopted, not cloned over."""
+    from dplanner.core.storage.kept import kept_dir
+
+    _repos, calls, _state = fakes
+    monkeypatch.setattr(checkouts._runner, "run", lambda _l, body, **_k: body() or True)
+    answers: list[tuple[Path | None, str]] = []
+    here = init_repo(tmp_path / "here")
+    services.repo.set_checkout("https://github.com/acme/here", here)
+    checkouts.ensure(
+        "https://github.com/acme/here", lambda root, error: answers.append((root, error))
+    )
+    assert answers == [(here, "")] and calls["clone"] == []
+
+    kept = kept_dir(tmp_path / "config", CODE_URL)
+    checkouts.ensure(CODE_URL, lambda root, error: answers.append((root, error)))
+    assert answers[-1] == (kept, "") and calls["clone"] == [(CODE_URL, kept)]
+    assert services.repo.checkout_for(CODE_URL) == kept
+    assert checkouts.where(CODE_URL) == "kept by DPlanner"
+
+    folders.set_clone_policy(folders.FOLDER)
+    folders.set_repositories_folder(tmp_path / "Code")
+    init_repo(tmp_path / "Code" / "ui")  # Already there: adopted.
+    landed: list[tuple[dict[str, Path], str]] = []
+    checkouts.ensure_many(
+        ["https://github.com/acme/ui", "https://github.com/acme/api"],
+        lambda got, error: landed.append((got, error)),
+    )
+    assert landed == [
+        (
+            {
+                "https://github.com/acme/ui": tmp_path / "Code" / "ui",
+                "https://github.com/acme/api": tmp_path / "Code" / "api",
+            },
+            "",
+        )
+    ]
+    assert calls["clone"][-1] == ("https://github.com/acme/api", tmp_path / "Code" / "api")
+    assert checkouts.where(CODE_URL) == "into the repositories folder"
+
+
+def test_a_clone_that_fails_answers_with_the_refusal(services, fakes, checkouts, monkeypatch):
+    from dataclasses import replace
+
+    from dplanner.core.storage.provider import StorageError
+
+    def refuse(_url, _dest):
+        raise StorageError("the server said no")
+
+    checkouts._services = replace(checkouts._services, clone_url=refuse)
+    monkeypatch.setattr(checkouts._runner, "run", lambda _l, body, **_k: body() or True)
+    answers: list[tuple[Path | None, str]] = []
+    checkouts.ensure(CODE_URL, lambda root, error: answers.append((root, error)))
+    assert answers == [(None, "the server said no")]
+    assert services.repo.checkout_for(CODE_URL) is None
+
+
+def test_the_settings_page_offers_the_clone_policy_as_a_choice(app):
+    """Sane defaults, options laid out: kept by DPlanner unless the person picks the
+    folder, and the folder field stays for the clones they ask for by name."""
+    from dplanner.modules.projects.settings_page import build_page
+
+    page = build_page(None)
+    try:
+        combo = page.findChild(QComboBox, "ClonePolicyCombo")
+        assert combo is not None and combo.currentData() == folders.KEPT
+        combo.setCurrentIndex(1)
+        combo.activated.emit(1)
+        assert folders.clone_policy() == folders.FOLDER
+        assert page.findChild(QLineEdit, "RepositoriesFolderEdit") is not None
+    finally:
+        page.deleteLater()

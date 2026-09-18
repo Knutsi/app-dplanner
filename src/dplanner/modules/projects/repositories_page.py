@@ -24,6 +24,7 @@ from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.widgets import block, caption, note
+from dplanner.modules.projects.checkouts import repo_folder_name
 from dplanner.modules.projects.repos import RepositoryServices, shown_path
 from dplanner.modules.projects.repositories_folder import (
     ensure_repositories_folder,
@@ -33,13 +34,6 @@ from dplanner.theme.tokens import SECTION_GAP
 
 CLONE, USE, LATER = "clone", "use", "later"
 READ_ONLY_NOTE = "A read-only location — a spec repository — is fetched when a Specs tab opens."
-
-
-def repo_folder_name(remote: str) -> str:
-    """The folder a clone of ``remote`` lands in: the repository's own name."""
-    from dplanner.core.storage.locations import remote_label
-
-    return remote_label(remote).rsplit("/", 1)[-1] or "repository"
 
 
 @dataclass

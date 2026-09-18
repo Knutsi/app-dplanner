@@ -146,12 +146,14 @@ def commands(
     *,
     roles: Mapping[str, LocationRole] | None = None,
     managed: ManagedFor | None = None,
+    kept_root: Path | None = None,
 ) -> list[CliCommand]:
     """``key_of`` is the step's readable key (``S7``, ``F3``) — the letter is a fact
     about aspects this file never reads, so the root hands the rule in and every row,
     listing and chart here prints the same key the canvas paints. ``roles`` is the
     location role registry the root gathers (the domain's ``code`` alone without it),
-    and ``managed`` says where a read-only location's clone stands."""
+    ``managed`` says where a read-only location's clone stands, and ``kept_root`` is the
+    configuration directory a clone DPlanner keeps lives under."""
     roles = roles if roles is not None else roles_by_id([CODE])
 
     def _configure_step_add(parser: ArgumentParser) -> None:
@@ -193,7 +195,7 @@ def commands(
         )
         return 0
 
-    locating = Locating(roles, managed)
+    locating = Locating(roles=roles, managed=managed, kept_root=kept_root)
     return [
         CliCommand(
             path=("project", "list"),
@@ -496,6 +498,7 @@ class Locating:
 
     roles: Mapping[str, LocationRole]
     managed: ManagedFor | None = None
+    kept_root: Path | None = None  # The configuration directory: a kept clone says so.
 
 
 def _facts(context: CliContext, project: Project, locating: Locating) -> RepositoryFacts:
@@ -504,6 +507,7 @@ def _facts(context: CliContext, project: Project, locating: Locating) -> Reposit
         context.store.project_dir(project.id),
         context.store.checkouts(),
         managed=locating.managed,
+        kept_root=locating.kept_root,
     )
 
 
@@ -515,6 +519,8 @@ def _where(placement: Placement) -> str:
         directory = placement.directory
         fetched = directory is not None and directory.is_dir()
         return "fetched on demand" + ("" if fetched else " — not fetched yet")
+    if placement.kept:
+        return f"{placement.directory} — a clone DPlanner keeps"
     return str(placement.directory)
 
 
@@ -530,6 +536,7 @@ def _location_row(placement: Placement, locating: Locating) -> dict[str, Any]:
         "label": location.label,
         "directory": str(placement.directory) if placement.directory else "",
         "managed": placement.managed,
+        "kept": placement.kept,
         "where": _where(placement),
     }
 

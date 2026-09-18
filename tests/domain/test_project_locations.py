@@ -214,3 +214,23 @@ def test_a_folder_on_this_computer_is_read_as_a_location(tmp_path):
     assert located_folder(repo) == LocatedFolder(WIDGET, repo, "")
     (tmp_path / "loose").mkdir()
     assert located_folder(tmp_path / "loose") is None
+
+
+def test_a_checkout_the_application_keeps_is_placed_as_here_and_says_so(tmp_path):
+    """A kept clone is a working checkout — an agent may open a shell there — told apart
+    from the person's own only in the wording, and only when the reader says where kept
+    clones live."""
+    from dplanner.core.storage.kept import kept_dir
+
+    row = Location("l1", "code", WIDGET)
+    kept = kept_dir(tmp_path / "config", WIDGET)
+    checkouts = {row.canonical: kept}
+    found = place(
+        row, checkouts=checkouts, plan_root=None, plan_remote="", kept_root=tmp_path / "config"
+    )
+    assert found == Placement(row, kept, kept=True) and found.here and not found.managed
+    assert not place(row, checkouts=checkouts, plan_root=None, plan_remote="").kept
+    own = {row.canonical: tmp_path / "Code" / "widget"}
+    assert not place(
+        row, checkouts=own, plan_root=None, plan_remote="", kept_root=tmp_path / "config"
+    ).kept

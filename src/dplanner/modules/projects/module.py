@@ -50,6 +50,7 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import notice
 from dplanner.framework.window import StatusHost
 from dplanner.modules.projects.card import RepositoriesCard
+from dplanner.modules.projects.checkouts import CheckoutService
 
 # ProjectEntry is re-exported: contributors are wired through this module's Deps, and the
 # composition root imports a module's surface from its module.py alone.
@@ -100,6 +101,9 @@ class ProjectsDeps:
     problems: Callable[[], list[ProjectProblem]]
     # Git and GitHub, as the composition root wires them.
     repos: RepositoryServices
+    # A repository on this machine for a verb that needs one — cloned where the clone
+    # policy says. Built by the root, because the agent module is handed it too.
+    checkouts: CheckoutService
     # Rows other modules put under each project, wired by the composition root.
     entries: tuple[ProjectEntry, ...] = ()
 
@@ -199,6 +203,7 @@ class ProjectsModule:
             deps.repos,
             deps.tasks,
             deps.theme,
+            checkouts=deps.checkouts,
             move=self.move_plan,
             mode=CREATE,
             parent=deps.parent,
@@ -297,6 +302,7 @@ class ProjectsModule:
                 deps.repos,
                 deps.tasks,
                 deps.theme,
+                checkouts=deps.checkouts,
                 move=self.move_plan,
                 parent=deps.parent,
             )

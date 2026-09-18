@@ -928,12 +928,16 @@ def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_p
     assert cwd == code
 
 
-def test_a_code_repository_not_checked_out_here_greys_run_agent_and_says_so(
-    services, step, tmp_path
+def test_a_code_repository_not_checked_out_here_is_cloned_before_the_agent(
+    services, step, tmp_path, monkeypatch
 ):
-    """Greyed with the reason — and recording the checkout (the Project dialog, or an
-    agent's first call adopted from the library file) re-evaluates every presenter,
-    though nothing in the context graph changed."""
+    """The label says the clone comes first, and running it asks the checkout service
+    for the repository, then launches in what landed — the clone policy decides where,
+    never whether. Recording the checkout (the dialog, an agent's first call adopted
+    from the library file) re-evaluates every presenter, though nothing in the context
+    graph changed."""
+    from dataclasses import replace
+
     from dplanner.core.storage.locations import init_repo
     from dplanner.domain.commands import SetFieldCommand
 
@@ -944,14 +948,37 @@ def test_a_code_repository_not_checked_out_here_greys_run_agent_and_says_so(
     )
     select(services, step)
     state = services.actions.spec("agent.run").state(services.context.current())
-    assert state.visible and not state.enabled
-    assert state.label is not None and "not checked out" in state.label
+    assert state.visible and state.enabled
+    assert state.label == "Run &Agent… — clones acme/widget first"
 
+    asked: list[list[str]] = []
+    kept = init_repo(tmp_path / "config" / "checkouts" / "widget-0123")
+
+    def ensure(repositories, done):
+        asked.append(list(repositories))
+        services.repo.set_checkout("https://github.com/acme/widget", kept)
+        done({"https://github.com/acme/widget": kept}, "")
+
+    module = next(m for m in services.modules if m.id == "step_agent_instruction")
+    monkeypatch.setattr(module, "_deps", replace(module._deps, ensure_checkouts=ensure))
+    calls: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     refreshed: list[bool] = []
     services.context.changed.connect(lambda _context: refreshed.append(True))
-    services.repo.set_checkout("https://github.com/acme/widget", init_repo(tmp_path / "widget"))
-    assert refreshed
-    assert services.actions.spec("agent.run").state(services.context.current()).enabled
+    services.actions.run("agent.run", services.context.current())
+    assert asked == [["https://github.com/acme/widget"]]
+    ((_command, cwd),) = calls
+    assert cwd == kept and refreshed
+    assert services.actions.spec("agent.run").state(services.context.current()).label is None
+
+    # A clone that fails launches nothing and says so.
+    services.repo.set_checkout("https://github.com/acme/widget", None)
+    monkeypatch.setattr(
+        module, "_deps", replace(module._deps, ensure_checkouts=lambda _r, done: done({}, "no"))
+    )
+    services.actions.run("agent.run", services.context.current())
+    assert len(calls) == 1
 
 
 def _agent_section(services):
@@ -1919,7 +1946,7 @@ def test_opening_an_agent_leaves_the_plans_steps_alone(services, step, monkeypat
     assert next(m for m in services.modules if m.id == RUN_ID).runs() == []
 
 
-def test_a_project_whose_code_is_not_checked_out_here_greys_opening_and_says_so(
+def test_a_project_whose_code_is_not_checked_out_here_opens_the_agent_after_a_clone(
     services, step, tmp_path
 ):
     from dplanner.domain.commands import SetFieldCommand
@@ -1930,8 +1957,8 @@ def test_a_project_whose_code_is_not_checked_out_here_greys_opening_and_says_so(
     )
     focus_project(services, project)
     state = services.actions.spec("agent.open").state(services.context.current())
-    assert state.visible and not state.enabled
-    assert state.label is not None and "not checked out" in state.label
+    assert state.visible and state.enabled  # Cloned first, where the policy says.
+    assert state.label == "Open Agent in Code — clones acme/widget first"
 
 
 def test_a_custom_agent_command_cannot_be_opened_bare_and_the_entry_says_why(
@@ -2002,7 +2029,7 @@ def test_a_step_works_in_the_code_location_it_names_else_the_primary(
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, with_workplace(step, "l2")))
     select(services, step)
     state = services.actions.spec("agent.run").state(services.context.current())
-    assert not state.enabled and "acme/ui is not checked out" in (state.label or "")
+    assert state.enabled and state.label == "Run &Agent… — clones acme/ui first"
     services.repo.set_checkout("https://github.com/acme/ui", ui)
     select(services, step)
     services.actions.run("agent.run", services.context.current())

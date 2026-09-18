@@ -36,7 +36,11 @@ from dplanner.modules.projects.open_dialog import (
 from dplanner.modules.projects.project_dialog import NewProjectSpec
 from dplanner.modules.projects.repo_picker import PlanTarget
 from dplanner.modules.projects.repos import Joined, shown_path
-from dplanner.modules.projects.repositories_folder import set_repositories_folder
+from dplanner.modules.projects.repositories_folder import (
+    FOLDER,
+    set_clone_policy,
+    set_repositories_folder,
+)
 
 
 def run(services, action_id):
@@ -533,6 +537,7 @@ def test_the_repositories_page_asks_about_the_worked_in_repositories_the_machine
         Location("l2", "spec", "https://github.com/acme/specs", path="products"),
         Location("l3", "reporting", str(code_origin), path="reports"),
     )
+    set_clone_policy(FOLDER)  # The page is the folder policy's.
     set_repositories_folder(tmp_path / "Code")
     recorded: list[tuple[str, Path]] = []
     dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
@@ -559,6 +564,7 @@ def test_later_and_a_checkout_this_machine_names_are_answers_too(services, tmp_p
         Location("l2", "code", "https://github.com/acme/ui", label="UI"),
     )
     here = init_repo(tmp_path / "ui")
+    set_clone_policy(FOLDER)  # The page is the folder policy's.
     set_repositories_folder(tmp_path / "Code")
     recorded: list[tuple[str, Path]] = []
     dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
@@ -600,6 +606,7 @@ def test_a_clone_on_the_repositories_page_that_fails_says_so_and_stays(
     origin, link = shared_with_locations(
         tmp_path, Location("l1", "code", "https://github.com/acme/widget")
     )
+    set_clone_policy(FOLDER)  # The page is the folder policy's.
     set_repositories_folder(tmp_path / "Code")
     recorded: list[tuple[str, Path]] = []
     clone_plan = cloner(tmp_path, recorded)
@@ -635,4 +642,24 @@ def test_a_clone_that_fails_says_so_and_the_wizard_stays_open(
     assert dialog.result() != QDialog.DialogCode.Accepted  # Nothing accepted it.
     assert dialog.link.link_status.words() == "gh is not signed in"
     assert dialog.joined() == []
+    dialog.deleteLater()
+
+
+def test_under_the_kept_policy_nothing_is_asked_after_the_clone(services, tmp_path, monkeypatch):
+    """The default: a repository the plan works in that this machine lacks is cloned by
+    the verb that first needs it, where DPlanner keeps clones — so the wizard finishes
+    on the plan alone and a team lead never picks a folder."""
+    origin, link = shared_with_locations(
+        tmp_path,
+        Location("l1", "code", "https://github.com/acme/widget"),
+        Location("l2", "reporting", "https://github.com/acme/widget", path="reports"),
+    )
+    set_repositories_folder(tmp_path / "Code")
+    recorded: list[tuple[str, Path]] = []
+    dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
+    dialog.link.set_text(encode(link))
+    dialog.primary_button.click()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert [remote for remote, _dest in recorded] == [str(origin)]  # The plan, nothing else.
+    assert dialog.joined()[0].checkouts == ()
     dialog.deleteLater()
