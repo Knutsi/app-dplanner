@@ -325,7 +325,9 @@ src/dplanner/
 ├── plugins/dplanner/             the Claude Code plugin: the hand-written skill that installs DPlanner — .claude-plugin/marketplace.json lists it
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
-│   ├── storage/             three providers behind one protocol: folder, git, GitHub
+│   ├── storage/             three providers behind one protocol: folder, git, GitHub — and two
+│   │                        clone doors: sparse.py (a folder read on demand) and kept.py (a working
+│   │                        clone DPlanner keeps for a verb that needs the repository here)
 │   ├── repository.py        what the framework knows about the model, and no more
 │   ├── formats.py           the format-migration engine
 │   ├── module_data.py       per-module JSON, its versions and takeovers
@@ -416,9 +418,13 @@ src/dplanner/
 ├── modules/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── library/             which library: File ▸ New/Open Project Library, the title; `library …` verbs
-│   ├── projects/            the Projects folder in the index, the project verbs, New Project…, Open
-│   │                        Projects…, the Project dialog (a column per repository: log, facts, ⋯ menu),
-│   │                        the Repositories card, Move Plan, and the repositories folder clones land in
+│   ├── projects/            the Projects folder in the index, the project and `location` verbs, New
+│   │                        Project…, Open Project… (link, browse, then the Repositories page), the Project
+│   │                        dialog (the Locations table over the role registry, a log column per
+│   │                        repository), the location dialog (location_dialog.py), the Repositories
+│   │                        card, Move Plan, the repositories folder and the clone policy
+│   │                        (repositories_folder.py), and the checkout service a verb gets a
+│   │                        repository on this machine from (checkouts.py)
 │   ├── project_dashboard/   the project's home tab: its name and summary, and a card per module with
 │   │                        something to say about the project (Repositories, Agent, Compilation
 │   │                        instructions) — what a click on the project's row in the index opens
@@ -486,7 +492,7 @@ src/dplanner/
 │   │                        `dplanner progress show|record|save|list|remove`
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
 │   │                        Project ▸ Preview Report, the publisher that writes `reports/` on every Save,
-│   │                        Settings ▸ Reports
+│   │                        Settings ▸ Reports; the `reporting` location role (roles.py)
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
 │   │                        deferrals — one labelled log (log.py), what reaches a step and the briefing's
 │   │                        capped index (reach.py), how the two retired modules reach it (migrate.py),
@@ -495,14 +501,15 @@ src/dplanner/
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor); and the
 │   │                        documents a *source* fetched (source_kind.py: the kind contract,
-│   │                        sourced.py: applying a snapshot, refresh.py: fetch and check)
+│   │                        sourced.py: applying a snapshot, refresh.py: fetch and check);
+│   │                        the `spec` location role (roles.py)
 │   ├── spec_confluence/     Confluence Cloud as *two* spec source kinds — a page and a folder —
 │   │                        over one client (client.py), storage XHTML to markdown (convert.py),
 │   │                        the walk, its caps and the two content types (source.py), the guided
 │   │                        Connect dialog, Settings ▸ Confluence
 │   ├── spec_folder/         a folder on this computer as a spec source: the locator over the
 │   │                        shared walk in domain/document_folder.py
-│   ├── spec_git/            a git repository as a spec source: the subprocess door (client.py),
+│   ├── spec_git/            a git repository as a spec source over core/storage/sparse.py's clone door:
 │   │                        the locator, the blobless shallow sparse fetch and the size guard
 │   │                        (source.py), and the dialog that lists the remote's folders
 │   ├── coverage/            the plan against the spec: milestones → features → passages →

@@ -7,6 +7,7 @@ undoable fails here rather than in front of a user.
 """
 
 import pytest
+from tests.facts import code_row
 
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
@@ -382,8 +383,10 @@ def test_move_plan_stays_offered_once_the_plan_has_its_own_repository(services, 
 
     context = select(services, "project", project.id)
     assert state(services, "projects.move", context).enabled
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
-    services.repo.set_checkout(project.id, init_repo(tmp_path / "widget"))
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
+    )
+    services.repo.set_checkout("https://github.com/acme/widget", init_repo(tmp_path / "widget"))
     assert state(services, "projects.move", context).enabled
 
 

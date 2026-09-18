@@ -1,11 +1,11 @@
-"""Opening a project link: what it names, where its repositories will land, and go.
+"""Opening a project link: what it names, where the plan will land, and go.
 
 This is the page most people arrive on. Somebody sent a link; the machine it arrives on
-may have neither repository, one of them, or both. So the page answers three questions in
-order — *what is this*, *where does the plan come from*, *where does the code go* — and
-each one states what it found rather than asking again: a plan repository this library
-already uses is used, and a code repository some other project here already planned is
-offered at the checkout that project recorded.
+may or may not have the plan repository. So the page answers two questions in order —
+*what is this*, *where does the plan come from* — and each one states what it found
+rather than asking again: a plan repository this library already uses is used. Which
+*other* repositories the project works in is read off the plan once it is here, on the
+wizard's Repositories page, so a link needs to name nothing but the plan.
 
 **The clone happens here, not after the dialog closes.** It is the one slow step, and a
 person who has just pressed *Set Up Project* should watch it happen where they pressed it
@@ -14,7 +14,7 @@ answers a :class:`~dplanner.modules.projects.repos.Joined` that is already on di
 the module only has to attach it.
 """
 
-from collections.abc import Callable, Collection
+from collections.abc import Collection
 from pathlib import Path
 
 from PySide6.QtCore import Signal as QtSignal
@@ -26,7 +26,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.core.storage.locations import remote_label
 from dplanner.core.storage.provider import StorageError
 from dplanner.domain.project_link import (
     ROOT,
@@ -43,6 +42,7 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.widgets import block, caption, note
+from dplanner.modules.projects.checkouts import repo_folder_name
 from dplanner.modules.projects.repo_picker import field_row, tool_button
 from dplanner.modules.projects.repos import Joined, RepositoryServices, shown_path
 from dplanner.modules.projects.repositories_folder import (
@@ -53,18 +53,13 @@ from dplanner.theme.icons import folder_icon
 from dplanner.theme.tokens import SECTION_GAP
 
 
-def repo_folder_name(remote: str) -> str:
-    """The folder a clone of ``remote`` lands in: the repository's own name."""
-    return remote_label(remote).rsplit("/", 1)[-1] or "repository"
-
-
 class LinkPage(QWidget):
     """The link field, what the link names, and where the code should go."""
 
     changed = QtSignal()  # The wizard re-reads the refusal from this.
     finished = QtSignal(bool)  # The work ended; True when there is a Setup to take.
 
-    _done = QtSignal(str, str, str)  # (directory, checkout, error) — from the work body.
+    _done = QtSignal(str, str)  # (directory, error) — from the work body.
 
     def __init__(
         self,
@@ -74,12 +69,10 @@ class LinkPage(QWidget):
         *,
         listed_dirs: Collection[Path],
         listed_ids: Collection[str],
-        known_checkout: Callable[[str], Path | None],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._services = services
-        self._known_checkout = known_checkout
         self._listed_dirs = {directory.resolve() for directory in listed_dirs}
         self._listed_ids = set(listed_ids)
         self._runner = TaskRunner(tasks, parent=self)
@@ -124,17 +117,8 @@ class LinkPage(QWidget):
         self.plan_line = QLabel(self.found)
         self.plan_where = note("", self.found)
         block(found_layout, caption("Plan repository", self.found), self.plan_line, self.plan_where)
-
-        self.checkout_edit = QLineEdit(self.found)
-        self.checkout_edit.setObjectName("LinkCheckoutEdit")
-        self.checkout_edit.setPlaceholderText("Where the code goes on this machine (optional)")
-        self.checkout_edit.textChanged.connect(lambda _text: self._say_checkout())
-        self.browse_button = tool_button("Choose the checkout…", "BrowseCheckoutButton", self.found)
-        self.browse_button.setIcon(folder_icon(ink))
-        self.browse_button.clicked.connect(self._browse_checkout)
-        checkout_row = field_row(self.checkout_edit, self.browse_button, self.found)
-        self.checkout_where = note("", self.found)
-        block(found_layout, caption("Code", self.found), checkout_row, self.checkout_where)
+        self.code_line = note("", self.found)
+        block(found_layout, caption("Code", self.found), self.code_line)
         layout.addStretch(1)
 
     # -- reading the link --------------------------------------------------------------------
@@ -187,7 +171,12 @@ class LinkPage(QWidget):
             where += f" · {link.plan_path}"
         self.plan_line.setText(where)
         self._say_plan(link)
-        self._suggest_checkout(link)
+        self.code_line.setText(
+            f"{link.code_label} — the repositories it works in are asked about after the"
+            " plan is here"
+            if link.code_remote
+            else "this link names no code repository"
+        )
 
     def _say_plan(self, link: ProjectLink) -> None:
         """The line under the plan repository — and the one refusal only it can find: a
@@ -233,59 +222,6 @@ class LinkPage(QWidget):
             return "your repositories folder — you will be asked where that is"
         return shown_path(folder / repo_folder_name(remote))
 
-    # -- where the code goes -----------------------------------------------------------------
-
-    def _suggest_checkout(self, link: ProjectLink) -> None:
-        if not link.code_remote:
-            self.checkout_edit.clear()
-            self.checkout_edit.setEnabled(False)
-            self.browse_button.setEnabled(False)
-            self.checkout_where.setText("this link names no code repository")
-            return
-        self.checkout_edit.setEnabled(True)
-        self.browse_button.setEnabled(True)
-        known = self._known_checkout(link.code_remote)
-        folder = repositories_folder()
-        if known is not None:
-            self.checkout_edit.setText(str(known))
-        elif folder is not None:
-            self.checkout_edit.setText(str(folder / repo_folder_name(link.code_remote)))
-        else:
-            self.checkout_edit.clear()
-        self._say_checkout()
-
-    def _browse_checkout(self) -> None:
-        start = self.checkout_edit.text().strip() or str(repositories_folder() or Path.home())
-        chosen = QFileDialog.getExistingDirectory(self, "Code Checkout", start)
-        if chosen:
-            self.checkout_edit.setText(chosen)
-
-    def checkout(self) -> Path | None:
-        text = self.checkout_edit.text().strip()
-        return Path(text).expanduser() if text else None
-
-    def _checkout_state(self) -> tuple[str, str]:
-        """``(what the line says, why it cannot be used)`` for the path as it stands."""
-        link, path = self._link, self.checkout()
-        if link is None or not link.code_remote:
-            return ("", "")
-        if path is None:
-            return (f"{link.code_label} — nothing is checked out here yet", "")
-        if (path / ".git").exists():
-            return (f"{link.code_label}, already there", "")
-        try:
-            occupied = path.exists() and (not path.is_dir() or any(path.iterdir()))
-        except OSError:
-            occupied = True
-        if occupied:
-            return ("", f"{shown_path(path)} exists and is not a checkout")
-        return (f"will be cloned into {shown_path(path)}", "")
-
-    def _say_checkout(self) -> None:
-        says, problem = self._checkout_state()
-        self.checkout_where.setText(says or problem)
-        self.changed.emit()
-
     # -- what the wizard asks ----------------------------------------------------------------
 
     def primary_text(self) -> str:
@@ -296,9 +232,7 @@ class LinkPage(QWidget):
             return ""  # Refused with no words: the page's own line says what is running.
         if self._link is None:
             return ""  # The field's own line already says what is wrong.
-        if self._problem:
-            return self._problem
-        return self._checkout_state()[1] or None
+        return self._problem or None
 
     def answer(self) -> Joined | None:
         return self._joined
@@ -310,10 +244,8 @@ class LinkPage(QWidget):
         link = self._link
         if link is None or self._working:
             return
-        checkout = self.checkout()
-        clone_code = checkout is not None and not (checkout / ".git").exists()
         here = self._clone_here(link)
-        if here is None or clone_code:
+        if here is None:
             folder = ensure_repositories_folder(self)
             if folder is None:
                 self.finished.emit(False)
@@ -330,13 +262,11 @@ class LinkPage(QWidget):
                     services.clone(link.plan_remote, target)
                 directory = project_directory(target, link)
                 if not (directory / PROJECT_META).is_file():
-                    self._done.emit("", "", f"{link.plan_label} has no project at {link.plan_path}")
+                    self._done.emit("", f"{link.plan_label} has no project at {link.plan_path}")
                     return
-                if clone_code and checkout is not None:
-                    services.clone(link.code_remote, checkout)
-                self._done.emit(str(directory), str(checkout or ""), "")
+                self._done.emit(str(directory), "")
             except (StorageError, OSError) as error:
-                self._done.emit("", "", str(error))
+                self._done.emit("", str(error))
 
         # Busy *before* the run: a runner that answers inline — which is how the suite runs
         # one — would otherwise have finished by the time this line overwrote its result.
@@ -349,12 +279,12 @@ class LinkPage(QWidget):
             self.changed.emit()
             self.finished.emit(False)
 
-    def _on_done(self, directory: str, checkout: str, error: str) -> None:
+    def _on_done(self, directory: str, error: str) -> None:
         self._working = False
         if error:
             self.link_status.say(error, "error")
             self.changed.emit()
             self.finished.emit(False)
             return
-        self._joined = Joined(Path(directory), Path(checkout) if checkout else None)
+        self._joined = Joined(Path(directory))
         self.finished.emit(True)

@@ -56,7 +56,7 @@ def test_add_puts_an_existing_project_into_the_library_file(cli, cli_library, tm
 
     said = cli("library", "add", str(directory))
     assert "Gadget" in said and "added" in said
-    assert directory in [entry.path for entry in read_library_file(cli_library)]
+    assert directory in read_library_file(cli_library).projects
     titles = [row["title"] for row in data(cli("project", "list", "--json"))["projects"]]
     assert titles == ["Gadget"]
 
@@ -89,7 +89,7 @@ def test_remove_forgets_the_project_but_keeps_its_files(cli, cli_library, worksp
     said = cli("library", "remove", "Discovery")
     assert "files stay on disk" in said
 
-    assert read_library_file(cli_library) == []
+    assert read_library_file(cli_library).projects == []
     assert data(cli("project", "list", "--json"))["projects"] == []
     assert (workspace / "discovery" / "project.dproj").is_file()  # unlike `project delete`
 

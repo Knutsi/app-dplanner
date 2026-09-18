@@ -48,7 +48,13 @@ from dplanner.framework.window import StatusHost, UnsavedChangesHost
 from dplanner.framework.window_watch import POLL_MS
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
 from dplanner.modules.sync.save_progress import SaveProgressDialog
-from dplanner.modules.sync.service import SAVE_TASK, Publication, RepoGroup, SyncService
+from dplanner.modules.sync.service import (
+    SAVE_TASK,
+    ExtraPublication,
+    Publication,
+    RepoGroup,
+    SyncService,
+)
 from dplanner.modules.sync.view import DiffDialog, IconLabel, UnsavedChangesButton
 from dplanner.theme.icons import branch_icon, folder_icon
 from dplanner.theme.themes import Theme
@@ -77,6 +83,14 @@ class SyncDeps:
     # What a repository publishes beside its plan when it is saved — the reports site —
     # prepared on the GUI thread and run inside the save. None when there is nothing.
     publisher: Callable[[RepoGroup], Publication | None] = lambda _group: None
+    # The publications into other repositories — the projects' reporting locations that
+    # are on this machine — prepared on the GUI thread, each one more row of the save.
+    extra_publications: Callable[[], Sequence[ExtraPublication]] = lambda: ()
+    # Run before the in-window save starts, handed the save to start: the root clones a
+    # reporting repository nobody has checked out here, then calls it. The quit-time save
+    # never waits on a clone — a person leaving must not — so it publishes such a
+    # project beside its plan, as a save always did.
+    prepare_save: Callable[[Callable[[], None]], None] = lambda go: go()
 
 
 class SyncModule:
@@ -335,7 +349,8 @@ class SyncModule:
 
     def _begin_exit_save(self, service: SyncService, message: str, chosen: list[RepoGroup]) -> bool:
         """Start the quit-time save under its dialog; False when it could not be started."""
-        labels = [self._group_label(group) for group in chosen]
+        extra = self._deps.extra_publications()
+        labels = [self._group_label(group) for group in chosen] + [e.label for e in extra]
         # How long the last save took, if this machine has seen one: the bar fills smoothly
         # between commits instead of standing still through each one.
         progress = SaveProgressDialog(
@@ -345,7 +360,7 @@ class SyncModule:
         )
         self._exit_progress = progress  # Set first: _on_saving reads it, and it is queued.
         self._exit_error = ""
-        if not service.save(message, self._publications(service), only=chosen):
+        if not service.save(message, self._publications(service), only=chosen, extra=extra):
             self._exit_progress = None
             progress.deleteLater()
             return False
@@ -401,7 +416,13 @@ class SyncModule:
         def run_save(_context: Context) -> None:
             deps.autosave.flush_now()  # Typing reaches disk before it is committed.
             service.refresh()
-            service.save(publications=self._publications(service))
+
+            def go() -> None:
+                service.save(
+                    publications=self._publications(service), extra=deps.extra_publications()
+                )
+
+            deps.prepare_save(go)
 
         def run_switch(context: Context) -> None:
             group = self._focused_group(service, context)

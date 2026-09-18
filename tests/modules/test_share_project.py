@@ -10,6 +10,7 @@ import subprocess
 import pytest
 from PySide6.QtGui import QColor, QGuiApplication, QImage
 from PySide6.QtWidgets import QFileDialog
+from tests.facts import code_row
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.project_link import SUFFIX, link_for, read
@@ -61,8 +62,8 @@ def published(services, tmp_path):
     root = init_repo(tmp_path / "plans")
     subprocess.run(["git", "-C", str(root), "remote", "add", "origin", ORIGIN], check=True)
     directory = seed_project(root / "search", "Search", summary="Replace the index")
-    project = module(services)._deps.connect_project(directory, None)
-    project.repository = CODE
+    project = module(services)._deps.connect_project(directory)
+    project.locations = code_row(CODE)
     return project
 
 

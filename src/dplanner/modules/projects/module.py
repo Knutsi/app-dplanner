@@ -32,7 +32,7 @@ from PySide6.QtWidgets import QTreeWidgetItem, QWidget
 from dplanner.core.storage.locations import init_repo
 from dplanner.core.storage.provider import StorageError
 from dplanner.domain.model import Library, NodeId, Project, ProjectId
-from dplanner.domain.project_link import LinkError, find_checkout, link_for
+from dplanner.domain.project_link import LinkError, link_for
 from dplanner.domain.relocate import RelocateError
 from dplanner.domain.seed import seed_project
 from dplanner.domain.store import ProjectProblem
@@ -50,6 +50,7 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import notice
 from dplanner.framework.window import StatusHost
 from dplanner.modules.projects.card import RepositoriesCard
+from dplanner.modules.projects.checkouts import CheckoutService
 
 # ProjectEntry is re-exported: contributors are wired through this module's Deps, and the
 # composition root imports a module's surface from its module.py alone.
@@ -90,15 +91,19 @@ class ProjectsDeps:
     open_dashboard: Callable[[NodeId, bool], None]
     # The store's half of Remove from Library, wired by the composition root.
     detach: Callable[[ProjectId], None]
-    # Its other half: attach a directory (with the code checkout, when known) and add
-    # the project to the library with the membership origin, off the undo stack.
-    connect_project: Callable[[Path, Path | None], Project]
+    # Its other half: attach a directory and add the project to the library with the
+    # membership origin, off the undo stack. Checkouts are recorded beside it, per
+    # repository, through `repos.set_checkout`.
+    connect_project: Callable[[Path], Project]
     # Every directory the library lists, opened or not — what the wizard greys.
     project_dirs: Callable[[], list[Path]]
     # Library entries that failed to open — shown greyed with the reason.
     problems: Callable[[], list[ProjectProblem]]
     # Git and GitHub, as the composition root wires them.
     repos: RepositoryServices
+    # A repository on this machine for a verb that needs one — cloned where the clone
+    # policy says. Built by the root, because the agent module is handed it too.
+    checkouts: CheckoutService
     # Rows other modules put under each project, wired by the composition root.
     entries: tuple[ProjectEntry, ...] = ()
 
@@ -198,8 +203,8 @@ class ProjectsModule:
             deps.repos,
             deps.tasks,
             deps.theme,
+            checkouts=deps.checkouts,
             move=self.move_plan,
-            known_checkout=self._checkout_of,
             mode=CREATE,
             parent=deps.parent,
         )
@@ -212,12 +217,14 @@ class ProjectsModule:
             if spec.plan.init:
                 init_repo(spec.plan.root)
             directory = seed_project(
-                spec.target, spec.title, summary=spec.summary, repository=spec.repository
+                spec.target, spec.title, summary=spec.summary, locations=spec.locations
             )
         except (StorageError, OSError) as error:
             notice(deps.parent, "New Project", f"Nothing was created — {error}")
             return
-        project = deps.connect_project(directory, spec.checkout)
+        project = deps.connect_project(directory)
+        for repository, checkout in spec.checkouts:
+            deps.repos.set_checkout(repository, checkout)
         deps.status.show_status(f"“{project.title or project.folder_name}” created", 4000)
         if spec.plan.publish:
             self._publish(spec.plan.root, spec.plan.publish)
@@ -231,26 +238,20 @@ class ProjectsModule:
             deps.theme,
             listed_dirs=deps.project_dirs(),
             listed_ids=[project.id for project in deps.library.projects],
-            known_checkout=self._checkout_of,
             parent=deps.parent,
         )
         accepted = bool(dialog.exec())
         chosen = dialog.joined() if accepted else []
         dialog.deleteLater()
-        added = [deps.connect_project(join.directory, join.checkout) for join in chosen]
+        added = [deps.connect_project(join.directory) for join in chosen]
+        for join in chosen:
+            for repository, checkout in join.checkouts:
+                deps.repos.set_checkout(repository, checkout)
         if len(added) == 1:
             title = added[0].title or added[0].folder_name
             deps.status.show_status(f"“{title}” added to the library", 4000)
         elif added:
             deps.status.show_status(f"{len(added)} projects added to the library", 4000)
-
-    def _checkout_of(self, remote: str) -> Path | None:
-        """Where this machine already has ``remote`` checked out, if some other project
-        here plans the same code — what the link page and New Project offer rather than
-        cloning again."""
-        deps = self._deps
-        facts = [deps.repos.facts_of(project.id) for project in deps.library.projects]
-        return find_checkout([(found.repository, found.checkout) for found in facts], remote)
 
     def share_project(self, project_id: ProjectId) -> None:
         """*Share Project…*: the link, the file and the code, for one project.
@@ -301,6 +302,7 @@ class ProjectsModule:
                 deps.repos,
                 deps.tasks,
                 deps.theme,
+                checkouts=deps.checkouts,
                 move=self.move_plan,
                 parent=deps.parent,
             )

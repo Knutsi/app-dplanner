@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtWidgets import QSpinBox
+from tests.facts import code_row
 from tests.platforms import POSIX_MODE_BITS, SH, SYMLINKS
 
 from dplanner.modules import agent_harnesses
@@ -171,24 +172,21 @@ def test_the_preflight_says_where_the_plan_lives(services, step):
     on the project accepted the colocation."""
     from dataclasses import replace
 
-    from dplanner.domain.repositories import RepositoryFacts
+    from tests.facts import code_facts
+
     from dplanner.modules import _default_briefing
 
     briefing = _default_briefing()
-    apart = RepositoryFacts(
+    apart = code_facts(
         plan_root=Path("/plans"),
         plan_remote="git@github.com:acme/plans.git",
         repository="https://github.com/acme/widget",
-        checkout=None,
-        colocation="",
     )
     text = briefing.preamble(step, True, apart)
     assert "own repository, acme/plans" in text and "acme/widget" in text
     assert "WARNING" not in text
 
-    inside = RepositoryFacts(
-        plan_root=Path("/widget"), plan_remote="", repository="", checkout=None, colocation=""
-    )
+    inside = code_facts(plan_root=Path("/widget"))
     text = briefing.preamble(step, True, inside)
     assert "WARNING" in text and "do not stage or commit" in text
     assert "dplanner project move" in text and "when the developer asks" in text
@@ -915,8 +913,10 @@ def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_p
 
     code = init_repo(tmp_path / "widget")
     project = services.document.project_of(step.id)
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
-    services.repo.set_checkout(project.id, code)
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
+    )
+    services.repo.set_checkout("https://github.com/acme/widget", code)
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
 
@@ -928,28 +928,57 @@ def test_a_separated_plans_agent_runs_in_the_code_checkout(services, step, tmp_p
     assert cwd == code
 
 
-def test_a_code_repository_not_checked_out_here_greys_run_agent_and_says_so(
-    services, step, tmp_path
+def test_a_code_repository_not_checked_out_here_is_cloned_before_the_agent(
+    services, step, tmp_path, monkeypatch
 ):
-    """Greyed with the reason — and recording the checkout (the Project dialog, or an
-    agent's first call adopted from the library file) re-evaluates every presenter,
-    though nothing in the context graph changed."""
+    """The label says the clone comes first, and running it asks the checkout service
+    for the repository, then launches in what landed — the clone policy decides where,
+    never whether. Recording the checkout (the dialog, an agent's first call adopted
+    from the library file) re-evaluates every presenter, though nothing in the context
+    graph changed."""
+    from dataclasses import replace
+
     from dplanner.core.storage.locations import init_repo
     from dplanner.domain.commands import SetFieldCommand
 
     project = services.document.project_of(step.id)
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
+    )
     select(services, step)
     state = services.actions.spec("agent.run").state(services.context.current())
-    assert state.visible and not state.enabled
-    assert state.label is not None and "not checked out" in state.label
+    assert state.visible and state.enabled
+    assert state.label == "Run &Agent… — clones acme/widget first"
 
+    asked: list[list[str]] = []
+    kept = init_repo(tmp_path / "config" / "checkouts" / "widget-0123")
+
+    def ensure(repositories, done):
+        asked.append(list(repositories))
+        services.repo.set_checkout("https://github.com/acme/widget", kept)
+        done({"https://github.com/acme/widget": kept}, "")
+
+    module = next(m for m in services.modules if m.id == "step_agent_instruction")
+    monkeypatch.setattr(module, "_deps", replace(module._deps, ensure_checkouts=ensure))
+    calls: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
     refreshed: list[bool] = []
     services.context.changed.connect(lambda _context: refreshed.append(True))
-    services.repo.set_checkout(project.id, init_repo(tmp_path / "widget"))
-    assert refreshed
-    assert services.actions.spec("agent.run").state(services.context.current()).enabled
+    services.actions.run("agent.run", services.context.current())
+    assert asked == [["https://github.com/acme/widget"]]
+    ((_command, cwd),) = calls
+    assert cwd == kept and refreshed
+    assert services.actions.spec("agent.run").state(services.context.current()).label is None
+
+    # A clone that fails launches nothing and says so.
+    services.repo.set_checkout("https://github.com/acme/widget", None)
+    monkeypatch.setattr(
+        module, "_deps", replace(module._deps, ensure_checkouts=lambda _r, done: done({}, "no"))
+    )
+    services.actions.run("agent.run", services.context.current())
+    assert len(calls) == 1
 
 
 def _agent_section(services):
@@ -1680,11 +1709,22 @@ def test_agent_prompt_says_where_the_plan_lives(cli_stdin):
     shown = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))
     assert "WARNING: this plan lives inside the code repository" in shown["prompt"]
 
-    cli_stdin("project", "set", "Discovery", "--repository", "https://github.com/acme/widget")
+    cli_stdin(
+        "location",
+        "add",
+        "Discovery",
+        "--role",
+        "code",
+        "--repository",
+        "https://github.com/acme/widget",
+    )
     shown = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))
     assert "WARNING" not in shown["prompt"]
     assert "apart from the code you are working in (acme/widget)" in shown["prompt"]
     assert shown["repository"] == "https://github.com/acme/widget"
+    # The table is told too, with where each row stands on this machine.
+    assert "Code: acme/widget — not checked out on this machine" in shown["prompt"]
+    assert "`dplanner location list`" in shown["prompt"]
 
 
 def test_a_step_without_a_worktree_is_briefed_to_stay_in_the_checkout(cli_stdin):
@@ -1857,8 +1897,10 @@ def test_opening_an_agent_runs_the_bare_command_where_the_code_is(
 
     code = init_repo(tmp_path / "widget")
     project = services.document.project_of(step.id)
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
-    services.repo.set_checkout(project.id, code)
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
+    )
+    services.repo.set_checkout("https://github.com/acme/widget", code)
     focus_project(services, project)
     assert services.actions.spec("agent.open").state(services.context.current()).enabled
 
@@ -1904,17 +1946,19 @@ def test_opening_an_agent_leaves_the_plans_steps_alone(services, step, monkeypat
     assert next(m for m in services.modules if m.id == RUN_ID).runs() == []
 
 
-def test_a_project_whose_code_is_not_checked_out_here_greys_opening_and_says_so(
+def test_a_project_whose_code_is_not_checked_out_here_opens_the_agent_after_a_clone(
     services, step, tmp_path
 ):
     from dplanner.domain.commands import SetFieldCommand
 
     project = services.document.project_of(step.id)
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
+    )
     focus_project(services, project)
     state = services.actions.spec("agent.open").state(services.context.current())
-    assert state.visible and not state.enabled
-    assert state.label is not None and "not checked out" in state.label
+    assert state.visible and state.enabled  # Cloned first, where the policy says.
+    assert state.label == "Open Agent in Code — clones acme/widget first"
 
 
 def test_a_custom_agent_command_cannot_be_opened_bare_and_the_entry_says_why(
@@ -1949,3 +1993,73 @@ def test_no_terminal_says_so_rather_than_offering_a_prompt_nobody_wrote(
     services.actions.run("agent.open", services.context.current())
     ((title, text),) = said
     assert title == "Open Agent in Code" and "No terminal opened" in text
+
+
+# -- a step names the code location it works in ---------------------------------------------------
+
+
+def test_a_step_works_in_the_code_location_it_names_else_the_primary(
+    services, step, tmp_path, monkeypatch
+):
+    """Two code repositories in a project: a step's shell opens in the one its
+    ``workplace`` names, the primary for a step that names none — and a named row that
+    is gone falls back to the primary rather than nowhere."""
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.commands import SetFieldCommand, SetModuleDataCommand
+    from dplanner.domain.locations import Location
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, with_workplace
+
+    widget, ui = init_repo(tmp_path / "widget"), init_repo(tmp_path / "ui")
+    project = services.document.project_of(step.id)
+    rows = (
+        Location("l1", "code", "https://github.com/acme/widget"),
+        Location("l2", "code", "https://github.com/acme/ui", label="UI"),
+    )
+    services.undo.push(SetFieldCommand(project.id, "locations", rows))
+    services.repo.set_checkout("https://github.com/acme/widget", widget)
+    services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
+    calls: list[tuple[list[str], Path]] = []
+    monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
+    monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["fake-term"])
+
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    assert calls[-1][1] == widget  # The primary.
+
+    services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, with_workplace(step, "l2")))
+    select(services, step)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.enabled and state.label == "Run &Agent… — clones acme/ui first"
+    services.repo.set_checkout("https://github.com/acme/ui", ui)
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    assert calls[-1][1] == ui
+
+    services.undo.push(SetFieldCommand(project.id, "locations", rows[:1]))
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    assert calls[-1][1] == widget  # The named row is gone: the primary again.
+
+
+def test_agent_workplace_names_a_code_location_from_the_terminal(cli_stdin):
+    cli_stdin("project", "create", "Discovery", "--code", "https://github.com/acme/widget")
+    cli_stdin(
+        "location",
+        "add",
+        "Discovery",
+        "--role",
+        "code",
+        "--repository",
+        "https://github.com/acme/ui",
+        "--label",
+        "UI",
+    )
+    cli_stdin("step", "add", "Discovery", "Deploy", "--agent")
+    said = cli_stdin("agent", "workplace", "Deploy", "code:UI")
+    assert "works in l2 (acme/ui)" in said
+    row = json.loads(cli_stdin("agent", "show", "Deploy", "--json"))
+    assert row["workplace"] == "l2"
+    assert "already" in cli_stdin("agent", "workplace", "Deploy", "l2")
+    assert "primary" in cli_stdin("agent", "workplace", "Deploy", "primary")
+    assert json.loads(cli_stdin("agent", "show", "Deploy", "--json"))["workplace"] == ""
+    assert "no location" in cli_stdin("agent", "workplace", "Deploy", "l9", expect=1)

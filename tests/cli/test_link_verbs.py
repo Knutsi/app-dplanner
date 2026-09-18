@@ -24,7 +24,7 @@ def published(tmp_path, cli, name="plans"):
     """A plan repository with a remote and one project in it, in this library."""
     root = init_repo(tmp_path / name)
     subprocess.run(["git", "-C", str(root), "remote", "add", "origin", ORIGIN], check=True)
-    cli("project", "create", "Search", "--in", str(root), "--repository", CODE)
+    cli("project", "create", "Search", "--in", str(root), "--code", CODE)
     return root
 
 

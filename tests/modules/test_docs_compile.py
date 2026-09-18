@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+from tests.facts import code_row
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import (
@@ -89,8 +90,10 @@ def project(services, make_project, tmp_path):
     library = services.document
     project = make_project("Discovery")
     code = init_repo(tmp_path / "widget")
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://example.com/widget"))
-    services.repo.set_checkout(project.id, code)
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://example.com/widget"))
+    )
+    services.repo.set_checkout("https://example.com/widget", code)
     parser = Step(title="Write the parser")
     auth = Step(title="Auth")
     v1 = Step(title="Release v1")
@@ -182,7 +185,7 @@ def test_a_collector_with_no_fragments_behind_it_cannot_compile(services, projec
 
 
 def test_a_project_with_no_checkout_here_says_so(services, project, terminal):
-    services.repo.set_checkout(project.id, None)
+    services.repo.set_checkout("https://example.com/widget", None)
     select(services, by_title(project, "Auth").id)
     greyed = state(services)
     assert greyed.enabled is False

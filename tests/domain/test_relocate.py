@@ -69,14 +69,16 @@ def test_the_plan_moves_with_its_files_index_lines_and_two_commits(colocated):
     meta = json.loads((target / PROJECT_META).read_text())
     # As git names the remote — which a machine may rewrite (an insteadOf rule), so the
     # comparison is the canonical one every reader makes.
-    assert canonical_remote(meta["repository"]) == "github.com/acme/widget"
+    [row] = meta["locations"]
+    assert row["role"] == "code" and canonical_remote(row["repository"]) == "github.com/acme/widget"
     assert "colocation" not in meta
     assert read_index(plans) == ["search-rewrite"] and not (code / POINTER_FILE).exists()
-    [entry] = read_library_file(store.library_path)
-    assert entry.path == target and entry.checkout == code.resolve()
+    file = read_library_file(store.library_path)
+    assert file.projects == [target]
+    assert file.checkouts == {"github.com/acme/widget": code.resolve()}
     assert store.project_dir(project.id) == target
-    assert store.checkout_of(project.id) == code.resolve()
-    assert canonical_remote(project.repository) == "github.com/acme/widget"
+    assert store.checkout_for("git@github.com:acme/widget.git") == code.resolve()
+    assert canonical_remote(project.locations[0].repository) == "github.com/acme/widget"
     assert moved.source_committed and moved.target_committed and moved.notes == ()
     assert _git(code, "log", "-1", "--format=%s").startswith("Move the plan of «Search rewrite»")
     assert _git(code, "status", "--porcelain") == ""
@@ -118,11 +120,12 @@ def test_a_plan_moves_on_between_plan_repositories_and_keeps_its_code(colocated,
     assert moved.target.resolve() == target and not (plans / "search-rewrite").exists()
     assert (target / "steps" / "read-the-spec" / "step.json").is_file()
     assert read_index(elsewhere) == ["search-rewrite"] and read_index(plans) == []
-    assert canonical_remote(project.repository) == "github.com/acme/widget"
+    assert canonical_remote(project.locations[0].repository) == "github.com/acme/widget"
     # Not the plan repository it happened to leave: the checkout it already had.
-    assert store.checkout_of(project.id) == code.resolve()
-    [entry] = read_library_file(store.library_path)
-    assert entry.path == target and entry.checkout == code.resolve()
+    assert store.checkout_for("git@github.com:acme/widget.git") == code.resolve()
+    file = read_library_file(store.library_path)
+    assert file.projects == [target]
+    assert file.checkouts == {"github.com/acme/widget": code.resolve()}
 
 
 def test_a_plan_that_never_had_a_checkout_here_gains_none_by_moving(colocated, tmp_path):
@@ -130,14 +133,13 @@ def test_a_plan_that_never_had_a_checkout_here_gains_none_by_moving(colocated, t
     store, library, _code, plans = colocated
     project = library.projects[0]
     move_project(store, project.id, plans / "search-rewrite")
-    store.set_checkout(project.id, None)
+    store.set_checkout("git@github.com:acme/widget.git", None)
     elsewhere = _repo(tmp_path / "elsewhere")
 
     move_project(store, project.id, elsewhere / "search-rewrite")
 
-    assert store.checkout_of(project.id) is None
-    [entry] = read_library_file(store.library_path)
-    assert entry.checkout is None
+    assert store.checkout_for("git@github.com:acme/widget.git") is None
+    assert read_library_file(store.library_path).checkouts == {}
 
 
 def test_unsaved_edits_refuse_the_move(colocated):

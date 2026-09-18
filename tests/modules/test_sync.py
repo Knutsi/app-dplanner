@@ -674,3 +674,48 @@ def test_the_diff_dialog_is_on_the_frame_with_save_now_as_the_primary(app):
         assert asked == [True]
     finally:
         dialog.deleteLater()
+
+
+def test_an_extra_publication_is_its_own_scoped_commit_after_the_plans(
+    services, make_project, library_repo, tmp_path
+):
+    """A reporting location in another repository: written, committed scoped to the site
+    and pushed as one more row of the save — a failure there never costs the plan's."""
+    from dplanner.core.storage.locations import repo_storage
+    from dplanner.modules.sync.service import ExtraPublication, RepoGroup
+
+    project = make_project("Discovery")
+    edit_and_flush(services, project)
+    reports = init_repo(tmp_path / "reports-repo")
+    (reports / "README.md").write_text("reports\n")
+    subprocess.run(["git", "-C", str(reports), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(reports), "commit", "-qm", "start"], check=True)
+
+    def publish():
+        (reports / "site").mkdir(exist_ok=True)
+        (reports / "site" / "index.html").write_text("<p>the report</p>")
+        (reports / "stray.txt").write_text("not the site's")
+        return ["site"]
+
+    def refuse():
+        raise OSError("disk full")
+
+    storage = repo_storage(reports, scopes=("site",))
+    assert isinstance(storage, RepoGroup)
+    phases: list[tuple[int, str]] = []
+    service = sync_service(services)
+    service.saving.connect(lambda index, phase: phases.append((index, phase)))
+    notices: list[str] = []
+    service.notice.connect(notices.append)
+    service.refresh()
+    service.save_sync(
+        "with the report",
+        extra=[
+            ExtraPublication("acme/reports", storage, publish),
+            ExtraPublication("acme/other", storage, refuse),
+        ],
+    )
+    assert commit_count(library_repo) == 1 and commit_count(reports) == 2
+    assert committed_paths(reports) == ["site/index.html"]
+    assert (1, PUBLISHING) in phases and (1, SAVED) in phases and (2, NOTHING) in phases
+    assert notices[-1].startswith("Saved") and "reports not written" in notices[-1]

@@ -190,6 +190,10 @@ def test_the_toolbar_replaced_the_add_button(services, project):
     assert entries == [
         "New Spec Document…",
         "Import Spec Document…",
+        # A repository named here and now; the row the project names already, greyed
+        # with its reason while it names none.
+        "From Repository…",
+        "From Location… — the project names no spec location — Project ▸ Settings…",
         "Folder on This Computer…",
         "Git Repository…",
         "Confluence Page…",

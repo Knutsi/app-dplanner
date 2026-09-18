@@ -46,6 +46,7 @@ from typing import Any, Final, Literal
 from dplanner.core.fsio import slugify
 from dplanner.core.repository import Origin
 from dplanner.core.signals import Signal
+from dplanner.domain.locations import Location
 
 type NodeId = str
 type ProjectId = str
@@ -76,15 +77,15 @@ DEFAULT_EDGE_KIND: Final = "requires"
 # mutators, three commands and three signals: they are edited the same way, undone the same
 # way, and differ only in what the Edit menu calls them.
 VALUE_FIELDS: Final[dict[str, tuple[str, ...]]] = {
-    "project": ("title", "summary", "repository", "colocation"),
+    "project": ("title", "summary", "colocation", "locations"),
     "step": ("title",),
 }
 
 FIELD_LABELS: Final[dict[str, str]] = {
     "title": "Rename",
     "summary": "Edit Summary",
-    "repository": "Set Code Repository",
     "colocation": "Set Colocation",
+    "locations": "Change Locations",
 }
 
 
@@ -204,7 +205,7 @@ class Step(Node):
 
 
 class Project(Node):
-    """A unit of work: a title, a summary, the code repository it plans, and the graph of
+    """A unit of work: a title, a summary, the locations it is about, and the graph of
     steps that delivers it."""
 
     kind = "project"
@@ -218,17 +219,20 @@ class Project(Node):
         folder_name: str = "",
         created: str = "",
         last_number: int = 0,
-        repository: str = "",
+        locations: Iterable[Location] = (),
         colocation: str = "",
     ) -> None:
         super().__init__(node_id=node_id, folder_name=folder_name, created=created)
         self.title = title
         self.summary = summary
-        # The code repository this project plans, as git names its remote — shared, so a
-        # colleague opening the plan knows which code it is about. "" is the older shape:
-        # the plan's own repository *is* the code repository. Where the plan itself lives
-        # is never stored; it is the repository enclosing the project directory.
-        self.repository = repository
+        # The places this project is about — its code, its specs, where its docs and tests
+        # go — each a role, a repository as git names its remote, and a position inside it
+        # (`domain/locations.py`). Shared, so a colleague opening the plan knows which
+        # code it is about; the first `code` row is *the* code repository every older
+        # reader means. An empty table is the older shape: the plan's own repository *is*
+        # the code repository. Where the plan itself lives is never stored; it is the
+        # repository enclosing the project directory.
+        self.locations: tuple[Location, ...] = tuple(locations)
         # "accepted" once the people on this project have decided the plan stays inside
         # its code repository; "" means warn. `domain/repositories.py` reads both.
         self.colocation = colocation

@@ -35,7 +35,9 @@ from PySide6.QtWidgets import QApplication, QDialog, QPlainTextEdit, QWidget
 from dplanner.app import new_session
 from dplanner.cli.install import COMMAND, LAUNCHER, SKILL, Item, Outcome
 from dplanner.core.storage.locations import init_repo
+from dplanner.core.storage.sparse import Probe
 from dplanner.domain.commands import SetFieldCommand
+from dplanner.domain.locations import CODE, Location, roles_by_id
 from dplanner.domain.project_link import ProjectLink, encode
 from dplanner.domain.relocate import Moved
 from dplanner.domain.repositories import repository_facts
@@ -46,8 +48,11 @@ from dplanner.framework.image_preview import ImagePreviewDialog
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.text_dialog import ExpandedTextDialog
 from dplanner.framework.user_config import set_global
+from dplanner.modules import default_location_roles, managed_for
 from dplanner.modules.install import dialog as install_dialog
 from dplanner.modules.library_watch.view import ConflictDialog
+from dplanner.modules.projects.checkouts import CheckoutService
+from dplanner.modules.projects.location_dialog import LocationDialog
 from dplanner.modules.projects.move_dialog import MovePlanDialog
 from dplanner.modules.projects.open_dialog import (
     BROWSE_PAGE,
@@ -461,6 +466,8 @@ def render_bare(app: QApplication, theme: Theme, out: Path) -> None:
 def fake_repositories(services, plans: Path) -> RepositoryServices:  # type: ignore[no-untyped-def]
     """The projects module's seam, over the real store's facts and invented git and gh."""
     store, library = services.repo, services.document
+    roles = roles_by_id(default_location_roles())
+    managed = managed_for(roles)
     now = datetime.now(UTC)
     log = RepoLog(
         branch="main",
@@ -477,9 +484,11 @@ def fake_repositories(services, plans: Path) -> RepositoryServices:  # type: ign
     )
     return RepositoryServices(
         facts_of=lambda pid: repository_facts(
-            library.project(pid), store.project_dir(pid), store.checkout_of(pid)
+            library.project(pid), store.project_dir(pid), store.checkouts(), managed=managed
         ),
+        roles=roles,
         project_dir=store.project_dir,
+        checkout_for=store.checkout_for,
         set_checkout=store.set_checkout,
         checkout_changed=store.checkout_changed,
         plan_roots=lambda: [plans],
@@ -488,9 +497,11 @@ def fake_repositories(services, plans: Path) -> RepositoryServices:  # type: ign
         gh_refusal=lambda: None,
         list_repositories=lambda: ["acme/widget", "acme/plans", "acme/website", "anna/dotfiles"],
         clone=lambda _url, dest: dest.mkdir(parents=True),
+        clone_url=lambda _url, dest: dest.mkdir(parents=True),
         publish=lambda _root, name: f"https://github.com/acme/{name}",
         create_repository=lambda name, _dest: f"https://github.com/acme/{name}",
         open_prs=lambda _remote: [pr],
+        list_folders=lambda _url, ref: Probe(ref, ()),
         move_project=lambda *_args: Moved(Path(), Path(), False, False, ()),
     )
 
@@ -516,12 +527,25 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
 
     discovery = services.repo.attach(seed_project(workspace / "discovery", "Discovery"))
     services.document.add_child(services.document.id, discovery)
-    services.undo.push(SetFieldCommand(discovery.id, "repository", CODE_URL))
-    services.repo.set_checkout(discovery.id, code)
+    services.undo.push(
+        SetFieldCommand(
+            discovery.id,
+            "locations",
+            (
+                Location("l1", CODE.id, CODE_URL),
+                Location("l2", "spec", "https://github.com/acme/specs", path="products/search"),
+                Location("l3", "reporting", CODE_URL, path="reports/search"),
+            ),
+        )
+    )
+    services.repo.set_checkout(CODE_URL, code)
     satellite = services.repo.attach(seed_project(workspace / "satellite", "Satellite"))
     services.document.add_child(services.document.id, satellite)
     settle(app)
     repos = fake_repositories(services, plans)
+    checkouts = CheckoutService(
+        repos, services.tasks, kept_root=home / "config", parent=services.window
+    )
 
     # -- Settings, on the pages this pass changed most -----------------------------------------
     set_global(
@@ -548,6 +572,7 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
         repos,
         services.tasks,
         services.theme,
+        checkouts=checkouts,
         move=lambda _pid: None,
         parent=services.window,
     )
@@ -565,6 +590,7 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
         repos,
         services.tasks,
         services.theme,
+        checkouts=checkouts,
         move=lambda _pid: None,
         mode=CREATE,
         parent=services.window,
@@ -575,13 +601,32 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
     save(creating, out, "project-create", theme, app)
     discard(creating)
 
+    # -- one location, asked for: the repositories gh knows listed, a position to browse ------
+    adding = LocationDialog(
+        repos.roles["spec"],
+        location_id="l4",
+        repositories=[CODE_URL, PLANS_URL],
+        location=None,
+        checkout_for=lambda _url: None,
+        record_checkout=lambda _repository, _root: None,
+        services=repos,
+        tasks=services.tasks,
+        theme=services.theme,
+        parent=services.window,
+    )
+    inline(adding._runner)
+    adding.repository.setEditText("https://github.com/acme/specs")
+    adding.position.setText("products/search")
+    fitted(adding, app, 560)
+    save(adding, out, "location-add", theme, app)
+    discard(adding)
+
     opening = OpenProjectDialog(
         replace(repos, plan_roots=lambda: []),
         services.tasks,
         services.theme,
         listed_dirs=[],
         listed_ids=[],
-        known_checkout=lambda _remote: None,
         parent=services.window,
     )
     inline(opening.browse._runner, opening.link._runner)

@@ -20,7 +20,10 @@ conflicts over a generated page.
 **The directory is a constant, not a setting.** The window's preferences are QSettings,
 which ``dplanner report site`` cannot read; a per-user name would let the two surfaces
 write two sites into one repository. ``FORMAT.md``'s rule says the same thing: a convention
-a colleague should see never lives in a preference.
+a colleague should see never lives in a preference. The one other home a site has is a
+project's **reporting location** — a repository and a folder the plan names, shared in
+``project.dproj`` for the same reason — and :class:`SiteTarget` is how either is named to
+:func:`write`, so the pages are one layout wherever they land.
 """
 
 import json
@@ -105,17 +108,42 @@ def slug_for(project_dir: Path, repo_root: Path) -> str:
     return slugify("-".join(parts), fallback="plan")
 
 
-def write(repo_root: Path, reports: Sequence[SiteReport]) -> list[str]:
-    """Write each project's pages, regenerate the index from what is now on disk, and
-    return the repository-relative pathspecs a commit should carry."""
-    site = repo_root / REPORTS_DIR
+@dataclass(frozen=True)
+class SiteTarget:
+    """Where a site is written: the directory holding it, inside the repository whose
+    commit records it. The plan repository's ``reports/`` by default; a project's
+    *reporting* location — any repository, any folder — when it names one."""
+
+    repo_root: Path
+    site: Path
+
+    @property
+    def pathspec(self) -> str:
+        """The site's path relative to its repository, for a scoped commit."""
+        try:
+            relative = self.site.resolve().relative_to(self.repo_root.resolve())
+        except ValueError:
+            return "."
+        return relative.as_posix() or "."
+
+
+def plan_site(repo_root: Path) -> SiteTarget:
+    """The site beside the plan: ``<plan repository>/reports/``."""
+    return SiteTarget(repo_root, repo_root / REPORTS_DIR)
+
+
+def write(target: SiteTarget, reports: Sequence[SiteReport]) -> list[str]:
+    """Write each project's pages into the target, regenerate its index from what is now
+    on disk, and return the repository-relative pathspecs a commit should carry."""
+    site = target.site
     for report in reports:
         directory = site / report.slug
         directory.mkdir(parents=True, exist_ok=True)
         write_atomic(directory / INDEX_NAME, report.page)
         write_atomic(directory / SUMMARY_NAME, report.summary)
+    site.mkdir(parents=True, exist_ok=True)
     write_atomic(site / INDEX_NAME, index_html(slugs_present(site)))
-    return [REPORTS_DIR]
+    return [target.pathspec]
 
 
 def slugs_present(site: Path) -> list[str]:

@@ -56,9 +56,17 @@ paths:
   `launcher.current_command` reads a stale one as the harness. The skill and the
   briefing's preamble both say *never kill by name or pattern*.
   `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
+- **A step names the code location it works in.** With several code rows in a project,
+  the agent-instruction entry's `workplace` holds a location id (`aspect.workplace`,
+  `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
+  the primary — the project's first code row — because which repository a step's change
+  lands in is a fact about the step, exactly as its worktree choice is. `_workdir(facts,
+  step)` places that row; a named row that is gone falls back to the primary. A run
+  across two repositories at once is two steps.
 - **An agent may be opened with nothing to do, and that is a second invocation.**
   *Project ▸ Open Agent in Code* is the same profiles in the same child menu, opening a
-  shell where a step's agent would work (the code checkout, else the plan's repository)
+  shell where a step's agent would work (the code checkout — cloned first, where the
+  clone policy says, when nobody has one here — else the plan's repository)
   with the harness's `open_command` — `claude`, `codex`, `opencode` — and **no briefing at
   all**: no `prompt.md`, no opening line, no worktree. It is the planning before the plan,
   when a spec has landed and there is no step to be about yet. The bare command is the

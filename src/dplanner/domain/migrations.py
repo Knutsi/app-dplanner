@@ -18,9 +18,20 @@ the migration numbers a version-1 project's steps in the order its ``children`` 
 records — the order the project has always shown them in — and sets the mark past the
 last. A ``whole`` hook, because a number is dealt per project and a per-node hook cannot
 see its siblings.
+
+**Version 3 made the code repository a row of the locations table.** ``"repository"`` on
+the project — one string, the code repository's remote — became the first ``code`` row of
+``"locations"`` (``domain/locations.py``), so a project can name several repositories,
+each with a role and a position. A ``node`` hook, because the old key is read off the raw
+dict the model no longer has a field for; a project with no ``repository`` gets no row,
+and still reads as the older shape.
 """
 
+from pathlib import Path
+from typing import Any
+
 from dplanner.core.formats import FormatHistory, Migration
+from dplanner.domain.locations import CODE, Location
 from dplanner.domain.model import Node, Project, next_number
 
 
@@ -31,11 +42,22 @@ def _deal_numbers(project: Project) -> None:
             project.last_number = step.number
 
 
+def _repository_to_location(node: Node, raw: dict[str, Any], _directory: Path) -> None:
+    repository = raw.get("repository")
+    if isinstance(node, Project) and isinstance(repository, str) and repository:
+        node.locations = (Location("l1", CODE.id, repository),)
+
+
 MIGRATIONS: tuple[Migration[Node, Project], ...] = (
     Migration(
         version=2,
         note="every step carries a per-project number; the project keeps the high-water mark",
         whole=_deal_numbers,
+    ),
+    Migration(
+        version=3,
+        note="the code repository is the first code row of the project's locations table",
+        node=_repository_to_location,
     ),
 )
 

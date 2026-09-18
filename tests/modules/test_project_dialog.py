@@ -8,14 +8,18 @@ commits which fact through which path, and what the plan column offers while the
 no repository of its own.
 """
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from PySide6.QtWidgets import QFileDialog
+from PySide6.QtWidgets import QComboBox, QFileDialog, QLineEdit
+from tests.facts import code_row
 
 from dplanner.core.storage.locations import init_repo
+from dplanner.core.storage.sparse import Probe
 from dplanner.domain.commands import AddNodeCommand, SetFieldCommand
+from dplanner.domain.locations import CODE, Location, roles_by_id
 from dplanner.domain.model import Step
 from dplanner.domain.relocate import Moved
 from dplanner.domain.repositories import ACCEPTED, repository_facts
@@ -65,8 +69,9 @@ def project(services, make_project):
 
 
 @pytest.fixture
-def fakes(services):
-    """A ``RepositoryServices`` over the real store's facts and fake git and gh."""
+def fakes(services, tmp_path):
+    """A ``RepositoryServices`` over the real store's facts and fake git and gh. Clones
+    DPlanner keeps land under the test's own configuration root."""
     calls: dict[str, list[object]] = {"clone": [], "publish": [], "create": [], "history": []}
     store, library = services.repo, services.document
 
@@ -74,7 +79,8 @@ def fakes(services):
         return repository_facts(
             library.project(project_id),
             store.project_dir(project_id),
-            store.checkout_of(project_id),
+            store.checkouts(),
+            kept_root=tmp_path / "config",
         )
 
     def history_for(root, scope, limit):
@@ -97,7 +103,9 @@ def fakes(services):
     state: dict[str, object] = {"gh": None, "prs": [PR]}
     services_ = RepositoryServices(
         facts_of=facts_of,
+        roles=roles_by_id([CODE]),
         project_dir=store.project_dir,
+        checkout_for=store.checkout_for,
         set_checkout=store.set_checkout,
         checkout_changed=store.checkout_changed,
         plan_roots=lambda: [],
@@ -106,16 +114,29 @@ def fakes(services):
         gh_refusal=lambda: str(state["gh"]) if state["gh"] else None,
         list_repositories=lambda: ["acme/widget", "acme/plans"],
         clone=clone,
+        clone_url=clone,
         publish=publish,
         create_repository=create,
         open_prs=lambda remote: list(state["prs"]),  # type: ignore[call-overload]
+        list_folders=lambda _url, ref: Probe(ref, ()),
         move_project=lambda *_args: Moved(Path(), Path(), False, False, ()),
     )
     return services_, calls, state
 
 
 @pytest.fixture
-def dialog(services, fakes, project, monkeypatch):
+def checkouts(services, fakes, tmp_path):
+    """The checkout service over the fakes, keeping clones under the test's own root."""
+    from dplanner.modules.projects.checkouts import CheckoutService
+
+    repos, _calls, _state = fakes
+    return CheckoutService(
+        repos, services.tasks, kept_root=tmp_path / "config", parent=services.window
+    )
+
+
+@pytest.fixture
+def dialog(services, fakes, checkouts, project, monkeypatch):
     repos, _calls, _state = fakes
     moved: list[str] = []
     built = ProjectDialog(
@@ -124,6 +145,7 @@ def dialog(services, fakes, project, monkeypatch):
         repos,
         services.tasks,
         services.theme,
+        checkouts=checkouts,
         move=moved.append,
         parent=services.window,
     )
@@ -141,19 +163,24 @@ def inline(dialog, monkeypatch):
         body()
         return True
 
-    for runner in (dialog._reader, dialog._worker):
+    for runner in (dialog._reader, dialog._worker, dialog._checkouts._runner):
         monkeypatch.setattr(runner, "run", run_now)
 
 
 def separate(services, project, tmp_path):
     """The shape the application wants: the code recorded and checked out elsewhere."""
     code = init_repo(tmp_path / "widget")
-    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
-    services.repo.set_checkout(project.id, code)
+    services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
+    services.repo.set_checkout(CODE_URL, code)
     return code
 
 
 # -- what each column says it is and where it is --------------------------------------------
+
+
+def code_of(project):
+    """The project's code repository as its table names it, "" for none."""
+    return project.locations[0].repository if project.locations else ""
 
 
 def entry(column, label):
@@ -184,7 +211,7 @@ def test_each_column_names_its_repository_and_where_it_is_here(
 
 def test_a_fact_nobody_recorded_is_said_and_greyed(services, dialog, project):
     assert dialog.code_column.identity.objectName() == "RepoLineMissing"
-    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
+    services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
     assert dialog.code_column.identity.objectName() == "RepoIdentity"
     assert dialog.code_column.location.text() == "not checked out on this machine"
     assert dialog.code_column.location.objectName() == "RepoLineMissing"
@@ -198,20 +225,22 @@ def test_both_menus_keep_their_shape_and_grey_what_cannot_run(services, dialog, 
     dropped — so the menu is the same list to learn whatever the project's state."""
     before = labels(dialog.code_column)
     assert entry(dialog.code_column, "Create on GitHub…").reason == ""
-    assert entry(dialog.code_column, "Clone into Repositories Folder").reason == (
+    assert entry(dialog.code_column, "Clone — kept by DPlanner").reason == (
         "no code repository recorded"
     )
     assert entry(dialog.code_column, "Open on GitHub").reason == "not a GitHub repository"
 
-    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
+    services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
     assert entry(dialog.code_column, "Open on GitHub").reason == ""
-    assert entry(dialog.code_column, "Clone into Repositories Folder").reason == ""
+    assert entry(dialog.code_column, "Clone — kept by DPlanner").reason == ""
     assert entry(dialog.code_column, "Create on GitHub…").reason == (
         "this project already records one"
     )
     # Nothing appeared and nothing went: only the reasons changed. (The plan column's
     # first entry is the exception, and it is worded by the offer, not by what exists.)
     assert labels(dialog.code_column) == before
+    folders.set_clone_policy(folders.FOLDER)  # The clone entry says where a clone lands.
+    assert entry(dialog.code_column, "Clone — into the repositories folder").reason == ""
 
 
 def test_a_greyed_entry_carries_its_reason_in_its_words(dialog):
@@ -266,10 +295,10 @@ def test_set_code_repository_commits_through_the_undo_stack(services, dialog, pr
         "The code this plan is about, as git names it",
         "Set",
     )
-    assert services.document.project(project.id).repository == CODE_URL
-    assert services.undo.undo_text() == "Set Code Repository"
+    assert code_of(services.document.project(project.id)) == CODE_URL
+    assert services.undo.undo_text() == "Change Locations"
     services.undo.undo()
-    assert services.document.project(project.id).repository == ""
+    assert code_of(services.document.project(project.id)) == ""
     assert dialog.code_column.identity.text() == "no code repository recorded"
 
 
@@ -281,7 +310,9 @@ def test_choosing_a_checkout_records_it_in_the_library_file_not_the_undo_stack(
     before = services.undo.undo_text()
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code))
     entry(dialog.code_column, "Choose Checkout…").run()
-    assert services.repo.checkout_of(project.id) == code
+    # No repository recorded and no origin: filed under the folder's own path, which is
+    # the only identity a repository that cannot be shared has.
+    assert services.repo.checkout_for(str(code)) == code
     assert services.undo.undo_text() == before
     assert not services.autosave.has_pending()  # Written directly, nothing left to flush.
 
@@ -296,8 +327,8 @@ def test_a_chosen_checkout_fills_an_empty_code_repository_from_its_origin(
     (code / "src").mkdir()
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code / "src"))
     entry(dialog.code_column, "Choose Checkout…").run()
-    assert services.repo.checkout_of(project.id) == code  # The repository root, not src/.
-    assert services.document.project(project.id).repository == CODE_URL
+    assert services.repo.checkout_for(CODE_URL) == code  # The repository root, not src/.
+    assert code_of(services.document.project(project.id)) == CODE_URL
 
 
 def test_keep_it_here_accepts_the_colocation_and_quiets_the_warning(services, dialog, project):
@@ -348,7 +379,7 @@ def test_a_separated_plan_fills_both_columns_and_prs_lead_the_code_column(
 
 
 def test_an_answer_for_a_project_the_dialog_left_is_dropped(
-    services, fakes, project, make_project, monkeypatch
+    services, fakes, checkouts, project, make_project, monkeypatch
 ):
     repos, _calls, _state = fakes
     other = make_project("Satellite")
@@ -358,6 +389,7 @@ def test_an_answer_for_a_project_the_dialog_left_is_dropped(
         repos,
         services.tasks,
         services.theme,
+        checkouts=checkouts,
         move=lambda _pid: None,
         parent=services.window,
     )
@@ -381,7 +413,7 @@ def test_a_missing_checkout_is_said_in_the_code_column(services, fakes, dialog, 
     """Pull requests come from GitHub and show without a checkout; with none open, the
     column says what is missing instead of standing empty."""
     _repos, _calls, state = fakes
-    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
+    services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
     assert dialog.code_column.rows() == [("#7 Build the modal", "S1 Read the spec · feat/login")]
     state["prs"] = []
     dialog.show_project(project.id)
@@ -402,26 +434,39 @@ def test_without_gh_every_entry_that_needs_it_is_greyed_and_the_note_says_why(
     assert dialog.gh_note.isVisibleTo(dialog) and "gh not found" in dialog.gh_note.text()
     for column, label in (
         (dialog.code_column, "Create on GitHub…"),
-        (dialog.code_column, "Clone into Repositories Folder"),
         (dialog.plan_column, "Publish to GitHub…"),
     ):
         assert "gh not found" in entry(column, label).reason
+    # A clone is git's, with the person's own credentials: gh is not asked.
+    assert "gh not found" not in entry(dialog.code_column, "Clone — kept by DPlanner").reason
     state["gh"] = None
     dialog.show_project(project.id)
     assert not dialog.gh_note.isVisibleTo(dialog)
     assert entry(dialog.code_column, "Create on GitHub…").reason == ""  # No repository yet.
 
 
-def test_clone_lands_in_the_repositories_folder_and_records_the_checkout(
+def test_clone_lands_where_the_policy_says_and_records_the_checkout(
     services, fakes, dialog, project, tmp_path
 ):
+    """Kept by DPlanner under its own root by default — never in the plan repository or
+    the repositories folder — and in the repositories folder when the person chose so."""
+    from dplanner.core.storage.kept import kept_dir
+
     _repos, calls, _state = fakes
-    folders.set_repositories_folder(tmp_path / "Code")
-    services.undo.push(SetFieldCommand(project.id, "repository", CODE_URL))
-    entry(dialog.code_column, "Clone into Repositories Folder").run()
-    assert calls["clone"] == [(CODE_URL, tmp_path / "Code" / "widget")]
-    assert services.repo.checkout_of(project.id) == tmp_path / "Code" / "widget"
+    services.undo.push(SetFieldCommand(project.id, "locations", code_row(CODE_URL)))
+    entry(dialog.code_column, "Clone — kept by DPlanner").run()
+    kept = kept_dir(tmp_path / "config", CODE_URL)
+    assert calls["clone"] == [(CODE_URL, kept)]
+    assert services.repo.checkout_for(CODE_URL) == kept
     assert "Cloned into" in dialog.status.words() and dialog.status.tone() == "ok"
+    assert dialog.locations.rows()[0][3] == f"kept by DPlanner at {shown_path(kept)}"
+
+    services.repo.set_checkout(CODE_URL, None)
+    folders.set_clone_policy(folders.FOLDER)
+    folders.set_repositories_folder(tmp_path / "Code")
+    entry(dialog.code_column, "Clone — into the repositories folder").run()
+    assert calls["clone"][-1] == (CODE_URL, tmp_path / "Code" / "widget")
+    assert services.repo.checkout_for(CODE_URL) == tmp_path / "Code" / "widget"
 
 
 def test_a_new_code_repository_is_created_cloned_and_recorded(
@@ -432,8 +477,10 @@ def test_a_new_code_repository_is_created_cloned_and_recorded(
     monkeypatch.setattr(LinePrompt, "ask", staticmethod(lambda *a, **k: "widget"))
     entry(dialog.code_column, "Create on GitHub…").run()
     assert calls["create"] == [("widget", tmp_path / "Code" / "widget")]
-    assert services.document.project(project.id).repository == "https://github.com/acme/widget"
-    assert services.repo.checkout_of(project.id) == tmp_path / "Code" / "widget"
+    assert code_of(services.document.project(project.id)) == "https://github.com/acme/widget"
+    assert (
+        services.repo.checkout_for("https://github.com/acme/widget") == tmp_path / "Code" / "widget"
+    )
 
 
 def test_publish_runs_for_a_plan_repository_without_an_origin_and_is_greyed_after(
@@ -475,22 +522,33 @@ def _card(services, project):
     return next(c for c in page.cards if c.title.text() == "Repositories").body
 
 
-def test_the_card_states_both_repositories_and_follows_the_facts(
+def test_the_card_states_the_plan_and_every_location_and_follows_the_facts(
     services, project, tmp_path, library_repo
 ):
     card = _card(services, project)
     assert card.plan_text.text() == "repo"  # The plan repository's folder: no origin yet.
-    assert card.code_text.text() == "no code repository recorded"
+    assert card.texts() == ["no code repository recorded"]
     assert card.note.isVisibleTo(card) and "inside the code" in card.note.text()
     assert card.move_button.text() == SET_UP_PLAN
 
-    separate(services, project, tmp_path)
-    assert card.code_text.text() == "acme/widget"
-    assert card.checkout_text.text().endswith("widget")
+    code = separate(services, project, tmp_path)
+    assert card.texts() == [f"Code: acme/widget — {shown_path(code)}"]
     assert not card.note.isVisibleTo(card)
     # Apart from its code there is nothing to set *up* — but a plan repository picked
     # wrongly is still moved, and the button says which offer this is.
     assert card.move_button.text() == MOVE_PLAN
+    # Every row the project names, worded once for the card and the dialog's table.
+    rows = (
+        *code_row(CODE_URL),
+        Location("l2", "reporting", CODE_URL, path="reports/search"),
+        Location("l3", "spec", "https://github.com/acme/specs", path="products"),
+    )
+    services.undo.push(SetFieldCommand(project.id, "locations", rows))
+    assert card.texts() == [
+        f"Code: acme/widget — {shown_path(code)}",
+        f"Reporting: acme/widget · reports/search/ — {shown_path(code / 'reports' / 'search')}",
+        "Spec: acme/specs · products/ — fetched on demand — not fetched yet",
+    ]
 
 
 def test_the_cards_buttons_run_the_registry_verbs(services, project, monkeypatch):
@@ -562,20 +620,26 @@ def test_opening_says_which_plan_lives_inside_its_code(app, library_file, librar
 # -- create mode --------------------------------------------------------------------------------
 
 
-def creating(services, fakes, monkeypatch=None, known=None):
+def creating(services, fakes, monkeypatch=None, checkouts=None):
     """*File ▸ New Project…*: the same dialog in create mode, wired as the module wires it
-    — over the library it already has, and over the checkouts this machine already has for
-    the code in it. Built by the test rather than by a fixture, because what the library
-    holds when the dialog opens is half of what these tests are about."""
+    — over the library it already has. Built by the test rather than by a fixture,
+    because what the library holds when the dialog opens is half of what these tests are
+    about."""
+    from dplanner.modules.projects.checkouts import CheckoutService
+
     repos, _calls, _state = fakes
+    if checkouts is None:
+        checkouts = CheckoutService(
+            repos, services.tasks, kept_root=Path("/nowhere"), parent=services.window
+        )
     dialog = ProjectDialog(
         services.document,
         services.undo,
         repos,
         services.tasks,
         services.theme,
+        checkouts=checkouts,
         move=lambda _pid: None,
-        known_checkout=(known or {}).get,
         mode=CREATE,
         parent=services.window,
     )
@@ -604,20 +668,48 @@ def listing(repo, asked):
     return Fake
 
 
+def answering(monkeypatch, **fields):
+    """Stands in for the location dialog: fills the fields it is given, accepts."""
+    from dplanner.modules.projects import location_dialog
+
+    opened: list[dict[str, object]] = []
+
+    class Fake(location_dialog.LocationDialog):
+        def exec(self):
+            opened.append(
+                {
+                    "role": self._role.id,
+                    "repository": self.repository.currentText(),
+                    "position": self.position.text(),
+                    "repositories": [
+                        self.repository.itemText(row) for row in range(self.repository.count())
+                    ],
+                }
+            )
+            if "repository" in fields:
+                self.repository.setEditText(fields["repository"])
+            if "position" in fields:
+                self.position.setText(fields["position"])
+            if "label" in fields:
+                self.label.setText(fields["label"])
+            return 1
+
+    monkeypatch.setattr(project_dialog, "LocationDialog", Fake)
+    return opened
+
+
 def test_create_mode_answers_a_spec_once_a_name_and_a_home_are_given(
     services, fakes, tmp_path, monkeypatch
 ):
     """The same dialog, nothing to edit: a name, a plan repository, a folder — the folder
-    follows the name until it is typed in — and the code fields ride along."""
-    import subprocess
-
+    follows the name until it is typed in — and the locations table over a draft."""
     dialog = creating(services, fakes)
     assert dialog.plan_picker is not None and dialog.folder_edit is not None
-    assert dialog.repository_combo is not None and dialog.checkout_edit is not None
     assert not dialog.create_button.isEnabled()
     assert dialog.status.words() == "Name the project first"
     # A form, not a surface with menus: nothing exists yet to read a log of or act on.
     assert not dialog.code_column.isVisibleTo(dialog)
+    assert dialog.locations.rows() == []
 
     dialog.name_edit.setText("Alpha Search")
     assert dialog.folder_edit.text() == "alpha-search"
@@ -626,16 +718,17 @@ def test_create_mode_answers_a_spec_once_a_name_and_a_home_are_given(
     dialog.plan_picker.set_current(plans)
     assert dialog.create_button.isEnabled() and dialog.status.words() == ""
 
-    code = init_repo(tmp_path / "widget")
-    subprocess.run(["git", "-C", str(code), "remote", "add", "origin", CODE_URL], check=True)
-    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code))
-    dialog.browse_button.click()
-    assert dialog.repository_combo.currentText() == CODE_URL  # From the checkout's origin.
-
+    opened = answering(monkeypatch, repository=CODE_URL)
+    dialog.locations.add_requested.emit("code")
+    assert opened[0]["role"] == "code"
+    assert dialog.locations.rows() == [
+        ("Code", "acme/widget", "", "not checked out on this machine")
+    ]
     spec = dialog.spec()
     assert spec is not None
     assert spec.target == plans / "alpha-search" and spec.plan.root == plans
-    assert spec.title == "Alpha Search" and spec.repository == CODE_URL and spec.checkout == code
+    assert spec.title == "Alpha Search" and spec.locations == code_row(CODE_URL)
+    assert spec.checkouts == () and spec.repository == CODE_URL
     assert services.document.projects == []  # The dialog wrote nothing anywhere.
 
     (plans / "alpha").mkdir()
@@ -691,76 +784,94 @@ def test_the_picker_offers_the_other_ways_in_as_one_menu(services, fakes, dialog
         new.deleteLater()
 
 
-def test_the_code_repository_offers_what_this_library_already_plans(
-    services, fakes, project, tmp_path
+def test_the_add_menu_renders_the_role_registry(services, fakes):
+    """A module declares a role and the entry appears: the Add ▾ is the registry, in its
+    order, each role's glyph beside it."""
+    new = creating(services, fakes)
+    try:
+        assert [entry.label for entry in new.locations.add_entries() if entry is not None] == [
+            "Code…"
+        ]
+    finally:
+        new.deleteLater()
+
+
+def test_the_location_dialog_lists_what_this_library_already_names_the_code_first(
+    services, fakes, project, tmp_path, monkeypatch
 ):
     """A second plan for code somebody here already works on is the common case, so the
-    field lists it — and picking it brings the checkout this machine has along, because a
-    team's second plan for one repository needs no second clone."""
-    code = separate(services, project, tmp_path)
-    new = creating(services, fakes, known={CODE_URL: code})
+    dialog's combo lists it — and the code the draft already names leads, because docs
+    and tests live with the code more often than not."""
+    separate(services, project, tmp_path)
+    new = creating(services, fakes)
     try:
-        combo = new.repository_combo
-        assert [combo.itemText(row) for row in range(combo.count())] == [CODE_URL]
-        # Nothing is named until somebody names it: an editable combo opened on its first
-        # row would answer a question nobody asked.
-        assert combo.currentText() == "" and new.checkout_edit.text() == ""
-        combo.setCurrentIndex(0)
-        combo.activated.emit(0)
-        assert combo.currentText() == CODE_URL
-        assert new.checkout_edit.text() == shown_path(code)
+        opened = answering(monkeypatch)
+        new.locations.add_requested.emit("code")
+        assert opened[0]["repositories"] == [CODE_URL]
+        assert opened[0]["repository"] == CODE_URL  # Pre-filled: the first entry.
+        assert new.locations.rows()[0][1] == "acme/widget"
+        # The checkout this machine already has for it comes along — a team's second
+        # plan for one repository needs no second clone.
+        assert new.locations.rows()[0][3].endswith("widget")
     finally:
         new.deleteLater()
 
 
-def test_the_code_repository_can_be_picked_from_github_rather_than_typed(
-    services, fakes, monkeypatch
-):
-    """The ⋯ beside the field, which the code column has had all along: the person's own
-    repositories, listed and filtered, and the one chosen is the code this plan is about."""
-    asked: dict[str, str] = {}
-    monkeypatch.setattr(project_dialog, "GhRepoListDialog", listing("acme/widget", asked))
-    new = creating(services, fakes, monkeypatch)
+def test_a_row_is_edited_by_activating_it_and_removed_from_its_menu(services, fakes, monkeypatch):
+    new = creating(services, fakes)
     try:
-        ways = new._create_code_entries()
-        assert [way.label for way in ways] == [
-            "Pick from GitHub…",
-            "Clone into Repositories Folder",
+        answering(monkeypatch, repository=CODE_URL)
+        new.locations.add_requested.emit("code")
+        answering(monkeypatch, repository="https://github.com/acme/ui", label="UI")
+        new.locations.activated.emit("l1")
+        assert new.locations.rows() == [
+            ("Code — UI", "acme/ui", "", "not checked out on this machine")
         ]
-        assert ways[1].reason == "no code repository named"  # Nothing to clone yet.
-        ways[0].run()
-        # The listing is one dialog wearing the caller's words: this one chooses, it does
-        # not clone.
-        assert asked == {"title": "Code Repository", "verb": "Choose"}
-        assert new.repository_combo.currentText() == CODE_URL
-        assert new._create_code_entries()[1].reason == ""
+        entries = new._location_entries(new._rows()[0])
+        assert [entry.label for entry in entries if entry is not None] == [
+            "Edit Location…",
+            "Choose Checkout…",
+            "Clone — kept by DPlanner",
+            "Open on GitHub",
+            "Remove Location",
+        ]
+        entries[-1].run()
+        assert (new.locations.rows() == [] and new.spec() is None) or new._draft == []
     finally:
         new.deleteLater()
 
 
-def test_cloning_the_code_in_create_mode_fills_the_field_and_writes_nothing(
+def test_cloning_a_location_in_create_mode_lands_in_the_draft_and_writes_nothing(
     services, fakes, tmp_path, monkeypatch
 ):
-    """The code column's own verb, answered into the form: there is no project yet to
-    record a checkout onto, so the clone lands in the field Create reads."""
+    """A row's own verb, answered into the draft: there is no project yet to record a
+    checkout onto, so the clone lands in what Create reads."""
     _repos, calls, _state = fakes
+    folders.set_clone_policy(folders.FOLDER)
     folders.set_repositories_folder(tmp_path / "Code")
     new = creating(services, fakes, monkeypatch)
     try:
-        new.repository_combo.setEditText(CODE_URL)
-        new._create_code_entries()[1].run()
+        answering(monkeypatch, repository=CODE_URL)
+        new.locations.add_requested.emit("code")
+        entries = new._location_entries(new._rows()[0])
+        clone = next(entry for entry in entries if entry is not None and "Clone" in entry.label)
+        assert clone.reason == ""
+        clone.run()
         assert calls["clone"] == [(CODE_URL, tmp_path / "Code" / "widget")]
-        assert new.checkout_edit.text() == shown_path(tmp_path / "Code" / "widget")
+        spec = new.spec()
+        assert spec is None or spec.checkouts == ((CODE_URL, tmp_path / "Code" / "widget"),)
+        assert new.locations.rows()[0][3] == shown_path(tmp_path / "Code" / "widget")
         assert services.document.projects == []  # Nothing reached the library.
+        assert new._location_entries(new._rows()[0])[3].reason == "already checked out here"
     finally:
         new.deleteLater()
 
 
-def test_a_checkout_that_disagrees_with_the_named_code_is_asked_about(
-    services, fakes, tmp_path, monkeypatch
+def test_a_chosen_checkout_that_disagrees_with_the_named_code_is_asked_about(
+    services, fakes, tmp_path, monkeypatch, dialog, project
 ):
-    """The same question both modes ask: keeping either answer silently would leave the
-    repository and the checkout naming different code."""
+    """Choose Checkout… on the code column: keeping either answer silently would leave
+    the repository and the checkout naming different code."""
     import subprocess
 
     code = init_repo(tmp_path / "widget")
@@ -773,15 +884,13 @@ def test_a_checkout_that_disagrees_with_the_named_code_is_asked_about(
         return False
 
     monkeypatch.setattr(project_dialog, "confirm", refuse)
-    new = creating(services, fakes, monkeypatch)
-    try:
-        new.repository_combo.setEditText("https://github.com/acme/other")
-        new.browse_button.click()
-        assert new.checkout_edit.text() == shown_path(code)  # The checkout is what was picked.
-        assert len(asked) == 1 and CODE_URL in asked[0]
-        assert new.repository_combo.currentText() == "https://github.com/acme/other"  # Refused.
-    finally:
-        new.deleteLater()
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/other"))
+    )
+    entry(dialog.code_column, "Choose Checkout…").run()
+    assert services.repo.checkout_for("https://github.com/acme/other") == code
+    assert len(asked) == 1 and CODE_URL in asked[0]
+    assert code_of(services.document.project(project.id)) == "https://github.com/acme/other"
 
 
 def test_a_glyph_button_stands_as_tall_as_the_field_it_is_beside(services, fakes):
@@ -790,11 +899,315 @@ def test_a_glyph_button_stands_as_tall_as_the_field_it_is_beside(services, fakes
     new = creating(services, fakes)
     try:
         new.show()
-        for field, button in (
-            (new.plan_picker.combo, new.plan_picker.menu_button),
-            (new.repository_combo, new.code_menu),
-            (new.checkout_edit, new.browse_button),
-        ):
-            assert field.height() == button.height() == CONTROL_HEIGHT
+        field, button = new.plan_picker.combo, new.plan_picker.menu_button
+        assert field.height() == button.height() == CONTROL_HEIGHT
+        assert new.locations.add_button.height() == CONTROL_HEIGHT
     finally:
         new.deleteLater()
+
+
+# -- the words, and what the wizard asks about ----------------------------------------------------
+
+
+def test_a_location_is_worded_once_for_the_table_the_card_and_the_verbs(tmp_path):
+    from dplanner.domain.locations import Location, Placement
+    from dplanner.modules.projects.repos import location_words
+
+    roles = roles_by_id([CODE])
+    row = Location("l1", CODE.id, "git@github.com:Acme/Widget.git", path="apps/web", label="UI")
+    here = location_words(Placement(row, tmp_path / "widget"), roles)
+    assert (here.name, here.repository, here.position) == ("Code — UI", "Acme/Widget", "apps/web/")
+    assert here.where == shown_path(tmp_path / "widget" / "apps" / "web") and not here.missing
+    assert here.identity == "Code — UI: Acme/Widget · apps/web/"
+    gone = location_words(Placement(row, None), roles)
+    assert gone.where == "not checked out on this machine" and gone.missing
+    cache = location_words(Placement(row, tmp_path / "cache", managed=True), roles)
+    assert cache.where == "fetched on demand — not fetched yet" and cache.missing
+
+
+def test_the_wizard_asks_only_about_worked_in_repositories_the_machine_lacks(tmp_path):
+    from dplanner.domain.locations import Location, LocationRole
+    from dplanner.modules.projects.repositories_page import missing_repositories
+
+    roles = roles_by_id(
+        [
+            CODE,
+            LocationRole("spec", "Spec", "", writes=False),
+            LocationRole("reporting", "Reporting", "", writes=True),
+        ]
+    )
+    rows = [
+        Location("l1", "code", "https://github.com/acme/widget"),
+        Location("l2", "reporting", "git@github.com:acme/widget.git", path="reports"),
+        Location("l3", "spec", "https://github.com/acme/specs"),
+        Location("l4", "code", "https://github.com/acme/ui", label="UI"),
+        Location("l5", "wiki", "https://github.com/acme/wiki"),  # A role this build lacks.
+    ]
+    have = {"github.com/acme/ui": tmp_path / "ui"}
+    missing = missing_repositories(
+        rows, roles, lambda url: have.get(Location("x", "code", url).canonical)
+    )
+    assert [(entry.repository, [row.id for row in entry.locations]) for entry in missing] == [
+        ("https://github.com/acme/widget", ["l1", "l2"])
+    ]
+
+
+# -- the location dialog ------------------------------------------------------------------------
+
+
+def location_dialog(services, fakes, monkeypatch, *, repositories=(CODE_URL,), checkout_for=None):
+    """The dialog for a new code row, its task bodies captured rather than run, so a test
+    sees the arc turning and then delivers the answer itself."""
+    from dplanner.domain.locations import CODE, next_id
+    from dplanner.modules.projects.location_dialog import LocationDialog
+
+    repos, _calls, _state = fakes
+    bodies: list[Callable[[], None]] = []
+    recorded: list[tuple[str, Path]] = []
+    built = LocationDialog(
+        CODE,
+        location_id=next_id(()),
+        repositories=list(repositories),
+        location=None,
+        checkout_for=checkout_for or (lambda _url: None),
+        record_checkout=lambda repository, root: recorded.append((repository, root)),
+        services=repos,
+        tasks=services.tasks,
+        theme=services.theme,
+        parent=services.window,
+    )
+
+    def capture(_label, body, **_kwargs):
+        bodies.append(body)
+        return True
+
+    monkeypatch.setattr(built._runner, "run", capture)
+    return built, bodies, recorded
+
+
+def test_the_location_dialog_lists_the_repositories_gh_knows_under_a_turning_refresh(
+    services, fakes, monkeypatch
+):
+    """What the project and the library name leads; what gh knows follows after a
+    separator, listed on a task the first time the dialog is seen and again on the refresh
+    glyph, whose arc turns meanwhile. A refill never eats what is being typed, and gh
+    refusing is a line under the row in the information tone, not an error."""
+    _repos, _calls, state = fakes
+    dialog, bodies, _recorded = location_dialog(services, fakes, monkeypatch)
+    try:
+        assert dialog.github_entries() == [CODE_URL] and bodies == []  # Not shown yet.
+        dialog.show()
+        assert len(bodies) == 1 and dialog.spinner.is_spinning()
+        assert not dialog.refresh_button.isEnabled()
+        assert dialog.listing_status.tone() == "busy"
+        dialog.repository.setEditText("https://example.com/half-typ")
+        bodies[0]()
+        assert not dialog.spinner.is_spinning() and dialog.refresh_button.isEnabled()
+        assert dialog.github_entries() == [CODE_URL, "https://github.com/acme/plans"]
+        assert dialog.repository.currentText() == "https://example.com/half-typ"
+        assert dialog.listing_status.words() == "2 repositories on GitHub"
+        dialog.hide()
+        dialog.show()
+        assert len(bodies) == 1  # Once per dialog: the glyph is the way to ask again.
+
+        state["gh"] = "gh is not installed"
+        dialog.refresh_button.click()
+        assert len(bodies) == 2 and dialog.spinner.is_spinning()
+        bodies[1]()
+        assert dialog.listing_status.words() == "gh is not installed"
+        assert dialog.listing_status.tone() == "info"
+        assert dialog.github_entries() == [CODE_URL]
+        # The ⋯ offers one more way in, and the GitHub picker is no longer among them.
+        assert [entry.label for entry in dialog._repository_entries() if entry] == [
+            "From a folder on this computer…"
+        ]
+    finally:
+        dialog.deleteLater()
+
+
+def test_a_folder_on_this_computer_fills_the_row_and_records_the_checkout(
+    services, fakes, tmp_path, monkeypatch
+):
+    """The spec author's way in: a folder of a checkout says the repository and the
+    position, and the checkout is recorded for this machine — no Settings, no clone."""
+    import subprocess
+
+    repo = init_repo(tmp_path / "specs")
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", CODE_URL], check=True)
+    (repo / "products" / "search").mkdir(parents=True)
+    dialog, _bodies, recorded = location_dialog(services, fakes, monkeypatch, repositories=())
+    try:
+        monkeypatch.setattr(
+            QFileDialog, "getExistingDirectory", lambda *a, **k: str(repo / "products" / "search")
+        )
+        dialog._from_folder()
+        assert dialog.repository.currentText() == CODE_URL
+        assert dialog.position.text() == "products/search"
+        assert recorded == [(CODE_URL, repo)]
+        assert dialog.listing_status.tone() == "ok"
+        assert dialog.answer().path == "products/search" and dialog.primary().isEnabled()
+
+        (tmp_path / "loose").mkdir()
+        monkeypatch.setattr(
+            QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path / "loose")
+        )
+        dialog._from_folder()
+        assert "not inside a git repository" in dialog.status.words()
+        assert dialog.repository.currentText() == CODE_URL and len(recorded) == 1
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_position_is_browsed_in_the_checkout_when_this_machine_has_one(
+    services, fakes, tmp_path, monkeypatch
+):
+    repo = init_repo(tmp_path / "widget")
+    (repo / "apps" / "web").mkdir(parents=True)
+    dialog, _bodies, _recorded = location_dialog(
+        services, fakes, monkeypatch, checkout_for=lambda _url: repo
+    )
+    try:
+        monkeypatch.setattr(
+            QFileDialog, "getExistingDirectory", lambda *a, **k: str(repo / "apps" / "web")
+        )
+        dialog.folders_button.click()
+        assert dialog.position.text() == "apps/web"
+        (tmp_path / "elsewhere").mkdir()
+        monkeypatch.setattr(
+            QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path / "elsewhere")
+        )
+        dialog.folders_button.click()
+        assert dialog.position.text() == "apps/web" and "outside" in dialog.status.words()
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_remote_folders_are_a_tree_and_nothing_is_cloned_to_pick_one(
+    services, fakes, monkeypatch
+):
+    """Without a checkout the position is picked from the remote's listing — the git
+    spec source's probe — shown as a tree, its first two levels open."""
+    from dataclasses import replace
+
+    from dplanner.core.storage.sparse import Folder
+    from dplanner.framework.task_runner import TaskRunner
+    from dplanner.modules.projects import location_dialog as module
+
+    repos, calls, _state = fakes
+    listing = Probe(
+        "HEAD",
+        (
+            Folder("", 40, 0),
+            Folder("docs", 20, 0),
+            Folder("docs/api", 5, 0),
+            Folder("docs/api/v2", 2, 0),
+            Folder("src", 15, 0),
+        ),
+    )
+    monkeypatch.setattr(TaskRunner, "run", lambda _self, _label, body, **_k: body() or True)
+    dialog = module.RemoteFoldersDialog(
+        replace(repos, list_folders=lambda _url, _ref: listing),
+        services.tasks,
+        CODE_URL,
+        "HEAD",
+        parent=services.window,
+    )
+    try:
+        assert dialog.tree.topLevelItemCount() == 1
+        root = dialog.tree.topLevelItem(0)
+        assert root is not None
+        children = [root.child(i) for i in range(root.childCount())]
+        assert [child.text(0) for child in children if child is not None] == ["docs", "src"]
+        docs = children[0]
+        api = docs.child(0) if docs is not None else None
+        v2 = api.child(0) if api is not None else None
+        assert docs is not None and api is not None and v2 is not None
+        assert root.isExpanded() and docs.isExpanded() and not api.isExpanded()
+        assert dialog.chosen() == ""  # The root is current first.
+        dialog.tree.setCurrentItem(v2)
+        assert dialog.chosen() == "docs/api/v2"
+        assert dialog.status.words() == "5 folders at HEAD"
+        assert calls["clone"] == []
+    finally:
+        dialog.deleteLater()
+
+
+# -- the checkout service -----------------------------------------------------------------------
+
+
+def test_the_checkout_service_answers_at_once_clones_where_the_policy_says_and_records(
+    services, fakes, checkouts, tmp_path, monkeypatch
+):
+    """A recorded checkout is the answer; otherwise a clone lands kept by DPlanner or in
+    the repositories folder, is recorded per repository, and one in flight queues the
+    next. A destination that already holds a repository is adopted, not cloned over."""
+    from dplanner.core.storage.kept import kept_dir
+
+    _repos, calls, _state = fakes
+    monkeypatch.setattr(checkouts._runner, "run", lambda _l, body, **_k: body() or True)
+    answers: list[tuple[Path | None, str]] = []
+    here = init_repo(tmp_path / "here")
+    services.repo.set_checkout("https://github.com/acme/here", here)
+    checkouts.ensure(
+        "https://github.com/acme/here", lambda root, error: answers.append((root, error))
+    )
+    assert answers == [(here, "")] and calls["clone"] == []
+
+    kept = kept_dir(tmp_path / "config", CODE_URL)
+    checkouts.ensure(CODE_URL, lambda root, error: answers.append((root, error)))
+    assert answers[-1] == (kept, "") and calls["clone"] == [(CODE_URL, kept)]
+    assert services.repo.checkout_for(CODE_URL) == kept
+    assert checkouts.where(CODE_URL) == "kept by DPlanner"
+
+    folders.set_clone_policy(folders.FOLDER)
+    folders.set_repositories_folder(tmp_path / "Code")
+    init_repo(tmp_path / "Code" / "ui")  # Already there: adopted.
+    landed: list[tuple[dict[str, Path], str]] = []
+    checkouts.ensure_many(
+        ["https://github.com/acme/ui", "https://github.com/acme/api"],
+        lambda got, error: landed.append((got, error)),
+    )
+    assert landed == [
+        (
+            {
+                "https://github.com/acme/ui": tmp_path / "Code" / "ui",
+                "https://github.com/acme/api": tmp_path / "Code" / "api",
+            },
+            "",
+        )
+    ]
+    assert calls["clone"][-1] == ("https://github.com/acme/api", tmp_path / "Code" / "api")
+    assert checkouts.where(CODE_URL) == "into the repositories folder"
+
+
+def test_a_clone_that_fails_answers_with_the_refusal(services, fakes, checkouts, monkeypatch):
+    from dataclasses import replace
+
+    from dplanner.core.storage.provider import StorageError
+
+    def refuse(_url, _dest):
+        raise StorageError("the server said no")
+
+    checkouts._services = replace(checkouts._services, clone_url=refuse)
+    monkeypatch.setattr(checkouts._runner, "run", lambda _l, body, **_k: body() or True)
+    answers: list[tuple[Path | None, str]] = []
+    checkouts.ensure(CODE_URL, lambda root, error: answers.append((root, error)))
+    assert answers == [(None, "the server said no")]
+    assert services.repo.checkout_for(CODE_URL) is None
+
+
+def test_the_settings_page_offers_the_clone_policy_as_a_choice(app):
+    """Sane defaults, options laid out: kept by DPlanner unless the person picks the
+    folder, and the folder field stays for the clones they ask for by name."""
+    from dplanner.modules.projects.settings_page import build_page
+
+    page = build_page(None)
+    try:
+        combo = page.findChild(QComboBox, "ClonePolicyCombo")
+        assert combo is not None and combo.currentData() == folders.KEPT
+        combo.setCurrentIndex(1)
+        combo.activated.emit(1)
+        assert folders.clone_policy() == folders.FOLDER
+        assert page.findChild(QLineEdit, "RepositoriesFolderEdit") is not None
+    finally:
+        page.deleteLater()

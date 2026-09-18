@@ -10,6 +10,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from tests.facts import code_row
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.library_file import write_library_file
@@ -360,32 +361,31 @@ def test_a_pending_migration_asks_for_a_rebuild(store, library, project_dir, mon
 # -- the code repository and the checkout, from another writer -------------------------------
 
 
-def test_an_outside_change_to_the_code_repository_is_adopted_in_place(store, library):
+def test_an_outside_change_to_the_locations_is_adopted_in_place(store, library):
     project = library.projects[0]
     other, theirs = other_writer(store)
-    theirs.set_field(project.id, "repository", "https://github.com/acme/widget")
+    theirs.set_field(project.id, "locations", code_row("https://github.com/acme/widget"))
     theirs.set_field(project.id, "colocation", "accepted")
     other.flush({(project.id, "meta")})
 
     adoption = store.adopt_outside_changes()
 
     assert adoption.applied == 1 and not adoption.conflicts
-    assert (project.repository, project.colocation) == (
-        "https://github.com/acme/widget",
+    assert (project.locations, project.colocation) == (
+        code_row("https://github.com/acme/widget"),
         "accepted",
     )
 
 
 def test_a_checkout_recorded_by_another_writer_is_adopted(store, library, tmp_path):
-    project = library.projects[0]
     other, _theirs = other_writer(store)
-    other.set_checkout(project.id, tmp_path / "src" / "widget")
+    other.set_checkout("https://github.com/acme/widget", tmp_path / "src" / "widget")
     seen: list[str] = []
     store.checkout_changed.connect(seen.append)
     assert store.changed_underneath()
 
     adoption = store.adopt_outside_changes()
 
-    assert adoption.applied == 1 and seen == [project.id]
-    assert store.checkout_of(project.id) == tmp_path / "src" / "widget"
+    assert adoption.applied == 1 and seen == ["github.com/acme/widget"]
+    assert store.checkout_for("https://github.com/acme/widget") == tmp_path / "src" / "widget"
     assert not store.changed_underneath()
