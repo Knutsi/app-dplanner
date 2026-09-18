@@ -17,9 +17,8 @@ from pathlib import Path
 from PySide6.QtCore import Signal as QtSignal
 from PySide6.QtWidgets import QComboBox, QFileDialog, QVBoxLayout, QWidget
 
-from dplanner.core.storage.locations import find_repo_root
 from dplanner.core.storage.provider import StorageError
-from dplanner.domain.locations import Location, LocationRole
+from dplanner.domain.locations import Location, LocationRole, located_folder
 from dplanner.framework.signalling import StatusLine
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.task_runner import TaskRunner
@@ -162,7 +161,16 @@ class RepositoriesPage(QWidget):
                 entry.answer, entry.checkout = CLONE, None
                 self.changed.emit()
                 return
-            entry.checkout = find_repo_root(Path(chosen)) or Path(chosen)
+            found = located_folder(Path(chosen))
+            if found is None:
+                self.status.say(
+                    f"{shown_path(Path(chosen))} is not inside a git repository", "error"
+                )
+                combo.setCurrentIndex(0)
+                entry.answer, entry.checkout = CLONE, None
+                self.changed.emit()
+                return
+            entry.checkout = found.root
             combo.setItemText(index, f"Use {shown_path(entry.checkout)}")
         entry.answer = answer
         self.changed.emit()

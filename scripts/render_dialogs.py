@@ -51,6 +51,7 @@ from dplanner.framework.user_config import set_global
 from dplanner.modules import default_location_roles, managed_for
 from dplanner.modules.install import dialog as install_dialog
 from dplanner.modules.library_watch.view import ConflictDialog
+from dplanner.modules.projects.location_dialog import LocationDialog
 from dplanner.modules.projects.move_dialog import MovePlanDialog
 from dplanner.modules.projects.open_dialog import (
     BROWSE_PAGE,
@@ -530,8 +531,8 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
             "locations",
             (
                 Location("l1", CODE.id, CODE_URL),
-                Location("l2", "specs", "https://github.com/acme/specs", path="products/search"),
-                Location("l3", "docs", CODE_URL, path="docs/search"),
+                Location("l2", "spec", "https://github.com/acme/specs", path="products/search"),
+                Location("l3", "reporting", CODE_URL, path="reports/search"),
             ),
         )
     )
@@ -592,6 +593,26 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
     framed(creating, CREATE_SIZE, app)
     save(creating, out, "project-create", theme, app)
     discard(creating)
+
+    # -- one location, asked for: the repositories gh knows listed, a position to browse ------
+    adding = LocationDialog(
+        repos.roles["spec"],
+        location_id="l4",
+        repositories=[CODE_URL, PLANS_URL],
+        location=None,
+        checkout_for=lambda _url: None,
+        record_checkout=lambda _repository, _root: None,
+        services=repos,
+        tasks=services.tasks,
+        theme=services.theme,
+        parent=services.window,
+    )
+    inline(adding._runner)
+    adding.repository.setEditText("https://github.com/acme/specs")
+    adding.position.setText("products/search")
+    fitted(adding, app, 560)
+    save(adding, out, "location-add", theme, app)
+    discard(adding)
 
     opening = OpenProjectDialog(
         replace(repos, plan_roots=lambda: []),

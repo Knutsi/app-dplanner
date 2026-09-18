@@ -24,7 +24,12 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
-from dplanner.core.storage.locations import canonical_remote, remote_label
+from dplanner.core.storage.locations import (
+    canonical_remote,
+    find_repo_root,
+    origin_url,
+    remote_label,
+)
 
 ID_PREFIX = "l"
 
@@ -138,6 +143,32 @@ def problem(location: Location) -> str:
     ):
         return f"this is not a git ref: {location.ref}"
     return ""
+
+
+@dataclass(frozen=True)
+class LocatedFolder:
+    """What a folder on this computer says about a location: the repository it is a
+    checkout of, that checkout's root, and the folder's position inside it."""
+
+    repository: str
+    root: Path
+    position: str
+
+
+def located_folder(folder: Path) -> LocatedFolder | None:
+    """A folder somebody picked, read as a location: the enclosing checkout is the
+    repository — its origin as git prints it, or its own resolved path when it has none, the
+    convention the checkouts map already keys a remote-less repository by — and the folder
+    is the position. None when the folder is in no git repository."""
+    root = find_repo_root(folder.expanduser())
+    if root is None:
+        return None
+    try:
+        relative = folder.expanduser().resolve().relative_to(root.resolve())
+    except ValueError:
+        return None
+    repository = origin_url(root) or str(root.resolve())
+    return LocatedFolder(repository, root, normalise_path(relative.as_posix()))
 
 
 def normalise_path(text: str) -> str:

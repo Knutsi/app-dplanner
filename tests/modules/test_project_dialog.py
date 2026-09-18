@@ -8,6 +8,7 @@ commits which fact through which path, and what the plan column offers while the
 no repository of its own.
 """
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -908,3 +909,183 @@ def test_the_wizard_asks_only_about_worked_in_repositories_the_machine_lacks(tmp
     assert [(entry.repository, [row.id for row in entry.locations]) for entry in missing] == [
         ("https://github.com/acme/widget", ["l1", "l2"])
     ]
+
+
+# -- the location dialog ------------------------------------------------------------------------
+
+
+def location_dialog(services, fakes, monkeypatch, *, repositories=(CODE_URL,), checkout_for=None):
+    """The dialog for a new code row, its task bodies captured rather than run, so a test
+    sees the arc turning and then delivers the answer itself."""
+    from dplanner.domain.locations import CODE, next_id
+    from dplanner.modules.projects.location_dialog import LocationDialog
+
+    repos, _calls, _state = fakes
+    bodies: list[Callable[[], None]] = []
+    recorded: list[tuple[str, Path]] = []
+    built = LocationDialog(
+        CODE,
+        location_id=next_id(()),
+        repositories=list(repositories),
+        location=None,
+        checkout_for=checkout_for or (lambda _url: None),
+        record_checkout=lambda repository, root: recorded.append((repository, root)),
+        services=repos,
+        tasks=services.tasks,
+        theme=services.theme,
+        parent=services.window,
+    )
+
+    def capture(_label, body, **_kwargs):
+        bodies.append(body)
+        return True
+
+    monkeypatch.setattr(built._runner, "run", capture)
+    return built, bodies, recorded
+
+
+def test_the_location_dialog_lists_the_repositories_gh_knows_under_a_turning_refresh(
+    services, fakes, monkeypatch
+):
+    """What the project and the library name leads; what gh knows follows after a
+    separator, listed on a task the first time the dialog is seen and again on the refresh
+    glyph, whose arc turns meanwhile. A refill never eats what is being typed, and gh
+    refusing is a line under the row in the information tone, not an error."""
+    _repos, _calls, state = fakes
+    dialog, bodies, _recorded = location_dialog(services, fakes, monkeypatch)
+    try:
+        assert dialog.github_entries() == [CODE_URL] and bodies == []  # Not shown yet.
+        dialog.show()
+        assert len(bodies) == 1 and dialog.spinner.is_spinning()
+        assert not dialog.refresh_button.isEnabled()
+        assert dialog.listing_status.tone() == "busy"
+        dialog.repository.setEditText("https://example.com/half-typ")
+        bodies[0]()
+        assert not dialog.spinner.is_spinning() and dialog.refresh_button.isEnabled()
+        assert dialog.github_entries() == [CODE_URL, "https://github.com/acme/plans"]
+        assert dialog.repository.currentText() == "https://example.com/half-typ"
+        assert dialog.listing_status.words() == "2 repositories on GitHub"
+        dialog.hide()
+        dialog.show()
+        assert len(bodies) == 1  # Once per dialog: the glyph is the way to ask again.
+
+        state["gh"] = "gh is not installed"
+        dialog.refresh_button.click()
+        assert len(bodies) == 2 and dialog.spinner.is_spinning()
+        bodies[1]()
+        assert dialog.listing_status.words() == "gh is not installed"
+        assert dialog.listing_status.tone() == "info"
+        assert dialog.github_entries() == [CODE_URL]
+        # The ⋯ offers one more way in, and the GitHub picker is no longer among them.
+        assert [entry.label for entry in dialog._repository_entries() if entry] == [
+            "From a folder on this computer…"
+        ]
+    finally:
+        dialog.deleteLater()
+
+
+def test_a_folder_on_this_computer_fills_the_row_and_records_the_checkout(
+    services, fakes, tmp_path, monkeypatch
+):
+    """The spec author's way in: a folder of a checkout says the repository and the
+    position, and the checkout is recorded for this machine — no Settings, no clone."""
+    import subprocess
+
+    repo = init_repo(tmp_path / "specs")
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", CODE_URL], check=True)
+    (repo / "products" / "search").mkdir(parents=True)
+    dialog, _bodies, recorded = location_dialog(services, fakes, monkeypatch, repositories=())
+    try:
+        monkeypatch.setattr(
+            QFileDialog, "getExistingDirectory", lambda *a, **k: str(repo / "products" / "search")
+        )
+        dialog._from_folder()
+        assert dialog.repository.currentText() == CODE_URL
+        assert dialog.position.text() == "products/search"
+        assert recorded == [(CODE_URL, repo)]
+        assert dialog.listing_status.tone() == "ok"
+        assert dialog.answer().path == "products/search" and dialog.primary().isEnabled()
+
+        (tmp_path / "loose").mkdir()
+        monkeypatch.setattr(
+            QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path / "loose")
+        )
+        dialog._from_folder()
+        assert "not inside a git repository" in dialog.status.words()
+        assert dialog.repository.currentText() == CODE_URL and len(recorded) == 1
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_position_is_browsed_in_the_checkout_when_this_machine_has_one(
+    services, fakes, tmp_path, monkeypatch
+):
+    repo = init_repo(tmp_path / "widget")
+    (repo / "apps" / "web").mkdir(parents=True)
+    dialog, _bodies, _recorded = location_dialog(
+        services, fakes, monkeypatch, checkout_for=lambda _url: repo
+    )
+    try:
+        monkeypatch.setattr(
+            QFileDialog, "getExistingDirectory", lambda *a, **k: str(repo / "apps" / "web")
+        )
+        dialog.folders_button.click()
+        assert dialog.position.text() == "apps/web"
+        (tmp_path / "elsewhere").mkdir()
+        monkeypatch.setattr(
+            QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path / "elsewhere")
+        )
+        dialog.folders_button.click()
+        assert dialog.position.text() == "apps/web" and "outside" in dialog.status.words()
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_remote_folders_are_a_tree_and_nothing_is_cloned_to_pick_one(
+    services, fakes, monkeypatch
+):
+    """Without a checkout the position is picked from the remote's listing — the git
+    spec source's probe — shown as a tree, its first two levels open."""
+    from dataclasses import replace
+
+    from dplanner.core.storage.sparse import Folder
+    from dplanner.framework.task_runner import TaskRunner
+    from dplanner.modules.projects import location_dialog as module
+
+    repos, calls, _state = fakes
+    listing = Probe(
+        "HEAD",
+        (
+            Folder("", 40, 0),
+            Folder("docs", 20, 0),
+            Folder("docs/api", 5, 0),
+            Folder("docs/api/v2", 2, 0),
+            Folder("src", 15, 0),
+        ),
+    )
+    monkeypatch.setattr(TaskRunner, "run", lambda _self, _label, body, **_k: body() or True)
+    dialog = module.RemoteFoldersDialog(
+        replace(repos, list_folders=lambda _url, _ref: listing),
+        services.tasks,
+        CODE_URL,
+        "HEAD",
+        parent=services.window,
+    )
+    try:
+        assert dialog.tree.topLevelItemCount() == 1
+        root = dialog.tree.topLevelItem(0)
+        assert root is not None
+        children = [root.child(i) for i in range(root.childCount())]
+        assert [child.text(0) for child in children if child is not None] == ["docs", "src"]
+        docs = children[0]
+        api = docs.child(0) if docs is not None else None
+        v2 = api.child(0) if api is not None else None
+        assert docs is not None and api is not None and v2 is not None
+        assert root.isExpanded() and docs.isExpanded() and not api.isExpanded()
+        assert dialog.chosen() == ""  # The root is current first.
+        dialog.tree.setCurrentItem(v2)
+        assert dialog.chosen() == "docs/api/v2"
+        assert dialog.status.words() == "5 folders at HEAD"
+        assert calls["clone"] == []
+    finally:
+        dialog.deleteLater()

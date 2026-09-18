@@ -63,7 +63,6 @@ from PySide6.QtWidgets import (
 from dplanner.core.fsio import slugify
 from dplanner.core.storage.locations import (
     canonical_remote,
-    find_repo_root,
     origin_url,
     remote_label,
 )
@@ -73,6 +72,7 @@ from dplanner.domain.locations import (
     CODE,
     Location,
     Placement,
+    located_folder,
     next_id,
     place,
     primary_code,
@@ -147,8 +147,8 @@ URL_ROLE = int(Qt.ItemDataRole.UserRole) + 10
 
 SETTINGS = "settings"
 CREATE = "create"
-SETTINGS_SIZE = (780, 640)
-CREATE_SIZE = (640, 520)
+SETTINGS_SIZE = (940, 770)
+CREATE_SIZE = (770, 620)
 # What the plan column says where the plan has no history of its own to show.
 SETUP_WORDS = "The plan's history is the code's — it has no repository of its own."
 
@@ -442,7 +442,7 @@ class ProjectDialog(DialogFrame):
             size=CREATE_SIZE if create else SETTINGS_SIZE,
         )
         self.setObjectName("ProjectDialog")
-        self.setMinimumSize(520, 420) if create else self.setMinimumSize(560, 460)
+        self.setMinimumSize(624, 504) if create else self.setMinimumSize(672, 552)
         self.mode = mode
         self._library = library
         self._undo = undo
@@ -760,6 +760,7 @@ class ProjectDialog(DialogFrame):
             repositories=self._known_repositories(),
             location=location,
             checkout_for=self._checkout_for,
+            record_checkout=lambda repository, root: self._record_checkout(root, repository),
             services=self._services,
             tasks=self._tasks,
             theme=self._theme,
@@ -1083,11 +1084,17 @@ class ProjectDialog(DialogFrame):
         self._set_repository(origin)
 
     def _ask_checkout(self) -> Path | None:
+        """A checkout on this machine: the repository root enclosing whatever folder of
+        it was picked, refused in words when the folder is in no repository."""
         start = repositories_folder() or Path.home()
         chosen = QFileDialog.getExistingDirectory(self, "Code Checkout", str(start))
         if not chosen:
             return None
-        return find_repo_root(Path(chosen)) or Path(chosen)
+        found = located_folder(Path(chosen))
+        if found is None:
+            self._say(f"{shown_path(Path(chosen))} is not inside a git repository", "error")
+            return None
+        return found.root
 
     def _keep_here(self) -> None:
         project = self._project()

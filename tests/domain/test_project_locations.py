@@ -194,3 +194,23 @@ def test_a_read_only_row_lands_in_its_managed_clone_and_a_writing_one_never_does
         managed=managed,
     )
     assert found == Placement(specs, tmp_path / "specs")
+
+
+def test_a_folder_on_this_computer_is_read_as_a_location(tmp_path):
+    """The shortest way to name a location: a folder of a checkout says which repository
+    (its origin, or its own path when it has none) and which position."""
+    import subprocess
+
+    from dplanner.core.storage.locations import init_repo
+    from dplanner.domain.locations import LocatedFolder, located_folder
+
+    repo = init_repo(tmp_path / "specs")
+    (repo / "products" / "search").mkdir(parents=True)
+    assert located_folder(repo / "products" / "search") == LocatedFolder(
+        str(repo.resolve()), repo, "products/search"
+    )
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", WIDGET], check=True)
+    assert located_folder(repo / "products") == LocatedFolder(WIDGET, repo, "products")
+    assert located_folder(repo) == LocatedFolder(WIDGET, repo, "")
+    (tmp_path / "loose").mkdir()
+    assert located_folder(tmp_path / "loose") is None

@@ -12,7 +12,8 @@ temporary directory, so no path or preference of the rendering machine reaches a
 | `settings-confluence-*` | Connected sites as a table with *Reconnect…* and *Forget* on a strip above it, greyed until a site is picked. |
 | `project-settings-*` | The Project dialog with Close alone, every edit live; both repositories apart, their logs side by side. |
 | `project-colocated-*` | A plan still inside its code: the warning, and the plan column's empty state carrying *Set up a plan repository…* as its verb. |
-| `project-create-*` | New Project: the plan repository, the folder, the code repository and its checkout as captioned blocks, and *Create* refused in words — a project already exists at that folder. |
+| `project-create-*` | New Project: the plan repository, the folder, and the Locations table over a draft — empty, saying what to add first — with *Create* refused in words: a project already exists at that folder. |
+| `location-add-*` | Add Location: the repository as a combo of what the library names and what gh knows, its refresh glyph and ⋯ (*From a folder on this computer…*); the position with *Browse…* over the checkout or the remote's tree; the role's summary as the hint. |
 | `open-project-ways-*` | Open Project, page one: the two ways in as a captioned list of two rows, in the room the later pages need — the wizard never resizes on screen; *Continue* the primary. |
 | `open-project-link-*` | The link page: what the link names, where the plan will be cloned, and where the code should go — each under its caption, *Back* beside Cancel. |
 | `open-project-browse-*` | The browse page: the plan repository under its caption, the projects it holds with who worked on each, and the primary worded with the count. |

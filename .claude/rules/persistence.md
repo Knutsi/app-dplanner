@@ -185,11 +185,18 @@ paths:
   the role registry** and a row's **⋯** its verbs (edit, choose checkout, clone, open,
   remove), built when they open and greyed *with the reason in their words* rather than
   dropped; a right-click on a row renders the same ⋯. Adding or editing a row is one fit
-  dialog (`location_dialog.py`): the repository as a combo led by the code the project
-  already names, the position with a folder picker over the checkout when this machine
-  has one and over the remote's tree listing (`RepositoryServices.list_folders`) when it
-  does not, refused in words while the row cannot stand. **Create mode is the same table
-  over a draft** the form holds until Create seeds the project; a clone run from the
+  dialog (`location_dialog.py`): the repository as a combo led by what the project and
+  the library already name and followed by what gh knows — listed on a task the first
+  time the dialog is seen and again on the refresh glyph, whose `Spinner` turns meanwhile;
+  a refusal is a line under the row in the information tone — the position with
+  *Browse…* over the checkout when this machine has one and over the remote's tree
+  (`RepositoryServices.list_folders`, a `QTreeWidget`, never a clone) when it does not,
+  and the ⋯'s *From a folder on this computer…*, which reads repository, position and
+  checkout off one picked folder (`domain.locations.located_folder`, the one reader of a
+  folder's identity, which the Project dialog's *Choose Checkout…* and the wizard's *Use
+  a checkout I have…* share) and records the checkout through the `record_checkout` the
+  dialog was built with; refused in words while the row cannot stand. **Create mode is
+  the same table over a draft** the form holds until Create seeds the project; a clone run from the
   draft's ⋯ lands in `NewProjectSpec.checkouts`. The two log columns keep the primary
   code's and the plan's history, and the code column's ⋯ acts on the primary code row
   through the same `_set_locations`. Every edit is one `SetFieldCommand` on `locations`.

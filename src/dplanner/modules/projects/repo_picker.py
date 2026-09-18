@@ -362,6 +362,19 @@ class RepoPicker(QWidget):
         self.note.say(text, tone)
 
 
+def github_listing(services: RepositoryServices) -> tuple[list[str], str]:
+    """BLOCKING — the body every listing of the person's GitHub repositories runs on a
+    task: the repositories, or why gh could not answer. One body, however many presenters
+    (the picking dialog, the location dialog's combo), so a refusal is worded once."""
+    refusal = services.gh_refusal()
+    if refusal is not None:
+        return [], refusal
+    try:
+        return services.list_repositories(), ""
+    except (StorageError, OSError) as error:
+        return [], str(error)
+
+
 class GhRepoListDialog(DialogFrame):
     """The person's GitHub repositories, filtered as they type; one is chosen.
 
@@ -409,17 +422,11 @@ class GhRepoListDialog(DialogFrame):
         self.list.currentRowChanged.connect(lambda row: self.choose_button.setEnabled(row >= 0))
         self.status.say("Listing your repositories…", "busy")
 
-        def body_() -> None:
-            refusal = services.gh_refusal()
-            if refusal is not None:
-                self._listed.emit([], refusal)
-                return
-            try:
-                self._listed.emit(services.list_repositories(), "")
-            except (StorageError, OSError) as error:
-                self._listed.emit([], str(error))
-
-        self._runner.run("Listing GitHub repositories", body_, key="projects.gh_list")
+        self._runner.run(
+            "Listing GitHub repositories",
+            lambda: self._listed.emit(*github_listing(services)),
+            key="projects.gh_list",
+        )
 
     def _on_listed(self, repos: object, error: str) -> None:
         self._repos = [str(repo) for repo in repos] if isinstance(repos, list) else []

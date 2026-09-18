@@ -4164,12 +4164,19 @@ where it is on this machine — and the **Locations table** (`locations_table.py
 under a caption with **Add ▾** rendering the role registry and **⋯** the selected row's
 verbs. A right-click on a row renders the same ⋯ — the row made current first, so the
 menu reads the same selection the button would. Adding or editing a row is one fit dialog
-(`location_dialog.py`): the repository as an editable combo led by the code the project
-already names (a project reports beside its code more often than not, so the default is
-the answer), the position with a folder picker over the checkout when this machine has
-one and over the remote's tree listing — the git spec source's probe, worn by a position —
-when it does not, so nobody types a subdirectory blind; refused in words while the row
-cannot stand. Nothing about a checkout is asked there: a repository already checked out
+(`location_dialog.py`), built for the person who has never managed a folder for DPlanner:
+the repository as an editable combo led by what the project and the library already name
+(a project reports beside its code more often than not, so the default is the answer) and
+followed by the repositories `gh` knows, listed on a task the first time the dialog is
+seen and again on a refresh glyph whose arc turns meanwhile — a refusal is a line under
+the row, never a dialog; the position with *Browse…* over the checkout when this machine
+has one and over the remote's tree listing — the git spec source's probe, worn by a
+position, as a tree with its first two levels open — when it does not, so nobody types a
+subdirectory blind and nothing is cloned to pick a folder; and the shortest way of all in
+the ⋯, *From a folder on this computer…*, which reads the repository, the position and the
+checkout off one picked folder (`domain.locations.located_folder`) — the spec author's way
+in, and the one reader of a folder's identity, shared with *Choose Checkout…* and the
+wizard's *Use a checkout I have…*; refused in words while the row cannot stand. Nothing about a checkout is asked there: a repository already checked out
 needs none, a read-only role needs none, and a worked-in repository this machine lacks
 shows *not checked out* in the table with *Clone…* in its ⋯ — a decision the person can
 make now or after Create. **Create mode is the same table over a draft** the form holds
