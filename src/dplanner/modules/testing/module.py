@@ -145,6 +145,10 @@ class TestsDeps:
     # *Group by ▸ Milestone* heading is written in. Wired by the composition root; this
     # module never learns which map a project uses.
     milestone_color: Callable[[str], str] = field(default=_no_color)
+    # Where an export is offered to land: the project's reporting location on this
+    # machine, when it names one — the folder colleagues read reports from — else the
+    # home directory. Wired by the composition root; this module never learns a role id.
+    reporting_dir: Callable[[str], Path | None] = lambda _project_id: None
     # Dictation into the editors; None is a build without a microphone.
     dictation: DictationService | None = None
 
@@ -833,10 +837,11 @@ class TestsModule:
         filters = [
             f"{export.FORMAT_LABELS[kind]} (*{export.SUFFIXES[kind]})" for kind in export.FORMATS
         ]
+        offered = deps.reporting_dir(project.id) or Path.home()
         chosen, picked = QFileDialog.getSaveFileName(
             deps.parent,
             "Export Tests",
-            str(Path.home() / f"{name} tests{export.SUFFIXES[export.FORMATS[0]]}"),
+            str(offered / f"{name} tests{export.SUFFIXES[export.FORMATS[0]]}"),
             ";;".join(filters),
         )
         if not chosen:

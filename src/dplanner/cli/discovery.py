@@ -30,6 +30,7 @@ from dplanner.core.storage.locations import (
 )
 from dplanner.core.storage.pointer import POINTER_FILE, resolve_index
 from dplanner.domain.library_file import LIBRARY_ENV, resolve_library_path
+from dplanner.domain.locations import CODE, Location, of_role
 from dplanner.domain.model import Library, Project
 from dplanner.domain.shelf import migrate_shelved
 from dplanner.domain.store import PROJECT_META, LibraryStore, StaleWorkspaceError
@@ -77,8 +78,8 @@ def find_current_project(
        project, and no such copy, is refused rather than half-served; an index naming
        several library projects asks for ``--project``.
     3. **The working directory's repository is one a library project plans**: its
-       ``origin`` is the project's code repository, spelt however git spells it — or, for
-       a repository with no origin, it is the checkout recorded for the project. An agent
+       ``origin`` is one of the project's code locations, spelt however git spells it —
+       or, for a repository with no origin, it is the checkout recorded for it. An agent
        in the code checkout, or in a worktree of it, therefore needs no configuration at
        all; and the first call from a checkout the library did not know **records it**,
        so the window's Run Agent finds the code too. Several projects planning one
@@ -101,14 +102,14 @@ def find_current_project(
     main = main_checkout(root).resolve()
     planned = _planning(library, store, main)
     if len(planned) == 1:
-        project = planned[0]
-        if store.checkout_of(project.id) is None:
-            store.set_checkout(project.id, main)
+        project, location = planned[0]
+        if store.checkout_for(location.repository) is None:
+            store.set_checkout(location.repository, main)
         return project
     if planned:
         raise CliError(
             "this code repository is planned by several library projects — pass --project: "
-            + _names(planned)
+            + _names([project for project, _location in planned])
         )
     matches = [
         project
@@ -126,21 +127,24 @@ def find_current_project(
     return None
 
 
-def _planning(library: Library, store: LibraryStore, main: Path) -> list[Project]:
-    """The library projects whose code repository is the one checked out at ``main``:
-    by its origin, by the checkout recorded for the project, or — for a code repository
-    with no remote, stored as its path — by that path."""
+def _planning(library: Library, store: LibraryStore, main: Path) -> list[tuple[Project, Location]]:
+    """The library projects one of whose code locations is the repository checked out at
+    ``main``, with that location: by its origin, by the checkout recorded for the
+    repository, or — for a code repository with no remote, stored as its path — by that
+    path. A project naming the repository twice counts once."""
     origin = canonical_remote(origin_url(main))
-    found: list[Project] = []
+    found: list[tuple[Project, Location]] = []
     for project in library.projects:
-        code = canonical_remote(project.repository) if project.repository else ""
-        checkout = store.checkout_of(project.id)
-        if (
-            (origin and code == origin)
-            or (checkout is not None and checkout.expanduser().resolve() == main)
-            or (code and Path(code).is_absolute() and Path(code) == main)
-        ):
-            found.append(project)
+        for location in of_role(project.locations, CODE.id):
+            code = location.canonical
+            checkout = store.checkout_for(code)
+            if (
+                (origin and code == origin)
+                or (checkout is not None and checkout.expanduser().resolve() == main)
+                or (Path(code).is_absolute() and Path(code) == main)
+            ):
+                found.append((project, location))
+                break
     return found
 
 

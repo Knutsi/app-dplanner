@@ -403,7 +403,7 @@ the block is then constant and a reader learns where to look once. A line too lo
 column elides in the **paint**, never in a resize — a widget that rewrites its own text
 while being resized can drive the layout in a circle — with the full text as the tooltip,
 and a path elides from the left, because a path's tail is what names it.
-`ARCHITECTURE.md`'s *The Project dialog is two columns, not three fields* has the
+`ARCHITECTURE.md`'s *The Project dialog is the Locations table over two log columns* has the
 reasoning, including why the count of fields was the symptom rather than the disease.
 
 ## Colour

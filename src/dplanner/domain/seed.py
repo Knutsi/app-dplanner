@@ -6,12 +6,14 @@ person has to delete before they can start. The empty index says so in words ins
 """
 
 import json
+from collections.abc import Iterable
 from pathlib import Path
 
 from dplanner.core.formats import FORMAT_KEY
 from dplanner.core.fsio import write_atomic
 from dplanner.core.storage.pointer import add_to_index
 from dplanner.domain.library_file import write_library_file
+from dplanner.domain.locations import Location, write_locations
 from dplanner.domain.migrations import FORMAT
 from dplanner.domain.model import Project
 from dplanner.domain.store import PROJECT_META
@@ -22,11 +24,13 @@ def create_library(path: Path) -> None:
     write_library_file(path, [])
 
 
-def seed_project(directory: Path, title: str, *, summary: str = "", repository: str = "") -> Path:
+def seed_project(
+    directory: Path, title: str, *, summary: str = "", locations: Iterable[Location] = ()
+) -> Path:
     """Write a brand-new project: its ``project.dproj`` and its line in the repo-root index.
 
-    ``repository`` is the code repository the project plans, as git names its remote;
-    left empty, the project reads as planning the repository it was created in.
+    ``locations`` is the table of places the project is about — its code first; left
+    empty, the project reads as planning the repository it was created in.
 
     A project born inside a git checkout is listed in the ``.dplanner`` index at the
     repository root, so the CLI's walk finds the plan from anywhere in the checkout — for
@@ -44,8 +48,9 @@ def seed_project(directory: Path, title: str, *, summary: str = "", repository: 
         meta["title"] = title
     if summary:
         meta["summary"] = summary
-    if repository:
-        meta["repository"] = repository
+    rows = write_locations(locations)
+    if rows:
+        meta["locations"] = rows
     meta[FORMAT_KEY] = FORMAT.current_version
     write_atomic(
         directory / PROJECT_META,

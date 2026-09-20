@@ -35,6 +35,7 @@ from dplanner.core.storage.locations import (
 )
 from dplanner.core.storage.pointer import POINTER_FILE, add_to_index, remove_from_index
 from dplanner.core.storage.provider import StorageError, VersionedStorage
+from dplanner.domain.locations import CODE, Location, primary_code, write_locations
 from dplanner.domain.model import ProjectId
 from dplanner.domain.store import PLAN_ENTRIES, PROJECT_META, LibraryStore
 
@@ -87,8 +88,18 @@ def move_project(
         raise RelocateError(
             "the project has unsaved edits in this window — let them reach disk, then try again"
         )
-    code = project.repository or origin_url(source) or str(main_checkout(source_root))
-    recorded = store.checkout_of(project_id)
+    primary = primary_code(project.locations)
+    code = (primary.repository if primary is not None else origin_url(source)) or str(
+        main_checkout(source_root)
+    )
+    # The moved plan names the code it came out of as its first code row; a table that
+    # already has one is left exactly as it stands.
+    locations = (
+        project.locations
+        if primary is not None
+        else (Location("l1", CODE.id, code), *project.locations)
+    )
+    recorded = store.checkout_for(code)
     # A plan leaving the repository that also held its code leaves *from* the checkout, so
     # that is where the code is from now on. A plan already apart from its code leaves a
     # repository that is not the code's, and inherits nothing: it keeps what was recorded,
@@ -110,7 +121,7 @@ def move_project(
         elif item.is_file():
             shutil.copy2(item, target / name)
     meta = json.loads((target / PROJECT_META).read_text(encoding="utf-8"))
-    meta["repository"] = code
+    meta["locations"] = write_locations(locations)
     meta.pop("colocation", None)
     write_atomic(
         target / PROJECT_META,
@@ -122,8 +133,10 @@ def move_project(
 
     # The store follows the files, the model follows the file that was written, and the
     # library file is on disk before any rebuild reads it.
-    store.relocate(project_id, target, checkout)
-    library.set_field(project_id, "repository", code, RELOCATE_ORIGIN)
+    store.relocate(project_id, target)
+    if checkout is not None and recorded is None:
+        store.set_checkout(code, checkout)
+    library.set_field(project_id, "locations", locations, RELOCATE_ORIGIN)
     library.set_field(project_id, "colocation", "", RELOCATE_ORIGIN)
     store.flush({(library.id, "structure"), (project_id, "meta")})
 

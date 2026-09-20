@@ -35,9 +35,11 @@ from pathlib import Path
 
 from PySide6.QtWidgets import QDialog, QMenu, QWidget
 
+from dplanner.core.storage.locations import remote_label
 from dplanner.core.telemetry import current
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.locations import Placement
 from dplanner.domain.model import Library, Node, NodeId, Step, StepId
 from dplanner.domain.progression import DONE
 from dplanner.domain.repositories import RepositoryFacts
@@ -75,6 +77,7 @@ from dplanner.modules.step_agent_instruction.aspect import (
     read_project,
     uses_worktree,
     with_worktree,
+    workplace,
     write_state,
 )
 from dplanner.modules.step_agent_instruction.profiles import (
@@ -137,25 +140,56 @@ def _no_start(_step_id: StepId) -> bool:
     return False
 
 
+def _no_clone(_repositories: Sequence[str], done: Callable[[dict[str, Path], str], None]) -> None:
+    """A build with nothing to clone with: the verb is refused where it would have cloned."""
+    done({}, "nothing here can clone a repository")
+
+
 def _all_done(_step: Step) -> str:
     """A build with nobody to ask about status: nothing is unfinished, nothing warns."""
     return DONE
 
 
-def _workdir(facts: RepositoryFacts) -> Path | None:
+def _workdir(facts: RepositoryFacts, step: Step | None = None) -> Path | None:
     """Where an agent on this project works — a step's, or one opened with nothing to do:
-    the code checkout when the project records a code repository, else the plan's own
-    repository, the older shape of a plan kept beside its code. None when neither is here."""
-    return facts.checkout if facts.repository else facts.plan_root
+    the checkout of the code location the step names (its ``workplace``, else the
+    project's primary code row) when the project records one, else the plan's own
+    repository, the older shape of a plan kept beside its code. None when neither is
+    here."""
+    placement = _code_placement(facts, step)
+    if placement is not None:
+        return placement.root if placement.here else None
+    return None if facts.repository else facts.plan_root
 
 
-def _workdir_refusal(facts: RepositoryFacts) -> str:
-    """Why no shell can open where this project's agent would work; "" when one can."""
-    if facts.repository:
-        if facts.checkout is None:
-            return "the code repository is not checked out on this machine — Project ▸ Settings…"
-        if not facts.checkout.expanduser().is_dir():
-            return f"the code checkout is gone from {facts.checkout} — Project ▸ Settings…"
+def _code_placement(facts: RepositoryFacts, step: Step | None) -> Placement | None:
+    """The code location a step works in, placed: the row its workplace names, else the
+    primary. A named row that is gone falls back to the primary — lint says so."""
+    named = facts.placement(workplace(step)) if step is not None else None
+    return named if named is not None else facts.code
+
+
+def _unplaced(facts: RepositoryFacts, step: Step | None = None) -> str:
+    """The code repository this agent would work in that this machine has no checkout of
+    — what Run Agent clones first — or "" when it is placed or there is none."""
+    placement = _code_placement(facts, step)
+    if placement is not None and placement.root is None:
+        return placement.location.repository
+    return ""
+
+
+def _workdir_refusal(facts: RepositoryFacts, step: Step | None = None) -> str:
+    """Why no shell can open where this project's agent would work; "" when one can. A
+    repository not checked out here is a refusal only for a verb that cannot clone — Run
+    Agent asks :func:`_unplaced` first and clones."""
+    placement = _code_placement(facts, step)
+    if placement is not None:
+        label = placement.location.repository_label
+        if not placement.here:
+            return f"{label} is not checked out on this machine — Project ▸ Settings…"
+        assert placement.root is not None
+        if not placement.root.expanduser().is_dir():
+            return f"the checkout of {label} is gone from {placement.root} — Project ▸ Settings…"
         return ""
     if facts.plan_root is None:
         return "the project's folder is not in a git repository"
@@ -241,6 +275,12 @@ class StepAgentInstructionDeps:
     facts_for: Callable[[StepId], RepositoryFacts]
     # The project panel's card registry; None is a build without a project panel.
     cards: InspectorSectionRegistry | None = None
+    # A checkout of each repository on this machine, cloned where the person's policy
+    # says when there is none — the projects module's checkout service, handed over by
+    # the root. Answers on the GUI thread with what landed and the first refusal.
+    ensure_checkouts: Callable[[Sequence[str], Callable[[dict[str, Path], str], None]], None] = (
+        field(default=_no_clone)
+    )
     # The cross-module half of the prompt, assembled by the composition root — the one
     # place allowed to know what the other aspects store. The same object feeds
     # ``dplanner agent prompt``, so the two surfaces cannot drift.
@@ -512,13 +552,31 @@ class StepAgentInstructionModule:
         # Where a shell can open is the *project's* fact and asking git for it is not free,
         # so it is asked once per project the selection touches rather than once per step.
         by_project: dict[str, str] = {}
+        clones: list[str] = []
         for step in chosen:
             project_id = deps.library.project_of(step.id).id
-            if project_id not in by_project:
-                by_project[project_id] = _workdir_refusal(deps.facts_for(step.id))
-            if reason := self._step_refusal(step) or by_project[project_id]:
+            facts = deps.facts_for(step.id)
+            # A code repository nobody checked out here is cloned first, not refused: the
+            # policy decides where it lands, never whether the verb runs.
+            unplaced = _unplaced(facts, step)
+            if unplaced:
+                if unplaced not in clones:
+                    clones.append(unplaced)
+                reason = self._step_refusal(step)
+            else:
+                # A step naming a workplace of its own is asked about on its own.
+                reason = self._step_refusal(step) or (
+                    _workdir_refusal(facts, step)
+                    if workplace(step)
+                    else by_project.setdefault(project_id, _workdir_refusal(facts))
+                )
+            if reason:
                 named = reason if count == 1 else f"“{_titled(step)}”: {reason}"
                 return ActionState(enabled=False, label=f"{verb} — {named}")
+        if clones:
+            named = ", ".join(remote_label(url) for url in clones)
+            amp = "Run &Agent…" if count == 1 else f"Run {count} &Agents…"
+            return ActionState(label=f"{amp} — clones {named} first")
         return ENABLED if count == 1 else ActionState(label=f"Run {count} &Agents…")
 
     def _can_preview(self, context: Context) -> ActionState:
@@ -587,6 +645,28 @@ class StepAgentInstructionModule:
         if waiting and not self._confirm_unfinished(waiting, count=len(chosen)):
             return
         profile = profile or default_profile()
+        clones = list(dict.fromkeys(_unplaced(deps.facts_for(s.id), s) for s in chosen))
+        clones = [url for url in clones if url]
+        if clones:
+            # Cloned first, on a task; the launches follow on the GUI thread once every
+            # repository has landed, reading the facts afresh — the checkout is recorded.
+            deps.status.show_status(
+                f"Cloning {', '.join(remote_label(url) for url in clones)} before the agent…", 0
+            )
+
+            def cloned(_landed: dict[str, Path], error: str) -> None:
+                if error:
+                    deps.status.show_status(f"No agent launched — could not clone {error}", 8000)
+                    return
+                self._launch_all(chosen, profile)
+
+            deps.ensure_checkouts(clones, cloned)
+            return
+        self._launch_all(chosen, profile)
+
+    def _launch_all(self, chosen: Sequence[Step], profile: Profile) -> None:
+        """One agent per step, in order, stopping at the first no terminal opened for."""
+        deps = self._deps
         claim = start_in_progress()
         launched = claimed = 0
         for step in chosen:
@@ -623,7 +703,7 @@ class StepAgentInstructionModule:
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
         worktree = self._run_name(step) if uses_worktree(step) else ""
-        workdir = _workdir(deps.facts_for(step.id))
+        workdir = _workdir(deps.facts_for(step.id), step)
         spawned, prepared = self._launch(
             assembled.text,
             run_dir,
@@ -753,7 +833,10 @@ class StepAgentInstructionModule:
                 label=f"{OPEN_MENU_TITLE} — this profile's agent command is a custom one,"
                 " and nothing here knows how to open it with no briefing",
             )
-        if refusal := _workdir_refusal(deps.facts_for(project_id)):
+        facts = deps.facts_for(project_id)
+        if unplaced := _unplaced(facts):
+            return ActionState(label=f"{OPEN_MENU_TITLE} — clones {remote_label(unplaced)} first")
+        if refusal := _workdir_refusal(facts):
             return ActionState(enabled=False, label=f"{OPEN_MENU_TITLE} — {refusal}")
         return ENABLED
 
@@ -772,6 +855,21 @@ class StepAgentInstructionModule:
         if not self._open_command(profile):
             return  # The state gate already prevents this; stay honest.
         title = deps.library.project(project_id).title or "Untitled project"
+        if unplaced := _unplaced(deps.facts_for(project_id)):
+            deps.status.show_status(f"Cloning {remote_label(unplaced)} before the agent…", 0)
+
+            def cloned(_landed: dict[str, Path], error: str) -> None:
+                if error:
+                    deps.status.show_status(f"No agent opened — could not clone {error}", 8000)
+                    return
+                self._open_in(project_id, profile, title)
+
+            deps.ensure_checkouts([unplaced], cloned)
+            return
+        self._open_in(project_id, profile, title)
+
+    def _open_in(self, project_id: NodeId, profile: Profile, title: str) -> None:
+        deps = self._deps
         spawned, _files = self._launch(
             "",
             launcher.new_run_dir(),

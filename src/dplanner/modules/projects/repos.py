@@ -14,11 +14,13 @@ which repository it is, and where it is on this machine — and :func:`code_line
 card cannot word the same fact two ways.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
 from dplanner.core.signals import Signal
+from dplanner.core.storage.sparse import Probe
+from dplanner.domain.locations import LocationRole, Placement
 from dplanner.domain.relocate import Moved
 from dplanner.domain.repositories import RepositoryFacts
 
@@ -73,7 +75,8 @@ def shown_path(path: Path) -> str:
 @dataclass(frozen=True)
 class Joined:
     """A project the library is about to take in: where it is on this machine, and the
-    code checkout to record beside it.
+    checkouts to record with it — ``(repository, path)`` pairs, per repository, since a
+    checkout is this machine's fact about a repository and not about the project.
 
     The one answer both ways into *Open Project…* end at — a browsed plan repository's
     rows and a project link's clone — so the module that connects them reads one shape
@@ -81,7 +84,7 @@ class Joined:
     """
 
     directory: Path
-    checkout: Path | None = None
+    checkouts: tuple[tuple[str, Path], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -124,6 +127,52 @@ def code_lines(facts: RepositoryFacts) -> RepoLines:
     )
 
 
+@dataclass(frozen=True)
+class LocationWords:
+    """One location as every surface words it: the row of the table, the card's line.
+
+    ``where`` always says something — a checkout, a managed clone fetched on demand, or
+    that nothing is here yet — and ``missing`` is what a reader greys.
+    """
+
+    name: str  # "Code", "Code — UI", "Specs".
+    repository: str  # As a person knows it: "acme/widget".
+    position: str  # "docs/search/", or "" for the root.
+    where: str
+    missing: bool = False
+
+    @property
+    def identity(self) -> str:
+        inside = f" · {self.position}" if self.position else ""
+        return f"{self.name}: {self.repository}{inside}"
+
+
+def location_words(placement: Placement, roles: Mapping[str, LocationRole]) -> LocationWords:
+    location = placement.location
+    name, repository = location.name(roles), location.repository_label
+    position = f"{location.path}/" if location.path else ""
+    if placement.root is None:
+        return LocationWords(name, repository, position, "not checked out on this machine", True)
+    if placement.managed:
+        directory = placement.directory
+        fetched = directory is not None and directory.is_dir()
+        where = "fetched on demand" + ("" if fetched else " — not fetched yet")
+        return LocationWords(name, repository, position, where, not fetched)
+    directory = placement.directory
+    assert directory is not None
+    if placement.kept:
+        return LocationWords(
+            name, repository, position, f"kept by DPlanner at {shown_path(directory)}"
+        )
+    return LocationWords(name, repository, position, shown_path(directory))
+
+
+def location_lines(placement: Placement, roles: Mapping[str, LocationRole]) -> RepoLines:
+    """One location as two lines — which it is, and where it is here."""
+    words = location_words(placement, roles)
+    return RepoLines(words.identity, words.where, location_missing=words.missing)
+
+
 def plan_lines(facts: RepositoryFacts) -> RepoLines:
     """The plan repository: its remote or folder name, and its root on this machine."""
     root = facts.plan_root
@@ -163,9 +212,14 @@ class RepositoryServices:
     """Everything the project surfaces do with the model's repositories, git and GitHub."""
 
     facts_of: Callable[[str], RepositoryFacts]
+    # Every kind of place a project can name, by role id — the Add menu's list.
+    roles: Mapping[str, LocationRole]
     project_dir: Callable[[str], Path]
+    # This machine's checkout of a repository, spelt however; and recording one. Keyed by
+    # repository, never by project: a second plan for one repository needs no second clone.
+    checkout_for: Callable[[str], Path | None]
     set_checkout: Callable[[str, Path | None], None]
-    checkout_changed: Signal[str]
+    checkout_changed: Signal[str]  # The canonical repository whose checkout changed.
     plan_roots: Callable[[], list[Path]]
     # PR number -> "S7 Build the modal", for the steps of one project that carry a PR.
     pr_steps: Callable[[str], dict[int, str]]
@@ -174,10 +228,16 @@ class RepositoryServices:
     # BLOCKING: why gh cannot be used — not installed, not signed in — or None when it can.
     gh_refusal: Callable[[], str | None]
     list_repositories: Callable[[], list[str]]  # BLOCKING: owner/repo, newest first.
-    clone: Callable[[str, Path], None]  # BLOCKING: a URL or owner/repo into a directory.
+    clone: Callable[[str, Path], None]  # BLOCKING: a URL or owner/repo into a directory, by gh.
+    # BLOCKING: any remote git can reach, into a directory, with the person's own git
+    # credentials — what a clone DPlanner keeps is made with (`core/storage/kept.py`).
+    clone_url: Callable[[str, Path], None]
     publish: Callable[[Path, str], str]  # BLOCKING: a root onto GitHub as name -> its origin.
     create_repository: Callable[[str, Path], str]  # BLOCKING: name on GitHub, cloned -> URL.
     open_prs: Callable[[str], list[PullRequest]]  # BLOCKING: a remote's open pull requests.
+    # BLOCKING: the folders a remote holds at a ref, without a file downloaded — what the
+    # position of a location is picked from when this machine has no checkout to browse.
+    list_folders: Callable[[str, str], Probe]
     # Synchronous on purpose: it rewrites the working tree, and the reload that follows
     # discards the build — ARCHITECTURE.md's *Storage operations that rewrite the working
     # tree are synchronous*.

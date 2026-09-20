@@ -32,6 +32,11 @@ class DocumentSourceKind(Protocol):
     name: str  # "Confluence" — how prose names it: "from Confluence", "Refresh Confluence".
     label: str  # "&Confluence Page…" — the + menu's entry.
     config_changed: Signal[()]  # After connect or forget: hosts re-ask status.
+    # Whether this kind reads a repository and a folder in it — the address a project's
+    # ``specs`` location is (`domain/locations.py`'s ``as_locator``). *Add Spec ▸ From
+    # Location…* adds a source of the first kind that says so, naming the row by id; the
+    # spec module resolves the row into this kind's locator before every call.
+    handles_locations: bool
 
     def icon(self, color: str | QColor) -> QIcon:
         """One painter for the menu (a QColor) and a row (a colour string)."""

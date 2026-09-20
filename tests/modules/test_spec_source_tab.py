@@ -49,6 +49,7 @@ class FakeKind:
     id: str = "fake"
     name: str = "Fake"
     label: str = "Fake Source…"
+    handles_locations: bool = False
     ready: bool = False
     connectable: bool = True
     located: tuple[str, dict[str, str]] | None = ("Auth", {"site": "https://f", "id": "1"})
@@ -174,7 +175,13 @@ def test_the_plus_dropdown_lists_the_kind_after_the_built_ins(fake_kind, service
     entries = [
         entry.text().replace("&", "") for entry in popup.actions() if not entry.isSeparator()
     ]
-    assert entries == ["New Spec Document…", "Import Spec Document…", "Fake Source…"]
+    assert entries == [
+        "New Spec Document…",
+        "Import Spec Document…",
+        "From Repository… — no git support here",  # The fake reads no repository.
+        "From Location… — no git support here",
+        "Fake Source…",
+    ]
     assert not popup.actions()[-1].icon().isNull()
 
 
@@ -573,3 +580,88 @@ def test_connect_is_not_offered_where_connecting_cannot_help(app, fake_kind, ser
     fake_kind.connectable = True
     tab._refresh_source_strip()
     assert not tab.connect_button.isHidden()
+
+
+# -- a source over one of the project's spec locations -----------------------------------------
+
+
+def test_a_specs_location_becomes_a_source_that_follows_the_row(fake_kind, services, project):
+    """*Add Spec ▸ From Location…*: greyed with its reason until the project names a
+    spec location; the source it adds names the row by id, and every call to the kind
+    gets the row's address — edit the row and the source moves with it."""
+    from dplanner.domain.commands import SetFieldCommand
+    from dplanner.domain.locations import Location
+    from dplanner.modules.spec.sourced import resolve_locator
+
+    fake_kind.handles_locations = True
+    context = select(services, project)
+    state = services.actions.spec("spec.add_source.location").state(context)
+    assert not state.enabled and "names no spec location" in (state.label or "")
+
+    row = Location("l1", "spec", "https://github.com/acme/specs", path="products", ref="v2")
+    services.undo.push(SetFieldCommand(project.id, "locations", (row,)))
+    assert services.actions.spec("spec.add_source.location").state(context).enabled
+    services.actions.run("spec.add_source.location", select(services, project))
+
+    index = read_index(services.document.project(project.id))
+    (source,) = index.sources
+    assert source.kind == "fake" and source.title == "Spec"
+    assert source.locator == {"location": "l1"}
+    assert resolve_locator(services.document.project(project.id), source) == {
+        "url": "https://github.com/acme/specs",
+        "ref": "v2",
+        "path": "products",
+    }
+    state = services.actions.spec("spec.add_source.location").state(select(services, project))
+    assert not state.enabled and "already" in (state.label or "")
+
+    moved = Location("l1", "spec", "https://github.com/acme/specs", path="products/v3")
+    services.undo.push(SetFieldCommand(project.id, "locations", (moved,)))
+    assert resolve_locator(services.document.project(project.id), source)["path"] == "products/v3"
+    assert resolve_locator(services.document.project(project.id), source)["ref"] == "HEAD"
+
+    services.undo.push(SetFieldCommand(project.id, "locations", ()))
+    from dplanner.modules import _default_briefing  # noqa: F401 — the module is built.
+
+    module = next(m for m in services.modules if m.id == "spec")
+    status = module.refresher.status(project.id, source)
+    assert not status.ready and "gone from the project" in status.message
+
+
+def test_from_repository_names_the_row_and_adds_its_source_as_one_gesture(
+    fake_kind, services, project, monkeypatch
+):
+    """The spec author's way in: the location dialog answers a spec row, and the row and
+    the source over it land as one undo step — nothing to set up in Settings first."""
+    from dataclasses import replace
+
+    from dplanner.domain.locations import Location
+
+    fake_kind.handles_locations = True
+    module = next(m for m in services.modules if m.id == "spec")
+    asked: list[tuple[str, str]] = []
+    row = Location("l1", "spec", "https://github.com/acme/specs", path="products")
+
+    def ask(project_id, role_id):
+        asked.append((project_id, role_id))
+        return row
+
+    monkeypatch.setattr(module, "_deps", replace(module._deps, ask_location=ask))
+    context = select(services, project)
+    assert services.actions.spec("spec.add_source.repository").state(context).enabled
+    services.actions.run("spec.add_source.repository", context)
+    assert asked == [(project.id, "spec")]
+    assert services.document.project(project.id).locations == (row,)
+    (source,) = read_index(services.document.project(project.id)).sources
+    assert source.locator == {"location": "l1"} and source.title == "Spec"
+    assert services.undo.undo_text() == "Add Spec From Repository"
+    services.undo.undo()
+    assert services.document.project(project.id).locations == ()
+    assert read_index(services.document.project(project.id)).sources == []
+
+    monkeypatch.setattr(module, "_deps", replace(module._deps, ask_location=lambda *_a: None))
+    services.actions.run("spec.add_source.repository", select(services, project))
+    assert services.document.project(project.id).locations == ()  # Cancelled: nothing.
+    monkeypatch.setattr(module, "_deps", replace(module._deps, ask_location=None))
+    state = services.actions.spec("spec.add_source.repository").state(select(services, project))
+    assert not state.enabled and "no location dialog" in (state.label or "")

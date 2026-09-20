@@ -46,6 +46,20 @@ paths:
   opened is not checked and wears none. A `SourceStatus` must claim `connectable` for
   Connect to be offered — a malformed locator is a refusal no dialog lifts, and the strip
   gives it the error tone instead.
+- **A spec location is a source waiting to be added — and can be named on the spot.**
+  *Add Spec ▸ From Repository…* runs the projects module's location dialog for a `spec`
+  row (`SpecDeps.ask_location`, wired by the root) and pushes the row and its source as
+  **one** `CompositeCommand`, so there is no "set it up in Settings first" and Undo takes
+  both away. A project's `spec` rows
+  (`modules/spec/roles.py`, read-only, several) are what *Add Spec ▸ From Location…*
+  offers: the source record names the row by id (`{"location": "l3"}`), and
+  `sourced.resolve_locator` hands the kind the row's address (`domain.locations.as_locator`:
+  `url`, `ref`, `path`) at every call — status, fetch, check, connect, open — so editing
+  the row in Project ▸ Settings… moves the source with it, and a row that is gone is a
+  status in words rather than a kind's refusal. The kind that takes one is the first with
+  `handles_locations` (the git kind); the entry is greyed with its reason while the
+  project names no spec location or every one is a source already. The cache directory
+  is the same digest a managed placement of the row uses, so nothing is cloned twice.
 - **A spec source is a kind the spec module runs, and there are four.** A document may
   come from outside — a **folder** on this computer, a **git repository**, a **Confluence
   page**, a **Confluence folder** — and *where it came from* is a source record in the
@@ -83,17 +97,22 @@ paths:
   leave the row kept and the page showing a blob that is gone. `is_document` is exported
   because the git kind's `check` derives the same key set from a git tree: two rules for
   what a document is would make a check lie about every file in the gap.
-- **A git spec source is a cache, never the plan.** A blobless, shallow, sparse clone
-  under `config_dir()/spec-git/<digest of url + ref + path>` — one directory per source,
-  so two sources can never cross sparse patterns. The **size guard runs before one blob
-  exists**: `--filter=blob:none` brings the trees, the listing counts what a fetch would
-  take in, and an oversized folder is refused *while it is being chosen*, naming the
-  folder. A **version is the file's blob oid**, which is what lets `check` name changed,
-  added and gone documents from the trees alone — a commit id moves for every file in the
-  repository and would report the whole source changed. **Nothing can hang a worker
-  thread**: prompts are off four ways, one transport is allowed and it is the validated
-  address's, every call has a timeout, and a kill reaches the process group. The person's
-  own git credentials do the auth and **an address carrying one is refused at the door**.
+- **A git spec source is a cache, never the plan — and the clone door is
+  `core/storage/sparse.py`'s.** `SparseClone(cache_root, url, ref, path)` is the blobless,
+  shallow, sparse clone under `config_dir()/spec-git/<digest of url + ref + path>` — one
+  directory per position, so two sources can never cross sparse patterns — and the module
+  only reads it: `source.py` builds the locator's clone, hands the walk's `is_document` to
+  the listing, and turns a `GitError` into the `SourceUnavailableError` a person reads.
+  The **size guard runs before one blob exists**: `--filter=blob:none` brings the trees,
+  `tree()` counts what `materialise()` would take in, and an oversized folder is refused
+  *while it is being chosen*, naming the folder (`Folder.refusal`). A **version is the
+  file's blob oid**, which is what lets `check` name changed, added and gone documents from
+  the trees alone — a commit id moves for every file in the repository and would report the
+  whole source changed. **Nothing can hang a worker thread**: prompts are off four ways, one
+  transport is allowed and it is the validated address's, every call has a timeout, and a
+  kill reaches the process group. The person's own git credentials do the auth and **an
+  address carrying one is refused at the door** — `parse_url`, and a `SparseClone` refuses
+  to be built over anything it did not accept.
 - **An external source's credential is the person's, never the plan's.** A kind may have
   none at all — a folder has nothing to connect to, and a git repository uses the git
   credentials already on the machine, which is why an address carrying a user name and

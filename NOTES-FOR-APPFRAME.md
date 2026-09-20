@@ -4217,3 +4217,77 @@ window is the case it did not have.
 the project's Dashboard tab now, and the registry is named for what it holds cards *about*.
 
 **Upstream?** With the registry, if it goes.
+
+## 51. From the repository-roles pass: the sparse clone door moves down to `core/storage/`
+
+### `core/storage/sparse.py` — a repository and a folder in it, fetched on demand, read-only
+
+**What we added.** One Qt-free module holding what had been the git spec source's engine
+(`modules/spec_git/source.py` and its `client.py`, now gone): `SparseClone(cache_root, url,
+ref, path)` with `bring_trees()`, `tree()`, `materialise()`, `remote_head()`,
+`local_head()` and `sweep()`; `sparse_dir()` (the cache digest, byte-identical to what the
+module wrote before, so no existing cache is repeated); `parse_url`, `valid_ref`,
+`valid_path` and `split_url` (the address as a security boundary — a dash is an option,
+`ext::` is a shell command, a glob character is a sparse pattern gone wrong, a credential
+is refused at the door); `Folder`, `folders()`, `too_big()` and `Probe` (the size guard,
+counting from the trees before one blob exists — it takes an `is_document` predicate,
+because core knows nothing about documents); `refusal()` (the sentence a person reads,
+composed from stderr and never quoting it); and the subprocess door — `run_git`,
+`hardening`, `environment`, `git_path`, `GitError`, `Ran`, the timeouts and the
+process-group kill.
+
+**Why it moved.** `docs/proposals/repository-roles-and-positions.md`: a project is about to
+name several repositories in several *roles*, and the ones it only reads (spec today; reporting
+on the table) all want "a repository and a position in it, fetched on demand
+without asking for a folder" — exactly what the spec kind had built for itself, privately.
+It was the largest kind module because the clone door was in it. The module keeps what is
+its own: the locator's shape in the spec index, the walk's rule for what a document is, the
+Snapshot and Freshness it builds, and the dialog.
+
+**Why `core/storage/` and not a second method on `GitStorage`.** `git.py`'s door is bound
+to one checkout the provider owns and writes; this one is bound to none, never writes, and
+its whole design is the guard that runs before a blob exists. A read-only clone that can be
+wiped is a different object from a working tree with a history, and giving it its own
+module keeps rule 8 honest — features import `sparse`, never a provider.
+
+**Upstream?** Yes, as it stands. It names nothing of the planner; the one product-specific
+phrase (`DPlanner` in three refusal sentences) is a constant's worth of text. Any
+application that reads a folder of somebody else's repository — a handbook, a template
+library, a schema — wants exactly this door, and the traps it closes (the cone-mode sparse
+pattern materialising the levels above the folder, a server that ignores `--filter` and
+downloads everything, `GIT_NO_LAZY_FETCH` as a variable rather than the 2.45+ option, git's
+read-only pack files defeating `rmtree` on Windows) each cost a day here.
+
+## 52. From the clone-policy pass: a second clone door, for a working checkout
+
+### `core/storage/kept.py` — a full clone the application keeps
+
+**What we added.** Beside `sparse.py`'s read-only cache, one Qt-free module for the other
+kind of clone a feature needs: a **working checkout** a person or an agent commits and
+pushes in, made for somebody who never chose a folder. `kept_dir(root, url)` names it —
+`<root>/checkouts/<name>-<digest>`, the digest over the canonical remote so two spellings
+of one repository share a clone, one directory per repository whatever ref or position a
+project names; `is_kept(path, root)` tells such a clone from the person's own; and
+`clone_full(url, dest, cancelled)` makes it — a plain `git clone` through `sparse.run_git`,
+the address through `parse_url` first, landed by the same `.partial` rename.
+
+**The trap it closes.** `git clone -c key=value` *writes the setting into the new
+repository's config* — that is the documented behaviour, and it is exactly right for the
+cache, whose `core.hooksPath` pointing at nothing should hold forever. For a working clone
+it is wrong: an agent would find hooks silently disabled and symlinks checked out as text
+files, for reasons nobody can see in the repository. So the clone-time hardening goes
+through `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_n`/`GIT_CONFIG_VALUE_n` (git ≥ 2.31), which
+applies to the invocation and nothing after it, with `core.symlinks=false` left out
+because the initial checkout would honour it. The test reads the clone's local config
+back and asserts none of it landed.
+
+**Where it lives.** Under the application's configuration directory, never in a plan
+repository, a project directory or the person's repositories folder: those are theirs, and
+a clone nobody asked for must not appear among them. The window's `CheckoutService`
+(`modules/projects/checkouts.py`) is the one caller, and the *clone policy* beside the
+repositories folder decides between this door and that folder — the destination only,
+never whether a verb runs.
+
+**Upstream?** Yes, with `sparse.py`: the two doors are one story (a repository read on
+demand, a repository worked in on demand), and any application that runs a tool inside
+somebody else's repository wants the second as soon as it has the first.

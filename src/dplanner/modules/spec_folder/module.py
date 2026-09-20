@@ -39,6 +39,7 @@ class SpecFolderKind:
     id = KIND
     name = "Folder"
     label = "&Folder on This Computer…"
+    handles_locations = False
 
     def __init__(self) -> None:
         # It takes no Deps: there is no service it needs and no capability it borrows —

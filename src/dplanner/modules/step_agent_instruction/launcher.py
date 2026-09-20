@@ -774,7 +774,7 @@ def detached_flags(platform: str = sys.platform) -> int:
     ``start_new_session`` is silently ignored. What the child *would* inherit is the console
     DPlanner was started from, and that console's Ctrl+C — which would reach the agent.
     ``DETACHED_PROCESS`` unhooks it; ``CREATE_NEW_PROCESS_GROUP`` is the flag
-    ``spec_git/client.py`` sets for the same reason. Not ``CREATE_NEW_CONSOLE``: every
+    ``core/storage/sparse.py`` sets for the same reason. Not ``CREATE_NEW_CONSOLE``: every
     Windows row in ``TERMINALS`` opens its own window already, so it would only add a stray
     black one behind each launch.
     """

@@ -14,9 +14,11 @@ from pathlib import Path
 
 import pytest
 from PySide6.QtWidgets import QDialog, QFileDialog
+from tests.facts import code_row
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.core.storage.provider import StorageError
+from dplanner.domain.locations import Location
 from dplanner.domain.plan_repo import read_meta
 from dplanner.domain.project_link import ProjectLink, document_text, encode
 from dplanner.domain.seed import seed_project
@@ -28,12 +30,17 @@ from dplanner.modules.projects.open_dialog import (
     CHOOSE,
     LINK,
     LINK_PAGE,
+    REPOSITORIES_PAGE,
     OpenProjectDialog,
 )
 from dplanner.modules.projects.project_dialog import NewProjectSpec
 from dplanner.modules.projects.repo_picker import PlanTarget
 from dplanner.modules.projects.repos import Joined, shown_path
-from dplanner.modules.projects.repositories_folder import set_repositories_folder
+from dplanner.modules.projects.repositories_folder import (
+    FOLDER,
+    set_clone_policy,
+    set_repositories_folder,
+)
 
 
 def run(services, action_id):
@@ -126,8 +133,8 @@ def test_new_project_is_seeded_into_the_picked_plan_repository_and_connected(
         summary="Find things",
         plan=PlanTarget(library_repo),
         folder="alpha-search",
-        repository="https://github.com/acme/widget",
-        checkout=code,
+        locations=code_row("https://github.com/acme/widget"),
+        checkouts=(("https://github.com/acme/widget", code),),
     )
     run(services, "projects.new")
     target = library_repo / "alpha-search"
@@ -135,9 +142,9 @@ def test_new_project_is_seeded_into_the_picked_plan_repository_and_connected(
     assert (library_repo / ".dplanner").read_text().splitlines() == ["alpha-search"]
     (project,) = services.document.projects
     assert project.title == "Alpha Search" and project.summary == "Find things"
-    assert project.repository == "https://github.com/acme/widget"
+    assert project.locations == code_row("https://github.com/acme/widget")
     assert services.repo.project_dir(project.id) == target.resolve()
-    assert services.repo.checkout_of(project.id) == code
+    assert services.repo.checkout_for("https://github.com/acme/widget") == code
     assert "created" in services.window.statusBar().currentMessage()
 
 
@@ -147,8 +154,7 @@ def test_new_project_initialises_a_new_local_plan_repository(services, tmp_path,
         summary="",
         plan=PlanTarget(tmp_path / "plans", init=True),
         folder="solo",
-        repository="",
-        checkout=None,
+        locations=(),
     )
     run(services, "projects.new")
     assert (tmp_path / "plans" / ".git").is_dir()
@@ -172,8 +178,7 @@ def test_new_project_on_github_publishes_the_fresh_repository(
         summary="",
         plan=PlanTarget(tmp_path / "plans", init=True, publish="plans"),
         folder="solo",
-        repository="",
-        checkout=None,
+        locations=(),
     )
     run(services, "projects.new")
     assert published == [((tmp_path / "plans").resolve(), "plans")]
@@ -204,7 +209,7 @@ def plans(tmp_path):
     return root
 
 
-def wizard(services, monkeypatch, *, listed_dirs=None, listed_ids=None, clone=None, checkout=None):
+def wizard(services, monkeypatch, *, listed_dirs=None, listed_ids=None, clone=None):
     """The wizard over the running application, wired as the module wires it — the library
     it already has is what the pages grey and refuse against, so a test that adds a project
     first sees it here too."""
@@ -218,11 +223,11 @@ def wizard(services, monkeypatch, *, listed_dirs=None, listed_ids=None, clone=No
         listed_ids=list(
             [p.id for p in services.document.projects] if listed_ids is None else listed_ids
         ),
-        known_checkout=(lambda _remote: checkout),
         parent=services.window,
     )
     inline(dialog.browse._runner, monkeypatch)
     inline(dialog.link._runner, monkeypatch)
+    inline(dialog.repositories._runner, monkeypatch)
     return dialog
 
 
@@ -464,7 +469,7 @@ def test_a_plan_repository_this_machine_already_has_is_used_rather_than_cloned(
     # nothing to fetch: the wizard points straight at the project inside it.
     here = tmp_path / "here"
     subprocess.run(["git", "clone", "-q", str(origin), str(here)], check=True)
-    module(services)._deps.connect_project(here / "search", None)
+    module(services)._deps.connect_project(here / "search")
     recorded: list[tuple[str, Path]] = []
     dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
     dialog.link.set_text(encode(link))
@@ -480,7 +485,7 @@ def test_a_clone_without_the_project_the_link_names_says_to_pull(
     origin, link = shared
     here = tmp_path / "here"
     subprocess.run(["git", "clone", "-q", str(origin), str(here)], check=True)
-    module(services)._deps.connect_project(here / "search", None)
+    module(services)._deps.connect_project(here / "search")
     moved = replace(link, plan_path="ranking", project_id="another", title="Ranking")
     dialog = linking(services, monkeypatch)
     dialog.link.set_text(encode(moved))
@@ -496,95 +501,129 @@ def test_setting_up_clones_the_plan_and_answers_with_the_project_directory(
     recorded: list[tuple[str, Path]] = []
     dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
     dialog.link.set_text(encode(link))
-    dialog.link.checkout_edit.clear()  # The code is somebody else's problem in this test.
+    assert "acme/widget" in dialog.link.code_line.text()
     dialog.primary_button.click()
+    # The plan names no location, so there is nothing to ask about: done.
     assert dialog.result() == QDialog.DialogCode.Accepted
-    assert dialog.joined() == [Joined(tmp_path / "Code" / "plans" / "search", None)]
+    assert dialog.joined() == [Joined(tmp_path / "Code" / "plans" / "search")]
     assert recorded == [(str(origin), tmp_path / "Code" / "plans")]
     dialog.deleteLater()
 
 
-def test_setting_up_clones_the_code_into_the_folder_the_person_named(
-    services, shared, tmp_path, monkeypatch
+def shared_with_locations(tmp_path, *locations):
+    """A plan repository whose one project names locations, and the link to it."""
+    origin = init_repo(tmp_path / "origin" / "plans")
+    seed_project(origin / "search", "Search", locations=locations)
+    commit_all(origin, "Anna")
+    return origin, ProjectLink(
+        plan_remote=str(origin),
+        plan_path="search",
+        project_id=read_meta(origin / "search")["id"],
+        title="Search",
+    )
+
+
+def test_the_repositories_page_asks_about_the_worked_in_repositories_the_machine_lacks(
+    services, tmp_path, monkeypatch
 ):
-    origin, link = shared
+    """After the clone, the plan says what it works in: a code repository this machine
+    lacks is a row with three answers, a read-only specs row is not asked about."""
     code_origin = init_repo(tmp_path / "origin" / "widget")
     (code_origin / "README.md").write_text("the widget\n")
     commit_all(code_origin, "Anna")
-    link = replace(link, code_remote=str(code_origin))
+    origin, link = shared_with_locations(
+        tmp_path,
+        Location("l1", "code", str(code_origin)),
+        Location("l2", "spec", "https://github.com/acme/specs", path="products"),
+        Location("l3", "reporting", str(code_origin), path="reports"),
+    )
+    set_clone_policy(FOLDER)  # The page is the folder policy's.
     set_repositories_folder(tmp_path / "Code")
     recorded: list[tuple[str, Path]] = []
     dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
     dialog.link.set_text(encode(link))
-    assert dialog.link.checkout_edit.text() == str(tmp_path / "Code" / "widget")
-    assert "will be cloned into" in dialog.link.checkout_where.text()
     dialog.primary_button.click()
-    assert dialog.joined()[0].checkout == tmp_path / "Code" / "widget"
-    assert (tmp_path / "Code" / "widget" / ".git").is_dir()
+    assert dialog.current_page() == REPOSITORIES_PAGE
+    assert not dialog.back_button.isVisibleTo(dialog)  # Read off the plan now on disk.
+    page = dialog.repositories
+    assert page.table.rowCount() == 1  # One repository, however many rows name it.
+    assert page.table.item(0, 1).text() == "Code, Reporting"
+    assert dialog.primary_button.text() == "Clone 1 and Finish"
+    dialog.primary_button.click()
+    assert dialog.result() == QDialog.DialogCode.Accepted
     assert [remote for remote, _dest in recorded] == [str(origin), str(code_origin)]
+    assert dialog.joined()[0].checkouts == ((str(code_origin), tmp_path / "Code" / "widget"),)
+    assert (tmp_path / "Code" / "widget" / ".git").is_dir()
     dialog.deleteLater()
 
 
-def test_setting_up_again_after_the_code_failed_uses_the_plan_it_already_cloned(
-    services, shared, tmp_path, monkeypatch
+def test_later_and_a_checkout_this_machine_names_are_answers_too(services, tmp_path, monkeypatch):
+    origin, link = shared_with_locations(
+        tmp_path,
+        Location("l1", "code", "https://github.com/acme/widget"),
+        Location("l2", "code", "https://github.com/acme/ui", label="UI"),
+    )
+    here = init_repo(tmp_path / "ui")
+    set_clone_policy(FOLDER)  # The page is the folder policy's.
+    set_repositories_folder(tmp_path / "Code")
+    recorded: list[tuple[str, Path]] = []
+    dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
+    dialog.link.set_text(encode(link))
+    dialog.primary_button.click()
+    page = dialog.repositories
+    assert page.table.rowCount() == 2
+    page._combos[0].setCurrentIndex(2)
+    page._combos[0].activated.emit(2)  # Later.
+    monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(here))
+    page._combos[1].setCurrentIndex(1)
+    page._combos[1].activated.emit(1)  # Use a checkout I have…
+    assert page._combos[1].currentText() == f"Use {shown_path(here)}"
+    assert dialog.primary_button.text() == "Finish"
+    dialog.primary_button.click()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert [remote for remote, _dest in recorded] == [str(origin)]  # Nothing else cloned.
+    assert dialog.joined()[0].checkouts == (("https://github.com/acme/ui", here),)
+    dialog.deleteLater()
+
+
+def test_a_repository_this_machine_already_has_is_not_asked_about(services, tmp_path, monkeypatch):
+    _origin, link = shared_with_locations(
+        tmp_path, Location("l1", "code", "https://github.com/acme/widget")
+    )
+    services.repo.set_checkout("https://github.com/acme/widget", init_repo(tmp_path / "widget"))
+    set_repositories_folder(tmp_path / "Code")
+    dialog = linking(services, monkeypatch, clone=cloner(tmp_path, []))
+    dialog.link.set_text(encode(link))
+    dialog.primary_button.click()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert dialog.joined()[0].checkouts == ()
+    dialog.deleteLater()
+
+
+def test_a_clone_on_the_repositories_page_that_fails_says_so_and_stays(
+    services, tmp_path, monkeypatch
 ):
-    origin, link = shared
+    origin, link = shared_with_locations(
+        tmp_path, Location("l1", "code", "https://github.com/acme/widget")
+    )
+    set_clone_policy(FOLDER)  # The page is the folder policy's.
     set_repositories_folder(tmp_path / "Code")
     recorded: list[tuple[str, Path]] = []
     clone_plan = cloner(tmp_path, recorded)
 
     def clone(remote, dest):
-        if remote == link.code_remote:
+        if remote == "https://github.com/acme/widget":
             raise StorageError("no access to acme/widget")
         clone_plan(remote, dest)
 
     dialog = linking(services, monkeypatch, clone=clone)
-    dialog.link.set_text(encode(link))  # The checkout is offered in the folder, to be cloned.
-    dialog.primary_button.click()
-    assert dialog.link.link_status.words() == "no access to acme/widget"
-    dialog.link.checkout_edit.clear()
-    dialog.primary_button.click()
-    assert dialog.joined() == [Joined(tmp_path / "Code" / "plans" / "search", None)]
-    assert recorded == [(str(origin), tmp_path / "Code" / "plans")]  # Cloned once, not twice.
-    dialog.deleteLater()
-
-
-def test_a_checkout_this_machine_already_has_is_offered_rather_than_a_clone(
-    services, shared, tmp_path, monkeypatch
-):
-    _origin, link = shared
-    here = init_repo(tmp_path / "widget")
-    dialog = linking(services, monkeypatch, checkout=here)
     dialog.link.set_text(encode(link))
-    assert dialog.link.checkout_edit.text() == str(here)
-    assert dialog.link.checkout_where.text() == "acme/widget, already there"
-    dialog.deleteLater()
-
-
-@pytest.mark.parametrize("taken", ["occupied", "occupied/notes.txt"])
-def test_a_checkout_path_that_is_something_else_is_refused(
-    services, shared, tmp_path, monkeypatch, taken
-):
-    """A folder of something else — or a file, which is no folder to look inside at all."""
-    _origin, link = shared
-    occupied = tmp_path / "occupied"
-    occupied.mkdir()
-    (occupied / "notes.txt").write_text("mine")
-    dialog = linking(services, monkeypatch)
-    dialog.link.set_text(encode(link))
-    dialog.link.checkout_edit.setText(str(tmp_path / taken))
-    assert "is not a checkout" in (dialog.link.refusal() or "")
-    assert not dialog.primary_button.isEnabled()
-    dialog.deleteLater()
-
-
-def test_a_link_naming_no_code_repository_leaves_the_checkout_alone(services, shared, monkeypatch):
-    _origin, link = shared
-    dialog = linking(services, monkeypatch)
-    dialog.link.set_text(encode(replace(link, code_remote="")))
-    assert not dialog.link.checkout_edit.isEnabled()
-    assert dialog.link.checkout_where.text() == "this link names no code repository"
-    assert dialog.primary_button.isEnabled()
+    dialog.primary_button.click()
+    assert dialog.current_page() == REPOSITORIES_PAGE
+    dialog.primary_button.click()
+    assert dialog.result() != QDialog.DialogCode.Accepted
+    assert dialog.repositories.status.words() == "no access to acme/widget"
+    assert recorded == [(str(origin), tmp_path / "Code" / "plans")]
     dialog.deleteLater()
 
 
@@ -599,9 +638,28 @@ def test_a_clone_that_fails_says_so_and_the_wizard_stays_open(
 
     dialog = linking(services, monkeypatch, clone=refuse)
     dialog.link.set_text(encode(link))
-    dialog.link.checkout_edit.clear()
     dialog.primary_button.click()
     assert dialog.result() != QDialog.DialogCode.Accepted  # Nothing accepted it.
     assert dialog.link.link_status.words() == "gh is not signed in"
     assert dialog.joined() == []
+    dialog.deleteLater()
+
+
+def test_under_the_kept_policy_nothing_is_asked_after_the_clone(services, tmp_path, monkeypatch):
+    """The default: a repository the plan works in that this machine lacks is cloned by
+    the verb that first needs it, where DPlanner keeps clones — so the wizard finishes
+    on the plan alone and a team lead never picks a folder."""
+    origin, link = shared_with_locations(
+        tmp_path,
+        Location("l1", "code", "https://github.com/acme/widget"),
+        Location("l2", "reporting", "https://github.com/acme/widget", path="reports"),
+    )
+    set_repositories_folder(tmp_path / "Code")
+    recorded: list[tuple[str, Path]] = []
+    dialog = linking(services, monkeypatch, clone=cloner(tmp_path, recorded))
+    dialog.link.set_text(encode(link))
+    dialog.primary_button.click()
+    assert dialog.result() == QDialog.DialogCode.Accepted
+    assert [remote for remote, _dest in recorded] == [str(origin)]  # The plan, nothing else.
+    assert dialog.joined()[0].checkouts == ()
     dialog.deleteLater()

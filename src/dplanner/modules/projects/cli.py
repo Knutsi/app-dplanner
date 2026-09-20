@@ -14,14 +14,15 @@ Qt-free by rule — see ``tests/test_architecture.py``.
 import json
 import shutil
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor
-from dplanner.cli.lint import LintCheck, LintFinding, repository_finding
+from dplanner.cli.lint import LintCheck, LintFinding, project_findings
 from dplanner.cli.lookup import (
     find_project,
     find_step,
@@ -32,12 +33,7 @@ from dplanner.cli.lookup import (
     step_arg,
 )
 from dplanner.core.fsio import slugify, write_atomic
-from dplanner.core.storage.locations import (
-    canonical_remote,
-    find_repo_root,
-    init_repo,
-    origin_url,
-)
+from dplanner.core.storage.locations import find_repo_root, init_repo
 from dplanner.core.storage.pointer import remove_from_index
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -48,6 +44,23 @@ from dplanner.domain.commands import (
     redirect_edges_command,
     remove_edges_command,
     remove_steps_command,
+)
+from dplanner.domain.locations import (
+    CODE,
+    Location,
+    LocationRole,
+    ManagedFor,
+    Placement,
+    find_location,
+    next_id,
+    normalise_path,
+    primary_code,
+    problem,
+    read_locations,
+    replaced,
+    roles_by_id,
+    without,
+    write_locations,
 )
 from dplanner.domain.model import (
     EDGE_KINDS,
@@ -128,11 +141,20 @@ def lint_checks() -> list[LintCheck]:
 
 
 def commands(
-    step_authors: Sequence[StepAuthor] = (), key_of: Callable[[Step], str] = _no_key
+    step_authors: Sequence[StepAuthor] = (),
+    key_of: Callable[[Step], str] = _no_key,
+    *,
+    roles: Mapping[str, LocationRole] | None = None,
+    managed: ManagedFor | None = None,
+    kept_root: Path | None = None,
 ) -> list[CliCommand]:
     """``key_of`` is the step's readable key (``S7``, ``F3``) — the letter is a fact
     about aspects this file never reads, so the root hands the rule in and every row,
-    listing and chart here prints the same key the canvas paints."""
+    listing and chart here prints the same key the canvas paints. ``roles`` is the
+    location role registry the root gathers (the domain's ``code`` alone without it),
+    ``managed`` says where a read-only location's clone stands, and ``kept_root`` is the
+    configuration directory a clone DPlanner keeps lives under."""
+    roles = roles if roles is not None else roles_by_id([CODE])
 
     def _configure_step_add(parser: ArgumentParser) -> None:
         project_arg(parser)
@@ -173,40 +195,46 @@ def commands(
         )
         return 0
 
+    locating = Locating(roles=roles, managed=managed, kept_root=kept_root)
     return [
         CliCommand(
             path=("project", "list"),
             summary="Every project in this library, with its step count.",
-            run=_project_list,
+            run=partial(_project_list, locating=locating),
             examples=("dplanner project list", "dplanner project list --json"),
         ),
         CliCommand(
             path=("project", "show"),
-            summary="One project: its summary, its steps and the links between them.",
+            summary="One project: its summary, its locations, its steps and the links "
+            "between them.",
             configure=project_arg,
-            run=partial(_project_show, key_of=key_of),
+            run=partial(_project_show, locating=locating, key_of=key_of),
             examples=("dplanner project show discovery",),
         ),
         CliCommand(
             path=("project", "create"),
             summary="Create a project directory inside a git repository and add it to the library.",
             configure=_configure_create,
-            run=_project_create,
-            examples=("dplanner project create 'Search rewrite' --summary 'Replace the index'",),
+            run=partial(_project_create, locating=locating),
+            examples=(
+                "dplanner project create 'Search rewrite' --summary 'Replace the index'",
+                "dplanner project create 'Search rewrite' --in ~/plans "
+                "--code https://github.com/acme/widget --checkout ~/src/widget",
+            ),
         ),
         CliCommand(
             path=("project", "rename"),
             summary="Change a project's title or summary.",
             configure=_configure_rename,
-            run=_project_rename,
+            run=partial(_project_rename, locating=locating),
             examples=("dplanner project rename discovery --title 'Discovery phase'",),
         ),
         CliCommand(
             path=("project", "set"),
-            summary="Say which code repository a project plans, where that code is checked "
-            "out on this machine, or that the plan stays inside its code on purpose.",
+            summary="Set the primary code repository and where it is checked out here, or "
+            "say that the plan stays inside its code on purpose.",
             configure=_configure_set,
-            run=_project_set,
+            run=partial(_project_set, locating=locating),
             examples=(
                 "dplanner project set discovery --repository https://github.com/acme/widget",
                 "dplanner project set discovery --checkout ~/src/widget",
@@ -214,11 +242,67 @@ def commands(
             ),
         ),
         CliCommand(
+            path=("location", "list"),
+            summary="The places a project is about — its code, its specs, where it reports — "
+            "each a repository and a position in it — and where each is on this machine.",
+            configure=project_arg,
+            run=partial(_location_list, locating=locating),
+            examples=(
+                "dplanner location list discovery",
+                "dplanner location list discovery --json",
+            ),
+        ),
+        CliCommand(
+            path=("location", "roles"),
+            summary="The kinds of place a project can name, and what each is for.",
+            run=partial(_location_roles, locating=locating),
+            examples=("dplanner location roles",),
+        ),
+        CliCommand(
+            path=("location", "add"),
+            summary="Name a place the project is about: a role, a repository (the code's "
+            "by default) and a position inside it.",
+            configure=partial(_configure_location_add, roles=roles),
+            run=partial(_location_add, locating=locating),
+            examples=(
+                "dplanner location add discovery --role code --repository "
+                "https://github.com/acme/widget-ui --label UI",
+                "dplanner location add discovery --role docs --path docs/search",
+                "dplanner location add discovery --role specs --repository "
+                "https://github.com/acme/specs --path products/search",
+            ),
+        ),
+        CliCommand(
+            path=("location", "set"),
+            summary="Change a location's repository, position, ref or label.",
+            configure=_configure_location_set,
+            run=partial(_location_set, locating=locating),
+            examples=("dplanner location set discovery l3 --path products/search/v2",),
+        ),
+        CliCommand(
+            path=("location", "remove"),
+            summary="Take a location out of the project's table.",
+            configure=_configure_location,
+            run=partial(_location_remove, locating=locating),
+            examples=("dplanner location remove discovery l3",),
+        ),
+        CliCommand(
+            path=("location", "checkout"),
+            summary="Where this machine has a location's repository checked out — recorded "
+            "per repository, per machine, never in the plan.",
+            configure=_configure_location_checkout,
+            run=partial(_location_checkout, locating=locating),
+            examples=(
+                "dplanner location checkout discovery l1 ~/src/widget",
+                "dplanner location checkout discovery l1 --forget",
+            ),
+        ),
+        CliCommand(
             path=("project", "move"),
             summary="Move a plan out of the repository it is in — usually the code it plans "
             "— into a plan repository, committing both sides.",
             configure=_configure_move,
-            run=_project_move,
+            run=partial(_project_move, locating=locating),
             examples=(
                 "dplanner project move discovery --into ~/plans",
                 "dplanner project move discovery --into ~/plans --init-repo",
@@ -230,7 +314,7 @@ def commands(
             summary="A link that sets this project up on somebody else's machine: both "
             "repositories, and where the plan sits in its own.",
             configure=_configure_share,
-            run=_project_share,
+            run=partial(_project_share, locating=locating),
             examples=(
                 "dplanner project share discovery",
                 f"dplanner project share discovery --file ~/discovery{SUFFIX}",
@@ -241,7 +325,7 @@ def commands(
             summary="Add the project a link names, from a clone of its plan repository "
             "this machine already has.",
             configure=_configure_open,
-            run=_project_open,
+            run=partial(_project_open, locating=locating),
             examples=(
                 f"dplanner project open ~/discovery{SUFFIX}",
                 "dplanner project open 'dplanner://project?plan=…' --into ~/Code/plans",
@@ -285,7 +369,7 @@ def commands(
             path=("project", "import"),
             summary="Create a project from JSON on stdin, in export's shape.",
             configure=_configure_import,
-            run=_project_import,
+            run=partial(_project_import, locating=locating),
             examples=("dplanner project import --dir ~/code/widget/planning < discovery.json",),
         ),
         CliCommand(
@@ -384,9 +468,9 @@ def project_document(library: Library, project: Project) -> dict[str, Any]:
     return {
         "title": project.title,
         "summary": project.summary,
-        # The code repository it plans travels with the plan; where it is checked out on
-        # a machine never does.
-        "repository": project.repository,
+        # The locations it names travel with the plan; where each is checked out on a
+        # machine never does.
+        "locations": write_locations(project.locations),
         "colocation": project.colocation,
         # A project owns module data and prose of its own — its start date, its standing
         # agent instruction — so the document carries both. Without this, exporting and
@@ -407,15 +491,59 @@ def project_document(library: Library, project: Project) -> dict[str, Any]:
     }
 
 
-def _facts(context: CliContext, project: Project) -> RepositoryFacts:
+@dataclass(frozen=True)
+class Locating:
+    """The two cross-module facts every reader of the locations table needs: the role
+    registry the root gathers, and where a read-only location's managed clone stands."""
+
+    roles: Mapping[str, LocationRole]
+    managed: ManagedFor | None = None
+    kept_root: Path | None = None  # The configuration directory: a kept clone says so.
+
+
+def _facts(context: CliContext, project: Project, locating: Locating) -> RepositoryFacts:
     return repository_facts(
-        project, context.store.project_dir(project.id), context.store.checkout_of(project.id)
+        project,
+        context.store.project_dir(project.id),
+        context.store.checkouts(),
+        managed=locating.managed,
+        kept_root=locating.kept_root,
     )
 
 
-def _project_row(context: CliContext, project: Project) -> dict[str, Any]:
+def _where(placement: Placement) -> str:
+    """Where a location is on this machine, in the words every surface uses."""
+    if placement.root is None:
+        return "not checked out on this machine"
+    if placement.managed:
+        directory = placement.directory
+        fetched = directory is not None and directory.is_dir()
+        return "fetched on demand" + ("" if fetched else " — not fetched yet")
+    if placement.kept:
+        return f"{placement.directory} — a clone DPlanner keeps"
+    return str(placement.directory)
+
+
+def _location_row(placement: Placement, locating: Locating) -> dict[str, Any]:
+    location = placement.location
+    return {
+        "id": location.id,
+        "role": location.role,
+        "name": location.name(locating.roles),
+        "repository": location.repository,
+        "path": location.path,
+        "ref": location.ref,
+        "label": location.label,
+        "directory": str(placement.directory) if placement.directory else "",
+        "managed": placement.managed,
+        "kept": placement.kept,
+        "where": _where(placement),
+    }
+
+
+def _project_row(context: CliContext, project: Project, locating: Locating) -> dict[str, Any]:
     directory = context.store.project_dir(project.id)
-    facts = _facts(context, project)
+    facts = _facts(context, project, locating)
     return {
         "id": project.id,
         "title": project.title,
@@ -423,34 +551,44 @@ def _project_row(context: CliContext, project: Project) -> dict[str, Any]:
         "steps": len(project.steps),
         "dir": str(directory),
         # The plan repository is derived — the directory decides it, git its remote; the
-        # code repository is the project's own word; where the code is checked out is
-        # this machine's, from the library file.
+        # locations are the project's own word; where each is on this machine is the
+        # library file's. `repository` and `checkout` are the primary code row's, the
+        # older readers' names for it.
         "plan_root": str(facts.plan_root) if facts.plan_root else "",
         "plan_remote": facts.plan_remote,
-        "repository": project.repository,
+        "repository": facts.repository,
         "checkout": str(facts.checkout) if facts.checkout else "",
+        "locations": [_location_row(found, locating) for found in facts.placements],
         "colocation": project.colocation,
         "state": facts.state,
     }
 
 
-def _repository_lines(context: CliContext, project: Project) -> list[str]:
-    """Where the plan and the code are, as ``project show`` and the setting verbs say it."""
-    facts = _facts(context, project)
+def _location_line(placement: Placement, locating: Locating) -> str:
+    location = placement.location
+    inside = f" at {location.path}" if location.path else ""
+    ref = f" @{location.ref}" if location.ref else ""
+    return (
+        f"  {location.id:<3} {location.name(locating.roles)}: {location.repository_label}"
+        f"{inside}{ref} — {_where(placement)}"
+    )
+
+
+def _repository_lines(context: CliContext, project: Project, locating: Locating) -> list[str]:
+    """Where the plan and every location are, as ``project show`` and the setting verbs
+    say it."""
+    facts = _facts(context, project, locating)
     title = project.title or project.folder_name
     plan = facts.plan_label or "not in a git repository"
     lines = [f"  plan: {plan}" + (f" ({facts.plan_root})" if facts.plan_root else "")]
-    if project.repository:
-        lines.append(f"  code: {facts.code_label}")
-    else:
-        lines.append(f"  code: not set — `dplanner project set '{title}' --repository URL`")
-    if facts.checkout:
-        lines.append(f"  checkout: {facts.checkout}")
-    else:
-        lines.append("  checkout: not on this machine")
-    finding = repository_finding(project, facts)
-    if finding is not None:
-        lines.append(f"  ! {finding.message}")
+    lines += [_location_line(found, locating) for found in facts.placements]
+    if facts.code is None:
+        lines.append(
+            f"  code: not set — `dplanner location add '{title}' --role code --repository URL`"
+        )
+    lines += [
+        f"  ! {finding.message}" for finding in project_findings(project, facts, locating.roles)
+    ]
     return lines
 
 
@@ -470,9 +608,9 @@ def _step_row(
 # -- project verbs ------------------------------------------------------------------------------
 
 
-def _project_list(context: CliContext, _args: Namespace) -> int:
+def _project_list(context: CliContext, _args: Namespace, locating: Locating) -> int:
     library = context.library
-    rows = [_project_row(context, project) for project in library.projects]
+    rows = [_project_row(context, project, locating) for project in library.projects]
     if not rows:
         context.report(
             {"projects": []},
@@ -488,17 +626,20 @@ def _project_list(context: CliContext, _args: Namespace) -> int:
 
 
 def _project_show(
-    context: CliContext, args: Namespace, key_of: Callable[[Step], str] = _no_key
+    context: CliContext,
+    args: Namespace,
+    locating: Locating,
+    key_of: Callable[[Step], str] = _no_key,
 ) -> int:
     library = context.library
     project = find_project(library, args.project)
-    data = _project_row(context, project) | {
+    data = _project_row(context, project, locating) | {
         "steps": [_step_row(library, step, key_of) for step in project.steps]
     }
     lines = [
         project.title,
         f"  {project.summary}" if project.summary else "",
-        *_repository_lines(context, project),
+        *_repository_lines(context, project, locating),
         "  Steps:",
     ]
     for step in project.steps:
@@ -542,16 +683,18 @@ def _configure_create(parser: ArgumentParser) -> None:
     )
     parser.add_argument("--summary", default="", help="one line on what it delivers")
     parser.add_argument(
-        "--repository",
+        "--code",
+        action="append",
+        default=[],
         metavar="URL",
-        default="",
-        help="the code repository this project plans, as git names its remote",
+        help="a code repository this project changes, as git names its remote; repeatable, "
+        "the first is the primary — `dplanner location add` names the others",
     )
     parser.add_argument(
         "--checkout",
         metavar="PATH",
         default="",
-        help="where this machine has that code checked out",
+        help="where this machine has the first code repository checked out",
     )
 
 
@@ -564,7 +707,12 @@ def _create_target(args: Namespace) -> Path:
 
 
 def _materialize(
-    context: CliContext, directory: Path, title: str, *, init: bool, repository: str = ""
+    context: CliContext,
+    directory: Path,
+    title: str,
+    *,
+    init: bool,
+    locations: Sequence[Location] = (),
 ) -> Project:
     """Seed a project directory and attach it — the CLI's half of File ▸ New Project."""
     directory = directory.expanduser()
@@ -578,7 +726,7 @@ def _materialize(
     for existing in context.library.projects:
         if context.store.project_dir(existing.id).resolve() == directory.resolve():
             raise CliError(f"{directory} is already in the library")
-    seed_project(directory, title, repository=repository)
+    seed_project(directory, title, locations=locations)
     project = context.store.attach(directory)
     # Membership is applied directly: the CLI has no undo stack, and the GUI's half of
     # this verb is off the stack too — a repository cannot be un-inited.
@@ -586,22 +734,27 @@ def _materialize(
     return project
 
 
-def _project_create(context: CliContext, args: Namespace) -> int:
+def _project_create(context: CliContext, args: Namespace, locating: Locating) -> int:
+    urls = [url.strip() for url in args.code if url.strip()]
+    if args.checkout and not urls:
+        raise CliError("--checkout says where a code repository is — name one with --code URL")
+    locations: list[Location] = []
+    for url in urls:
+        locations.append(Location(next_id(locations), CODE.id, url))
     project = _materialize(
-        context,
-        _create_target(args),
-        args.title,
-        init=args.init_repo,
-        repository=args.repository.strip(),
+        context, _create_target(args), args.title, init=args.init_repo, locations=locations
     )
     if args.checkout:
-        context.store.set_checkout(project.id, Path(args.checkout).expanduser().resolve())
+        context.store.set_checkout(urls[0], Path(args.checkout).expanduser().resolve())
     if args.summary:
         context.apply(SetFieldCommand(project.id, "summary", args.summary))
     context.report(
-        _project_row(context, project),
+        _project_row(context, project, locating),
         "\n".join(
-            [f"Created {project.title!r}  {project.id}", *_repository_lines(context, project)]
+            [
+                f"Created {project.title!r}  {project.id}",
+                *_repository_lines(context, project, locating),
+            ]
         ),
     )
     return 0
@@ -613,7 +766,7 @@ def _configure_rename(parser: ArgumentParser) -> None:
     parser.add_argument("--summary", help="the new summary")
 
 
-def _project_rename(context: CliContext, args: Namespace) -> int:
+def _project_rename(context: CliContext, args: Namespace, locating: Locating) -> int:
     project = find_project(context.library, args.project)
     if args.title is None and args.summary is None:
         raise CliError("nothing to change — pass --title or --summary")
@@ -621,16 +774,19 @@ def _project_rename(context: CliContext, args: Namespace) -> int:
         context.apply(SetFieldCommand(project.id, "title", args.title))
     if args.summary is not None:
         context.apply(SetFieldCommand(project.id, "summary", args.summary))
-    context.report(_project_row(context, project), f"{project.title}")
+    context.report(_project_row(context, project, locating), f"{project.title}")
     return 0
 
 
 def _configure_set(parser: ArgumentParser) -> None:
     project_arg(parser)
+    # The primary code row's shorthands, kept from before the table: an agent taught by an
+    # earlier skill still lands, and "the code repository" is a real thing — the first row.
     parser.add_argument(
         "--repository",
         metavar="URL",
-        help="the code repository this project plans, as git names its remote",
+        help="the primary code repository, as git names its remote — the first code "
+        "location; `dplanner location add` names the others",
     )
     parser.add_argument(
         "--checkout", metavar="PATH", help="where this machine has that code checked out"
@@ -638,7 +794,7 @@ def _configure_set(parser: ArgumentParser) -> None:
     parser.add_argument(
         "--forget-checkout",
         action="store_true",
-        help="drop the checkout recorded on this machine",
+        help="drop the checkout recorded on this machine for the primary code repository",
     )
     parser.add_argument(
         "--accept-colocation",
@@ -650,7 +806,7 @@ def _configure_set(parser: ArgumentParser) -> None:
     )
 
 
-def _project_set(context: CliContext, args: Namespace) -> int:
+def _project_set(context: CliContext, args: Namespace, locating: Locating) -> int:
     project = find_project(context.library, args.project)
     asked = (
         args.repository is not None,
@@ -662,30 +818,24 @@ def _project_set(context: CliContext, args: Namespace) -> int:
     if not any(asked):
         raise CliError(
             "nothing to set — pass --repository, --checkout, --forget-checkout, "
-            "--accept-colocation or --warn-colocation"
+            "--accept-colocation or --warn-colocation; every other location is "
+            "`dplanner location add|set|checkout`"
         )
-    notes: list[str] = []
     if args.repository is not None:
-        context.apply(SetFieldCommand(project.id, "repository", args.repository.strip()))
-    if args.checkout:
-        checkout = Path(args.checkout).expanduser().resolve()
-        context.store.set_checkout(project.id, checkout)
-        origin = origin_url(checkout)
-        if (
-            project.repository
-            and origin
-            and canonical_remote(origin) != canonical_remote(project.repository)
-        ):
-            notes.append(f"  ! {checkout} has origin {origin}, not the project's code repository")
-    elif args.forget_checkout:
-        context.store.set_checkout(project.id, None)
+        _set_locations(context, project, _with_primary(project.locations, args.repository.strip()))
+    primary = primary_code(project.locations)
+    if args.checkout or args.forget_checkout:
+        if primary is None:
+            raise CliError("the project names no code repository — pass --repository URL too")
+        checkout = Path(args.checkout).expanduser().resolve() if args.checkout else None
+        context.store.set_checkout(primary.repository, checkout)
     if args.accept_colocation:
         context.apply(SetFieldCommand(project.id, "colocation", ACCEPTED))
     elif args.warn_colocation:
         context.apply(SetFieldCommand(project.id, "colocation", ""))
     context.report(
-        _project_row(context, project) | {"notes": notes},
-        "\n".join([project.title, *_repository_lines(context, project), *notes]),
+        _project_row(context, project, locating),
+        "\n".join([project.title, *_repository_lines(context, project, locating)]),
     )
     return 0
 
@@ -707,7 +857,7 @@ def _configure_move(parser: ArgumentParser) -> None:
     )
 
 
-def _project_move(context: CliContext, args: Namespace) -> int:
+def _project_move(context: CliContext, args: Namespace, locating: Locating) -> int:
     project = find_project(context.library, args.project)
     if bool(args.to) == bool(args.into):
         raise CliError("say where the plan goes — exactly one of --to DIR and --into PLAN_REPO")
@@ -732,7 +882,7 @@ def _project_move(context: CliContext, args: Namespace) -> int:
         f"Moved the plan of {project.title!r} to {moved.target}",
         "  committed in " + " and ".join(committed) if committed else "  nothing committed",
         *[f"  ! {note}" for note in moved.notes],
-        *_repository_lines(context, project),
+        *_repository_lines(context, project, locating),
     ]
     context.report(
         {
@@ -757,10 +907,12 @@ def _configure_share(parser: ArgumentParser) -> None:
     )
 
 
-def _project_share(context: CliContext, args: Namespace) -> int:
+def _project_share(context: CliContext, args: Namespace, locating: Locating) -> int:
     project = find_project(context.library, args.project)
     try:
-        link = link_for(project, context.store.project_dir(project.id), _facts(context, project))
+        link = link_for(
+            project, context.store.project_dir(project.id), _facts(context, project, locating)
+        )
     except LinkError as error:
         raise CliError(str(error)) from error
     text = encode(link)
@@ -826,7 +978,7 @@ def _link_root(context: CliContext, link: ProjectLink, into: str | None) -> Path
     return root
 
 
-def _project_open(context: CliContext, args: Namespace) -> int:
+def _project_open(context: CliContext, args: Namespace, locating: Locating) -> int:
     try:
         link = read_link(args.link)
     except LinkError as error:
@@ -845,10 +997,18 @@ def _project_open(context: CliContext, args: Namespace) -> int:
     # the window's half of this verb is off the stack too.
     context.library.add_child(context.library.id, project)
     if args.checkout:
-        context.store.set_checkout(project.id, Path(args.checkout).expanduser().resolve())
+        primary = primary_code(project.locations)
+        if primary is None:
+            raise CliError(f"{link.name} names no code repository for --checkout to be of")
+        context.store.set_checkout(primary.repository, Path(args.checkout).expanduser().resolve())
     context.report(
-        _project_row(context, project),
-        "\n".join([f"Added {project.title!r}  {project.id}", *_repository_lines(context, project)]),
+        _project_row(context, project, locating),
+        "\n".join(
+            [
+                f"Added {project.title!r}  {project.id}",
+                *_repository_lines(context, project, locating),
+            ]
+        ),
     )
     return 0
 
@@ -964,7 +1124,7 @@ def _configure_import(parser: ArgumentParser) -> None:
     )
 
 
-def _project_import(context: CliContext, args: Namespace) -> int:
+def _project_import(context: CliContext, args: Namespace, locating: Locating) -> int:
     """Read a project document from stdin.
 
     JSON rather than a PDF or a Markdown outline on purpose. Whoever is calling this — an
@@ -982,12 +1142,12 @@ def _project_import(context: CliContext, args: Namespace) -> int:
         raise CliError("expected a JSON object in the shape `dplanner project export` writes")
 
     title = args.title or str(document.get("title", "Imported project"))
+    locations = read_locations(document.get("locations"))
+    repository = document.get("repository")  # An export written before the table existed.
+    if not locations and isinstance(repository, str) and repository:
+        locations = (Location("l1", CODE.id, repository),)
     project = _materialize(
-        context,
-        Path(args.directory),
-        title,
-        init=args.init_repo,
-        repository=str(document.get("repository", "")),
+        context, Path(args.directory), title, init=args.init_repo, locations=locations
     )
     summary = str(document.get("summary", ""))
     if summary:
@@ -1031,10 +1191,207 @@ def _project_import(context: CliContext, args: Namespace) -> int:
                 context.apply(SetEdgesCommand(target, kind, wanted))
 
     context.report(
-        _project_row(context, project),
+        _project_row(context, project, locating),
         f"Imported {project.title!r} with {len(project.steps)} steps  {project.id}",
     )
     return 0
+
+
+def _with_primary(locations: tuple[Location, ...], url: str) -> tuple[Location, ...]:
+    """The table with its primary code row set to ``url`` — replaced in place, added first
+    when there is none, dropped when ``url`` is empty."""
+    primary = primary_code(locations)
+    if not url:
+        return without(locations, primary.id) if primary is not None else locations
+    if primary is None:
+        return (Location(next_id(locations), CODE.id, url), *locations)
+    return replaced(
+        locations, Location(primary.id, CODE.id, url, primary.path, primary.ref, primary.label)
+    )
+
+
+# -- location verbs -----------------------------------------------------------------------------
+
+
+def _configure_location(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument("location", help="a location's id (l3), or its role — code:UI, docs")
+
+
+def _configure_location_add(parser: ArgumentParser, roles: Mapping[str, LocationRole]) -> None:
+    project_arg(parser)
+    parser.add_argument(
+        "--role", required=True, choices=sorted(roles), help="what kind of place this is"
+    )
+    parser.add_argument(
+        "--repository",
+        metavar="URL",
+        default="",
+        help="the repository, as git names its remote; the project's code by default",
+    )
+    _location_fields(parser)
+    parser.add_argument(
+        "--checkout",
+        metavar="PATH",
+        default="",
+        help="where this machine has that repository checked out",
+    )
+
+
+def _configure_location_set(parser: ArgumentParser) -> None:
+    _configure_location(parser)
+    parser.add_argument("--repository", metavar="URL", help="the repository, as git names it")
+    _location_fields(parser, default=None)
+
+
+def _location_fields(parser: ArgumentParser, default: str | None = "") -> None:
+    parser.add_argument(
+        "--path", metavar="DIR", default=default, help="a directory inside the repository"
+    )
+    parser.add_argument(
+        "--ref", metavar="REF", default=default, help="a branch or tag; the default branch if none"
+    )
+    parser.add_argument(
+        "--label", default=default, help="tells two locations of one role apart (UI, backend)"
+    )
+
+
+def _configure_location_checkout(parser: ArgumentParser) -> None:
+    _configure_location(parser)
+    parser.add_argument("path", nargs="?", default="", help="the checkout on this machine")
+    parser.add_argument("--forget", action="store_true", help="drop what is recorded")
+
+
+def _location_of(context: CliContext, args: Namespace) -> tuple[Project, Location]:
+    project = find_project(context.library, args.project)
+    try:
+        return project, find_location(project.locations, args.location)
+    except LookupError as error:
+        raise CliError(str(error)) from error
+
+
+def _set_locations(context: CliContext, project: Project, locations: Sequence[Location]) -> None:
+    for location in locations:
+        wrong = problem(location)
+        if wrong:
+            raise CliError(f"location {location.id} {wrong}")
+    context.apply(SetFieldCommand(project.id, "locations", tuple(locations)))
+
+
+def _location_report(
+    context: CliContext, project: Project, location: Location, locating: Locating, lead: str
+) -> int:
+    facts = _facts(context, project, locating)
+    placement = facts.placement(location.id)
+    assert placement is not None
+    context.report(
+        _location_row(placement, locating),
+        "\n".join([lead, _location_line(placement, locating)]),
+    )
+    return 0
+
+
+def _location_list(context: CliContext, args: Namespace, locating: Locating) -> int:
+    project = find_project(context.library, args.project)
+    facts = _facts(context, project, locating)
+    rows = [_location_row(found, locating) for found in facts.placements]
+    lines = [_location_line(found, locating) for found in facts.placements] or [
+        f"  {project.title} names no locations yet — `dplanner location add "
+        f"'{project.title}' --role code --repository URL`"
+    ]
+    context.report({"project": project.id, "locations": rows}, "\n".join(lines))
+    return 0
+
+
+def _location_roles(context: CliContext, _args: Namespace, locating: Locating) -> int:
+    rows = [
+        {
+            "id": role.id,
+            "label": role.label,
+            "summary": role.summary,
+            "writes": role.writes,
+            "several": role.several,
+            "default_path": role.default_path,
+        }
+        for role in locating.roles.values()
+    ]
+    lines = [
+        f"  {role.id:<8} {role.summary}"
+        + ("  (worked in: needs a checkout here)" if role.writes else "  (read: fetched on demand)")
+        for role in locating.roles.values()
+    ]
+    context.report({"roles": rows}, "\n".join(lines))
+    return 0
+
+
+def _location_add(context: CliContext, args: Namespace, locating: Locating) -> int:
+    project = find_project(context.library, args.project)
+    role = locating.roles[args.role]
+    repository = args.repository.strip()
+    if not repository:
+        primary = primary_code(project.locations)
+        if primary is None:
+            raise CliError(
+                "--repository URL: the project names no code repository to take as the default"
+            )
+        repository = primary.repository
+    if not role.several and any(found.role == role.id for found in project.locations):
+        raise CliError(
+            f"{project.title} already names {role.label.lower()} — `dplanner location set` "
+            "changes it, `location remove` drops it"
+        )
+    location = Location(
+        id=next_id(project.locations),
+        role=role.id,
+        repository=repository,
+        path=normalise_path(args.path or role.default_path),
+        ref=args.ref.strip(),
+        label=args.label.strip(),
+    )
+    _set_locations(context, project, replaced(project.locations, location))
+    if args.checkout:
+        context.store.set_checkout(repository, Path(args.checkout).expanduser().resolve())
+    return _location_report(context, project, location, locating, f"Added to {project.title}")
+
+
+def _location_set(context: CliContext, args: Namespace, locating: Locating) -> int:
+    project, location = _location_of(context, args)
+    if all(value is None for value in (args.repository, args.path, args.ref, args.label)):
+        raise CliError("nothing to change — pass --repository, --path, --ref or --label")
+    changed = Location(
+        id=location.id,
+        role=location.role,
+        repository=location.repository if args.repository is None else args.repository.strip(),
+        path=location.path if args.path is None else normalise_path(args.path),
+        ref=location.ref if args.ref is None else args.ref.strip(),
+        label=location.label if args.label is None else args.label.strip(),
+    )
+    _set_locations(context, project, replaced(project.locations, changed))
+    return _location_report(context, project, changed, locating, project.title)
+
+
+def _location_remove(context: CliContext, args: Namespace, locating: Locating) -> int:
+    project, location = _location_of(context, args)
+    _set_locations(context, project, without(project.locations, location.id))
+    context.report(
+        {"project": project.id, "removed": location.id},
+        "\n".join(
+            [
+                f"Removed {location.id} from {project.title}",
+                *_repository_lines(context, project, locating),
+            ]
+        ),
+    )
+    return 0
+
+
+def _location_checkout(context: CliContext, args: Namespace, locating: Locating) -> int:
+    project, location = _location_of(context, args)
+    if bool(args.path) == args.forget:
+        raise CliError("say where the repository is — a PATH, or --forget")
+    checkout = None if args.forget else Path(args.path).expanduser().resolve()
+    context.store.set_checkout(location.repository, checkout)
+    return _location_report(context, project, location, locating, project.title)
 
 
 # -- step verbs ---------------------------------------------------------------------------------

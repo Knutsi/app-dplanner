@@ -71,15 +71,14 @@ uv run mypy --platform win32   # the same tree as Windows sees it
 **`--platform win32` is a check, not a curiosity.** The application ships on Windows, and
 almost none of the suite can run there from here, so the type checker is the only reader we
 have of the Windows half — mypy skips a `sys.platform == "win32"` branch entirely on Linux,
-so that code is otherwise read by nobody until somebody runs it. It takes thirty seconds and
-it found four real errors the day it was first run. Keeping it clean costs one habit:
-**compare `sys.platform` inline where you branch on the platform**, never through a module
-constant, because mypy narrows on the comparison and a constant is opaque to it
-(`modules/spec_git/client.py` is the worked example).
+so that code is otherwise read by nobody until somebody runs it. It takes thirty seconds.
+Keeping it clean costs one habit: **compare `sys.platform` inline where you branch on the
+platform**, never through a module constant, because mypy narrows on the comparison and a
+constant is opaque to it (`core/storage/sparse.py` is the worked example).
 
-On a machine whose shell already presets `QT_QPA_PLATFORM` (Arch with a tiling WM, for
-instance), the `setdefault` in `tests/conftest.py` does not kick in and a bare `pytest`
-opens real windows all over the workspace. Always prefix it. The same shell usually presets
+On a machine whose shell already presets `QT_QPA_PLATFORM` (Arch with a tiling WM), the
+`setdefault` in `tests/conftest.py` does not kick in and a bare `pytest` opens real
+windows. Always prefix it. The same shell usually presets
 `QT_QPA_PLATFORMTHEME=gtk3`, which `conftest.py` blanks for an offscreen run: with it every
 worker initialises GTK — eight threads and a live compositor connection — and an offscreen
 window becomes active one event round late, so a focus-dependent test
@@ -198,6 +197,7 @@ modules/<name>/
 ├── aspect.py    for a step aspect: SPEC, DATA_FORMAT, read/write    ← imports no Qt
 ├── report.py    what it says in a report: report_source()           ← imports no Qt
 ├── harness.py   for an agent CLI provider: HARNESS, and nothing else  ← imports no Qt
+├── roles.py     the location role it acts on (spec, reporting): ROLE   ← imports no Qt
 ├── checks.py    what this machine needs for it: checks()              ← imports no Qt
 ├── themes.py    for a theme provider: the ThemeProvider it offers        ← imports no Qt
 └── section.py   the editor it puts in the step detail panel (Step Details…)

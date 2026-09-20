@@ -3,7 +3,7 @@ of plans, kept apart from the code it plans — listed in the user's per-user pr
 
 ```
 Library  ── the account level: the projects a user is planning
-└── Project  ── a unit of work with a beginning and an end, in a plan repository, planning one code repository
+└── Project  ── a unit of work with a beginning and an end, in a plan repository, naming the locations it is about
     └── Step  ── a node in that project's graph
 ```
 
@@ -16,8 +16,18 @@ estimate, a ticket, a description — which the graph itself knows nothing about
 
 A project's plan lives in a **plan repository** — a git repository that holds plans and
 nothing else, one folder per project, often several projects for several people — and it
-plans a **code repository** named on the project. `dplanner project show` prints both, and
-where the code is checked out on this machine. Three rules follow:
+names the **locations** it is about: a table of rows, each a role (`code`, `spec`,
+`reporting`), a repository and a position (a folder) inside it. The first `code` row
+is *the* code repository. `dplanner location list <project>` prints the table with where
+each row stands on this machine; `location roles` says what each role is for;
+`location add|set|remove` change it and `location checkout` records where this machine
+has a row's repository. `project show` prints the same, and its `--json` keeps
+`repository` and `checkout` for the primary code row. A read-only row (spec) is fetched
+by the window, never by you; a worked-in row (code, reporting) that is *not checked out
+on this machine* is one you must not look for — say so instead — and one *kept by
+DPlanner* is an ordinary checkout under its configuration directory, worked in like any.
+A reporting row is where DPlanner publishes the report site on Save (`dplanner report
+site` writes it too): never write there yourself. Three rules follow:
 
 - **`dplanner` writes to the plan wherever it is run from.** Status, notes, docs, tests,
   GitHub refs: every verb reaches the plan repository. Never create, edit or commit plan

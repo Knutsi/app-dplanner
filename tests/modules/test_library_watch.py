@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import ClassVar
 
 import pytest
+from tests.facts import code_row
 
 from dplanner.domain.commands import AddNodeCommand, SetFieldCommand
 from dplanner.domain.model import Step
@@ -361,8 +362,10 @@ def test_a_conflict_is_settled_where_the_plan_lives_not_in_the_code_checkout(
 
     services = session.services
     project = services.document.project_of(step.id)
-    services.undo.push(SetFieldCommand(project.id, "repository", "https://github.com/acme/widget"))
-    services.repo.set_checkout(project.id, init_repo(tmp_path / "widget"))
+    services.undo.push(
+        SetFieldCommand(project.id, "locations", code_row("https://github.com/acme/widget"))
+    )
+    services.repo.set_checkout("https://github.com/acme/widget", init_repo(tmp_path / "widget"))
     services.autosave.flush_now()
 
     services.undo.push(SetFieldCommand(step.id, "title", "Typed here"))

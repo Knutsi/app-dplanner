@@ -52,7 +52,7 @@ root* means the membership changed, and rewrites the library file.
 import json
 import logging
 import shutil
-from collections.abc import Callable, Collection, Iterable
+from collections.abc import Callable, Collection, Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final
@@ -68,7 +68,8 @@ from dplanner.core.storage.locations import (
 )
 from dplanner.core.storage.provider import StorageError, StorageProvider
 from dplanner.core.text_diff import diff_hunks
-from dplanner.domain.library_file import LibraryEntry, read_library_file, write_library_file
+from dplanner.domain.library_file import checkout_key, read_library_file, write_library_file
+from dplanner.domain.locations import read_locations, write_locations
 from dplanner.domain.migrations import FORMAT
 from dplanner.domain.model import (
     EDGE_KINDS,
@@ -178,9 +179,6 @@ class _ProjectRecord:
     # What the directory looked like the last time this store read or wrote it. Size and
     # modification time per file — what every build tool uses for the same question.
     disk: dict[str, tuple[int, int]] = field(default_factory=dict)
-    # Where this machine has the project's code repository — the library file's row, never
-    # the plan's. None until something records it.
-    checkout: Path | None = None
 
 
 class ModuleFileArea:
@@ -282,15 +280,19 @@ class LibraryStore:
         self._problems: list[ProjectProblem] = []
         # Library entries that failed to open keep their place in the file across rewrites:
         # a project this build cannot read is still the user's project.
-        self._problem_entries: list[LibraryEntry] = []
+        self._problem_entries: list[Path] = []
         # One provider per distinct git repository, cached because the sync feature
         # subscribes to their signals — rebuilt only when membership changes.
         self._groups: list[StorageProvider] | None = None
         self._library_stamp: tuple[int, int] | None = None
         self.dirty: Signal[str, str] = Signal()
-        # A project's code checkout was recorded or changed — here, or by another writer
-        # whose library file this store adopted. Run Agent re-evaluates on it.
-        self.checkout_changed: Signal[ProjectId] = Signal()
+        # Where this machine has the repositories the projects name, by canonical
+        # repository — the library file's map, never the plan's (`domain/library_file.py`).
+        self._checkouts: dict[str, Path] = {}
+        # A checkout was recorded or changed — here, or by another writer whose library
+        # file this store adopted — carrying the canonical repository. Run Agent
+        # re-evaluates on it.
+        self.checkout_changed: Signal[str] = Signal()
         # Every (node, entry) changed here and not yet written — the finer twin of the
         # dirty marks, kept so an outside change to the *same* entry is a conflict and one
         # to any other entry of the same node is not. See adopt_outside_changes().
@@ -315,14 +317,15 @@ class LibraryStore:
         self._problem_entries.clear()
         self._groups = None
         migrated: list[tuple[_ProjectRecord, Project]] = []
-        for entry in read_library_file(self.library_path):
+        file = read_library_file(self.library_path)
+        self._checkouts = dict(file.checkouts)
+        for entry in file.projects:
             try:
-                project, record, pending = self._open_project(entry.path)
+                project, record, pending = self._open_project(entry)
             except (StorageError, UnsupportedFormatError, OSError) as error:
-                self._problems.append(ProjectProblem(entry.path, str(error)))
+                self._problems.append(ProjectProblem(entry, str(error)))
                 self._problem_entries.append(entry)
                 continue
-            record.checkout = entry.checkout
             library.projects.append(project)
             self._records[project.id] = record
             if pending:
@@ -382,7 +385,7 @@ class LibraryStore:
             folder_name=record.directory.name,
             created=str(raw.get("created", "")),
             last_number=_read_number(raw.get("last_number")),
-            repository=str(raw.get("repository", "")),
+            locations=read_locations(raw.get("locations")),
             colocation=str(raw.get("colocation", "")),
         )
         self._load_node_files(record, project, "", raw, pending)
@@ -493,13 +496,11 @@ class LibraryStore:
 
     # -- membership ----------------------------------------------------------------------------
 
-    def attach(self, directory: Path, checkout: Path | None = None) -> Project:
+    def attach(self, directory: Path) -> Project:
         """Open a project directory and start tracking it. No model mutation here —
         the caller adds the returned project to the library, which marks the root
-        structure dirty and gets the library file rewritten on the next flush.
-        ``checkout`` is where this machine has the project's code, when that is known."""
+        structure dirty and gets the library file rewritten on the next flush."""
         project, record, pending = self._open_project(Path(directory))
-        record.checkout = checkout
         self._records[project.id] = record
         self._groups = None
         if pending:
@@ -513,13 +514,16 @@ class LibraryStore:
         self._records.pop(project_id, None)
         self._groups = None
 
-    def checkout_of(self, project_id: ProjectId) -> Path | None:
-        """Where this machine has the project's code repository; None while nothing said."""
-        record = self._records.get(project_id)
-        return None if record is None else record.checkout
+    def checkouts(self) -> Mapping[str, Path]:
+        """Where this machine has each repository, by canonical repository."""
+        return dict(self._checkouts)
 
-    def set_checkout(self, project_id: ProjectId, checkout: Path | None) -> None:
-        """Record where this machine has the project's code — in the library file, now.
+    def checkout_for(self, repository: str) -> Path | None:
+        """Where this machine has ``repository``, spelt however; None while nothing said."""
+        return self._checkouts.get(checkout_key(repository))
+
+    def set_checkout(self, repository: str, checkout: Path | None) -> None:
+        """Record where this machine has ``repository`` — in the library file, now.
 
         Written straight into the file rather than through a dirty mark, because the CLI
         records a checkout as a side effect of a *read* verb (discovery matched the
@@ -531,26 +535,20 @@ class LibraryStore:
         flush path. A file that cannot be read whole right now (a torn write) is left
         alone: the record holds the answer, and the next membership flush writes it.
         """
-        record = self._records[project_id]
-        if record.checkout == checkout:
+        key = checkout_key(repository)
+        if not key or self._checkouts.get(key) == checkout:
             return
-        record.checkout = checkout
+        if checkout is None:
+            self._checkouts.pop(key, None)
+        else:
+            self._checkouts[key] = checkout
         try:
-            entries = read_library_file(self.library_path, strict=True)
+            file = read_library_file(self.library_path, strict=True)
         except (OSError, ValueError):
             return
-        target = record.directory.resolve()
-        write_library_file(
-            self.library_path,
-            [
-                LibraryEntry(entry.path, checkout)
-                if entry.path.expanduser().resolve() == target
-                else entry
-                for entry in entries
-            ],
-        )
+        write_library_file(self.library_path, file.projects, self._checkouts)
         self._remember_library_stamp()
-        self.checkout_changed.emit(project_id)
+        self.checkout_changed.emit(key)
 
     def has_unflushed(self, project_id: ProjectId) -> bool:
         """Whether anything of this project changed here and has not reached disk yet."""
@@ -559,15 +557,13 @@ class LibraryStore:
             library.belongs_to(node_id, project_id) for node_id, _entry in self._unflushed
         )
 
-    def relocate(self, project_id: ProjectId, directory: Path, checkout: Path | None) -> None:
+    def relocate(self, project_id: ProjectId, directory: Path) -> None:
         """The project's files moved to ``directory`` — ``domain/relocate.py`` did the
         moving — so open the record there, keep the node map (the layout inside is the
         same tree), and mark the library file for its next flush, which writes the path."""
         old = self._records[project_id]
         storage = open_project_storage(directory)
-        record = _ProjectRecord(
-            directory=storage.root, storage=storage, dirs=dict(old.dirs), checkout=checkout
-        )
+        record = _ProjectRecord(directory=storage.root, storage=storage, dirs=dict(old.dirs))
         self._remember_disk(record)
         self._records[project_id] = record
         self._groups = None
@@ -730,29 +726,30 @@ class LibraryStore:
         library = self.library
         assert library is not None
         try:
-            entries = read_library_file(self.library_path, strict=True)
+            file = read_library_file(self.library_path, strict=True)
         except (OSError, ValueError) as error:
             raise _DeferredError from error  # A torn write, not a library that emptied itself.
-        listed = [entry.path.resolve() for entry in entries]
+        listed = [entry.resolve() for entry in file.projects]
         by_directory = {
             record.directory.resolve(): project_id for project_id, record in self._records.items()
         }
-        problems = {entry.path.expanduser().resolve() for entry in self._problem_entries}
+        problems = {entry.expanduser().resolve() for entry in self._problem_entries}
         applied = 0
-        for entry, directory in zip(entries, listed, strict=True):
-            known = by_directory.get(directory)
-            if known is not None:
-                # A row this store holds: only its checkout can have changed underneath.
-                record = self._records[known]
-                if record.checkout != entry.checkout:
-                    record.checkout = entry.checkout
-                    self.checkout_changed.emit(known)
-                    applied += 1
-                continue
-            if directory in problems:
+        # The other writer's checkouts, taken in key by key: a checkout recorded there is
+        # a fact about this machine whichever window wrote it.
+        for key in set(self._checkouts) | set(file.checkouts):
+            if self._checkouts.get(key) != file.checkouts.get(key):
+                if key in file.checkouts:
+                    self._checkouts[key] = file.checkouts[key]
+                else:
+                    del self._checkouts[key]
+                self.checkout_changed.emit(key)
+                applied += 1
+        for entry, directory in zip(file.projects, listed, strict=True):
+            if directory in by_directory or directory in problems:
                 continue
             try:
-                project = self.attach(directory, entry.checkout)
+                project = self.attach(directory)
             except (StorageError, UnsupportedFormatError, OSError, json.JSONDecodeError) as error:
                 self._problems.append(ProjectProblem(directory, str(error)))
                 self._problem_entries.append(entry)
@@ -769,7 +766,7 @@ class LibraryStore:
                 del by_directory[directory]
                 applied += 1
         self._problem_entries = [
-            entry for entry in self._problem_entries if entry.path.expanduser().resolve() in listed
+            entry for entry in self._problem_entries if entry.expanduser().resolve() in listed
         ]
         self._problems = [
             problem for problem in self._problems if problem.path.expanduser().resolve() in listed
@@ -905,7 +902,7 @@ class LibraryStore:
             if not _meta_differs(live, fresh) or clashes(live.id, entry, path):
                 return 0
             if isinstance(live, Project) and isinstance(fresh, Project):
-                for name in ("title", "summary", "repository", "colocation"):
+                for name in ("title", "summary", "locations", "colocation"):
                     library.set_field(live.id, name, getattr(fresh, name), OUTSIDE_ORIGIN)
                 # A high-water mark only ever rises, and no view shows it: no signal.
                 live.last_number = max(live.last_number, fresh.last_number)
@@ -1050,12 +1047,12 @@ class LibraryStore:
         assert self.library is not None
         # Model order first; entries that failed to open keep their place at the end —
         # a project this build cannot read is still the user's project.
-        entries: list[LibraryEntry | Path] = [
-            LibraryEntry(self._records[project.id].directory, self._records[project.id].checkout)
+        entries = [
+            self._records[project.id].directory
             for project in self.library.projects
             if project.id in self._records
         ]
-        write_library_file(self.library_path, [*entries, *self._problem_entries])
+        write_library_file(self.library_path, [*entries, *self._problem_entries], self._checkouts)
         self._remember_library_stamp()
 
     def _flush_project(self, record: _ProjectRecord, marks: set[DirtyMark]) -> None:
@@ -1174,8 +1171,8 @@ class LibraryStore:
                 meta["title"] = node.title
             if node.summary:
                 meta["summary"] = node.summary
-            if node.repository:
-                meta["repository"] = node.repository
+            if node.locations:
+                meta["locations"] = write_locations(node.locations)
             if node.colocation:
                 meta["colocation"] = node.colocation
             if node.last_number:
@@ -1296,10 +1293,10 @@ def _is_entry(name: str) -> bool:
 
 def _meta_differs(live: Node, fresh: Node) -> bool:
     if isinstance(live, Project) and isinstance(fresh, Project):
-        return (live.title, live.summary, live.repository, live.colocation, live.last_number) != (
+        return (live.title, live.summary, live.locations, live.colocation, live.last_number) != (
             fresh.title,
             fresh.summary,
-            fresh.repository,
+            fresh.locations,
             fresh.colocation,
             fresh.last_number,
         )

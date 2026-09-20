@@ -76,13 +76,12 @@ def test_the_move_lands_the_plan_in_the_new_repository_and_reloads(
     assert (plans / "discovery" / PROJECT_META).is_file()
     assert not (library_repo / "discovery").exists()
     assert (plans / ".dplanner").read_text().splitlines() == ["discovery"]
-    entries = read_library_file(library_file)
-    assert [entry.path for entry in entries] == [plans / "discovery"]
+    assert read_library_file(library_file).projects == [plans / "discovery"]
     # The old library repository recorded the departure, and the moved project records
     # what code it plans: the repository it left.
     assert session.services is not None and session.services.window is not old_window
     moved = session.services.document.project(project.id)
-    assert moved.repository == str(library_repo.resolve())
+    assert moved.locations[0].repository == str(library_repo.resolve())
     assert boxes == [] or all("notes" not in text for _title, text in boxes)
 
 
@@ -126,8 +125,7 @@ def test_a_plan_already_in_its_own_repository_moves_on_to_another(
 
     assert (second / "discovery" / PROJECT_META).is_file()
     assert not (first / "discovery").exists()
-    entries = read_library_file(library_file)
-    assert [entry.path for entry in entries] == [second / "discovery"]
+    assert read_library_file(library_file).projects == [second / "discovery"]
     assert session.services is not None and session.services.document.has(project.id)
 
 

@@ -10,11 +10,12 @@ gates on a test suite: hand over clean.
 """
 
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 
 from dplanner.cli.command import CliCommand, CliContext
 from dplanner.cli.lookup import find_project
+from dplanner.domain.locations import LocationRole, duplicates, problem
 from dplanner.domain.model import Library, Project
 from dplanner.domain.repositories import LEGACY, RepositoryFacts, repository_facts
 from dplanner.domain.store import FilesFor
@@ -60,19 +61,66 @@ def repository_finding(project: Project, facts: RepositoryFacts) -> LintFinding 
     )
 
 
-def commands(checks: Sequence[LintCheck]) -> list[CliCommand]:
+def location_findings(project: Project, roles: Mapping[str, LocationRole]) -> list[LintFinding]:
+    """The table's own gaps: a row that cannot stand, a role this build does not know
+    (kept, never dropped — a colleague's build may have the module), and a role named
+    twice that says a project names it once."""
+    title = project.title or project.folder_name
+    found: list[LintFinding] = []
+    for location in project.locations:
+        wrong = problem(location)
+        if wrong:
+            found.append(
+                LintFinding(
+                    check="location.invalid",
+                    subject_id=project.id,
+                    subject=title,
+                    message=f"location {location.id} {wrong} — `dplanner location set "
+                    f"{location.id} …`, or `dplanner location remove {location.id}`",
+                )
+            )
+        if location.role not in roles:
+            found.append(
+                LintFinding(
+                    check="location.unknown_role",
+                    subject_id=project.id,
+                    subject=title,
+                    message=f"location {location.id} has the role {location.role!r}, which "
+                    "this build does not know — kept as it is; `dplanner location roles` "
+                    "lists the roles here",
+                )
+            )
+    for role in duplicates(project.locations, roles):
+        found.append(
+            LintFinding(
+                check="location.duplicate",
+                subject_id=project.id,
+                subject=title,
+                message=f"names {roles[role].label.lower()} more than once, and a project "
+                "has one — `dplanner location remove <id>` for the row that is not it",
+            )
+        )
+    return found
+
+
+def project_findings(
+    project: Project, facts: RepositoryFacts, roles: Mapping[str, LocationRole]
+) -> list[LintFinding]:
+    """The project-scoped findings, before any module's checks: the repository question
+    and the table's."""
+    repository = repository_finding(project, facts)
+    return [*([repository] if repository is not None else []), *location_findings(project, roles)]
+
+
+def commands(checks: Sequence[LintCheck], *, roles: Mapping[str, LocationRole]) -> list[CliCommand]:
     def _lint(context: CliContext, args: Namespace) -> int:
         library = context.library
         store = context.store
         projects = [find_project(library, args.project)] if args.project else list(library.projects)
         found: list[tuple[Project, LintFinding]] = []
         for project in projects:
-            facts = repository_facts(
-                project, store.project_dir(project.id), store.checkout_of(project.id)
-            )
-            finding = repository_finding(project, facts)
-            if finding is not None:
-                found.append((project, finding))
+            facts = repository_facts(project, store.project_dir(project.id), store.checkouts())
+            found += [(project, finding) for finding in project_findings(project, facts, roles)]
             for check in checks:
                 found += [
                     (project, finding) for finding in check(library, project, context.store.files)

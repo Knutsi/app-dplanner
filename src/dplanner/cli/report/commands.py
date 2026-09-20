@@ -2,9 +2,10 @@
 
 The terminal's half of reporting: the same ``Report`` the window renders, built here from
 the sources the composition root hands over. ``html`` prints the page (or writes it with
-``--out``), ``site`` lays the plan repository's site out under ``reports/`` and never
-commits — the CLI is a transaction over the plan, and a Save is the window's — ``xlsx`` and
-``csv`` write the tables, ``tables`` names them.
+``--out``), ``site`` lays the site out — under the plan repository's ``reports/``, or at
+the project's reporting location when it names one this machine has — and never commits:
+the CLI is a transaction over the plan, and a Save is the window's. ``xlsx`` and ``csv``
+write the tables, ``tables`` names them.
 
 An optional ``project`` positional falls back to the current project, the one the working
 directory is in, because an agent finishing a step wants ``dplanner report site`` and not
@@ -32,7 +33,14 @@ def commands(
     key_of: Callable[[Step], str],
     kind_of: Callable[[Step], str],
     status_for: Callable[[Step], str],
+    reporting_site: Callable[[CliContext, Project], website.SiteTarget | None] = (
+        lambda _context, _project: None
+    ),
 ) -> list[CliCommand]:
+    """``reporting_site`` says where a project publishes instead of beside its plan — its
+    reporting location, when it names one and this machine has that repository — handed in
+    by the root, which alone knows the roles."""
+
     def build_for(context: CliContext, project: Project) -> Report:
         root = find_repo_root(context.store.project_dir(project.id))
         return build(
@@ -64,17 +72,21 @@ def commands(
 
     def site(context: CliContext, args: Namespace) -> int:
         projects = list(context.library.projects) if args.all else [_project(context, args)]
-        by_root: dict[Path, list[Project]] = {}
+        by_target: dict[website.SiteTarget, list[tuple[Project, Path]]] = {}
         for project in projects:
             root = find_repo_root(context.store.project_dir(project.id))
             if root is None:
                 raise CliError(f"{project.title!r} is not inside a git repository")
-            by_root.setdefault(root, []).append(project)
+            if args.out:
+                target = website.SiteTarget(Path(args.out), Path(args.out))
+            else:
+                target = reporting_site(context, project) or website.plan_site(root)
+            by_target.setdefault(target, []).append((project, root))
         written: list[dict[str, Any]] = []
         lines: list[str] = []
-        for root, members in sorted(by_root.items()):
+        for target, members in sorted(by_target.items(), key=lambda item: str(item[0].site)):
             pages = []
-            for project in members:
+            for project, root in members:
                 report = build_for(context, project)
                 slug = website.slug_for(context.store.project_dir(project.id), root)
                 pages.append(
@@ -84,9 +96,15 @@ def commands(
                         page.summary_script(report, slug),
                     )
                 )
-            website.write(root, pages)
-            written.append({"root": str(root), "projects": [p.slug for p in pages]})
-            lines.append(f"{root / website.REPORTS_DIR}/")
+            website.write(target, pages)
+            written.append(
+                {
+                    "root": str(target.repo_root),
+                    "site": str(target.site),
+                    "projects": [p.slug for p in pages],
+                }
+            )
+            lines.append(f"{target.site}/")
             lines += [f"  {p.slug}/{website.INDEX_NAME}" for p in pages]
             lines.append(f"  {website.INDEX_NAME}")
         context.report({"sites": written}, "\n".join(lines))
@@ -228,4 +246,10 @@ def _configure_site(parser: ArgumentParser) -> None:
         "--all",
         action="store_true",
         help="every repository in the library, not only the current project's",
+    )
+    parser.add_argument(
+        "--out",
+        metavar="DIR",
+        help="write the site into this directory instead of beside the plan or at the "
+        "project's reporting location",
     )

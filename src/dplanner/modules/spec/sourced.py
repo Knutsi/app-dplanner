@@ -18,6 +18,8 @@ from pathlib import PurePosixPath
 from dplanner.core.fsio import slugify
 from dplanner.domain.document_source import Freshness, Locator, Snapshot
 from dplanner.domain.ids import next_id
+from dplanner.domain.locations import Location, as_locator, roles_by_id
+from dplanner.domain.model import Project
 from dplanner.domain.store import ModuleFileArea
 from dplanner.modules.spec.documents import (
     KIND_MARKDOWN,
@@ -82,6 +84,42 @@ def add_source(
 
 def source_of(index: SpecIndex, source_id: str) -> SpecSource | None:
     return next((source for source in index.sources if source.id == source_id), None)
+
+
+LOCATION_KEY = "location"  # A source record that names one of the project's locations.
+
+
+def location_source(
+    index: SpecIndex, location: Location, kind: str
+) -> tuple[SpecIndex, SpecSource]:
+    """A source over one of the project's ``specs`` locations: the record names the row
+    by id, and the row's repository, ref and path are read off the table at every call —
+    so editing the row in Project ▸ Settings… moves the source with it."""
+    return add_source(index, kind, location.name(roles_by_id([])), {LOCATION_KEY: location.id})
+
+
+def location_of(project: Project, source: SpecSource) -> Location | None:
+    """The location a source names, or None — for a source that names none, and for one
+    whose row is gone from the project."""
+    named = source.locator.get(LOCATION_KEY)
+    if not named:
+        return None
+    return next((row for row in project.locations if row.id == named), None)
+
+
+def resolve_locator(project: Project, source: SpecSource) -> Locator:
+    """The locator its kind takes: the row's address for a source that names a location,
+    else the record's own. A row that is gone resolves to the bare reference, which no
+    kind reads — and the status says so in words before any kind is asked."""
+    location = location_of(project, source)
+    return as_locator(location) if location is not None else source.locator
+
+
+def sourced_locations(index: SpecIndex) -> set[str]:
+    """The location ids the index's sources already stand on."""
+    return {
+        source.locator[LOCATION_KEY] for source in index.sources if LOCATION_KEY in source.locator
+    }
 
 
 def documents_of(index: SpecIndex, source_id: str) -> list[SpecDocument]:
