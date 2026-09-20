@@ -307,8 +307,21 @@ def test_the_terminal_and_the_tests_export_land_at_the_reporting_location_too(
 @pytest.fixture
 def kept_home(monkeypatch, tmp_path):
     """The configuration directory, this test's own — where DPlanner keeps clones. Listed
-    before ``services`` wherever it is used, so the session is built over it."""
+    before ``services`` wherever it is used, so the session is built over it.
+
+    It carries the identity the kept clone commits under, because moving
+    ``XDG_CONFIG_HOME`` moves *git's* global configuration too — a machine with no
+    ``~/.gitconfig`` keeps it at ``$XDG_CONFIG_HOME/git/config`` — and the commit the save
+    makes in a clone nobody configured would otherwise ask the developer's own. The suite
+    never reads the shell it runs in.
+    """
     home = tmp_path / "config-home"
+    gitconfig = tmp_path / "gitconfig"
+    gitconfig.write_text(
+        "[user]\n\tname = Test\n\temail = test@example.com\n[commit]\n\tgpgsign = false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(home))
     return home / "dplanner"
 
