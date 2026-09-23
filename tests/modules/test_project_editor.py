@@ -321,7 +321,7 @@ def test_a_drop_runs_the_same_verb_the_menu_does(services, project, tab):
     user was."""
     first, second = project.steps
     tab.select_step(first.id)
-    scene(tab).link_requested.emit(first.id, second.id)
+    scene(tab).link_requested.emit((first.id,), second.id)
 
     assert services.document.step(second.id).edges["requires"] == [first.id]
     assert services.context.current().selected_entities("step") == [first.id]
@@ -331,7 +331,7 @@ def test_a_drop_runs_the_same_verb_the_menu_does(services, project, tab):
 def test_a_refused_drop_says_why_instead_of_doing_nothing(services, project, tab):
     first, _second, third = chain(services, project)
     # third already waits on first through second; linking first onto third closes the loop.
-    scene(tab).link_requested.emit(third.id, first.id)
+    scene(tab).link_requested.emit((third.id,), first.id)
 
     assert "requires" not in services.document.step(first.id).edges
     assert "cycle" in services.window.statusBar().currentMessage()
@@ -340,7 +340,7 @@ def test_a_refused_drop_says_why_instead_of_doing_nothing(services, project, tab
 def test_a_drop_onto_an_already_linked_node_says_so(services, project, tab):
     first, second = project.steps
     services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
-    scene(tab).link_requested.emit(first.id, second.id)
+    scene(tab).link_requested.emit((first.id,), second.id)
     assert services.window.statusBar().currentMessage() == "Already linked"
 
 
@@ -356,7 +356,7 @@ def test_a_step_whose_list_holds_a_ghost_can_still_be_linked_and_unlinked(
     services.undo.push(RemoveNodeCommand(first.id))
     assert services.document.step(second.id).edges["requires"] == [first.id]
 
-    scene(tab).link_requested.emit(spare.id, second.id)
+    scene(tab).link_requested.emit((spare.id,), second.id)
     assert services.document.step(second.id).edges["requires"] == [first.id, spare.id]
 
     edge_item(tab, second, spare).setSelected(True)
@@ -542,11 +542,32 @@ def state(services, action_id, context):
     return services.actions.spec(action_id).state(context)
 
 
-def test_link_wants_exactly_two_steps(services, project, tab):
+def test_link_wants_at_least_two_steps(services, project, tab):
     first, second = project.steps
     assert not state(services, "steps.link", context_of(services)).enabled
     assert not state(services, "steps.link", context_of(services, first.id)).enabled
     assert state(services, "steps.link", context_of(services, first.id, second.id)).enabled
+
+
+def test_link_makes_the_last_step_wait_on_every_other_in_one_undo(services, project, tab):
+    first, second = project.steps
+    third = Step(title="Ship it")
+    services.undo.push(AddNodeCommand(project.id, third))
+    services.undo.push(SetEdgesCommand(third.id, "requires", [second.id]))
+
+    services.actions.run("steps.link", context_of(services, first.id, second.id, third.id))
+    assert services.document.step(third.id).edges["requires"] == [second.id, first.id]
+    services.undo.undo()
+    assert services.document.step(third.id).edges["requires"] == [second.id]
+
+
+def test_a_fan_in_that_would_close_a_cycle_refuses_the_lot(services, project, tab):
+    first, _second, third = chain(services, project)
+    spare = Step(title="Spare")
+    services.undo.push(AddNodeCommand(project.id, spare))
+    # first waits on spare fine, but on third it closes the loop.
+    found = state(services, "steps.link", context_of(services, spare.id, third.id, first.id))
+    assert not found.enabled and found.label is not None and "cycle" in found.label
 
 
 def test_link_greys_itself_and_says_why(services, project, tab):
@@ -1219,6 +1240,27 @@ def test_connect_mode_links_two_clicks_and_then_lets_go(app, services, project, 
 
     assert services.document.step(second.id).edges["requires"] == [first.id]
     assert modes(tab).current().name == IDLE
+
+
+def test_connect_with_several_selected_links_them_all_to_the_step_clicked(
+    app, services, project, tab
+):
+    """The selection is the sources, not a stale pick: the click is the step that waits on
+    every one of them, in one undo step."""
+    first, second = project.steps
+    third = Step(title="Ship it")
+    services.undo.push(AddNodeCommand(project.id, third))
+    canvas = scene(tab)
+    canvas.select_steps([first.id, second.id])
+    press_key(app, tab, Qt.Key.Key_C)
+    assert modes(tab).current().name == CONNECT
+
+    click(app, tab, centre_of(canvas._nodes[third.id]))
+
+    assert services.document.step(third.id).edges["requires"] == [first.id, second.id]
+    assert modes(tab).current().name == IDLE
+    services.undo.undo()
+    assert "requires" not in services.document.step(third.id).edges
 
 
 def test_selecting_several_steps_announces_the_selection_once(services, project, tab):

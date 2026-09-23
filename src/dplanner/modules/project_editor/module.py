@@ -579,16 +579,16 @@ class ProjectActivity(EntityActivity):
             return moved
         return f"{moved}; {len(plan.refused)} left alone — {plan.refused[0][1]}"
 
-    def _on_link_requested(self, source: StepId, target: StepId) -> None:
+    def _on_link_requested(self, sources: tuple[StepId, ...], target: StepId) -> None:
         """A drop is not a special case: it runs the same verb the menu does, handed a
-        context naming both ends, so the refusal, the label and the command all come from
-        one place. The canvas selection is left as the gesture found it — selecting the
-        pair left Connect with no source for the next link."""
+        context naming both ends — the waiter last — so the refusal, the label and the
+        command all come from one place. The canvas selection is left as the gesture found
+        it — selecting the pair left Connect with no source for the next link."""
         context = Context(
             {
                 SCOPE_ACTIVITY: self.activity_nodes(),
                 SCOPE_SELECTION: tuple(
-                    ContextNode(selection_uri("step", step_id)) for step_id in (source, target)
+                    ContextNode(selection_uri("step", step_id)) for step_id in (*sources, target)
                 ),
             }
         )
