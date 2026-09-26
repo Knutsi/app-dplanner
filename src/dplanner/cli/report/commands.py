@@ -52,6 +52,7 @@ def commands(
             kind_of=kind_of,
             status_for=status_for,
             plan_remote=origin_url(root) if root is not None else "",
+            today=context.clock.today(),
         )
 
     def html(context: CliContext, args: Namespace) -> int:

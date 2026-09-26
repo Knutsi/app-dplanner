@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from dplanner.core.clock import Clock
 from dplanner.core.repository import Repository
 from dplanner.core.telemetry import Telemetry
 from dplanner.framework.action_registry import ActionRegistry
@@ -83,6 +84,9 @@ class AppServices:
     settings_sections: SettingsSectionRegistry
 
     # -- services ------------------------------------------------------------------------------
+    # Today, for everything that dates a plan (``core/clock.py``): the machine's day, told
+    # when it turns, and pinned by a test.
+    clock: Clock
     theme: ThemeService
     zoom: ZoomService
     tasks: TaskService

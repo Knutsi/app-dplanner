@@ -454,7 +454,7 @@ def render_bare(app: QApplication, theme: Theme, out: Path) -> None:
         volume=((start, 40.0), (date(2026, 9, 1), 52.0), (today, 58.0)),
         remaining=((start, 40.0), (date(2026, 9, 1), 33.0), (today, 31.0)),
     )
-    chart = ChartDialog(data, title="Discovery — Progress")
+    chart = ChartDialog(data, data.today, title="Discovery — Progress")
     framed(chart, CHART_SIZE, app)
     save(chart, out, "chart", theme, app)
     discard(chart)

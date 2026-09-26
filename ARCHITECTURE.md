@@ -4490,6 +4490,24 @@ Three consequences worth writing down:
   three columns, which is recorded as a `later` note rather than settled by making the
   export worse.
 
+## Today is handed in
+
+A forecast is dated from today, so whatever reads the date decides what the Time tab says.
+Read where it was needed — `date.today()` in the tab, the recorder, the calendar, the CLI
+verbs and the report — the day could not be pinned by a test (two test files asserted
+against the machine's date, and any test that reads a forecast becomes weekend- and
+midnight-dependent the moment the model reads today), could not be set to a simulated day
+by the time simulator, and could not be noticed turning: a window left open overnight showed
+yesterday's forecast and recorded nothing for the new day until somebody edited something.
+
+So the day is a `Clock` (`core/clock.py`), one per window and one per CLI run: `today()`,
+`pin(day)` and `day_changed`. It is Qt-free because the CLI and the report need it; the
+window's `DayWatch` (`framework/day_watch.py`) asks it to check at midnight and when the
+application becomes active, since a timer sleeps with the machine. A report is built *for*
+a day and every source is handed that day, rather than each source asking a clock of its
+own — one report, one day. The rule is `.claude/rules/schedule.md`'s *Today is the
+clock's*.
+
 ## Time estimates: two worker pools, one greedy simulation
 
 `schedule()` and `critical_path()` print the honest brackets — one worker, unlimited

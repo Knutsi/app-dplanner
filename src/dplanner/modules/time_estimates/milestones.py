@@ -151,18 +151,18 @@ class PalettePicker(QComboBox):
             self.palette_picked.emit(self.palette_id)
 
 
-def _tip(entry: MilestoneEntry) -> str:
+def _tip(entry: MilestoneEntry, today: date) -> str:
     steps = f"{entry.steps} step{'s' if entry.steps != 1 else ''}"
     title = entry.title if entry.title and entry.title != entry.label else ""
     name = f"{entry.label} — {title}" if title else entry.label
     tip = (
         f"{name}\n{steps} — nothing estimated, so no date"
         if entry.finish is None
-        else f"{name}\n{steps} · lands {format_date(entry.finish)}"
+        else f"{name}\n{steps} · lands {format_date(entry.finish, today)}"
     )
     if entry.asked is not None:
         tip += (
-            f"\nAsked to begin {format_date(entry.asked)}, but the previous milestone "
+            f"\nAsked to begin {format_date(entry.asked, today)}, but the previous milestone "
             "lands later — it runs after that instead."
         )
     return tip
@@ -184,7 +184,7 @@ class MilestoneTable(Table):
         self.cellActivated.connect(self._on_activated)
         self.edited.connect(self._on_edited)
 
-    def show_entries(self, entries: Sequence[MilestoneEntry], selected: str) -> None:
+    def show_entries(self, entries: Sequence[MilestoneEntry], selected: str, today: date) -> None:
         keys = tuple(entry.key for entry in entries)
         self._entries = {entry.key: entry for entry in entries}
         # Quiet while the rows are written: a refresh is not a pick.
@@ -193,11 +193,11 @@ class MilestoneTable(Table):
             if keys != self._keys:
                 self.clear_rows()
                 for entry in entries:
-                    self.add_row(self._cells(entry), data={KEY_ROLE: entry.key})
+                    self.add_row(self._cells(entry, today), data={KEY_ROLE: entry.key})
                 self._keys = keys
             else:
                 for row, entry in enumerate(entries):
-                    for column, cell in enumerate(self._cells(entry)):
+                    for column, cell in enumerate(self._cells(entry, today)):
                         self.set_cell(row, column, cell)
             for row, entry in enumerate(entries):
                 item = self.item(row, MILESTONE_COLUMN)
@@ -210,16 +210,16 @@ class MilestoneTable(Table):
             self.blockSignals(False)
 
     @staticmethod
-    def _cells(entry: MilestoneEntry) -> tuple[Cell, ...]:
+    def _cells(entry: MilestoneEntry, today: date) -> tuple[Cell, ...]:
         glyph = (
             key_badge_icon(entry.badge, entry.color)
             if entry.is_milestone and entry.badge
             else dot_icon(entry.color)
         )
         title = entry.title if entry.title and entry.title != entry.label else ""
-        tip = _tip(entry)
+        tip = _tip(entry, today)
         own = entry.start is not None
-        lands = format_date(entry.finish) if entry.finish else "—"
+        lands = format_date(entry.finish, today) if entry.finish else "—"
         return (
             Cell(
                 entry.label, detail=title, glyph=glyph, emphasis=entry.key == ALL_KEY, tooltip=tip

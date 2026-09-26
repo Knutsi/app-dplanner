@@ -3,6 +3,8 @@
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
+from datetime import date
+
 from dplanner.cli.report.parts import Contribution, Facet, ReportSource
 from dplanner.domain.model import Library, Project
 from dplanner.domain.schedule import format_days
@@ -13,7 +15,7 @@ LABEL = "Estimate"
 
 
 def report_source() -> ReportSource:
-    def source(_library: Library, project: Project, _files: FilesFor) -> Contribution:
+    def source(_library: Library, project: Project, _files: FilesFor, _day: date) -> Contribution:
         facets = {}
         for step in project.steps:
             days = read(step)

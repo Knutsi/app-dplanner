@@ -97,7 +97,8 @@ class Readers:
     days_for: Callable[[Step], float | None]
     is_agent: Callable[[Step], bool]
     status_for: Callable[[Step], str]
-    start_of: Callable[[Project], date]
+    # When a project's work begins; an undated one begins on the day handed in.
+    start_of: Callable[[Project, date], date]
     milestone_label: Callable[[Step], str]
     # What a step's estimate was before, each with the day it changed — the change report.
     estimate_history: Callable[[Step], list[tuple[date, float]]]
@@ -112,7 +113,7 @@ def commands(
     days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
     status_for: Callable[[Step], str],
-    start_of: Callable[[Project], date],
+    start_of: Callable[[Project, date], date],
     milestone_label: Callable[[Step], str],
     estimate_history: Callable[[Step], list[tuple[date, float]]],
     key_of: Callable[[Step], str],
@@ -440,7 +441,9 @@ def _milestone(context: CliContext, args: Namespace, milestone_label: Callable[[
         color = None
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, write_milestone(start, color)))
     said = [
-        f"starts {format_date(start)}" if start else "starts when the previous lands",
+        f"starts {format_date(start, context.clock.today())}"
+        if start
+        else "starts when the previous lands",
         f"colour {color}" if color else "automatic colour",
     ]
     context.report(
@@ -465,7 +468,8 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
     days_for, is_agent = readers.days_for, readers.is_agent
     milestone_label, is_milestone = readers.milestone_label, readers.is_milestone
     efficiency = args.efficiency / 100 if args.efficiency is not None else read_efficiency(project)
-    start = readers.start_of(project)
+    today = context.clock.today()
+    start = readers.start_of(project, today)
     report = time_report(
         context.library,
         project,
@@ -545,7 +549,9 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
             for phase, color in zip(team.phases, colors, strict=True)
         ],
     }
-    context.report(data, _report(project.title, report, parallel, calendar, team, milestone_label))
+    context.report(
+        data, _report(project.title, report, parallel, calendar, team, milestone_label, today)
+    )
     return 0
 
 
@@ -578,16 +584,16 @@ def _grid(cells: tuple[Cell, ...], text: Callable[[Cell], str]) -> list[str]:
     return lines
 
 
-def _phase_line(phase: Phase, milestone_label: Callable[[Step], str]) -> str:
+def _phase_line(phase: Phase, milestone_label: Callable[[Step], str], today: date) -> str:
     name = milestone_label(phase.milestone) if phase.milestone else "remaining work"
     when = (
-        f"{format_date(phase.start)} → {format_date(phase.finish)}"
+        f"{format_date(phase.start, today)} → {format_date(phase.finish, today)}"
         if phase.finish
-        else f"from {format_date(phase.start)}, nothing estimated"
+        else f"from {format_date(phase.start, today)}, nothing estimated"
     )
     said = f"{name}: {when} ({format_days(phase.calendar_days)}, {len(phase.steps)} steps)"
     if phase.pushed and phase.asked is not None:
-        said += f" — asked for {format_date(phase.asked)}, but the previous lands later"
+        said += f" — asked for {format_date(phase.asked, today)}, but the previous lands later"
     return said
 
 
@@ -598,6 +604,7 @@ def _report(
     calendar: tuple[Cell, ...],
     team: Cell,
     milestone_label: Callable[[Step], str],
+    today: date,
 ) -> str:
     head = (
         f"{title}: {format_days(report.total_days)} of work — "
@@ -610,18 +617,19 @@ def _report(
     lines += _grid(parallel, lambda cell: format_days(cell.days))
     lines += [
         "",
-        f"Calendar (at {report.efficiency:.0%} focus, from {format_date(report.start)}; "
+        f"Calendar (at {report.efficiency:.0%} focus, from {format_date(report.start, today)}; "
         "cells are days and landing dates)",
     ]
     lines += _grid(
         calendar,
         lambda cell: (
-            format_days(cell.days) + (f" · {format_date(cell.finish)}" if cell.finish else "")
+            format_days(cell.days)
+            + (f" · {format_date(cell.finish, today)}" if cell.finish else "")
         ),
     )
     people = f"{team.humans} {'person' if team.humans == 1 else 'people'}"
     lines += ["", f"Milestones in sequence ({people} + {team.agents} agents)"]
-    lines += [f"  {_phase_line(phase, milestone_label)}" for phase in team.phases]
+    lines += [f"  {_phase_line(phase, milestone_label, today)}" for phase in team.phases]
     if not report.has_agent_steps:
         lines += ["", "No agent steps — agent capacity does not change these numbers."]
     return "\n".join(lines)
@@ -642,7 +650,7 @@ def _snapshot(
         readers.status_for,
         humans=humans,
         agents=agents,
-        start=readers.start_of(project),
+        start=readers.start_of(project, today),
         efficiency=read_efficiency(project),
         is_milestone=readers.is_milestone,
         start_for=read_start,
@@ -652,7 +660,7 @@ def _snapshot(
 
 def _progress_record(context: CliContext, args: Namespace, readers: Readers) -> int:
     project = find_project(context.library, args.project)
-    now = _snapshot(context, project, readers, date.today())
+    now = _snapshot(context, project, readers, context.clock.today())
     if now is None:
         raise CliError("nothing to record — the project has no steps, or cannot be dated")
     rows = recorded(read_history(project), now)
@@ -667,14 +675,14 @@ def _progress_record(context: CliContext, args: Namespace, readers: Readers) -> 
     )
     context.report(
         {"project": project.id, "day": now.day.isoformat(), "outcome": "recorded"},
-        f"{project.title}: progress recorded for {format_date(now.day)}",
+        f"{project.title}: progress recorded for {format_date(now.day, now.day)}",
     )
     return 0
 
 
 def _progress_save(context: CliContext, args: Namespace, readers: Readers) -> int:
     project = find_project(context.library, args.project)
-    now = _snapshot(context, project, readers, date.today())
+    now = _snapshot(context, project, readers, context.clock.today())
     if now is None:
         raise CliError("nothing to save — the project has no steps, or cannot be dated")
     try:
@@ -687,7 +695,8 @@ def _progress_save(context: CliContext, args: Namespace, readers: Readers) -> in
     kept = saved[-1]
     context.report(
         {"project": project.id, "title": kept.title, "day": kept.day.isoformat()},
-        f"{project.title}: saved the plan as of {format_date(kept.day)} as {kept.title!r}",
+        f"{project.title}: saved the plan as of {format_date(kept.day, kept.day)} "
+        f"as {kept.title!r}",
     )
     return 0
 
@@ -697,7 +706,8 @@ def _progress_list(context: CliContext, args: Namespace) -> int:
     saved = read_saved(project)
     history = read_history(project)
     lines = [
-        f"  {row.title} · {format_date(row.day)}" + (f" — {row.note}" if row.note else "")
+        f"  {row.title} · {format_date(row.day, context.clock.today())}"
+        + (f" — {row.note}" if row.note else "")
         for row in saved
     ]
     said = (
@@ -760,7 +770,7 @@ def _pick_arg(value: str | None, saved: list[Snapshot], default: Pick, flag: str
 
 def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> int:
     project = find_project(context.library, args.project)
-    today = date.today()
+    today = context.clock.today()
     live = _snapshot(context, project, readers, today)
     if live is None:
         if not project.steps:
@@ -770,7 +780,7 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
     history = read_history(project)
     saved = read_saved(project)
     humans, agents = read_team(project)
-    start = readers.start_of(project)
+    start = readers.start_of(project, today)
     then_pick = _pick_arg(args.basis, saved, AT_START, "--basis")
     now_pick = _pick_arg(args.as_of, saved, LIVE, "--as-of")
     now = resolve(now_pick, history=history, saved=saved, live=live, start=start)
@@ -844,7 +854,7 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
                 },
             }
         )
-        line = _progress_line(label, reached, landing, then, moved)
+        line = _progress_line(label, reached, landing, then, moved, today)
         gaps = idle(now, key)
         if gaps:
             line += "; no work planned " + ", ".join(
@@ -896,7 +906,7 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
         },
     }
     if changes is not None:
-        lines += changes.lines(readers.key_of)
+        lines += changes.lines(readers.key_of, today)
     if total:
         lines.append(
             "volume: "
@@ -935,16 +945,23 @@ def _percent(share: float | None) -> str:
 
 
 def _progress_line(
-    label: str, tally: Tally, landing: date | None, then: Snapshot | None, moved: Delta | None
+    label: str,
+    tally: Tally,
+    landing: date | None,
+    then: Snapshot | None,
+    moved: Delta | None,
+    today: date,
 ) -> str:
     said = (
         f"{label}: {_percent(tally.share())} "
         f"({format_days(tally.done_days)} of {format_days(tally.days)}, "
         f"{tally.done} of {tally.steps} steps)"
     )
-    said += f" — lands {format_date(landing)}" if landing else " — nothing estimated, no date"
+    said += (
+        f" — lands {format_date(landing, today)}" if landing else " — nothing estimated, no date"
+    )
     if moved is not None and then is not None:
-        said += "; " + delta_words(moved, then.day)
+        said += "; " + delta_words(moved, then.day, today)
     elif then is not None:
         said += "; not in the plan compared with"
     return said

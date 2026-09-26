@@ -163,7 +163,7 @@ def _set(context: CliContext, args: Namespace) -> int:
     if args.days < 0:
         raise CliError("an estimate cannot be negative")
     step = find_step(context.library, args.step, context.current)
-    entry = write(args.days, previous=step.module_data.get(MODULE_ID))
+    entry = write(args.days, previous=step.module_data.get(MODULE_ID), today=context.clock.today())
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     context.report({"step": step.id} | entry, f"{step.title}: {format_day_count(args.days)}")
     return 0
@@ -244,10 +244,11 @@ def _start(context: CliContext, args: Namespace) -> int:
             raise CliError(f"{args.date!r} is not an ISO-8601 date, e.g. 2026-09-01") from error
     project = find_project(context.library, args.project)
     context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_start(start)))
+    today = context.clock.today()
     said = (
-        f"starts today, {format_date(date.today())}"
+        f"starts today, {format_date(today, today)}"
         if start is None
-        else f"starts {format_date(start)}"
+        else f"starts {format_date(start, today)}"
     )
     written = "" if start is None else start.isoformat()
     context.report({"project": project.id, "start": written}, f"{project.title}: {said}")

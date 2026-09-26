@@ -64,12 +64,12 @@ class SnapshotPicker(QToolButton):
     picked = Signal(object)  # Pick
     forget = Signal(str)  # A saved snapshot's title.
 
-    def __init__(self, leading: Pick, parent: QWidget | None = None) -> None:
+    def __init__(self, leading: Pick, today: date, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._leading = leading
         self._pick = leading
         self._saved: tuple[Snapshot, ...] = ()
-        self._today = date.today()
+        self._today = today
         self.setObjectName("ToolbarButton")
         self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.setCursor(Qt.CursorShape.PointingHandCursor)

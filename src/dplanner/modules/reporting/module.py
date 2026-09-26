@@ -34,6 +34,7 @@ from PySide6.QtWidgets import QFileDialog, QWidget
 from dplanner.cli.report import page, sheets, website
 from dplanner.cli.report.assemble import Report, build
 from dplanner.cli.report.parts import ReportSource
+from dplanner.core.clock import Clock
 from dplanner.domain.model import Library, ProjectId, Step
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
@@ -76,6 +77,8 @@ class ReportingDeps:
     key_of: Callable[[Step], str]
     kind_of: Callable[[Step], str]
     status_for: Callable[[Step], str]
+    # The day a report is of: the window's, which a test may pin.
+    clock: Clock
     # Where a project publishes instead of beside its plan — its reporting location, when
     # it names one and this machine has that repository — wired by the root; this module
     # never learns a role id. None means beside the plan, as always.
@@ -171,6 +174,7 @@ class ReportingModule:
             kind_of=deps.kind_of,
             status_for=deps.status_for,
             plan_remote=deps.plan_remote(project_id),
+            today=deps.clock.today(),
         )
 
     def prepare_publication(

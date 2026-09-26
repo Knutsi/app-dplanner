@@ -336,7 +336,16 @@ def _default_project_dir(argv, workspace):
 
 
 @pytest.fixture
-def cli(registry, workspace, cli_library, at_work_board):
+def clock():
+    """The day the ``cli`` fixtures' runs date things by — the machine's until a test pins
+    it (``core/clock.py``). A window's is ``services.clock``."""
+    from dplanner.core.clock import Clock
+
+    return Clock()
+
+
+@pytest.fixture
+def cli(registry, workspace, cli_library, at_work_board, clock):
     from io import StringIO
 
     from dplanner.cli.main import run
@@ -352,6 +361,7 @@ def cli(registry, workspace, cli_library, at_work_board):
             out,
             err,
             board=at_work_board,
+            clock=clock,
         )
         assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
         return out.getvalue() + err.getvalue()
@@ -360,7 +370,7 @@ def cli(registry, workspace, cli_library, at_work_board):
 
 
 @pytest.fixture
-def cli_stdin(registry, workspace, cli_library, at_work_board):
+def cli_stdin(registry, workspace, cli_library, at_work_board, clock):
     import sys
     from io import StringIO
 
@@ -380,6 +390,7 @@ def cli_stdin(registry, workspace, cli_library, at_work_board):
                 out,
                 err,
                 board=at_work_board,
+                clock=clock,
             )
         finally:
             sys.stdin = real

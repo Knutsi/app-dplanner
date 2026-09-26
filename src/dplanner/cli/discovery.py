@@ -21,6 +21,7 @@ from typing import TextIO
 
 from dplanner.cli.command import CliContext, CliError
 from dplanner.cli.lookup import find_project
+from dplanner.core.clock import Clock
 from dplanner.core.module_data import ModuleDataFormat, migrate_module_data
 from dplanner.core.storage.locations import (
     canonical_remote,
@@ -237,6 +238,7 @@ def open_library(
     out: TextIO,
     *,
     as_json: bool = False,
+    clock: Clock | None = None,
 ) -> Iterator[CliContext]:
     """Open the library, hand it to a verb, and write back exactly what changed.
 
@@ -246,7 +248,13 @@ def open_library(
     store = LibraryStore(path)
     library = store.load()
 
-    context = CliContext(out=out, as_json=as_json, opened=library, opened_store=store)
+    context = CliContext(
+        out=out,
+        as_json=as_json,
+        opened=library,
+        opened_store=store,
+        clock=clock or Clock(),
+    )
     store.dirty.connect(lambda owner_id, aspect: context.marks.add((owner_id, aspect)))
     migrate_module_data(store, formats, library)
     migrate_shelved(store, formats)

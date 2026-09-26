@@ -8,6 +8,7 @@ Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 from collections.abc import Callable
+from datetime import date
 
 from dplanner.cli.report.parts import (
     Column,
@@ -44,7 +45,7 @@ def report_source(
     step_aspects: Callable[[Step], list[str]],
     milestone_label: Callable[[Step], str],
 ) -> ReportSource:
-    def source(library: Library, project: Project, _files: FilesFor) -> Contribution:
+    def source(library: Library, project: Project, _files: FilesFor, _day: date) -> Contribution:
         def aspects(step_id: StepId) -> list[str]:
             step = project.step(step_id)
             return step_aspects(step) if step is not None else []

@@ -8,6 +8,7 @@ Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 from collections.abc import Callable
+from datetime import date
 
 from dplanner.cli.report.parts import (
     Column,
@@ -31,7 +32,7 @@ def report_source(
     days_for: Callable[[Step], float | None],
     key_of: Callable[[Step], str],
 ) -> ReportSource:
-    def source(library: Library, project: Project, _files: FilesFor) -> Contribution:
+    def source(library: Library, project: Project, _files: FilesFor, _day: date) -> Contribution:
         found = progression(library, project, status_for)
         if not found.total:
             return Contribution()

@@ -292,12 +292,12 @@ def test_the_delta_says_what_was_added_and_how_the_landing_moved(plan):
         moved = delta(then, now, key)
         assert moved == Delta(1, 5.0, date(2026, 9, 18), date(2026, 9, 25))
         assert moved.shift == 5 and not moved.unchanged
-        assert delta_words(moved, then.day) == (
+        assert delta_words(moved, then.day, date(2026, 9, 21)) == (
             "since 7 September: +1 step, +5d, lands 5 working days later (was 18 September)"
         )
         still = delta(then, now, key_of(plan, "B"))  # v1 did not move
         assert still is not None and still.unchanged
-        assert delta_words(still, then.day) == "unchanged since 7 September"
+        assert delta_words(still, then.day, date(2026, 9, 21)) == "unchanged since 7 September"
         assert delta(then, now, "nobody") is None
     finally:
         del DAYS["E"]
@@ -318,11 +318,16 @@ def test_the_change_report_names_steps_born_and_re_estimated_after_the_basis(pla
         ("A", date(2026, 9, 12), 3.0, 1.0)
     ]
     assert changes.since == date(2026, 9, 7)
-    assert changes.lines(lambda step: f"S{step.title}") == [
+    assert changes.lines(lambda step: f"S{step.title}", date(2026, 9, 21)) == [
         "added since 7 September: SE",
         "re-estimated since 7 September: SA 3d → 1d on 12 September",
     ]
-    assert changes_since(project, date(2026, 9, 30), days_for, lambda _s: []).lines(str) == []
+    assert (
+        changes_since(project, date(2026, 9, 30), days_for, lambda _s: []).lines(
+            str, date(2026, 9, 30)
+        )
+        == []
+    )
 
 
 # -- the history on disk -------------------------------------------------------------------------

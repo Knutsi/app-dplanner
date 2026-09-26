@@ -1009,6 +1009,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
+            clock=services.clock,
             # Estimates, agent-ness and the start date through the owners' Qt-free
             # readers — the matrix never learns what any of them is stored as.
             days_for=estimated_days,
@@ -1020,7 +1021,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             # behind the chart's delta.
             estimate_history=estimate_history,
             step_key=_step_key,
-            start_of=lambda project_id: start_of(library.project(project_id)),
+            start_of=lambda project_id: start_of(
+                library.project(project_id), services.clock.today()
+            ),
             # Clicking the calendar re-dates the plan: one undoable write of the
             # estimation module's own entry, composed here so neither module imports
             # the other.
@@ -1075,6 +1078,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             key_of=_step_key,
             kind_of=_step_kind,
             status_for=step_status,
+            clock=services.clock,
             reporting_site=reporting_site,
         )
     )

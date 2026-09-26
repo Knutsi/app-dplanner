@@ -4291,3 +4291,25 @@ never whether a verb runs.
 **Upstream?** Yes, with `sparse.py`: the two doors are one story (a repository read on
 demand, a repository worked in on demand), and any application that runs a tool inside
 somebody else's repository wants the second as soon as it has the first.
+
+## 53. From the time-backport pass: today is a service
+
+### `core/clock.py`, `framework/day_watch.py` — `Clock`, `DayWatch`; `AppServices.clock`
+
+**What we added.** A `Clock` in the Qt-free core — `today()`, `pin(day)` and a
+`day_changed` signal — built once per window by `AppBuilder` and put on `AppServices`, and
+one per CLI run on `CliContext` (`run(…, clock=)` lets a test pin it). `DayWatch`, parented
+to the window and held on it as `day_watch` for the menu bar's reason, asks the clock to
+`check()` at just past local midnight, re-arming each time, and again whenever the
+application becomes active: a `QTimer` stops while the machine sleeps, so a laptop opened
+the next morning would otherwise show yesterday until the next midnight.
+
+**Why.** Everything that dates a plan read `date.today()` where it needed it, so a test could
+not pin the day, the time simulator could not show a simulated one, and a window left open
+overnight kept yesterday's forecast and wrote no row for the new day until somebody edited
+something. One clock makes the day an input like any other, and `day_changed` makes the
+turn of the day an event like a model change.
+
+**Upstream?** Yes. Any application that dates anything has the same three problems, and the
+split — the notion of today in the core, the timer in the framework — is the layering the
+template already has for signals.

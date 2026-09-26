@@ -320,12 +320,15 @@ def segment_words(segment: Segment, basis: str, today: date) -> str:
 class ProgressChart(QWidget):
     """The plots, a page at a time; the host hands it a :class:`ChartData`."""
 
-    def __init__(self, parent: QWidget | None = None, *, page: str = PROGRESS_PAGE) -> None:
+    def __init__(
+        self, today: date, parent: QWidget | None = None, *, page: str = PROGRESS_PAGE
+    ) -> None:
         super().__init__(parent)
         self._data: ChartData | None = None
         self._page = page
-        self._first = date.today()
-        self._last = date.today()
+        # The axis before any data: today, the day the host will date the data by.
+        self._first = today
+        self._last = today
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.setMouseTracking(True)
         self._bound_height()
@@ -1267,9 +1270,11 @@ class ChartDialog(DialogFrame):
     dialog on the frame, Close alone in the footer.
     """
 
-    def __init__(self, data: ChartData | None, *, title: str, parent: QWidget | None = None):
+    def __init__(
+        self, data: ChartData | None, today: date, *, title: str, parent: QWidget | None = None
+    ):
         super().__init__(title, parent, editor=True)
-        self.chart = ProgressChart(self.body, page=ALL_PAGES)
+        self.chart = ProgressChart(today, self.body, page=ALL_PAGES)
         # The plots stop growing at their ceiling; with many milestones the rows can
         # still outrun a short screen, and then this scrolls rather than squeezing them.
         scroller = QScrollArea(self.body)

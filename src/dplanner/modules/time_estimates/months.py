@@ -117,13 +117,13 @@ class MonthsView(QWidget):
 
     day_picked = Signal(object)  # a datetime.date
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, today: date, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._start: date | None = None
         self._bands: tuple[Band, ...] = ()
         self._emphasised: str | None = None
-        self._today = date.today()
-        self._begin = date.today().replace(day=1)
+        self._today = today
+        self._begin = today.replace(day=1)
         self._wanted = 0  # Months the plan asks for; the grid rounds up to fill its rows.
         self._count = 0
         self._columns = 1
@@ -143,10 +143,10 @@ class MonthsView(QWidget):
 
     # -- the host's side of the contract -------------------------------------------------------
 
-    def show_bands(self, start: date, bands: tuple[Band, ...], today: date | None = None) -> None:
+    def show_bands(self, start: date, bands: tuple[Band, ...], today: date) -> None:
         self._start = start
         self._bands = bands
-        self._today = today or date.today()
+        self._today = today
         finish = max((band.finish for band in bands), default=None)
         self._begin, self._wanted = _month_span(start, finish)
         self._begin = _add_months(self._begin, self._offset)

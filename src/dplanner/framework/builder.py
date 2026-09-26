@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any, Self
 
 from PySide6.QtWidgets import QApplication
 
+from dplanner.core.clock import Clock
 from dplanner.core.module_data import migrate_module_data
 from dplanner.core.repository import RepositoryFactory
 from dplanner.core.telemetry import current as current_telemetry
@@ -44,6 +45,7 @@ from dplanner.framework.context import (
     ContextNode,
     ContextService,
 )
+from dplanner.framework.day_watch import DayWatch
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.dictation import DictationService
 from dplanner.framework.index_panel import IndexPanel, IndexSegmentRegistry
@@ -176,6 +178,10 @@ class AppBuilder:
         panels = PanelRegistry()
         dock = PanelDock(panels, context, tabs)
         window = self._window_factory(tabs, dock)
+        # One day for the whole window, told when it turns; the watch dies with the window,
+        # which holds it for the reason it holds the menu bar.
+        clock = Clock()
+        window.day_watch = DayWatch(clock, parent=window)
         # The context is announced once per event-loop turn: a gesture that publishes the
         # selection several times — a re-selection clears before it selects — costs one
         # re-evaluation of every action state, toolbar and panel, over the final state.
@@ -242,6 +248,7 @@ class AppBuilder:
             project_cards=InspectorSectionRegistry(),
             step_details=InspectorSectionRegistry(),
             settings_sections=SettingsSectionRegistry(),
+            clock=clock,
             theme=theme,
             zoom=ZoomService(),
             tasks=tasks,

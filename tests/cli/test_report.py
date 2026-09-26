@@ -80,7 +80,7 @@ def test_every_source_speaks_plain_data(cli_library, plan):
     with open_library(cli_library, default_module_formats(), io.StringIO()) as context:
         project = context.library.project(plan)
         for source in _report_sources():
-            contribution = source(context.library, project, context.store.files)
+            contribution = source(context.library, project, context.store.files, date(2026, 9, 6))
             assert isinstance(contribution, Contribution)
             assert _plain(contribution), source
         report = build(
@@ -240,6 +240,7 @@ def test_the_steps_table_marks_milestones_and_carries_facet_columns(cli_library,
             key_of=_step_key,
             kind_of=_step_kind,
             status_for=status_for,
+            today=date(2026, 9, 6),
         )
     table = next(t for t in report.tables() if isinstance(t, Table) and t.id == "steps")
     by_key = {row.cells[0]: row for row in table.rows}

@@ -79,7 +79,7 @@ def report_source(
     days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
     status_for: Callable[[Step], str],
-    start_of: Callable[[Project], date],
+    start_of: Callable[[Project, date], date],
     milestone_label: Callable[[Step], str],
     estimate_history: Callable[[Step], list[tuple[date, float]]],
     key_of: Callable[[Step], str],
@@ -88,10 +88,10 @@ def report_source(
         days_for, is_agent, status_for, start_of, milestone_label, estimate_history, key_of
     )
 
-    def source(library: Library, project: Project, _files: FilesFor) -> Contribution:
+    def source(library: Library, project: Project, _files: FilesFor, day: date) -> Contribution:
         if not project.steps:
             return NOTHING
-        dated = _dated(library, project, readers)
+        dated = _dated(library, project, readers, day)
         if dated is None:
             return NOTHING
         if dated.cycle:
@@ -181,10 +181,12 @@ def report_source(
     return source
 
 
-def milestones_table(library: Library, project: Project, readers: Readers) -> Table | None:
+def milestones_table(
+    library: Library, project: Project, readers: Readers, today: date
+) -> Table | None:
     """The milestones as the report tabulates them — what *Milestones (CSV)…* writes.
     None when the project has no steps or cannot be dated."""
-    dated = _dated(library, project, readers)
+    dated = _dated(library, project, readers, today)
     if dated is None or dated.cycle:
         return None
     return _milestones_table(dated, readers)
@@ -206,8 +208,8 @@ class _Dated:
         return self.report.cycle
 
 
-def _dated(library: Library, project: Project, readers: Readers) -> _Dated | None:
-    start = readers.start_of(project)
+def _dated(library: Library, project: Project, readers: Readers, day: date) -> _Dated | None:
+    start = readers.start_of(project, day)
     efficiency = read_efficiency(project)
     report = time_report(
         library,
@@ -227,7 +229,7 @@ def _dated(library: Library, project: Project, readers: Readers) -> _Dated | Non
         report.calendar[0] if report.calendar else Cell(humans, agents, 0.0),
     )
     labels = {id(phase): _label(phase, team.phases, readers) for phase in team.phases}
-    return _Dated(report, team, start, efficiency, date.today(), labels)
+    return _Dated(report, team, start, efficiency, day, labels)
 
 
 def _label(phase: Phase, phases: tuple[Phase, ...], readers: Readers) -> str:
@@ -249,7 +251,7 @@ def _change_figure(moved: Delta | None, then: Snapshot | None, today: date) -> F
     label = f"Since the plan of {format_date(then.day, today=today)}"
     if moved is None:
         return Figure(label, "—", note="not in the plan then")
-    words = delta_words(moved, then.day)
+    words = delta_words(moved, then.day, today)
     tone: Tone = "" if moved.unchanged else "busy"
     shift = moved.shift
     if shift is not None and shift > 0:
