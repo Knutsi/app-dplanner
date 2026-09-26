@@ -1,24 +1,31 @@
 /**
- * Model variants: each flag is one proposed change to DPlanner's time model. With every flag
- * off the port computes exactly what DPlanner computes today, quirks included — that is
- * what the parity tools hold it to (`FAITHFUL`). A change decided on for the backport moves
- * into `ADOPTED`, which the page always runs, and leaves `VARIANTS`, the experiments still
- * open. ISSUES.md says which issue each flag answers; add the next experiment here and
- * thread it where it bites.
+ * The model's options: each one a proposed change to DPlanner's time model. With all of them
+ * off the port computes exactly what DPlanner computes today, quirks included — that is what
+ * the parity tools hold it to (`FAITHFUL`). A change decided on for the backport moves into
+ * `ADOPTED`, which the page always runs, and leaves `VARIANTS`, the experiments still open.
+ * ISSUES.md says which issue each answers; add the next experiment here and thread it where
+ * it bites.
  */
 export interface ModelOptions {
   /** Round a fractional day up with a 1e-9 guard, so float noise cannot add a day. */
   epsilon: boolean;
   /** A stretch begins where the previous one ended, not on the next whole working day. */
   carry: boolean;
-  /** Done work drops out, and what remains is simulated from today. */
-  replan: boolean;
+  /**
+   * How what is done and under way moves the dates.
+   * - `off`: it does not; every date is simulated from the project's start (DPlanner today).
+   * - `restart`: done work drops out, and everything unfinished starts again, at its full
+   *   estimate, from today — v3's model, kept to show the saw-tooth it draws (ISSUES F5).
+   * - `resume`: the plan's own dates stand while what is done matches them; otherwise the
+   *   rest resumes from tomorrow, with work in flight credited for the days already spent.
+   */
+  replan: "off" | "restart" | "resume";
 }
 
-export const FAITHFUL: ModelOptions = { epsilon: false, carry: false, replan: false };
+export const FAITHFUL: ModelOptions = { epsilon: false, carry: false, replan: "off" };
 
-/** What the page runs: DPlanner today, re-planned from today (ISSUES.md F1). */
-export const ADOPTED: ModelOptions = { ...FAITHFUL, replan: true };
+/** What the page runs (ISSUES F1, F5, I1, Q3). */
+export const ADOPTED: ModelOptions = { epsilon: true, carry: true, replan: "resume" };
 
 export const GUARD = 1e-9;
 
@@ -26,16 +33,5 @@ export function guardOf(options: ModelOptions): number {
   return options.epsilon ? GUARD : 0;
 }
 
-export const VARIANTS: { key: keyof ModelOptions; label: string; hint: string }[] = [
-  {
-    key: "epsilon",
-    label: "Round with a guard",
-    hint: "ceil(days − 1e-9): 25.000000000000004 working days is 25, not 26",
-  },
-  {
-    key: "carry",
-    label: "Carry part-days between milestones",
-    hint:
-      "the next stretch starts at the fraction of a day the previous one ended, not the next morning",
-  },
-];
+/** The experiments still open: none, while every proposal so far has been adopted. */
+export const VARIANTS: { key: "epsilon" | "carry"; label: string; hint: string }[] = [];

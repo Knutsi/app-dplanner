@@ -18,7 +18,7 @@ import type { V3Handlers, V3Page, V3State } from "./state.ts";
 
 const TABS: [V3Page, string][] = [["milestones", "Milestones"], ["work", "Work"]];
 
-function tabs(state: V3State, on: V3Handlers): HTMLElement {
+export function tabs(state: V3State, on: V3Handlers): HTMLElement {
   return h(
     "span",
     { class: "v3-tabs", role: "tablist" },
@@ -33,7 +33,7 @@ function tabs(state: V3State, on: V3Handlers): HTMLElement {
   );
 }
 
-function showing(found: Brief, state: V3State, on: V3Handlers): HTMLElement {
+export function showing(found: Brief, state: V3State, on: V3Handlers): HTMLElement {
   const select = h("select", {
     title: "Which work the plots show: everything, or one milestone's own",
     onchange: (event: Event) => {
@@ -115,7 +115,12 @@ document.addEventListener("pointerdown", (event) => {
   }
 });
 
-function popover(name: string, summary: HTMLElement, panel: HTMLElement, tone = ""): HTMLElement {
+export function popover(
+  name: string,
+  summary: HTMLElement,
+  panel: HTMLElement,
+  tone = "",
+): HTMLElement {
   const details = h(
     "details",
     { class: `popover-menu ${name}${tone}`, open: opened.has(name) },
@@ -169,7 +174,7 @@ function whatIf(view: TimeView, state: V3State, on: V3Handlers): HTMLElement[] {
     : [menu];
 }
 
-function more(view: TimeView, state: V3State, on: V3Handlers): HTMLElement {
+export function more(view: TimeView, state: V3State, on: V3Handlers): HTMLElement {
   const palette = h("select", {
     onchange: (event: Event) =>
       on.state({ whatIf: { ...state.whatIf, palette: (event.target as HTMLSelectElement).value } }),

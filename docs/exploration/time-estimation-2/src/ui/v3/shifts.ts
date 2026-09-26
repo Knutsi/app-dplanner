@@ -8,6 +8,7 @@
  */
 
 import { axisTicks, type Day, shortDate } from "../../model/calendar.ts";
+import { isDelay } from "../../model/graph.ts";
 import type { Brief, Scope } from "../../brief.ts";
 import type { TimeView } from "../../present.ts";
 import { clip, esc, INK, n, SECONDARY, textWidth } from "../markup.ts";
@@ -43,13 +44,16 @@ function arrow(from: number, to: number, y: number, color: string): string {
     } Z" fill="${color}" fill-opacity="0.85"/>`;
 }
 
-function words(scope: Scope, today: Day): string {
+function words(scope: Scope, view: TimeView): string {
+  const today = view.today;
   const parts = [`${scope.badge} ${scope.label}${scope.title ? ` — ${scope.title}` : ""}`];
   if (scope.move.then !== null) parts.push(`then: ${shortDate(scope.move.then, today)}`);
   if (scope.landedBy !== null) parts.push(`done by ${shortDate(scope.landedBy, today)}`);
   else if (scope.move.planned !== null) {
     parts.push(`plan now: ${shortDate(scope.move.planned, today)}`);
   }
+  const stretch = view.stretches.find((one) => one.key === scope.key);
+  for (const step of stretch?.phase.steps.filter(isDelay) ?? []) parts.push(`waits: ${step.title}`);
   return parts.join("\n");
 }
 
@@ -107,7 +111,7 @@ export function shiftsSvg(
     const y = TOP + (index + 0.5) * ROW_H;
     rows.push({ key: scope.key!, top: y - ROW_H / 2, bottom: y + ROW_H / 2 });
     const faded = selected !== null && selected !== scope.key ? ` opacity="0.35"` : "";
-    out.push(`<g class="shift-row"${faded}><title>${esc(words(scope, today))}</title>`);
+    out.push(`<g class="shift-row"${faded}><title>${esc(words(scope, view))}</title>`);
     if (selected === scope.key) {
       out.push(
         `<rect x="0" y="${n(y - ROW_H / 2)}" width="${

@@ -196,6 +196,7 @@
   var daysFor = (step2) => step2.estimateOff ? null : step2.estimate;
   var isAgent = (step2) => step2.agent;
   var isMilestone = (step2) => Boolean(step2.milestone);
+  var isDelay = (step2) => step2.delay !== null;
   var startFor = (step2) => step2.start;
   function efficiencyOf(plan) {
     return plan.assumptions.efficiency ?? DEFAULT_EFFICIENCY;
@@ -305,28 +306,18 @@
   var FAITHFUL = {
     epsilon: false,
     carry: false,
-    replan: false
+    replan: "off"
   };
   var ADOPTED = {
-    ...FAITHFUL,
-    replan: true
+    epsilon: true,
+    carry: true,
+    replan: "resume"
   };
   var GUARD = 1e-9;
   function guardOf(options) {
     return options.epsilon ? GUARD : 0;
   }
-  var VARIANTS = [
-    {
-      key: "epsilon",
-      label: "Round with a guard",
-      hint: "ceil(days \u2212 1e-9): 25.000000000000004 working days is 25, not 26"
-    },
-    {
-      key: "carry",
-      label: "Carry part-days between milestones",
-      hint: "the next stretch starts at the fraction of a day the previous one ended, not the next morning"
-    }
-  ];
+  var VARIANTS = [];
 
   // src/model/palettes.ts
   var PALETTES = [
@@ -500,16 +491,20 @@
   }
 
   // src/model/simulate.ts
-  function parallelFinish(steps, daysFor2, humans, agents) {
+  function parallelFinish(steps, daysFor2, humans, agents, running = /* @__PURE__ */ new Set(), waits = plainWaits) {
     if (humans < 1 || agents < 1) throw new Error("a pool with work in it needs at least one worker");
     if (!steps.length) return null;
     const order = new Map(steps.map((step2, index) => [
       step2.id,
       index
     ]));
+    const byId2 = new Map(steps.map((step2) => [
+      step2.id,
+      step2
+    ]));
     const days = new Map(steps.map((step2) => [
       step2.id,
-      daysFor2(step2)
+      costOf(step2, daysFor2)
     ]));
     const waiting = /* @__PURE__ */ new Map();
     const dependents = new Map(steps.map((step2) => [
@@ -546,14 +541,27 @@
         []
       ]
     ]);
-    for (const step2 of steps) {
-      if (!waiting.get(step2.id).size) ready.get(pool.get(step2.id)).push(step2.id);
-    }
-    let running = [];
+    let busy = [];
     const landings2 = /* @__PURE__ */ new Map();
+    const starts = /* @__PURE__ */ new Map();
     let now = 0;
+    const release = (id) => {
+      const step2 = byId2.get(id);
+      if (isDelay(step2)) {
+        starts.set(id, now);
+        busy.push([
+          waits(step2, now),
+          id
+        ]);
+      } else {
+        ready.get(pool.get(id)).push(id);
+      }
+    };
+    for (const step2 of steps) {
+      if (!waiting.get(step2.id).size) release(step2.id);
+    }
     let remaining2 = steps.length;
-    const priority = (a, b) => tails.get(b) - tails.get(a) || order.get(a) - order.get(b);
+    const priority = (a, b) => Number(running.has(b)) - Number(running.has(a)) || tails.get(b) - tails.get(a) || order.get(a) - order.get(b);
     while (remaining2) {
       for (const lane of [
         true,
@@ -564,24 +572,25 @@
           queue.sort(priority);
           const id = queue.shift();
           free.set(lane, free.get(lane) - 1);
-          running.push([
+          starts.set(id, now);
+          busy.push([
             now + (days.get(id) ?? 0),
             id
           ]);
         }
       }
-      if (!running.length) break;
-      now = Math.min(...running.map(([finish]) => finish));
-      const landed = running.filter(([finish]) => finish <= now);
-      running = running.filter(([finish]) => finish > now);
+      if (!busy.length) break;
+      now = Math.min(...busy.map(([finish]) => finish));
+      const landed = busy.filter(([finish]) => finish <= now);
+      busy = busy.filter(([finish]) => finish > now);
       for (const [finish, id] of landed) {
         landings2.set(id, finish);
-        free.set(pool.get(id), free.get(pool.get(id)) + 1);
+        if (!isDelay(byId2.get(id))) free.set(pool.get(id), free.get(pool.get(id)) + 1);
         remaining2 -= 1;
         for (const after of dependents.get(id)) {
           const left = waiting.get(after);
           left.delete(id);
-          if (!left.size) ready.get(pool.get(after)).push(after);
+          if (!left.size) release(after);
         }
       }
     }
@@ -591,8 +600,16 @@
         ...days.values()
       ].filter((value) => value === null).length,
       landings: landings2,
+      starts,
       tails
     };
+  }
+  function waitDays(step2) {
+    return step2.delay && "days" in step2.delay ? step2.delay.days : 0;
+  }
+  var plainWaits = (step2, at) => at + waitDays(step2);
+  function costOf(step2, daysFor2) {
+    return isDelay(step2) ? waitDays(step2) : daysFor2(step2);
   }
   function chainTails(steps, daysFor2) {
     const order = new Set(steps.map((step2) => step2.id));
@@ -607,7 +624,7 @@
     }
     return tailsOf(steps, new Map(steps.map((step2) => [
       step2.id,
-      daysFor2(step2)
+      costOf(step2, daysFor2)
     ])), dependents);
   }
   function tailsOf(steps, days, dependents) {
@@ -626,8 +643,16 @@
     return tails;
   }
   function landingOf(phase, id) {
-    const offset = phase.landings.get(id) ?? 0;
-    return offset > 0 ? workingDaysAfter(phase.start, phase.lead + offset, phase.guard) : phase.start;
+    const fact = phase.facts.get(id);
+    if (fact !== void 0) return fact;
+    return dayAt(phase, phase.landings.get(id) ?? 0);
+  }
+  function startDayOf(phase, id) {
+    return phase.facts.get(id) ?? dayAt(phase, phase.starts.get(id) ?? 0);
+  }
+  function dayAt(phase, offset) {
+    const at = phase.lead + offset;
+    return at > 0 ? workingDaysAfter(phase.start, at, phase.guard) : phase.start;
   }
   function pushed(phase) {
     return phase.asked !== null && phase.start > nextWorkingDay(phase.asked);
@@ -658,68 +683,179 @@
   }
   function phases(plan, daysFor2, args) {
     const options = args.options ?? FAITHFUL;
-    const guard = guardOf(options);
+    if (options.replan !== "resume") return scheduled(plan, daysFor2, args, options);
+    const planned = scheduled(plan, daysFor2, args, options);
+    return holds(planned, args.today) ? planned : resumed(plan, daysFor2, args, options);
+  }
+  function scheduled(plan, daysFor2, args, options) {
     const result = [];
-    let when = args.start;
-    let lead = 0;
+    let clock = {
+      when: args.start,
+      lead: 0
+    };
     let replanned = false;
     for (const [index, [milestone, steps]] of groups(plan).entries()) {
       let costs = daysFor2;
-      if (options.replan && !replanned && steps.some((step2) => step2.status !== DONE)) {
+      if (options.replan === "restart" && !replanned && steps.some((step2) => step2.status !== DONE)) {
         replanned = true;
-        if (args.today > when) [when, lead] = [
-          args.today,
-          0
-        ];
+        if (args.today > clock.when) clock = {
+          when: args.today,
+          lead: 0
+        };
       }
-      if (options.replan && replanned) {
+      if (options.replan === "restart" && replanned) {
         costs = (step2) => {
           const days = daysFor2(step2);
           return days !== null && step2.status === DONE ? 0 : days;
         };
       }
-      const asked = milestone ? startFor(milestone) : null;
-      let begins = asked !== null && (index === 0 || asked >= when) ? asked : when;
-      let used = begins === when ? lead : 0;
-      if (nextWorkingDay(begins) !== begins) used = 0;
-      begins = nextWorkingDay(begins);
-      const run2 = parallelFinish(steps, costs, args.humans, args.agents);
-      const finish = run2.days > 0 ? workingDaysAfter(begins, used + run2.days, guard) : null;
-      result.push({
-        milestone,
-        steps,
-        days: run2.days,
-        start: begins,
-        finish,
-        asked,
-        unestimated: run2.unestimated,
-        landings: run2.landings,
-        lead: used,
-        guard
-      });
-      if (finish === null) {
-        [when, lead] = [
-          begins,
-          used
-        ];
-      } else if (options.carry) {
-        const total = used + run2.days;
-        const part = total - Math.floor(total + GUARD);
-        [when, lead] = part > GUARD ? [
-          finish,
-          part
-        ] : [
-          nextWorkingDay(finish + 1),
-          0
-        ];
-      } else {
-        [when, lead] = [
-          nextWorkingDay(finish + 1),
-          0
-        ];
-      }
+      const [phase, next] = dated(milestone, steps, steps, costs, clock, index === 0, args, options);
+      result.push(phase);
+      clock = next;
     }
     return result;
+  }
+  function holds(planned, today) {
+    return planned.every((phase) => phase.steps.every((step2) => {
+      if (step2.created !== null && startDayOf(phase, step2.id) < step2.created) return false;
+      if (isDelay(step2)) return true;
+      const lands = landingOf(phase, step2.id);
+      if (step2.status === DONE !== lands <= today) return false;
+      if (step2.status === DONE && step2.since !== null && step2.since !== lands) return false;
+      const started = step2.status === "in-progress" || step2.status === "blocked";
+      return !started || step2.since === null || step2.since <= startDayOf(phase, step2.id);
+    }));
+  }
+  var HALF = 0.5;
+  function resumed(plan, daysFor2, args, options) {
+    const result = [];
+    let clock = null;
+    const spentSince = (day) => day === null || day > args.today ? 0 : workingDaysBetween(day, args.today) - HALF;
+    const was = plan.assumptions.efficiencyWas;
+    const worked = (step2) => {
+      const whole = spentSince(step2.since);
+      if (!was || isAgent(step2) || step2.since === null || was.until <= step2.since) return whole;
+      const after = was.until > args.today ? 0 : workingDaysBetween(was.until, args.today);
+      return (whole - after) * (was.efficiency / efficiencyOf(plan)) + after;
+    };
+    const byId2 = new Map(plan.steps.map((step2) => [
+      step2.id,
+      step2
+    ]));
+    const waited = (step2) => {
+      const before = step2.requires.map((id) => byId2.get(id)).filter((one) => one !== void 0);
+      if (before.some((one) => one.status !== DONE)) return 0;
+      const done = before.map((one) => one.since).filter((day) => day !== null);
+      const last = done.length ? Math.max(...done) : null;
+      if (step2.created !== null && (last === null || step2.created > last)) {
+        return step2.created > args.today ? 0 : workingDaysBetween(step2.created, args.today);
+      }
+      return spentSince(last);
+    };
+    for (const [milestone, steps] of groups(plan)) {
+      const done = steps.filter((step2) => step2.status === DONE);
+      const facts = new Map(done.map((step2) => [
+        step2.id,
+        step2.since ?? args.today
+      ]));
+      const left = steps.filter((step2) => step2.status !== DONE);
+      if (!left.some((step2) => !isDelay(step2))) {
+        result.push(finished(milestone, steps, facts, args.today, options));
+        continue;
+      }
+      clock ??= {
+        when: nextWorkingDay(args.today + 1),
+        lead: 0
+      };
+      const running = new Set(left.filter((step2) => step2.status === "in-progress").map((step2) => step2.id));
+      const costs = (step2) => {
+        const days = daysFor2(step2);
+        return days === null || !running.has(step2.id) ? days : Math.max(HALF, days - worked(step2));
+      };
+      const [phase, next] = dated(milestone, steps, left, costs, clock, false, args, options, {
+        running,
+        facts,
+        waited
+      });
+      result.push(phase);
+      clock = next;
+    }
+    return result;
+  }
+  function finished(milestone, steps, facts, today, options) {
+    const days = facts.size ? [
+      ...facts.values()
+    ] : [
+      today
+    ];
+    return {
+      milestone,
+      steps,
+      days: 0,
+      start: Math.min(...days),
+      finish: Math.max(...days),
+      asked: milestone ? startFor(milestone) : null,
+      unestimated: 0,
+      landings: /* @__PURE__ */ new Map(),
+      starts: /* @__PURE__ */ new Map(),
+      lead: 0,
+      guard: guardOf(options),
+      facts
+    };
+  }
+  function dated(milestone, steps, members, costs, clock, first, args, options, extra = {}) {
+    const guard = guardOf(options);
+    const asked = milestone ? startFor(milestone) : null;
+    let begins = asked !== null && (first || asked >= clock.when) ? asked : clock.when;
+    let used = begins === clock.when ? clock.lead : 0;
+    if (nextWorkingDay(begins) !== begins) used = 0;
+    begins = nextWorkingDay(begins);
+    const waits = (step2, at) => {
+      const delay = step2.delay;
+      if ("days" in delay) return at + Math.max(0, delay.days - (extra.waited?.(step2) ?? 0));
+      const opens = nextWorkingDay(delay.until);
+      const offset = opens <= begins ? 0 : workingDaysBetween(begins, opens) - 1 - used;
+      return Math.max(at, offset);
+    };
+    const run2 = parallelFinish(members, costs, args.humans, args.agents, extra.running, waits);
+    const finish = run2.days > 0 ? workingDaysAfter(begins, used + run2.days, guard) : null;
+    const phase = {
+      milestone,
+      steps,
+      days: run2.days,
+      start: begins,
+      finish,
+      asked,
+      unestimated: run2.unestimated,
+      landings: run2.landings,
+      starts: run2.starts,
+      lead: used,
+      guard,
+      facts: extra.facts ?? /* @__PURE__ */ new Map()
+    };
+    if (finish === null) return [
+      phase,
+      {
+        when: begins,
+        lead: used
+      }
+    ];
+    if (!options.carry) return [
+      phase,
+      {
+        when: nextWorkingDay(finish + 1),
+        lead: 0
+      }
+    ];
+    const total = used + run2.days;
+    const part = total - Math.floor(total + GUARD);
+    return [
+      phase,
+      {
+        when: finish,
+        lead: part > GUARD ? part : 1
+      }
+    ];
   }
   function stretched(daysFor2, efficiency) {
     return (step2) => {
@@ -785,7 +921,13 @@
       today: args.today,
       options: args.options
     };
-    const raw = phases(plan, daysFor2, common);
+    const raw = phases(plan, daysFor2, {
+      ...common,
+      options: {
+        ...args.options ?? FAITHFUL,
+        replan: "off"
+      }
+    });
     const slow = phases(plan, stretched(daysFor2, args.efficiency), common);
     const landing = [
       ...slow
@@ -868,14 +1010,16 @@
     steps: 0,
     done: 0,
     days: 0,
-    doneDays: 0
+    doneDays: 0,
+    changed: 0
   };
   function addTally(a, b) {
     return {
       steps: a.steps + b.steps,
       done: a.done + b.done,
       days: a.days + b.days,
-      doneDays: a.doneDays + b.doneDays
+      doneDays: a.doneDays + b.doneDays,
+      changed: a.changed + b.changed
     };
   }
   function shareOf(tally2) {
@@ -904,7 +1048,7 @@
     return snapshot.stretches.find((s) => s.key === key)?.finish ?? null;
   }
   function sameStretch(a, b) {
-    return a.key === b.key && a.start === b.start && a.finish === b.finish && a.tally.steps === b.tally.steps && a.tally.done === b.tally.done && a.tally.days === b.tally.days && a.tally.doneDays === b.tally.doneDays && a.landings.length === b.landings.length && a.landings.every((knot, index) => {
+    return a.key === b.key && a.start === b.start && a.finish === b.finish && a.tally.steps === b.tally.steps && a.tally.done === b.tally.done && a.tally.days === b.tally.days && a.tally.doneDays === b.tally.doneDays && a.tally.changed === b.tally.changed && a.landings.length === b.landings.length && a.landings.every((knot, index) => {
       const other = b.landings[index];
       return knot.day === other.day && knot.steps === other.steps && knot.days === other.days;
     });
@@ -954,12 +1098,12 @@
     if (!plan.steps.length || cyclic(plan).length) return null;
     return snapshotFrom(calendarPhases(plan, args), args.today);
   }
-  function snapshotFrom(dated, today) {
+  function snapshotFrom(dated3, today) {
     return {
       day: today,
-      stretches: dated.map((phase) => ({
+      stretches: dated3.map((phase) => ({
         key: phase.milestone ? phase.milestone.id : "",
-        tally: tally(phase.steps),
+        tally: tally(phase.steps, daysFor, today),
         start: phase.start,
         finish: phase.finish,
         landings: landings(phase)
@@ -971,6 +1115,7 @@
   function landings(phase, days = daysFor) {
     const byDay = /* @__PURE__ */ new Map();
     for (const step2 of phase.steps) {
+      if (isDelay(step2)) continue;
       const when = landingOf(phase, step2.id);
       const found = byDay.get(when) ?? {
         day: when,
@@ -987,16 +1132,18 @@
       ...byDay.keys()
     ].sort((a, b) => a - b).map((when) => byDay.get(when));
   }
-  function tally(steps, days = daysFor) {
+  function tally(steps, days = daysFor, today) {
     let total = EMPTY_TALLY;
     for (const step2 of steps) {
+      if (isDelay(step2)) continue;
       const cost = days(step2) ?? 0;
       const landed = step2.status === DONE;
       total = addTally(total, {
         steps: 1,
         done: landed ? 1 : 0,
         days: cost,
-        doneDays: landed ? cost : 0
+        doneDays: landed ? cost : 0,
+        changed: today !== void 0 && step2.since === today ? 1 : 0
       });
     }
     return total;
@@ -1349,7 +1496,8 @@
         steps: count(row.steps),
         done: count(row.done),
         days: amount(row.days),
-        doneDays: amount(row.done_days)
+        doneDays: amount(row.done_days),
+        changed: count(row.changed)
       },
       start: start2,
       finish,
@@ -1397,6 +1545,9 @@
         done: s.tally.done,
         days: s.tally.days,
         done_days: s.tally.doneDays,
+        ...s.tally.changed ? {
+          changed: s.tally.changed
+        } : {},
         start: isoDay(s.start),
         ...s.finish !== null ? {
           finish: isoDay(s.finish)
@@ -1415,6 +1566,16 @@
   // src/data.ts
   var EXPORT_FORMAT = "te2-export/1";
   var dayOrNull = (value) => value ? parseDay(value) : null;
+  function delayFromJson(json) {
+    if (!json) return null;
+    if ("days" in json) return {
+      days: json.days
+    };
+    const until2 = parseDay(json.until);
+    return until2 === null ? null : {
+      until: until2
+    };
+  }
   function planFromJson(json) {
     return {
       ...json,
@@ -1431,7 +1592,9 @@
           ];
         }),
         created: dayOrNull(step2.created),
-        start: dayOrNull(step2.start)
+        start: dayOrNull(step2.start),
+        since: dayOrNull(step2.since ?? null),
+        delay: delayFromJson(step2.delay)
       }))
     };
   }
@@ -1444,15 +1607,24 @@
   var ALL_LABEL = "All milestones";
   var WHOLE_LABEL = "All work";
   var REMAINDER_LABEL = "Remaining work";
-  function applyWhatIf(plan, whatIf3) {
+  function applyWhatIf(plan, whatIf3, today) {
     const begins = whatIf3.begins ?? {};
+    const stored = plan.assumptions.efficiency;
+    const changed = whatIf3.efficiency !== void 0 && whatIf3.efficiency !== stored;
     return {
       ...plan,
       start: whatIf3.start ?? plan.start,
       assumptions: {
-        efficiency: whatIf3.efficiency ?? plan.assumptions.efficiency,
+        ...plan.assumptions,
+        efficiency: whatIf3.efficiency ?? stored,
         palette: whatIf3.palette ?? plan.assumptions.palette,
-        team: whatIf3.team ?? plan.assumptions.team
+        team: whatIf3.team ?? plan.assumptions.team,
+        ...changed ? {
+          efficiencyWas: {
+            until: today + 1,
+            efficiency: stored ?? DEFAULT_EFFICIENCY
+          }
+        } : {}
       },
       steps: plan.steps.map((step2) => step2.id in begins ? {
         ...step2,
@@ -1465,7 +1637,7 @@
     return all.every((other) => other.milestone === null) ? WHOLE_LABEL : REMAINDER_LABEL;
   }
   function present(stored, today, recording2, state, options) {
-    const plan = applyWhatIf(stored, state.whatIf);
+    const plan = applyWhatIf(stored, state.whatIf, today);
     const start2 = startOf(plan, today);
     const report = timeReport(plan, daysFor, {
       start: start2,
@@ -1707,7 +1879,7 @@
       ...byDay.keys()
     ].sort((a, b) => a - b);
     const frames = [];
-    const finished = /* @__PURE__ */ new Map();
+    const finished2 = /* @__PURE__ */ new Map();
     let before = null;
     for (let day = days[0]; day <= days[days.length - 1]; day += 1) {
       const found = byDay.get(day);
@@ -1719,12 +1891,12 @@
         });
         continue;
       }
-      const plan = planFromJson(found.plan);
+      const plan = dated2(planFromJson(found.plan), before, day);
       const events2 = describe(before, plan.steps, found.commit);
       for (const step2 of plan.steps) {
         const was = before?.plan.steps.find((other) => other.id === step2.id);
-        if (step2.status === DONE && was?.status !== DONE) finished.set(step2.id, day);
-        if (step2.status !== DONE) finished.delete(step2.id);
+        if (step2.status === DONE && was?.status !== DONE) finished2.set(step2.id, day);
+        if (step2.status !== DONE) finished2.delete(step2.id);
       }
       before = {
         day,
@@ -1742,8 +1914,26 @@
       title: file.title,
       frames,
       begin: first,
-      finished,
+      finished: finished2,
       kind: "replay"
+    };
+  }
+  function dated2(plan, before, day) {
+    if (!before) return plan;
+    const old = new Map(before.plan.steps.map((step2) => [
+      step2.id,
+      step2
+    ]));
+    return {
+      ...plan,
+      steps: plan.steps.map((step2) => {
+        if (step2.since !== null) return step2;
+        const was = old.get(step2.id);
+        return {
+          ...step2,
+          since: was && was.status === step2.status ? was.since : day
+        };
+      })
     };
   }
   function describe(before, steps, commit) {
@@ -1777,10 +1967,11 @@
       if (!stored || !frame.events.length) continue;
       const mine = snapshotOf(frame.plan, frame.day);
       if (!mine) continue;
+      const apart = differences(stored, mine);
       found.push({
         day: frame.day,
-        same: samePlan(stored, mine),
-        differences: differences(stored, mine)
+        same: !apart.length,
+        differences: apart
       });
     }
     return found;
@@ -1897,6 +2088,8 @@
         created: SAMPLE_START - 7,
         start: null,
         color: null,
+        since: null,
+        delay: null,
         ...fields
       };
       steps.push(step2);
@@ -2034,11 +2227,13 @@
       breaks: "the team stays as it is \u2014 a second person and a third agent join on day 14",
       look: "Every landing jumps earlier on day 14. Scope change against the plan at start reads as \u201Cpulled in\u201D, though no scope changed: a record freezes its day's team (R2).",
       world: {
-        teamChange: {
-          after: 14,
-          humans: 2,
-          agents: 3
-        }
+        budgets: [
+          {
+            after: 14,
+            humans: 2,
+            agents: 3
+          }
+        ]
       }
     },
     {
@@ -2110,6 +2305,179 @@
     return SCENARIOS.find((found) => found.id === id) ?? SCENARIOS[0];
   }
 
+  // src/sim/edits.ts
+  var NO_EDITS = {
+    budgets: [],
+    delays: []
+  };
+  function budgetOf(plan) {
+    const [humans, agents] = teamOf(plan);
+    return {
+      humans,
+      agents,
+      efficiency: efficiencyOf(plan)
+    };
+  }
+  var sameBudget = (a, b) => a.humans === b.humans && a.agents === b.agents && Math.abs(a.efficiency - b.efficiency) < 1e-9;
+  function rebudget(edits, day, budget, before) {
+    const others = edits.budgets.filter((one) => one.day !== day);
+    const budgets = sameBudget(budget, before) ? others : [
+      ...others,
+      {
+        day,
+        ...budget
+      }
+    ];
+    return {
+      ...edits,
+      budgets: budgets.sort((a, b) => a.day - b.day)
+    };
+  }
+  function worldBudgets(edits, begin) {
+    return edits.budgets.map(({ day, ...budget }) => ({
+      after: day - begin,
+      ...budget
+    }));
+  }
+  function worldDelays(edits, begin) {
+    return edits.delays.map(({ day, ...delay }) => ({
+      after: day - begin,
+      ...delay
+    }));
+  }
+  function edited(timeline3, edits) {
+    if (!edits.budgets.length && !edits.delays.length) return timeline3;
+    return {
+      ...timeline3,
+      frames: timeline3.frames.map((frame) => {
+        const made = edits.budgets.filter((one) => one.day <= frame.day);
+        const budget = made.at(-1);
+        const delays = edits.delays.filter((one) => one.day <= frame.day);
+        if (!budget && !delays.length) return frame;
+        const before = [
+          budgetOf(frame.plan),
+          ...made
+        ].map((one) => one.efficiency);
+        const changed = before.findLastIndex((focus2, at) => at > 0 && focus2 !== before[at - 1]);
+        const assumptions = budget ? {
+          ...frame.plan.assumptions,
+          team: [
+            budget.humans,
+            budget.agents
+          ],
+          efficiency: budget.efficiency,
+          ...changed > 0 ? {
+            efficiencyWas: {
+              until: made[changed - 1].day,
+              efficiency: before[changed - 1]
+            }
+          } : {}
+        } : frame.plan.assumptions;
+        const steps = delays.reduce((held, edit) => insertDelay(held, edit), frame.plan.steps);
+        return {
+          ...frame,
+          plan: {
+            ...frame.plan,
+            assumptions,
+            steps
+          }
+        };
+      })
+    };
+  }
+  function waitTitle(delay) {
+    if ("days" in delay) return `Wait ${delay.days} working day${delay.days === 1 ? "" : "s"}`;
+    return `Wait until ${weekdayName(delay.until).slice(0, 3)} ${shortDate(delay.until, delay.until)}`;
+  }
+  var delayId = (edit) => `wait-${isoDay(edit.day)}-${edit.before}`;
+  function insertDelay(steps, edit) {
+    const at = steps.findIndex((step2) => step2.id === edit.before);
+    const id = delayId(edit);
+    if (at < 0 || steps.some((step2) => step2.id === id)) return [
+      ...steps
+    ];
+    const held = steps[at];
+    const delay = {
+      id,
+      number: Math.max(...steps.map((step2) => step2.number)) + 1,
+      title: waitTitle(edit.delay),
+      requires: held.requires,
+      estimate: null,
+      estimateOff: true,
+      estimateHistory: [],
+      status: "pending",
+      milestone: null,
+      agent: false,
+      created: edit.day,
+      start: null,
+      color: null,
+      since: null,
+      delay: edit.delay
+    };
+    return [
+      ...steps.slice(0, at),
+      delay,
+      {
+        ...held,
+        requires: [
+          id
+        ]
+      },
+      ...steps.slice(at + 1)
+    ];
+  }
+  function budgetsToHash(budgets) {
+    return budgets.map((one) => `${isoDay(one.day)}:${one.humans}+${one.agents}@${Math.round(one.efficiency * 100)}`).join(";");
+  }
+  function delaysToHash(delays) {
+    return delays.map((one) => `${isoDay(one.day)}:${one.before}:${"days" in one.delay ? `days:${one.delay.days}` : `until:${isoDay(one.delay.until)}`}`).join(";");
+  }
+  function delaysFromHash(text2) {
+    return (text2 ?? "").split(";").flatMap((part) => {
+      const found = part.match(/^(\d{4}-\d\d-\d\d):([^:;]+):(until|days):([\d.-]+)$/);
+      const day = found ? parseDay(found[1]) : null;
+      if (!found || day === null) return [];
+      if (found[3] === "days") {
+        const days = Number(found[4]);
+        return days > 0 ? [
+          {
+            day,
+            before: found[2],
+            delay: {
+              days
+            }
+          }
+        ] : [];
+      }
+      const until2 = parseDay(found[4]);
+      return until2 === null ? [] : [
+        {
+          day,
+          before: found[2],
+          delay: {
+            until: until2
+          }
+        }
+      ];
+    });
+  }
+  function budgetsFromHash(text2) {
+    return (text2 ?? "").split(";").flatMap((part) => {
+      const found = part.match(/^(\d{4}-\d\d-\d\d):(\d+)[+ ](\d+)@(\d+)$/);
+      const day = found ? parseDay(found[1]) : null;
+      if (!found || day === null) return [];
+      const [humans, agents, percent2] = found.slice(2).map(Number);
+      return humans >= 1 && agents >= 1 && percent2 > 0 ? [
+        {
+          day,
+          humans,
+          agents,
+          efficiency: percent2 / 100
+        }
+      ] : [];
+    }).sort((a, b) => a.day - b.day);
+  }
+
   // src/sim/world.ts
   var DEFAULT_WORLD = {
     seed: 7,
@@ -2122,7 +2490,8 @@
     scopePerWeek: 0,
     reestimateEvery: 0,
     reestimateFactor: 1.5,
-    teamChange: null,
+    budgets: [],
+    delays: [],
     block: null,
     workAhead: false,
     dated: true,
@@ -2144,10 +2513,14 @@
     progress;
     blockedUntil;
     finished;
+    // A Delay is a timer, never a worker: when it ends, in working days since work began.
+    waits;
+    over;
     humans;
     agents;
     random;
     events;
+    today;
     constructor(start2, params, begin) {
       this.params = params;
       this.begin = begin;
@@ -2155,6 +2528,8 @@
       this.progress = /* @__PURE__ */ new Map();
       this.blockedUntil = /* @__PURE__ */ new Map();
       this.finished = /* @__PURE__ */ new Map();
+      this.waits = /* @__PURE__ */ new Map();
+      this.over = /* @__PURE__ */ new Set();
       this.events = [];
       this.steps = start2.steps.map((step2) => ({
         ...step2,
@@ -2164,6 +2539,7 @@
         ...start2,
         start: params.dated ? begin : null
       };
+      this.today = begin;
       const [humans, agents] = teamOf(start2);
       this.humans = Array(humans).fill(null);
       this.agents = Array(agents).fill(null);
@@ -2176,6 +2552,7 @@
       let doneOn = null;
       for (let day = this.begin - this.params.lead; day - this.begin <= this.params.maxDays; day += 1) {
         this.events = [];
+        this.today = day;
         if (day >= this.begin) {
           this.scheduled(day - this.begin, day);
           if (isWorkingDay(day)) {
@@ -2194,7 +2571,9 @@
           },
           events: this.events
         });
-        if (doneOn === null && this.steps.every((step2) => step2.status === DONE)) doneOn = day;
+        if (doneOn === null && this.steps.every((step2) => isDelay(step2) || step2.status === DONE)) {
+          doneOn = day;
+        }
         if (doneOn !== null && day >= doneOn + this.params.tail) break;
       }
       return {
@@ -2206,17 +2585,26 @@
       };
     }
     // -- the plan changing under the team ----------------------------------------------------------
+    /** A change to a step; one to its status is stamped with the day, as DPlanner would. */
     update(id, patch) {
       const index = this.steps.findIndex((step2) => step2.id === id);
+      const was = this.steps[index];
+      const moved = patch.status !== void 0 && patch.status !== was.status;
       this.steps[index] = {
-        ...this.steps[index],
-        ...patch
+        ...was,
+        ...patch,
+        ...moved ? {
+          since: this.today
+        } : {}
       };
       return this.steps[index];
     }
     scheduled(offset, day) {
-      const change = this.params.teamChange;
-      if (change && offset === change.after) {
+      for (const change of this.params.budgets.filter((one) => one.after === offset)) {
+        const [was, efficiency] = [
+          efficiencyOf(this.plan),
+          change.efficiency ?? efficiencyOf(this.plan)
+        ];
         this.plan = {
           ...this.plan,
           assumptions: {
@@ -2224,12 +2612,29 @@
             team: [
               change.humans,
               change.agents
-            ]
+            ],
+            efficiency,
+            ...efficiency !== was ? {
+              efficiencyWas: {
+                until: day,
+                efficiency: was
+              }
+            } : {}
           }
         };
         this.humans = resized(this.humans, change.humans);
         this.agents = resized(this.agents, change.agents);
-        this.events.push(`the team becomes ${change.humans} ${change.humans === 1 ? "person" : "people"} + ${change.agents} agent${change.agents === 1 ? "" : "s"}`);
+        this.events.push(`the team becomes ${change.humans} ${change.humans === 1 ? "person" : "people"} + ${change.agents} agent${change.agents === 1 ? "" : "s"}${change.efficiency !== void 0 ? ` at ${Math.round(change.efficiency * 100)}% focus` : ""}`);
+      }
+      for (const change of this.params.delays.filter((one) => one.after === offset)) {
+        const edit = {
+          day,
+          before: change.before,
+          delay: change.delay
+        };
+        this.steps = insertDelay(this.steps, edit);
+        const added = this.steps.find((step2) => step2.id === delayId(edit));
+        if (added) this.events.push(`${stepKey(added)} ${added.title} added`);
       }
       const block = this.params.block;
       if (block && offset === block.after) {
@@ -2301,7 +2706,9 @@
           agent,
           created: day,
           start: null,
-          color: null
+          color: null,
+          since: null,
+          delay: null
         };
         this.steps.push(step2);
         this.effortOf(step2);
@@ -2361,7 +2768,7 @@
       return groups({
         ...this.plan,
         steps: this.steps
-      }).find(([, members]) => members.some((step2) => step2.status !== DONE));
+      }).find(([, members]) => members.some((step2) => !isDelay(step2) && step2.status !== DONE));
     }
     release(id) {
       this.humans = this.humans.map((held) => held === id ? null : held);
@@ -2381,9 +2788,10 @@
         step2.id,
         index
       ]));
-      const done = (id) => this.find(id).status === DONE;
+      const done = (id) => this.find(id).status === DONE || this.over.has(id);
       const known = new Set(this.steps.map((step2) => step2.id));
-      const current = () => stretches.findIndex(([, members]) => members.some((step2) => !done(step2.id)));
+      const current = () => stretches.findIndex(([, members]) => members.some((step2) => !isDelay(step2) && !done(step2.id)));
+      const base = workingDaysBetween(this.begin, day) - 1;
       const running = () => new Set([
         ...this.humans,
         ...this.agents
@@ -2395,7 +2803,7 @@
         if (now < 0) return void 0;
         return this.steps.filter((step2) => {
           const stretch = stretchOf.get(step2.id);
-          return step2.agent === agent && step2.status !== DONE && step2.status !== "blocked" && !busy.has(step2.id) && (this.params.workAhead || stretch === now) && (opens[stretch] === null || opens[stretch] <= day) && step2.requires.every((id) => !known.has(id) || done(id));
+          return !isDelay(step2) && step2.agent === agent && step2.status !== DONE && step2.status !== "blocked" && !busy.has(step2.id) && (this.params.workAhead || stretch === now) && (opens[stretch] === null || opens[stretch] <= day) && step2.requires.every((id) => !known.has(id) || done(id));
         }).sort((a, b) => stretchOf.get(a.id) - stretchOf.get(b.id) || tails.get(b.id) - tails.get(a.id) || order.get(a.id) - order.get(b.id))[0];
       };
       const land = (id) => {
@@ -2406,9 +2814,31 @@
         });
         this.events.push(`${stepKey(step2)} ${step2.title} done`);
       };
+      const waitFor = (now) => {
+        let ended = false;
+        const stretch = current();
+        for (const step2 of this.steps) {
+          if (!step2.delay || this.over.has(step2.id)) continue;
+          if (!this.waits.has(step2.id)) {
+            const mine = stretchOf.get(step2.id);
+            if (mine === void 0 || !this.params.workAhead && mine !== stretch) continue;
+            if (!step2.requires.every((id) => !known.has(id) || done(id))) continue;
+            const delay = step2.delay;
+            const opens2 = "days" in delay ? now + delay.days : workingDaysBetween(this.begin, nextWorkingDay(delay.until)) - 1;
+            this.waits.set(step2.id, opens2);
+          }
+          if (this.waits.get(step2.id) <= now + EPSILON) {
+            this.over.add(step2.id);
+            this.finished.set(step2.id, day);
+            ended = true;
+          }
+        }
+        return ended;
+      };
+      let time = 0;
       const assign = () => {
         for (; ; ) {
-          let moved = false;
+          let moved = waitFor(base + time);
           for (const [lane, agent] of [
             [
               this.agents,
@@ -2434,7 +2864,6 @@
           if (!moved) return;
         }
       };
-      let time = 0;
       for (let guard = 0; guard < 1e4; guard += 1) {
         assign();
         const busyAgents = this.agents.filter((id) => id !== null).length;
@@ -2449,8 +2878,11 @@
             human
           ])
         ];
-        if (!busy.length || time >= 1 - EPSILON) return;
-        const step2 = Math.min(1 - time, ...busy.map(([id, rate]) => (this.effortOf(this.find(id)) - (this.progress.get(id) ?? 0)) / rate));
+        const ending = [
+          ...this.waits
+        ].filter(([id]) => !this.over.has(id)).map(([, end]) => end - base - time).filter((left) => left > EPSILON && left <= 1 - time + EPSILON);
+        if (!busy.length && !ending.length || time >= 1 - EPSILON) return;
+        const step2 = Math.min(1 - time, ...ending, ...busy.map(([id, rate]) => (this.effortOf(this.find(id)) - (this.progress.get(id) ?? 0)) / rate));
         for (const [id, rate] of busy) {
           this.progress.set(id, (this.progress.get(id) ?? 0) + rate * step2);
         }
@@ -3074,7 +3506,9 @@
       agent: false,
       created: MONDAY - 3,
       start: null,
-      color: null
+      color: null,
+      since: null,
+      delay: null
     };
   }
   function planOn(day) {
@@ -4120,6 +4554,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     const scope = [];
     const done = [];
     const jumps = [];
+    const active = /* @__PURE__ */ new Set();
     let before = null;
     for (const row of until(view.recording.rows, view.live)) {
       const own = ownTally(row, key);
@@ -4135,6 +4570,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
           days: own.days - before.days
         });
       }
+      if (own.changed > 0 || before && own.done !== before.done) active.add(row.day);
       scope.push([
         row.day,
         own.days
@@ -4160,7 +4596,10 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         ],
         ...promised
       ] : promised,
-      jumps
+      jumps,
+      active: [
+        ...active
+      ].sort((a, b) => a - b)
     };
   }
   function stepsOf(view, plan, key) {
@@ -5070,7 +5509,8 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     if (Math.abs(tip - from) < 6) return "";
     return `<line x1="${n(from + way * (DOT + 1))}" x2="${n(tip)}" y1="${n(y)}" y2="${n(y)}" stroke="${color}" stroke-width="1.5" stroke-opacity="0.85"/><path d="M${n(tip)},${n(y)} L${n(tip - way * 6)},${n(y - 3.5)} L${n(tip - way * 6)},${n(y + 3.5)} Z" fill="${color}" fill-opacity="0.85"/>`;
   }
-  function words(scope, today) {
+  function words(scope, view) {
+    const today = view.today;
     const parts = [
       `${scope.badge} ${scope.label}${scope.title ? ` \u2014 ${scope.title}` : ""}`
     ];
@@ -5079,6 +5519,8 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     else if (scope.move.planned !== null) {
       parts.push(`plan now: ${shortDate(scope.move.planned, today)}`);
     }
+    const stretch = view.stretches.find((one) => one.key === scope.key);
+    for (const step2 of stretch?.phase.steps.filter(isDelay) ?? []) parts.push(`waits: ${step2.title}`);
     return parts.join("\n");
   }
   function shiftsSvg(found, view, selected, width) {
@@ -5126,7 +5568,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         bottom: y + ROW_H2 / 2
       });
       const faded = selected !== null && selected !== scope.key ? ` opacity="0.35"` : "";
-      out.push(`<g class="shift-row"${faded}><title>${esc(words(scope, today))}</title>`);
+      out.push(`<g class="shift-row"${faded}><title>${esc(words(scope, view))}</title>`);
       if (selected === scope.key) {
         out.push(`<rect x="0" y="${n(y - ROW_H2 / 2)}" width="${n(width)}" height="${ROW_H2}" class="row-picked"/>`);
       }
@@ -5434,6 +5876,22 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       ...points.filter(([when]) => when > day)
     ];
   }
+  function delaySpans(view) {
+    return view.stretches.flatMap(({ phase }) => phase.steps.filter(isDelay).flatMap((step2) => {
+      const [begins, ends] = [
+        phase.starts.get(step2.id),
+        phase.landings.get(step2.id)
+      ];
+      if (begins === void 0 || ends === void 0 || ends - begins < 1e-9) return [];
+      return [
+        {
+          title: step2.title,
+          from: startDayOf(phase, step2.id),
+          to: landingOf(phase, step2.id)
+        }
+      ];
+    }));
+  }
   function stepPath2(points, x, y, end) {
     if (!points.length) return "";
     let path = `M${n(x(points[0][0]))},${n(y(points[0][1]))}`;
@@ -5476,7 +5934,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     }
     return out.join("");
   }
-  function workSvg(data, marked, view, width, compared2) {
+  function workSvg(data, marked, view, width, compared2, marks = {}) {
     const today = view.today;
     const days = [
       today,
@@ -5521,6 +5979,41 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       out.push(`<line x1="${n(x(when))}" x2="${n(x(when))}" y1="${scopeTop}" y2="${n(workTop + PLOT_H2)}" style="stroke:${INK}" stroke-opacity="0.07"/>`);
       if (Math.abs(x(when) - x(today)) < 34) continue;
       out.push(`<text x="${n(x(when))}" y="${n(height - 8)}" text-anchor="middle" style="fill:${SECONDARY}">${esc(label2)}</text>`);
+    }
+    const band = (from, to, fill, top2, label2) => {
+      const [a, b] = [
+        Math.max(LEFT3, from),
+        Math.min(right, to)
+      ];
+      if (b - a < 0.5) return;
+      out.push(`<rect x="${n(a)}" y="${n(top2)}" width="${n(b - a)}" height="${PLOT_H2}" ${fill}>${label2 ? `<title>${esc(label2)}</title>` : ""}</rect>`);
+    };
+    if (marks.weekends) {
+      for (let day = first + 1; day <= last; day += 1) {
+        if (isWorkingDay(day)) continue;
+        for (const top2 of [
+          scopeTop,
+          workTop
+        ]) band(x(day - 1), x(day), `class="weekend"`, top2);
+      }
+    }
+    if (marks.delays) {
+      const spans = delaySpans(view);
+      if (spans.length) {
+        out.push(`<defs><pattern id="delay-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" class="delay-fill"/><line x1="0" y1="0" x2="0" y2="6" class="delay-line"/></pattern></defs>`);
+      }
+      for (const span of spans) {
+        for (const top2 of [
+          scopeTop,
+          workTop
+        ]) {
+          band(x(span.from), x(span.to), `fill="url(#delay-hatch)" class="delay"`, top2, span.title);
+        }
+        const at = Math.max(LEFT3, x(span.from)) + 4;
+        if (at < right - 20) {
+          out.push(`<text x="${n(at)}" y="${n(workTop + 12)}" font-size="10" class="delay-label">${esc(span.title)}</text>`);
+        }
+      }
     }
     const up = glyphPath({
       x: 9,
@@ -5575,24 +6068,50 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       const said = `${mark.steps >= 0 ? "+" : "\u2212"}${Math.abs(mark.steps)} step${Math.abs(mark.steps) === 1 ? "" : "s"}, ${mark.days >= 0 ? "+" : "\u2212"}${formatDays(Math.abs(mark.days)) || "0d"} on ${shortDate(mark.day, today)}`;
       out.push(`<path d="${glyphPath(glyph, mark.direction)}" class="scope-${mark.direction}-glyph scope-mark"><title>${esc(said)}</title></path>`);
     }
+    const schedule = marks.idle ? `stroke-dasharray="5 3"` : `stroke-dasharray="1 3" stroke-linecap="round"`;
+    const idle2 = `stroke-dasharray="0.5 4" stroke-linecap="round"`;
     out.push(title2("Work done", [
       [
         `<rect x="0" y="2" width="18" height="10" style="fill:${INK}" fill-opacity="0.15"/><line x1="0" x2="18" y1="2" y2="2" style="stroke:${INK}" stroke-width="2"/>`,
         "done"
       ],
+      ...marks.idle ? [
+        [
+          `<line x1="0" x2="18" y1="7" y2="7" style="stroke:${INK}" stroke-width="2" ${idle2}/>`,
+          "no status change"
+        ]
+      ] : [],
       [
-        `<line x1="0" x2="18" y1="7" y2="7" style="stroke:${SECONDARY}" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"/>`,
+        `<line x1="0" x2="18" y1="7" y2="7" style="stroke:${SECONDARY}" stroke-width="1.5" ${schedule}/>`,
         "the plan's schedule"
       ]
     ], workTop - 16, right));
     out.push(`<line x1="${LEFT3}" x2="${n(right)}" y1="${n(workY(scopeNow))}" y2="${n(workY(scopeNow))}" style="stroke:${PLAN}" stroke-opacity="0.35" stroke-dasharray="2 3"><title>${esc(`all of the work: ${formatDays(scopeNow) || "0d"}`)}</title></line>`);
     if (data.promised.length > 1) {
-      out.push(`<path d="${stepPath2(data.promised, x, workY, data.promised[data.promised.length - 1][0])}" fill="none" style="stroke:${SECONDARY}" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"/>`);
+      out.push(`<path d="${stepPath2(data.promised, x, workY, data.promised[data.promised.length - 1][0])}" fill="none" style="stroke:${SECONDARY}" stroke-width="1.5" ${schedule}/>`);
     }
     if (data.done.length) {
       const line = stepPath2(data.done, x, workY, today);
       out.push(`<path d="${line} V${n(workY(0))} H${n(x(data.done[0][0]))} Z" style="fill:${INK}" fill-opacity="0.1"/>`);
-      out.push(`<path d="${line}" fill="none" style="stroke:${INK}" stroke-width="2"/>`);
+      if (!marks.idle) {
+        out.push(`<path d="${line}" fill="none" style="stroke:${INK}" stroke-width="2"/>`);
+      } else {
+        const active = new Set(data.active);
+        const [solid, dotted] = [
+          [],
+          []
+        ];
+        let level = data.done[0][1];
+        for (let day = data.done[0][0] + 1; day <= today; day += 1) {
+          const y = workY(level);
+          (active.has(day) ? solid : dotted).push(`M${n(x(day - 1))},${n(y)} H${n(x(day))}`);
+          const next = stepAt(data.done, day) ?? level;
+          if (next !== level) solid.push(`M${n(x(day))},${n(y)} V${n(workY(next))}`);
+          level = next;
+        }
+        out.push(`<path d="${solid.join(" ")}" fill="none" style="stroke:${INK}" stroke-width="2"/>`);
+        out.push(`<path d="${dotted.join(" ")}" fill="none" style="stroke:${INK}" stroke-width="2" ${idle2} class="idle"/>`);
+      }
     }
     const labelled = [];
     for (const one of marked) {
@@ -5647,6 +6166,9 @@ ${done !== null ? "done by" : "the plan lands it"} ${shortDate(day, today)}`;
 
   // src/ui/v3/view.ts
   function v3View(view, state, on) {
+    return tabbedView(view, state, on, (found) => toolbar2(view, found, state, on));
+  }
+  function tabbedView(view, state, on, bar, marks = {}) {
     if (view.report.cycle.length) {
       const names = view.report.cycle.map((step2) => step2.title || "an untitled step").join(", ");
       return h("div", {
@@ -5659,7 +6181,7 @@ ${done !== null ? "done by" : "the plan lands it"} ${shortDate(day, today)}`;
     const basis = basisName(state.then, view);
     return h("div", {
       class: "v3"
-    }, keyFigures(found, view, basis), toolbar2(view, found, state, on), state.page === "milestones" ? milestones2(found, view, state, on) : work(found, view, state));
+    }, keyFigures(found, view, basis), bar(found), state.page === "milestones" ? milestones2(found, view, state, on) : work(found, view, state, marks));
   }
   function keyFigures(found, view, basis) {
     const whole = found.whole;
@@ -5744,7 +6266,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       class: "v3-page"
     }, holder, key);
   }
-  function work(found, view, state) {
+  function work(found, view, state, marks) {
     const scopes = [
       found.whole,
       ...found.milestones
@@ -5769,7 +6291,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       hidden: true
     });
     queueMicrotask(() => {
-      const { svg, geometry: geometry2 } = workSvg(data, marked, view, Math.max(560, holder.clientWidth), found.compared);
+      const { svg, geometry: geometry2 } = workSvg(data, marked, view, Math.max(560, holder.clientWidth), found.compared, marks);
       holder.innerHTML = svg;
       holder.append(tip);
       const element = holder.querySelector("svg");
@@ -5806,6 +6328,81 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     return h("section", {
       class: "v3-page"
     }, holder);
+  }
+
+  // src/ui/v4/budget.ts
+  function counts(label2, values, current, pick) {
+    return h("div", {
+      class: "budget-row"
+    }, h("span", {
+      class: "budget-label"
+    }, label2), h("span", {
+      class: "segmented",
+      role: "group",
+      "aria-label": label2
+    }, ...values.map((value) => h("button", {
+      class: value === current ? "on" : "",
+      onclick: () => pick(value)
+    }, String(value)))));
+  }
+  function budgetMenu(view, apply) {
+    const now = budgetOf(view.plan);
+    const percent2 = Math.round(now.efficiency * 100);
+    const agents = view.report.hasAgentSteps;
+    const focus2 = h("select", {
+      onchange: (event) => apply({
+        ...now,
+        efficiency: Number(event.target.value) / 100
+      })
+    });
+    for (let value = 10; value <= 100; value += 5) {
+      focus2.append(h("option", {
+        value: String(value),
+        selected: value === percent2
+      }, `${value}%`));
+    }
+    const people = `${now.humans} ${now.humans === 1 ? "person" : "people"}`;
+    const summary = h("summary", {
+      title: `${people}${agents ? ` and ${now.agents} agent${now.agents === 1 ? "" : "s"}` : ""}, at ${percent2}% focus \u2014 a change applies from this day on`
+    }, "Budget ", h("span", {
+      class: "budget-now"
+    }, agents ? `${now.humans}p/${now.agents}a \xB7 ${percent2}%` : `${now.humans}p \xB7 ${percent2}%`));
+    const panel = h("div", {
+      class: "menu-panel budget-panel"
+    }, counts("People", HUMANS, now.humans, (humans) => apply({
+      ...now,
+      humans
+    })), agents ? counts("Agents", AGENTS, now.agents, (count2) => apply({
+      ...now,
+      agents: count2
+    })) : null, h("div", {
+      class: "budget-row"
+    }, h("span", {
+      class: "budget-label"
+    }, "Focus"), focus2), h("div", {
+      class: "budget-note"
+    }, `From ${formatDate(view.today, view.today)} on; the days before keep theirs.`));
+    return popover("budget", summary, panel);
+  }
+
+  // src/ui/v4/view.ts
+  function toolbar3(view, found, state, on) {
+    return h("div", {
+      class: "v3-toolbar"
+    }, tabs(state, on), h("span", {
+      class: "divider"
+    }), comparePicker(view, state.then, (then) => on.state({
+      then
+    })), state.page === "work" ? showing(found, state, on) : null, h("span", {
+      class: "spacer"
+    }), budgetMenu(view, on.budget), saveButton(view, on.save), more(view, state, on));
+  }
+  function v4View(view, state, on) {
+    return tabbedView(view, state, on, (found) => toolbar3(view, found, state, on), {
+      weekends: true,
+      idle: true,
+      delays: true
+    });
   }
 
   // src/ui/debugger/track.ts
@@ -6077,16 +6674,20 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     ],
     [
       "v3",
-      "v3 \xB7 latest"
+      "v3"
+    ],
+    [
+      "v4",
+      "v4 \xB7 latest"
     ]
   ];
   var VERSION_KEY = "te2.version";
   function readVersion() {
     try {
       const stored = localStorage.getItem(VERSION_KEY);
-      return VERSIONS.find(([version]) => version === stored)?.[0] ?? "v3";
+      return VERSIONS.find(([version]) => version === stored)?.[0] ?? "v4";
     } catch {
-      return "v3";
+      return "v4";
     }
   }
   var FOLDS_KEY = "te2.debugger";
@@ -6115,7 +6716,9 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     },
     v2: V2_START,
     v3: V3_START,
+    v4: V3_START,
     saved: [],
+    edits: NO_EDITS,
     offset: 0
   };
   var folds = readFolds();
@@ -6149,27 +6752,50 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     renderContent();
   }
   var timelineKey = "";
+  var timelineBase = "";
   var timeline2;
   var replayed = null;
   var recordingKey = "";
   var recording;
   var compared = null;
   function currentTimeline() {
-    const key = JSON.stringify([
+    const base = JSON.stringify([
       app.source,
       app.seed,
       app.world
     ]);
+    const key = JSON.stringify([
+      base,
+      app.edits
+    ]);
     if (key !== timelineKey) {
-      timelineKey = key;
+      const kept = base === timelineBase ? timeline2.frames[app.frame]?.day : void 0;
+      [timelineKey, timelineBase] = [
+        key,
+        base
+      ];
       const file = exports.get(app.source);
-      timeline2 = file ? replay(file) : run(samplePlan(app.seed), {
+      const played = file ? replay(file) : run(samplePlan(app.seed), {
         ...app.world,
-        seed: app.seed
+        seed: app.seed,
+        budgets: [
+          ...app.world.budgets,
+          ...worldBudgets(app.edits, SAMPLE_START)
+        ],
+        delays: [
+          ...app.world.delays,
+          ...worldDelays(app.edits, SAMPLE_START)
+        ]
       }, SAMPLE_START);
-      replayed = file ? parity(timeline2) : null;
-      app.frame = file ? timeline2.frames.length - 1 : Math.min(timeline2.frames.length - 1, timeline2.frames.findIndex((f) => f.day === timeline2.begin) + 14);
-      app.offset = 0;
+      timeline2 = file ? edited(played, app.edits) : played;
+      replayed = file ? parity(played) : null;
+      const at = kept === void 0 ? -1 : timeline2.frames.findIndex((f) => f.day === kept);
+      if (at >= 0) {
+        app.frame = at;
+      } else {
+        app.frame = file ? timeline2.frames.length - 1 : Math.min(timeline2.frames.length - 1, timeline2.frames.findIndex((f) => f.day === timeline2.begin) + 14);
+        app.offset = 0;
+      }
     }
     return timeline2;
   }
@@ -6225,7 +6851,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
   function renderContent() {
     const frame = timeline2.frames[app.frame];
     const upToDay = recordedBy(recording, frame.day);
-    content.replaceChildren(app.version === "v3" ? v3Content(frame.plan, frame.day, upToDay) : app.version === "v2" ? v2Content(frame.plan, frame.day, upToDay) : v1Content(frame.plan, frame.day, upToDay));
+    content.replaceChildren(app.version === "v3" || app.version === "v4" ? tabbedContent(app.version, frame.plan, frame.day, upToDay) : app.version === "v2" ? v2Content(frame.plan, frame.day, upToDay) : v1Content(frame.plan, frame.day, upToDay));
     viewTitle.textContent = `${frame.plan.title} \u2014 Time Estimates`;
     viewTitle.dataset.version = app.version;
     happened.replaceChildren(events(frame.events));
@@ -6321,8 +6947,8 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       save: saver(day, upToDay)
     });
   }
-  function v3Content(plan, day, upToDay) {
-    const state = app.v3;
+  function tabbedContent(version, plan, day, upToDay) {
+    const state = app[version];
     const view = present(plan, day, upToDay, {
       picked: state.scope,
       then: resolvePick(state.then, day),
@@ -6334,16 +6960,25 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     if (!view) return h("div", {
       class: "empty"
     }, NO_STEPS);
-    return v3View(view, state, {
+    const handlers = {
       state: (patch) => {
-        app.v3 = {
-          ...app.v3,
+        app[version] = {
+          ...app[version],
           ...patch
         };
         renderContent();
         writeHash();
       },
       save: saver(day, upToDay)
+    };
+    if (version === "v3") return v3View(view, state, handlers);
+    return v4View(view, state, {
+      ...handlers,
+      budget: (budget) => {
+        const before = timeline2.frames[app.frame - 1]?.plan ?? plan;
+        app.edits = rebudget(app.edits, day, budget, budgetOf(before));
+        render();
+      }
     });
   }
   function section(key, name, ...inner) {
@@ -6377,6 +7012,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
         app.source = event.target.value;
         app.cadence = exports.has(app.source) ? "stored" : scenarioById(app.scenario).cadence ?? "weekdays";
         app.saved = [];
+        app.edits = NO_EDITS;
         app.view = {
           ...app.view,
           whatIf: {},
@@ -6391,6 +7027,11 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
         };
         app.v3 = {
           ...app.v3,
+          whatIf: {},
+          scope: null
+        };
+        app.v4 = {
+          ...app.v4,
           whatIf: {},
           scope: null
         };
@@ -6423,6 +7064,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
         onchange: (event) => {
           app.seed = Number(event.target.value) || 1;
           app.saved = [];
+          app.edits = NO_EDITS;
           render();
         }
       })), h("label", {
@@ -6431,8 +7073,95 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       }, "open an export\u2026 ", open))
     ];
     if (!file) rows.push(scenarioRow());
+    rows.push(editsRow());
     rows.push(modelRow(Boolean(file)));
     return rows;
+  }
+  function editsRow() {
+    const frame = timeline2.frames[app.frame];
+    const byId2 = new Map(frame.plan.steps.map((step2) => [
+      step2.id,
+      step2
+    ]));
+    const waiting = frame.plan.steps.filter((step2) => step2.status === "pending" && !isDelay(step2));
+    const before = h("select", {
+      title: "The step that waits: it starts no earlier than the delay allows"
+    }, ...waiting.map((step2) => h("option", {
+      value: step2.id
+    }, `${stepKey(step2)} ${step2.title}`)));
+    const until2 = h("input", {
+      type: "date",
+      value: isoDay(frame.day + 7)
+    });
+    const days = h("input", {
+      type: "number",
+      class: "short",
+      value: "3",
+      min: "1",
+      step: "1",
+      hidden: true
+    });
+    const kind = h("select", {
+      onchange: () => {
+        until2.hidden = kind.value === "days";
+        days.hidden = !until2.hidden;
+      }
+    }, h("option", {
+      value: "until"
+    }, "until"), h("option", {
+      value: "days"
+    }, "for working days"));
+    const add = () => {
+      const wait = kind.value === "days" ? Number(days.value) > 0 ? {
+        days: Number(days.value)
+      } : null : (() => {
+        const day = parseDay(until2.value);
+        return day === null ? null : {
+          until: day
+        };
+      })();
+      if (!wait || !before.value) return;
+      const edit = {
+        day: frame.day,
+        before: before.value,
+        delay: wait
+      };
+      app.edits = {
+        ...app.edits,
+        delays: [
+          ...app.edits.delays,
+          edit
+        ]
+      };
+      render();
+    };
+    const made = app.edits.delays.map((edit, index) => {
+      const held = byId2.get(edit.before);
+      return h("span", {
+        class: "edit"
+      }, `${waitTitle(edit.delay)} before ${held ? stepKey(held) : edit.before} \xB7 made ${shortDate(edit.day, frame.day)} `, h("button", {
+        class: "link",
+        title: "Remove this delay",
+        onclick: () => {
+          app.edits = {
+            ...app.edits,
+            delays: app.edits.delays.filter((_, at) => at !== index)
+          };
+          render();
+        }
+      }, "\u2715"));
+    });
+    return h("div", {
+      class: "row edits"
+    }, h("span", {
+      class: "label"
+    }, "Plan edits:"), waiting.length ? h("span", {
+      class: "add-delay"
+    }, "add a delay before ", before, " ", kind, " ", until2, days, " ", h("button", {
+      onclick: add
+    }, "Add")) : h("span", {
+      class: "note"
+    }, "nothing left that has not started"), ...made);
   }
   function scenarioRow() {
     const scenario = scenarioById(app.scenario);
@@ -6446,6 +7175,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
         };
         app.cadence = chosen.cadence ?? "weekdays";
         app.saved = [];
+        app.edits = NO_EDITS;
         render();
       }
     }, ...SCENARIOS.map((one) => h("option", {
@@ -6506,8 +7236,8 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       title: "Which days the recorder ran \u2014 the window was open \u2014 and so wrote a row"
     }, "Recorder runs ", cadence), h("span", {
       class: "label",
-      title: "Always on: done steps cost nothing, and the first unfinished stretch starts no earlier than today (ISSUES.md F1)"
-    }, "Model: re-plans from today \xB7 variants:"), ...VARIANTS.map(({ key, label: label2, hint }) => h("label", {
+      title: "The plan's own dates stand while what is done matches them; otherwise the rest resumes from tomorrow, with work in flight credited (ISSUES.md F1, F5). Rounding is fixed (I1, Q3)."
+    }, `Model: the plan holds, else resumes from tomorrow${VARIANTS.length ? " \xB7 variants:" : ""}`), ...VARIANTS.map(({ key, label: label2, hint }) => h("label", {
       title: hint
     }, h("input", {
       type: "checkbox",
@@ -6662,6 +7392,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     app.source = value.slug;
     app.cadence = "stored";
     app.saved = [];
+    app.edits = NO_EDITS;
     render();
   }
   function alertInPage(message) {
@@ -6678,12 +7409,18 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
         scenario: app.scenario,
         day: isoDay(day),
         cadence: app.cadence,
-        variants: VARIANTS.filter(({ key }) => app.options[key]).map(({ key }) => key).join(","),
         ui: app.version
       });
-      const picked = app.version === "v3" ? app.v3.scope : app.version === "v2" ? app.v2.scope : null;
+      const variants = VARIANTS.filter(({ key }) => app.options[key]).map(({ key }) => key);
+      if (variants.length) state.set("variants", variants.join(","));
+      const budgets = budgetsToHash(app.edits.budgets);
+      if (budgets) state.set("budget", budgets);
+      const delays = delaysToHash(app.edits.delays);
+      if (delays) state.set("delay", delays);
+      const tabbed = app.version === "v3" || app.version === "v4" ? app[app.version] : null;
+      const picked = tabbed ? tabbed.scope : app.version === "v2" ? app.v2.scope : null;
       if (picked !== null) state.set("scope", picked || "rest");
-      if (app.version === "v3") state.set("page", app.v3.page);
+      if (tabbed) state.set("page", tabbed.page);
       history.replaceState(null, "", `#${state}`);
     } catch {
     }
@@ -6711,6 +7448,10 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       ...ADOPTED
     };
     for (const { key } of VARIANTS) app.options[key] = variants.includes(key);
+    app.edits = {
+      budgets: budgetsFromHash(state.get("budget")),
+      delays: delaysFromHash(state.get("delay"))
+    };
     const tab = state.get("tab");
     if (tab === "track" || tab === "records") folds = {
       ...folds,
@@ -6727,13 +7468,18 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       scope
     };
     const page = state.get("page");
-    app.v3 = {
-      ...app.v3,
-      scope,
-      ...page === "milestones" || page === "work" ? {
-        page
-      } : {}
-    };
+    for (const version of [
+      "v3",
+      "v4"
+    ]) {
+      app[version] = {
+        ...app[version],
+        scope,
+        ...page === "milestones" || page === "work" ? {
+          page
+        } : {}
+      };
+    }
     currentTimeline();
     const asked = state.get("day");
     const day = parseDay(asked ?? "");

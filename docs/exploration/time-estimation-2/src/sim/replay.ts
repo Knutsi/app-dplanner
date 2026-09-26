@@ -8,8 +8,8 @@
  */
 
 import { type Day, isoDay, parseDay } from "../model/calendar.ts";
-import { DONE } from "../model/graph.ts";
-import { readRows, rowJson, samePlan, type Snapshot } from "../model/progress.ts";
+import { DONE, type Plan } from "../model/graph.ts";
+import { readRows, rowJson, type Snapshot } from "../model/progress.ts";
 import { type ExportFile, planFromJson } from "../data.ts";
 import { type Frame, snapshotOf, type Timeline } from "./timeline.ts";
 
@@ -29,7 +29,7 @@ export function replay(file: ExportFile): Timeline {
       frames.push({ ...before!, day, events: [] });
       continue;
     }
-    const plan = planFromJson(found.plan);
+    const plan = dated(planFromJson(found.plan), before, day);
     const events = describe(before, plan.steps, found.commit);
     for (const step of plan.steps) {
       const was = before?.plan.steps.find((other) => other.id === step.id);
@@ -46,6 +46,23 @@ export function replay(file: ExportFile): Timeline {
   }
   const first = frames[0].plan.start ?? frames[0].day;
   return { title: file.title, frames, begin: first, finished, kind: "replay" };
+}
+
+/**
+ * Each step's `since` where the files do not say it: the first day of the history on which it
+ * read its current status. Before the first frame nothing is known.
+ */
+function dated(plan: Plan, before: Frame | null, day: Day): Plan {
+  if (!before) return plan;
+  const old = new Map(before.plan.steps.map((step) => [step.id, step]));
+  return {
+    ...plan,
+    steps: plan.steps.map((step) => {
+      if (step.since !== null) return step;
+      const was = old.get(step.id);
+      return { ...step, since: was && was.status === step.status ? was.since : day };
+    }),
+  };
 }
 
 function describe(before: Frame | null, steps: Frame["plan"]["steps"], commit: string): string[] {
@@ -88,11 +105,9 @@ export function parity(timeline: Timeline): Parity[] {
     if (!stored || !frame.events.length) continue;
     const mine = snapshotOf(frame.plan, frame.day);
     if (!mine) continue;
-    found.push({
-      day: frame.day,
-      same: samePlan(stored, mine),
-      differences: differences(stored, mine),
-    });
+    // Field by field, what DPlanner stores — never what only the port records (`changed`).
+    const apart = differences(stored, mine);
+    found.push({ day: frame.day, same: !apart.length, differences: apart });
   }
   return found;
 }

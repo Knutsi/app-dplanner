@@ -1,7 +1,7 @@
 /** Hand-rolled asserts and a small plan builder — the tests import nothing from outside. */
 
 import { type Day, fromYMD } from "../src/model/calendar.ts";
-import type { Plan, Status, Step } from "../src/model/graph.ts";
+import type { Delay, Plan, Status, Step } from "../src/model/graph.ts";
 
 export function assert(condition: unknown, message = "assertion failed"): asserts condition {
   if (!condition) throw new Error(message);
@@ -45,6 +45,9 @@ export interface Shape {
   starts?: Record<string, Day>;
   start?: Day | null;
   created?: Record<string, Day>;
+  running?: string[]; // In progress.
+  since?: Record<string, Day>;
+  delays?: Record<string, Delay>; // Delay steps: no estimate, no status of their own.
 }
 
 /** A plan whose step ids are their titles, so a test reads like the Python one. */
@@ -55,14 +58,21 @@ export function planOf(titles: string[], shape: Shape = {}): Plan {
     title,
     requires: shape.requires?.[title] ?? (shape.chain && index ? [titles[index - 1]] : []),
     estimate: shape.days?.[title] ?? null,
-    estimateOff: false,
+    estimateOff: Boolean(shape.delays?.[title]),
     estimateHistory: [],
-    status: (shape.done?.includes(title) ? "done" : "pending") as Status,
+    status:
+      (shape.done?.includes(title)
+        ? "done"
+        : shape.running?.includes(title)
+        ? "in-progress"
+        : "pending") as Status,
     milestone: shape.milestones?.includes(title) ? title : null,
     agent: shape.agents?.includes(title) ?? false,
     created: shape.created?.[title] ?? null,
     start: shape.starts?.[title] ?? null,
     color: null,
+    since: shape.since?.[title] ?? null,
+    delay: shape.delays?.[title] ?? null,
   }));
   return {
     id: "plan",

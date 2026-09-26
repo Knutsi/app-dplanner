@@ -10,6 +10,7 @@
 import { type Day } from "./model/calendar.ts";
 import {
   daysFor,
+  DEFAULT_EFFICIENCY,
   efficiencyOf,
   milestoneLabel,
   type Plan,
@@ -141,15 +142,22 @@ export interface TimeView {
   start: Day;
 }
 
-export function applyWhatIf(plan: Plan, whatIf: WhatIf): Plan {
+export function applyWhatIf(plan: Plan, whatIf: WhatIf, today: Day): Plan {
   const begins = whatIf.begins ?? {};
+  const stored = plan.assumptions.efficiency;
+  // A what-if focus is a change from tomorrow on: the work in flight ran at the stored one.
+  const changed = whatIf.efficiency !== undefined && whatIf.efficiency !== stored;
   return {
     ...plan,
     start: whatIf.start ?? plan.start,
     assumptions: {
-      efficiency: whatIf.efficiency ?? plan.assumptions.efficiency,
+      ...plan.assumptions,
+      efficiency: whatIf.efficiency ?? stored,
       palette: whatIf.palette ?? plan.assumptions.palette,
       team: whatIf.team ?? plan.assumptions.team,
+      ...(changed
+        ? { efficiencyWas: { until: today + 1, efficiency: stored ?? DEFAULT_EFFICIENCY } }
+        : {}),
     },
     steps: plan.steps.map((
       step,
@@ -170,7 +178,7 @@ export function present(
   state: ViewState,
   options: ModelOptions,
 ): TimeView | null {
-  const plan = applyWhatIf(stored, state.whatIf);
+  const plan = applyWhatIf(stored, state.whatIf, today);
   const start = startOf(plan, today);
   const report = timeReport(plan, daysFor, {
     start,

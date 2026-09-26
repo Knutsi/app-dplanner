@@ -12,11 +12,19 @@
  * DPlanner wrote down about it (timeline.ts).
  */
 
-import { type Day, isWorkingDay, workingDaysAfter } from "../model/calendar.ts";
+import {
+  type Day,
+  isWorkingDay,
+  nextWorkingDay,
+  workingDaysAfter,
+  workingDaysBetween,
+} from "../model/calendar.ts";
 import {
   daysFor,
+  type Delay,
   DONE,
   efficiencyOf,
+  isDelay,
   type Plan,
   type Step,
   stepKey,
@@ -24,6 +32,7 @@ import {
 } from "../model/graph.ts";
 import { chainTails, groups, stretched } from "../model/simulate.ts";
 import { choose, lognormal, type Rng, rng, seedOf } from "./rng.ts";
+import { delayId, insertDelay } from "./edits.ts";
 import type { Frame, Timeline } from "./timeline.ts";
 
 export interface WorldParams {
@@ -37,7 +46,8 @@ export interface WorldParams {
   scopePerWeek: number; // New steps per week, into the stretch being worked.
   reestimateEvery: number; // Working days between re-estimates; 0 = never.
   reestimateFactor: number;
-  teamChange: { after: number; humans: number; agents: number } | null; // `after` in days
+  budgets: BudgetChange[]; // The plan re-budgeted, and the team with it.
+  delays: DelayChange[]; // Delay steps added to the plan, which the team then waits for.
   block: { after: number; days: number } | null; // `days` in working days
   workAhead: boolean; // Idle people start the next milestone's ready work.
   dated: boolean; // The plan has a start date stored.
@@ -57,7 +67,8 @@ export const DEFAULT_WORLD: WorldParams = {
   scopePerWeek: 0,
   reestimateEvery: 0,
   reestimateFactor: 1.5,
-  teamChange: null,
+  budgets: [],
+  delays: [],
   block: null,
   workAhead: false,
   dated: true,
@@ -65,6 +76,21 @@ export const DEFAULT_WORLD: WorldParams = {
   tail: 5,
   maxDays: 400,
 };
+
+/** A re-budget: from `after` days since work began, this team and (if given) this focus. */
+export interface BudgetChange {
+  after: number;
+  humans: number;
+  agents: number;
+  efficiency?: number;
+}
+
+/** A Delay step added `after` days since work began, before the step `before`. */
+export interface DelayChange {
+  after: number;
+  before: string;
+  delay: Delay;
+}
 
 const EPSILON = 1e-9;
 
@@ -80,14 +106,19 @@ class World {
   private readonly progress = new Map<string, number>();
   private readonly blockedUntil = new Map<string, Day>();
   private readonly finished = new Map<string, Day>();
+  // A Delay is a timer, never a worker: when it ends, in working days since work began.
+  private readonly waits = new Map<string, number>();
+  private readonly over = new Set<string>();
   private humans: (string | null)[];
   private agents: (string | null)[];
   private readonly random: Rng;
   private events: string[] = [];
+  private today: Day;
 
   constructor(start: Plan, private readonly params: WorldParams, private readonly begin: Day) {
     this.steps = start.steps.map((step) => ({ ...step, status: "pending" }));
     this.plan = { ...start, start: params.dated ? begin : null };
+    this.today = begin;
     const [humans, agents] = teamOf(start);
     this.humans = Array(humans).fill(null);
     this.agents = Array(agents).fill(null);
@@ -106,6 +137,7 @@ class World {
       day += 1
     ) {
       this.events = [];
+      this.today = day;
       if (day >= this.begin) {
         this.scheduled(day - this.begin, day);
         if (isWorkingDay(day)) {
@@ -115,7 +147,9 @@ class World {
         }
       }
       frames.push({ day, plan: { ...this.plan, steps: [...this.steps] }, events: this.events });
-      if (doneOn === null && this.steps.every((step) => step.status === DONE)) doneOn = day;
+      if (doneOn === null && this.steps.every((step) => isDelay(step) || step.status === DONE)) {
+        doneOn = day;
+      }
       if (doneOn !== null && day >= doneOn + this.params.tail) break;
     }
     return {
@@ -129,26 +163,45 @@ class World {
 
   // -- the plan changing under the team ----------------------------------------------------------
 
+  /** A change to a step; one to its status is stamped with the day, as DPlanner would. */
   private update(id: string, patch: Partial<Step>): Step {
     const index = this.steps.findIndex((step) => step.id === id);
-    this.steps[index] = { ...this.steps[index], ...patch };
+    const was = this.steps[index];
+    const moved = patch.status !== undefined && patch.status !== was.status;
+    this.steps[index] = { ...was, ...patch, ...(moved ? { since: this.today } : {}) };
     return this.steps[index];
   }
 
   private scheduled(offset: number, day: Day): void {
-    const change = this.params.teamChange;
-    if (change && offset === change.after) {
+    for (const change of this.params.budgets.filter((one) => one.after === offset)) {
+      const [was, efficiency] = [
+        efficiencyOf(this.plan),
+        change.efficiency ?? efficiencyOf(this.plan),
+      ];
       this.plan = {
         ...this.plan,
-        assumptions: { ...this.plan.assumptions, team: [change.humans, change.agents] },
+        assumptions: {
+          ...this.plan.assumptions,
+          team: [change.humans, change.agents],
+          efficiency,
+          ...(efficiency !== was ? { efficiencyWas: { until: day, efficiency: was } } : {}),
+        },
       };
       this.humans = resized(this.humans, change.humans);
       this.agents = resized(this.agents, change.agents);
       this.events.push(
         `the team becomes ${change.humans} ${
           change.humans === 1 ? "person" : "people"
-        } + ${change.agents} agent${change.agents === 1 ? "" : "s"}`,
+        } + ${change.agents} agent${change.agents === 1 ? "" : "s"}${
+          change.efficiency !== undefined ? ` at ${Math.round(change.efficiency * 100)}% focus` : ""
+        }`,
       );
+    }
+    for (const change of this.params.delays.filter((one) => one.after === offset)) {
+      const edit = { day, before: change.before, delay: change.delay };
+      this.steps = insertDelay(this.steps, edit);
+      const added = this.steps.find((step) => step.id === delayId(edit));
+      if (added) this.events.push(`${stepKey(added)} ${added.title} added`);
     }
     const block = this.params.block;
     if (block && offset === block.after) {
@@ -204,6 +257,8 @@ class World {
         created: day,
         start: null,
         color: null,
+        since: null,
+        delay: null,
       };
       this.steps.push(step);
       this.effortOf(step);
@@ -256,7 +311,7 @@ class World {
 
   private currentStretch(): [Step | null, Step[]] | undefined {
     return groups({ ...this.plan, steps: this.steps }).find(([, members]) =>
-      members.some((step) => step.status !== DONE)
+      members.some((step) => !isDelay(step) && step.status !== DONE)
     );
   }
 
@@ -275,11 +330,15 @@ class World {
     const opens = stretches.map(([milestone]) => milestone?.start ?? null);
     const tails = this.tails();
     const order = new Map(this.steps.map((step, index) => [step.id, index]));
-    const done = (id: string) => this.find(id).status === DONE;
+    const done = (id: string) => this.find(id).status === DONE || this.over.has(id);
     const known = new Set(this.steps.map((step) => step.id));
     // Asked afresh at every moment: a milestone that lands at eleven opens the next one then.
     const current = () =>
-      stretches.findIndex(([, members]) => members.some((step) => !done(step.id)));
+      stretches.findIndex(([, members]) =>
+        members.some((step) => !isDelay(step) && !done(step.id))
+      );
+    // Today's first moment, in working days since work began; a delay's clock runs on these.
+    const base = workingDaysBetween(this.begin, day) - 1;
     const running = () => new Set([...this.humans, ...this.agents].filter((id) => id !== null));
     const focus = this.params.focus ?? efficiencyOf(plan);
 
@@ -290,7 +349,8 @@ class World {
       return this.steps
         .filter((step) => {
           const stretch = stretchOf.get(step.id)!;
-          return step.agent === agent && step.status !== DONE && step.status !== "blocked" &&
+          return !isDelay(step) && step.agent === agent && step.status !== DONE &&
+            step.status !== "blocked" &&
             !busy.has(step.id) &&
             (this.params.workAhead || stretch === now) &&
             (opens[stretch] === null || opens[stretch]! <= day) &&
@@ -307,9 +367,35 @@ class World {
       const step = this.update(id, { status: DONE });
       this.events.push(`${stepKey(step)} ${step.title} done`);
     };
+    // A delay starts the moment all it requires is done and its stretch is being worked, and
+    // ends after its days, or as its day begins. True when one ended, freeing what waits on it.
+    const waitFor = (now: number): boolean => {
+      let ended = false;
+      const stretch = current();
+      for (const step of this.steps) {
+        if (!step.delay || this.over.has(step.id)) continue;
+        if (!this.waits.has(step.id)) {
+          const mine = stretchOf.get(step.id);
+          if (mine === undefined || (!this.params.workAhead && mine !== stretch)) continue;
+          if (!step.requires.every((id) => !known.has(id) || done(id))) continue;
+          const delay = step.delay;
+          const opens = "days" in delay
+            ? now + delay.days
+            : workingDaysBetween(this.begin, nextWorkingDay(delay.until)) - 1;
+          this.waits.set(step.id, opens);
+        }
+        if (this.waits.get(step.id)! <= now + EPSILON) {
+          this.over.add(step.id);
+          this.finished.set(step.id, day);
+          ended = true;
+        }
+      }
+      return ended;
+    };
+    let time = 0;
     const assign = () => {
       for (;;) {
-        let moved = false;
+        let moved = waitFor(base + time);
         for (const [lane, agent] of [[this.agents, true], [this.humans, false]] as const) {
           for (let slot = 0; slot < lane.length; slot += 1) {
             if (lane[slot] !== null) continue;
@@ -325,7 +411,6 @@ class World {
       }
     };
 
-    let time = 0;
     for (let guard = 0; guard < 10_000; guard += 1) {
       assign();
       const busyAgents = this.agents.filter((id) => id !== null).length;
@@ -341,9 +426,14 @@ class World {
           [id, human] as [string, number]
         ),
       ];
-      if (!busy.length || time >= 1 - EPSILON) return;
+      // A delay ending today moves the clock on even when nobody is working.
+      const ending = [...this.waits].filter(([id]) => !this.over.has(id)).map(([, end]) =>
+        end - base - time
+      ).filter((left) => left > EPSILON && left <= 1 - time + EPSILON);
+      if ((!busy.length && !ending.length) || time >= 1 - EPSILON) return;
       const step = Math.min(
         1 - time,
+        ...ending,
         ...busy.map(([id, rate]) =>
           (this.effortOf(this.find(id)) - (this.progress.get(id) ?? 0)) / rate
         ),

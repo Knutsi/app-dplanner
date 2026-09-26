@@ -8,7 +8,7 @@
  */
 
 import { type Day, isoDay, parseDay } from "./model/calendar.ts";
-import type { Plan, Status, Step } from "./model/graph.ts";
+import type { Delay, Plan, Status, Step } from "./model/graph.ts";
 
 export const EXPORT_FORMAT = "te2-export/1";
 
@@ -42,7 +42,11 @@ export interface StepJson {
   created: string | null;
   start: string | null;
   color: string | null;
+  since?: string | null; // Absent from exports DPlanner's files cannot fill (BACKPORT.md).
+  delay?: DelayJson | null;
 }
+
+type DelayJson = { until: string } | { days: number };
 
 export interface PlanJson {
   id: string;
@@ -54,6 +58,16 @@ export interface PlanJson {
 
 const dayOrNull = (value: string | null): Day | null => (value ? parseDay(value) : null);
 const isoOrNull = (value: Day | null): string | null => (value !== null ? isoDay(value) : null);
+
+function delayFromJson(json: DelayJson | null | undefined): Delay | null {
+  if (!json) return null;
+  if ("days" in json) return { days: json.days };
+  const until = parseDay(json.until);
+  return until === null ? null : { until };
+}
+
+const delayToJson = (delay: Delay | null): DelayJson | null =>
+  delay === null ? null : "days" in delay ? { days: delay.days } : { until: isoDay(delay.until) };
 
 export function planFromJson(json: PlanJson): Plan {
   return {
@@ -67,6 +81,8 @@ export function planFromJson(json: PlanJson): Plan {
       }),
       created: dayOrNull(step.created),
       start: dayOrNull(step.start),
+      since: dayOrNull(step.since ?? null),
+      delay: delayFromJson(step.delay),
     })),
   };
 }
@@ -80,6 +96,8 @@ export function planToJson(plan: Plan): PlanJson {
       estimateHistory: step.estimateHistory.map(([day, days]) => [isoDay(day), days]),
       created: isoOrNull(step.created),
       start: isoOrNull(step.start),
+      since: isoOrNull(step.since),
+      delay: delayToJson(step.delay),
     })),
   };
 }

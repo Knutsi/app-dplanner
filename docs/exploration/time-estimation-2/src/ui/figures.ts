@@ -41,6 +41,8 @@ function step(
     created: MONDAY - 3,
     start: null,
     color: null,
+    since: null,
+    delay: null,
   };
 }
 

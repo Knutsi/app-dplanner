@@ -81,7 +81,7 @@ export const SCENARIOS: Scenario[] = [
     breaks: "the team stays as it is — a second person and a third agent join on day 14",
     look: "Every landing jumps earlier on day 14. Scope change against the plan at start " +
       "reads as “pulled in”, though no scope changed: a record freezes its day's team (R2).",
-    world: { teamChange: { after: 14, humans: 2, agents: 3 } },
+    world: { budgets: [{ after: 14, humans: 2, agents: 3 }] },
   },
   {
     id: "blocked",

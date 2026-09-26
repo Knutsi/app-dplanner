@@ -9,7 +9,9 @@ two questions:
 - **Do the view and the reporting say what they mean?**
 
 What it found is in [`ISSUES.md`](ISSUES.md). How comparisons over time work, in plain
-words, is in [`explainer.html`](explainer.html).
+words, is in [`explainer.html`](explainer.html). What each version taught is in
+[`LESSONS.md`](LESSONS.md), and what must reach the Qt app is in
+[`BACKPORT.md`](BACKPORT.md).
 
 ## Open it
 
@@ -45,10 +47,15 @@ remembered in the browser:
     parameter.
   - *Recorder runs:* which days DPlanner's recorder wrote a row. When replaying it also
     offers *as DPlanner recorded it*.
-  - *Model:* the page always **re-plans from today**: done steps cost nothing, and the
-    first unfinished stretch starts no earlier than today (ISSUES.md F1). That is decided
-    for the backport, so it has no switch. The *variants* beside it are the fixes still on
-    trial, off by default. The parity tools alone run DPlanner exactly as it is today.
+  - *Plan edits:* what DPlanner's canvas would do and this page has no canvas for. You can
+    add a **Delay step** before any step that has not started, on the day shown: *until* a
+    day, or *for* a number of working days. It goes in the address bar, and ✕ removes it.
+    In a scenario the simulated team waits for it too.
+  - *Model:* the page always runs **`resume`** (ISSUES.md F1, F5). The plan's own dates
+    stand while what is done matches them. Otherwise the rest resumes from tomorrow, with
+    work in flight credited for the days already spent. The rounding is fixed (I1, Q3).
+    That is decided for the backport, so it has no switch. The parity tools alone run
+    DPlanner exactly as it is today.
 - **Track record.** Each milestone's forecast against the day it was made, with the real
   landing on the diagonal, and the forecast error at points along the way. DPlanner as it
   is today is drawn dashed beside the page's model. DPlanner has no such view; see
@@ -59,9 +66,9 @@ remembered in the browser:
 What happened on the day sits between the sections. Track record and Records are computed
 only while unfolded.
 
-**The view comes in three designs.** Switch between them in the debugger's bar (*v1 ·
-today* / *v2* / *v3 · latest*). All read the same plan on the same day, and the choice is
-remembered; v3 is the default.
+**The view comes in four designs.** Switch between them in the debugger's bar (*v1 ·
+today* / *v2* / *v3* / *v4 · latest*). All read the same plan on the same day, and the
+choice is remembered; v4 is the default.
 
 - **v1** is a wireframe of today's tab: the strip, the staffing grid, the milestones, the
   calendar, and the plot pages.
@@ -74,10 +81,36 @@ remembered; v3 is the default.
   5. What if the team were different?
 - **v3** is v2 pared down after review: key figures, a toolbar and two tabs, with the words
   moved into tooltips.
+- **v4** is v3 with the **Budget** in place of the what-ifs. Its Work tab marks weekends,
+  the days nothing changed, and the waits of Delay steps.
 
-In every design, focus, team, palette, start and a milestone's begin date are *what-ifs* on
-the day's live plan. The recorded past stays as it was recorded. Every design reads the
-page's model, so v1 is today's tab *layout* over a plan re-planned from today.
+In v1 to v3, focus, team, palette, start and a milestone's begin date are *what-ifs* on the
+day's live plan. In v4 the Budget is not a what-if: a choice is saved at once, and applies
+from the day shown on. Every design reads the page's model, so v1 is today's tab *layout*
+over a plan that resumes from tomorrow.
+
+### v4, part by part
+
+v4 is v3's layout, part for part, with these changes:
+
+- **Budget** replaces *What if…* in the toolbar.
+  - People [1][2][3] and Agents [1][2][3][4] as buttons; Agents only when the plan has agent
+    steps.
+  - Focus from 10% to 100%.
+  - A click applies at once, from the day shown on; earlier days keep theirs. It goes in the
+    address bar (`budget=`).
+  - In a scenario the simulated team changes with it, so you see what a real re-budget does.
+- **Work**, both plots:
+  - a pale band on each weekend;
+  - a hatched, named band over each Delay's wait.
+- **Work done:**
+  - the done line is dotted across each day on which no step changed status;
+  - the plan's schedule is dashed, so the two never mix.
+- **Milestones:** a row's tooltip names the delays its stretch waits on.
+
+The dates hold still while the plan does. By the book reads the same date every day until
+it lands, and a Delay or a re-budget moves the dates only from its own day on (ISSUES.md
+F5 has the numbers).
 
 ### v3, part by part
 
@@ -155,9 +188,11 @@ page where you left it:
 
 - `day=end` goes to the last day;
 - `tab=track` or `tab=records` unfolds that section;
-- `ui=v1`, `ui=v2` or `ui=v3` picks the design, and `scope=<step id>` the milestone it
-  shows;
-- `page=milestones` or `page=work` picks v3's tab.
+- `ui=v1` to `ui=v4` picks the design, and `scope=<step id>` the milestone it shows;
+- `page=milestones` or `page=work` picks the tab in v3 and v4;
+- `budget=2026-11-02:2+1@60` holds re-budgets: the day, people + agents, and focus;
+- `delay=2026-10-12:s14:until:2026-11-04` (or `…:days:3`) holds Delay steps: the day made,
+  the step held, and the wait.
 
 ## Build, check, test
 
@@ -169,6 +204,7 @@ deno task check     # strict type-check of src/, tools/ and tests/
 deno task test      # the ported DPlanner tests, the simulation, the issues
 deno task build     # bundle src/main.ts into app.js (commit it: the page loads it)
 deno task dev       # the same, rebuilding on every save
+deno task accuracy  # each model's forecasts against the truth, scenario by scenario
 ```
 
 `app.js` is generated. Rebuild it after editing `src/`, and commit it with the change, so
@@ -217,36 +253,45 @@ On 2026-09-26 both agreed exactly:
 index.html, app.css     the page, and its wireframe styling (DESIGN.md's tokens)
 explainer.html          how comparisons over time work; its figures are drawn by app.js
 ISSUES.md               the issues, each with its evidence and a direction
+LESSONS.md              what each version taught, v1 to v4
+BACKPORT.md             the checklist for the Qt app
 src/model/              the faithful port — no DOM, and `today` is always passed in
   calendar.ts             days as integers, working days, how dates and days are worded
-  graph.ts                Plan and Step, the predicates DPlanner wires, placed/cone/cyclic
-  simulate.ts             parallel_finish, phases, stretched, the 3×4 matrix
+  graph.ts                Plan and Step (with `since` and Delay steps), the predicates
+                          DPlanner wires, placed/cone/cyclic
+  simulate.ts             parallel_finish, phases (and `resume`: holds, resumed), stretched,
+                          the 3×4 matrix
   progress.ts             snapshots, curves, baseline/resolve, recording, volume, words
   palettes.ts             the colour maps and the milestone deal
-  options.ts              the model: FAITHFUL (DPlanner today), ADOPTED (the page's),
-                          and the variants still on trial
+  options.ts              the model: FAITHFUL (DPlanner today), ADOPTED (the page's:
+                          `resume` and the rounding fixes), and the variants still on trial
 src/sim/                time travel
   world.ts                reality: a team working the plan with true effort, and events
   scenarios.ts            the presets, each breaking one assumption
   timeline.ts             frames, and the recorder that writes rows over them
   replay.ts               an exported git history as frames; parity with stored rows
+  edits.ts                what the page changes in the plan from a day on: re-budgets and
+                          Delay steps, for the world, a replay and the address bar
+  accuracy.ts             a model's forecasts against the truth: error, movement, moves
   sample.ts, rng.ts       the synthetic plan, and seeded luck
 src/present.ts          what the Time tab shows, as data (every design starts here)
-src/brief.ts            what v2 and v3 derive: lag, projected landing, the move split,
-                        verdicts, the burn-up series
+src/brief.ts            what v2 to v4 derive: lag, projected landing, the move split,
+                        verdicts, the burn-up series and its active days
 src/ui/v1/              today's tab: timetab.ts, calendar.ts, charts.ts
 src/ui/v2/              the first redesign: view.ts, headline, milestones, burnup, changes,
                         words (how it says things), state
 src/ui/v3/              the second: view.ts (key figures and the tabs), toolbar, shifts
-                        (Milestones), work (Work), marks (the ✓), state
-src/ui/compare.ts       the Compared with picker v2 and v3 share
-src/ui/glyphs.ts        the ▲▼◀▶ arrows v2 and v3 share
+                        (Milestones), work (Work, and v4's marks), marks (the ✓), state
+src/ui/v4/              the third: view.ts (v3's layout, v4's toolbar), budget (the Budget)
+src/ui/compare.ts       the Compared with picker v2 to v4 share
+src/ui/glyphs.ts        the ▲▼◀▶ arrows v2 to v4 share
 src/ui/debugger/        the debugger's readings: track.ts, records.ts
 src/ui/markup.ts        building HTML and SVG; figures.ts draws the explainer's figures
 src/data.ts             the export format
-tools/                  export_plan.ts, parity.ts, compare_matrix.ts
+tools/                  export_plan.ts, parity.ts, compare_matrix.ts, accuracy.ts
 tests/                  model_test (DPlanner's own cases), sim_test, issues_test,
-                        brief_test and glyphs_test (v2), v3_test; played.ts plays a
+                        brief_test and glyphs_test (v2), v3_test, resume_test (the model),
+                        edits_test (the Budget), delay_test, v4_test; played.ts plays a
                         scenario for them
 ```
 
@@ -273,11 +318,16 @@ Each step contributes:
 
 ## Evolving it
 
-- **A model change** is a flag in `src/model/options.ts`, threaded where it bites
-  (`phases` holds all three flags today). As a variant it appears in the page and in Track
-  record's comparison by itself. Once it is decided on, move it into `ADOPTED` and out of
-  `VARIANTS`, as `replan` was. If it fixes an issue, flip that issue's test in
-  `tests/issues_test.ts` and say so in ISSUES.md.
+- **A model change** is an option in `src/model/options.ts`, threaded where it bites
+  (`phases` holds all three today). As a variant it appears in the page and in Track
+  record's comparison by itself.
+  - **Decide on it with `deno task accuracy`**, not its intent. Add the mode to the tool's
+    list, and adopt it only if By the book stays at 0.0 · 0 · 0 and the other scenarios do
+    not move more (LESSONS.md, *The model*).
+  - Once decided, move it into `ADOPTED` and out of `VARIANTS`, as the rounding fixes and
+    `resume` were.
+  - If it fixes an issue, flip that issue's test in `tests/issues_test.ts`, say so in
+    ISSUES.md, and add it to BACKPORT.md.
 - **A new scenario** is an entry in `src/sim/scenarios.ts`: the world parameters, the one
   assumption it breaks, and where to look. Check the "look" sentence against the numbers
   before trusting it; several first guesses were wrong.

@@ -11,7 +11,9 @@
  *   on the done line the day it was done, or a dot on the schedule the day the plan lands it.
  */
 
-import { axisTicks, type Day, formatDays, shortDate } from "../../model/calendar.ts";
+import { axisTicks, type Day, formatDays, isWorkingDay, shortDate } from "../../model/calendar.ts";
+import { isDelay } from "../../model/graph.ts";
+import { landingOf, startDayOf } from "../../model/simulate.ts";
 import { niceCeiling, type Point } from "../../model/progress.ts";
 import type { Burnup, Jump, Scope } from "../../brief.ts";
 import type { TimeView } from "../../present.ts";
@@ -64,6 +66,34 @@ export function stepAt(points: readonly Point[], day: Day): number | null {
 export function stepsFrom(points: readonly Point[], day: Day): Point[] {
   const at = stepAt(points, day);
   return [...(at === null ? [] : [[day, at] as Point]), ...points.filter(([when]) => when > day)];
+}
+
+/**
+ * What v4 adds to the plots. A day's point on the axis is its end, so the day itself runs
+ * from the point before to its own — which is where each of these draws it.
+ * - `weekends`: a pale band on each day off, through both plots;
+ * - `idle`: the done line dotted across a day on which no step changed status;
+ * - `delays`: a hatched band over each wait still in the plan, named.
+ */
+export interface WorkMarks {
+  weekends?: boolean;
+  idle?: boolean;
+  delays?: boolean;
+}
+
+/** Each Delay in the plan that still waits: its title and the days it covers. */
+export function delaySpans(view: TimeView): { title: string; from: Day; to: Day }[] {
+  return view.stretches.flatMap(({ phase }) =>
+    phase.steps.filter(isDelay).flatMap((step) => {
+      const [begins, ends] = [phase.starts.get(step.id), phase.landings.get(step.id)];
+      if (begins === undefined || ends === undefined || ends - begins < 1e-9) return [];
+      return [{
+        title: step.title,
+        from: startDayOf(phase, step.id),
+        to: landingOf(phase, step.id),
+      }];
+    })
+  );
 }
 
 export interface WorkGeometry {
@@ -153,6 +183,7 @@ export function workSvg(
   view: TimeView,
   width: number,
   compared: boolean,
+  marks: WorkMarks = {},
 ): { svg: string; geometry: WorkGeometry } {
   const today = view.today;
   const days = [today, ...data.scope.map(([day]) => day), ...data.promised.map(([day]) => day)];
@@ -212,6 +243,43 @@ export function workSvg(
         n(height - 8)
       }" text-anchor="middle" style="fill:${SECONDARY}">${esc(label)}</text>`,
     );
+  }
+
+  const band = (from: number, to: number, fill: string, top: number, label?: string) => {
+    const [a, b] = [Math.max(LEFT, from), Math.min(right, to)];
+    if (b - a < 0.5) return;
+    out.push(
+      `<rect x="${n(a)}" y="${n(top)}" width="${n(b - a)}" height="${PLOT_H}" ${fill}>${
+        label ? `<title>${esc(label)}</title>` : ""
+      }</rect>`,
+    );
+  };
+  if (marks.weekends) {
+    for (let day = first + 1; day <= last; day += 1) {
+      if (isWorkingDay(day)) continue;
+      for (const top of [scopeTop, workTop]) band(x(day - 1), x(day), `class="weekend"`, top);
+    }
+  }
+  if (marks.delays) {
+    const spans = delaySpans(view);
+    if (spans.length) {
+      out.push(
+        `<defs><pattern id="delay-hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="6" height="6" class="delay-fill"/><line x1="0" y1="0" x2="0" y2="6" class="delay-line"/></pattern></defs>`,
+      );
+    }
+    for (const span of spans) {
+      for (const top of [scopeTop, workTop]) {
+        band(x(span.from), x(span.to), `fill="url(#delay-hatch)" class="delay"`, top, span.title);
+      }
+      const at = Math.max(LEFT, x(span.from)) + 4;
+      if (at < right - 20) {
+        out.push(
+          `<text x="${n(at)}" y="${n(workTop + 12)}" font-size="10" class="delay-label">${
+            esc(span.title)
+          }</text>`,
+        );
+      }
+    }
   }
 
   // -- Scope ----------------------------------------------------------------------------------
@@ -287,6 +355,11 @@ export function workSvg(
   }
 
   // -- Work done ------------------------------------------------------------------------------
+  // With idle days dotted on the done line, the schedule is dashed, so the two never mix.
+  const schedule = marks.idle
+    ? `stroke-dasharray="5 3"`
+    : `stroke-dasharray="1 3" stroke-linecap="round"`;
+  const idle = `stroke-dasharray="0.5 4" stroke-linecap="round"`;
   out.push(title(
     "Work done",
     [
@@ -294,8 +367,14 @@ export function workSvg(
         `<rect x="0" y="2" width="18" height="10" style="fill:${INK}" fill-opacity="0.15"/><line x1="0" x2="18" y1="2" y2="2" style="stroke:${INK}" stroke-width="2"/>`,
         "done",
       ],
+      ...(marks.idle
+        ? [[
+          `<line x1="0" x2="18" y1="7" y2="7" style="stroke:${INK}" stroke-width="2" ${idle}/>`,
+          "no status change",
+        ] as Key]
+        : []),
       [
-        `<line x1="0" x2="18" y1="7" y2="7" style="stroke:${SECONDARY}" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"/>`,
+        `<line x1="0" x2="18" y1="7" y2="7" style="stroke:${SECONDARY}" stroke-width="1.5" ${schedule}/>`,
         "the plan's schedule",
       ],
     ],
@@ -314,7 +393,7 @@ export function workSvg(
     out.push(
       `<path d="${
         stepPath(data.promised, x, workY, data.promised[data.promised.length - 1][0])
-      }" fill="none" style="stroke:${SECONDARY}" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"/>`,
+      }" fill="none" style="stroke:${SECONDARY}" stroke-width="1.5" ${schedule}/>`,
     );
   }
   if (data.done.length) {
@@ -324,7 +403,27 @@ export function workSvg(
         n(x(data.done[0][0]))
       } Z" style="fill:${INK}" fill-opacity="0.1"/>`,
     );
-    out.push(`<path d="${line}" fill="none" style="stroke:${INK}" stroke-width="2"/>`);
+    if (!marks.idle) {
+      out.push(`<path d="${line}" fill="none" style="stroke:${INK}" stroke-width="2"/>`);
+    } else {
+      // Solid across a day some step changed status, dotted across one none did.
+      const active = new Set(data.active);
+      const [solid, dotted]: string[][] = [[], []];
+      let level = data.done[0][1];
+      for (let day = data.done[0][0] + 1; day <= today; day += 1) {
+        const y = workY(level);
+        (active.has(day) ? solid : dotted).push(`M${n(x(day - 1))},${n(y)} H${n(x(day))}`);
+        const next = stepAt(data.done, day) ?? level;
+        if (next !== level) solid.push(`M${n(x(day))},${n(y)} V${n(workY(next))}`);
+        level = next;
+      }
+      out.push(`<path d="${solid.join(" ")}" fill="none" style="stroke:${INK}" stroke-width="2"/>`);
+      out.push(
+        `<path d="${
+          dotted.join(" ")
+        }" fill="none" style="stroke:${INK}" stroke-width="2" ${idle} class="idle"/>`,
+      );
+    }
   }
   const labelled: [number, number][] = [];
   for (const one of marked) {

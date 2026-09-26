@@ -28,12 +28,21 @@ export interface Step {
   created: Day | null;
   start: Day | null; // time_estimates.start on a milestone: when its stretch begins.
   color: string | null; // time_estimates.color on a milestone.
+  // The day its status last changed — a fact DPlanner does not store yet (BACKPORT.md).
+  since: Day | null;
+  delay: Delay | null; // A Delay step: a wait, with no work and no status of its own.
 }
+
+/** What a Delay step waits for: a day its dependents may start on, or n working days. */
+export type Delay = { until: Day } | { days: number };
 
 export interface Assumptions {
   efficiency: number | null; // The focus factor; 0.5 when absent.
   palette: string | null;
   team: [number, number] | null; // [people, agents]; [1, 1] when absent.
+  // The focus before it last changed, and the day the new one began: work in flight across
+  // the change ran at the old one (BACKPORT.md).
+  efficiencyWas?: { until: Day; efficiency: number } | null;
 }
 
 export interface Plan {
@@ -58,6 +67,7 @@ export type StepTest = (step: Step) => boolean;
 export const daysFor: DaysFor = (step) => (step.estimateOff ? null : step.estimate);
 export const isAgent: StepTest = (step) => step.agent;
 export const isMilestone: StepTest = (step) => Boolean(step.milestone);
+export const isDelay: StepTest = (step) => step.delay !== null;
 export const statusFor = (step: Step): Status => step.status;
 export const startFor = (step: Step): Day | null => step.start;
 

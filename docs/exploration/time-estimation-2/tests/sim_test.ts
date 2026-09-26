@@ -38,7 +38,7 @@ Deno.test("by the book, with the rounding fixed, the first day's forecast is wha
       const [said, happened] of forecastAndTruth(timeline, {
         epsilon: true,
         carry: true,
-        replan: false,
+        replan: "off",
       })
     ) {
       assertEquals(said, happened, `seed ${seed}`);
@@ -159,4 +159,22 @@ Deno.test("a replayed history dates a step's finish by the first day it read don
   assertEquals(timeline.frames.length, 5); // 5th to 9th, the 6th and 8th carried over
   assertEquals(timeline.frames[1].events, []);
   assertEquals([...timeline.finished], [["s2", SAMPLE_START + 2]]); // s1 was undone on the 9th
+});
+
+Deno.test("the world stamps every status change with its day, and nothing else", () => {
+  const timeline = world({ block: { after: 10, days: 3 } });
+  let before = timeline.frames[0];
+  for (const frame of timeline.frames.slice(1)) {
+    for (const step of frame.plan.steps) {
+      const was = before.plan.steps.find((one) => one.id === step.id);
+      if (!was) continue;
+      if (was.status !== step.status) assertEquals(step.since, frame.day, step.id);
+      else assertEquals(step.since, was.since, step.id);
+    }
+    before = frame;
+  }
+  const last = timeline.frames[timeline.frames.length - 1].plan;
+  for (const step of last.steps) {
+    assertEquals(step.since, timeline.finished.get(step.id), `${step.id} done on its day`);
+  }
 });

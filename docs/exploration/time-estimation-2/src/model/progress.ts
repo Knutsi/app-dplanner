@@ -19,7 +19,7 @@ import {
   pyRound,
   workingDaysBetween,
 } from "./calendar.ts";
-import { cyclic, type DaysFor, daysFor, DONE, type Plan, type Step } from "./graph.ts";
+import { cyclic, type DaysFor, daysFor, DONE, isDelay, type Plan, type Step } from "./graph.ts";
 import type { ModelOptions } from "./options.ts";
 import { landingOf, type Phase, phases, stretched } from "./simulate.ts";
 
@@ -33,9 +33,12 @@ export interface Tally {
   done: number;
   days: number; // Estimated days, unestimated steps counting nothing.
   doneDays: number;
+  // Steps whose status changed on the snapshot's day — 0 in a row DPlanner wrote, which
+  // does not know (BACKPORT.md).
+  changed: number;
 }
 
-export const EMPTY_TALLY: Tally = { steps: 0, done: 0, days: 0.0, doneDays: 0.0 };
+export const EMPTY_TALLY: Tally = { steps: 0, done: 0, days: 0.0, doneDays: 0.0, changed: 0 };
 
 export function addTally(a: Tally, b: Tally): Tally {
   return {
@@ -43,6 +46,7 @@ export function addTally(a: Tally, b: Tally): Tally {
     done: a.done + b.done,
     days: a.days + b.days,
     doneDays: a.doneDays + b.doneDays,
+    changed: a.changed + b.changed,
   };
 }
 
@@ -102,6 +106,7 @@ function sameStretch(a: Stretch, b: Stretch): boolean {
   return a.key === b.key && a.start === b.start && a.finish === b.finish &&
     a.tally.steps === b.tally.steps && a.tally.done === b.tally.done &&
     a.tally.days === b.tally.days && a.tally.doneDays === b.tally.doneDays &&
+    a.tally.changed === b.tally.changed &&
     a.landings.length === b.landings.length &&
     a.landings.every((knot, index) => {
       const other = b.landings[index];
@@ -196,7 +201,7 @@ export function snapshotFrom(dated: Phase[], today: Day): Snapshot {
     day: today,
     stretches: dated.map((phase) => ({
       key: phase.milestone ? phase.milestone.id : "",
-      tally: tally(phase.steps),
+      tally: tally(phase.steps, daysFor, today),
       start: phase.start,
       finish: phase.finish,
       landings: landings(phase),
@@ -210,6 +215,7 @@ export function snapshotFrom(dated: Phase[], today: Day): Snapshot {
 export function landings(phase: Phase, days: DaysFor = daysFor): Landing[] {
   const byDay = new Map<Day, Landing>();
   for (const step of phase.steps) {
+    if (isDelay(step)) continue;
     const when = landingOf(phase, step.id);
     const found = byDay.get(when) ?? { day: when, steps: 0, days: 0.0 };
     byDay.set(when, { day: when, steps: found.steps + 1, days: found.days + (days(step) ?? 0.0) });
@@ -217,10 +223,15 @@ export function landings(phase: Phase, days: DaysFor = daysFor): Landing[] {
   return [...byDay.keys()].sort((a, b) => a - b).map((when) => byDay.get(when)!);
 }
 
-/** `tally`: what these steps amount to, and how much of it reads done — only "done" counts. */
-export function tally(steps: readonly Step[], days: DaysFor = daysFor): Tally {
+/**
+ * `tally`: what these steps amount to, and how much of it reads done — only "done" counts.
+ * A Delay is no work, so it is no part of any tally. `today` counts the steps whose status
+ * changed that day.
+ */
+export function tally(steps: readonly Step[], days: DaysFor = daysFor, today?: Day): Tally {
   let total = EMPTY_TALLY;
   for (const step of steps) {
+    if (isDelay(step)) continue;
     const cost = days(step) ?? 0.0;
     const landed = step.status === DONE;
     total = addTally(total, {
@@ -228,6 +239,7 @@ export function tally(steps: readonly Step[], days: DaysFor = daysFor): Tally {
       done: landed ? 1 : 0,
       days: cost,
       doneDays: landed ? cost : 0.0,
+      changed: today !== undefined && step.since === today ? 1 : 0,
     });
   }
   return total;
@@ -638,6 +650,7 @@ function stretchFrom(row: Json): Stretch | null {
       done: count(row.done),
       days: amount(row.days),
       doneDays: amount(row.done_days),
+      changed: count(row.changed),
     },
     start,
     finish,
@@ -685,6 +698,7 @@ export function rowJson(row: Snapshot): Json {
       done: s.tally.done,
       days: s.tally.days,
       done_days: s.tally.doneDays,
+      ...(s.tally.changed ? { changed: s.tally.changed } : {}),
       start: isoDay(s.start),
       ...(s.finish !== null ? { finish: isoDay(s.finish) } : {}),
       ...(s.landings.length

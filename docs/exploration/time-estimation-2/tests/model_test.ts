@@ -270,18 +270,18 @@ Deno.test("a snapshot tallies each stretch in sequence, cumulative through a mil
   const [v1, v2] = now.stretches;
   assertEquals([v1.key, v1.tally, v1.start, v1.finish], [
     "B",
-    { steps: 2, done: 2, days: 3, doneDays: 3 },
+    { steps: 2, done: 2, days: 3, doneDays: 3, changed: 0 },
     MONDAY,
     sep(9),
   ]);
   assertEquals([v2.key, v2.tally, v2.start, v2.finish], [
     "D",
-    { steps: 2, done: 0, days: 7, doneDays: 0 },
+    { steps: 2, done: 0, days: 7, doneDays: 0, changed: 0 },
     sep(10),
     sep(18),
   ]);
-  assertEquals(toward(now, "D"), { steps: 4, done: 2, days: 10, doneDays: 3 });
-  assertEquals(toward(now, "nobody"), { steps: 0, done: 0, days: 0, doneDays: 0 });
+  assertEquals(toward(now, "D"), { steps: 4, done: 2, days: 10, doneDays: 3, changed: 0 });
+  assertEquals(toward(now, "nobody"), { steps: 0, done: 0, days: 0, doneDays: 0, changed: 0 });
 });
 
 Deno.test("a stretch records what lands on each date, and the curve is the simulation's", () => {

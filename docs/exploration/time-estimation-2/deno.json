@@ -12,7 +12,8 @@
     "dev": "deno bundle --platform browser --format iife --watch -o app.js src/main.ts",
     "export": "deno run --allow-read --allow-write=local --allow-run=git tools/export_plan.ts",
     "parity": "deno run --allow-read tools/parity.ts",
-    "compare-matrix": "deno run --allow-read tools/compare_matrix.ts"
+    "compare-matrix": "deno run --allow-read tools/compare_matrix.ts",
+    "accuracy": "deno run tools/accuracy.ts"
   },
   "fmt": { "lineWidth": 100 }
 }

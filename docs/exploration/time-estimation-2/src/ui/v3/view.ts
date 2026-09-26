@@ -14,9 +14,23 @@ import { h } from "../markup.ts";
 import { shiftsSvg } from "./shifts.ts";
 import type { V3Handlers, V3State } from "./state.ts";
 import { toolbar } from "./toolbar.ts";
-import { stepAt, stepsFrom, workSvg } from "./work.ts";
+import { stepAt, stepsFrom, type WorkMarks, workSvg } from "./work.ts";
 
 export function v3View(view: TimeView, state: V3State, on: V3Handlers): HTMLElement {
+  return tabbedView(view, state, on, (found) => toolbar(view, found, state, on));
+}
+
+/**
+ * Key figures, a toolbar and the two tabs — v3's layout, which v4 keeps with its own toolbar
+ * and more marks on the Work tab.
+ */
+export function tabbedView(
+  view: TimeView,
+  state: V3State,
+  on: V3Handlers,
+  bar: (found: Brief) => HTMLElement,
+  marks: WorkMarks = {},
+): HTMLElement {
   if (view.report.cycle.length) {
     const names = view.report.cycle.map((step) => step.title || "an untitled step").join(", ");
     return h(
@@ -35,8 +49,10 @@ export function v3View(view: TimeView, state: V3State, on: V3Handlers): HTMLElem
     "div",
     { class: "v3" },
     keyFigures(found, view, basis),
-    toolbar(view, found, state, on),
-    state.page === "milestones" ? milestones(found, view, state, on) : work(found, view, state),
+    bar(found),
+    state.page === "milestones"
+      ? milestones(found, view, state, on)
+      : work(found, view, state, marks),
   );
 }
 
@@ -125,7 +141,7 @@ function milestones(found: Brief, view: TimeView, state: V3State, on: V3Handlers
 
 // -- Work -----------------------------------------------------------------------------------------
 
-function work(found: Brief, view: TimeView, state: V3State): HTMLElement {
+function work(found: Brief, view: TimeView, state: V3State, marks: WorkMarks): HTMLElement {
   const scopes: Scope[] = [found.whole, ...found.milestones];
   const scope = scopes.find((one) => one.key === state.scope) ?? found.whole;
   const series = burnup(view, scope.key, found.compared);
@@ -142,6 +158,7 @@ function work(found: Brief, view: TimeView, state: V3State): HTMLElement {
       view,
       Math.max(560, holder.clientWidth),
       found.compared,
+      marks,
     );
     holder.innerHTML = svg;
     holder.append(tip);

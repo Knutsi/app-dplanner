@@ -89,6 +89,8 @@ export function samplePlan(seed: number, shape: SampleShape = SAMPLE_SHAPE): Pla
       created: SAMPLE_START - 7,
       start: null,
       color: null,
+      since: null,
+      delay: null,
       ...fields,
     };
     steps.push(step);

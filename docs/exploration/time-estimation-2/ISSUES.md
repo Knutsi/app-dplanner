@@ -27,6 +27,7 @@ So what follows is DPlanner's behaviour, not the port's.
 | Id | Issue | Weight | Evidence |
 |---|---|---|---|
 | [F1](#f1) | The landing dates never learn from what has landed | high | Python, real plan, scenario |
+| [F5](#f5) | Re-planning restarted work in flight: the forecast saw-toothed | high (v3; fixed in v4) | scenario, accuracy |
 | [P1](#p1) | "Behind" while exactly on time | high | Python, scenario |
 | [U1](#u1) | A landing date in the past is shown like any other | high | scenario, real plan |
 | [F2](#f2) | An undated plan slides every day and is compared with itself | medium | Python, scenario |
@@ -84,19 +85,18 @@ simulated from `start`. `progress.py:351` `tally` is the only reader of status.
 **Why it matters.** The number people read, the landing date, is the one number that
 cannot go late.
 
-**Direction — adopted for the backport.**
+**Direction — adopted for the backport, as `resume` (v4).**
 
-- Re-plan the remaining work from today: done steps cost nothing, and the first unfinished
-  stretch starts no earlier than today. `replan` in `options.ts` does this, and the page
-  now always runs it (`ADOPTED`); there is no switch to turn it off. Track record draws
-  DPlanner as it is today dashed beside it, and the forecasts converge.
-- It also shows what DPlanner today cannot see. On 26 September DPlanner's own plan moves
-  #1 out to 29 September, and moves #2, #3 and OSS *earlier* (OSS 14 → 7 October). Work
-  already done in later milestones stops costing time.
-- Doing this properly needs two facts the model lacks:
-  - **when a step became done** (a status timestamp);
-  - **how much of an in-progress step is left.** Without it, a re-plan saw-tooths (see
-    [below](#what-the-model-variants-taught)).
+- The plan's own dates stand while what is done matches them. Otherwise the rest resumes
+  from tomorrow: done work is a fact, work in flight keeps its worker and is credited with
+  the days already spent, and everything else costs its estimate (`replan: "resume"` in
+  `options.ts`; the page always runs it). v3's first cut, `restart`, re-priced work in
+  flight from scratch, and saw-toothed: [F5](#f5).
+- It shows what DPlanner today cannot see. On 26 September DPlanner's own plan lands on
+  2 October, against 14 October at the start: work already done in later milestones stops
+  costing time, and work in flight is credited.
+- It needs one fact DPlanner does not store: **the day each step's status last changed**
+  (`since`). BACKPORT.md has the format.
 
 <a id="f2"></a>
 ### F2. An undated plan slides every day and is compared with itself
@@ -159,6 +159,70 @@ unable to start before it is unblocked, or at least report which milestones a bl
 holds.
 
 ---
+
+<a id="f5"></a>
+### F5. Re-planning restarted work in flight: the forecast saw-toothed
+
+**What.** v3's re-plan (`restart`) put every unfinished step back at its full estimate from
+today. Every day spent on a long step was thrown away, so the forecast slipped a working day
+per working day until the step landed, then snapped back.
+
+**Where.** The first cut of `replan` in `phases` (kept as `replan: "restart"`).
+
+**Evidence.**
+
+- **Scenario** [By the book](index.html#source=sample&seed=1&scenario=by-the-book&day=2026-10-11&ui=v3):
+  every step takes exactly its estimate, and the truth is 2 December. v3 read *9 December,
+  ▶ +5d* on Sunday 11 October. Day by day:
+
+  ```
+  10-05 2 Dec | 06 +1d | 07 +2d | 08 +3d | 09 +4d | 12 −1d | 13 0 | … | 20 +1d | … | 30 +9d | 11-02 0
+  ```
+
+- Three causes, each confirmed:
+  - **E1, the saw-tooth.** A 5-day human step at 50% focus runs 10 working days, and every
+    one of them was priced again from scratch.
+  - **E2, start of day against end of day.** The re-plan began at the *start* of today,
+    but a day's snapshot is its *end*. So on the day a step landed the forecast read a day
+    early (−1d), and a weekend added a day (Friday +4d, Saturday +5d).
+  - **E3, done work re-dated by the budget.** Stretches already finished were still dated
+    from the project's start with the current budget, and held back what followed. Focus
+    10% on 2 November moved M2 from 11 November to 26 January '27, behind an M1 finished
+    on 19 October.
+- **Accuracy** (`deno task accuracy`, six seeds). By the book the whole-plan landing
+  travelled **342 working days in total, on 215 days**, where the plan from its start
+  never moved. The table is below.
+
+**Why it matters.** A forecast that moves when nothing happened teaches people to ignore
+it.
+
+**Direction — done in v4 (`resume`):**
+
+- the plan holds while reality matches it;
+- otherwise resume from the next working day (E2);
+- credit work in flight with the days since it started (E1);
+- date finished stretches by their facts and never let them gate the rest (E3);
+- adopt the rounding fixes (I1, Q3).
+
+The same run, whole-plan landing: mean |error| · total movement · days moved, in working
+days.
+
+| Scenario | DPlanner today | v3 `restart` | v4 `resume` |
+|---|---|---|---|
+| By the book | 0.7 · 0 · 0 | 2.3 · 342 · 215 | **0.0 · 0 · 0** |
+| Optimistic | 19.2 · 0 · 0 | 8.9 · 566 · 330 | 10.5 · 123 · 115 |
+| Learning | 24.6 · 268 · 45 | 22.6 · 793 · 292 | **13.0** · 551 · 124 |
+| Undated | 20.7 · 243 · 243 | 16.3 · 487 · 230 | **0.9 · 20 · 20** |
+| Blocked | 3.6 · 0 · 0 | 2.9 · 390 · 241 | **1.8** · 62 · 50 |
+| Someone joins | 3.2 · 52 · 6 | 4.1 · 334 · 181 | **2.2** · 54 · 15 |
+| Realistic | 14.8 · 94 · 38 | 10.2 · 644 · 338 | 11.3 · 206 · 123 |
+
+**What `resume` still cannot do.**
+
+- It trusts the estimates of the work not yet done. Where every estimate is low
+  (Optimistic, Realistic), `restart`'s pessimism happens to lie closer to the truth.
+- **The next experiment is a pace factor**, learned from the done work's actual against
+  estimated effort. The status `since` makes it measurable.
 
 ## The progress measure
 
@@ -498,12 +562,13 @@ no projection at all:
 
 ## What the model variants taught
 
-- **`epsilon` and `carry` are pure wins.**
+- **`epsilon` and `carry` are pure wins.** Both are now adopted.
   - Together they make the first day's forecast exactly right when reality follows the
     estimates (`tests/sim_test.ts`).
   - They change nothing else.
-- **`replan` fixes F1's worst symptom, and exposes the next missing fact.** It is now
-  adopted: the page always runs it.
+- **`replan` fixes F1's worst symptom, and exposes the next missing fact.** Its first cut,
+  `restart`, was adopted in v3 despite the saw-tooth described here, and the saw-tooth was
+  the first thing a reader saw ([F5](#f5)). v4's `resume` answers each point below.
   - The forecasts climb toward the truth and meet it at landing.
   - Pricing an in-progress step at its full estimate makes the forecast *pessimistic*: it
     rises through a long step and drops when the step lands (a saw-tooth in Track record).
@@ -516,3 +581,27 @@ no projection at all:
   - The problems are not in how it schedules.
   - They are in what it reads (only done or not done), when it reads it (from the start,
     never from today), and how the view compares (shares against interpolated lines).
+
+---
+
+## What v4 needed that DPlanner does not store
+
+Each of these is in BACKPORT.md with its format.
+
+- **The day a step's status last changed (`since`).**
+  - It credits work in flight.
+  - It dates a done milestone exactly, where today there is only "recorded done by".
+  - It tells which days nothing changed.
+- **How many steps changed status on a record's day (`changed`).**
+  - Progress rows count only `done`, so starting a step writes nothing, and the view cannot
+    tell a day of work from an idle one.
+  - Rows are written by the GUI and by `progress record`, never by `status set`. So a day
+    of agent work driven from the CLI, with no window open, has no row at all.
+- **The focus before it last changed, and the day it did (`efficiencyWas`).**
+  - Past budgets are otherwise not needed: a re-planned forecast only looks forward, and
+    each past day's forecast is frozen in its row.
+  - The one exception is work in flight across a change of focus: it ran at the old pace.
+  - Crediting it at the new one read M2 as 10 February '27 on the day focus fell to 10%,
+    against a real 16 December. With the old focus remembered it reads 18 December.
+- **A Delay step.** "Testing starts Wednesday" is a wait, not work. DPlanner can only say it
+  as a milestone's own start date, which cannot hold one branch.

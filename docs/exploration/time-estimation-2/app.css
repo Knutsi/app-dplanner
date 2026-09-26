@@ -290,6 +290,39 @@ main { padding-top: 4px; }
 .v3-key .k-done { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: var(--secondary); color: var(--surface); font-size: 9px; font-weight: 700; }
 .v3-key .hint { margin-left: auto; }
 
+/* -- v4: the Budget, and the Work tab's weekends, idle days and waits -------------------------- */
+
+:root {
+  --weekend: rgba(35, 38, 43, 0.045);
+  --delay: #8a6d3b;
+  --delay-fill: rgba(160, 124, 51, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --weekend: rgba(230, 232, 236, 0.05);
+    --delay: #d6b77a;
+    --delay-fill: rgba(200, 164, 92, 0.12);
+  }
+}
+
+.weekend { fill: var(--weekend); }
+.delay-fill { fill: var(--delay-fill); }
+.delay-line { stroke: var(--delay); stroke-width: 1; stroke-opacity: 0.45; }
+.delay-label { fill: var(--delay); font-weight: 600; }
+.budget-now { color: var(--secondary); font-weight: 400; font-variant-numeric: tabular-nums; margin-left: 2px; }
+.budget-panel { min-width: 230px; }
+.budget-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.budget-label { color: var(--secondary); }
+.segmented { display: inline-flex; }
+.segmented button { min-width: 32px; border-radius: 0; margin-left: -1px; font-variant-numeric: tabular-nums; }
+.segmented button:first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
+.segmented button:last-child { border-radius: 0 5px 5px 0; }
+.budget-note { font-size: 12px; color: var(--secondary); white-space: normal; max-width: 230px; }
+.debug .row.edits .add-delay { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.debug .row.edits .add-delay select { max-width: 280px; }
+.debug .row.edits .edit { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 1px 4px 1px 10px; font-size: 12px; }
+
 /* -- the Time tab ------------------------------------------------------------------------------- */
 
 .strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }

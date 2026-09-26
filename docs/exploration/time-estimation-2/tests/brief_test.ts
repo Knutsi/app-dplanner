@@ -127,3 +127,17 @@ Deno.test("re-planned from today, no undone work is late: the lag is zero and th
     m2(faithful).move.planned! < today && m2(found).move.planned! > m2(faithful).move.planned!,
   );
 });
+
+Deno.test("the burn-up's active days are exactly the days some step changed status", () => {
+  const today = fromYMD(2026, 11, 20);
+  const { timeline, viewOn } = played("by-the-book", ADOPTED);
+  const moved = timeline.frames.filter((frame, index) =>
+    index > 0 && frame.day <= today &&
+    frame.plan.steps.some((step) =>
+      timeline.frames[index - 1].plan.steps.find((one) => one.id === step.id)?.status !==
+        step.status
+    )
+  ).map((frame) => frame.day);
+  assert(moved.length > 5);
+  assertEquals(burnup(viewOn(today), null, true).active, moved);
+});

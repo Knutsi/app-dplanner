@@ -281,12 +281,16 @@ export interface Burnup {
   baseline: number | null; // The scope's own days in the plan compared with.
   promised: [Day, number][]; // The plan now's promise for the same work, by landing day.
   jumps: Jump[]; // Every change in scope between two records.
+  // The days some step changed status: the record says so, or — in a row DPlanner wrote,
+  // which does not — its done count moved.
+  active: Day[];
 }
 
 export function burnup(view: TimeView, key: string | null, compared: boolean): Burnup {
   const scope: [Day, number][] = [];
   const done: [Day, number][] = [];
   const jumps: Jump[] = [];
+  const active = new Set<Day>();
   let before: Tally | null = null;
   for (const row of until(view.recording.rows, view.live)) {
     const own = ownTally(row, key);
@@ -298,6 +302,7 @@ export function burnup(view: TimeView, key: string | null, compared: boolean): B
     if (before && (own.steps !== before.steps || Math.abs(own.days - before.days) > EPSILON)) {
       jumps.push({ day: row.day, steps: own.steps - before.steps, days: own.days - before.days });
     }
+    if (own.changed > 0 || (before && own.done !== before.done)) active.add(row.day);
     scope.push([row.day, own.days]);
     done.push([row.day, own.doneDays]);
     before = own;
@@ -314,6 +319,7 @@ export function burnup(view: TimeView, key: string | null, compared: boolean): B
     baseline,
     promised: start !== undefined ? [[start, 0], ...promised] : promised,
     jumps,
+    active: [...active].sort((a, b) => a - b),
   };
 }
 

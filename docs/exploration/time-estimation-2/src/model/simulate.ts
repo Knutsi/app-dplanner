@@ -15,8 +15,10 @@ import {
   cyclic,
   type DaysFor,
   DONE,
+  efficiencyOf,
   HUMANS,
   isAgent,
+  isDelay,
   isMilestone,
   placed,
   type Plan,
@@ -29,6 +31,7 @@ export interface ParallelFinish {
   days: number; // Simulated makespan in working days.
   unestimated: number; // Steps that ran as zero days.
   landings: Map<string, number>; // The working day each step finished on, from the start.
+  starts: Map<string, number>; // …and the one it started on.
   tails: Map<string, number>; // Each step's longest remaining chain, itself included.
 }
 
@@ -36,17 +39,24 @@ export interface ParallelFinish {
  * `parallel_finish`: greedy list scheduling over two pools. A free slot takes the ready step
  * with the longest remaining chain, ties by position in `steps`. An edge to a step outside
  * `steps` counts as met. Null only when there is nothing to run.
+ *
+ * `running` names work already in flight: it keeps the worker it has, so it goes first.
+ *
+ * A Delay step takes no worker: the moment it is ready it waits, and `waits` says until when.
  */
 export function parallelFinish(
   steps: readonly Step[],
   daysFor: DaysFor,
   humans: number,
   agents: number,
+  running: ReadonlySet<string> = new Set(),
+  waits: Waits = plainWaits,
 ): ParallelFinish | null {
   if (humans < 1 || agents < 1) throw new Error("a pool with work in it needs at least one worker");
   if (!steps.length) return null;
   const order = new Map(steps.map((step, index) => [step.id, index]));
-  const days = new Map(steps.map((step) => [step.id, daysFor(step)]));
+  const byId = new Map(steps.map((step) => [step.id, step]));
+  const days = new Map(steps.map((step) => [step.id, costOf(step, daysFor)]));
   const waiting = new Map<string, Set<string>>();
   const dependents = new Map<string, string[]>(steps.map((step) => [step.id, []]));
   for (const step of steps) {
@@ -59,15 +69,26 @@ export function parallelFinish(
   const free = new Map<boolean, number>([[true, agents], [false, humans]]);
   const pool = new Map(steps.map((step) => [step.id, isAgent(step)]));
   const ready = new Map<boolean, string[]>([[true, []], [false, []]]);
-  for (const step of steps) {
-    if (!waiting.get(step.id)!.size) ready.get(pool.get(step.id)!)!.push(step.id);
-  }
-  let running: [number, string][] = [];
+  let busy: [number, string][] = [];
   const landings = new Map<string, number>();
+  const starts = new Map<string, number>();
   let now = 0.0;
+  const release = (id: string) => {
+    const step = byId.get(id)!;
+    if (isDelay(step)) {
+      starts.set(id, now);
+      busy.push([waits(step, now), id]);
+    } else {
+      ready.get(pool.get(id)!)!.push(id);
+    }
+  };
+  for (const step of steps) {
+    if (!waiting.get(step.id)!.size) release(step.id);
+  }
   let remaining = steps.length;
   const priority = (a: string, b: string) =>
-    tails.get(b)! - tails.get(a)! || order.get(a)! - order.get(b)!;
+    Number(running.has(b)) - Number(running.has(a)) || tails.get(b)! - tails.get(a)! ||
+    order.get(a)! - order.get(b)!;
   while (remaining) {
     // Python walks `ready.items()` in insertion order: the agent lane (True), then humans.
     for (const lane of [true, false]) {
@@ -76,21 +97,22 @@ export function parallelFinish(
         queue.sort(priority);
         const id = queue.shift()!;
         free.set(lane, free.get(lane)! - 1);
-        running.push([now + (days.get(id) ?? 0.0), id]);
+        starts.set(id, now);
+        busy.push([now + (days.get(id) ?? 0.0), id]);
       }
     }
-    if (!running.length) break; // A loop a hand-edited file carries.
-    now = Math.min(...running.map(([finish]) => finish));
-    const landed = running.filter(([finish]) => finish <= now);
-    running = running.filter(([finish]) => finish > now);
+    if (!busy.length) break; // A loop a hand-edited file carries.
+    now = Math.min(...busy.map(([finish]) => finish));
+    const landed = busy.filter(([finish]) => finish <= now);
+    busy = busy.filter(([finish]) => finish > now);
     for (const [finish, id] of landed) {
       landings.set(id, finish);
-      free.set(pool.get(id)!, free.get(pool.get(id)!)! + 1);
+      if (!isDelay(byId.get(id)!)) free.set(pool.get(id)!, free.get(pool.get(id)!)! + 1);
       remaining -= 1;
       for (const after of dependents.get(id)!) {
         const left = waiting.get(after)!;
         left.delete(id);
-        if (!left.size) ready.get(pool.get(after)!)!.push(after);
+        if (!left.size) release(after);
       }
     }
   }
@@ -98,8 +120,25 @@ export function parallelFinish(
     days: now,
     unestimated: [...days.values()].filter((value) => value === null).length,
     landings,
+    starts,
     tails,
   };
+}
+
+/** When a Delay made ready at `at` is over, in the same working days as the simulation. */
+export type Waits = (step: Step, at: number) => number;
+
+/** A Delay's own working days: a `days` delay's count; an `until` delay's ends by the calendar. */
+export function waitDays(step: Step): number {
+  return step.delay && "days" in step.delay ? step.delay.days : 0.0;
+}
+
+/** Without dates, an `until` delay is over at once; `phases` knows the dates, and does better. */
+const plainWaits: Waits = (step, at) => at + waitDays(step);
+
+/** What a step weighs in the simulation: its days, or a Delay's wait — never work. */
+function costOf(step: Step, daysFor: DaysFor): number | null {
+  return isDelay(step) ? waitDays(step) : daysFor(step);
 }
 
 /** The priority `parallel_finish` schedules `steps` by: each one's longest remaining chain. */
@@ -111,7 +150,7 @@ export function chainTails(steps: readonly Step[], daysFor: DaysFor): Map<string
       if (order.has(target)) dependents.get(target)!.push(step.id);
     }
   }
-  return tailsOf(steps, new Map(steps.map((step) => [step.id, daysFor(step)])), dependents);
+  return tailsOf(steps, new Map(steps.map((step) => [step.id, costOf(step, daysFor)])), dependents);
 }
 
 /** `tail_of`: each step's own days plus the longest chain of steps waiting on it. */
@@ -144,14 +183,30 @@ export interface Phase {
   asked: Day | null;
   unestimated: number;
   landings: Map<string, number>;
+  starts: Map<string, number>;
   lead: number; // Part of the start day already used — always 0 unless `carry` is on.
   guard: number;
+  facts: Map<string, Day>; // Re-planned: the day each done step was done, which dates it.
 }
 
 /** `Phase.landing_of`: the date a step lands on; the stretch's start for a weightless one. */
 export function landingOf(phase: Phase, id: string): Day {
-  const offset = phase.landings.get(id) ?? 0.0;
-  return offset > 0 ? workingDaysAfter(phase.start, phase.lead + offset, phase.guard) : phase.start;
+  const fact = phase.facts.get(id);
+  if (fact !== undefined) return fact;
+  return dayAt(phase, phase.landings.get(id) ?? 0.0);
+}
+
+/**
+ * The day a step starts on. Work that starts the moment a day ends starts on that day, as a
+ * team picks up the next step when it finishes one — the same rule as a landing's.
+ */
+export function startDayOf(phase: Phase, id: string): Day {
+  return phase.facts.get(id) ?? dayAt(phase, phase.starts.get(id) ?? 0.0);
+}
+
+function dayAt(phase: Phase, offset: number): Day {
+  const at = phase.lead + offset;
+  return at > 0 ? workingDaysAfter(phase.start, at, phase.guard) : phase.start;
 }
 
 /** `Phase.pushed`: the date asked for could not be kept. */
@@ -192,58 +247,217 @@ export interface PhaseArgs {
 /**
  * `phases`: the milestones in sequence, each stretch simulated on its own and dated from the
  * working day after the previous one lands — or from its own later start date.
+ *
+ * Under `resume` that is the plan while it holds — while everything it has done by today is
+ * done, nothing more, and nothing in flight started late — and otherwise the rest of the
+ * work re-planned from tomorrow (`resumed`).
  */
 export function phases(plan: Plan, daysFor: DaysFor, args: PhaseArgs): Phase[] {
   const options = args.options ?? FAITHFUL;
-  const guard = guardOf(options);
+  if (options.replan !== "resume") return scheduled(plan, daysFor, args, options);
+  const planned = scheduled(plan, daysFor, args, options);
+  return holds(planned, args.today) ? planned : resumed(plan, daysFor, args, options);
+}
+
+/** When the next stretch may begin, and how much of that day is already used. */
+interface Clock {
+  when: Day;
+  lead: number;
+}
+
+function scheduled(plan: Plan, daysFor: DaysFor, args: PhaseArgs, options: ModelOptions): Phase[] {
   const result: Phase[] = [];
-  let when = args.start; // The earliest the next stretch may begin.
-  let lead = 0.0; // With `carry`: how much of `when` the previous stretch already used.
+  let clock: Clock = { when: args.start, lead: 0.0 };
   let replanned = false;
   for (const [index, [milestone, steps]] of groups(plan).entries()) {
     let costs = daysFor;
-    if (options.replan && !replanned && steps.some((step) => step.status !== DONE)) {
+    if (options.replan === "restart" && !replanned && steps.some((step) => step.status !== DONE)) {
       // The first stretch with work left: done work costs nothing, and it cannot begin
       // before today. Every later stretch follows it as usual.
       replanned = true;
-      if (args.today > when) [when, lead] = [args.today, 0.0];
+      if (args.today > clock.when) clock = { when: args.today, lead: 0.0 };
     }
-    if (options.replan && replanned) {
+    if (options.replan === "restart" && replanned) {
       costs = (step) => {
         const days = daysFor(step);
         return days !== null && step.status === DONE ? 0.0 : days;
       };
     }
-    const asked = milestone ? startFor(milestone) : null;
-    let begins = asked !== null && (index === 0 || asked >= when) ? asked : when;
-    let used = begins === when ? lead : 0.0;
-    if (nextWorkingDay(begins) !== begins) used = 0.0;
-    begins = nextWorkingDay(begins);
-    const run = parallelFinish(steps, costs, args.humans, args.agents)!;
-    const finish = run.days > 0 ? workingDaysAfter(begins, used + run.days, guard) : null;
-    result.push({
-      milestone,
-      steps,
-      days: run.days,
-      start: begins,
-      finish,
-      asked,
-      unestimated: run.unestimated,
-      landings: run.landings,
-      lead: used,
-      guard,
-    });
-    if (finish === null) {
-      [when, lead] = [begins, used];
-    } else if (options.carry) {
-      const total = used + run.days;
-      const part = total - Math.floor(total + GUARD);
-      [when, lead] = part > GUARD ? [finish, part] : [nextWorkingDay(finish + 1), 0.0];
-    } else {
-      [when, lead] = [nextWorkingDay(finish + 1), 0.0];
-    }
+    const [phase, next] = dated(milestone, steps, steps, costs, clock, index === 0, args, options);
+    result.push(phase);
+    clock = next;
   }
   return result;
+}
+
+/**
+ * Does reality still match the plan? Each step is done exactly when the plan has it landed
+ * by today — on the very day, where that is known, or a plan finished late would hold again
+ * once everything is done — nothing in flight started after the day the plan started it, and
+ * nothing was planned to start before it existed: a step or a Delay added since. A step
+ * nobody marked in progress says nothing about when it started, so it is not held against
+ * the plan.
+ */
+function holds(planned: Phase[], today: Day): boolean {
+  return planned.every((phase) =>
+    phase.steps.every((step) => {
+      if (step.created !== null && startDayOf(phase, step.id) < step.created) return false;
+      if (isDelay(step)) return true;
+      const lands = landingOf(phase, step.id);
+      if ((step.status === DONE) !== (lands <= today)) return false;
+      if (step.status === DONE && step.since !== null && step.since !== lands) return false;
+      const started = step.status === "in-progress" || step.status === "blocked";
+      return !started || step.since === null || step.since <= startDayOf(phase, step.id);
+    })
+  );
+}
+
+/** Half a working day: what is assumed spent on the day work started, and left of late work. */
+const HALF = 0.5;
+
+/**
+ * The rest of the work from tomorrow. A stretch that is all done is dated by when it was done
+ * and holds nothing back. From the first with work left, stretches follow one another from
+ * the next working day: done steps are facts, work in flight keeps its worker and is credited
+ * with the working days since it started (from the middle of that day; at least half a day
+ * is left), a `days` Delay with the days it has already waited, and everything else costs
+ * its estimate.
+ */
+function resumed(plan: Plan, daysFor: DaysFor, args: PhaseArgs, options: ModelOptions): Phase[] {
+  const result: Phase[] = [];
+  let clock: Clock | null = null;
+  const spentSince = (day: Day | null) =>
+    day === null || day > args.today ? 0.0 : workingDaysBetween(day, args.today) - HALF;
+  // Work in flight, in the working days of today's focus: the days it ran before the focus
+  // last changed count at the old one's pace.
+  const was = plan.assumptions.efficiencyWas;
+  const worked = (step: Step) => {
+    const whole = spentSince(step.since);
+    if (!was || isAgent(step) || step.since === null || was.until <= step.since) return whole;
+    const after = was.until > args.today ? 0.0 : workingDaysBetween(was.until, args.today);
+    return (whole - after) * (was.efficiency / efficiencyOf(plan)) + after;
+  };
+  const byId = new Map(plan.steps.map((step) => [step.id, step]));
+  // A `days` delay made after what it waits on was done waited from the start of the day it
+  // was made; otherwise from the day the last of that was done, part-way through it.
+  const waited = (step: Step) => {
+    const before = step.requires.map((id) => byId.get(id)).filter((one) => one !== undefined);
+    if (before.some((one) => one.status !== DONE)) return 0.0;
+    const done = before.map((one) => one.since).filter((day) => day !== null);
+    const last = done.length ? Math.max(...done) : null;
+    if (step.created !== null && (last === null || step.created > last)) {
+      return step.created > args.today ? 0.0 : workingDaysBetween(step.created, args.today);
+    }
+    return spentSince(last);
+  };
+  for (const [milestone, steps] of groups(plan)) {
+    const done = steps.filter((step) => step.status === DONE);
+    const facts = new Map(done.map((step) => [step.id, step.since ?? args.today]));
+    const left = steps.filter((step) => step.status !== DONE);
+    if (!left.some((step) => !isDelay(step))) {
+      result.push(finished(milestone, steps, facts, args.today, options));
+      continue;
+    }
+    clock ??= { when: nextWorkingDay(args.today + 1), lead: 0.0 };
+    const running = new Set(
+      left.filter((step) => step.status === "in-progress").map((step) => step.id),
+    );
+    const costs: DaysFor = (step) => {
+      const days = daysFor(step);
+      return days === null || !running.has(step.id) ? days : Math.max(HALF, days - worked(step));
+    };
+    const [phase, next] = dated(milestone, steps, left, costs, clock, false, args, options, {
+      running,
+      facts,
+      waited,
+    });
+    result.push(phase);
+    clock = next;
+  }
+  return result;
+}
+
+/** A stretch whose work is all done: from the first day any of it was done to the last. */
+function finished(
+  milestone: Step | null,
+  steps: Step[],
+  facts: Map<string, Day>,
+  today: Day,
+  options: ModelOptions,
+): Phase {
+  const days = facts.size ? [...facts.values()] : [today];
+  return {
+    milestone,
+    steps,
+    days: 0.0,
+    start: Math.min(...days),
+    finish: Math.max(...days),
+    asked: milestone ? startFor(milestone) : null,
+    unestimated: 0,
+    landings: new Map(),
+    starts: new Map(),
+    lead: 0.0,
+    guard: guardOf(options),
+    facts,
+  };
+}
+
+/** What a re-planned stretch knows: work in flight, what is done, and how long a delay waited. */
+interface Extra {
+  running?: ReadonlySet<string>;
+  facts?: Map<string, Day>;
+  waited?: (step: Step) => number;
+}
+
+/** One stretch dated from `clock`, and the clock it leaves for the next. */
+function dated(
+  milestone: Step | null,
+  steps: Step[],
+  members: Step[],
+  costs: DaysFor,
+  clock: Clock,
+  first: boolean,
+  args: PhaseArgs,
+  options: ModelOptions,
+  extra: Extra = {},
+): [Phase, Clock] {
+  const guard = guardOf(options);
+  const asked = milestone ? startFor(milestone) : null;
+  let begins = asked !== null && (first || asked >= clock.when) ? asked : clock.when;
+  let used = begins === clock.when ? clock.lead : 0.0;
+  if (nextWorkingDay(begins) !== begins) used = 0.0;
+  begins = nextWorkingDay(begins);
+  const waits: Waits = (step, at) => {
+    const delay = step.delay!;
+    if ("days" in delay) return at + Math.max(0.0, delay.days - (extra.waited?.(step) ?? 0.0));
+    // Its dependents may start on its day: that day's first moment, from where this began.
+    const opens = nextWorkingDay(delay.until);
+    const offset = opens <= begins ? 0.0 : workingDaysBetween(begins, opens) - 1 - used;
+    return Math.max(at, offset);
+  };
+  const run = parallelFinish(members, costs, args.humans, args.agents, extra.running, waits)!;
+  const finish = run.days > 0 ? workingDaysAfter(begins, used + run.days, guard) : null;
+  const phase: Phase = {
+    milestone,
+    steps,
+    days: run.days,
+    start: begins,
+    finish,
+    asked,
+    unestimated: run.unestimated,
+    landings: run.landings,
+    starts: run.starts,
+    lead: used,
+    guard,
+    facts: extra.facts ?? new Map(),
+  };
+  if (finish === null) return [phase, { when: begins, lead: used }];
+  if (!options.carry) return [phase, { when: nextWorkingDay(finish + 1), lead: 0.0 }];
+  // Ending exactly as a day ends still ends on that day: what follows starts then, as a team
+  // picks up the next step the moment it finishes one.
+  const total = used + run.days;
+  const part = total - Math.floor(total + GUARD);
+  return [phase, { when: finish, lead: part > GUARD ? part : 1.0 }];
 }
 
 /** `stretched`: human steps' days divided by the focus factor; agent steps untouched. */
@@ -345,7 +559,11 @@ export function cellFor(
   args: ReportArgs,
 ): [Cell, Cell] {
   const common = { humans, agents, start: args.start, today: args.today, options: args.options };
-  const raw = phases(plan, daysFor, common);
+  // Project days count work, not dates, so what is done and under way does not re-plan them.
+  const raw = phases(plan, daysFor, {
+    ...common,
+    options: { ...(args.options ?? FAITHFUL), replan: "off" },
+  });
   const slow = phases(plan, stretched(daysFor, args.efficiency), common);
   const landing = [...slow].reverse().find((phase) => phase.finish !== null)?.finish ?? null;
   return [

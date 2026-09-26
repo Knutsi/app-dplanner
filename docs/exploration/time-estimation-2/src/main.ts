@@ -20,7 +20,7 @@ import {
   shortDate,
   weekdayName,
 } from "./model/calendar.ts";
-import { isMilestone, placed, type Plan } from "./model/graph.ts";
+import { type Delay, isDelay, isMilestone, placed, type Plan, stepKey } from "./model/graph.ts";
 import { ADOPTED, FAITHFUL, type ModelOptions, VARIANTS } from "./model/options.ts";
 import { milestoneColors } from "./model/palettes.ts";
 import { AT_START, LIVE } from "./model/progress.ts";
@@ -39,6 +39,20 @@ import {
   type Timeline,
 } from "./sim/timeline.ts";
 import { DEFAULT_WORLD, run, type WorldParams } from "./sim/world.ts";
+import {
+  budgetOf,
+  budgetsFromHash,
+  budgetsToHash,
+  delaysFromHash,
+  delaysToHash,
+  edited,
+  type Edits,
+  NO_EDITS,
+  rebudget,
+  waitTitle,
+  worldBudgets,
+  worldDelays,
+} from "./sim/edits.ts";
 import { renderFigures } from "./ui/figures.ts";
 import { recordsView } from "./ui/debugger/records.ts";
 import { h } from "./ui/markup.ts";
@@ -48,6 +62,7 @@ import { V2_START, type V2State } from "./ui/v2/state.ts";
 import { v2View } from "./ui/v2/view.ts";
 import { V3_START, type V3Page, type V3State } from "./ui/v3/state.ts";
 import { v3View } from "./ui/v3/view.ts";
+import { v4View } from "./ui/v4/view.ts";
 import { trackRecord } from "./ui/debugger/track.ts";
 
 interface App {
@@ -62,21 +77,28 @@ interface App {
   view: ViewState; // v1's.
   v2: V2State;
   v3: V3State;
+  v4: V3State; // v3's layout, and its state.
   saved: SavedSpec[]; // Saved by hand on this page.
+  edits: Edits; // The plan changed on this page, each from its day.
   offset: number;
 }
 
-/** Which design of the view is shown: v1 is today's tab, v2 and v3 the redesigns. */
-type Version = "v1" | "v2" | "v3";
-const VERSIONS: [Version, string][] = [["v1", "v1 · today"], ["v2", "v2"], ["v3", "v3 · latest"]];
+/** Which design of the view is shown: v1 is today's tab, v2 to v4 the redesigns. */
+type Version = "v1" | "v2" | "v3" | "v4";
+const VERSIONS: [Version, string][] = [
+  ["v1", "v1 · today"],
+  ["v2", "v2"],
+  ["v3", "v3"],
+  ["v4", "v4 · latest"],
+];
 const VERSION_KEY = "te2.version";
 
 function readVersion(): Version {
   try {
     const stored = localStorage.getItem(VERSION_KEY);
-    return VERSIONS.find(([version]) => version === stored)?.[0] ?? "v3";
+    return VERSIONS.find(([version]) => version === stored)?.[0] ?? "v4";
   } catch {
-    return "v3";
+    return "v4";
   }
 }
 
@@ -103,7 +125,9 @@ const app: App = {
   view: { picked: null, then: AT_START, now: LIVE, lens: "calendar", page: "progress", whatIf: {} },
   v2: V2_START,
   v3: V3_START,
+  v4: V3_START,
   saved: [],
+  edits: NO_EDITS,
   offset: 0,
 };
 let folds: Folds = readFolds();
@@ -132,6 +156,7 @@ function fold(patch: Partial<Folds>): void {
 // -- what is derived, and cached while its inputs hold --------------------------------------------
 
 let timelineKey = "";
+let timelineBase = "";
 let timeline: Timeline;
 let replayed: Parity[] | null = null;
 let recordingKey = "";
@@ -139,19 +164,31 @@ let recording: Recording;
 let compared: Recording | null = null;
 
 function currentTimeline(): Timeline {
-  const key = JSON.stringify([app.source, app.seed, app.world]);
+  const base = JSON.stringify([app.source, app.seed, app.world]);
+  const key = JSON.stringify([base, app.edits]);
   if (key !== timelineKey) {
-    timelineKey = key;
+    // An edit replays the same history with one change in it: stay on the day it was made.
+    const kept = base === timelineBase ? timeline.frames[app.frame]?.day : undefined;
+    [timelineKey, timelineBase] = [key, base];
     const file = exports.get(app.source);
-    timeline = file
-      ? replay(file)
-      : run(samplePlan(app.seed), { ...app.world, seed: app.seed }, SAMPLE_START);
-    replayed = file ? parity(timeline) : null;
-    app.frame = file ? timeline.frames.length - 1 : Math.min(
-      timeline.frames.length - 1,
-      timeline.frames.findIndex((f) => f.day === timeline.begin) + 14,
-    );
-    app.offset = 0;
+    const played = file ? replay(file) : run(samplePlan(app.seed), {
+      ...app.world,
+      seed: app.seed,
+      budgets: [...app.world.budgets, ...worldBudgets(app.edits, SAMPLE_START)],
+      delays: [...app.world.delays, ...worldDelays(app.edits, SAMPLE_START)],
+    }, SAMPLE_START);
+    timeline = file ? edited(played, app.edits) : played;
+    replayed = file ? parity(played) : null;
+    const at = kept === undefined ? -1 : timeline.frames.findIndex((f) => f.day === kept);
+    if (at >= 0) {
+      app.frame = at;
+    } else {
+      app.frame = file ? timeline.frames.length - 1 : Math.min(
+        timeline.frames.length - 1,
+        timeline.frames.findIndex((f) => f.day === timeline.begin) + 14,
+      );
+      app.offset = 0;
+    }
   }
   return timeline;
 }
@@ -209,8 +246,8 @@ function renderContent(): void {
   const frame = timeline.frames[app.frame];
   const upToDay = recordedBy(recording, frame.day);
   content.replaceChildren(
-    app.version === "v3"
-      ? v3Content(frame.plan, frame.day, upToDay)
+    app.version === "v3" || app.version === "v4"
+      ? tabbedContent(app.version, frame.plan, frame.day, upToDay)
       : app.version === "v2"
       ? v2Content(frame.plan, frame.day, upToDay)
       : v1Content(frame.plan, frame.day, upToDay),
@@ -301,8 +338,14 @@ function v2Content(plan: Plan, day: Day, upToDay: Recording): HTMLElement {
   });
 }
 
-function v3Content(plan: Plan, day: Day, upToDay: Recording): HTMLElement {
-  const state = app.v3;
+/** v3 and v4: one layout and one kind of state; v4 re-budgets where v3 had what-ifs. */
+function tabbedContent(
+  version: "v3" | "v4",
+  plan: Plan,
+  day: Day,
+  upToDay: Recording,
+): HTMLElement {
+  const state = app[version];
   const view = present(plan, day, upToDay, {
     picked: state.scope,
     then: resolvePick(state.then, day),
@@ -312,13 +355,23 @@ function v3Content(plan: Plan, day: Day, upToDay: Recording): HTMLElement {
     whatIf: state.whatIf,
   }, app.options);
   if (!view) return h("div", { class: "empty" }, NO_STEPS);
-  return v3View(view, state, {
-    state: (patch) => {
-      app.v3 = { ...app.v3, ...patch };
+  const handlers = {
+    state: (patch: Partial<V3State>) => {
+      app[version] = { ...app[version], ...patch };
       renderContent();
       writeHash();
     },
     save: saver(day, upToDay),
+  };
+  if (version === "v3") return v3View(view, state, handlers);
+  return v4View(view, state, {
+    ...handlers,
+    budget: (budget) => {
+      // Against the budget the day before, a choice that changes nothing is no change.
+      const before = timeline.frames[app.frame - 1]?.plan ?? plan;
+      app.edits = rebudget(app.edits, day, budget, budgetOf(before));
+      render();
+    },
   });
 }
 
@@ -364,9 +417,11 @@ function setupRows(): HTMLElement[] {
           ? "stored"
           : scenarioById(app.scenario).cadence ?? "weekdays";
         app.saved = [];
+        app.edits = NO_EDITS;
         app.view = { ...app.view, whatIf: {}, picked: null, then: AT_START, now: LIVE };
         app.v2 = { ...app.v2, whatIf: {}, scope: null };
         app.v3 = { ...app.v3, whatIf: {}, scope: null };
+        app.v4 = { ...app.v4, whatIf: {}, scope: null };
         render();
       },
     },
@@ -403,6 +458,7 @@ function setupRows(): HTMLElement[] {
           onchange: (event: Event) => {
             app.seed = Number((event.target as HTMLInputElement).value) || 1;
             app.saved = [];
+            app.edits = NO_EDITS;
             render();
           },
         }),
@@ -419,8 +475,95 @@ function setupRows(): HTMLElement[] {
     ),
   ];
   if (!file) rows.push(scenarioRow());
+  rows.push(editsRow());
   rows.push(modelRow(Boolean(file)));
   return rows;
+}
+
+/**
+ * What DPlanner's canvas would do and this page has no canvas for: add a Delay step before a
+ * step that has not started, on the scrubbed day. The list names the delays added so far.
+ */
+function editsRow(): HTMLElement {
+  const frame = timeline.frames[app.frame];
+  const byId = new Map(frame.plan.steps.map((step) => [step.id, step]));
+  const waiting = frame.plan.steps.filter((step) => step.status === "pending" && !isDelay(step));
+  const before = h(
+    "select",
+    { title: "The step that waits: it starts no earlier than the delay allows" },
+    ...waiting.map((step) => h("option", { value: step.id }, `${stepKey(step)} ${step.title}`)),
+  );
+  const until = h("input", { type: "date", value: isoDay(frame.day + 7) });
+  const days = h("input", {
+    type: "number",
+    class: "short",
+    value: "3",
+    min: "1",
+    step: "1",
+    hidden: true,
+  });
+  const kind = h(
+    "select",
+    {
+      onchange: () => {
+        until.hidden = kind.value === "days";
+        days.hidden = !until.hidden;
+      },
+    },
+    h("option", { value: "until" }, "until"),
+    h("option", { value: "days" }, "for working days"),
+  );
+  const add = () => {
+    const wait: Delay | null = kind.value === "days"
+      ? Number(days.value) > 0 ? { days: Number(days.value) } : null
+      : (() => {
+        const day = parseDay(until.value);
+        return day === null ? null : { until: day };
+      })();
+    if (!wait || !before.value) return;
+    const edit = { day: frame.day, before: before.value, delay: wait };
+    app.edits = { ...app.edits, delays: [...app.edits.delays, edit] };
+    render();
+  };
+  const made = app.edits.delays.map((edit, index) => {
+    const held = byId.get(edit.before);
+    return h(
+      "span",
+      { class: "edit" },
+      `${waitTitle(edit.delay)} before ${held ? stepKey(held) : edit.before} · made ${
+        shortDate(edit.day, frame.day)
+      } `,
+      h("button", {
+        class: "link",
+        title: "Remove this delay",
+        onclick: () => {
+          app.edits = { ...app.edits, delays: app.edits.delays.filter((_, at) => at !== index) };
+          render();
+        },
+      }, "✕"),
+    );
+  });
+  return h(
+    "div",
+    { class: "row edits" },
+    h("span", { class: "label" }, "Plan edits:"),
+    waiting.length
+      ? h(
+        "span",
+        { class: "add-delay" },
+        "add a delay before ",
+        before,
+        " ",
+        kind,
+        " ",
+        until,
+        days,
+        " ",
+        h("button", { onclick: add }, "Add"),
+      )
+      : h("span", { class: "note" }, "nothing left that has not started"),
+    ...made,
+  );
 }
 
 function scenarioRow(): HTMLElement {
@@ -434,6 +577,7 @@ function scenarioRow(): HTMLElement {
         app.world = { ...DEFAULT_WORLD, ...chosen.world };
         app.cadence = chosen.cadence ?? "weekdays";
         app.saved = [];
+        app.edits = NO_EDITS;
         render();
       },
     },
@@ -548,8 +692,8 @@ function modelRow(replaying: boolean): HTMLElement {
     h("span", {
       class: "label",
       title:
-        "Always on: done steps cost nothing, and the first unfinished stretch starts no earlier than today (ISSUES.md F1)",
-    }, "Model: re-plans from today · variants:"),
+        "The plan's own dates stand while what is done matches them; otherwise the rest resumes from tomorrow, with work in flight credited (ISSUES.md F1, F5). Rounding is fixed (I1, Q3).",
+    }, `Model: the plan holds, else resumes from tomorrow${VARIANTS.length ? " · variants:" : ""}`),
     ...VARIANTS.map(({ key, label, hint }) =>
       h(
         "label",
@@ -745,6 +889,7 @@ function adopt(value: unknown): void {
   app.source = value.slug;
   app.cadence = "stored";
   app.saved = [];
+  app.edits = NO_EDITS;
   render();
 }
 
@@ -761,13 +906,19 @@ function writeHash(): void {
       scenario: app.scenario,
       day: isoDay(day),
       cadence: app.cadence,
-      variants: VARIANTS.filter(({ key }) => app.options[key]).map(({ key }) => key).join(","),
       ui: app.version,
     });
-    // v2's pick of a milestone: its step id, "rest" for the work after the last one.
-    const picked = app.version === "v3" ? app.v3.scope : app.version === "v2" ? app.v2.scope : null;
+    const variants = VARIANTS.filter(({ key }) => app.options[key]).map(({ key }) => key);
+    if (variants.length) state.set("variants", variants.join(","));
+    const budgets = budgetsToHash(app.edits.budgets);
+    if (budgets) state.set("budget", budgets);
+    const delays = delaysToHash(app.edits.delays);
+    if (delays) state.set("delay", delays);
+    // The pick of a milestone: its step id, "rest" for the work after the last one.
+    const tabbed = app.version === "v3" || app.version === "v4" ? app[app.version] : null;
+    const picked = tabbed ? tabbed.scope : app.version === "v2" ? app.v2.scope : null;
     if (picked !== null) state.set("scope", picked || "rest");
-    if (app.version === "v3") state.set("page", app.v3.page);
+    if (tabbed) state.set("page", tabbed.page);
     history.replaceState(null, "", `#${state}`);
   } catch {
     // A page opened from disk in some browsers refuses replaceState; the page works without it.
@@ -792,6 +943,10 @@ function readHash(): void {
   const variants = (state.get("variants") ?? "").split(",");
   app.options = { ...ADOPTED };
   for (const { key } of VARIANTS) app.options[key] = variants.includes(key);
+  app.edits = {
+    budgets: budgetsFromHash(state.get("budget")),
+    delays: delaysFromHash(state.get("delay")),
+  };
   // A link naming one of the debugger's readings opens it, as the tabs of the first cut did.
   const tab = state.get("tab");
   if (tab === "track" || tab === "records") folds = { ...folds, open: true, [tab]: true };
@@ -803,11 +958,13 @@ function readHash(): void {
   const scope = scoped === null ? null : scoped === "rest" ? "" : scoped;
   app.v2 = { ...app.v2, scope };
   const page = state.get("page");
-  app.v3 = {
-    ...app.v3,
-    scope,
-    ...(page === "milestones" || page === "work" ? { page: page as V3Page } : {}),
-  };
+  for (const version of ["v3", "v4"] as const) {
+    app[version] = {
+      ...app[version],
+      scope,
+      ...(page === "milestones" || page === "work" ? { page: page as V3Page } : {}),
+    };
+  }
   currentTimeline();
   // A day, or "end" for the last one — a scenario's length depends on how it plays out.
   const asked = state.get("day");
