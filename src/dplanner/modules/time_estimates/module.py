@@ -126,11 +126,9 @@ from dplanner.modules.time_estimates.progress import (
     LIVE,
     Pick,
     Snapshot,
-    Stretch,
     actual,
     expected,
     idle,
-    landings,
     pick_words,
     read_history,
     read_saved,
@@ -138,8 +136,8 @@ from dplanner.modules.time_estimates.progress import (
     resolve,
     saved_with,
     saved_without,
+    snapshot_of,
     span_of,
-    tally,
     volume,
     write_history,
 )
@@ -217,8 +215,10 @@ class TimeEstimatesDeps:
     days_for: Callable[[Step], float | None]
     is_agent: Callable[[Step], bool]
     milestone_label: Callable[[Step], str]
-    # Where a step stands, through the status aspect's reader — what "landed" means here.
+    # Where a step stands, through the status aspect's reader — what "landed" means here —
+    # and the day it last changed, which tells a day of work from a quiet one.
     status_for: Callable[[Step], str]
+    since_for: Callable[[Step], date | None]
     # What each estimate was before, and the key a row prints: the change report the CSV
     # and the terminal print, read off the steps themselves.
     estimate_history: Callable[[Step], list[tuple[date, float]]]
@@ -307,7 +307,9 @@ class TimeEstimatesActivity(EntityActivity):
             tip="Take the picked milestone's own start date away",
         )
         self.controls.add_divider()
-        self.focus_bar = FocusBar(deps.library, deps.undo, project_id, self.controls)
+        self.focus_bar = FocusBar(
+            deps.library, deps.undo, project_id, deps.clock.today, self.controls
+        )
         self.controls.add_widget(self.focus_bar)
         self.lens_box = QComboBox(strip)
         self.lens_box.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
@@ -564,18 +566,13 @@ class TimeEstimatesActivity(EntityActivity):
         the rows' percentages are read from, and what the recorder writes."""
         if self._report is None or not self._report.calendar:
             return None
-        return Snapshot(
-            day=today or self._deps.clock.today(),
-            stretches=tuple(
-                Stretch(
-                    key=phase.milestone.id if phase.milestone else "",
-                    tally=tally(phase.steps, self._deps.days_for, self._deps.status_for),
-                    start=phase.start,
-                    finish=phase.finish,
-                    landings=landings(phase, self._deps.days_for),
-                )
-                for phase in self._selected_cell().phases
-            ),
+        deps = self._deps
+        return snapshot_of(
+            self._selected_cell().phases,
+            today or deps.clock.today(),
+            deps.days_for,
+            deps.status_for,
+            deps.since_for,
         )
 
     # -- input ---------------------------------------------------------------------------------
@@ -647,7 +644,7 @@ class TimeEstimatesActivity(EntityActivity):
         if self._syncing_team or not self._product.has(self.project_id):
             return
         project = self._project()
-        entry = write_project(project, team=self.matrix.selection)
+        entry = write_project(project, today=self._deps.clock.today(), team=self.matrix.selection)
         if entry == project.module_data.get(MODULE_ID, {}):
             self._render()
             return
@@ -762,7 +759,7 @@ class TimeEstimatesActivity(EntityActivity):
         if not self._product.has(self.project_id):
             return
         project = self._project()
-        entry = write_project(project, palette_id=palette_id)
+        entry = write_project(project, today=self._deps.clock.today(), palette_id=palette_id)
         if entry == project.module_data.get(MODULE_ID, {}):
             return
         self._deps.undo.push(
@@ -1049,6 +1046,7 @@ class TimeEstimatesModule:
             deps.days_for,
             deps.is_agent,
             deps.status_for,
+            deps.since_for,
             lambda dated, _today: deps.start_of(dated.id),
             deps.milestone_label,
             deps.estimate_history,
@@ -1093,6 +1091,7 @@ class TimeEstimatesModule:
             days_for=deps.days_for,
             is_agent=deps.is_agent,
             status_for=deps.status_for,
+            since_for=deps.since_for,
             is_milestone=lambda step: bool(deps.milestone_label(step)),
             start_of=deps.start_of,
             clock=deps.clock,

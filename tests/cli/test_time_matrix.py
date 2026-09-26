@@ -13,6 +13,9 @@ from dplanner.theme.palettes import PALETTES, shades
 # The day every run here is dated by — a Monday two weeks into the plan — so no date a
 # verb prints depends on the day the suite runs.
 TODAY = date(2026, 9, 21)
+# What a focus change today remembers: the 50% the day began with, the new focus counting
+# from tomorrow.
+WAS = {"until": "2026-09-22", "efficiency": 0.5}
 
 
 @pytest.fixture
@@ -82,8 +85,30 @@ def test_focus_is_stored_cleared_and_read_back_by_the_matrix(cli, cli_library):
     assert {cell["days"] for cell in data["calendar"]} == {16.0}
     cli("schedule", "focus", "Discovery", "--clear")
     library = LibraryStore(cli_library).load()
-    assert MODULE_ID not in library.projects[0].module_data
+    # Back on the default, and only the focus the day began with is left to remember.
+    assert library.projects[0].module_data[MODULE_ID] == {
+        "efficiency_was": WAS,
+        "format": 2,
+    }
     assert "give either" in cli("schedule", "focus", "Discovery", expect=1)
+
+
+def test_a_focus_change_remembers_the_focus_the_day_began_with(cli, cli_library, clock):
+    """Work under way ran at the focus it was started under, so a change keeps the one it
+    replaced and the day the new one began — tomorrow. A second change the same day keeps
+    the day's first, and another write carries it along."""
+
+    def stored():
+        return LibraryStore(cli_library).load().projects[0].module_data[MODULE_ID]
+
+    cli("schedule", "focus", "Discovery", "--percent", "60")
+    cli("schedule", "focus", "Discovery", "--percent", "80")
+    assert stored()["efficiency_was"] == {"until": "2026-09-22", "efficiency": 0.5}
+    clock.pin(date(2026, 9, 23))
+    cli("schedule", "focus", "Discovery", "--percent", "40")
+    assert stored()["efficiency_was"] == {"until": "2026-09-24", "efficiency": 0.8}
+    cli("schedule", "palette", "Discovery", "mako")
+    assert stored()["efficiency_was"] == {"until": "2026-09-24", "efficiency": 0.8}
 
 
 def test_a_stepless_project_reports_no_steps(cli):
@@ -136,7 +161,7 @@ def test_dating_a_milestone_moves_its_stretch_and_the_whole(staged, cli_library)
     assert "v2 (Ship the docs): starts 5 October" in said
     library = LibraryStore(cli_library).load()
     docs = next(step for step in library.projects[0].steps if step.title == "Ship the docs")
-    assert docs.module_data[MODULE_ID] == {"start": "2026-10-05", "format": 1}
+    assert docs.module_data[MODULE_ID] == {"start": "2026-10-05", "format": 2}
     data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
     v2 = data["milestones"][1]
     assert (v2["asked"], v2["start"], v2["finish"]) == ("2026-10-05", "2026-10-05", "2026-10-09")
@@ -184,14 +209,19 @@ def test_the_palette_is_chosen_listed_and_kept_beside_the_focus_factor(staged, c
     assert library.projects[0].module_data[MODULE_ID] == {
         "efficiency": 0.6,
         "palette": "mako",
-        "format": 1,
+        "efficiency_was": WAS,
+        "format": 2,
     }
     assert "no palette called 'neon'" in staged(
         "schedule", "palette", "Discovery", "neon", expect=1
     )
     staged("schedule", "palette", "Discovery", "viridis")  # the default: absent again
     library = LibraryStore(cli_library).load()
-    assert library.projects[0].module_data[MODULE_ID] == {"efficiency": 0.6, "format": 1}
+    assert library.projects[0].module_data[MODULE_ID] == {
+        "efficiency": 0.6,
+        "efficiency_was": WAS,
+        "format": 2,
+    }
 
 
 def test_only_a_milestone_takes_a_date(staged):
@@ -226,7 +256,7 @@ def test_a_loop_in_the_file_is_refused_with_its_steps_named(cli, workspace):
 def test_the_team_is_stored_and_the_milestones_are_printed_for_it(staged, cli_library):
     staged("schedule", "team", "Discovery", "--humans", "2", "--agents", "3")
     library = LibraryStore(cli_library).load()
-    assert library.projects[0].module_data[MODULE_ID] == {"team": [2, 3], "format": 1}
+    assert library.projects[0].module_data[MODULE_ID] == {"team": [2, 3], "format": 2}
     data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
     assert data["team"] == {"humans": 2, "agents": 3}
     said = staged("schedule", "team", "Discovery", "--clear")
@@ -248,14 +278,16 @@ def test_the_team_rides_beside_the_focus_and_the_palette(staged, cli_library):
         "efficiency": 0.6,
         "palette": "mako",
         "team": [2, 1],
-        "format": 1,
+        "efficiency_was": WAS,
+        "format": 2,
     }
     staged("schedule", "focus", "Discovery", "--clear")
     library = LibraryStore(cli_library).load()
     assert library.projects[0].module_data[MODULE_ID] == {
         "palette": "mako",
         "team": [2, 1],
-        "format": 1,
+        "efficiency_was": WAS,
+        "format": 2,
     }
 
 
@@ -272,7 +304,7 @@ def test_progress_show_counts_what_landed_toward_each_milestone(staged):
     assert whole["expected"][0] == {"date": "2026-09-07", "share": 0.0}
     assert whole["expected"][-1] == {"date": "2026-09-23", "share": 1.0}
     assert whole["actual"] == [{"date": TODAY.isoformat(), "share": pytest.approx(2 / 7)}]
-    assert data["recorded_days"] == 0 and data["saved"] == []
+    assert data["recorded_days"] == 1 and data["saved"] == []  # `status set` recorded it
     assert data["basis"] == {"pick": "start", "title": "", "day": "", "words": ""}
     assert data["as_of"] == ""
     assert data["volume"] == [{"date": TODAY.isoformat(), "days": 7.0, "remaining": 5.0}]
@@ -280,7 +312,7 @@ def test_progress_show_counts_what_landed_toward_each_milestone(staged):
     said = staged("progress", "show", "Discovery")
     assert "v1: 50% (2d of 4d, 1 of 2 steps) — lands 16 September" in said
     assert "All work: 29% (2d of 7d, 1 of 4 steps)" in said
-    assert "(nothing recorded to compare with; 1 person + 1 agent; 0 days recorded" in said
+    assert "(nothing recorded to compare with; 1 person + 1 agent; 1 day recorded" in said
     # A milestone is named by its label or by its step, whichever comes to mind.
     one = json.loads(staged("progress", "show", "Discovery", "--milestone", "v2", "--json"))
     assert [scope["label"] for scope in one["scopes"]] == ["v2"]
@@ -391,7 +423,7 @@ def test_a_saved_snapshot_is_named_listed_compared_against_and_forgotten(staged,
     assert "already saved" in staged("progress", "save", "Discovery", "kickoff review", expect=1)
     library = LibraryStore(cli_library).load()
     entry = library.projects[0].module_data["progress_history"]
-    assert entry["format"] == 2 and "days" not in entry  # saved on purpose, not recorded
+    assert entry["format"] == 3 and "days" not in entry  # saved on purpose, not recorded
     (kept,) = entry["saved"]
     assert (kept["title"], kept["note"], kept["day"]) == (
         "Kickoff review",

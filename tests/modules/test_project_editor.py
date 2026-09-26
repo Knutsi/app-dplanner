@@ -9,6 +9,7 @@ which is the point: however many projects are open, there is one of each.
 """
 
 from dataclasses import replace
+from datetime import date
 
 import pytest
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSizeF, Qt
@@ -2616,14 +2617,18 @@ def test_the_spine_carries_the_key_and_is_shaded_by_status(services, project, ta
     assert inside.name() not in quiet  # The strip is a shade of its own, even at rest.
     assert len(quiet) > 1  # The key's glyphs put a second colour inside it.
 
-    services.undo.push(SetModuleDataCommand(step.id, STATUS_ID, status("in-progress")))
+    services.undo.push(
+        SetModuleDataCommand(step.id, STATUS_ID, status("in-progress", today=date(2026, 9, 21)))
+    )
     image = render_card(tab, step.id)
     busy = spine_colours()
     assert busy != quiet
     busiest = max(busy, key=lambda name: QColor(name).blue() - QColor(name).red())
     assert QColor(busiest).blue() > QColor(busiest).red()  # A blue wash.
 
-    services.undo.push(SetModuleDataCommand(step.id, STATUS_ID, status("done")))
+    services.undo.push(
+        SetModuleDataCommand(step.id, STATUS_ID, status("done", today=date(2026, 9, 21)))
+    )
     image = render_card(tab, step.id)
     greenest = max(spine_colours(), key=lambda name: QColor(name).green() - QColor(name).red())
     assert QColor(greenest).green() > QColor(greenest).red()  # A green wash.

@@ -50,7 +50,9 @@ def plan(cli_library, workspace):
         SetEdgesCommand(steps[2].id, "requires", [steps[1].id]).redo(library)
         SetModuleDataCommand(steps[0].id, "estimation", estimate(2.0)).redo(library)
         SetModuleDataCommand(steps[1].id, "estimation", estimate(3.0)).redo(library)
-        SetModuleDataCommand(steps[0].id, "step_status", status("done")).redo(library)
+        SetModuleDataCommand(
+            steps[0].id, "step_status", status("done", today=date(2026, 9, 21))
+        ).redo(library)
         SetModuleDataCommand(steps[2].id, "step_milestone", milestone("v1")).redo(library)
         area = context.store.files(steps[0].id, "step_description")
         picture = attach(area, encode_rgb(2, 2, 6, bytes(12)), "dot.png")

@@ -97,6 +97,7 @@ class Readers:
     days_for: Callable[[Step], float | None]
     is_agent: Callable[[Step], bool]
     status_for: Callable[[Step], str]
+    since_for: Callable[[Step], date | None]  # The day a step's status last changed.
     # When a project's work begins; an undated one begins on the day handed in.
     start_of: Callable[[Project, date], date]
     milestone_label: Callable[[Step], str]
@@ -108,25 +109,12 @@ class Readers:
         return bool(self.milestone_label(step))
 
 
-def commands(
-    *,
-    days_for: Callable[[Step], float | None],
-    is_agent: Callable[[Step], bool],
-    status_for: Callable[[Step], str],
-    start_of: Callable[[Project, date], date],
-    milestone_label: Callable[[Step], str],
-    estimate_history: Callable[[Step], list[tuple[date, float]]],
-    key_of: Callable[[Step], str],
-) -> list[CliCommand]:
-    readers = Readers(
-        days_for, is_agent, status_for, start_of, milestone_label, estimate_history, key_of
-    )
-
+def commands(readers: Readers) -> list[CliCommand]:
     def matrix(context: CliContext, args: Namespace) -> int:
         return _matrix(context, args, readers)
 
     def milestone(context: CliContext, args: Namespace) -> int:
-        return _milestone(context, args, milestone_label)
+        return _milestone(context, args, readers.milestone_label)
 
     def progress_show(context: CliContext, args: Namespace) -> int:
         return _progress_show(context, args, readers)
@@ -337,10 +325,11 @@ def _focus(context: CliContext, args: Namespace) -> int:
         raise CliError("--percent is a percentage between 1 and 100")
     project = find_project(context.library, args.project)
     value = None if args.clear else args.percent / 100
+    today = context.clock.today()
     entry = (
-        write_project(project, clear="efficiency")
+        write_project(project, today=today, clear="efficiency")
         if value is None
-        else write_project(project, efficiency=value)
+        else write_project(project, today=today, efficiency=value)
     )
     context.apply(SetModuleDataCommand(project.id, MODULE_ID, entry))
     said = (
@@ -377,7 +366,11 @@ def _palette(context: CliContext, args: Namespace) -> int:
             f"no palette called {args.name!r} — one of " + ", ".join(found.id for found in PALETTES)
         )
     context.apply(
-        SetModuleDataCommand(project.id, MODULE_ID, write_project(project, palette_id=chosen.id))
+        SetModuleDataCommand(
+            project.id,
+            MODULE_ID,
+            write_project(project, today=context.clock.today(), palette_id=chosen.id),
+        )
     )
     context.report(
         {"project": project.id, "palette": chosen.id, "palettes": choices},
@@ -395,10 +388,11 @@ def _team(context: CliContext, args: Namespace) -> int:
     if named and (args.humans < 1 or args.agents < 1):
         raise CliError("a team needs at least one of each — --humans and --agents are ≥ 1")
     project = find_project(context.library, args.project)
+    today = context.clock.today()
     entry = (
-        write_project(project, clear="team")
+        write_project(project, today=today, clear="team")
         if args.clear
-        else write_project(project, team=(args.humans, args.agents))
+        else write_project(project, today=today, team=(args.humans, args.agents))
     )
     context.apply(SetModuleDataCommand(project.id, MODULE_ID, entry))
     humans, agents = read_team(project)
@@ -648,6 +642,7 @@ def _snapshot(
         readers.days_for,
         readers.is_agent,
         readers.status_for,
+        readers.since_for,
         humans=humans,
         agents=agents,
         start=readers.start_of(project, today),
@@ -663,21 +658,36 @@ def _progress_record(context: CliContext, args: Namespace, readers: Readers) -> 
     now = _snapshot(context, project, readers, context.clock.today())
     if now is None:
         raise CliError("nothing to record — the project has no steps, or cannot be dated")
-    rows = recorded(read_history(project), now)
-    if rows is None:
+    if not _write_day(context, project, now):
         context.report(
             {"project": project.id, "day": now.day.isoformat(), "outcome": "unchanged"},
             f"{project.title}: nothing changed since the last record",
         )
         return 0
-    context.apply(
-        SetModuleDataCommand(project.id, HISTORY_ID, write_history(rows, read_saved(project)))
-    )
     context.report(
         {"project": project.id, "day": now.day.isoformat(), "outcome": "recorded"},
         f"{project.title}: progress recorded for {format_date(now.day, now.day)}",
     )
     return 0
+
+
+def record_day(context: CliContext, project: Project, readers: Readers) -> bool:
+    """Write ``project``'s row for today where the plan moved or a status changed — what
+    the window's recorder does after a settled change, for a verb that changed something
+    with no window open. True when a row was written; a project that cannot be dated has
+    nothing to record."""
+    now = _snapshot(context, project, readers, context.clock.today())
+    return now is not None and _write_day(context, project, now)
+
+
+def _write_day(context: CliContext, project: Project, now: Snapshot) -> bool:
+    rows = recorded(read_history(project), now)
+    if rows is None:
+        return False
+    context.apply(
+        SetModuleDataCommand(project.id, HISTORY_ID, write_history(rows, read_saved(project)))
+    )
+    return True
 
 
 def _progress_save(context: CliContext, args: Namespace, readers: Readers) -> int:

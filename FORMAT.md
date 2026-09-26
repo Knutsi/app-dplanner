@@ -179,7 +179,7 @@ nested exactly like the model:
             ├── step.json      id, title, edges
             └── modules/
                 ├── estimation.json         structured data
-                ├── step_status.json        {"status": "done"} — absent means pending
+                ├── step_status.json        {"status": "done", "since": …, "started": …}
                 ├── testing.json            the tests this step keeps, one record each
                 ├── step_description.md     prose
                 └── step_description/       files this module owns
@@ -582,21 +582,27 @@ an aspect is a fact about the work that an agent may want to write, and a layout
 presentation. It is per step rather than one map on the project so that moving a node is a
 one-file diff — the same reasoning as ordering living in the parent's list. The time
 report's assumptions are the second instance: `modules/time_estimates.json` beside the
-project, `{"efficiency": 0.5, "palette": "mako", "team": [2, 3]}` — the focus factor, the
-colour map and the team the calendar is dated for, each absent on its default — an
-assumption about the team, not a fact about a step. The same module writes `{"start":
+project (format 2), `{"efficiency": 0.5, "palette": "mako", "team": [2, 3],
+"efficiency_was": {"until": "2026-09-22", "efficiency": 0.6}}` — the focus factor, the
+colour map and the team the calendar is dated for, each absent on its default, and the
+focus before its last change with the day the new one began (the day after it was
+changed; a second change that day keeps the day's first) — an assumption about the team,
+not a fact about a step. The past focus is kept because work under way ran at it; no other
+past budget is stored, since a forecast looks forward and each past day's is in its row. The same module writes `{"start":
 "2026-10-05", "color": "#e0602c"}` beside a *milestone* step: the day its stretch of work
 begins instead of the day the previous one lands, and a colour chosen over the dealt one
 — assumptions again, and the landing date itself is never written. The same package
-writes a **second id** beside the project, `modules/progress_history.json` (format 2):
+writes a **second id** beside the project, `modules/progress_history.json` (format 3):
 `{"days": [{"day": "2026-09-05", "stretches": [{"milestone": "<step id>", "steps": 8,
-"done": 3, "days": 11.0, "done_days": 4.5, "start": "2026-09-07", "finish":
+"done": 3, "days": 11.0, "done_days": 4.5, "changed": 2, "start": "2026-09-07", "finish":
 "2026-10-12", "landings": [{"date": "2026-09-09", "steps": 2, "days": 3.0}, …]}]}],
 "saved": [{"title": "Kickoff review", "note": "What we thought on day one", "day":
 "2026-09-05", "stretches": […]}]}` — under `days`, one row per day on which the plan's
-progress or its promise changed, the stretches in the order the sequence ran them that
-day (no `milestone` key for the work after the last one, no `finish` for a stretch
-nothing dated, no `landings` for one with nothing to land); under `saved`, the
+progress or its promise changed or a status was set, the stretches in the order the
+sequence ran them that day (no `milestone` key for the work after the last one, no
+`finish` for a stretch nothing dated, no `landings` for one with nothing to land, no
+`changed` for one none of whose steps' statuses changed that day — the count that tells a
+day of work from a quiet one when nothing landed); under `saved`, the
 snapshots somebody kept on purpose, the same row with the `title` it is found by and a
 `note` when one was given (no `saved` list without one; a row there without a title is
 not a saved snapshot and reads as absent). A saved snapshot is never replaced by a later
@@ -605,7 +611,16 @@ expected to land on each date, so the plan as it stood that day is drawn exactly
 the row. It is the one derived-looking thing that is stored, because the past cannot be
 recomputed: the chart of the plan against what became of it needs where the plan stood
 and what it promised on earlier days. The bump to format 2 exists for the `saved` key,
-so an older build refuses to rewrite the entry rather than dropping what somebody saved.
+and to format 3 for `changed`: an older build's writer rebuilds every row, so the number
+is how it knows it would drop what it cannot write.
+**A status remembers two days** for the same reason: `step_status.json` (format 2) is
+`{"status": "done", "since": "2026-09-18", "started": "2026-09-14"}` — the day the status
+last changed, and the day the step first went in progress — stamped by the aspect's
+`write`, so the window, `dplanner status set` and an agent's launch all record them, and
+restored by undo with the rest of the entry. Pending is still absence, but a step set back
+to pending keeps its days: an entry with no `status` key, which reads as pending. A copy
+keeps the status and forgets the days, which were the original's. An older entry has no
+days, and every reader takes that as "not said", never as today.
 **An estimate
 remembers what it was** for the same review: `estimation.json` (format 2) carries
 `"history": [{"day": "2026-09-12", "days": 3.0}]` beside `days` — the value that stood

@@ -103,7 +103,7 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
     library.set_field(project.id, "summary", f"{count} steps of synthetic work.")
     start = date.today() - timedelta(days=40)
     SetModuleDataCommand(project.id, "estimation", write_start(start)).redo(library)
-    assumptions = write_project(project, efficiency=0.6, team=(2, 1))
+    assumptions = write_project(project, today=date.today(), efficiency=0.6, team=(2, 1))
     SetModuleDataCommand(project.id, "time_estimates", assumptions).redo(library)
 
     steps: list[Step] = []
@@ -135,7 +135,9 @@ def _fill(library: Library, project: Project, count: int, unplaced: float) -> No
             )
         word = _status(index, count)
         if word != "pending":
-            SetModuleDataCommand(step.id, "step_status", status(word)).redo(library)
+            SetModuleDataCommand(step.id, "step_status", status(word, today=date.today())).redo(
+                library
+            )
         if index % 10 == 5:
             SetModuleDataCommand(
                 step.id,

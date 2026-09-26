@@ -32,7 +32,7 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("status", "clear"),
-            summary="Back to pending, leaving no file behind.",
+            summary="Back to pending; the step keeps the days it started and changed on.",
             configure=step_arg,
             run=_clear,
             examples=("dplanner status clear 'Read the spec'",),
@@ -53,10 +53,16 @@ def _configure_set(parser: ArgumentParser) -> None:
 
 
 def _set(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step, context.current)
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(args.state)))
-    context.report({"step": step.id, "status": args.state}, f"{step.title}: {args.state}")
+    _say(context, args.step, args.state)
     return 0
+
+
+def _say(context: CliContext, needle: str, status: str) -> None:
+    step = find_step(context.library, needle, context.current)
+    previous = step.module_data.get(MODULE_ID)
+    entry = write(status, today=context.clock.today(), previous=previous)
+    context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
+    context.report({"step": step.id, "status": status}, f"{step.title}: {status}")
 
 
 def _show(context: CliContext, args: Namespace) -> int:
@@ -67,9 +73,7 @@ def _show(context: CliContext, args: Namespace) -> int:
 
 
 def _clear(context: CliContext, args: Namespace) -> int:
-    step = find_step(context.library, args.step, context.current)
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, {}))
-    context.report({"step": step.id, "status": "pending"}, f"{step.title}: pending")
+    _say(context, args.step, "pending")
     return 0
 
 

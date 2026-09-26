@@ -60,6 +60,7 @@ class ProgressRecorder(QObject):
         days_for: Callable[[Step], float | None],
         is_agent: Callable[[Step], bool],
         status_for: Callable[[Step], str],
+        since_for: Callable[[Step], date | None],
         is_milestone: Callable[[Step], bool],
         start_of: Callable[[ProjectId], date],
         clock: Clock,
@@ -71,6 +72,7 @@ class ProgressRecorder(QObject):
         self._days_for = days_for
         self._is_agent = is_agent
         self._status_for = status_for
+        self._since_for = since_for
         self._is_milestone = is_milestone
         self._start_of = start_of
         self._settle = Debounced(self.record_all, SETTLE_MS, parent=self, service=debounce)
@@ -105,6 +107,7 @@ class ProgressRecorder(QObject):
             self._days_for,
             self._is_agent,
             self._status_for,
+            self._since_for,
             humans=humans,
             agents=agents,
             start=self._start_of(project.id),

@@ -425,7 +425,7 @@ def test_picking_a_palette_reshades_the_milestones_and_is_undoable(services, sta
     _read, draft, _docs, ship = staged.steps
     mako = next(found for found in PALETTES if found.id == "mako")
     tab.palette_picker.setCurrentIndex(tab.palette_picker.findData("mako"))
-    assert staged.module_data[MODULE_ID] == {"palette": "mako", "format": 1}
+    assert staged.module_data[MODULE_ID] == {"palette": "mako", "format": 2}
     assert read_palette(staged) is mako
     assert _swatches(tab) == shades(mako, 2)
     assert tab.months.band_at(date(2026, 9, 10)).color.name() == shades(mako, 2)[0]
@@ -437,14 +437,31 @@ def test_picking_a_palette_reshades_the_milestones_and_is_undoable(services, sta
 
 
 def test_the_palette_and_the_focus_factor_share_one_entry_without_clobbering(services, staged):
+    """Each write keeps the rest, the focus it replaced included: 50% was the day's focus
+    when it began, so both changes today remember 50%, the new one counting from tomorrow."""
+    was = {"until": "2026-09-22", "efficiency": 0.5}
     tab = services.tabs.open("time", staged.id)
     tab.focus_bar.percent.setValue(60)
     tab.palette_picker.setCurrentIndex(tab.palette_picker.findData("rocket"))
-    assert staged.module_data[MODULE_ID] == {"efficiency": 0.6, "palette": "rocket", "format": 1}
+    assert staged.module_data[MODULE_ID] == {
+        "efficiency": 0.6,
+        "palette": "rocket",
+        "efficiency_was": was,
+        "format": 2,
+    }
     tab.focus_bar.percent.setValue(80)
-    assert staged.module_data[MODULE_ID] == {"efficiency": 0.8, "palette": "rocket", "format": 1}
+    assert staged.module_data[MODULE_ID] == {
+        "efficiency": 0.8,
+        "palette": "rocket",
+        "efficiency_was": was,
+        "format": 2,
+    }
     tab.palette_picker.setCurrentIndex(tab.palette_picker.findData(PALETTES[0].id))
-    assert staged.module_data[MODULE_ID] == {"efficiency": 0.8, "format": 1}  # default: absent
+    assert staged.module_data[MODULE_ID] == {  # the palette's default: absent
+        "efficiency": 0.8,
+        "efficiency_was": was,
+        "format": 2,
+    }
 
 
 def test_the_colour_verb_offers_the_palettes_shades_then_custom_and_automatic(services, staged):
@@ -484,7 +501,7 @@ def test_dating_a_milestone_starts_from_the_day_the_sequence_gave_it(services, s
     assert begins.text() == "17 Sep" and begins.data(MUTED_ROLE) is True
     assert begins.flags() & Qt.ItemFlag.ItemIsEditable
     _begin(tab, ship.id, date(2026, 10, 5))
-    assert ship.module_data[MODULE_ID] == {"start": "2026-10-05", "format": 1}
+    assert ship.module_data[MODULE_ID] == {"start": "2026-10-05", "format": 2}
     assert _landings(tab)[2] == ("v2", "9 October", "5d")
     assert _cell(tab, _row(tab, ship.id), BEGINS_COLUMN).data(MUTED_ROLE) is False
     tab.milestones.selectRow(_row(tab, ship.id))
@@ -529,7 +546,7 @@ def test_a_chosen_colour_overrides_the_dealt_one_until_automatic(services, stage
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, ship = staged.steps
     tab.pick_colour(draft.id, "#C98500")
-    assert draft.module_data[MODULE_ID] == {"color": "#c98500", "format": 1}
+    assert draft.module_data[MODULE_ID] == {"color": "#c98500", "format": 2}
     assert _cell(tab, _row(tab, draft.id), 0).data(COLOR_ROLE) == "#c98500"
     assert tab.months.band_at(date(2026, 9, 10)).color.name() == "#c98500"
     # The other is still dealt in turn — its shade is its place among two, not one.
@@ -546,10 +563,10 @@ def test_a_dated_milestone_keeps_its_colour_and_vice_versa(services, staged):
     assert draft.module_data[MODULE_ID] == {
         "start": "2026-09-01",
         "color": "#c98500",
-        "format": 1,
+        "format": 2,
     }
     tab.pick_colour(draft.id, None)
-    assert draft.module_data[MODULE_ID] == {"start": "2026-09-01", "format": 1}
+    assert draft.module_data[MODULE_ID] == {"start": "2026-09-01", "format": 2}
 
 
 def test_picking_a_milestone_emphasises_it_in_the_calendar_and_the_plots(services, staged):
@@ -669,7 +686,7 @@ def test_clicking_a_tile_stores_the_team_and_the_tab_restores_it(services, proje
     """The team is the project's staffing assumption, the focus factor's twin: one
     undoable write, and a tab opened later selects it."""
     tab.matrix.select(2, 3)
-    assert project.module_data[MODULE_ID] == {"team": [2, 3], "format": 1}
+    assert project.module_data[MODULE_ID] == {"team": [2, 3], "format": 2}
     assert services.undo.undo_text() == "Choose Team"
     services.tabs.close_activity(tab)
     again = services.tabs.open("time", project.id)
@@ -690,7 +707,7 @@ def test_a_stored_team_the_collapsed_grid_cannot_show_selects_its_nearest_seat(s
     assert tab.matrix.agent_counts == (1,) and tab.matrix.selection == (2, 1)
     assert project.module_data[MODULE_ID] == {"team": [2, 3], "format": 1}  # a sync is not a click
     tab.matrix.select(3, 1)
-    assert project.module_data[MODULE_ID] == {"team": [3, 1], "format": 1}
+    assert project.module_data[MODULE_ID] == {"team": [3, 1], "format": 2}
 
 
 def test_each_row_says_how_much_of_the_work_through_it_has_landed(services, staged):
@@ -704,14 +721,14 @@ def test_each_row_says_how_much_of_the_work_through_it_has_landed(services, stag
         _cell(tab, row, LANDED_COLUMN).text() for row in range(tab.milestones.rowCount())
     ]
     assert landed() == ["0%", "0%", "0%"]
-    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
+    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done", today=TODAY)))
     # By estimated days, the one measure: the whole (2 of 7), then v1 (2 of 4), then v2
     # (2 of 7) — everything through its stretch. The count is in the tooltip's words.
     assert landed() == ["29%", "50%", "29%"]
     assert _cell(tab, _row(tab, ship.id), LANDED_COLUMN).toolTip() == (
         "2d of 7d estimated · 1 of 4 steps done"
     )
-    SetModuleDataCommand(draft.id, STATUS_ID, write_status("done")).redo(library)
+    SetModuleDataCommand(draft.id, STATUS_ID, write_status("done", today=TODAY)).redo(library)
     assert landed() == ["57%", "100%", "57%"]
 
 
@@ -743,7 +760,7 @@ def test_the_plots_show_the_whole_plan_a_page_at_a_time(services, staged):
 
     read, draft, _docs, ship = staged.steps
     tab = services.tabs.open("time", staged.id)
-    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
+    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done", today=TODAY)))
     data = tab.chart._data
     assert data.finish == date(2026, 9, 23) and data.emphasis is None
     assert data.expected[0] == (date(2026, 9, 7), 0.0)
@@ -786,7 +803,7 @@ def test_the_recorder_writes_the_day_once_off_the_undo_stack(services, staged):
     (row,) = read_history(staged)  # the window opened on the plan and recorded it
     assert row.day == TODAY and row.toward(None).done == 0
     before = services.undo.undo_text()
-    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
+    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done", today=TODAY)))
     (row,) = read_history(staged)
     assert row.toward(None).done == 1
     assert services.undo.undo_text() != before  # the status is the undo step, the record is not
@@ -797,7 +814,23 @@ def test_the_recorder_writes_the_day_once_off_the_undo_stack(services, staged):
     services.undo.redo()
     assert read_history(staged)[0].toward(None).done == 1
     entry = staged.module_data[HISTORY_ID]
-    assert entry["format"] == 2 and len(entry["days"]) == 1
+    assert entry["format"] == 3 and len(entry["days"]) == 1
+
+
+def test_a_step_started_today_makes_today_a_day_of_work(services, staged):
+    """Nothing landed, but a status moved: the day's row counts it, so the day is told
+    from one on which nothing happened."""
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as write_status
+    from dplanner.modules.time_estimates.progress import read_history
+
+    read, *_rest = staged.steps
+    (row,) = read_history(staged)
+    assert row.changed == 0
+    entry = write_status("in-progress", today=TODAY, previous=read.module_data.get(STATUS_ID))
+    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, entry))
+    (row,) = read_history(staged)
+    assert row.changed == 1 and row.toward(None).done == 0
 
 
 def test_a_turned_day_re_dates_the_tab_and_is_recorded(services, project, tab):
@@ -967,7 +1000,7 @@ def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services
     assert tab.then_picker.menu_labels()[1].startswith("Kickoff review · ")
     assert tab.now_picker.menu_labels()[:2] == ["Now", tab.then_picker.menu_labels()[1]]
     # Work lands and the plan grows; the saved snapshot is what the plots compare against.
-    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done")))
+    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done", today=TODAY)))
     services.undo.push(SetModuleDataCommand(ship.id, ESTIMATION_ID, write_days(4.0)))
     tab.then_picker.picked.emit(Pick("saved", title="Kickoff review"))
     data = tab.chart._data
@@ -990,7 +1023,7 @@ def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services
     assert tab.chart._data.finish == date(2026, 9, 29) and tab.chart._data.marks == ()
     services.undo.undo()
     assert [row.title for row in read_saved(staged)] == ["Kickoff review"]
-    assert staged.module_data[HISTORY_ID]["format"] == 2
+    assert staged.module_data[HISTORY_ID]["format"] == 3
     before = services.undo.undo_text()
     tab.now_picker.forget.emit("nobody")  # nothing to forget: nothing pushed
     assert services.undo.undo_text() == before

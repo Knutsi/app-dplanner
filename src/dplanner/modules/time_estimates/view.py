@@ -25,6 +25,7 @@ about it, the button that does it. It is off screen when it has nothing to say.
 """
 
 from collections.abc import Callable
+from datetime import date
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import (
@@ -88,12 +89,14 @@ class FocusBar(QWidget):
         library: Library,
         undo: UndoService[Library],
         project_id: ProjectId,
+        today: Callable[[], date],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._product = library
         self._undo = undo
         self._project_id = project_id
+        self._today = today  # A focus change remembers the day it began.
         self._loading = False
 
         self.percent = QSpinBox(self)
@@ -130,7 +133,7 @@ class FocusBar(QWidget):
         if self._loading or not self._product.has(self._project_id):
             return
         project = self._product.project(self._project_id)
-        entry = write_project(project, efficiency=self.percent.value() / 100)
+        entry = write_project(project, today=self._today(), efficiency=self.percent.value() / 100)
         if entry == project.module_data.get(MODULE_ID, {}):
             return
         self._undo.push(

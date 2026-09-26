@@ -2,6 +2,7 @@
 
 import json
 import shlex
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -1133,7 +1134,11 @@ def test_done_prerequisites_launch_without_asking(services, step, prerequisite, 
     from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
     from dplanner.modules.step_status.aspect import write as write_status
 
-    services.undo.push(SetModuleDataCommand(prerequisite.id, STATUS_ID, write_status("done")))
+    services.undo.push(
+        SetModuleDataCommand(
+            prerequisite.id, STATUS_ID, write_status("done", today=date(2026, 9, 21))
+        )
+    )
     calls = _fake_terminal(monkeypatch)
     boxes = _record_boxes(monkeypatch, click=None)
     select(services, step)

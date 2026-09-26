@@ -29,6 +29,7 @@ from dplanner.core.module_data import ModuleDataFormat
 logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from argparse import Namespace
     from collections.abc import Callable, Container, Mapping, Sequence
     from pathlib import Path
 
@@ -63,6 +64,7 @@ if TYPE_CHECKING:
     from dplanner.modules.spec_confluence.module import SecretStore
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
     from dplanner.modules.sync.service import Publication
+    from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.theme.providers import ThemeProvider
 
 __all__ = [
@@ -197,6 +199,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         StepPropertiesModule,
     )
     from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.modules.step_status.aspect import read_since as status_since
     from dplanner.modules.step_status.aspect import record_started
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
@@ -482,7 +485,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             SetModuleDataCommand(
                 project_id,
                 TIME_ID,
-                write_project(project, palette_id=palette_id),
+                write_project(project, today=services.clock.today(), palette_id=palette_id),
                 label="Milestone Palette",
             )
         )
@@ -1015,8 +1018,10 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             days_for=estimated_days,
             is_agent=agent_enabled,
             milestone_label=milestone_read,
-            # What "landed" means: the status aspect's word, the progression board's seam.
+            # What "landed" means: the status aspect's word, the progression board's seam —
+            # and the day it last changed.
             status_for=step_status,
+            since_for=status_since,
             # What each estimate was before, and the key a row prints: the change report
             # behind the chart's delta.
             estimate_history=estimate_history,
@@ -1324,7 +1329,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             # And says so on the step when the shell opens: the status aspect's own
             # writer, applied off the undo stack the way the launch stamp is. The
             # agent module holds the preference; the word is the status module's.
-            mark_started=lambda step_id: record_started(library, step_id),
+            mark_started=lambda step_id: record_started(library, step_id, services.clock.today()),
             # What names the run — its worktree, its branch, its window: the key and
             # the ticket, composed here from aspects the agent module never reads.
             step_key=_step_key,
@@ -1721,7 +1726,12 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         ),
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
         StepStatusModule(
-            StepStatusDeps(library=library, undo=services.undo, actions=services.actions)
+            StepStatusDeps(
+                library=library,
+                undo=services.undo,
+                actions=services.actions,
+                clock=services.clock,
+            )
         ),
         # No tab either: a check carries nothing, and the Covers tab that shows what it
         # gathers is the tests module's — it renders a list of tests, which is that
@@ -2165,6 +2175,55 @@ def _step_type_icons(step: "Step") -> tuple[str, ...]:
     )
 
 
+def _time_readers() -> "TimeReaders":
+    """What the time module reads of other modules' aspects, for its verbs and its report:
+    estimates, agent-ness, status and the day it changed, the start date, milestones, the
+    estimate history and the key a row prints — the owners' Qt-free readers, handed over
+    here so no module imports another's."""
+    from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.modules.estimation.aspect import read_history as estimate_history
+    from dplanner.modules.estimation.schedule import start_of
+    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.modules.step_status.aspect import read_since as status_since
+    from dplanner.modules.time_estimates.cli import Readers
+
+    return Readers(
+        days_for=estimated_days,
+        is_agent=agent_enabled,
+        status_for=step_status,
+        since_for=status_since,
+        start_of=start_of,
+        milestone_label=milestone_read,
+        estimate_history=estimate_history,
+        key_of=_step_key,
+    )
+
+
+# The status verbs that write one, each followed by the day's progress row.
+STATUS_WRITES = (("status", "set"), ("status", "clear"))
+
+
+def _recording_status(
+    command: "CliCommand", record: "Callable[[CliContext, Project], bool]"
+) -> "CliCommand":
+    """``command`` followed by ``record`` for the project of the step it named."""
+    from dataclasses import replace
+
+    from dplanner.cli.lookup import find_step
+
+    inner = command.run
+
+    def run(context: "CliContext", args: "Namespace") -> int:
+        code = inner(context, args)
+        step = find_step(context.library, args.step, context.current)
+        record(context, context.library.project_of(step.id))
+        return code
+
+    return replace(command, run=run)
+
+
 def _report_sources() -> tuple["ReportSource", ...]:
     """Every module's say in a report, in page order.
 
@@ -2176,15 +2235,13 @@ def _report_sources() -> tuple["ReportSource", ...]:
     """
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import read as estimated_days
-    from dplanner.modules.estimation.aspect import read_history as estimate_history
     from dplanner.modules.estimation.report import report_source as estimates
-    from dplanner.modules.estimation.schedule import project_schedule, start_of
+    from dplanner.modules.estimation.schedule import project_schedule
     from dplanner.modules.feature.report import report_source as features
     from dplanner.modules.github.report import report_source as github
     from dplanner.modules.notes.report import report_source as notes
     from dplanner.modules.progression.report import report_source as progression
     from dplanner.modules.project_editor.report import report_source as graph
-    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_description.report import report_source as descriptions
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_milestone.report import report_source as milestones
@@ -2201,15 +2258,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
 
     return (
         progression(status_for=step_status, days_for=estimated_days, key_of=_step_key),
-        time_estimates(
-            days_for=estimated_days,
-            is_agent=agent_enabled,
-            status_for=step_status,
-            start_of=start_of,
-            milestone_label=milestone_read,
-            estimate_history=estimate_history,
-            key_of=_step_key,
-        ),
+        time_estimates(_time_readers()),
         graph(
             key_of=_step_key,
             kind_of=_step_kind,
@@ -2617,17 +2666,25 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
 
     Assembled here because each policy lives in its owner's Qt-free half and no module may
     import another's; both the window's Paste/Duplicate and ``step duplicate`` read this
-    tuple. Four entries, on purpose: an id minted per project (a test's), the state of a
-    shell somebody is running and what its runs consumed — both facts about the
-    original — and a feature's passages, which were read into *that* feature and are not
-    a claim a copy may make. Everything else a step carries copies as it is.
+    tuple. Five entries, on purpose: an id minted per project (a test's), the state of a
+    shell somebody is running and what its runs consumed, and the days a status was said
+    on — all facts about the original — and a feature's passages, which were read into
+    *that* feature and are not a claim a copy may make. Everything else a step carries
+    copies as it is.
     """
     from dplanner.modules.feature.aspect import drop_cites_for_paste
     from dplanner.modules.step_agent_run.aspect import forget_for_paste
     from dplanner.modules.step_agent_run.usage import forget_for_paste as forget_usage
+    from dplanner.modules.step_status.aspect import forget_days_for_paste
     from dplanner.modules.testing.aspect import remint_for_paste
 
-    return (remint_for_paste, forget_for_paste, forget_usage, drop_cites_for_paste)
+    return (
+        remint_for_paste,
+        forget_for_paste,
+        forget_usage,
+        forget_days_for_paste,
+        drop_cites_for_paste,
+    )
 
 
 def _source_kinds(
@@ -2887,8 +2944,6 @@ def default_cli_commands(
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
-    from dplanner.modules.estimation.aspect import read_history as estimate_history
-    from dplanner.modules.estimation.schedule import start_of
     from dplanner.modules.feature import cli as feature_cli
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.github import cli as github_cli
@@ -2902,7 +2957,6 @@ def default_cli_commands(
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.spec.aspect import read_topology
     from dplanner.modules.step_agent_instruction import cli as agent_cli
-    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_marked
     from dplanner.modules.step_agent_run import cli as agent_state_cli
     from dplanner.modules.step_check import cli as check_cli
     from dplanner.modules.step_check.aspect import read as check_read
@@ -2919,6 +2973,7 @@ def default_cli_commands(
     from dplanner.modules.time_estimates import cli as time_cli
 
     specs = aspect_specs()
+    time_readers = _time_readers()
     scopes = _scope_kinds(check_read, is_feature, milestone_read)
     sources = _asset_sources()
     roles = roles_by_id(default_location_roles())
@@ -3009,17 +3064,7 @@ def default_cli_commands(
         ),
         # The staffing matrix reads estimates, agent-ness and the start date through the
         # owners' Qt-free readers — handed over here so no cli.py imports another module's.
-        *time_cli.commands(
-            days_for=estimated_days,
-            is_agent=agent_marked,
-            status_for=step_status,
-            start_of=start_of,
-            milestone_label=milestone_read,
-            # What each estimate was before, for the change report — and the key every
-            # row prints, the one rule.
-            estimate_history=estimate_history,
-            key_of=_step_key,
-        ),
+        *time_cli.commands(time_readers),
         *github_cli.commands(),
         # A note names the step it was made on by id and prints it by key — the
         # same rule every row prints, handed over rather than imported.
@@ -3041,6 +3086,16 @@ def default_cli_commands(
         # shared with the window's Problems panel, which is a second presenter of exactly
         # this list.
         *lint_commands(checks=list(_lint_checks()), roles=roles),
+    ]
+    # A status said from the terminal is a day of work on record, window or no window: an
+    # agent reports with `status set`, and nobody opens a window to record it.
+    commands = [
+        _recording_status(
+            command, lambda context, project: time_cli.record_day(context, project, time_readers)
+        )
+        if command.path in STATUS_WRITES
+        else command
+        for command in commands
     ]
     # Every verb that declared a door runs behind it — the topology for a graph edit, the
     # house format for a test body. Wrapped before the skill reads the registry, so the
