@@ -123,6 +123,7 @@ MONTHS = (
     "December",
 )
 ABBREVIATION = 3  # "September" → "Sep". True of every month in English.
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
 def format_date(when: date, today: date | None = None) -> str:

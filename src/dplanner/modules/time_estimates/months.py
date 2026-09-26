@@ -36,7 +36,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
-from dplanner.domain.schedule import SATURDAY, format_date, working_days_between
+from dplanner.domain.schedule import SATURDAY, WEEKDAYS, format_date, working_days_between
 from dplanner.theme.tokens import SECONDARY_ALPHA
 
 MONTHS_SHOWN = 6
@@ -67,8 +67,6 @@ FADE = 0.4
 DAY_ALPHA = 190
 WEEKEND_ALPHA = 90
 LANDING_INK = "#ffffff"
-
-WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 _ONE_DAY = timedelta(days=1)
 

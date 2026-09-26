@@ -1,4 +1,5 @@
-"""What the simulator changes in a plan, each from the day it is made: a re-budget.
+"""What the simulator changes in a plan, each from the day it is made: a re-budget, and a
+wait inserted before a step.
 
 In the window each is an ordinary write, made today, and the model re-plans from tomorrow —
 so nothing needs to remember when it was made. The simulator keeps the day because it plays
@@ -8,8 +9,9 @@ history back: the world makes the change on that day, and the team really change
 from dataclasses import dataclass
 from datetime import date
 
+from dplanner.domain.schedule import Wait
 from dplanner.modules.time_estimates.simulation.frames import PlanState
-from dplanner.modules.time_estimates.simulation.world import BudgetChange
+from dplanner.modules.time_estimates.simulation.world import BudgetChange, WaitChange
 
 
 @dataclass(frozen=True)
@@ -49,5 +51,22 @@ def world_budgets(edits: tuple[BudgetEdit, ...], begin: date) -> tuple[BudgetCha
             agents=edit.budget.agents,
             efficiency=edit.budget.efficiency,
         )
+        for edit in edits
+    )
+
+
+@dataclass(frozen=True)
+class WaitEdit:
+    """A wait made on ``day``, inserted before the step ``before``."""
+
+    day: date
+    before: str
+    wait: Wait
+
+
+def world_waits(edits: tuple[WaitEdit, ...], begin: date) -> tuple[WaitChange, ...]:
+    """The waits as the world takes them: in days since work began."""
+    return tuple(
+        WaitChange(after=(edit.day - begin).days, before=edit.before, wait=edit.wait)
         for edit in edits
     )
