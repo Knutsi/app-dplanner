@@ -6,9 +6,15 @@ done, and how many steps nobody has sized (a click opens the Estimates tab on th
 them a strip holds, in the order they are reached for: the **pages** — *Milestones* (where
 each lands against the plan compared with, ``shift_view.py``), *Work* (the scope and the
 work done on one scale, ``work_view.py``) and *Calendar* (six months with the stretches lit,
-``months.py``); what the plan is **compared with**; **History**; and the **Budget** — who
-works on it and how much of their day, from today on (``budget.py``) — *Save Snapshot…*,
-⋯ for the milestone colours, and Export.
+``months.py``); what the plan is **compared with**; **History**; the **Budget** — who
+works on it and how much of their day, from today on (``budget.py``); **Adjust for
+Efficiency**; *Save Snapshot…*, ⋯ for the milestone colours, and Export.
+
+*Adjust for Efficiency* re-dates people's remaining steps at the focus their finished steps
+actually ran at (``Readers.pace``), once there is enough to go on. It is the reader's way of
+looking — a per-user preference (``user_config``), never stored with the plan — so it
+reaches the page alone: the recorder, a saved snapshot and the report keep the plan as its
+stored focus dates it.
 
 Everything on the page is one :class:`~dplanner.modules.time_estimates.present.Presented`,
 read after a quiet spell from the plan dated for its stored team (``Readers.snapshot``, the
@@ -64,6 +70,7 @@ from dplanner.framework.segmented import Segmented
 from dplanner.framework.signalling import StatusLine, UpdatingIndicator
 from dplanner.framework.table import DATE_FORMAT
 from dplanner.framework.toolbar import Toolbar
+from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.widgets import EmptyState, GlyphButton, caption, quiet
 from dplanner.modules.time_estimates.budget import BudgetButton
 from dplanner.modules.time_estimates.history import BACK_TO_TODAY, HistoryButton
@@ -82,7 +89,10 @@ from dplanner.modules.time_estimates.progress import (
 )
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
+    PACE_AFTER,
+    PACE_STEPS,
     REMAINDER_COLOR,
+    as_planned,
     read_efficiency,
     read_palette,
     read_team,
@@ -102,6 +112,8 @@ if TYPE_CHECKING:
 TIME_KIND = "time"
 REFRESH_DELAY_MS = 500
 NO_STEPS = "No steps yet — the tab dates a plan once it has some."
+ADJUST = "Adjust for Efficiency"
+ADJUST_KEY = "adjust_for_efficiency"  # user_config, under this module's id: a way of looking.
 SAVE_SNAPSHOT_TIP = "Keep the plan as it stands today, under a title, to compare against later"
 MILESTONES_PAGE, WORK_PAGE, CALENDAR_PAGE = "milestones", "work", "calendar"
 PAGES = (
@@ -142,6 +154,10 @@ class TimeEstimatesActivity(EntityActivity):
         self.project_id = project_id
         self._shown: Presented | None = None
         self._live: Snapshot | None = None
+        # How fast people's finished steps ran (None too early), and the plan re-dated at it
+        # when the reader adjusts for it — the page's alone.
+        self._pace: float | None = None
+        self._adjusted: Snapshot | None = None
         self._picked: str | None = None
         # What the plan is compared with: the plan at the project's start unless picked
         # otherwise — a way of looking, never stored.
@@ -207,6 +223,13 @@ class TimeEstimatesActivity(EntityActivity):
         self.budget = BudgetButton(self.controls)
         self.budget.chosen.connect(self._on_budget)
         self.controls.add_widget(self.budget)
+        self.adjust = QToolButton(self.controls)
+        self.adjust.setObjectName("ToolbarButton")
+        self.adjust.setCheckable(True)
+        self.adjust.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.adjust.setText(ADJUST)
+        self.adjust.clicked.connect(lambda _checked: self._on_adjust())
+        self.controls.add_widget(self.adjust)
         self.save_snapshot = self.controls.add_verb(
             "Save Snapshot…", camera_icon, self._on_save_snapshot, tip=SAVE_SNAPSHOT_TIP
         )
@@ -364,6 +387,16 @@ class TimeEstimatesActivity(EntityActivity):
         return self._then
 
     @property
+    def pace(self) -> float | None:
+        """How fast people's finished steps ran against the plan — None while too early."""
+        return self._pace
+
+    @property
+    def adjusting(self) -> bool:
+        """Whether the page's dates run at the pace so far right now."""
+        return self._adjust_on() and self._pace is not None and self._as_of is None
+
+    @property
     def as_of(self) -> date | None:
         """The recorded day History shows — None while the page shows today."""
         return self._as_of
@@ -403,6 +436,16 @@ class TimeEstimatesActivity(EntityActivity):
         """A way of looking, not a plan fact: re-rendered, never stored."""
         self._then = pick
         self._render()
+
+    @staticmethod
+    def _adjust_on() -> bool:
+        return bool(get_global(MODULE_ID, ADJUST_KEY, False))
+
+    def _on_adjust(self) -> None:
+        """The reader's preference flips — kept on across days, since the toggle waits out a
+        day too early rather than switching itself off."""
+        set_global(MODULE_ID, ADJUST_KEY, not self._adjust_on())
+        self._refresh()
 
     def _on_history(self, day: object) -> None:
         """A day History reached: the page follows at once, and its writers stand down."""
@@ -504,7 +547,15 @@ class TimeEstimatesActivity(EntityActivity):
         deps = self._deps
         project = self._project()
         today = deps.clock.today()
-        self._live = deps.readers.snapshot(self._library, project, today, day_over=deps.day_over)
+        readers = deps.readers
+        self._live = readers.snapshot(self._library, project, today, day_over=deps.day_over)
+        self._pace = readers.pace(project, today) if self._live is not None else None
+        pace = self._pace
+        self._adjusted = (
+            readers.snapshot(self._library, project, today, day_over=deps.day_over, pace=pace)
+            if self._adjust_on() and pace is not None and not as_planned(pace)
+            else None
+        )
         self._render()
 
     def _render(self) -> None:
@@ -538,6 +589,9 @@ class TimeEstimatesActivity(EntityActivity):
             now = next((row for row in history if row.day == self._as_of), live)
             if now is live:
                 self._as_of = None  # The record is gone — an undo past it, a reload.
+        adjusted = self._adjusted
+        if self._as_of is None and adjusted is not None:
+            now = adjusted
         names = names_of(self._library, project, now, deps.readers)
         shown = present(
             now,
@@ -546,12 +600,13 @@ class TimeEstimatesActivity(EntityActivity):
             pick=self._then,
             start=start,
             named=names,
-            reach_of_rows=(live, *self._held),
+            reach_of_rows=(live, *((adjusted,) if adjusted else ()), *self._held),
         )
         self._shown = shown
         self.history.show_history([row.day for row in history], today, shown.day)
         self.controls.set_shown(self.back_to_today, self._as_of is not None)
         self._show_writers()
+        self._show_adjust(project, today)
         if self._picked is not None and all(
             scope.key != self._picked for scope in shown.milestones
         ):
@@ -601,6 +656,38 @@ class TimeEstimatesActivity(EntityActivity):
         self.save_snapshot.setToolTip(why or SAVE_SNAPSHOT_TIP)
         self.months.set_pickable(not why)
 
+    def _show_adjust(self, project: Project, today: date) -> None:
+        """The toggle's words carry the focus measured beside the Budget's planned one;
+        greyed, and never shown pressed, before there is a pace and while History looks
+        back."""
+        pace = self._pace
+        planned = read_efficiency(project)
+        looking_back = self._as_of is not None
+        self.adjust.setEnabled(pace is not None and not looking_back)
+        self.adjust.setChecked(self.adjusting)
+        if looking_back and self._as_of is not None:
+            day = format_date(self._as_of, today)
+            self.adjust.setText(ADJUST)
+            self.adjust.setToolTip(f"Showing the plan as recorded {day} — back to today to adjust")
+            return
+        if pace is None:
+            self.adjust.setText(ADJUST)
+            self.adjust.setToolTip(
+                f"Adjusting for efficiency needs {PACE_AFTER} working days of work and "
+                f"{PACE_STEPS} finished steps"
+            )
+            return
+        measured = planned * pace
+        self.adjust.setText(f"{ADJUST} · {measured:.0%}")
+        self.adjust.setToolTip(
+            f"Finished steps ran at about the planned focus ({measured:.0%} against "
+            f"{planned:.0%}): adjusting leaves the dates as they are"
+            if as_planned(pace)
+            else f"Finished steps ran at {measured:.0%} focus against the {planned:.0%} "
+            f"planned, taking {1 / pace:.1f}\N{MULTIPLICATION SIGN} their estimates: adjust "
+            "what is left to it"
+        )
+
     def _show_then_day(self) -> None:
         """A *Day…* pick shows its field beside the picker, loaded with the day and never
         reading its own load as a pick."""
@@ -640,7 +727,10 @@ class TimeEstimatesActivity(EntityActivity):
             self.landing_figure.setToolTip("All the work is done")
         elif whole.planned is not None:
             self.landing_figure.setText(format_date(whole.planned, shown.day))
-            self.landing_figure.setToolTip("Where the plan lands, re-dated from what has happened")
+            self.landing_figure.setToolTip(
+                "Where the plan lands, re-dated from what has happened"
+                + (", people's remaining steps at the pace so far" if self._adjusted else "")
+            )
         else:
             self.landing_figure.setText("—")
             self.landing_figure.setToolTip("Nothing estimated, so nothing to date")

@@ -2219,7 +2219,7 @@ def _step_type_icons(step: "Step") -> tuple[str, ...]:
 
 def _time_readers() -> "TimeReaders":
     """What the time module reads of other modules' aspects, for its verbs and its report:
-    estimates, agent-ness, status and the day it changed, the start date, milestones, the
+    estimates, agent-ness, status and the days it changed and began, the start date, milestones, the
     estimate history and the key a row prints — the owners' Qt-free readers, handed over
     here so no module imports another's."""
     from dplanner.modules.estimation.aspect import enabled as estimate_enabled
@@ -2230,6 +2230,7 @@ def _time_readers() -> "TimeReaders":
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_status.aspect import read_since as status_since
+    from dplanner.modules.step_status.aspect import read_started as status_started
     from dplanner.modules.time_estimates.cli import Readers
 
     return Readers(
@@ -2237,6 +2238,7 @@ def _time_readers() -> "TimeReaders":
         is_agent=agent_enabled,
         status_for=step_status,
         since_for=status_since,
+        started_for=status_started,
         is_marker=lambda step: not estimate_enabled(step),
         start_of=start_of,
         milestone_label=milestone_read,

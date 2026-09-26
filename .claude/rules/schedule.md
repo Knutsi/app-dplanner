@@ -3,7 +3,7 @@ paths:
   - "src/dplanner/modules/{time_estimates,progression,step_order,estimation}/**"
   - "src/dplanner/domain/{schedule,progression,ordering}.py"
   - "src/dplanner/theme/palettes.py"
-  - "tests/modules/test_{time_estimates,time_progress,time_present,progression_board,step_order,milestone_colors,estimation_bulk}.py"
+  - "tests/modules/test_{time_estimates,time_progress,time_present,time_pace,progression_board,step_order,milestone_colors,estimation_bulk}.py"
   - "tests/domain/test_{schedule,progression,ordering}.py"
   - "tests/cli/test_time_matrix.py"
   - "scripts/render_boards.py"
@@ -74,6 +74,12 @@ paths:
   done exactly when they land it, and otherwise resumes the rest from tomorrow: done steps
   dated by their `since`, work in flight first and credited, a stretch whose work is done
   dated by it whatever its markers say, the whole landing with its **latest** stretch.
+  **Adjust for Efficiency** is the tab's opt-in exception: people's remaining work at the
+  pace so far (`schedule.pace_so_far` — finished steps' stretched days over the working
+  days they took; five working days and three steps first, a tenth either way is the plan's,
+  ¼–4×), handed in as `resume_days` = `stretched` at the measured focus, so it moves only a
+  plan that no longer holds. A per-user preference (`user_config`), off by default, that
+  reaches the page alone — never the recorder, a saved snapshot or the report.
   **Every surface that dates the plan hands the facts in** — the tab, the recorder,
   `schedule matrix`, `progress show|record` and the report — reading a day still going
   (`day_over` False: a step due today has until tonight); only the parity harness and the

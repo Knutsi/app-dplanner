@@ -39,16 +39,18 @@ and :func:`milestone_colors`, the one deal every surface reads. Hex strings so t
 print and store them; the view turns them into paint.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
-from math import ceil
+from math import ceil, log
 from typing import Any, TypeGuard
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import cyclic, placed
+from dplanner.domain.progression import DONE
 from dplanner.domain.schedule import (
+    HALF,
     Phase,
     ScheduleFacts,
     critical_path,
@@ -301,6 +303,58 @@ def stretched(
     return calendar_days
 
 
+# The evidence a pace needs: working days of work behind the plan, and people's steps
+# finished. Before both it is a guess, and a date moved by a guess is worse than none.
+PACE_AFTER = 5
+PACE_STEPS = 3
+# A pace this close to the planned one is the plan's: step-sized noise, not a trend.
+PACE_BAND = 0.1
+# How far either way a pace is believed.
+PACE_LEAST, PACE_MOST = 0.25, 4.0
+
+
+def pace_so_far(
+    steps: Iterable[Step],
+    days_for: Callable[[Step], float | None],
+    *,
+    is_agent: Callable[[Step], bool],
+    status_for: Callable[[Step], str],
+    started_for: Callable[[Step], date | None],
+    since_for: Callable[[Step], date | None],
+    start: date,
+    today: date,
+) -> float | None:
+    """How fast people's finished steps ran against the plan: the days they were given —
+    ``days_for``, stretched at the planned focus — over the working days they took, each from
+    the middle of the day it started to the middle of the day it was done. 1 is as planned,
+    0.5 half the speed. It is the focus measured, so like the focus it is people's alone: an
+    agent's step runs at its estimate. None before :data:`PACE_AFTER` working days of work
+    and :data:`PACE_STEPS` finished steps. A step blocked on the way counts its stall as
+    slowness."""
+    if today < start or working_days_between(start, today) <= PACE_AFTER:
+        return None
+    given = took = 0.0
+    count = 0
+    for step in steps:
+        days = days_for(step)
+        if days is None or is_agent(step) or status_for(step) != DONE:
+            continue
+        started, since = started_for(step), since_for(step)
+        if started is None or since is None:
+            continue
+        given += days
+        took += working_days_between(started, since) - 2 * HALF
+        count += 1
+    if count < PACE_STEPS or took <= 0:
+        return None
+    return min(PACE_MOST, max(PACE_LEAST, given / took))
+
+
+def as_planned(pace: float) -> bool:
+    """Whether ``pace`` is the plan's own, within :data:`PACE_BAND` either way."""
+    return abs(log(pace)) < log(1 + PACE_BAND)
+
+
 @dataclass(frozen=True)
 class Cell:
     """One staffing scenario: the cap, the makespan, and — when measured from a start
@@ -390,9 +444,11 @@ def schedule_facts(
     since_for: Callable[[Step], date | None],
     is_marker: Callable[[Step], bool],
     day_over: bool = False,
+    resume_days: Callable[[Step], float | None] | None = None,
 ) -> ScheduleFacts:
     """What has happened in ``project`` by ``today``, for the calendar to re-date it from:
-    the stored statuses with their days, and work in flight credited at the focus it ran at.
+    the stored statuses with their days, and work in flight credited at the focus it ran at
+    — and, where given, what the rest costs once the plan no longer holds (``resume_days``).
 
     A person's step started before the focus last changed ran at the old focus until the new
     one began (``efficiency_was``), so those days count at the old one's pace — crediting
@@ -416,6 +472,7 @@ def schedule_facts(
         since_of=since_for,
         is_marker=is_marker,
         worked=worked,
+        resume_days=resume_days,
         day_over=day_over,
     )
 

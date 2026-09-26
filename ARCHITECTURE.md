@@ -4706,6 +4706,26 @@ itself*.
   dot. Re-dated from what is done, the plan now always agrees with what has landed by
   today, so the word could only ever say *on plan*; a slip shows as the plan now moving
   against the plan then, which the scope and milestone plots draw.
+- **Adjusting for efficiency is the reader's, and off by default.** Resuming prices every
+  step not yet started at its estimate, so when every step takes half again as long the
+  forecast slips one late step at a time and never learns the pattern (the prototype's
+  ISSUES F6). *Adjust for Efficiency* re-dates people's remaining work at the pace so far
+  (`schedule.pace_so_far`): the stretched days people's finished steps were given over the
+  working days they took, middle of the start day to middle of the done day — the focus
+  measured, so people's alone, as the focus is. Two cheaper measures were tried there and
+  rejected: the work done against the plan's schedule jumps with every long step that
+  lands late, and a first cut that mixed in agents and floored a step at half a day read
+  every plan slow, moving the dates of plans whose estimates were right. It waits for five
+  working days and three finished steps, treats a pace within a tenth of the plan as the
+  plan's, and believes one only between ¼ and 4×. It enters the model as nothing new:
+  `ScheduleFacts.resume_days` is `stretched` at the measured focus (planned × pace), and
+  it applies only once the plan no longer holds, so a plan followed to the day never moves.
+  **Why a toggle, off by default:** on the prototype's accuracy table it helps the plans
+  whose estimates are systematically short (Optimistic 10.5 → 6.5 days of error) and costs
+  the ones where they are not (Blocked 1.8 → 4.2) — a judgement about the team, which only
+  the reader can make. So it is a per-user way of looking (`user_config`), never stored
+  with the plan: the recorder, a saved snapshot and the report keep the plan as its stored
+  focus dates it, and History, reading a record, greys it.
 
 ### The Time tab has a simulator, and it is the prototype's
 
