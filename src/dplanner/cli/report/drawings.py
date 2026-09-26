@@ -805,29 +805,35 @@ def _milestone_marks(
     colors: Colors,
 ) -> str:
     """Each milestone where it ends, named over its mark — beside it where over would
-    leave the plot — and a name that would sit on another's left to the tooltip."""
+    leave the plot — and a name that would sit on another's left to the tooltip. Milestones
+    landing on one day share the mark, a wedge each that picks its own step, and the name."""
     out = []
     labelled: list[tuple[float, float]] = []
-    for stretch in chart.marked:
-        if stretch.finish is None:
-            continue
-        line = done if stretch.done else schedule
-        value = _step_at(line.points, stretch.finish) if line is not None else None
-        cx, cy = x(stretch.finish), level(value or 0.0)
-        out.append(
-            f'<g class="landing" data-step="{_t(stretch.step_id)}">'
-            f"<title>{_t(stretch.note)}</title>"
-        )
-        if stretch.done:
-            radius = CHECK_MARK
-            out.append(_check(cx, cy, stretch.color, radius))
+    for landing in chart.landings:
+        first = landing[0]
+        assert first.finish is not None  # A landing is where some milestone ends.
+        line = done if first.done else schedule
+        value = _step_at(line.points, first.finish) if line is not None else None
+        cx, cy = x(first.finish), level(value or 0.0)
+        note = "\n\n".join(stretch.note for stretch in landing)
+        out.append(f'<g class="landing" data-step="{_t(first.step_id)}"><title>{_t(note)}</title>')
+        radius = CHECK_MARK if first.done else LANDING_MARK + 1
+        if len(landing) > 1:
+            out.append(_wedges(cx, cy, radius, landing))
+            out.append(
+                _tick(cx, cy, radius)
+                if first.done
+                else f'<circle class="ring" cx="{_n(cx)}" cy="{_n(cy)}" r="{_n(radius)}" '
+                f'fill="none" stroke="{colors.surface}" stroke-width="1.5"/>'
+            )
+        elif first.done:
+            out.append(_check(cx, cy, first.color, radius))
         else:
-            radius = LANDING_MARK + 1
             out.append(
                 f'<circle class="ring" cx="{_n(cx)}" cy="{_n(cy)}" r="{_n(radius)}" '
-                f'fill="{stretch.color}" stroke="{colors.surface}" stroke-width="1.5"/>'
+                f'fill="{first.color}" stroke="{colors.surface}" stroke-width="1.5"/>'
             )
-        name = _clip(stretch.label, 16)
+        name = " · ".join(_clip(stretch.label, 16) for stretch in landing)
         width = _text_width(name, 11.0)
         spot, anchor = (cx, cy - radius - 7), "middle"
         if spot[1] - 6 < panel.top:
@@ -951,16 +957,39 @@ def _arrow(start: float, end: float, row: float, color: str) -> str:
 def _check(cx: float, cy: float, color: str, radius: float) -> str:
     """A circle with a check, in the milestone's colour: its work is done. The check is
     white on either theme, as in the window."""
+    return (
+        f'<circle class="done-mark" cx="{_n(cx)}" cy="{_n(cy)}" r="{_n(radius)}" '
+        f'fill="{color}"/>{_tick(cx, cy, radius)}'
+    )
+
+
+def _tick(cx: float, cy: float, radius: float) -> str:
     k = radius / 8.0  # The window's check is drawn for a circle of eight.
     tick = (
         f"M{_n(cx - 3.8 * k)},{_n(cy + 0.2 * k)} L{_n(cx - 1.0 * k)},{_n(cy + 3.0 * k)} "
         f"L{_n(cx + 4.0 * k)},{_n(cy - 3.0 * k)}"
     )
     return (
-        f'<circle class="done-mark" cx="{_n(cx)}" cy="{_n(cy)}" r="{_n(radius)}" '
-        f'fill="{color}"/><path d="{tick}" fill="none" stroke="#ffffff" '
-        f'stroke-width="{_n(max(1.5, 2 * k))}" stroke-linecap="round" stroke-linejoin="round"/>'
+        f'<path d="{tick}" fill="none" stroke="#ffffff" stroke-width="{_n(max(1.5, 2 * k))}" '
+        'stroke-linecap="round" stroke-linejoin="round"/>'
     )
+
+
+def _wedges(cx: float, cy: float, radius: float, landing: Sequence[Stretch]) -> str:
+    """A circle cut into a wedge per milestone, clockwise from twelve — the window's shared
+    mark — each wedge its own step's, so a click picks the one under it."""
+    out = []
+    share = 2 * pi / len(landing)
+    for index, stretch in enumerate(landing):
+        start, end = -pi / 2 + index * share, -pi / 2 + (index + 1) * share
+        edge = f"{_n(cx + radius * cos(start))},{_n(cy + radius * sin(start))}"
+        rim = f"{_n(cx + radius * cos(end))},{_n(cy + radius * sin(end))}"
+        out.append(
+            f'<g data-step="{_t(stretch.step_id)}"><path class="wedge" '
+            f'd="M{_n(cx)},{_n(cy)} L{edge} A{_n(radius)},{_n(radius)} 0 0 1 {rim} Z" '
+            f'fill="{stretch.color}"/></g>'
+        )
+    return "".join(out)
 
 
 def _triangle(cx: float, cy: float, size: float, up: bool, color: str) -> str:

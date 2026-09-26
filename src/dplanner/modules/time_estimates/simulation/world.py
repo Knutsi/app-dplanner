@@ -3,10 +3,12 @@
 The executor is deliberately the model's own scheduler run against the *true* effort of
 each step: the same two pools, the same "longest remaining chain first" priority
 (``domain/schedule.py``'s ``chain_tails``), the same milestones-in-sequence rule
-(``stretches``), with time continuous inside a working day. So when the true effort equals
-the estimate and nothing happens to the plan (*By the book*), whatever gap opens between the
-forecast and what happens is the model's own doing, and every other scenario breaks exactly
-one assumption on top of that.
+(``stretches``), the same marker taking no worker, with time continuous inside a working
+day. So when the true effort equals the estimate and nothing happens to the plan (*By the
+book*), whatever gap opens between the forecast and what happens is the model's own doing,
+and every other scenario breaks exactly one assumption on top of that — a person keeping
+two steps going (``juggle``) and a step marked done the next morning (``mark_late``) among
+them.
 
 Nothing here reads the model or the recorder: this is what happened, not what DPlanner
 wrote down about it. It is the HTML prototype's world, step for step, so a scenario and a
@@ -88,6 +90,8 @@ class WorldParams:
     waits: tuple[WaitChange, ...] = ()  # Waits added to the plan, which the team then waits for.
     block: Block | None = None
     work_ahead: bool = False  # Idle people start the next milestone's ready work.
+    juggle: int = 1  # Steps a person keeps going at once, their focus split between them.
+    mark_late: bool = False  # A step landing is marked done the next working morning.
     dated: bool = True  # The plan has a start date stored.
     lead: int = 3  # Days shown before work begins.
     tail: int = 5  # Days shown after the last step lands.
@@ -173,8 +177,10 @@ class _World:
         # A wait is a timer, never a worker: when it ends, in working days since work began.
         self._waits: dict[str, float] = {}
         self._over: set[str] = set()
+        self._unmarked: list[str] = []  # Landed, and to be marked done in the morning.
         humans, agents = start.state.team
-        self._humans: list[str | None] = [None] * humans
+        # A person holds ``juggle`` slots side by side: person p's are p·juggle onwards.
+        self._humans: list[str | None] = [None] * (humans * params.juggle)
         self._agents: list[str | None] = [None] * agents
         self._random = rng(seed_of(params.seed, "events"))
         self._events: list[str] = []
@@ -203,6 +209,7 @@ class _World:
                 self._scheduled((day - self._begin).days, day)
                 if day.weekday() < SATURDAY:
                     workday += 1
+                    self._mark()
                     if workday > 1:
                         self._change_plan(day, workday)
                     self._work(day)
@@ -253,7 +260,7 @@ class _World:
                 if efficiency != was
                 else self._state.efficiency_was,
             )
-            self._humans = _resized(self._humans, change.humans)
+            self._humans = _resized(self._humans, change.humans * self._params.juggle)
             self._agents = _resized(self._agents, change.agents)
             people = f"{change.humans} {'person' if change.humans == 1 else 'people'}"
             agents = f"{change.agents} agent{'' if change.agents == 1 else 's'}"
@@ -413,8 +420,26 @@ class _World:
     def _land(self, step_id: str, day: date) -> None:
         self._release(step_id)
         self._finished[step_id] = day
+        if self._params.mark_late:
+            self._unmarked.append(step_id)
+            return
         step = self._set_status(step_id, DONE)
         self._events.append(f"{_key(step)} {step.title} done")
+
+    def _mark(self) -> None:
+        """What landed yesterday, marked done this morning: the work was over, the status
+        says so only now."""
+        for step_id in self._unmarked:
+            step = self._set_status(step_id, DONE)
+            self._events.append(f"{_key(step)} {step.title} marked done")
+        self._unmarked = []
+
+    def _human_slots(self) -> list[int]:
+        """The people's slots in the order a free one is taken: everyone's first, then
+        everyone's second — nobody picks up another step while somebody has none."""
+        juggle = self._params.juggle
+        people = len(self._humans) // juggle
+        return [person * juggle + held for held in range(juggle) for person in range(people)]
 
     def _work(self, day: date) -> None:
         groups = self._stretches()
@@ -428,7 +453,11 @@ class _World:
         focus = self._params.focus if self._params.focus is not None else self._state.efficiency
 
         def done(step_id: str) -> bool:
-            return self._find(step_id).status == DONE or step_id in self._over
+            return (
+                self._find(step_id).status == DONE
+                or step_id in self._over
+                or step_id in self._unmarked
+            )
 
         def current() -> int:
             # Asked afresh at every moment: a milestone that lands at eleven opens the next
@@ -450,23 +479,31 @@ class _World:
             return asked is None or asked <= day
 
         def eligible(agent: bool) -> StepState | None:
+            """The step a free agent or person takes next."""
+            return next((step for step in ready() if not step.off and step.agent == agent), None)
+
+        def marker() -> StepState | None:
+            """A marker ready to land, which takes nobody: marking a milestone is no work."""
+            return next((step for step in ready() if step.off), None)
+
+        def ready() -> list[StepState]:
             busy = {held for held in (*self._humans, *self._agents) if held is not None}
             now = current()
             if now < 0:
-                return None
-            ready = [
+                return []
+            found = [
                 step
                 for step in self._steps
                 if step.wait is None
-                and step.agent == agent
                 and step.status not in (DONE, BLOCKED)
+                and step.id not in self._unmarked
                 and step.id not in busy
                 and (self._params.work_ahead or stretch_of[step.id] == now)
                 and opened(step)
                 and all(target not in known or done(target) for target in step.requires)
             ]
-            ready.sort(key=lambda step: (stretch_of[step.id], -tails[step.id], order[step.id]))
-            return ready[0] if ready else None
+            found.sort(key=lambda step: (stretch_of[step.id], -tails[step.id], order[step.id]))
+            return found
 
         def wait_for(now: float) -> bool:
             """A wait starts the moment all it requires is done and its stretch is being
@@ -498,8 +535,13 @@ class _World:
         def assign() -> None:
             while True:
                 moved = wait_for(base + time)
+                while (landing := marker()) is not None:
+                    moved = True
+                    if landing.status == PENDING:
+                        self._set_status(landing.id, IN_PROGRESS)
+                    self._land(landing.id, day)
                 for agent in (True, False):
-                    for slot in range(len(self._agents if agent else self._humans)):
+                    for slot in range(len(self._agents)) if agent else self._human_slots():
                         lane = self._agents if agent else self._humans
                         if lane[slot] is not None:
                             continue
@@ -520,12 +562,17 @@ class _World:
         for _guard in range(10_000):
             assign()
             busy_agents = sum(1 for held in self._agents if held is not None)
-            human = max(
-                0.05, focus - (self._params.agent_load * busy_agents) / max(1, len(self._humans))
-            )
+            juggle = self._params.juggle
+            people = [self._humans[at : at + juggle] for at in range(0, len(self._humans), juggle)]
+            human = max(0.05, focus - (self._params.agent_load * busy_agents) / max(1, len(people)))
             busy: list[tuple[str, float]] = [
                 *((held, 1.0) for held in self._agents if held is not None),
-                *((held, human) for held in self._humans if held is not None),
+                *(
+                    (held, human / sum(1 for one in person if one is not None))
+                    for person in people
+                    for held in person
+                    if held is not None
+                ),
             ]
             # A wait ending today moves the clock on even when nobody is working.
             ending = [

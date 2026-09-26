@@ -341,7 +341,7 @@ def test_picking_a_palette_reshades_the_milestones_and_is_undoable(services, sta
     assert staged.module_data[MODULE_ID] == {"palette": "mako", "format": 2}
     assert read_palette(staged) is mako
     assert _swatches(tab) == shades(mako, 2)
-    assert tab.months.band_at(date(2026, 9, 10)).color.name() == shades(mako, 2)[0]
+    assert tab.months.bands_at(date(2026, 9, 10))[0].color.name() == shades(mako, 2)[0]
     services.undo.undo()
     assert MODULE_ID not in staged.module_data
     assert tab.palette_picker.currentData() == PALETTES[0].id  # the picker follows the model
@@ -459,7 +459,7 @@ def test_a_chosen_colour_overrides_the_dealt_one_until_automatic(services, stage
     section.pick_colour("#C98500")
     assert draft.module_data[MODULE_ID] == {"color": "#c98500", "format": 2}
     assert _swatches(tab)[0] == "#c98500"
-    assert tab.months.band_at(date(2026, 9, 10)).color.name() == "#c98500"
+    assert tab.months.bands_at(date(2026, 9, 10))[0].color.name() == "#c98500"
     # The other is still dealt in turn — its shade is its place among two, not one.
     assert _swatches(tab)[1] == shades(PALETTES[0], 2)[1]
     section.pick_colour(None)
@@ -593,14 +593,67 @@ def test_the_calendar_answers_height_for_width_and_never_resizes_itself(app, sta
 def test_the_calendar_paints_each_stretch_and_marks_the_landing(services, staged):
     tab = services.tabs.open("time", staged.id)
     _read, draft, _docs, ship = staged.steps
-    first = tab.months.band_at(date(2026, 9, 10))
-    second = tab.months.band_at(date(2026, 9, 21))
-    assert first is not None and first.key == draft.id and first.label == "v1"
-    assert second is not None and second.key == ship.id
+    (first,) = tab.months.bands_at(date(2026, 9, 10))
+    (second,) = tab.months.bands_at(date(2026, 9, 21))
+    assert first.key == draft.id and first.label == "v1"
+    assert second.key == ship.id
     assert [first.color.name(), second.color.name()] == shades(PALETTES[0], 2)
-    assert "v1 lands" in tab.months.day_tooltip(date(2026, 9, 16))
+    # v2 begins the afternoon v1 lands: the day is both, and the landing is what it shows.
+    assert tab.months.bands_at(date(2026, 9, 16)) == (first, second)
+    assert "v1 lands; v2 starts, working day 1 of 6" in tab.months.day_tooltip(date(2026, 9, 16))
     assert "v2, working day 2 of 6" in tab.months.day_tooltip(date(2026, 9, 17))
     assert "v2 lands" in tab.months.day_tooltip(date(2026, 9, 23))
+
+
+def test_two_milestones_worked_at_once_share_their_days_on_the_calendar(services, staged):
+    """The agent starts v2's docs the Friday before, while v1's model is still to come: from
+    then until v1 lands both stretches are being worked, and each such day is both."""
+    read, draft, docs, ship = staged.steps
+    tab = services.tabs.open("time", staged.id)
+    for step, status in ((read, "done"), (docs, "in-progress")):
+        services.undo.push(
+            SetModuleDataCommand(step.id, STATUS_ID, write_status(status, today=TODAY))
+        )
+    shared = tab.months.bands_at(date(2026, 9, 8))
+    assert [band.key for band in shared] == [draft.id, ship.id]
+    assert tab.months.day_tooltip(date(2026, 9, 8)) == (
+        "Tuesday 8 September — v1, working day 3 of 5; v2, working day 3 of 9"
+    )
+
+
+def test_milestones_landing_on_one_day_share_one_mark_and_one_name(services, staged):
+    """Everything done today: v1 and v2 land together, so the Work page, the calendar and
+    the report each mark the day once — a wedge each in the report, which a click reads —
+    and name both."""
+    from dplanner.cli.report.drawings import LIGHT, chart_svg
+    from dplanner.cli.report.parts import Chart
+    from dplanner.modules import _time_readers
+    from dplanner.modules.time_estimates.report import report_source
+
+    tab = services.tabs.open("time", staged.id)
+    for step in staged.steps:
+        services.undo.push(
+            SetModuleDataCommand(step.id, STATUS_ID, write_status("done", today=TODAY))
+        )
+    shown = tab.shown
+    assert shown is not None
+    (landing,) = shown.landings
+    assert [scope.named.label for scope in landing] == ["v1", "v2"]
+    work = tab.work
+    work.resize(900, work.height())
+    work.grab()
+    (hit,) = [hit for hit in work._hits if "v1" in hit.words]
+    assert "v2" in hit.words
+    assert "v1 lands; v2 lands" in tab.months.day_tooltip(TODAY)
+    contribution = report_source(_time_readers())(
+        services.document, staged, services.repo.files, TODAY
+    )
+    (chart,) = [placed.part for placed in contribution.placed if isinstance(placed.part, Chart)]
+    assert len(chart.landings) == 1
+    svg = chart_svg(chart, LIGHT)
+    assert svg.count('class="landing"') == 1 and svg.count('class="wedge"') == 2
+    assert f'<g data-step="{staged.steps[3].id}"><path class="wedge"' in svg
+    assert ">v1 · v2</text>" in svg
 
 
 # -- the Work page ---------------------------------------------------------------------------
@@ -791,8 +844,9 @@ def test_a_host_may_grey_the_writers_for_a_reason_of_its_own(tab):
 
 @pytest.fixture
 def slow(services, make_project):
-    """Three 1d steps that each took four working days at 50% focus — two planned — then a
-    4d step to go, read on the Wednesday after: people run at two-thirds of the plan."""
+    """Three 1d steps that each took one of three people four working days at 50% focus —
+    two planned — then a 4d step to go, read on the Wednesday after: people run at
+    two-thirds of the plan."""
     from dplanner.framework.user_config import set_global
     from dplanner.modules.time_estimates.activity import ADJUST_KEY
 
@@ -810,6 +864,7 @@ def slow(services, make_project):
         entry = write_status("done", today=date(2026, 9, 10), previous=began)
         SetModuleDataCommand(step.id, STATUS_ID, entry).redo(library)
     SetModuleDataCommand(project.id, ESTIMATION_ID, write_start(date(2026, 9, 7))).redo(library)
+    SetModuleDataCommand(project.id, MODULE_ID, {"team": [3, 1]}).redo(library)
     yield project
     set_global(MODULE_ID, ADJUST_KEY, False)  # a preference: the next test starts off
 

@@ -63,9 +63,10 @@ paths:
   them through `TimeEstimatesDeps.estimate_missing` — over one `Toolbar`: the pages (a
   `Segmented`: *Milestones*, *Work*, *Calendar*), *Compared with*, the Budget, *Save
   Snapshot…*, ⋯ and Export. A pick on the Milestones page **highlights, never hides**:
-  the calendar fades the other stretches. A cycle a
-  hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says so instead
-  of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
+  the calendar fades the other stretches. **A calendar day two stretches are both worked
+  is a stripe of each**, and a landing fills its day with every milestone landing on it.
+  A cycle a hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says
+  so instead of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
   worker pools, one greedy simulation* has the reasoning.
 - **The plan re-dates itself from what has happened, and facts beat the sequence.**
   `phases` handed `ScheduleFacts` — `time_estimates/schedule.py`'s `schedule_facts`: the
@@ -74,10 +75,16 @@ paths:
   done exactly when they land it, and otherwise resumes the rest from tomorrow: done steps
   dated by their `since`, work in flight first and credited, a stretch whose work is done
   dated by it whatever its markers say, the whole landing with its **latest** stretch.
+  **Work already started in a stretch not reached yet runs now**, keeping its worker from
+  tomorrow beside the stretch being worked and done where it belongs the day it lands, and
+  **a marker takes no worker** — both measured with the simulator's parallel scenarios
+  (`ARCHITECTURE.md`'s *Milestones worked in parallel*, which also has the candidates
+  rejected and why).
   **Adjust for Efficiency** is the tab's opt-in exception: people's remaining work at the
   pace so far (`schedule.pace_so_far` — finished steps' stretched days over the working
-  days they took; five working days and three steps first, a tenth either way is the plan's,
-  ¼–4×), handed in as `resume_days` = `stretched` at the measured focus, so it moves only a
+  days they took, each half day shared among people's steps open in it; five working days
+  and three steps first, a tenth either way is the plan's, ¼–4×), handed in as
+  `resume_days` = `stretched` at the measured focus, so it moves only a
   plan that no longer holds. A per-user preference (`user_config`), off by default, that
   reaches the page alone — never the recorder, a saved snapshot or the report.
   **Every surface that dates the plan hands the facts in** — the tab, the recorder,
@@ -85,8 +92,11 @@ paths:
   (`day_over` False: a step due today has until tonight); only the parity harness and the
   simulator read days that are over. **The model is the prototype's to the day**:
   `tests/modules/test_time_parity.py` replays its scenarios through the real aspect writers
-  (`simulation/frames.py`) and compares every forecast, so a model change is made in the
-  prototype first, its fixture regenerated, then here. A stretch's `start` is where its
+  (`simulation/frames.py`) and compares every forecast, so a model change that moves one
+  of them is made in the prototype first, its fixture regenerated, then here; one that
+  moves none — milestones worked in parallel, which its scenarios never play, and *Adjust
+  for Efficiency*'s pace, which the file does not compare — is measured with
+  `scripts/time_accuracy.py` over all fifteen. A stretch's `start` is where its
   remaining work begins and `began` when its work first began — a view shows `began`.
   `ARCHITECTURE.md`'s *The plan re-dates itself from what has happened* has the reasoning.
 - **A wait is a step that holds, and no work.** `modules/step_wait/` marks a step
@@ -124,9 +134,12 @@ paths:
   debounce service — never `dataclasses.replace` over the window's deps — and scrubs by
   `replay.restore`, never by rebuilding the tab; the embedded tab's writers are greyed
   (`set_read_only`, the simulator writes that plan) and *Hold the Axes Still* hands it the
-  whole run's rows to hold (`hold_reach`). `scripts/time_accuracy.py` is the number
-  to quote for a model change. `ARCHITECTURE.md`'s *The Time tab has a simulator* has the
-  reasoning.
+  whole run's rows to hold (`hold_reach`). Three scenarios are this simulator's own —
+  *Two tracks*, *Multitasking*, *Late marking*, milestones worked in parallel, which the
+  prototype never played (a `SampleShape` of two `tracks`, a world's `juggle` and
+  `mark_late`). `scripts/time_accuracy.py` is the number to quote for a model change,
+  printed as recorded and with *Adjust for Efficiency* on. `ARCHITECTURE.md`'s *The Time
+  tab has a simulator* has the reasoning.
 - **Progress is derived; the past is a list of snapshots, and a comparison is two of
   them.** How far a milestone has come — by estimated days, everything through its
   stretch; the count of steps is tallied and worded, never the share — is
@@ -168,7 +181,8 @@ paths:
   (`Presented.scale`): the scope against the plan compared with, warm where it holds more
   and cool where less, a ▲ or ▼ each day it changed (`scope_marks`, by the day's sum);
   and the work done, **dotted across a day no step changed status** (`Burnup.active`),
-  beside the plan's schedule from the day shown on, each milestone marked where it ends.
+  beside the plan's schedule from the day shown on, each milestone marked where it ends —
+  **milestones landing on one day share the mark**, a wedge each, and the name.
   Weekends are pale bands through both. **Both surfaces draw the same page**: the report's
   `Chart` of `Plot`s (`shift`, `scope`, `done`) and `Stretch`es is `present.py`'s output
   said as plain data (`time_estimates/report.py`), drawn by `cli/report/drawings.py`.

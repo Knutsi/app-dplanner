@@ -4,7 +4,9 @@ What the real plans have in common: one start step; milestones in a chain, each 
 what branches out of the previous one and collects into it; most steps agent work sized in
 quarter days; a few human steps sized in whole days; milestone steps opted out of
 estimating; and a couple of steps nobody has sized yet. The seed changes the shape, never
-the kind — and names the same plan the HTML prototype's seed does.
+the kind — and names the same plan the HTML prototype's seed does. A shape of more than one
+*track* deals the milestones to chains that never wait on one another, which the prototype
+never drew.
 """
 
 import math
@@ -63,6 +65,8 @@ class SampleShape:
     chain: tuple[int, int] = (2, 4)  # Steps per chain.
     agent_share: float = 0.75
     unestimated: int = 2
+    # Chains of milestones that never wait on one another, dealt the milestones in turn.
+    tracks: int = 1
 
 
 SAMPLE_SHAPE = SampleShape()
@@ -107,8 +111,10 @@ def sample_plan(seed: int, shape: SampleShape = SAMPLE_SHAPE) -> Plan:
         )
         return f"s{number}"
 
-    previous = add("Project start", requires=(), estimate=0.0)
+    closing = [add("Project start", requires=(), estimate=0.0)] * shape.tracks
     for index in range(1, shape.milestones + 1):
+        track = (index - 1) % shape.tracks
+        previous = closing[track]
         ends: list[str] = []
         # Both counts are drawn afresh at every turn of their loop, as the prototype's
         # loop conditions draw them: the same seed then deals the same plan.
@@ -127,7 +133,9 @@ def sample_plan(seed: int, shape: SampleShape = SAMPLE_SHAPE) -> Plan:
                 link += 1
             ends.append(at)
             branch += 1
-        previous = add(f"Release {index}", requires=tuple(ends), off=True, milestone=f"M{index}")
+        closing[track] = add(
+            f"Release {index}", requires=tuple(ends), off=True, milestone=f"M{index}"
+        )
     sized = [index for index, step in enumerate(steps) if step.estimate and index != 0]
     for _left in range(shape.unestimated):
         if not sized:

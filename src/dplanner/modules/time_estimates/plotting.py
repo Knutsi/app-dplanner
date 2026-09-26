@@ -28,6 +28,9 @@ GRID_ALPHA = 20
 SAVED_ALPHA = 100
 TODAY_ALPHA = 140
 CHECK_RADIUS = 8.0
+# QPainter's angles are sixteenths of a degree from three o'clock, counter-clockwise.
+FULL_TURN = 360 * 16
+TWELVE = 90 * 16
 # The plan's own blue: the scope line and the schedule — the report's plan colour.
 PLAN = QColor("#5f87d7")
 # The scope grew (amber) or shrank (teal): the area between the lines, and the ▲ or ▼.
@@ -86,11 +89,24 @@ def faded(color: QColor, alpha: int) -> QColor:
     return found
 
 
-def paint_check(painter: QPainter, centre: QPointF, color: QColor) -> None:
-    """A circle with a check, in the milestone's colour: this milestone is done."""
+def paint_disc(painter: QPainter, centre: QPointF, radius: float, *colors: QColor) -> None:
+    """A filled circle in a milestone's colour — or, for milestones landing on one day, cut
+    into a wedge of each, clockwise from twelve in their sequence."""
     painter.setPen(Qt.PenStyle.NoPen)
-    painter.setBrush(color)
-    painter.drawEllipse(centre, CHECK_RADIUS, CHECK_RADIUS)
+    if len(colors) == 1:
+        painter.setBrush(colors[0])
+        painter.drawEllipse(centre, radius, radius)
+        return
+    box = QRectF(centre.x() - radius, centre.y() - radius, 2 * radius, 2 * radius)
+    span = FULL_TURN / len(colors)
+    for index, color in enumerate(colors):
+        painter.setBrush(color)
+        painter.drawPie(box, round(TWELVE - index * span), -round(span))
+
+
+def paint_check(painter: QPainter, centre: QPointF, *colors: QColor) -> None:
+    """A circle with a check, in the milestone's colour: this milestone is done."""
+    paint_disc(painter, centre, CHECK_RADIUS, *colors)
     tick = QPainterPath(QPointF(centre.x() - 3.8, centre.y() + 0.2))
     tick.lineTo(centre.x() - 1.0, centre.y() + 3.0)
     tick.lineTo(centre.x() + 4.0, centre.y() - 3.0)
