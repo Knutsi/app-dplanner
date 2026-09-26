@@ -10,12 +10,15 @@ panel agree about what exists.
 The format is deliberately small::
 
     {
-        "format": 3,
+        "format": 4,
         "projects": [{"path": "/home/anna/plans/search"}],
         "checkouts": {"github.com/acme/widget": "/home/anna/src/widget"},
+        "archived": [{"path": "/home/anna/plans/launch"}],
     }
 
 Paths are absolute (``~`` is allowed) and the array order is the order the panel shows.
+``archived`` is the projects this user took out of the library and kept listed: never
+opened, watched or saved, and back among ``projects`` the moment one is attached again.
 ``checkouts`` is where this machine has each repository a project names, keyed by the
 repository's canonical spelling (:func:`~dplanner.core.storage.locations.canonical_remote`)
 — a checkout is a fact about a *repository* on this machine, not about a project, so two
@@ -38,16 +41,17 @@ from dplanner.core.fsio import write_atomic
 from dplanner.core.storage.locations import canonical_remote, origin_url
 
 LIBRARY_ENV = "DPLANNER_LIBRARY"
-LIBRARY_FORMAT = 3
+LIBRARY_FORMAT = 4
 
 
 @dataclass
 class LibraryFile:
-    """What the file says: the project directories in order, and this machine's checkouts
-    by canonical repository."""
+    """What the file says: the project directories in order, this machine's checkouts by
+    canonical repository, and the directories archived out of the library."""
 
     projects: list[Path] = field(default_factory=list)
     checkouts: dict[str, Path] = field(default_factory=dict)
+    archived: list[Path] = field(default_factory=list)
 
 
 def default_library_path() -> Path:
@@ -87,7 +91,7 @@ def read_library_file(path: Path, *, strict: bool = False) -> LibraryFile:
         return LibraryFile()
     found = LibraryFile()
     for row in rows:
-        if not (isinstance(row, dict) and isinstance(row.get("path"), str) and row["path"]):
+        if not _is_row(row):
             continue
         found.projects.append(Path(row["path"]).expanduser())
         checkout = row.get("checkout")  # A format-2 row: the project's code checkout.
@@ -98,7 +102,14 @@ def read_library_file(path: Path, *, strict: bool = False) -> LibraryFile:
         for key, value in checkouts.items():
             if isinstance(key, str) and key and isinstance(value, str) and value:
                 found.checkouts[key] = Path(value).expanduser()
+    archived = raw.get("archived", [])
+    if isinstance(archived, list):
+        found.archived = [Path(row["path"]).expanduser() for row in archived if _is_row(row)]
     return found
+
+
+def _is_row(row: object) -> bool:
+    return isinstance(row, dict) and isinstance(row.get("path"), str) and bool(row["path"])
 
 
 def _adopt_checkout(checkouts: dict[str, Path], checkout: Path) -> None:
@@ -109,12 +120,18 @@ def _adopt_checkout(checkouts: dict[str, Path], checkout: Path) -> None:
 
 
 def write_library_file(
-    path: Path, entries: Sequence[Path], checkouts: Mapping[str, Path] | None = None
+    path: Path,
+    entries: Sequence[Path],
+    checkouts: Mapping[str, Path] | None = None,
+    archived: Sequence[Path] = (),
 ) -> None:
-    """Write the rows and the checkouts. Absence encodes the default: no checkouts, no key."""
+    """Write the rows, the checkouts and the archive. Absence encodes the default: no
+    checkouts or nothing archived, no key."""
     rows = [{"path": str(entry)} for entry in entries]
     data: dict[str, object] = {"format": LIBRARY_FORMAT, "projects": rows}
     if checkouts:
         data["checkouts"] = {key: str(value) for key, value in sorted(checkouts.items())}
+    if archived:
+        data["archived"] = [{"path": str(entry)} for entry in archived]
     path.parent.mkdir(parents=True, exist_ok=True)
     write_atomic(path, json.dumps(data, ensure_ascii=False, indent=2, sort_keys=True) + "\n")

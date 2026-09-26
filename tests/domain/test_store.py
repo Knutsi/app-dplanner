@@ -597,3 +597,68 @@ def test_a_file_area_refuses_a_name_that_would_leave_it(store, library, project_
         with pytest.raises(ValueError):
             area.absolute(bad)
     assert is_area_name("assets/ok.png") and area.read_bytes("assets/ok.png") == b"x"
+
+
+# -- the archive -------------------------------------------------------------------------------
+
+
+def archive(store, library, project):
+    """What the composition root's ``archive_project`` does: the store, then the model."""
+    directory = store.archive(project.id)
+    library.remove_child(project.id)
+    store.flush({(library.id, "structure")})
+    return directory
+
+
+def test_an_archived_project_leaves_the_library_for_its_archive(store, library):
+    project = library.projects[0]
+    directory = store.project_dir(project.id)
+    heard: list[None] = []
+    store.archive_changed.connect(lambda: heard.append(None))
+
+    assert archive(store, library, project) == directory
+
+    assert heard == [None]
+    assert store.archived() == [directory]
+    assert store.repo_groups() == []  # Detached: nothing of it is saved or watched.
+    file = read_library_file(store.library_path)
+    assert (file.projects, file.archived) == ([], [directory])
+    reopened = LibraryStore(store.library_path)
+    assert reopened.load().projects == []
+    assert reopened.archived() == [directory]
+
+
+def test_attaching_an_archived_directory_restores_it(store, library):
+    """Restoring is connecting: Restore, Open Project… and ``library add`` agree."""
+    project = library.projects[0]
+    directory = archive(store, library, project)
+
+    restored = store.attach(directory)
+    library.add_child(library.id, restored)
+    store.flush({(library.id, "structure")})
+
+    assert restored.id == project.id
+    assert store.archived() == []
+    file = read_library_file(store.library_path)
+    assert (file.projects, file.archived) == ([directory], [])
+
+
+def test_forgetting_an_archived_entry_marks_the_library_file(store, library):
+    directory = archive(store, library, library.projects[0])
+    marks = []
+    store.dirty.connect(lambda owner, aspect: marks.append((owner, aspect)))
+
+    store.forget_archived(directory)
+
+    assert store.archived() == []
+    assert marks == [(library.id, "structure")]
+    store.flush(set(marks))
+    assert read_library_file(store.library_path).archived == []
+    store.forget_archived(directory)  # Nothing listed: nothing to write.
+    assert len(marks) == 1
+
+
+def test_recording_a_checkout_keeps_the_archive(store, library, tmp_path):
+    directory = archive(store, library, library.projects[0])
+    store.set_checkout("git@github.com:acme/widget.git", tmp_path / "widget")
+    assert read_library_file(store.library_path).archived == [directory]

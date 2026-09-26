@@ -389,3 +389,26 @@ def test_a_checkout_recorded_by_another_writer_is_adopted(store, library, tmp_pa
     assert adoption.applied == 1 and seen == ["github.com/acme/widget"]
     assert store.checkout_for("https://github.com/acme/widget") == tmp_path / "src" / "widget"
     assert not store.changed_underneath()
+
+
+def test_an_archive_by_another_writer_is_adopted_and_so_is_its_restore(store, library):
+    other, theirs = other_writer(store)
+    project_id = library.projects[0].id
+    directory = other.archive(project_id)
+    theirs.remove_child(project_id)
+    other.flush({(theirs.id, "structure")})
+    heard: list[None] = []
+    store.archive_changed.connect(lambda: heard.append(None))
+
+    store.adopt_outside_changes()
+
+    assert library.projects == [] and store.archived() == [directory]
+    assert store.repo_groups() == [] and heard == [None]
+    assert not store.changed_underneath()
+
+    theirs.add_child(theirs.id, other.attach(directory))
+    other.flush({(theirs.id, "structure")})
+    store.adopt_outside_changes()
+
+    assert [p.id for p in library.projects] == [project_id] and store.archived() == []
+    assert not store.changed_underneath()

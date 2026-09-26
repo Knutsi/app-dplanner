@@ -29,7 +29,7 @@ def test_checkouts_round_trip_by_repository_and_are_absent_when_none(tmp_path):
         {"github.com/acme/widget": Path("/src/widget")},
     )
     raw = json.loads(path.read_text())
-    assert raw["format"] == LIBRARY_FORMAT == 3
+    assert raw["format"] == LIBRARY_FORMAT == 4
     assert raw["projects"] == [
         {"path": str(Path("/plans/search"))},
         {"path": str(Path("/plans/billing"))},
@@ -41,6 +41,24 @@ def test_checkouts_round_trip_by_repository_and_are_absent_when_none(tmp_path):
     )
     write_library_file(path, [Path("/plans/search")])
     assert "checkouts" not in json.loads(path.read_text())
+
+
+def test_the_archive_round_trips_in_order_and_is_absent_when_empty(tmp_path):
+    path = tmp_path / "library.json"
+    archived = [Path("/plans/launch"), Path("/plans/spike")]
+    write_library_file(path, [Path("/plans/search")], archived=archived)
+    assert json.loads(path.read_text())["archived"] == [{"path": str(entry)} for entry in archived]
+    assert read_library_file(path) == LibraryFile([Path("/plans/search")], {}, archived)
+    write_library_file(path, [Path("/plans/search")])
+    assert "archived" not in json.loads(path.read_text())
+    assert read_library_file(path).archived == []
+
+
+def test_a_bad_archive_row_is_dropped_and_the_rest_kept(tmp_path):
+    path = tmp_path / "library.json"
+    rows = [{"path": str(Path("/plans/launch"))}, {"path": ""}, "junk", {"path": 3}]
+    path.write_text(json.dumps({"format": 4, "projects": [], "archived": rows}))
+    assert read_library_file(path).archived == [Path("/plans/launch")]
 
 
 def test_a_format_two_checkout_is_filed_under_its_origin(tmp_path):

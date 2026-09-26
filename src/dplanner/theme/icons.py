@@ -428,8 +428,13 @@ def stop_icon(color: str | QColor) -> QIcon:
 
 
 def archive_icon(color: str | QColor) -> QIcon:
-    """An archive box: the tests taken off the roster."""
+    """An archive box: the tests taken off the roster, and the projects out of the library."""
     return glyph_icon("archive", color)
+
+
+def restore_icon(color: str | QColor) -> QIcon:
+    """An arrow coming round again: an archived project back into the library."""
+    return glyph_icon("restore", color)
 
 
 def eye_icon(color: str | QColor) -> QIcon:

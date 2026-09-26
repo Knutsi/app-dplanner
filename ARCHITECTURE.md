@@ -45,6 +45,39 @@ a wizard over the two ways in, and all of them start from the same question — 
 repository?* — answered by one picker. The library module keeps only the question of
 *which library*.
 
+**An archive is Remove from Library that remembers.** A finished project should leave the
+working set without being forgotten, so *Project ▸ Archive Project* (`library archive`)
+detaches it exactly as Remove does and files its directory under the library file's
+`archived` list. Four decisions shaped it.
+
+- **It is per user, never on the plan.** A flag in `project.dproj` would archive the
+  project for everybody who has it, and would keep it loaded and saved in every window
+  just to hide it. The library file is already one person's view of which plans are live,
+  so the archive is one more list in it (`FORMAT.md`'s format 4). An archived project is
+  not opened, so it costs a library nothing at load and nothing at save.
+- **The store holds the list, as it holds the checkouts.** `LibraryStore` writes the file
+  whole on every membership flush, so a list anybody else kept would be dropped on the next
+  one. The same holds for the other writer: `_adopt_library_file` takes the list in
+  *before* it attaches anything, so a project another window restored is not un-archived
+  here twice.
+- **Restoring is attaching.** `store.attach` takes a directory off the list, so *Restore
+  Project*, *Open Project…* on the folder, `library add` and `library restore` are one path
+  with four doors, and a project can never be listed as both live and archived. The one
+  exception is deliberate: `library add <plan repository>` adds *every* project a
+  repository lists, and it skips the archived ones by name, because a bulk add is not a
+  request to undo somebody's archiving.
+- **Remove from Library generalises rather than gaining a twin.** The archive is part of
+  the library, so the one verb forgets an archived entry when that is what is picked, and
+  `library remove` falls back to the archive when no live project matches. An archived
+  project is published as `archived_project`, keyed by its directory, and every other
+  Project verb reads `project`, so none of them can mistake one for a project it could
+  open. The Project menu's *membership* band holds all four verbs, and it is the whole of
+  the right-click on the index's Archive folder and in the Archive tab.
+
+The store lets go before the model does, for Remove as much as for Archive. Sync rewires
+its repository groups on the structure signal and reads them from the store's records, so
+a model change heard first rewired onto a project that was still attached.
+
 **A project link is the third way in, and the only one that works on a machine with
 nothing.** Open Project's browse page assumes a plan repository you can already name;
 somebody being brought onto a project cannot name one. So *File ▸ Share Project…* writes

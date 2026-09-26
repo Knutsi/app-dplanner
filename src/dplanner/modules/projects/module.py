@@ -1,10 +1,10 @@
-"""Projects: the folder in the index, what you can do to a project, and where it lives.
+"""Projects: the folders in the index, what you can do to a project, and where it lives.
 
 The tabs a project opens into belong to ``project_dashboard`` (its home) and
-``project_editor`` (its graph); this module never learns what an activity is. It is handed
+``project_editor`` (its graph); this module never learns what they are. It is handed
 ``open_dashboard`` and ``open_steps`` callbacks and calls them, which is the same seam the
 plan tree used before it and the reason two features can render the same thing without
-meeting.
+meeting. Its one tab is about no project: the Archive (``archive_tab.py``).
 
 Where a project lives is this module's other subject: the Project dialog (a column per
 repository — its log, what it is and where it is here, and a ⋯ menu of everything that
@@ -19,8 +19,14 @@ which plan repository, and the same picker answers it. Adding a project happens 
 undo stack**, through the root's ``connect_project`` with the library origin: creating one
 initialises a repository and writes files an undo could never honestly take back. The
 library file is rewritten by the store on the next autosave flush.
+
+So does archiving one, which is Remove from Library that remembers: the directory moves to
+the library file's ``archived`` list, per user, and the project is no longer loaded. The
+index's Archive folder (``archive_index.py``) and the Archive tab list it, and restoring
+is ``connect_project`` again — the store's attach takes the directory off the list.
 """
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -29,6 +35,8 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtWidgets import QTreeWidgetItem, QWidget
 
+from dplanner.core.formats import UnsupportedFormatError
+from dplanner.core.signals import Signal
 from dplanner.core.storage.locations import init_repo
 from dplanner.core.storage.provider import StorageError
 from dplanner.domain.model import Library, NodeId, Project, ProjectId
@@ -44,11 +52,14 @@ from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.session import SessionControl
 from dplanner.framework.settings_registry import SettingsSection, SettingsSectionRegistry
+from dplanner.framework.tabs import TabHost
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import notice
 from dplanner.framework.window import StatusHost
+from dplanner.modules.projects.archive_index import ArchiveSegment
+from dplanner.modules.projects.archive_tab import ARCHIVE_KIND, ArchiveActivity
 from dplanner.modules.projects.card import RepositoriesCard
 from dplanner.modules.projects.checkouts import CheckoutService
 
@@ -63,7 +74,7 @@ from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices, shown
 from dplanner.modules.projects.settings_page import build_page
 from dplanner.modules.projects.share_dialog import ShareProjectDialog
 from dplanner.modules.projects.verbs import ProjectVerbs
-from dplanner.theme.icons import branch_icon, container_icon
+from dplanner.theme.icons import archive_icon, branch_icon, container_icon
 
 
 @dataclass(frozen=True)
@@ -74,6 +85,7 @@ class ProjectsDeps:
     debounce: DebounceService
     undo: UndoService[Library]
     segments: IndexSegmentRegistry
+    tabs: TabHost  # The Archive tab; a project's own tabs are the root's callbacks.
     theme: ThemeService
     parent: QWidget
     status: StatusHost
@@ -89,12 +101,22 @@ class ProjectsDeps:
     # Show a project's Dashboard, as a preview tab or for keeps — what a click on the
     # project's own row in the index asks for. Wired by the composition root.
     open_dashboard: Callable[[NodeId, bool], None]
-    # The store's half of Remove from Library, wired by the composition root.
-    detach: Callable[[ProjectId], None]
-    # Its other half: attach a directory and add the project to the library with the
-    # membership origin, off the undo stack. Checkouts are recorded beside it, per
-    # repository, through `repos.set_checkout`.
+    # Attach a directory and add the project to the library with the membership origin,
+    # off the undo stack — also what restores an archived one. Checkouts are recorded
+    # beside it, per repository, through `repos.set_checkout`.
     connect_project: Callable[[Path], Project]
+    # Its opposite, for Remove from Library: the store lets go, then the model.
+    disconnect_project: Callable[[ProjectId], None]
+    # The same, keeping the directory in the library file's archive.
+    archive_project: Callable[[ProjectId], None]
+    # The archive itself — the store's, per user — and the one edit not made by moving a
+    # project: forgetting an entry.
+    archived: Callable[[], list[Path]]
+    archive_changed: Signal[()]
+    forget_archived: Callable[[Path], None]
+    # Whether a project still has edits that have not reached disk — an archived project
+    # is never saved again, so it leaves only once they have.
+    has_unflushed: Callable[[ProjectId], bool]
     # Every directory the library lists, opened or not — what the wizard greys.
     project_dirs: Callable[[], list[Path]]
     # Library entries that failed to open — shown greyed with the reason.
@@ -146,11 +168,25 @@ class ProjectsModule:
             undo=deps.undo,
             parent=deps.parent,
             open_steps=deps.open_steps,
-            detach=deps.detach,
+            disconnect=deps.disconnect_project,
             settings=self.show_project,
             move=self.move_plan,
             share=self.share_project,
+            archive=self.archive,
+            restore=self.restore,
+            forget=deps.forget_archived,
+            archived=deps.archived,
+            show_archive=lambda: self.open_archive(None, preview=False),
         ).register_into(deps.actions)
+        deps.tabs.register_factory(
+            ARCHIVE_KIND,
+            lambda _target: ArchiveActivity(
+                archived=deps.archived,
+                changed=deps.archive_changed,
+                actions=deps.actions,
+                context=deps.context,
+            ),
+        )
 
         deps.cards.register(
             InspectorSection(
@@ -189,6 +225,25 @@ class ProjectsModule:
                 factory=segment,
                 order=10,
                 icon=container_icon,
+            )
+        )
+        deps.segments.register(
+            IndexSegment(
+                id="archive",
+                label="Archive",
+                factory=lambda root: ArchiveSegment(
+                    root,
+                    archived=deps.archived,
+                    changed=deps.archive_changed,
+                    open_archive=lambda directory, preview: self.open_archive(
+                        directory, preview=preview
+                    ),
+                    context=deps.context,
+                    actions=deps.actions,
+                    theme=deps.theme,
+                ),
+                order=40,  # Last, below Tests (20) and Docs (30): out of the way.
+                icon=archive_icon,
             )
         )
         self._say_where_plans_live()
@@ -252,6 +307,46 @@ class ProjectsModule:
             deps.status.show_status(f"“{title}” added to the library", 4000)
         elif added:
             deps.status.show_status(f"{len(added)} projects added to the library", 4000)
+
+    # -- the archive ---------------------------------------------------------------------------
+
+    def archive(self, project_id: ProjectId) -> None:
+        """Out of the library and into its archive — once its edits are on disk, because an
+        archived project is never loaded, and so never saved, again."""
+        deps = self._deps
+        if not deps.library.has(project_id):
+            return
+        project = deps.library.project(project_id)
+        title = project.title or project.folder_name
+        deps.autosave.flush_now()
+        if deps.has_unflushed(project_id):
+            notice(
+                deps.parent,
+                "Archive Project",
+                f"The last edits to “{title}” could not be written to disk, so it was not "
+                "archived.",
+            )
+            return
+        deps.archive_project(project_id)
+        deps.status.show_status(f"“{title}” archived — Project ▸ Show Archive has it", 6000)
+
+    def restore(self, directory: Path) -> None:
+        """Back into the library: restoring is connecting, and the attach takes the
+        directory off the archive."""
+        deps = self._deps
+        try:
+            project = deps.connect_project(directory)
+        except (StorageError, UnsupportedFormatError, OSError, json.JSONDecodeError) as error:
+            notice(deps.parent, "Restore Project", f"{directory} could not be opened — {error}")
+            return
+        title = project.title or project.folder_name
+        deps.status.show_status(f"“{title}” restored to the library", 4000)
+
+    def open_archive(self, directory: Path | None, *, preview: bool) -> None:
+        """Show the Archive tab, with ``directory``'s row picked when one is named."""
+        activity = self._deps.tabs.open(ARCHIVE_KIND, preview=preview)
+        if directory is not None and isinstance(activity, ArchiveActivity):
+            activity.pick(directory)
 
     def share_project(self, project_id: ProjectId) -> None:
         """*Share Project…*: the link, the file and the code, for one project.

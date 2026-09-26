@@ -106,7 +106,22 @@ paths:
   forget. Neither is honestly reversible, so they apply directly with `LIBRARY_ORIGIN` —
   the root's `connect_project` — and the library file is rewritten by the ordinary flush
   (a structure mark on the library root). The verbs live in `modules/projects/`; the
-  library module keeps New/Open Project Library and the title.
+  library module keeps New/Open Project Library and the title. **The store lets go before
+  the model does** — `store.detach`/`store.archive`, then `remove_child` — because sync
+  rewires on the structure signal from the store's records; the root's
+  `disconnect_project` and `archive_project` are the one spelling.
+- **An archive is Remove from Library that remembers, and it is per user.** Archiving
+  files the directory under the library file's `archived` list (format 4), held and
+  written by the store like the checkouts and adopted from the other writer *before*
+  anything is attached. An archived project is never opened, watched or saved, so the
+  window flushes its edits first and refuses if they would not land. **Restoring is
+  attaching**: `store.attach` takes a directory off the list, so Restore, Open Project…,
+  `library add` and `library restore` are one path — except `library add <plan
+  repository>`, which skips archived projects rather than un-archive them in bulk. Never
+  put an archived flag on the plan. An archived project is `selection/archived_project/<dir>`,
+  never `project`, and Remove from Library forgets one; the Project menu's `membership`
+  band is the whole of its right-click. `ARCHITECTURE.md`'s *An archive is Remove from
+  Library that remembers* has the reasoning.
 - **There are two ways into a library and a project link is what makes the second one
   possible.** *Open Project…* is a wizard (`modules/projects/open_dialog.py`) over a
   chooser page, a **link** page and a **browse** page — the old Open Projects dialog, now

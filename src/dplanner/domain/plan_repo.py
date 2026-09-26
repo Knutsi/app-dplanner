@@ -8,7 +8,8 @@ index and is scanned instead, shallowly, so a clone from any era answers the sam
 
 Two readers, one function: ``dplanner library browse`` (and ``library add <root>``) and the
 Open Project wizard's browse page. Nothing here opens a project or touches the library — it
-reads the one file that says what a project is called and how many steps it has.
+reads the one file that says what a project is called and how many steps it has, which is
+also how the archive names a project it no longer opens (:func:`summary`).
 """
 
 import json
@@ -122,15 +123,36 @@ def ago(iso: str, now: datetime | None = None) -> str:
     return "just now"
 
 
-def _describe(root: Path, directory: Path, *, indexed: bool) -> PlanProject:
+@dataclass(frozen=True)
+class ProjectSummary:
+    """What a project directory says about itself, read without opening the project."""
+
+    project_id: str
+    title: str  # The folder's name when the project gives none.
+    steps: int
+    present: bool  # Whether the directory still holds a project.dproj at all.
+
+
+def summary(directory: Path) -> ProjectSummary:
+    """The project at ``directory`` as a row would name it — a browse listing's, or an
+    archived project's, which is never opened."""
     meta = read_meta(directory)
     children = meta.get("children", [])
-    relative = Path(os.path.relpath(directory, root)).as_posix()
-    return PlanProject(
-        directory=directory,
-        relative=relative,
+    return ProjectSummary(
         project_id=str(meta.get("id", "")),
         title=str(meta.get("title", "")) or directory.name,
         steps=len(children) if isinstance(children, list) else 0,
+        present=(directory / PROJECT_META).is_file(),
+    )
+
+
+def _describe(root: Path, directory: Path, *, indexed: bool) -> PlanProject:
+    found = summary(directory)
+    return PlanProject(
+        directory=directory,
+        relative=Path(os.path.relpath(directory, root)).as_posix(),
+        project_id=found.project_id,
+        title=found.title,
+        steps=found.steps,
         indexed=indexed,
     )
