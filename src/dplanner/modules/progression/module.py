@@ -83,9 +83,12 @@ class ProgressionDeps:
     context: ContextService
     tabs: TabHost
     debounce: DebounceService
-    # The stored status claims, as answers. Wired by the composition root from the status
-    # aspect's Qt-free reader; the honest default is a build where nothing is claimed.
+    # The status claims, as answers — a wait read done once it is over. Wired by the
+    # composition root from the status aspect's Qt-free reader; the honest default is a
+    # build where nothing is claimed.
     status_for: Callable[[Step], str] = field(default=_pending)
+    # Whether a step is work at all: a wait is not, and is on no lane and in no count.
+    counts_as_work: Callable[[Step], bool] = field(default=lambda _step: True)
     # The Run Agent gate, closed over the real action, and the fill of the Step menu's
     # Run Agent child — the profiles, then Manage Agent Profiles… — which the Ready lane's
     # button drops down. None is a build without an agent: the button is absent from the
@@ -197,7 +200,9 @@ class ProgressionActivity(EntityActivity):
     def _refresh(self) -> None:
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
-        self.board.show_progress(progression(self._product, self._project(), self._deps.status_for))
+        deps = self._deps
+        found = progression(self._product, self._project(), deps.status_for, deps.counts_as_work)
+        self.board.show_progress(found)
 
     def _publish(self, step_id: StepId | None) -> None:
         self._publish_all([] if step_id is None else [step_id])

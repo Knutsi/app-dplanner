@@ -4751,6 +4751,19 @@ the day:
   done has waited since the last of them was done, from the middle of that day — or since
   the day it was made, when it was made after them — and only the rest is left; `_holds`
   asks a wait nothing but when it was made, since it has no status to be late by.
+- **Everywhere else, a wait is done when it is over.** With no status of its own a wait
+  read *pending* forever, and the board and the Run Agent gate — which ask whether a
+  prerequisite reads done — held whatever followed one for good. So they read
+  `schedule.wait_status` instead of the stored status alone: a wait is done once what it
+  waits on is done and its day has come, or its days have been waited (the model's own
+  `waited`), and `WAITING` until then. Derived on every read, like the rest of progression,
+  so a wait releases its steps the morning it may with nobody marking anything.
+- **One predicate says what is work.** A wait is on no lane of the board, in no volume and
+  never unestimated — `_counts_as_work`, one function in the root, handed to progression,
+  the Estimates tab, the Order tab, `estimate rollup`, `schedule show`, `order show` and
+  lint, and `schedule.volume` is the one place a volume is counted, so no two surfaces
+  count a wait differently. What a wait cannot carry — a status, an agent, tests — is
+  refused with the reason in the verb's words (`aspect_toggle`'s `refusal`), never hidden.
 
 ### The Time tab has a simulator, and it is the prototype's
 

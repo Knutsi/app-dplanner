@@ -98,3 +98,36 @@ def test_a_wait_names_a_day_or_a_count_and_nothing_else(cli):
         "wait", "set", "hardware-arrives", "--until", "soon", expect=1
     )
     assert "0 or more" in cli("wait", "set", "hardware-arrives", "--days", "-2", expect=1)
+
+
+# -- a wait elsewhere: no work, no status, and done when it is over ----------------------------
+
+
+def test_the_board_holds_what_follows_a_wait_until_its_day(cli, clock):
+    """Hardware arrives on the 21st: the model has nothing ready until then, and the wait
+    is on no lane and in no count."""
+    cli("wait", "set", "hardware-arrives", "--until", "2026-09-21")
+    cli("status", "set", "read-the-spec", "done")
+    found = json.loads(cli("progression", "show", "Discovery", "--json"))
+    assert found["counts"]["done"] == 1 and found["counts"]["ready"] == 0
+    assert found["counts"]["waiting"] == 1  # Draft the model; the wait is none of these
+    clock.pin(date(2026, 9, 21))
+    found = json.loads(cli("progression", "show", "Discovery", "--json"))
+    assert [row["title"] for row in found["ready"]] == ["Draft the model"]
+
+
+def test_a_wait_takes_no_status(cli):
+    cli("wait", "set", "hardware-arrives", "--days", "2")
+    said = cli("status", "set", "hardware-arrives", "done", expect=1)
+    assert "is a wait: a wait has no status" in said
+
+
+def test_a_wait_is_in_no_volume_and_never_missing_an_estimate(cli):
+    before = json.loads(cli("estimate", "rollup", "Discovery", "--json"))
+    assert (before["steps"], before["unestimated"]) == (3, 1)
+    assert "estimate.missing" in cli("project", "lint", "Discovery", "--json", expect=1)
+    cli("wait", "set", "hardware-arrives", "--days", "2")
+    after = json.loads(cli("estimate", "rollup", "Discovery", "--json"))
+    assert (after["steps"], after["unestimated"], after["days"]) == (2, 0, before["days"])
+    assert json.loads(cli("order", "show", "Discovery", "--json"))["unestimated"] == 0
+    assert "estimate.missing" not in cli("project", "lint", "Discovery", "--json", expect=1)

@@ -7,11 +7,11 @@ table's, the menu bar and the command palette at once, because that is what regi
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dplanner.core.clock import Clock
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library
+from dplanner.domain.model import Library, Step
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -24,6 +24,7 @@ from dplanner.framework.undo import UndoService
 from dplanner.modules.step_status.aspect import (
     DATA_FORMAT,
     MODULE_ID,
+    NO_STATUS_ON_A_WAIT,
     STATUSES,
     read,
     write,
@@ -36,6 +37,9 @@ class StepStatusDeps:
     undo: UndoService[Library]
     actions: ActionRegistry
     clock: Clock  # The day a status change is stamped with.
+    # A wait has no status of its own — it is over when its day comes — so the verbs grey
+    # on one. The composition root knows what marks a wait.
+    is_wait: Callable[[Step], bool] = field(default=lambda _step: False)
 
 
 class StepStatusModule:
@@ -68,6 +72,9 @@ class StepStatusModule:
             step = focused_step(context, self._deps.library)
             if step is None:
                 return DISABLED
+            if self._deps.is_wait(step):
+                words = status.replace("-", " ").title()
+                return ActionState(enabled=False, label=f"{words} — {NO_STATUS_ON_A_WAIT}")
             return ActionState(checked=read(step) == status)
 
         return state
@@ -75,7 +82,7 @@ class StepStatusModule:
     def _setter(self, status: str) -> Callable[[Context], None]:
         def run(context: Context) -> None:
             step = focused_step(context, self._deps.library)
-            if step is None or read(step) == status:
+            if step is None or read(step) == status or self._deps.is_wait(step):
                 return
             entry = write(
                 status, today=self._deps.clock.today(), previous=step.module_data.get(MODULE_ID)

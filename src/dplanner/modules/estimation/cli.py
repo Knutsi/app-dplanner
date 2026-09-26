@@ -7,6 +7,7 @@ uses, so the terminal and the window cannot show one total two ways.
 """
 
 from argparse import ArgumentParser, Namespace
+from collections.abc import Callable
 from datetime import date
 from typing import Any
 
@@ -22,6 +23,7 @@ from dplanner.domain.schedule import (
     format_date,
     format_day_count,
     format_days,
+    volume,
     volume_words,
 )
 from dplanner.domain.shelf import turn_off
@@ -60,7 +62,7 @@ def step_author() -> StepAuthor:
     return StepAuthor(configure, author)
 
 
-def lint_checks() -> list[LintCheck]:
+def lint_checks(*, counts_as_work: Callable[[Step], bool]) -> list[LintCheck]:
     def missing_estimates(
         _product: Library, project: Project, _files: FilesFor
     ) -> list[LintFinding]:
@@ -73,8 +75,9 @@ def lint_checks() -> list[LintCheck]:
             )
             for step in project.steps
             # A step that has turned the aspect off is not missing an estimate; it has
-            # said it has no work of its own. Lint reports gaps, not decisions.
-            if enabled(step) and read(step) is None
+            # said it has no work of its own, and a wait has none. Lint reports gaps, not
+            # decisions.
+            if enabled(step) and read(step) is None and counts_as_work(step)
         ]
         # A start date only matters once somebody has started sizing the work; flagging it
         # on every unestimated project would be noise.
@@ -93,7 +96,15 @@ def lint_checks() -> list[LintCheck]:
     return [missing_estimates]
 
 
-def commands() -> list[CliCommand]:
+def commands(*, counts_as_work: Callable[[Step], bool]) -> list[CliCommand]:
+    """``counts_as_work`` says a wait is no work — no part of a total, never unestimated."""
+
+    def rollup(context: CliContext, args: Namespace) -> int:
+        return _rollup(context, args, counts_as_work)
+
+    def show(context: CliContext, args: Namespace) -> int:
+        return _show(context, args, counts_as_work)
+
     return [
         CliCommand(
             path=("estimate", "set"),
@@ -120,7 +131,7 @@ def commands() -> list[CliCommand]:
             path=("estimate", "rollup"),
             summary="Total a project's estimates, and count what is still unestimated.",
             configure=project_arg,
-            run=_rollup,
+            run=rollup,
             examples=("dplanner estimate rollup discovery",),
         ),
         CliCommand(
@@ -137,7 +148,7 @@ def commands() -> list[CliCommand]:
             path=("schedule", "show"),
             summary="When each step lands, in the order the work can be done.",
             configure=project_arg,
-            run=_show,
+            run=show,
             examples=(
                 "dplanner schedule show discovery",
                 "dplanner schedule show discovery --json",
@@ -213,23 +224,16 @@ def _clear(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _rollup(context: CliContext, args: Namespace) -> int:
+def _rollup(context: CliContext, args: Namespace, counts_as_work: Callable[[Step], bool]) -> int:
     """A total, plus how much of it is a guess.
 
     The count of unestimated steps is not decoration: a total that silently treats them as
     zero understates the plan, and the person reading it has no way to tell.
     """
     project = find_project(context.library, args.project)
-    estimates = [read(step) for step in project.steps]
-    total = sum(days for days in estimates if days is not None)
-    missing = sum(1 for days in estimates if days is None)
-    data = {
-        "project": project.id,
-        "days": total,
-        "steps": len(project.steps),
-        "unestimated": missing,
-    }
-    context.report(data, f"{project.title}: {volume_words(total, len(project.steps), missing)}")
+    total, steps, missing = volume(project.steps, read, counts_as_work)
+    data = {"project": project.id, "days": total, "steps": steps, "unestimated": missing}
+    context.report(data, f"{project.title}: {volume_words(total, steps, missing)}")
     return 0
 
 
@@ -255,7 +259,7 @@ def _start(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _show(context: CliContext, args: Namespace) -> int:
+def _show(context: CliContext, args: Namespace, counts_as_work: Callable[[Step], bool]) -> int:
     """The schedule: the order walk carrying estimates, under both honest assumptions.
 
     The serial total and the critical path bracket every real staffing, so both are
@@ -265,7 +269,7 @@ def _show(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
     rows = project_schedule(context.library, project)
     start = start_of(project)
-    unestimated = sum(1 for row in rows if row.days is None)
+    unestimated = sum(1 for row in rows if row.days is None and counts_as_work(row.place.step))
     landing = finish_date(rows)
     path = project_critical_path(context.library, project)
     path_landing = critical_finish(project, path) if path is not None else None

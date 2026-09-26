@@ -30,6 +30,8 @@ IN_PROGRESS: Final = "in-progress"
 
 # In the order work moves through them. "pending" first because it is the default.
 STATUSES: Final = ("pending", IN_PROGRESS, "done", "blocked")
+# A wait (``step_wait``) has none: what it holds is released by the calendar, not by a claim.
+NO_STATUS_ON_A_WAIT: Final = "a wait has no status: it is over when its day comes"
 
 SINCE_KEY: Final = "since"
 STARTED_KEY: Final = "started"

@@ -5,6 +5,8 @@ model. Statuses arrive as a function built from a dict — the same shape the co
 root wires in, and the same trick ``test_schedule.py`` plays with ``days_of``.
 """
 
+from datetime import date, timedelta
+
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import ready
@@ -175,3 +177,65 @@ def test_estimated_progress_is_none_when_nothing_is_sized():
     library, project = build("A", "B")
     found = progression(library, project, status_of({}))
     assert estimated_progress(found, lambda _step: None) is None
+
+
+# -- waits ------------------------------------------------------------------------------------
+
+
+MONDAY = date(2026, 9, 7)
+
+
+def held_by_a_wait(wait, statuses, since=None, today=MONDAY):
+    """A, then a wait W on A, then B on W: what the board makes of it on ``today``."""
+    from dplanner.domain.schedule import wait_status
+
+    library, project = build("A", "W", "B")
+    link(library, project, "W", "A")
+    link(library, project, "B", "W")
+    named = {step.title: step for step in project.steps}
+    named["W"].created = "2026-09-01T12:00:00"  # made the week before, not the machine's day
+    status = wait_status(
+        library,
+        status_of(statuses),
+        lambda step: (since or {}).get(step.title),
+        lambda step: wait if step is named["W"] else None,
+        today,
+    )
+    found = progression(library, project, status, lambda step: step is not named["W"])
+    return found, status(named["W"])
+
+
+def test_a_wait_is_no_work_and_holds_what_follows_it_until_its_day():
+    from dplanner.domain.progression import DONE, WAITING
+    from dplanner.domain.schedule import Wait
+
+    wednesday = MONDAY + timedelta(days=2)
+    found, wait = held_by_a_wait(Wait(until=wednesday), {"A": "done"}, today=MONDAY)
+    assert wait == WAITING
+    assert titles(found.done) == ["A"] and found.total == 2  # the wait is on no lane
+    assert titles(found.waiting) == ["B"] and found.ready == ()
+    found, wait = held_by_a_wait(Wait(until=wednesday), {"A": "done"}, today=wednesday)
+    assert wait == DONE
+    assert [launchable.step.title for launchable in found.ready] == ["B"]
+    assert found.percent == 50.0  # of the work: A of A and B
+
+
+def test_a_wait_holds_while_what_it_waits_on_is_not_done():
+    from dplanner.domain.progression import WAITING
+    from dplanner.domain.schedule import Wait
+
+    found, wait = held_by_a_wait(Wait(until=MONDAY), {}, today=MONDAY + timedelta(days=7))
+    assert wait == WAITING and [one.step.title for one in found.ready] == ["A"]
+    assert found.ready[0].unlocks == 1  # B, and not the wait: it is no work
+
+
+def test_a_days_wait_is_over_once_its_days_are_waited():
+    """Three working days from A's Monday, middle to middle: over on Thursday."""
+    from dplanner.domain.progression import DONE, WAITING
+    from dplanner.domain.schedule import Wait
+
+    done = {"A": "done"}
+    since = {"A": MONDAY}
+    wednesday, thursday = MONDAY + timedelta(days=2), MONDAY + timedelta(days=3)
+    assert held_by_a_wait(Wait(days=3.0), done, since, wednesday)[1] == WAITING
+    assert held_by_a_wait(Wait(days=3.0), done, since, thursday)[1] == DONE

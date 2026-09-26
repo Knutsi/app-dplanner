@@ -4340,3 +4340,20 @@ and agents as counts, the focus as a list) are. Pages of a surface had been chec
 
 **Upstream?** Yes, all three: none of them knows anything about DPlanner, and a popover is
 the missing sibling of the template's menus.
+
+## 55. From the time-backport pass: a toggle that cannot apply says why
+
+### `framework/aspect_toggle.py` — `aspect_toggle(..., refusal=)`
+
+**What we changed.** An optional `refusal: Callable[[Step], str]`. Where it answers anything
+but "", the toggle is greyed — checked as the step says, its words `<label> — <reason>` —
+and running it does nothing. The Agent and Test toggles use it on a wait step, which has no
+work for either.
+
+**Why.** *Disabled, never hidden* needs a reason to show, and until now the only way for a
+toggle to refuse was a wrapper around the whole `ActionSpec` at each registration. A
+template applied over a refused toggle skips it, as it skips any disabled action.
+
+**Upstream?** Yes: it is the template's own disabled-with-its-reason rule, given a seam on
+the one helper every aspect toggle goes through.
+

@@ -34,9 +34,9 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QCheckBox, QFileDialog, QHBoxLayout, QVBoxLayout, QWidget
 
 from dplanner.core.fsio import write_csv
-from dplanner.domain.model import Library, NodeId, Project, ProjectId, StepId
+from dplanner.domain.model import Library, NodeId, Project, ProjectId, Step, StepId
 from dplanner.domain.ordering import Placed, placed
-from dplanner.domain.schedule import Scheduled, schedule, volume_words
+from dplanner.domain.schedule import Scheduled, schedule, volume, volume_words
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -131,6 +131,8 @@ class StepOrderDeps:
     # assumption and a step's key is another's letter, and this one learns neither.
     milestone_color: Callable[[StepId], str] = field(default=_no_color)
     step_key: Callable[[StepId], str] = field(default=_no_color)
+    # Whether a step is work at all: a wait is not, and is no part of the volume.
+    counts_as_work: Callable[[Step], bool] = field(default=lambda _step: True)
 
 
 class OrderActivity(EntityActivity):
@@ -259,8 +261,10 @@ class OrderActivity(EntityActivity):
         order = placed(self._product, self._project())
         scheduled = self._deps.step_schedule(self.project_id, order)
         self.table.show_order(scheduled)
-        sized = [row.days for row in scheduled if row.days is not None]
-        self.volume.setText(volume_words(sum(sized), len(scheduled), len(scheduled) - len(sized)))
+        days = {row.place.step.id: row.days for row in scheduled}
+        steps = [row.place.step for row in scheduled]
+        said = volume(steps, lambda step: days[step.id], self._deps.counts_as_work)
+        self.volume.setText(volume_words(*said))
         self.volume.setVisible(bool(scheduled))
         self.empty.say("" if scheduled else "Steps appear here in the order they can be done.")
 

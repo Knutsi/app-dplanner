@@ -15,7 +15,8 @@ paths:
   to a per-run temp directory, never the project. The agent reports back through the CLI
   (`status set`, `agent-state set`, `note add`). **The graph gates launching**: a step
   whose `requires` do not all read done (through `status_for` on the module's Deps, the
-  progression board's seam) gets a confirmation naming them before a shell opens — the
+  progression board's seam, where a wait reads done once it is over) gets a confirmation
+  naming them before a shell opens — the
   person may know the work landed unrecorded, so it asks rather than refuses, **once for
   the whole gesture** whichever of the chosen steps wait.
   **It runs one agent per chosen step, and the count is the last precondition.** The verb

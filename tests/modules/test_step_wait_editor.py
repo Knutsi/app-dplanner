@@ -64,3 +64,19 @@ def test_the_block_holds_until_a_day_or_for_working_days(services, project, pane
     services.undo.undo()  # a burst of edits to one entry is one step, as typing is
     wait = read(step)
     assert wait is not None and wait.until is None and section.days_choice.isChecked()
+
+
+def test_a_wait_takes_no_status_no_agent_and_no_tests_and_says_why(services, project, panel):
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+
+    step = project.steps[0]
+    context = Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step.id)),)})
+    assert services.actions.spec("status.done").state(context).enabled
+    panel.bar.template("Wait").trigger()
+    done = services.actions.spec("status.done").state(context)
+    assert not done.enabled and "a wait has no status" in done.label
+    for toggle, words in (("agent.toggle", "no work for an agent"), ("test.toggle", "to test")):
+        state = services.actions.spec(toggle).state(context)
+        assert not state.enabled and words in state.label
+    run = services.actions.spec("agent.run").state(context)
+    assert not run.enabled

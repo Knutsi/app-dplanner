@@ -33,14 +33,14 @@ the rest resumes from tomorrow, with work in flight credited — so a forecast h
 while things go to plan and moves only when they do not.
 """
 
-from collections.abc import Callable, Container, Iterator, Mapping, Sequence
+from collections.abc import Callable, Container, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from math import ceil, floor
 
 from dplanner.domain.model import Library, Project, Step, StepId, local_day
 from dplanner.domain.ordering import Placed, placed
-from dplanner.domain.progression import BLOCKED, DONE, IN_PROGRESS
+from dplanner.domain.progression import BLOCKED, DONE, IN_PROGRESS, WAITING
 from dplanner.domain.scope import cone
 
 WORKING_DAYS_PER_WEEK = 5
@@ -181,6 +181,19 @@ def format_day_count(days: float) -> str:
     """A day count as prose: "1 day", "2.5 days" — for sentences, where ``format_days``
     feeds columns. The grammar lives here so no verb prints "1 days" again."""
     return f"{days:g} day" if days == 1 else f"{days:g} days"
+
+
+def volume(
+    steps: Iterable[Step],
+    days_for: Callable[[Step], float | None],
+    counts_as_work: Callable[[Step], bool],
+) -> tuple[float, int, int]:
+    """What ``steps`` amount to for :func:`volume_words`: the estimated days, how many are
+    work, and how many of those nobody has sized. A wait is no work, so it is no part of
+    any of the three."""
+    work = [step for step in steps if counts_as_work(step)]
+    sized = [days for step in work if (days := days_for(step)) is not None]
+    return sum(sized), len(work), len(work) - len(sized)
 
 
 def volume_words(days: float, steps: int, unestimated: int) -> str:
@@ -525,6 +538,57 @@ def spent_since(day: date | None, today: date) -> float:
     return working_days_between(day, today) - HALF
 
 
+def waited(
+    step: Step,
+    before: Sequence[Step],
+    status_of: Callable[[Step], str],
+    since_of: Callable[[Step], date | None],
+    today: date,
+) -> float:
+    """Working days a wait has held by ``today``, ``before`` being what it waits on. A wait
+    made after all that was done has waited since the start of the day it was made;
+    otherwise since the day the last of it was done, part-way through it. Nothing while any
+    of it is not done."""
+    if any(status_of(one) != DONE for one in before):
+        return 0.0
+    done = [day for one in before if (day := since_of(one)) is not None]
+    last = max(done, default=None)
+    made = local_day(step.created)
+    if made is not None and (last is None or made > last):
+        return 0.0 if made > today else float(working_days_between(made, today))
+    return spent_since(last, today)
+
+
+def wait_status(
+    library: Library,
+    status_of: Callable[[Step], str],
+    since_of: Callable[[Step], date | None],
+    wait_of: Callable[[Step], Wait | None],
+    today: date,
+) -> Callable[[Step], str]:
+    """``status_of`` with every wait read as done once it is over and :data:`WAITING` until
+    then — what the board and the Run Agent gate read, so what follows a wait is ready on the
+    day it may start. A wait is over when what it waits on is done and its day has come, or
+    its days have been waited; a wait on a wait asks the one before."""
+
+    def status(step: Step, seen: frozenset[StepId] = frozenset()) -> str:
+        wait = wait_of(step)
+        if wait is None:
+            return status_of(step)
+        if step.id in seen:  # Defensive: a loop a hand-edited file carries.
+            return WAITING
+        before = library.requires(step.id)
+        derived = [status(one, seen | {step.id}) for one in before]
+        if any(found != DONE for found in derived):
+            return WAITING
+        if wait.until is not None:
+            return DONE if today >= wait.until else WAITING
+        held = waited(step, before, lambda _one: DONE, since_of, today)
+        return DONE if held >= wait.days else WAITING
+
+    return lambda step: status(step)
+
+
 @dataclass(frozen=True)
 class _Clock:
     """When the next stretch may begin, and how much of that day is already used."""
@@ -728,19 +792,9 @@ def _resumed(
         since = facts.since_of(step)
         return since if since is not None else min(planned_day.get(step.id, today), today)
 
-    def waited(step: Step) -> float:
-        """A wait made after what it waits on was done has waited since the start of the
-        day it was made; otherwise since the day the last of that was done, part-way
-        through it."""
+    def held(step: Step) -> float:
         before = [by_id[target] for target in step.edges.get("requires", []) if target in by_id]
-        if any(facts.status_of(one) != DONE for one in before):
-            return 0.0
-        done = [day for one in before if (day := facts.since_of(one)) is not None]
-        last = max(done, default=None)
-        made = local_day(step.created)
-        if made is not None and (last is None or made > last):
-            return 0.0 if made > today else float(working_days_between(made, today))
-        return spent_since(last, today)
+        return waited(step, before, facts.status_of, facts.since_of, today)
 
     result: list[Phase] = []
     clock: _Clock | None = None
@@ -767,7 +821,7 @@ def _resumed(
         ]
         began_by = min([*known.values(), *started], default=None)
         phase, clock = dated(
-            milestone, steps, left, costs, clock, False, running, known, began_by, waited
+            milestone, steps, left, costs, clock, False, running, known, began_by, held
         )
         result.append(phase)
     return result

@@ -708,7 +708,9 @@ class TimeEstimatesActivity(EntityActivity):
         unsized = [
             step
             for step in project.steps
-            if deps.readers.days_for(step) is None and not deps.readers.is_marker(step)
+            if deps.readers.days_for(step) is None
+            and not deps.readers.is_marker(step)
+            and deps.readers.wait_of(step) is None
         ]
         # No record holds the unsized steps, so a look back cannot say how many there were.
         self.unsized.setVisible(bool(unsized) and self._as_of is None)

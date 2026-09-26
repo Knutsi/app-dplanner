@@ -28,12 +28,13 @@ READY_TABLE_ID = "ready"
 
 def report_source(
     *,
-    status_for: Callable[[Step], str],
+    status_in: Callable[[Library, date], Callable[[Step], str]],
+    counts_as_work: Callable[[Step], bool],
     days_for: Callable[[Step], float | None],
     key_of: Callable[[Step], str],
 ) -> ReportSource:
-    def source(library: Library, project: Project, _files: FilesFor, _day: date) -> Contribution:
-        found = progression(library, project, status_for)
+    def source(library: Library, project: Project, _files: FilesFor, day: date) -> Contribution:
+        found = progression(library, project, status_in(library, day), counts_as_work)
         if not found.total:
             return Contribution()
         placed = [

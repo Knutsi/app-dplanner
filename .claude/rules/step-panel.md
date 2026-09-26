@@ -78,9 +78,9 @@ paths:
   dialog's lead — because applying a template ends with the bar's own refresh, after the
   last write anybody heard. **A toggle never reports `visible=False`**, and a strip that
   re-shows what fits on every reflow could not honour it: **"this type can never carry that
-  aspect" needs no new mechanism** — a toggle returning `ActionState(enabled=False,
-  label=…)` is the existing *disabled, never hidden* rule; do not build one until it is
-  asked for.
+  aspect" is the existing *disabled, never hidden* rule** — `aspect_toggle`'s `refusal`
+  answers why, and the toggle greys with the reason in its words (a wait refuses Agent
+  and Test).
 - **The step panel's first tab is Details, composed from blocks.** A module that wants its
   editor there instead of behind a tab of its own registers into `services.step_details` —
   the `InspectorSectionRegistry`'s third instantiation; estimate, a wait's hold
