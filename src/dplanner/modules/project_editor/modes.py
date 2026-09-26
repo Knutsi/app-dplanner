@@ -165,7 +165,8 @@ class CanvasKey:
 class Canvas(Protocol):
     """Everything a mode may do to the canvas, and nothing else."""
 
-    link_requested: Signal[StepId, StepId]
+    # The steps to be waited on, and the one step that waits on all of them.
+    link_requested: Signal[tuple[StepId, ...], StepId]
     create_requested: Signal[float, float]
     selection_changed: Signal[CanvasSelection]
     region_create_requested: Signal[float, float, float, float]
@@ -329,42 +330,49 @@ class _LinkingMode(ModeBase):
     ``_refusal`` takes both ends as arguments rather than reading one off the gesture. That
     is not style — the release handler this came from cleared its source on its first line
     and then asked about it, so every drop refused itself for a fortnight.
+
+    The sources are plural because Connect adopts a whole selection: every one of them is
+    waited on by the one target, and one refusal refuses the lot, as ``steps.link`` does.
     """
 
-    def _refusal(self, source: StepId, target: StepId) -> str | None:
-        if source == target:
-            return "a step cannot depend on itself"
-        return self.deps.canvas.link_refusal(target, source)
+    def _refusal(self, sources: tuple[StepId, ...], target: StepId) -> str | None:
+        for source in sources:
+            if source == target:
+                return "a step cannot depend on itself"
+            refusal = self.deps.canvas.link_refusal(target, source)
+            if refusal is not None:
+                return refusal
+        return None
 
-    def _aim(self, source: StepId, cursor: QPointF) -> None:
+    def _aim(self, sources: tuple[StepId, ...], cursor: QPointF) -> None:
         canvas = self.deps.canvas
         target = canvas.node_at(cursor)
-        origin_node = canvas.node(source)
+        origin_node = canvas.node(sources[0])
         if origin_node is None:
             return
         origin = origin_node.handle_scene_pos()
-        ok = target is not None and self._refusal(source, target.step_id) is None
-        if target is None or target.step_id == source:
+        ok = target is not None and self._refusal(sources, target.step_id) is None
+        if target is None or target.step_id in sources:
             canvas.set_link_states(None, None)
         else:
             canvas.set_link_states(target.step_id if ok else None, None if ok else target.step_id)
         canvas.aim_preview(origin, cursor, ok)
 
-    def _aim_at_step(self, source: StepId, target: StepId) -> None:
+    def _aim_at_step(self, sources: tuple[StepId, ...], target: StepId) -> None:
         """Aim at a whole node rather than at a point — what keyboard navigation produces."""
         canvas = self.deps.canvas
-        origin_node, target_node = canvas.node(source), canvas.node(target)
+        origin_node, target_node = canvas.node(sources[0]), canvas.node(target)
         if origin_node is None or target_node is None:
             return
-        ok = self._refusal(source, target) is None
+        ok = self._refusal(sources, target) is None
         canvas.set_link_states(target if ok else None, None if ok else target)
         canvas.aim_preview(
             origin_node.handle_scene_pos(), target_node.sceneBoundingRect().center(), ok
         )
 
-    def _propose(self, source: StepId, target: StepId) -> None:
-        """Hand the pair to the activity, which runs ``steps.link`` exactly as the menu does."""
-        self.deps.canvas.link_requested.emit(source, target)
+    def _propose(self, sources: tuple[StepId, ...], target: StepId) -> None:
+        """Hand the steps to the activity, which runs ``steps.link`` exactly as the menu does."""
+        self.deps.canvas.link_requested.emit(sources, target)
 
     def _clear(self) -> None:
         self.deps.canvas.hide_preview()
@@ -378,24 +386,24 @@ class LinkDragMode(_LinkingMode):
 
     def __init__(self, deps: CanvasDeps, source: StepId) -> None:
         super().__init__(deps)
-        self._source = source
+        self._sources = (source,)
 
     def enter(self) -> None:
-        node = self.deps.canvas.node(self._source)
+        node = self.deps.canvas.node(self._sources[0])
         if node is not None:
-            self._aim(self._source, node.handle_scene_pos())
+            self._aim(self._sources, node.handle_scene_pos())
 
     def exit(self) -> None:
         self._clear()
 
     def mouse_move(self, event: CanvasEvent) -> bool:
-        self._aim(self._source, event.scene_pos)
+        self._aim(self._sources, event.scene_pos)
         return True
 
     def mouse_release(self, event: CanvasEvent) -> bool:
         target = self.deps.canvas.node_at(event.scene_pos)
-        if target is not None and target.step_id != self._source:
-            self._propose(self._source, target.step_id)
+        if target is not None and target.step_id not in self._sources:
+            self._propose(self._sources, target.step_id)
         self._pop()
         return True
 
@@ -411,25 +419,26 @@ class LinkDragMode(_LinkingMode):
 
 
 class ConnectMode(_LinkingMode):
-    """Pick a step, then the step that waits on it — with the mouse or with the keyboard.
+    """Pick the steps others wait on, then the step that waits — with the mouse or the keys.
 
-    It adopts whatever is selected as its source, so entering the mode with a step in front
-    of you means you are already halfway. Movement keys are *not* consumed: they fall through
-    to the canvas keymap and move the selection, and this mode re-aims at wherever they
-    landed. Enter finishes the link, and one finished link ends the mode.
+    It adopts whatever is selected as its sources, so entering the mode with a step in front
+    of you means you are already halfway — and entering it with several means the next
+    click links every one of them to the step clicked. Movement keys are *not* consumed:
+    they fall through to the canvas keymap and move the selection, and this mode re-aims at
+    wherever they landed. Enter finishes the link, and one finished link ends the mode.
     """
 
     name = CONNECT
 
     def __init__(self, deps: CanvasDeps) -> None:
         super().__init__(deps)
-        self._source: StepId | None = None
+        self._sources: tuple[StepId, ...] = ()
         self._unsubscribe: Callable[[], None] | None = None
 
     def enter(self) -> None:
         self._unsubscribe = self.deps.canvas.selection_changed.connect(self._on_selection)
         self.deps.view.viewport().setCursor(Qt.CursorShape.CrossCursor)
-        self._take_source(self.deps.canvas.selected_step())
+        self._take_sources(self.deps.canvas.selection().steps)
 
     def exit(self) -> None:
         if self._unsubscribe is not None:
@@ -441,17 +450,17 @@ class ConnectMode(_LinkingMode):
     def mouse_press(self, event: CanvasEvent) -> bool:
         node = self.deps.canvas.node_at(event.scene_pos)
         if node is None:
-            self._take_source(None)
-        elif self._source is None or node.step_id == self._source:
+            self._take_sources(())
+        elif not self._sources or node.step_id in self._sources:
             self.deps.canvas.select_step(node.step_id)
-            self._take_source(node.step_id)
+            self._take_sources((node.step_id,))
         else:
             self._finish(node.step_id)
         return True  # Consumed either way: no node dragging and no rubber band in this mode.
 
     def mouse_move(self, event: CanvasEvent) -> bool:
-        if self._source is not None:
-            self._aim(self._source, event.scene_pos)
+        if self._sources:
+            self._aim(self._sources, event.scene_pos)
         return True
 
     def mouse_release(self, event: CanvasEvent) -> bool:
@@ -462,35 +471,40 @@ class ConnectMode(_LinkingMode):
 
     def key_press(self, key: CanvasKey) -> bool:
         if key.key == Qt.Key.Key_Escape:
-            if self._source is None:
+            if not self._sources:
                 return False  # Nothing pending: the canvas pops the mode instead.
-            self._take_source(None)
+            self._take_sources(())
             return True
         if key.key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
             target = self.deps.canvas.selected_step()
-            if self._source is not None and target is not None and target != self._source:
+            if self._sources and target is not None and target not in self._sources:
                 self._finish(target)
             return True
         return False  # Movement keys belong to the keymap; this mode follows what they select.
 
-    def _take_source(self, step_id: StepId | None) -> None:
-        self._source = step_id
+    def _take_sources(self, step_ids: tuple[StepId, ...]) -> None:
+        self._sources = step_ids
         self._clear()
-        if step_id is None:
+        if not step_ids:
             self.deps.status("Connect: pick the step others wait on. Esc leaves.")
-        else:
+        elif len(step_ids) == 1:
             self.deps.status("Connect: pick the step that waits. Enter links, Esc cancels.")
+        else:
+            self.deps.status(
+                f"Connect: pick the step that waits on these {len(step_ids)}."
+                " Enter links, Esc cancels."
+            )
 
     def _on_selection(self, selection: CanvasSelection) -> None:
-        if self._source is None or len(selection.steps) != 1:
+        if not self._sources or len(selection.steps) != 1:
             return
         target = selection.steps[0]
-        if target != self._source:
-            self._aim_at_step(self._source, target)
+        if target not in self._sources:
+            self._aim_at_step(self._sources, target)
 
     def _finish(self, target: StepId) -> None:
-        assert self._source is not None
-        self._propose(self._source, target)
+        assert self._sources
+        self._propose(self._sources, target)
         if self.stack is not None:
             self.stack.pop()
 

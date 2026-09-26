@@ -141,11 +141,11 @@ class GraphScene(QGraphicsScene):
         self.addItem(self._outline)
 
         self.nodes_moved: Signal[list[tuple[StepId, float, float]]] = Signal()
-        # (source, target): the user connected source to target. Whether that is a legal link
-        # is not this view's business — the action decides.
-        self.link_requested: Signal[StepId, StepId] = Signal()
+        # (sources, target): the user connected every source to target. Whether that is a
+        # legal link is not this view's business — the action decides.
+        self.link_requested: Signal[tuple[StepId, ...], StepId] = Signal()
         self.create_requested: Signal[float, float] = Signal()
-        # Everything picked, in the order it was picked: two steps is what a link verb reads.
+        # Everything picked, in pick order: a link verb makes the last one wait on the rest.
         self.selection_changed: Signal[CanvasSelection] = Signal()
         self.region_create_requested: Signal[float, float, float, float] = Signal()
         # Regions that finished moving, with the steps a body drag carried — one gesture,

@@ -164,7 +164,7 @@ class StepVerbs:
                 group="link",
                 order=10,
                 icon=link_icon,
-                tip="The second selected step waits on the first",
+                tip="The last selected step waits on every other selected step",
                 state=self._can_link,
                 run=self._link,
             ),
@@ -252,9 +252,23 @@ class StepVerbs:
                     return waits, kind
         return None
 
+    def _fan_in(self, context: Context) -> tuple[list[StepId], StepId] | None:
+        """The selected steps as ``(waited on, waiting)``: the last one picked waits on every
+        other — a pair is the case of one — or None if fewer than two known steps are
+        selected."""
+        chosen = context.selected_entities("step")
+        if len(chosen) < 2 or not all(self.library.has(step_id) for step_id in chosen):
+            return None
+        *sources, waiter = chosen
+        return sources, waiter
+
+    def _new_sources(self, sources: list[StepId], waiter: StepId) -> list[StepId]:
+        waiting = self.library.step(waiter).edges.get("requires", [])
+        return [source for source in sources if source not in waiting]
+
     def _can_link(self, context: Context) -> ActionState:
-        pair = self._pair(context)
-        if pair is None:
+        fan = self._fan_in(context)
+        if fan is None:
             return DISABLED
         if self._existing_link(context) is not None:
             # The documented exception to "disabled, never hidden": Link and Unlink are one
@@ -262,21 +276,27 @@ class StepVerbs:
             # same fact twice. The label travels anyway, for the canvas reporting a drop onto
             # an already-linked node.
             return ActionState(visible=False, enabled=False, label="Already linked")
-        source, waiter = pair
-        refusal = self.library.link_refusal(waiter, "requires", source)
-        if refusal is None:
-            return ENABLED
-        # The label carries the reason, so a greyed entry says why rather than just being
-        # grey — and the canvas reuses it for the status bar after a refused drop.
-        return ActionState(enabled=False, label=f"Cannot Link — {refusal}")
+        sources, waiter = fan
+        new = self._new_sources(sources, waiter)
+        if not new:
+            return ActionState(enabled=False, label="Already linked")
+        for source in new:
+            refusal = self.library.link_refusal(waiter, "requires", source)
+            if refusal is not None:
+                # The label carries the reason, so a greyed entry says why rather than just
+                # being grey — and the canvas reuses it for the status bar after a refused
+                # drop. One refusal refuses the lot: half a fan-in is a surprise to undo.
+                return ActionState(enabled=False, label=f"Cannot Link — {refusal}")
+        return ENABLED
 
     def _link(self, context: Context) -> None:
-        pair = self._pair(context)
-        if pair is None:
+        fan = self._fan_in(context)
+        if fan is None:
             return  # The state gate already prevents this; stay honest.
-        source, waiter = pair
+        sources, waiter = fan
         waiting = self.library.step(waiter).edges.get("requires", [])
-        self.undo.push(SetEdgesCommand(waiter, "requires", [*waiting, source]))
+        new = self._new_sources(sources, waiter)
+        self.undo.push(SetEdgesCommand(waiter, "requires", [*waiting, *new]))
 
     def _can_unlink(self, context: Context) -> ActionState:
         picked = picked_edges(self.library, context)
