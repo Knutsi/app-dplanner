@@ -68,30 +68,65 @@ button.link { border: none; background: none; color: var(--accent); text-decorat
 .caption.bold { font-weight: 600; color: var(--ink); }
 .subtitle { color: var(--secondary); font-size: 12px; }
 
-/* -- the page's head ---------------------------------------------------------------------------- */
+/* -- the debugger: everything that exists only in the prototype ------------------------------------
+   Dark in both themes, and a cool navy rather than the view's neutral greys, so the line
+   between "what DPlanner would show" and "what drives it" holds on either desktop. Every
+   control and plot inside reads these tokens, so none of them needs a dark variant. */
 
-header { border-bottom: 1px solid var(--border); padding-bottom: 8px; }
-header .title { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; flex-wrap: wrap; margin-bottom: 8px; }
-header .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 6px 0; }
-header .open input { max-width: 220px; }
+.debug {
+  --bg: #111722;
+  --surface: #18202d;
+  --elevated: #222b3a;
+  --border: #2f3a4d;
+  --ink: #e4e9f2;
+  --secondary: #9aa7bb;
+  --accent: #d9b25f;
+  --on-accent: #111722;
+  --bad: #e07a7a;
+  color-scheme: dark;
+  background: var(--bg);
+  color: var(--ink);
+  accent-color: var(--accent);
+}
+
+.debug-bar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  padding: 8px 12px 4px;
+  border-radius: 8px 8px 0 0;
+  box-shadow: 0 2px 0 var(--border);
+}
+.debug-bar:has(+ .debug-body[hidden]) { border-radius: 8px; }
+.debug-bar .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.debug-bar .fold { font-weight: 600; margin-right: 8px; }
+.debug-bar .today-label { margin-left: 12px; font-weight: 600; }
+.debug-bar .scenario-name { margin-left: 12px; color: var(--secondary); }
+.debug-bar nav { margin-left: auto; display: flex; gap: 12px; }
+.track-strip { position: relative; margin-top: 6px; }
+.track-strip input[type="range"] { width: 100%; margin: 0; }
+.track-strip .ticks { height: 14px; }
+
+.debug-body { padding: 4px 12px 12px; border-radius: 0 0 8px 8px; }
+.debug-section { border-top: 1px solid var(--border); padding: 6px 0; }
+.debug-section > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.debug-section > summary::marker { color: var(--secondary); }
+.debug .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 6px 0; }
+.debug .open input { max-width: 220px; }
 .scenario .breaks { color: var(--secondary); flex: 1 1 360px; }
 .scenario .look { flex-basis: 100%; background: var(--surface); border-left: 3px solid var(--accent); padding: 6px 10px; }
 details.world { flex-basis: 100%; }
 details.world summary { cursor: pointer; color: var(--secondary); }
 .params { display: flex; flex-wrap: wrap; gap: 6px 16px; padding: 8px 0; }
 
-.timeline { position: sticky; top: 0; z-index: 5; background: var(--bg); border-bottom: 1px solid var(--border); padding: 8px 0; }
-.timeline .controls { display: flex; align-items: center; gap: 4px; }
-.timeline .today-label { margin-left: 12px; font-weight: 600; }
-.track-strip { position: relative; margin-top: 4px; }
-.track-strip input[type="range"] { width: 100%; margin: 0; }
-.track-strip .ticks { height: 14px; }
-
 .events { color: var(--secondary); margin: 8px 0; min-height: 20px; }
 .events b { color: var(--ink); }
 
-nav.tabs { display: flex; gap: 4px; margin-top: 10px; border-bottom: 1px solid var(--border); }
-nav.tabs button { border-radius: 5px 5px 0 0; border-bottom: none; }
+/* -- the view: the Time tab as DPlanner would show it, framed like a tab --------------------------- */
+
+.view { margin-top: 16px; }
+.view-tabs { border-bottom: 1px solid var(--border); }
+.view-tab { display: inline-block; padding: 6px 14px; background: var(--surface); border: 1px solid var(--border); border-bottom: none; border-radius: 5px 5px 0 0; margin-bottom: -1px; font-weight: 600; }
 
 main { padding-top: 4px; }
 

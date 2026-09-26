@@ -67,7 +67,7 @@ function forecasts(rows: readonly Snapshot[], key: string | null): [Day, Day][] 
   });
 }
 
-export function trackTab(
+export function trackRecord(
   timeline: Timeline,
   recording: Recording,
   compared: Recording | null,

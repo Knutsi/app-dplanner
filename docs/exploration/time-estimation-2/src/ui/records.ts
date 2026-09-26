@@ -21,7 +21,7 @@ function stretchText(row: Snapshot, key: string, today: Day): string {
   } · ${shortDate(stretch.start, today)} → ${finish}`;
 }
 
-export function recordsTab(
+export function recordsView(
   timeline: Timeline,
   recording: Recording,
   index: number,

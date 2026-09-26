@@ -1,6 +1,11 @@
 /**
- * The prototype's page: pick a plan and a scenario (or a real plan's history), scrub the
- * days, and read the Time tab, the track record and the raw records as of the day picked.
+ * The prototype's page: a dark debugger over a light view.
+ *
+ * The **view** is the Time tab as DPlanner would show it on the scrubbed day — nothing on it
+ * exists only in the prototype. The **debugger** is everything that does: which plan and
+ * scenario, the model variants and the recorder, the day scrubber, what happened that day,
+ * the track record and the raw records. Its bar (the scrubber) stays pinned at the top; its
+ * body folds away, section by section or whole (`d`), so the view can be read on its own.
  *
  * Three things are kept apart on purpose (timeline.ts has the why): the *timeline* is what
  * happened; the *recording* is what DPlanner wrote down about it, under the chosen recorder
@@ -35,12 +40,10 @@ import {
 } from "./sim/timeline.ts";
 import { DEFAULT_WORLD, run, type WorldParams } from "./sim/world.ts";
 import { renderFigures } from "./ui/figures.ts";
-import { recordsTab } from "./ui/records.ts";
+import { recordsView } from "./ui/records.ts";
 import { h } from "./ui/markup.ts";
 import { timeTab } from "./ui/timetab.ts";
-import { trackTab } from "./ui/track.ts";
-
-type Tab = "time" | "track" | "records";
+import { trackRecord } from "./ui/track.ts";
 
 interface App {
   source: string; // "sample", or an export's slug
@@ -50,11 +53,20 @@ interface App {
   cadence: Cadence;
   options: ModelOptions;
   frame: number;
-  tab: Tab;
   view: ViewState;
   saved: SavedSpec[]; // Saved by hand on this page.
   offset: number;
 }
+
+/** Which parts of the debugger are unfolded — a per-viewer convenience, kept in the browser. */
+interface Folds {
+  open: boolean; // The body under the bar.
+  setup: boolean;
+  track: boolean;
+  records: boolean;
+}
+
+const FOLDS_KEY = "te2.debugger";
 
 const exports = new Map<string, ExportFile>();
 const app: App = {
@@ -65,11 +77,32 @@ const app: App = {
   cadence: "weekdays",
   options: { ...FAITHFUL },
   frame: -1,
-  tab: "time",
   view: { picked: null, then: AT_START, now: LIVE, lens: "calendar", page: "progress", whatIf: {} },
   saved: [],
   offset: 0,
 };
+let folds: Folds = readFolds();
+
+function readFolds(): Folds {
+  const fallback = { open: true, setup: true, track: false, records: false };
+  try {
+    return { ...fallback, ...JSON.parse(localStorage.getItem(FOLDS_KEY) ?? "{}") };
+  } catch {
+    return fallback;
+  }
+}
+
+function fold(patch: Partial<Folds>): void {
+  folds = { ...folds, ...patch };
+  try {
+    localStorage.setItem(FOLDS_KEY, JSON.stringify(folds));
+  } catch {
+    // A private window or blocked storage: the folds just do not outlive the page.
+  }
+  body.hidden = !folds.open;
+  toggle.textContent = folds.open ? "▾ Debugger" : "▸ Debugger";
+  renderContent();
+}
 
 // -- what is derived, and cached while its inputs hold --------------------------------------------
 
@@ -133,28 +166,44 @@ function currentRecording(): Recording {
 
 const root = document.getElementById("app")!;
 let content: HTMLElement;
-let strip: HTMLElement;
+let body: HTMLElement;
+let toggle: HTMLButtonElement;
+let happened: HTMLElement;
+let trackHost: HTMLElement;
+let recordsHost: HTMLElement;
+let viewTitle: HTMLElement;
 
 function render(): void {
   currentTimeline();
   currentRecording();
-  root.replaceChildren(header(), strip = timelineStrip(), tabs(), content = h("main"));
+  root.replaceChildren(debuggerBar(), debuggerBody(), viewFrame());
   renderContent();
   writeHash();
 }
 
+/** Everything that depends on the day: the view, and the debugger's day-bound parts. */
 function renderContent(): void {
   const frame = timeline.frames[app.frame];
   const upToDay = recordedBy(recording, frame.day);
-  content.replaceChildren(
-    events(frame.events),
-    app.tab === "time"
-      ? timeContent(frame.plan, frame.day, upToDay)
-      : app.tab === "track"
-      ? trackTab(timeline, recording, compared, app.options, app.frame)
-      : recordsTab(timeline, recording, app.frame, replayed),
+  content.replaceChildren(timeContent(frame.plan, frame.day, upToDay));
+  viewTitle.textContent = `${frame.plan.title} — Time Estimates`;
+  happened.replaceChildren(events(frame.events));
+  // The two heavy readings run only while someone is looking at them.
+  trackHost.replaceChildren(
+    folds.open && folds.track
+      ? trackRecord(timeline, recording, compared, app.options, app.frame)
+      : "",
   );
-  updateStrip();
+  recordsHost.replaceChildren(
+    folds.open && folds.records ? recordsView(timeline, recording, app.frame, replayed) : "",
+  );
+  updateBar();
+}
+
+function viewFrame(): HTMLElement {
+  viewTitle = h("span", { class: "view-tab" });
+  content = h("main");
+  return h("section", { class: "view" }, h("div", { class: "view-tabs" }, viewTitle), content);
 }
 
 function timeContent(
@@ -204,7 +253,38 @@ function timeContent(
   });
 }
 
-function header(): HTMLElement {
+// -- the debugger's body -----------------------------------------------------------------------------
+
+/** A foldable part of the debugger, its fold remembered. */
+function section(key: "setup" | "track" | "records", name: string, ...inner: HTMLElement[]) {
+  const details = h(
+    "details",
+    { class: "debug-section", open: folds[key] },
+    h("summary", {}, name),
+    ...inner,
+  );
+  details.addEventListener("toggle", () => {
+    if (details.open !== folds[key]) fold({ [key]: details.open });
+  });
+  return details;
+}
+
+function debuggerBody(): HTMLElement {
+  happened = h("div", { class: "happened" });
+  trackHost = h("div");
+  recordsHost = h("div");
+  body = h(
+    "section",
+    { class: "debug debug-body", hidden: !folds.open },
+    section("setup", "Plan, scenario and model", ...setupRows()),
+    happened,
+    section("track", "Track record — how good the forecasts were", trackHost),
+    section("records", "Records — what progress_history.json holds", recordsHost),
+  );
+  return body;
+}
+
+function setupRows(): HTMLElement[] {
   const file = exports.get(app.source);
   const source = h(
     "select",
@@ -236,7 +316,7 @@ function header(): HTMLElement {
       if (chosen) adopt(JSON.parse(await chosen.text()));
     },
   });
-  const rows: (HTMLElement | null)[] = [
+  const rows: HTMLElement[] = [
     h(
       "div",
       { class: "row" },
@@ -269,25 +349,7 @@ function header(): HTMLElement {
   ];
   if (!file) rows.push(scenarioRow());
   rows.push(modelRow(Boolean(file)));
-  return h(
-    "header",
-    {},
-    h(
-      "div",
-      { class: "title" },
-      h("h1", {}, "Time estimation — exploration 2"),
-      h(
-        "nav",
-        {},
-        h("a", { href: "explainer.html" }, "How comparisons over time work"),
-        " · ",
-        h("a", { href: "ISSUES.md" }, "Issues found"),
-        " · ",
-        h("a", { href: "README.md" }, "README"),
-      ),
-    ),
-    ...rows,
-  );
+  return rows;
 }
 
 function scenarioRow(): HTMLElement {
@@ -439,13 +501,22 @@ function modelRow(replaying: boolean): HTMLElement {
   );
 }
 
-// -- the days --------------------------------------------------------------------------------------
+function events(lines: string[]): HTMLElement {
+  return h(
+    "div",
+    { class: "events" },
+    h("b", {}, "What happened today: "),
+    lines.length ? lines.join(" · ") : "nothing",
+  );
+}
+
+// -- the debugger's bar: the days --------------------------------------------------------------------
 
 let slider: HTMLInputElement;
 let label: HTMLElement;
 let playing: number | null = null;
 
-function timelineStrip(): HTMLElement {
+function debuggerBar(): HTMLElement {
   const last = timeline.frames.length - 1;
   slider = h("input", {
     type: "range",
@@ -455,6 +526,11 @@ function timelineStrip(): HTMLElement {
     oninput: (event: Event) => go(Number((event.target as HTMLInputElement).value)),
   });
   label = h("span", { class: "today-label" });
+  toggle = h("button", {
+    class: "fold",
+    title: "Fold the debugger away to read the view on its own (d)",
+    onclick: () => fold({ open: !folds.open }),
+  }, folds.open ? "▾ Debugger" : "▸ Debugger");
   const play = h("button", {
     title: "Play the days",
     onclick: () => {
@@ -477,18 +553,30 @@ function timelineStrip(): HTMLElement {
       }, 220);
     },
   }, "▶");
+  const scenario = exports.has(app.source)
+    ? `replay of ${exports.get(app.source)!.title}`
+    : `${scenarioById(app.scenario).name} · seed ${app.seed}`;
   return h(
     "div",
-    { class: "timeline" },
+    { class: "debug debug-bar" },
     h(
       "div",
       { class: "controls" },
+      toggle,
       h("button", { title: "First day", onclick: () => go(0) }, "⏮"),
       h("button", { title: "A day earlier (←)", onclick: () => go(app.frame - 1) }, "◂"),
       play,
       h("button", { title: "A day later (→)", onclick: () => go(app.frame + 1) }, "▸"),
       h("button", { title: "Last day", onclick: () => go(last) }, "⏭"),
       label,
+      h("span", { class: "scenario-name" }, scenario),
+      h(
+        "nav",
+        {},
+        h("a", { href: "explainer.html" }, "Explainer"),
+        h("a", { href: "ISSUES.md" }, "Issues"),
+        h("a", { href: "README.md" }, "README"),
+      ),
     ),
     h("div", { class: "track-strip" }, slider, h("div", { class: "ticks", html: ticks() })),
   );
@@ -531,12 +619,11 @@ function ticks(): string {
   return out.join("");
 }
 
-function updateStrip(): void {
-  if (!strip) return;
+function updateBar(): void {
   const day = timeline.frames[app.frame].day;
   slider.value = String(app.frame);
   const worked = day - timeline.begin;
-  label.textContent = `Today: ${weekdayName(day)} ${formatDate(day, day)} — ` +
+  label.textContent = `${weekdayName(day)} ${formatDate(day, day)} — ` +
     (worked >= 0
       ? `day ${worked + 1} since work began (${shortDate(timeline.begin, day)})`
       : `${-worked} day${worked === -1 ? "" : "s"} before work begins`) +
@@ -547,33 +634,6 @@ function go(index: number): void {
   app.frame = Math.max(0, Math.min(timeline.frames.length - 1, index));
   renderContent();
   writeHash();
-}
-
-function events(happened: string[]): HTMLElement {
-  return h(
-    "div",
-    { class: "events" },
-    h("b", {}, "What happened today: "),
-    happened.length ? happened.join(" · ") : "nothing",
-  );
-}
-
-function tabs(): HTMLElement {
-  const tab = (key: Tab, name: string) =>
-    h("button", {
-      class: app.tab === key ? "on" : "",
-      onclick: () => {
-        app.tab = key;
-        render();
-      },
-    }, name);
-  return h(
-    "nav",
-    { class: "tabs" },
-    tab("time", "Time tab"),
-    tab("track", "Track record"),
-    tab("records", "Records"),
-  );
 }
 
 // -- loading, the address bar, the keyboard ---------------------------------------------------------
@@ -602,7 +662,6 @@ function writeHash(): void {
       seed: String(app.seed),
       scenario: app.scenario,
       day: isoDay(day),
-      tab: app.tab,
       cadence: app.cadence,
       variants: VARIANTS.filter(({ key }) => app.options[key]).map(({ key }) => key).join(","),
     });
@@ -630,8 +689,9 @@ function readHash(): void {
   const variants = (state.get("variants") ?? "").split(",");
   app.options = { ...FAITHFUL };
   for (const { key } of VARIANTS) app.options[key] = variants.includes(key);
+  // A link naming one of the debugger's readings opens it, as the tabs of the first cut did.
   const tab = state.get("tab");
-  if (tab === "time" || tab === "track" || tab === "records") app.tab = tab;
+  if (tab === "track" || tab === "records") folds = { ...folds, open: true, [tab]: true };
   currentTimeline();
   // A day, or "end" for the last one — a scenario's length depends on how it plays out.
   const asked = state.get("day");
@@ -659,6 +719,7 @@ function start(): void {
     if (["INPUT", "SELECT", "TEXTAREA"].includes(target.tagName)) return;
     if (event.key === "ArrowLeft") go(app.frame - 1);
     if (event.key === "ArrowRight") go(app.frame + 1);
+    if (event.key === "d" && !event.ctrlKey && !event.metaKey) fold({ open: !folds.open });
   });
   document.addEventListener("dragover", (event) => event.preventDefault());
   document.addEventListener("drop", async (event) => {

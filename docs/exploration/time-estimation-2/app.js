@@ -2622,7 +2622,7 @@
     const emphasised = data.segments.find((segment) => segment.key && segment.key === data.emphasis) ?? null;
     for (const [index, panel] of g2.panels.entries()) {
       out.push(`<g class="plot plot-${panel.kind}">`, title(data, panel, g2), grid(data, panel, g2, ticks2));
-      const body = panel.kind === "status" ? statusPlot(data, panel, g2) : panel.kind === "scope" ? scopePlot(data, panel, g2) : panel.kind === "shift" ? shiftPlot(data, panel, g2, emphasised) : amountPlot(data, panel, g2);
+      const body2 = panel.kind === "status" ? statusPlot(data, panel, g2) : panel.kind === "scope" ? scopePlot(data, panel, g2) : panel.kind === "shift" ? shiftPlot(data, panel, g2, emphasised) : amountPlot(data, panel, g2);
       if (emphasised && (panel.kind === "status" || panel.kind === "scope")) {
         const spans = [
           emphasised.now,
@@ -2636,9 +2636,9 @@
           out.push(`<rect x="${n(g2.x(from) - 2)}" y="${n(panel.top - 20)}" width="${n(g2.x(to) - g2.x(from) + 4)}" height="${n(panel.height + 40)}"/>`);
         }
         out.push(`</clipPath></defs>`);
-        out.push(`<g opacity="${FADE}">${body}</g><g clip-path="url(#${clipId})">${body}</g>`);
+        out.push(`<g opacity="${FADE}">${body2}</g><g clip-path="url(#${clipId})">${body2}</g>`);
       } else {
-        out.push(body);
+        out.push(body2);
       }
       out.push(`</g>`);
     }
@@ -3302,7 +3302,7 @@
     const finish = stretch.finish !== null ? shortDate(stretch.finish, today) : "undated";
     return `${done}/${steps} steps \xB7 ${formatDays(doneDays) || "0d"} of ${formatDays(days) || "0d"} \xB7 ${shortDate(stretch.start, today)} \u2192 ${finish}`;
   }
-  function recordsTab(timeline2, recording2, index, parity2) {
+  function recordsView(timeline2, recording2, index, parity2) {
     const today = timeline2.frames[index].day;
     const plan = timeline2.frames[timeline2.frames.length - 1].plan;
     const keys = [
@@ -3325,11 +3325,11 @@
     const table = h("table", {
       class: "records"
     }, h("thead", {}, h("tr", {}, h("th", {}, "Day"), h("th", {}, "What happened"), ...keys.map(([, label2]) => h("th", {}, label2)))));
-    const body = h("tbody");
+    const body2 = h("tbody");
     for (const frame of timeline2.frames.slice(0, index + 1).reverse()) {
       const row = byDay.get(frame.day);
       const found = parity2?.find((one) => one.day === frame.day);
-      body.append(h("tr", {
+      body2.append(h("tr", {
         class: row ? "" : "absent"
       }, h("td", {
         class: "day"
@@ -3347,7 +3347,7 @@
         }, "no row \u2014 the window was closed, or nothing had changed")
       ]));
     }
-    table.append(body);
+    table.append(body2);
     const latest = rows[rows.length - 1];
     return h("div", {
       class: "records-tab"
@@ -3696,7 +3696,7 @@
       "Days",
       "Landed"
     ].map((name) => h("th", {}, name)))));
-    const body = h("tbody");
+    const body2 = h("tbody");
     for (const entry of view.entries) {
       const picked = entry.key === ALL_KEY || entry.key === "" ? state.picked === null : state.picked === entry.key;
       const share = shareOf(entry.landed);
@@ -3721,7 +3721,7 @@
           });
         }
       });
-      body.append(h("tr", {
+      body2.append(h("tr", {
         class: `${picked ? "picked" : ""}${entry.key === ALL_KEY ? " whole" : ""}`,
         title: `${entry.label}
 ${entry.steps} steps \xB7 lands ${entry.finish !== null ? formatDate(entry.finish, view.today) : "\u2014"}` + (entry.pushed !== null ? `
@@ -3741,7 +3741,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         title: `${g(entry.landed.doneDays)}d of ${g(entry.landed.days)}d estimated \xB7 ${entry.landed.done} of ${entry.landed.steps} steps done`
       }, share === null ? "\u2014" : percent(share))));
     }
-    table.append(body);
+    table.append(body2);
     const none = view.entries.every((entry) => !entry.badge);
     return h("div", {}, h("div", {
       class: "caption bold"
@@ -3867,7 +3867,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       ];
     });
   }
-  function trackTab(timeline2, recording2, compared2, options, index) {
+  function trackRecord(timeline2, recording2, compared2, options, index) {
     const today = timeline2.frames[index].day;
     const plan = timeline2.frames[timeline2.frames.length - 1].plan;
     const rows = recording2.rows.filter((row) => row.day <= today);
@@ -3989,7 +3989,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       "at \xBE",
       "last before landing"
     ].map((name) => h("th", {}, name)))));
-    const body = h("tbody");
+    const body2 = h("tbody");
     for (const one of series) {
       const cells = (source) => {
         const line = forecasts(source, one.key);
@@ -4018,7 +4018,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       };
       const mine = cells(rows);
       const theirs = compared2 ? cells(others) : null;
-      body.append(h("tr", {}, h("td", {}, h("span", {
+      body2.append(h("tr", {}, h("td", {}, h("span", {
         class: "badge",
         style: `background:${one.color}`
       }), one.label), h("td", {}, one.truth !== null ? shortDate(one.truth, today) : "not yet"), ...mine.map((text2, index) => h("td", {
@@ -4027,7 +4027,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         class: "subtitle"
       }, `today's model: ${theirs[index]}`) : null))));
     }
-    table.append(body);
+    table.append(body2);
     return h("div", {}, table, h("p", {
       class: "note"
     }, "(+3d) means it really landed three working days after that forecast; (\u22122d), two before it. \xBC, \xBD and \xBE are points between the first record and the real landing."));
@@ -4092,6 +4092,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
   }
 
   // src/main.ts
+  var FOLDS_KEY = "te2.debugger";
   var exports = /* @__PURE__ */ new Map();
   var app = {
     source: "sample",
@@ -4106,7 +4107,6 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       ...FAITHFUL
     },
     frame: -1,
-    tab: "time",
     view: {
       picked: null,
       then: AT_START,
@@ -4118,6 +4118,36 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     saved: [],
     offset: 0
   };
+  var folds = readFolds();
+  function readFolds() {
+    const fallback = {
+      open: true,
+      setup: true,
+      track: false,
+      records: false
+    };
+    try {
+      return {
+        ...fallback,
+        ...JSON.parse(localStorage.getItem(FOLDS_KEY) ?? "{}")
+      };
+    } catch {
+      return fallback;
+    }
+  }
+  function fold(patch) {
+    folds = {
+      ...folds,
+      ...patch
+    };
+    try {
+      localStorage.setItem(FOLDS_KEY, JSON.stringify(folds));
+    } catch {
+    }
+    body.hidden = !folds.open;
+    toggle.textContent = folds.open ? "\u25BE Debugger" : "\u25B8 Debugger";
+    renderContent();
+  }
   var timelineKey = "";
   var timeline;
   var replayed = null;
@@ -4180,19 +4210,39 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
   }
   var root = document.getElementById("app");
   var content;
-  var strip;
+  var body;
+  var toggle;
+  var happened;
+  var trackHost;
+  var recordsHost;
+  var viewTitle;
   function render() {
     currentTimeline();
     currentRecording();
-    root.replaceChildren(header(), strip = timelineStrip(), tabs(), content = h("main"));
+    root.replaceChildren(debuggerBar(), debuggerBody(), viewFrame());
     renderContent();
     writeHash();
   }
   function renderContent() {
     const frame = timeline.frames[app.frame];
     const upToDay = recordedBy(recording, frame.day);
-    content.replaceChildren(events(frame.events), app.tab === "time" ? timeContent(frame.plan, frame.day, upToDay) : app.tab === "track" ? trackTab(timeline, recording, compared, app.options, app.frame) : recordsTab(timeline, recording, app.frame, replayed));
-    updateStrip();
+    content.replaceChildren(timeContent(frame.plan, frame.day, upToDay));
+    viewTitle.textContent = `${frame.plan.title} \u2014 Time Estimates`;
+    happened.replaceChildren(events(frame.events));
+    trackHost.replaceChildren(folds.open && folds.track ? trackRecord(timeline, recording, compared, app.options, app.frame) : "");
+    recordsHost.replaceChildren(folds.open && folds.records ? recordsView(timeline, recording, app.frame, replayed) : "");
+    updateBar();
+  }
+  function viewFrame() {
+    viewTitle = h("span", {
+      class: "view-tab"
+    });
+    content = h("main");
+    return h("section", {
+      class: "view"
+    }, h("div", {
+      class: "view-tabs"
+    }, viewTitle), content);
   }
   function timeContent(plan, day, upToDay) {
     const view = present(plan, day, upToDay, app.view, app.options);
@@ -4244,7 +4294,31 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       }
     });
   }
-  function header() {
+  function section(key, name, ...inner) {
+    const details = h("details", {
+      class: "debug-section",
+      open: folds[key]
+    }, h("summary", {}, name), ...inner);
+    details.addEventListener("toggle", () => {
+      if (details.open !== folds[key]) fold({
+        [key]: details.open
+      });
+    });
+    return details;
+  }
+  function debuggerBody() {
+    happened = h("div", {
+      class: "happened"
+    });
+    trackHost = h("div");
+    recordsHost = h("div");
+    body = h("section", {
+      class: "debug debug-body",
+      hidden: !folds.open
+    }, section("setup", "Plan, scenario and model", ...setupRows()), happened, section("track", "Track record \u2014 how good the forecasts were", trackHost), section("records", "Records \u2014 what progress_history.json holds", recordsHost));
+    return body;
+  }
+  function setupRows() {
     const file = exports.get(app.source);
     const source = h("select", {
       onchange: (event) => {
@@ -4296,15 +4370,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     ];
     if (!file) rows.push(scenarioRow());
     rows.push(modelRow(Boolean(file)));
-    return h("header", {}, h("div", {
-      class: "title"
-    }, h("h1", {}, "Time estimation \u2014 exploration 2"), h("nav", {}, h("a", {
-      href: "explainer.html"
-    }, "How comparisons over time work"), " \xB7 ", h("a", {
-      href: "ISSUES.md"
-    }, "Issues found"), " \xB7 ", h("a", {
-      href: "README.md"
-    }, "README"))), ...rows);
+    return rows;
   }
   function scenarioRow() {
     const scenario = scenarioById(app.scenario);
@@ -4395,10 +4461,15 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       class: "note"
     }, "(the variants apply to what the prototype records, not to what DPlanner stored)") : null);
   }
+  function events(lines) {
+    return h("div", {
+      class: "events"
+    }, h("b", {}, "What happened today: "), lines.length ? lines.join(" \xB7 ") : "nothing");
+  }
   var slider;
   var label;
   var playing = null;
-  function timelineStrip() {
+  function debuggerBar() {
     const last = timeline.frames.length - 1;
     slider = h("input", {
       type: "range",
@@ -4410,6 +4481,13 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     label = h("span", {
       class: "today-label"
     });
+    toggle = h("button", {
+      class: "fold",
+      title: "Fold the debugger away to read the view on its own (d)",
+      onclick: () => fold({
+        open: !folds.open
+      })
+    }, folds.open ? "\u25BE Debugger" : "\u25B8 Debugger");
     const play = h("button", {
       title: "Play the days",
       onclick: () => {
@@ -4432,11 +4510,12 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         }, 220);
       }
     }, "\u25B6");
+    const scenario = exports.has(app.source) ? `replay of ${exports.get(app.source).title}` : `${scenarioById(app.scenario).name} \xB7 seed ${app.seed}`;
     return h("div", {
-      class: "timeline"
+      class: "debug debug-bar"
     }, h("div", {
       class: "controls"
-    }, h("button", {
+    }, toggle, h("button", {
       title: "First day",
       onclick: () => go(0)
     }, "\u23EE"), h("button", {
@@ -4448,7 +4527,15 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     }, "\u25B8"), h("button", {
       title: "Last day",
       onclick: () => go(last)
-    }, "\u23ED"), label), h("div", {
+    }, "\u23ED"), label, h("span", {
+      class: "scenario-name"
+    }, scenario), h("nav", {}, h("a", {
+      href: "explainer.html"
+    }, "Explainer"), h("a", {
+      href: "ISSUES.md"
+    }, "Issues"), h("a", {
+      href: "README.md"
+    }, "README"))), h("div", {
       class: "track-strip"
     }, slider, h("div", {
       class: "ticks",
@@ -4478,34 +4565,16 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     out.push("</svg>");
     return out.join("");
   }
-  function updateStrip() {
-    if (!strip) return;
+  function updateBar() {
     const day = timeline.frames[app.frame].day;
     slider.value = String(app.frame);
     const worked = day - timeline.begin;
-    label.textContent = `Today: ${weekdayName(day)} ${formatDate(day, day)} \u2014 ` + (worked >= 0 ? `day ${worked + 1} since work began (${shortDate(timeline.begin, day)})` : `${-worked} day${worked === -1 ? "" : "s"} before work begins`) + ` \xB7 ${app.frame + 1} of ${timeline.frames.length}`;
+    label.textContent = `${weekdayName(day)} ${formatDate(day, day)} \u2014 ` + (worked >= 0 ? `day ${worked + 1} since work began (${shortDate(timeline.begin, day)})` : `${-worked} day${worked === -1 ? "" : "s"} before work begins`) + ` \xB7 ${app.frame + 1} of ${timeline.frames.length}`;
   }
   function go(index) {
     app.frame = Math.max(0, Math.min(timeline.frames.length - 1, index));
     renderContent();
     writeHash();
-  }
-  function events(happened) {
-    return h("div", {
-      class: "events"
-    }, h("b", {}, "What happened today: "), happened.length ? happened.join(" \xB7 ") : "nothing");
-  }
-  function tabs() {
-    const tab = (key, name) => h("button", {
-      class: app.tab === key ? "on" : "",
-      onclick: () => {
-        app.tab = key;
-        render();
-      }
-    }, name);
-    return h("nav", {
-      class: "tabs"
-    }, tab("time", "Time tab"), tab("track", "Track record"), tab("records", "Records"));
   }
   function adopt(value) {
     if (!isExport(value)) {
@@ -4531,7 +4600,6 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         seed: String(app.seed),
         scenario: app.scenario,
         day: isoDay(day),
-        tab: app.tab,
         cadence: app.cadence,
         variants: VARIANTS.filter(({ key }) => app.options[key]).map(({ key }) => key).join(",")
       });
@@ -4563,7 +4631,11 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     };
     for (const { key } of VARIANTS) app.options[key] = variants.includes(key);
     const tab = state.get("tab");
-    if (tab === "time" || tab === "track" || tab === "records") app.tab = tab;
+    if (tab === "track" || tab === "records") folds = {
+      ...folds,
+      open: true,
+      [tab]: true
+    };
     currentTimeline();
     const asked = state.get("day");
     const day = parseDay(asked ?? "");
@@ -4588,6 +4660,9 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       ].includes(target.tagName)) return;
       if (event.key === "ArrowLeft") go(app.frame - 1);
       if (event.key === "ArrowRight") go(app.frame + 1);
+      if (event.key === "d" && !event.ctrlKey && !event.metaKey) fold({
+        open: !folds.open
+      });
     });
     document.addEventListener("dragover", (event) => event.preventDefault());
     document.addEventListener("drop", async (event) => {

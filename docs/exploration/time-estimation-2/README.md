@@ -22,31 +22,52 @@ Some browser tools refuse `file://` pages. For those, serve the directory:
 python3 -m http.server 8765 --bind 127.0.0.1 -d docs/exploration/time-estimation-2
 ```
 
-**The page, top to bottom:**
+**The page is two parts.** The dark **debugger** on top is everything that exists only in
+the prototype. The light **view** under it is the Time tab as DPlanner would show it on the
+day the debugger is set to.
 
-- **Plan.** The synthetic sample (pick a seed), or a replay of an exported real plan. You
-  can also drop an export `.json` anywhere on the page.
-- **Scenario.** Each scenario breaks *one* assumption the model makes, and says where to
-  look. "By the book" breaks none; it is the control. *Adjust the world* exposes every
-  parameter.
-- **Recorder runs.** Which days DPlanner's recorder wrote a row. When replaying, this also
-  offers *as DPlanner recorded it*.
-- **Model variants.** Proposed fixes, off by default. With all of them off, the page
-  computes exactly what DPlanner computes today.
-- **The day strip.** Play, step (← →) or scrub. The ticks under it are recorded days, saved
-  snapshots (tall) and when each milestone *really* landed (coloured).
-- **Time tab.** A wireframe of today's tab: the strip, the staffing grid, the milestones,
-  the calendar, and the plot pages. Focus, team, palette, start and a milestone's begin
-  date are *what-ifs* on the scrubbed day's live plan. The recorded past stays as it was
-  recorded.
+**The debugger's bar** stays pinned to the top of the window. It holds:
+
+- *▾ Debugger*, which folds the rest away (or press `d`);
+- play and step (← →);
+- the day;
+- the scrubber. The ticks under it are recorded days, saved snapshots (tall) and when each
+  milestone *really* landed (coloured).
+
+**The debugger's body** has three sections, each folding on its own, and the folds are
+remembered in the browser:
+
+- **Plan, scenario and model.**
+  - *Plan:* the synthetic sample (pick a seed), or a replay of an exported real plan. You
+    can also drop an export `.json` anywhere on the page.
+  - *Scenario:* each one breaks *one* assumption the model makes, and says where to look.
+    "By the book" breaks none; it is the control. *Adjust the world* exposes every
+    parameter.
+  - *Recorder runs:* which days DPlanner's recorder wrote a row. When replaying it also
+    offers *as DPlanner recorded it*.
+  - *Model variants:* proposed fixes, off by default. With all of them off, the page
+    computes exactly what DPlanner computes today.
 - **Track record.** Each milestone's forecast against the day it was made, with the real
   landing on the diagonal, and the forecast error at points along the way. DPlanner has no
   such view; see ISSUES.md U2.
 - **Records.** Exactly what `progress_history.json` holds, day by day, beside what happened
   that day. On a replay, each stored row also shows whether the port reproduces it.
 
-The address bar keeps the plan, scenario, day, tab and variants, so a link opens the page
-where you left it (`day=end` for the last day).
+What happened on the day sits between the sections. Track record and Records are computed
+only while unfolded.
+
+**The view** is a wireframe of today's tab: the strip, the staffing grid, the milestones,
+the calendar, and the plot pages.
+
+- Focus, team, palette, start and a milestone's begin date are *what-ifs* on the day's
+  live plan.
+- The recorded past stays as it was recorded.
+
+The address bar keeps the plan, scenario, day and variants, so a link opens the page where
+you left it:
+
+- `day=end` goes to the last day;
+- `tab=track` or `tab=records` unfolds that section.
 
 ## Build, check, test
 
