@@ -97,7 +97,9 @@ export function has(snapshot: Snapshot, key: string | null): boolean {
 /** `Snapshot.landing`: the stretch's finish, or the last dated one for the whole. */
 export function landingIn(snapshot: Snapshot, key: string | null): Day | null {
   if (key === null) {
-    return [...snapshot.stretches].reverse().find((s) => s.finish !== null)?.finish ?? null;
+    // The latest landing, not the last stretch's: work done out of sequence lands earlier.
+    const dated = snapshot.stretches.filter((s) => s.finish !== null).map((s) => s.finish!);
+    return dated.length ? Math.max(...dated) : null;
   }
   return snapshot.stretches.find((s) => s.key === key)?.finish ?? null;
 }

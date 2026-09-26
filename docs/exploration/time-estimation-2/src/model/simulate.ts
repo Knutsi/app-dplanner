@@ -19,6 +19,7 @@ import {
   HUMANS,
   isAgent,
   isDelay,
+  isMarker,
   isMilestone,
   placed,
   type Plan,
@@ -262,7 +263,7 @@ export function phases(plan: Plan, daysFor: DaysFor, args: PhaseArgs): Phase[] {
   if (holds(planned, args.today)) return planned;
   const pace = options.pace ? paceSoFar(plan, daysFor, args.start, args.today) : null;
   const costs = pace === null || asPlanned(pace) ? daysFor : paced(daysFor, pace);
-  return resumed(plan, costs, args, options);
+  return resumed(plan, costs, args, options, planned);
 }
 
 /** The evidence a pace needs: working days of work, and steps finished. */
@@ -348,7 +349,7 @@ function holds(planned: Phase[], today: Day): boolean {
   return planned.every((phase) =>
     phase.steps.every((step) => {
       if (step.created !== null && startDayOf(phase, step.id) < step.created) return false;
-      if (isDelay(step)) return true;
+      if (isDelay(step) || isMarker(step)) return true;
       const lands = landingOf(phase, step.id);
       if ((step.status === DONE) !== (lands <= today)) return false;
       if (step.status === DONE && step.since !== null && step.since !== lands) return false;
@@ -362,15 +363,29 @@ function holds(planned: Phase[], today: Day): boolean {
 const HALF = 0.5;
 
 /**
- * The rest of the work from tomorrow. A stretch that is all done is dated by when it was done
- * and holds nothing back. From the first with work left, stretches follow one another from
- * the next working day: done steps are facts, work in flight keeps its worker and is credited
- * with the working days since it started (from the middle of that day; at least half a day
- * is left), a `days` Delay with the days it has already waited, and everything else costs
- * its estimate.
+ * The rest of the work from tomorrow. A stretch whose work is all done is dated by when it
+ * was done and holds nothing back — its marker steps (a milestone's own) need not be marked.
+ * From the first with work left, stretches follow one another from the next working day:
+ * done steps are facts, work in flight keeps its worker and is credited with the working
+ * days since it started (from the middle of that day; at least half a day is left), a
+ * `days` Delay with the days it has already waited, and everything else costs its estimate.
+ * A done step nobody dated (a status older than its days) is taken as done by its planned
+ * landing, or today if that is later — never later than it could have been.
  */
-function resumed(plan: Plan, daysFor: DaysFor, args: PhaseArgs, options: ModelOptions): Phase[] {
+function resumed(
+  plan: Plan,
+  daysFor: DaysFor,
+  args: PhaseArgs,
+  options: ModelOptions,
+  planned: Phase[],
+): Phase[] {
   const result: Phase[] = [];
+  const plannedDay = new Map<string, Day>();
+  for (const phase of planned) {
+    for (const step of phase.steps) plannedDay.set(step.id, landingOf(phase, step.id));
+  }
+  const dayDone = (step: Step): Day =>
+    step.since ?? Math.min(plannedDay.get(step.id) ?? args.today, args.today);
   let clock: Clock | null = null;
   const spentSince = (day: Day | null) =>
     day === null || day > args.today ? 0.0 : workingDaysBetween(day, args.today) - HALF;
@@ -398,9 +413,9 @@ function resumed(plan: Plan, daysFor: DaysFor, args: PhaseArgs, options: ModelOp
   };
   for (const [milestone, steps] of groups(plan)) {
     const done = steps.filter((step) => step.status === DONE);
-    const facts = new Map(done.map((step) => [step.id, step.since ?? args.today]));
+    const facts = new Map(done.map((step) => [step.id, dayDone(step)]));
     const left = steps.filter((step) => step.status !== DONE);
-    if (!left.some((step) => !isDelay(step))) {
+    if (!left.some((step) => !isDelay(step) && !isMarker(step))) {
       result.push(finished(milestone, steps, facts, args.today, options));
       continue;
     }
@@ -423,14 +438,33 @@ function resumed(plan: Plan, daysFor: DaysFor, args: PhaseArgs, options: ModelOp
   return result;
 }
 
-/** A stretch whose work is all done: from the first day any of it was done to the last. */
+/**
+ * A stretch whose work is all done: from the first day any of it was done to the last. A
+ * marker step nobody marked is dated by what it requires — a milestone lands with its work.
+ */
 function finished(
   milestone: Step | null,
   steps: Step[],
-  facts: Map<string, Day>,
+  known: Map<string, Day>,
   today: Day,
   options: ModelOptions,
 ): Phase {
+  const facts = new Map(known);
+  const work = facts.size ? Math.max(...facts.values()) : today;
+  for (let pending = steps.filter((step) => !facts.has(step.id)); pending.length;) {
+    const next = pending.filter((step) =>
+      step.requires.some((id) => pending.some((one) => one.id === id))
+    );
+    for (const step of pending.filter((one) => !next.includes(one))) {
+      const needs = step.requires.map((id) => facts.get(id)).filter((day) => day !== undefined);
+      facts.set(step.id, needs.length ? Math.max(...needs) : work);
+    }
+    if (next.length === pending.length) {
+      for (const step of next) facts.set(step.id, work); // A loop a hand-edited file carries.
+      break;
+    }
+    pending = next;
+  }
   const days = facts.size ? [...facts.values()] : [today];
   return {
     milestone,
@@ -615,7 +649,10 @@ export function cellFor(
     options: { ...(args.options ?? FAITHFUL), replan: "off" },
   });
   const slow = phases(plan, stretched(daysFor, args.efficiency), common);
-  const landing = [...slow].reverse().find((phase) => phase.finish !== null)?.finish ?? null;
+  // The whole lands when its last stretch does — the latest, which facts can make other than
+  // the last in sequence when later work was done first.
+  const dated = slow.filter((phase) => phase.finish !== null).map((phase) => phase.finish!);
+  const landing = dated.length ? Math.max(...dated) : null;
   return [
     {
       humans,

@@ -252,6 +252,7 @@ deno task test      # the ported DPlanner tests, the simulation, the issues
 deno task build     # bundle src/main.ts into app.js (commit it: the page loads it)
 deno task dev       # the same, rebuilding on every save
 deno task accuracy  # each model's forecasts against the truth, scenario by scenario
+deno task export-parity out.json.gz  # the backport's parity fixture: events and forecasts
 ```
 
 `app.js` is generated. Rebuild it after editing `src/`, and commit it with the change, so
@@ -338,7 +339,8 @@ src/ui/glyphs.ts        the ▲▼◀▶ arrows v2 to v5 share
 src/ui/debugger/        the debugger's readings: track.ts, records.ts
 src/ui/markup.ts        building HTML and SVG; figures.ts draws the explainer's figures
 src/data.ts             the export format
-tools/                  export_plan.ts, parity.ts, compare_matrix.ts, accuracy.ts
+tools/                  export_plan.ts, parity.ts, compare_matrix.ts, accuracy.ts,
+                        export_parity.ts (the Qt backport's fixture)
 tests/                  model_test (DPlanner's own cases), sim_test, issues_test,
                         brief_test and glyphs_test (v2), v3_test, resume_test (the model),
                         edits_test (the Budget), delay_test, v4_test, v5_test (History,

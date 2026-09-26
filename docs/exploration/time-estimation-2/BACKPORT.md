@@ -42,6 +42,18 @@ in `src/model/options.ts`.
   - A resumed stretch *began* at its first fact: the earliest `since` of its done steps
     and of its steps in progress, not tomorrow (`Phase.began`). The calendar's band starts
     there.
+  - **A marker step (a milestone, feature or check step, estimate off) carries no schedule
+    facts** (`isMarker`): *holds* skips it, a stretch is finished when its *work* is done,
+    and an unmarked marker is dated by what it requires. People rarely mark a milestone step
+    done on the day its work lands; waiting for the mark slid the stretch every day.
+  - **The whole lands with its latest stretch**, not its last in sequence: a later
+    milestone done first would otherwise date the project in the past (`cellFor`,
+    `landingIn`).
+  - A done step with no `since` (a status older than its days) is dated by the earlier of
+    its planned landing and today, never today alone.
+- [ ] **Parity with the prototype**: `deno task export-parity <out.json.gz>` writes every
+  scenario × seeds 1–3 as the events DPlanner stores, and the forecast of each day. The
+  app replays them into a real library and holds its model to the same forecasts.
   - `parallel_finish` also returns each step's start offset, which the *holds* check reads
     with the same "a day's end" rule as a landing.
 - [ ] **The rounding fixes.**

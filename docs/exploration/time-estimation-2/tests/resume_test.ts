@@ -119,3 +119,42 @@ Deno.test("a plan finished late never holds again: at the end, the landing is th
   assertEquals(found.whole.move.planned, truth);
   assert(found.whole.move.plan! > 10, `moved ${found.whole.move.plan} against the start`);
 });
+
+Deno.test("a milestone nobody marked done lands with its work, and holds nothing back", () => {
+  // A (2d) closes M1, never marked done; B (2d), after M1, closes M2 and is under way.
+  const plan = planOf(["A", "M1", "B", "M2"], {
+    days: { A: 2, B: 2 },
+    requires: { M1: ["A"], B: ["M1"], M2: ["B"] },
+    milestones: ["M1", "M2"],
+    markers: ["M1", "M2"],
+    done: ["A"],
+    running: ["B"],
+    since: { A: sep(9), B: sep(10) },
+  });
+  const [first, second] = phases(plan, daysFor, {
+    humans: 1,
+    agents: 1,
+    start: sep(7),
+    today: sep(11),
+    options: ADOPTED,
+  });
+  assertEquals([first.finish, landingOf(first, "M1")], [sep(9), sep(9)]);
+  assertEquals(second.start, sep(14)); // resumed from the Monday after Friday the 11th
+});
+
+Deno.test("the whole plan lands with its latest milestone, not its last in sequence", () => {
+  // M2's own work (B) was done first; M1's (A) is still under way.
+  const plan = planOf(["A", "M1", "B", "M2"], {
+    days: { A: 5, B: 1 },
+    requires: { M1: ["A"], M2: ["B"] },
+    milestones: ["M1", "M2"],
+    markers: ["M1", "M2"],
+    done: ["B"],
+    running: ["A"],
+    since: { A: sep(7), B: sep(8) },
+  });
+  const said = snapshotOf(plan, sep(9), ADOPTED)!;
+  const [m1, m2] = said.stretches.map((stretch) => stretch.finish);
+  assert(m1 !== null && m2 !== null && m2 < m1, `M1 ${m1}, M2 ${m2}`);
+  assertEquals(landingIn(said, null), m1);
+});

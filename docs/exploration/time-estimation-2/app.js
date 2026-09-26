@@ -197,6 +197,7 @@
   var isAgent = (step2) => step2.agent;
   var isMilestone = (step2) => Boolean(step2.milestone);
   var isDelay = (step2) => step2.delay !== null;
+  var isMarker = (step2) => step2.estimateOff && !isDelay(step2);
   var startFor = (step2) => step2.start;
   function efficiencyOf(plan) {
     return plan.assumptions.efficiency ?? DEFAULT_EFFICIENCY;
@@ -690,7 +691,7 @@
     if (holds(planned, args.today)) return planned;
     const pace = options.pace ? paceSoFar(plan, daysFor2, args.start, args.today) : null;
     const costs = pace === null || asPlanned(pace) ? daysFor2 : paced(daysFor2, pace);
-    return resumed(plan, costs, args, options);
+    return resumed(plan, costs, args, options, planned);
   }
   var PACE_AFTER = 5;
   var PACE_STEPS = 3;
@@ -752,7 +753,7 @@
   function holds(planned, today) {
     return planned.every((phase) => phase.steps.every((step2) => {
       if (step2.created !== null && startDayOf(phase, step2.id) < step2.created) return false;
-      if (isDelay(step2)) return true;
+      if (isDelay(step2) || isMarker(step2)) return true;
       const lands = landingOf(phase, step2.id);
       if (step2.status === DONE !== lands <= today) return false;
       if (step2.status === DONE && step2.since !== null && step2.since !== lands) return false;
@@ -761,8 +762,13 @@
     }));
   }
   var HALF = 0.5;
-  function resumed(plan, daysFor2, args, options) {
+  function resumed(plan, daysFor2, args, options, planned) {
     const result = [];
+    const plannedDay = /* @__PURE__ */ new Map();
+    for (const phase of planned) {
+      for (const step2 of phase.steps) plannedDay.set(step2.id, landingOf(phase, step2.id));
+    }
+    const dayDone = (step2) => step2.since ?? Math.min(plannedDay.get(step2.id) ?? args.today, args.today);
     let clock = null;
     const spentSince = (day) => day === null || day > args.today ? 0 : workingDaysBetween(day, args.today) - HALF;
     const was = plan.assumptions.efficiencyWas;
@@ -790,10 +796,10 @@
       const done = steps.filter((step2) => step2.status === DONE);
       const facts = new Map(done.map((step2) => [
         step2.id,
-        step2.since ?? args.today
+        dayDone(step2)
       ]));
       const left = steps.filter((step2) => step2.status !== DONE);
-      if (!left.some((step2) => !isDelay(step2))) {
+      if (!left.some((step2) => !isDelay(step2) && !isMarker(step2))) {
         result.push(finished(milestone, steps, facts, args.today, options));
         continue;
       }
@@ -816,7 +822,21 @@
     }
     return result;
   }
-  function finished(milestone, steps, facts, today, options) {
+  function finished(milestone, steps, known, today, options) {
+    const facts = new Map(known);
+    const work = facts.size ? Math.max(...facts.values()) : today;
+    for (let pending = steps.filter((step2) => !facts.has(step2.id)); pending.length; ) {
+      const next = pending.filter((step2) => step2.requires.some((id) => pending.some((one) => one.id === id)));
+      for (const step2 of pending.filter((one) => !next.includes(one))) {
+        const needs = step2.requires.map((id) => facts.get(id)).filter((day) => day !== void 0);
+        facts.set(step2.id, needs.length ? Math.max(...needs) : work);
+      }
+      if (next.length === pending.length) {
+        for (const step2 of next) facts.set(step2.id, work);
+        break;
+      }
+      pending = next;
+    }
     const days = facts.size ? [
       ...facts.values()
     ] : [
@@ -970,9 +990,8 @@
       }
     });
     const slow = phases(plan, stretched(daysFor2, args.efficiency), common);
-    const landing = [
-      ...slow
-    ].reverse().find((phase) => phase.finish !== null)?.finish ?? null;
+    const dated3 = slow.filter((phase) => phase.finish !== null).map((phase) => phase.finish);
+    const landing = dated3.length ? Math.max(...dated3) : null;
     return [
       {
         humans,
@@ -1082,9 +1101,8 @@
   }
   function landingIn(snapshot, key) {
     if (key === null) {
-      return [
-        ...snapshot.stretches
-      ].reverse().find((s) => s.finish !== null)?.finish ?? null;
+      const dated3 = snapshot.stretches.filter((s) => s.finish !== null).map((s) => s.finish);
+      return dated3.length ? Math.max(...dated3) : null;
     }
     return snapshot.stretches.find((s) => s.key === key)?.finish ?? null;
   }

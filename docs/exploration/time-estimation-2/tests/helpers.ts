@@ -40,6 +40,7 @@ export interface Shape {
   requires?: Record<string, string[]>;
   chain?: boolean; // Each step requires the one before it.
   milestones?: string[];
+  markers?: string[]; // Estimate off: a milestone, feature or check step carrying no work.
   agents?: string[];
   done?: string[];
   starts?: Record<string, Day>;
@@ -59,7 +60,7 @@ export function planOf(titles: string[], shape: Shape = {}): Plan {
     title,
     requires: shape.requires?.[title] ?? (shape.chain && index ? [titles[index - 1]] : []),
     estimate: shape.days?.[title] ?? null,
-    estimateOff: Boolean(shape.delays?.[title]),
+    estimateOff: Boolean(shape.delays?.[title]) || Boolean(shape.markers?.includes(title)),
     estimateHistory: [],
     status:
       (shape.done?.includes(title)

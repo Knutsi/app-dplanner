@@ -69,6 +69,12 @@ export const daysFor: DaysFor = (step) => (step.estimateOff ? null : step.estima
 export const isAgent: StepTest = (step) => step.agent;
 export const isMilestone: StepTest = (step) => Boolean(step.milestone);
 export const isDelay: StepTest = (step) => step.delay !== null;
+/**
+ * A step that carries no work by design — a milestone, feature or check step, estimate off.
+ * Its own status is no fact about the schedule: people rarely mark a milestone step done on
+ * the day its work lands, so a model that waited for the mark would slide it every day.
+ */
+export const isMarker: StepTest = (step) => step.estimateOff && !isDelay(step);
 export const statusFor = (step: Step): Status => step.status;
 export const startFor = (step: Step): Day | null => step.start;
 

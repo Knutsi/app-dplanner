@@ -13,7 +13,8 @@
     "export": "deno run --allow-read --allow-write=local --allow-run=git tools/export_plan.ts",
     "parity": "deno run --allow-read tools/parity.ts",
     "compare-matrix": "deno run --allow-read tools/compare_matrix.ts",
-    "accuracy": "deno run tools/accuracy.ts"
+    "accuracy": "deno run tools/accuracy.ts",
+    "export-parity": "deno run --allow-write tools/export_parity.ts"
   },
   "fmt": { "lineWidth": 100 }
 }
