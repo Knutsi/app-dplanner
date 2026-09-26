@@ -284,7 +284,8 @@ class Contribution:
     facets: Mapping[StepId, tuple[Facet, ...]] = field(default_factory=dict)
 
 
-ReportSource = Callable[[Library, Project, FilesFor], Contribution]
+# What one module says about a project in a report built for a day.
+ReportSource = Callable[[Library, Project, FilesFor, date], Contribution]
 
 NOTHING: Final = Contribution()
 

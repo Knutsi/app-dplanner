@@ -51,15 +51,18 @@ def read_start(project: Project) -> date | None:
         return None
 
 
-def start_of(project: Project) -> date:
+def start_of(project: Project, today: date | None = None) -> date:
     """When this project's work begins: the date somebody set, or today.
 
     **Derived, never written.** Storing today would make merely opening a tab dirty the
     workspace — ``ordering.py``'s rule again — and it would be wrong by tomorrow. So a
     project nobody has dated answers "if you start now", every surface asks this rather than
     ``read_start``, and the only thing on disk is a date a person chose.
+
+    ``today`` is the caller's clock (``core/clock.py``) — the Time tab's, which a test or
+    the simulator may have pinned; a surface that holds no clock yet gets the machine's.
     """
-    return read_start(project) or date.today()
+    return read_start(project) or today or date.today()
 
 
 def write_start(start: date | None) -> dict[str, Any]:

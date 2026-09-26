@@ -40,7 +40,7 @@ them. The graph can therefore grow features without learning a single thing abou
 import uuid
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Final, Literal
 
 from dplanner.core.fsio import slugify
@@ -91,6 +91,17 @@ FIELD_LABELS: Final[dict[str, str]] = {
 
 def now_stamp() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
+
+
+def local_day(stamp: str) -> date | None:
+    """The day a :func:`now_stamp` fell on where this machine is — what "the day it was
+    made" means to somebody reading a calendar, since the stamp itself is UTC. A stamp from
+    an older build with no offset is taken as local; an unreadable one is no day."""
+    try:
+        when = datetime.fromisoformat(stamp)
+    except ValueError:
+        return None
+    return when.astimezone().date() if when.tzinfo is not None else when.date()
 
 
 def next_number(project: "Project") -> int:

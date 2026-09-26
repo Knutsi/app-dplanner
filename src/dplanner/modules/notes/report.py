@@ -6,6 +6,7 @@ index makes. Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architec
 """
 
 from collections.abc import Callable
+from datetime import date
 
 from dplanner.cli.report.parts import Contribution, Facet, Placed, Prose, ReportSource, images_in
 from dplanner.domain.model import Library, Project, Step
@@ -15,7 +16,7 @@ from dplanner.modules.notes.reach import when_where
 
 
 def report_source(*, key_of: Callable[[Step], str]) -> ReportSource:
-    def source(_library: Library, project: Project, files: FilesFor) -> Contribution:
+    def source(_library: Library, project: Project, files: FilesFor, _day: date) -> Contribution:
         notes = standing(read_log(project))
         placed = tuple(
             Placed("notes", 10 + index, _prose(project, note, files, key_of))

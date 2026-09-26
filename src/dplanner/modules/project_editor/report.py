@@ -12,6 +12,7 @@ Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 from collections.abc import Callable
+from datetime import date
 
 from dplanner.cli.report.parts import (
     Contribution,
@@ -41,7 +42,7 @@ def report_source(
     # canvas paints and the timeline bands.
     colors_of: Callable[[Library, Project], dict[StepId, str]],
 ) -> ReportSource:
-    def source(library: Library, project: Project, _files: FilesFor) -> Contribution:
+    def source(library: Library, project: Project, _files: FilesFor, _day: date) -> Contribution:
         if not project.steps:
             return Contribution()
         placed_at = positions(library, project)

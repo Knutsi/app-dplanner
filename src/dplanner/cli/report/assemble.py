@@ -81,9 +81,10 @@ def build(
     kind_of: Callable[[Step], str],
     status_for: Callable[[Step], str],
     plan_remote: str = "",
-    today: date | None = None,
+    today: date,
 ) -> Report:
-    contributions = [source(library, project, files) for source in sources]
+    """The report of ``project`` as of ``today`` — the day every source dates it by."""
+    contributions = [source(library, project, files, today) for source in sources]
     facets_of = _facets_by_step(contributions)
     steps = tuple(
         StepCard(
@@ -109,7 +110,7 @@ def build(
         project_id=project.id,
         title=project.title or "Untitled project",
         summary=project.summary,
-        day=today or date.today(),
+        day=today,
         sections=sections,
         steps=steps,
         plan_remote=plan_remote,

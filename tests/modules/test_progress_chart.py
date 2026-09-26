@@ -59,7 +59,7 @@ BLUE, VIOLET, TEAL = QColor("#4a7fd6"), QColor("#8e6fd8"), QColor("#2a9d8f")
 
 
 def _chart(data: ChartData, width: int = 700, page: str = PROGRESS_PAGE) -> ProgressChart:
-    chart = ProgressChart(page=page)
+    chart = ProgressChart(data.today, page=page)
     chart.show_data(data)
     chart.resize(width, chart.height())
     return chart

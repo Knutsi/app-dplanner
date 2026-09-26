@@ -21,6 +21,7 @@ from typing import TextIO
 
 from dplanner.cli.command import CliCommand, CliContext, CliError, CliRegistry
 from dplanner.cli.discovery import find_current_project, find_library, open_library
+from dplanner.core.clock import Clock
 from dplanner.core.module_data import ModuleDataFormat
 from dplanner.core.telemetry import current
 from dplanner.domain.at_work import AtWorkBoard
@@ -143,6 +144,7 @@ def run(
     out: TextIO | None = None,
     err: TextIO | None = None,
     board: "AtWorkBoard | None" = None,
+    clock: Clock | None = None,
 ) -> int:
     """Parse, open the library if the verb needs one, and run it.
 
@@ -165,6 +167,8 @@ def run(
     passes a board only when an agent CLI's shell is around the process, because a developer
     running a verb in their own terminal must not renew somebody else's claim. The verbs that
     read and write claims hold their own board and work either way.
+
+    ``clock`` is the day the run dates things by; the machine's unless a test pins one.
     """
     out = out if out is not None else sys.stdout
     err = err if err is not None else sys.stderr
@@ -185,10 +189,14 @@ def run(
     )
     try:
         if not command.needs_library:
-            code = command.run(CliContext(out=out, as_json=args.as_json), args)
+            code = command.run(
+                CliContext(out=out, as_json=args.as_json, clock=clock or Clock()), args
+            )
         else:
             path = find_library(args.library)
-            with open_library(path, formats, out, as_json=args.as_json) as context:
+            with open_library(
+                path, formats, out, as_json=args.as_json, clock=clock or Clock()
+            ) as context:
                 context.current = find_current_project(
                     context.library, context.store, args.project_scope
                 )

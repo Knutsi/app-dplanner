@@ -127,6 +127,15 @@ paths:
   carries the value it replaced, one row per day, format 2; `dplanner estimate show`
   reads it back) — are the terminal's and the report's prose; the charts say it with
   the plots. `ARCHITECTURE.md`'s *Progress against the plan* has the reasoning.
+- **Today is the clock's, never the machine's.** Whatever dates a plan reads the day from
+  `core/clock.py`'s `Clock` — `TimeEstimatesDeps.clock` and the reporting module's in the
+  window (`services.clock`), `CliContext.clock` in a verb — and `format_date`/`short_date`
+  are handed the same day, since whether a label prints its year is a question about
+  today. A report is built *for* a day (`build(today=…)`), and every `ReportSource` is
+  handed it. `day_changed` re-runs the tab and the recorder, so a window open overnight
+  moves on. **A test pins it**: `services.clock.pin(…)` in the window, the `clock` fixture in
+  a CLI test — never an assertion against `date.today()`. `ARCHITECTURE.md`'s *Today is
+  handed in* has the reasoning.
 - **A milestone's colour is its place in the project's map, and every surface reads the
   one answer.** `schedule.py`'s `milestone_colors(library, project, is_milestone)` is the
   deal — `ordering.placed`'s sequence, a milestone's own chosen colour over its dealt

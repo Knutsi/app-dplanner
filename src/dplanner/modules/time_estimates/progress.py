@@ -62,7 +62,7 @@ from itertools import pairwise
 from typing import Any, Literal
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
-from dplanner.domain.model import Library, Project, Step
+from dplanner.domain.model import Library, Project, Step, local_day
 from dplanner.domain.ordering import cyclic
 from dplanner.domain.progression import DONE
 from dplanner.domain.schedule import (
@@ -499,10 +499,10 @@ def delta(then: Snapshot, now: Snapshot, key: str | None) -> Delta | None:
     )
 
 
-def delta_words(moved: Delta, since: date) -> str:
+def delta_words(moved: Delta, since: date, today: date) -> str:
     """The delta in one clause: what was added and how the landing moved since the
     baseline's recorded day."""
-    when = format_date(since)
+    when = format_date(since, today)
     if moved.unchanged:
         return f"unchanged since {when}"
     parts = []
@@ -515,10 +515,10 @@ def delta_words(moved: Delta, since: date) -> str:
         direction = "later" if shift > 0 else "earlier"
         parts.append(
             f"lands {abs(shift)} working day{'s' if abs(shift) != 1 else ''} {direction}"
-            + (f" (was {format_date(moved.finish_then)})" if moved.finish_then else "")
+            + (f" (was {format_date(moved.finish_then, today)})" if moved.finish_then else "")
         )
     elif moved.finish_then is None and moved.finish_now is not None:
-        parts.append(f"now lands {format_date(moved.finish_now)}")
+        parts.append(f"now lands {format_date(moved.finish_now, today)}")
     elif moved.finish_now is None and moved.finish_then is not None:
         parts.append("no longer dated")
     return f"since {when}: " + ", ".join(parts)
@@ -534,8 +534,8 @@ class Changes:
 
     since: date
 
-    def lines(self, key_of: Callable[[Step], str]) -> list[str]:
-        when = format_date(self.since)
+    def lines(self, key_of: Callable[[Step], str], today: date) -> list[str]:
+        when = format_date(self.since, today)
         found = []
         if self.added:
             named = ", ".join(
@@ -547,7 +547,7 @@ class Changes:
         if self.estimates:
             named = ", ".join(
                 f"{key_of(step) or step.title} {format_days(was)} → {format_days(days)} "
-                f"on {format_date(day)}"
+                f"on {format_date(day, today)}"
                 for step, day, was, days in self.estimates
             )
             found.append(f"re-estimated since {when}: {named}")
@@ -570,7 +570,7 @@ def changes_since(
     added = []
     estimates = []
     for step in project.steps:
-        born = _created_on(step)
+        born = local_day(step.created)
         if born is not None and born > since:
             added.append((step, days_for(step)))
             continue
@@ -580,13 +580,6 @@ def changes_since(
             first_when, was = later[0]
             estimates.append((step, first_when, was, days_for(step)))
     return Changes(added, estimates, since)
-
-
-def _created_on(step: Step) -> date | None:
-    try:
-        return date.fromisoformat(step.created[:10])
-    except ValueError:
-        return None
 
 
 # -- the history on disk ------------------------------------------------------------------------

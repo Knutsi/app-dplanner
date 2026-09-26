@@ -25,6 +25,7 @@ from datetime import date
 
 from PySide6.QtCore import QObject
 
+from dplanner.core.clock import Clock
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, ProjectId, Step
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
@@ -61,10 +62,12 @@ class ProgressRecorder(QObject):
         status_for: Callable[[Step], str],
         is_milestone: Callable[[Step], bool],
         start_of: Callable[[ProjectId], date],
+        clock: Clock,
         parent: QObject,
     ) -> None:
         super().__init__(parent)
         self._product = library
+        self._clock = clock
         self._days_for = days_for
         self._is_agent = is_agent
         self._status_for = status_for
@@ -83,6 +86,9 @@ class ProgressRecorder(QObject):
             library.text_edited,
         )
         self._unsubscribes = [signal.connect(self._on_change) for signal in signals]
+        # A turned day can re-date the plan with nothing edited — an undated project starts
+        # today — so it is heard like an edit, and written only if the plan moved.
+        self._unsubscribes.append(self._clock.day_changed.connect(self._on_change))
         self._settle.trigger()
 
     def stop(self) -> None:
@@ -105,7 +111,7 @@ class ProgressRecorder(QObject):
             efficiency=read_efficiency(project),
             is_milestone=self._is_milestone,
             start_for=read_start,
-            today=today or date.today(),
+            today=today or self._clock.today(),
         )
 
     def record_all(self) -> None:

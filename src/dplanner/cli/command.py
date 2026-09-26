@@ -11,6 +11,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TextIO
 
+from dplanner.core.clock import Clock
 from dplanner.core.repository import DirtyMark
 from dplanner.domain.commands import Command
 from dplanner.domain.model import Library, Project
@@ -37,6 +38,9 @@ class CliContext:
     ``current`` is the project the invocation resolved from the working directory or
     ``--project`` — see ``cli/discovery.py`` for the rule. A verb that acts on "the"
     project reads :attr:`project`, which spells out what to do when there is none.
+
+    ``clock`` is the day the run dates things by (``core/clock.py``): the machine's, unless
+    a test pinned the one it handed to ``run``.
     """
 
     out: TextIO
@@ -45,6 +49,7 @@ class CliContext:
     opened_store: "LibraryStore | None" = None
     current: "Project | None" = None
     marks: set[DirtyMark] = field(default_factory=set)
+    clock: Clock = field(default_factory=Clock)
 
     @property
     def library(self) -> Library:

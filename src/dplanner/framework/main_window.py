@@ -21,6 +21,7 @@ from dplanner.framework.tabs import TabHost
 from dplanner.identity import APP_NAME
 
 if TYPE_CHECKING:
+    from dplanner.framework.day_watch import DayWatch
     from dplanner.framework.menubar import DynamicMenuBar
 
 # One window-level fact in the bare per-user store, like the theme and the zoom.
@@ -41,6 +42,7 @@ class AppWindow(QMainWindow):
 
         # Assigned by the builder; held here so the QMenus outlive construction.
         self.dynamic_menubar: DynamicMenuBar | None = None
+        self.day_watch: DayWatch | None = None
 
         # Run on window close, before teardown — the builder appends the autosave flush, so
         # quitting can never lose the last few seconds of typing.

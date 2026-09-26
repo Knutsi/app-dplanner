@@ -8,6 +8,7 @@ Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 from collections.abc import Callable
+from datetime import date
 
 from dplanner.cli.report.parts import (
     Column,
@@ -29,7 +30,7 @@ NOT_RUN = "not run"
 
 
 def report_source(*, key_of: Callable[[Step], str]) -> ReportSource:
-    def source(_library: Library, project: Project, _files: FilesFor) -> Contribution:
+    def source(_library: Library, project: Project, _files: FilesFor, _day: date) -> Contribution:
         latest = runs.latest_results(runs.read(project))
         facets = {}
         rows: list[Row] = []

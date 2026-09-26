@@ -73,6 +73,7 @@ from PySide6.QtWidgets import (
 from shiboken6 import isValid
 
 from dplanner.cli.report.sheets import csv_rows
+from dplanner.core.clock import Clock
 from dplanner.core.fsio import write_csv
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, Step, StepId
@@ -208,6 +209,9 @@ class TimeEstimatesDeps:
     context: ContextService
     tabs: TabHost
     debounce: DebounceService
+    # Today: what every date on the page is read from, and what tells the tab and the
+    # recorder that the day has turned.
+    clock: Clock
     # Estimates, agent-ness and milestones through the aspects' Qt-free readers — the
     # matrix never learns what any of them is stored as.
     days_for: Callable[[Step], float | None]
@@ -322,7 +326,7 @@ class TimeEstimatesActivity(EntityActivity):
         compare_caption = QLabel("Compare", self.controls)
         compare_caption.setObjectName("ToolbarLabel")
         self.controls.add_widget(compare_caption)
-        self.then_picker = SnapshotPicker(AT_START, self.controls)
+        self.then_picker = SnapshotPicker(AT_START, deps.clock.today(), self.controls)
         self.then_picker.picked.connect(self._on_then_picked)
         self.then_picker.forget.connect(self._on_forget)
         self.controls.add_widget(self.then_picker)
@@ -332,7 +336,7 @@ class TimeEstimatesActivity(EntityActivity):
         with_caption = QLabel("with", self.controls)
         with_caption.setObjectName("ToolbarLabel")
         self.controls.add_widget(with_caption)
-        self.now_picker = SnapshotPicker(LIVE, self.controls)
+        self.now_picker = SnapshotPicker(LIVE, deps.clock.today(), self.controls)
         self.now_picker.picked.connect(self._on_now_picked)
         self.now_picker.forget.connect(self._on_forget)
         self.controls.add_widget(self.now_picker)
@@ -396,7 +400,7 @@ class TimeEstimatesActivity(EntityActivity):
         pager_row.addStretch(1)
         right.addWidget(self.pager)
 
-        self.months = MonthsView(answer)
+        self.months = MonthsView(deps.clock.today(), answer)
         self.months.day_picked.connect(self._on_start_picked)
         right.addWidget(self.months)
 
@@ -429,7 +433,7 @@ class TimeEstimatesActivity(EntityActivity):
         # The plots take the height the window has left — nothing else here asks to
         # stretch — and whatever is over their ceiling falls to the bottom of the page
         # rather than into the gaps above them.
-        self.chart = ProgressChart(answer, page=PROGRESS_PAGE)
+        self.chart = ProgressChart(deps.clock.today(), answer, page=PROGRESS_PAGE)
         right.addWidget(self.chart, 1)
         right.addStretch(0)
 
@@ -468,6 +472,8 @@ class TimeEstimatesActivity(EntityActivity):
             # between pools — and a milestone's label and a step's title are what the
             # lists print.
             follow_project(self._product, self.project_id, self._refresh_soon.trigger),
+            # A turned day re-dates the plan like any change to it would.
+            deps.clock.day_changed.connect(lambda _day: self._refresh_soon.trigger()),
         ]
         self._refresh()
 
@@ -559,7 +565,7 @@ class TimeEstimatesActivity(EntityActivity):
         if self._report is None or not self._report.calendar:
             return None
         return Snapshot(
-            day=today or date.today(),
+            day=today or self._deps.clock.today(),
             stretches=tuple(
                 Stretch(
                     key=phase.milestone.id if phase.milestone else "",
@@ -659,7 +665,9 @@ class TimeEstimatesActivity(EntityActivity):
         """Every page of the plots in a window of their own — the same data, more room.
         Modal, because it is a way of looking at what the tab already shows and nothing
         to work beside."""
-        dialog = ChartDialog(self._plots, title=self.title, parent=self._deps.parent)
+        dialog = ChartDialog(
+            self._plots, self._deps.clock.today(), title=self.title, parent=self._deps.parent
+        )
         self._expanded = dialog
         try:
             dialog.exec()
@@ -860,10 +868,10 @@ class TimeEstimatesActivity(EntityActivity):
 
         now = self.snapshot()
         assert now is not None  # a datable report has a calendar
-        self.months.show_bands(report.start, self._bands(stretches))
+        self.months.show_bands(report.start, self._bands(stretches), now.day)
         self.months.emphasise(self._picked)
         entries = self._entries(stretches, now, calendar)
-        self.milestones.show_entries(entries, self._picked or ALL_KEY)
+        self.milestones.show_entries(entries, self._picked or ALL_KEY, now.day)
         self.no_milestones.setVisible(not any(entry.is_milestone for entry in entries))
         self._sync_milestone_verbs()
         self._render_progress(stretches, now)
@@ -1019,7 +1027,7 @@ class TimeEstimatesActivity(EntityActivity):
             f"{format_days(calendar.days)} of calendar time at {report.efficiency:.0%} focus",
         ]
         if calendar.finish is not None:
-            lines.append(f"lands {format_date(calendar.finish)}")
+            lines.append(f"lands {format_date(calendar.finish, self._deps.clock.today())}")
         return "\n".join(lines)
 
 
@@ -1041,12 +1049,12 @@ class TimeEstimatesModule:
             deps.days_for,
             deps.is_agent,
             deps.status_for,
-            lambda dated: deps.start_of(dated.id),
+            lambda dated, _today: deps.start_of(dated.id),
             deps.milestone_label,
             deps.estimate_history,
             deps.step_key,
         )
-        table = milestones_table(deps.library, project, readers)
+        table = milestones_table(deps.library, project, readers, deps.clock.today())
         if table is None:
             return
         suggested = f"{project.title or 'Untitled project'} milestones.csv"
@@ -1087,6 +1095,7 @@ class TimeEstimatesModule:
             status_for=deps.status_for,
             is_milestone=lambda step: bool(deps.milestone_label(step)),
             start_of=deps.start_of,
+            clock=deps.clock,
             parent=deps.parent,
         )
         self._recorder.start()
