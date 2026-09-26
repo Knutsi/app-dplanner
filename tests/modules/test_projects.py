@@ -37,11 +37,13 @@ def state(services, action_id, context):
 
 
 def test_the_module_contributes_the_first_index_folder(services):
-    """Projects is the top folder; Tests registers below it. Order is (order, id)."""
+    """Projects is the top folder and the Archive the last; Tests and Docs register between.
+    Order is (order, id)."""
     assert [segment.id for segment in services.index_segments.segments()] == [
         "projects",
         "tests",
         "docs",
+        "archive",
     ]
 
 

@@ -164,6 +164,10 @@ def _among(library: Library, store: LibraryStore, candidates: list[Path]) -> Pro
             "this plan repository holds several library projects — pass --project: " + _names(mine)
         )
     first = candidates[0]
+    if first in {entry.expanduser().resolve() for entry in store.archived()}:
+        raise CliError(
+            f"{first} is a DPlanner project you archived — run: dplanner library restore {first}"
+        )
     raise CliError(
         f"{first} is a DPlanner project, but it is not in your library — "
         f"run: dplanner library add {first}"

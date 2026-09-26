@@ -66,7 +66,7 @@ class CoverageModule:
                 label="Show &Coverage",
                 menu="Project",
                 group="open",
-                order=32,
+                order=45,
                 icon=coverage_icon,
                 tip="The milestones, the features under them, the spec passages they "
                 "were read from and the tests and docs that prove them — as one picture",

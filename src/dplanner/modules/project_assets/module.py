@@ -64,7 +64,7 @@ class ProjectAssetsModule:
                 label="Open &Assets",
                 menu="Project",
                 group="open",
-                order=35,
+                order=15,
                 tip="Every image and file this project carries, and what uses each",
                 state=self._on_a_project,
                 run=self._open,

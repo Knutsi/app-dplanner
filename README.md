@@ -423,8 +423,10 @@ src/dplanner/
 │   │                        dialog (the Locations table over the role registry, a log column per
 │   │                        repository), the location dialog (location_dialog.py), the Repositories
 │   │                        card, Move Plan, the repositories folder and the clone policy
-│   │                        (repositories_folder.py), and the checkout service a verb gets a
-│   │                        repository on this machine from (checkouts.py)
+│   │                        (repositories_folder.py), the checkout service a verb gets a
+│   │                        repository on this machine from (checkouts.py), and the archive:
+│   │                        Archive/Restore Project, the index's Archive folder
+│   │                        (archive_index.py) and the Archive tab (archive_tab.py)
 │   ├── project_dashboard/   the project's home tab: its name and summary, and a card per module with
 │   │                        something to say about the project (Repositories, Agent, Compilation
 │   │                        instructions) — what a click on the project's row in the index opens

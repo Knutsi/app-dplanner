@@ -6,6 +6,7 @@ checks the imports, this checks the behaviour.
 """
 
 import json
+import re
 from io import StringIO
 
 import pytest
@@ -249,6 +250,16 @@ def test_a_project_outside_the_library_is_refused_not_half_served(repo, tmp_path
     directory = seed_project(repo / "planning", "Widget")
     library, store = open_library_of(tmp_path)  # the library has never heard of it
     with pytest.raises(CliError, match="not in your library"):
+        find_current_project(library, store, start=directory)
+
+
+def test_an_archived_project_is_refused_with_the_way_back(repo, tmp_path):
+    directory = seed_project(repo / "planning", "Widget")
+    library, store = open_library_of(tmp_path, directory)
+    store.archive(library.projects[0].id)
+    library.remove_child(library.projects[0].id)
+    way_back = f"archived — run: dplanner library restore {directory.resolve()}"
+    with pytest.raises(CliError, match=re.escape(way_back)):
         find_current_project(library, store, start=directory)
 
 

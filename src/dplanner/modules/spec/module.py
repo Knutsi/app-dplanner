@@ -403,7 +403,7 @@ class SpecModule:
                 label="Open &Specs",
                 menu="Project",
                 group="open",
-                order=30,
+                order=10,
                 tip="The documents this project answers to",
                 state=self._on_a_project,
                 run=self._open,

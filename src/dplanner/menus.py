@@ -79,7 +79,10 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # have moved on. It is the project's because it is about all of them at once — the
     # per-collector launch is a Step verb, beside Run Agent. It is a band of its own below
     # the one above: bringing a set of documents up to date is not opening a terminal.
-    "Project": ("edit", "documents", "agent", "docs", "features", "tests", "open"),
+    # "membership" is whether a project is in this library at all — Archive, Restore,
+    # Remove from Library and Show Archive — and it is the whole of what an archived
+    # project's right-click renders, through `fill_menu`'s `group` filter.
+    "Project": ("edit", "membership", "documents", "agent", "docs", "features", "tests", "open"),
     # The canvas the plan is drawn on: how it is arranged and how it is looked at. Every
     # verb here steers the graph editor and nothing else, which is what makes it a menu
     # rather than a group inside View — and what tells the next person where to add one.

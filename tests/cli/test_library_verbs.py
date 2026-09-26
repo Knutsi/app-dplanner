@@ -94,6 +94,76 @@ def test_remove_forgets_the_project_but_keeps_its_files(cli, cli_library, worksp
     assert (workspace / "discovery" / "project.dproj").is_file()  # unlike `project delete`
 
 
+# -- the archive -------------------------------------------------------------------------------
+
+
+def test_archive_keeps_the_project_listed_but_out_of_the_library(cli, cli_library, workspace):
+    cli("project", "create", "Discovery")
+    directory = workspace / "discovery"
+
+    said = cli("library", "archive", "Discovery")
+    assert "archived" in said and f"dplanner library restore {directory}" in said
+
+    file = read_library_file(cli_library)
+    assert (file.projects, file.archived) == ([], [directory])
+    assert data(cli("project", "list", "--json"))["projects"] == []
+    listed = data(cli("library", "list", "--json"))
+    assert listed["projects"] == []
+    assert listed["archived"] == [
+        {"path": str(directory), "title": "Discovery", "steps": 0, "present": True}
+    ]
+    assert "Archived:" in cli("library", "list")
+
+
+def test_restore_brings_an_archived_project_back(cli, cli_library, workspace):
+    cli("project", "create", "Discovery")
+    cli("library", "archive", "Discovery")
+
+    said = cli("library", "restore", "disc")  # Part of its title, as `library list` said it.
+    assert "restored to the library" in said
+
+    file = read_library_file(cli_library)
+    assert (file.projects, file.archived) == ([workspace / "discovery"], [])
+    assert "no archived project matching" in cli("library", "restore", "Discovery", expect=1)
+
+
+def test_restore_refuses_a_folder_that_has_gone(cli, workspace):
+    cli("project", "create", "Discovery")
+    cli("library", "archive", "Discovery")
+    shutil.rmtree(workspace / "discovery")
+
+    said = cli("library", "restore", "discovery", expect=1)
+    assert "no longer holds a project" in said and "dplanner library remove" in said
+    listed = data(cli("library", "list", "--json"))["archived"]
+    assert listed[0]["present"] is False
+
+
+def test_remove_forgets_an_archived_entry_when_no_project_matches(cli, cli_library, workspace):
+    cli("project", "create", "Discovery")
+    cli("library", "archive", "Discovery")
+
+    said = cli("library", "remove", str(workspace / "discovery"))
+    assert "removed from the library's archive" in said
+    assert read_library_file(cli_library).archived == []
+    assert (workspace / "discovery" / "project.dproj").is_file()
+    assert "no project matching" in cli("library", "remove", "Discovery", expect=1)
+
+
+def test_adding_a_plan_repository_leaves_its_archived_projects_archived(cli, tmp_path):
+    plans = init_repo(tmp_path / "plans")
+    seed_project(plans / "search", "Search")
+    seed_project(plans / "billing", "Billing")
+    cli("library", "add", str(plans))
+    cli("library", "archive", "Billing")
+
+    said = data(cli("library", "add", str(plans), "--json"))
+    assert said["added"] == []
+    assert sorted(row["reason"] for row in said["skipped"]) == [
+        "already in the library",
+        "archived — library restore brings it back",
+    ]
+
+
 # -- path --------------------------------------------------------------------------------------
 
 
