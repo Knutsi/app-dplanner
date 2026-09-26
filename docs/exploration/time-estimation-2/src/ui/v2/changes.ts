@@ -10,7 +10,7 @@ import { type Day, formatDays, g, shortDate } from "../../model/calendar.ts";
 import { stepKey } from "../../model/graph.ts";
 import type { ChangeList, Scope } from "../../brief.ts";
 import { h } from "../markup.ts";
-import { glyphPath } from "./glyphs.ts";
+import { glyphPath } from "../glyphs.ts";
 import { moveParts, workingDays } from "./words.ts";
 
 const LISTED = 6;

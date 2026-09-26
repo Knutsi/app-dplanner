@@ -1,52 +1,17 @@
-/** v2's derived answers — lag, projection, the move split, verdicts, burn-up, changes. */
+/**
+ * v2's derived answers — lag, projection, the move split, verdicts, burn-up, changes. Lag is
+ * a reading of DPlanner as it is today (`FAITHFUL`); re-planned from today, as the page runs,
+ * nothing undone is ever late, and the last test pins that.
+ */
 
 import { type Day, fromYMD } from "../src/model/calendar.ts";
-import type { Plan } from "../src/model/graph.ts";
-import { FAITHFUL } from "../src/model/options.ts";
-import { AT_START, changesSince, take } from "../src/model/progress.ts";
+import { ADOPTED, FAITHFUL } from "../src/model/options.ts";
+import { changesSince, take } from "../src/model/progress.ts";
 import { brief, burnup, changes, paceOf } from "../src/brief.ts";
-import { present, type TimeView } from "../src/present.ts";
-import { SAMPLE_START, samplePlan } from "../src/sim/sample.ts";
-import { scenarioById } from "../src/sim/scenarios.ts";
-import { record, recordedBy, type Recording } from "../src/sim/timeline.ts";
-import { DEFAULT_WORLD, run } from "../src/sim/world.ts";
 import { assert, assertEquals, MONDAY, planOf, sep } from "./helpers.ts";
+import { played, viewOf } from "./played.ts";
 
 const at = (today: Day) => ({ humans: 1, agents: 1, start: MONDAY, efficiency: 1.0, today });
-
-/** The Time tab's data for a plan on a day, compared with the plan at start. */
-function viewOf(plan: Plan, day: Day, recording: Recording): TimeView {
-  const state = {
-    picked: null,
-    then: AT_START,
-    now: { kind: "now" as const },
-    lens: "calendar" as const,
-    page: "progress" as const,
-    whatIf: {},
-  };
-  return present(plan, day, recordedBy(recording, day), state, FAITHFUL)!;
-}
-
-/** A scenario played on the sample plan (seed 1), read as the view reads it on a day. */
-function played(id: string) {
-  const scenario = scenarioById(id);
-  const timeline = run(
-    samplePlan(1),
-    { ...DEFAULT_WORLD, ...scenario.world, seed: 1 },
-    SAMPLE_START,
-  );
-  const recording = record(timeline, {
-    options: FAITHFUL,
-    cadence: scenario.cadence ?? "weekdays",
-    saved: [],
-    seed: 1,
-  });
-  return {
-    timeline,
-    viewOn: (day: Day) =>
-      viewOf(timeline.frames.find((one) => one.day === day)!.plan, day, recording),
-  };
-}
 
 Deno.test("lag counts the working days the earliest undone work is overdue — a step, never a slope", () => {
   const shape = { chain: true, days: { A: 2, B: 3 } };
@@ -68,8 +33,14 @@ Deno.test("lag counts the working days the earliest undone work is overdue — a
   assertEquals(paceOf(nothing, null, sep(14)).lag, 4); // A was due Tue 8: Wed, Thu, Fri, Mon
 });
 
+Deno.test("on a weekend, work that is overdue lands on Monday at the earliest, never in the past", () => {
+  const nothing = take(planOf(["A", "B"], { chain: true, days: { A: 2, B: 3 } }), at(sep(12)))!;
+  // A was due Tue 8; on Saturday 12 the soonest it can be done is Monday 14.
+  assertEquals(paceOf(nothing, null, sep(12)).lag, paceOf(nothing, null, sep(14)).lag);
+});
+
 Deno.test("by the book, nothing is ever late: lag is zero and no verdict says otherwise", () => {
-  const { timeline, viewOn } = played("by-the-book");
+  const { timeline, viewOn } = played("by-the-book", FAITHFUL);
   for (const frame of timeline.frames.filter((one) => one.day >= timeline.begin)) {
     const found = brief(viewOn(frame.day));
     for (const scope of [found.whole, ...found.milestones]) {
@@ -80,7 +51,7 @@ Deno.test("by the book, nothing is ever late: lag is zero and no verdict says ot
 });
 
 Deno.test("optimistic estimates: M2 is overdue on 20 November, and its projection is not", () => {
-  const found = brief(played("optimistic").viewOn(fromYMD(2026, 11, 20)));
+  const found = brief(played("optimistic", FAITHFUL).viewOn(fromYMD(2026, 11, 20)));
   const m2 = found.milestones.find((scope) => scope.label === "M2")!;
   assertEquals(m2.verdict, "overdue");
   assert(m2.pace.lag >= 3, `lag ${m2.pace.lag}`);
@@ -93,7 +64,7 @@ Deno.test("optimistic estimates: M2 is overdue on 20 November, and its projectio
 });
 
 Deno.test("someone joins: the dates move, the scope does not, and the list says so", () => {
-  const view = played("joiner").viewOn(fromYMD(2026, 11, 2));
+  const view = played("joiner", FAITHFUL).viewOn(fromYMD(2026, 11, 2));
   const whole = brief(view).whole;
   assert(whole.move.plan! < 0, "the plan now lands earlier");
   const listed = changes(view, whole)!;
@@ -101,7 +72,7 @@ Deno.test("someone joins: the dates move, the scope does not, and the list says 
 });
 
 Deno.test("scope creep: the burn-up's scope climbs above the baseline, and each jump is named", () => {
-  const view = played("scope-creep").viewOn(fromYMD(2026, 11, 20));
+  const view = played("scope-creep", FAITHFUL).viewOn(fromYMD(2026, 11, 20));
   const whole = burnup(view, null, true);
   assert(whole.baseline !== null);
   assert(whole.scope[whole.scope.length - 1][1] > whole.baseline!);
@@ -111,7 +82,7 @@ Deno.test("scope creep: the burn-up's scope climbs above the baseline, and each 
 });
 
 Deno.test("an undated plan has nothing earlier to compare with, and says so instead of a verdict", () => {
-  const found = brief(played("undated").viewOn(fromYMD(2026, 10, 20)));
+  const found = brief(played("undated", FAITHFUL).viewOn(fromYMD(2026, 10, 20)));
   assertEquals(found.compared, false);
   const kinds = [found.whole, ...found.milestones].map((scope) => scope.verdict);
   assert(kinds.every((kind) => ["no-baseline", "landed", "overdue"].includes(kind)), kinds.join());
@@ -121,7 +92,7 @@ Deno.test("a milestone the plan compared with never had is new, not on track", (
   const shape = { chain: true, days: { A: 1, B: 1 }, start: MONDAY };
   const then = take(planOf(["A", "M1", "B"], { ...shape, milestones: ["M1"] }), at(MONDAY))!;
   const now = planOf(["A", "M1", "B", "M2"], { ...shape, milestones: ["M1", "M2"] });
-  const found = brief(viewOf(now, sep(8), { rows: [then], saved: [] }));
+  const found = brief(viewOf(now, sep(8), { rows: [then], saved: [] }, FAITHFUL));
   assertEquals(found.milestones.find((scope) => scope.label === "M2")?.verdict, "new");
 });
 
@@ -140,4 +111,19 @@ Deno.test("changes_since names steps born after the baseline and estimates chang
     3,
     1,
   ]]);
+});
+
+Deno.test("re-planned from today, no undone work is late: the lag is zero and the plan's date moves", () => {
+  const today = fromYMD(2026, 11, 20);
+  const faithful = brief(played("optimistic", FAITHFUL).viewOn(today));
+  const found = brief(played("optimistic", ADOPTED).viewOn(today));
+  for (const scope of found.milestones.filter((one) => one.key && one.landedBy === null)) {
+    assertEquals(scope.pace.lag, 0, scope.label);
+    assert(scope.move.planned! >= today, `${scope.label} lands before today`);
+    assertEquals(scope.move.projected, scope.move.planned);
+  }
+  const m2 = (of: typeof found) => of.milestones.find((scope) => scope.label === "M2")!;
+  assert(
+    m2(faithful).move.planned! < today && m2(found).move.planned! > m2(faithful).move.planned!,
+  );
 });

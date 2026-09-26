@@ -15,7 +15,7 @@ import type { Brief, Scope } from "../../brief.ts";
 import type { TimeView } from "../../present.ts";
 import { esc, h, INK, n, SECONDARY } from "../markup.ts";
 import { verdictChip } from "./headline.ts";
-import { alongSegment, glyphPath } from "./glyphs.ts";
+import { alongSegment, glyphPath } from "../glyphs.ts";
 import type { V2Handlers, V2State } from "./state.ts";
 import { moveChip, moveParts } from "./words.ts";
 

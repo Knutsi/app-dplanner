@@ -3,22 +3,14 @@
  * how that moved against the plan compared with and why, and the one thing that needs a look.
  */
 
-import { g, isoDay, parseDay, percent, shortDate } from "../../model/calendar.ts";
-import { pickWords, shareOf } from "../../model/progress.ts";
+import { g, percent, shortDate } from "../../model/calendar.ts";
+import { shareOf } from "../../model/progress.ts";
 import type { Brief, Scope } from "../../brief.ts";
 import type { TimeView } from "../../present.ts";
 import { h } from "../markup.ts";
-import { resolvePick, type V2Handlers, type V2Pick, type V2State } from "./state.ts";
+import { basisName, comparePicker } from "../compare.ts";
+import type { V2Handlers, V2State } from "./state.ts";
 import { longDate, moveSentence, paceSentence, VERDICTS, workingDays } from "./words.ts";
-
-/** What the plan compared with is called in a sentence: short, and never a guess. */
-export function basisName(pick: V2Pick, view: TimeView): string {
-  if (pick.kind === "start") return "the plan at start";
-  if (pick.kind === "week") return "the plan a week ago";
-  if (pick.kind === "saved") return pick.title;
-  if (pick.kind === "now") return "the plan now";
-  return `the plan at ${shortDate(pick.day, view.today)}`;
-}
 
 export function verdictChip(scope: Scope): HTMLElement {
   const verdict = VERDICTS[scope.verdict];
@@ -28,49 +20,6 @@ export function verdictChip(scope: Scope): HTMLElement {
     h("span", { class: "glyph" }, verdict.glyph),
     verdict.word,
   );
-}
-
-function comparePicker(view: TimeView, state: V2State, on: V2Handlers): HTMLElement {
-  const pick = state.then;
-  const select = h("select", {
-    title: pickWords(resolvePick(pick, view.today), view.then, view.today) ||
-      "Nothing recorded to compare with yet",
-    onchange: (event: Event) => {
-      const value = (event.target as HTMLSelectElement).value;
-      if (value === "start") on.state({ then: { kind: "start" } });
-      else if (value === "week") on.state({ then: { kind: "week" } });
-      else if (value === "day") on.state({ then: { kind: "day", day: view.today - 14 } });
-      else on.state({ then: { kind: "saved", title: value.slice(6) } });
-    },
-  });
-  select.append(
-    h("option", { value: "start", selected: pick.kind === "start" }, "the plan at start"),
-  );
-  select.append(
-    h("option", { value: "week", selected: pick.kind === "week" }, "the plan a week ago"),
-  );
-  for (const row of view.recording.saved) {
-    select.append(h("option", {
-      value: `saved:${row.title}`,
-      selected: pick.kind === "saved" && pick.title.toLowerCase() === row.title.toLowerCase(),
-      title: row.note,
-    }, `${row.title} · ${shortDate(row.day, view.today)}`));
-  }
-  select.append(h("option", { value: "day", selected: pick.kind === "day" }, "a day…"));
-  const day = pick.kind === "day"
-    ? h("input", {
-      type: "date",
-      value: isoDay(pick.day),
-      onchange: (event: Event) => {
-        const when = parseDay((event.target as HTMLInputElement).value);
-        if (when !== null) on.state({ then: { kind: "day", day: when } });
-      },
-    })
-    : null;
-  const found = view.then && view.then.day !== view.today
-    ? h("span", { class: "recorded" }, `recorded ${shortDate(view.then.day, view.today)}`)
-    : h("span", { class: "recorded missing" }, "nothing recorded before today");
-  return h("label", { class: "compare" }, "Compared with ", select, day, found);
 }
 
 export function headline(
@@ -133,7 +82,12 @@ export function headline(
   return h(
     "header",
     { class: "v2-head" },
-    h("div", { class: "v2-controls" }, comparePicker(view, state, on), whatIfChip(state, on)),
+    h(
+      "div",
+      { class: "v2-controls" },
+      comparePicker(view, state.then, (then) => on.state({ then })),
+      whatIfChip(state, on),
+    ),
     answer,
     h("div", { class: "sub" }, planned + done),
     verdictLine,

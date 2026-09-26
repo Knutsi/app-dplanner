@@ -84,11 +84,15 @@ simulated from `start`. `progress.py:351` `tally` is the only reader of status.
 **Why it matters.** The number people read, the landing date, is the one number that
 cannot go late.
 
-**Direction.**
+**Direction — adopted for the backport.**
 
 - Re-plan the remaining work from today: done steps cost nothing, and the first unfinished
-  stretch starts no earlier than today. `replan` in `options.ts` is a first cut, and it is
-  enough to show the forecasts converging (Track record, same scenario, variant on).
+  stretch starts no earlier than today. `replan` in `options.ts` does this, and the page
+  now always runs it (`ADOPTED`); there is no switch to turn it off. Track record draws
+  DPlanner as it is today dashed beside it, and the forecasts converge.
+- It also shows what DPlanner today cannot see. On 26 September DPlanner's own plan moves
+  #1 out to 29 September, and moves #2, #3 and OSS *earlier* (OSS 14 → 7 October). Work
+  already done in later milestones stops costing time.
 - Doing this properly needs two facts the model lacks:
   - **when a step became done** (a status timestamp);
   - **how much of an in-progress step is left.** Without it, a re-plan saw-tooths (see
@@ -465,8 +469,11 @@ The trend chart does survive, because it compares *forecasts*, not shares.
 
 ## What the v2 view answers, and what it still cannot
 
-v2 (the page's *v2 · redesign*; README) changes how the stored data is *read*, not the model
-or the data. That is enough to answer several of the issues above at the view level:
+v2 (the page's *v2*; README) changes how the stored data is *read*, not the model or the
+data. That is enough to answer several of the issues above at the view level. The table
+records what v2 answered over DPlanner as it is today. Since re-planning was adopted
+([F1](#f1)), the lag is always zero and the plan's own dates carry the move, so v3 draws
+no projection at all:
 
 | Issue | How v2 answers it |
 |---|---|
@@ -495,7 +502,8 @@ or the data. That is enough to answer several of the issues above at the view le
   - Together they make the first day's forecast exactly right when reality follows the
     estimates (`tests/sim_test.ts`).
   - They change nothing else.
-- **`replan` fixes F1's worst symptom, and exposes the next missing fact.**
+- **`replan` fixes F1's worst symptom, and exposes the next missing fact.** It is now
+  adopted: the page always runs it.
   - The forecasts climb toward the truth and meet it at landing.
   - Pricing an in-progress step at its full estimate makes the forecast *pessimistic*: it
     rises through a long step and drops when the step lands (a saw-tooth in Track record).

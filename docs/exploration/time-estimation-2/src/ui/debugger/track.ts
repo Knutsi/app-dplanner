@@ -99,7 +99,7 @@ export function trackRecord(
       "Each line is one milestone's landing date, as the plan said it on each recorded day. A forecast that holds is flat; ",
       "where a line meets the diagonal, that day is the landing it promised. ◆ marks where the milestone really landed.",
       compared
-        ? " Dashed lines are DPlanner as it is today; solid ones are the model with the variants switched on."
+        ? " Dashed lines are DPlanner as it is today; solid ones are the model the page runs, re-planned from today with any variants switched on."
         : "",
     ),
     h("div", { html: trendSvg(series, rows, others, today, timeline) }),

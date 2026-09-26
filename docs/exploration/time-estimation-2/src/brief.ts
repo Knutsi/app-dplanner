@@ -21,7 +21,7 @@
  * scope stays legible.
  */
 
-import { addWorkingDays, type Day } from "./model/calendar.ts";
+import { addWorkingDays, type Day, nextWorkingDay } from "./model/calendar.ts";
 import type { Plan, Step } from "./model/graph.ts";
 import { WHOLE_COLOR } from "./model/palettes.ts";
 import {
@@ -134,7 +134,8 @@ export function paceOf(live: Snapshot, key: string | null, today: Day): Pace {
     short: Math.max(0, promised - done),
     earned,
     due,
-    lag: due !== null && due < today ? landingShift(due, today) : 0,
+    // Work still undone can be done today at the soonest, or on Monday if today is a weekend.
+    lag: due !== null && due < today ? landingShift(due, nextWorkingDay(today)) : 0,
   };
 }
 

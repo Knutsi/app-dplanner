@@ -13,7 +13,7 @@ import { niceCeiling } from "../../model/progress.ts";
 import type { Burnup, Scope } from "../../brief.ts";
 import type { TimeView } from "../../present.ts";
 import { esc, INK, n, PLAN, SECONDARY, textWidth } from "../markup.ts";
-import { type Direction, glyphPath, placeGlyphs, type Rect } from "./glyphs.ts";
+import { type Direction, glyphPath, placeGlyphs, type Rect } from "../glyphs.ts";
 
 const HEIGHT = 250;
 const LEFT = 48;

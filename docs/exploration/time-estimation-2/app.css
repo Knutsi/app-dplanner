@@ -242,6 +242,54 @@ main { padding-top: 4px; }
 .v2-fold > summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
 .v2-fold .row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin: 8px 0; }
 
+/* -- v3: key figures, a toolbar, two tabs ---------------------------------------------------------
+   Words live in tooltips; the page carries numbers and marks. It reuses v2's tokens. */
+
+.v3 { display: flex; flex-direction: column; padding-top: 14px; }
+.v3-figures { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 18px; padding: 0 2px 12px; font-variant-numeric: tabular-nums; }
+.v3-figures .figure { font-size: 15px; color: var(--secondary); cursor: default; white-space: nowrap; }
+.v3-figures .figure.lead { font-size: 28px; line-height: 1.15; font-weight: 700; color: var(--ink); }
+.v3-figures .figure.move { font-weight: 600; }
+.v3-figures .figure.tone-later { color: var(--later); }
+.v3-figures .figure.tone-earlier { color: var(--earlier); }
+.v3-figures .figure.tone-ok { color: var(--ok); }
+
+.v3-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 8px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px 8px 0 0; color: var(--secondary); }
+.v3-toolbar .divider { width: 1px; align-self: stretch; background: var(--border); margin: 2px 2px; }
+.v3-toolbar .spacer { flex: 1 1 auto; }
+.v3-toolbar .compare { display: inline-flex; align-items: center; gap: 6px; }
+/* Which record was found is in the picker's tooltip; the bar says so only when there is none. */
+.v3-toolbar .recorded { display: none; font-size: 12px; }
+.v3-toolbar .recorded.missing { display: inline; color: var(--later); }
+.v3-toolbar .anchor .popover { left: auto; right: 0; }
+.v3-toolbar .showing { display: inline-flex; align-items: center; gap: 6px; }
+.v3-tabs { display: inline-flex; gap: 2px; }
+.v3-tabs button { border: none; background: none; height: 28px; padding: 0 12px; border-radius: 5px; color: var(--secondary); font-weight: 600; }
+.v3-tabs button:hover { background: var(--elevated); color: var(--ink); }
+.v3-tabs button.on { background: var(--elevated); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+.popover-menu { position: relative; }
+.popover-menu > summary { list-style: none; cursor: pointer; height: 28px; line-height: 28px; padding: 0 10px; border-radius: 5px; }
+.popover-menu > summary::-webkit-details-marker { display: none; }
+.popover-menu > summary:hover, .popover-menu[open] > summary { background: var(--elevated); color: var(--ink); }
+.popover-menu.more > summary { padding: 0 8px; font-size: 18px; }
+.popover-menu.active > summary { background: color-mix(in srgb, var(--later) 16%, transparent); color: var(--ink); font-weight: 600; }
+.popover-menu .menu-panel { position: absolute; right: 0; top: 32px; z-index: 10; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; white-space: nowrap; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.15); }
+.popover-menu .menu-panel label { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.clear-what-if { border: none; background: none; padding: 0 6px; margin-left: -8px; color: var(--secondary); }
+.clear-what-if:hover { color: var(--ink); }
+
+.v3-page { position: relative; background: var(--surface); border: 1px solid var(--border); border-top: none; border-radius: 0 0 8px 8px; padding: 10px 12px 12px; }
+.shifts-holder, .work-holder { position: relative; width: 100%; min-height: 120px; }
+.shifts-holder svg { cursor: pointer; }
+.row-picked { fill: color-mix(in srgb, var(--accent) 10%, transparent); }
+.shift-row:hover { opacity: 1; }
+.v3-key { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 16px; margin-top: 8px; font-size: 12px; color: var(--secondary); }
+.v3-key > span { display: inline-flex; align-items: center; gap: 5px; }
+.v3-key .k-then, .v3-key .k-now { display: inline-block; width: 9px; height: 9px; border-radius: 50%; border: 1.6px solid var(--secondary); }
+.v3-key .k-now { background: var(--secondary); }
+.v3-key .k-done { display: inline-grid; place-items: center; width: 14px; height: 14px; border-radius: 50%; background: var(--secondary); color: var(--surface); font-size: 9px; font-weight: 700; }
+.v3-key .hint { margin-left: auto; }
+
 /* -- the Time tab ------------------------------------------------------------------------------- */
 
 .strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }

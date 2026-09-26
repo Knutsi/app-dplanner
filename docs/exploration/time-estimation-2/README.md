@@ -45,32 +45,64 @@ remembered in the browser:
     parameter.
   - *Recorder runs:* which days DPlanner's recorder wrote a row. When replaying it also
     offers *as DPlanner recorded it*.
-  - *Model variants:* proposed fixes, off by default. With all of them off, the page
-    computes exactly what DPlanner computes today.
+  - *Model:* the page always **re-plans from today**: done steps cost nothing, and the
+    first unfinished stretch starts no earlier than today (ISSUES.md F1). That is decided
+    for the backport, so it has no switch. The *variants* beside it are the fixes still on
+    trial, off by default. The parity tools alone run DPlanner exactly as it is today.
 - **Track record.** Each milestone's forecast against the day it was made, with the real
-  landing on the diagonal, and the forecast error at points along the way. DPlanner has no
-  such view; see ISSUES.md U2.
+  landing on the diagonal, and the forecast error at points along the way. DPlanner as it
+  is today is drawn dashed beside the page's model. DPlanner has no such view; see
+  ISSUES.md U2.
 - **Records.** Exactly what `progress_history.json` holds, day by day, beside what happened
   that day. On a replay, each stored row also shows whether the port reproduces it.
 
 What happened on the day sits between the sections. Track record and Records are computed
 only while unfolded.
 
-**The view comes in two designs.** Switch between them in the debugger's bar (*v1 · today*
-/ *v2 · redesign*). Both read the same plan on the same day, and the choice is remembered.
+**The view comes in three designs.** Switch between them in the debugger's bar (*v1 ·
+today* / *v2* / *v3 · latest*). All read the same plan on the same day, and the choice is
+remembered; v3 is the default.
 
 - **v1** is a wireframe of today's tab: the strip, the staffing grid, the milestones, the
   calendar, and the plot pages.
-- **v2** is the redesign, built around what a professional reader comes to the tab to
+- **v2** is the first redesign, built around what a professional reader comes to the tab to
   learn. Top to bottom, it answers:
   1. When does it land, really?
   2. Did that move, and why — did the plan change, or are we slower?
   3. Which milestone needs a look?
   4. How is the scope moving?
   5. What if the team were different?
+- **v3** is v2 pared down after review: key figures, a toolbar and two tabs, with the words
+  moved into tooltips.
 
-In both designs, focus, team, palette, start and a milestone's begin date are *what-ifs* on
-the day's live plan. The recorded past stays as it was recorded.
+In every design, focus, team, palette, start and a milestone's begin date are *what-ifs* on
+the day's live plan. The recorded past stays as it was recorded. Every design reads the
+page's model, so v1 is today's tab *layout* over a plan re-planned from today.
+
+### v3, part by part
+
+- **Key figures**, one line: the landing date (`✓` once everything is done), how many
+  working days it moved against the plan compared with (▶ +13d), the share done, and a
+  warning count of unsized steps.
+- **The toolbar**, in the order the controls are reached for. The tabs come first, then
+  *Compared with* and, on the Work tab, *Showing* (all work or one milestone). On the
+  right, folded away: *What if…* (team and focus, tinted with a one-click ✕ while set),
+  *Save snapshot…*, and ⋯ for the colour map.
+- **Milestones** is v1's shift view, restored. Each row shows where the plan compared with
+  landed a milestone (a ring) and where the plan now lands it (a dot), with an arrow between
+  them. A milestone that is done ends in a ✓ circle on the day it was recorded done. Click a
+  row to pick it; double-click to open its work.
+- **Work** is two plots on one locked date axis and one scale in days.
+  - **Scope**: the scope's step line over the scope compared with (dashed). The area between
+    them is shaded warm where work was added and cool where it was taken away. One ▲ or ▼
+    sits under the line on each day the scope changed, by the day's sum.
+  - **Work done**: the done area up to today, and from today on the plan's schedule. Each
+    milestone is marked where it sits: a ✓ on the done line the day it was done, or a dot on
+    the schedule the day the plan lands it.
+
+  **There is no projection "at today's pace".** Re-planned from today, nothing undone is
+  ever late: late work moves the plan's own dates. The Milestones arrows and the Work
+  schedule show that move directly.
 
 ### v2, part by part
 
@@ -101,11 +133,14 @@ ever mean time. Colour is never the only channel: every verdict has a glyph and 
 every scope area has arrows.
 
 **Two numbers v2 derives** (`src/brief.ts`, pure and tested) come from nothing DPlanner does
-not already store.
+not already store. Both were built over DPlanner as it is today. Re-planned from today,
+the lag is always zero and the projected landing *is* the plan's date, so v2 now reads
+them as nothing to report; its tests pin them on the faithful model.
 
 - **Lag** is how many working days the earliest undone work is overdue. It uses the plan's
   landing knots as steps, never a line drawn between them, so a step in flight on schedule
-  is never "behind".
+  is never "behind". It counts to today, or to Monday on a weekend, so work still undone
+  never lands in the past.
 - **The projected landing** is the plan's landing moved on by the lag.
 
 Dates, lag and verdicts count everything up to a milestone, since milestones run in
@@ -120,7 +155,9 @@ page where you left it:
 
 - `day=end` goes to the last day;
 - `tab=track` or `tab=records` unfolds that section;
-- `ui=v1` or `ui=v2` picks the design, and `scope=<step id>` the milestone v2 shows.
+- `ui=v1`, `ui=v2` or `ui=v3` picks the design, and `scope=<step id>` the milestone it
+  shows;
+- `page=milestones` or `page=work` picks v3's tab.
 
 ## Build, check, test
 
@@ -186,24 +223,31 @@ src/model/              the faithful port — no DOM, and `today` is always pass
   simulate.ts             parallel_finish, phases, stretched, the 3×4 matrix
   progress.ts             snapshots, curves, baseline/resolve, recording, volume, words
   palettes.ts             the colour maps and the milestone deal
-  options.ts              the model variants (every flag off = DPlanner today)
+  options.ts              the model: FAITHFUL (DPlanner today), ADOPTED (the page's),
+                          and the variants still on trial
 src/sim/                time travel
   world.ts                reality: a team working the plan with true effort, and events
   scenarios.ts            the presets, each breaking one assumption
   timeline.ts             frames, and the recorder that writes rows over them
   replay.ts               an exported git history as frames; parity with stored rows
   sample.ts, rng.ts       the synthetic plan, and seeded luck
-src/present.ts          what the Time tab shows, as data (both designs start here)
-src/brief.ts            what v2 derives: lag, projected landing, the move split, verdicts
+src/present.ts          what the Time tab shows, as data (every design starts here)
+src/brief.ts            what v2 and v3 derive: lag, projected landing, the move split,
+                        verdicts, the burn-up series
 src/ui/v1/              today's tab: timetab.ts, calendar.ts, charts.ts
-src/ui/v2/              the redesign: view.ts, headline, milestones, burnup, changes,
-                        glyphs (the arrows), words (how it says things), state
+src/ui/v2/              the first redesign: view.ts, headline, milestones, burnup, changes,
+                        words (how it says things), state
+src/ui/v3/              the second: view.ts (key figures and the tabs), toolbar, shifts
+                        (Milestones), work (Work), marks (the ✓), state
+src/ui/compare.ts       the Compared with picker v2 and v3 share
+src/ui/glyphs.ts        the ▲▼◀▶ arrows v2 and v3 share
 src/ui/debugger/        the debugger's readings: track.ts, records.ts
 src/ui/markup.ts        building HTML and SVG; figures.ts draws the explainer's figures
 src/data.ts             the export format
 tools/                  export_plan.ts, parity.ts, compare_matrix.ts
 tests/                  model_test (DPlanner's own cases), sim_test, issues_test,
-                        brief_test and glyphs_test (v2)
+                        brief_test and glyphs_test (v2), v3_test; played.ts plays a
+                        scenario for them
 ```
 
 **How an export maps to DPlanner's files.** `tools/export_plan.ts`'s header has the full
@@ -230,8 +274,9 @@ Each step contributes:
 ## Evolving it
 
 - **A model change** is a flag in `src/model/options.ts`, threaded where it bites
-  (`phases` holds all three variants today). It then appears in the page and in Track
-  record's comparison by itself. If it fixes an issue, flip that issue's test in
+  (`phases` holds all three flags today). As a variant it appears in the page and in Track
+  record's comparison by itself. Once it is decided on, move it into `ADOPTED` and out of
+  `VARIANTS`, as `replan` was. If it fixes an issue, flip that issue's test in
   `tests/issues_test.ts` and say so in ISSUES.md.
 - **A new scenario** is an entry in `src/sim/scenarios.ts`: the world parameters, the one
   assumption it breaks, and where to look. Check the "look" sentence against the numbers

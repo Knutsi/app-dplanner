@@ -1,6 +1,6 @@
 /** The arrow glyphs: whole, inside their area, and one on the edge when the area is small. */
 
-import { alongSegment, glyphPath, placeGlyphs } from "../src/ui/v2/glyphs.ts";
+import { alongSegment, glyphPath, placeGlyphs } from "../src/ui/glyphs.ts";
 import { assert, assertEquals } from "./helpers.ts";
 
 Deno.test("every glyph sits whole inside its area, with a margin", () => {

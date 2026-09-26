@@ -307,6 +307,10 @@
     carry: false,
     replan: false
   };
+  var ADOPTED = {
+    ...FAITHFUL,
+    replan: true
+  };
   var GUARD = 1e-9;
   function guardOf(options) {
     return options.epsilon ? GUARD : 0;
@@ -321,11 +325,6 @@
       key: "carry",
       label: "Carry part-days between milestones",
       hint: "the next stretch starts at the fraction of a day the previous one ended, not the next morning"
-    },
-    {
-      key: "replan",
-      label: "Re-plan from today",
-      hint: "done steps cost nothing, and the first unfinished stretch starts no earlier than today"
     }
   ];
 
@@ -637,10 +636,10 @@
     return phase.finish !== null ? workingDaysBetween(phase.start, phase.finish) : 0;
   }
   function groups(plan) {
-    const milestones2 = placed(plan).map((place) => place.step).filter(isMilestone);
+    const milestones3 = placed(plan).map((place) => place.step).filter(isMilestone);
     const taken = /* @__PURE__ */ new Set();
     const found = [];
-    for (const closing of milestones2) {
+    for (const closing of milestones3) {
       const reached = cone(plan, closing.id, isMilestone).steps;
       const own = new Set(reached.map((step2) => step2.id).filter((id) => !taken.has(id)));
       own.add(closing.id);
@@ -1147,12 +1146,12 @@
     rows.push(now);
     return rows;
   }
-  function findSaved(saved, title2) {
-    const wanted = title2.trim().toLowerCase();
+  function findSaved(saved, title3) {
+    const wanted = title3.trim().toLowerCase();
     return saved.find((row) => row.title.toLowerCase() === wanted) ?? null;
   }
-  function savedWith(saved, now, title2, note = "") {
-    const named = title2.trim();
+  function savedWith(saved, now, title3, note = "") {
+    const named = title3.trim();
     if (!named) throw new Error("a saved snapshot needs a title");
     if (findSaved(saved, named)) throw new Error(`a snapshot called "${named}" is already saved`);
     return [
@@ -1445,15 +1444,15 @@
   var ALL_LABEL = "All milestones";
   var WHOLE_LABEL = "All work";
   var REMAINDER_LABEL = "Remaining work";
-  function applyWhatIf(plan, whatIf2) {
-    const begins = whatIf2.begins ?? {};
+  function applyWhatIf(plan, whatIf3) {
+    const begins = whatIf3.begins ?? {};
     return {
       ...plan,
-      start: whatIf2.start ?? plan.start,
+      start: whatIf3.start ?? plan.start,
       assumptions: {
-        efficiency: whatIf2.efficiency ?? plan.assumptions.efficiency,
-        palette: whatIf2.palette ?? plan.assumptions.palette,
-        team: whatIf2.team ?? plan.assumptions.team
+        efficiency: whatIf3.efficiency ?? plan.assumptions.efficiency,
+        palette: whatIf3.palette ?? plan.assumptions.palette,
+        team: whatIf3.team ?? plan.assumptions.team
       },
       steps: plan.steps.map((step2) => step2.id in begins ? {
         ...step2,
@@ -1475,8 +1474,8 @@
       options
     });
     if (!report) return null;
-    const team = teamOf(plan);
-    const cell = cellAt(report.calendar, ...team) ?? report.calendar[0];
+    const team2 = teamOf(plan);
+    const cell = cellAt(report.calendar, ...team2) ?? report.calendar[0];
     const colors = milestoneColors(plan, plan.assumptions.palette);
     const phases2 = cell?.phases ?? [];
     const shades2 = phaseColors(phases2, colors);
@@ -1533,7 +1532,7 @@
       today,
       plan,
       report,
-      team,
+      team: team2,
       cell,
       stretches,
       entries: entries(stretches, live, cell, start2),
@@ -1883,11 +1882,11 @@
   function samplePlan(seed, shape = SAMPLE_SHAPE) {
     const random = rng(seed);
     const steps = [];
-    const add = (title2, fields = {}) => {
+    const add = (title3, fields = {}) => {
       const step2 = {
         id: `s${steps.length + 1}`,
         number: steps.length + 1,
-        title: title2,
+        title: title3,
         requires: [],
         estimate: null,
         estimateOff: false,
@@ -2266,8 +2265,8 @@
       if (this.params.scopePerWeek && this.random() < this.params.scopePerWeek / 5) {
         const agent = this.random() < 0.7;
         const id = `added-${this.steps.length + 1}`;
-        const work = members.filter((step3) => step3 !== milestone);
-        const after = work.length ? choose(this.random, work) : null;
+        const work2 = members.filter((step3) => step3 !== milestone);
+        const after = work2.length ? choose(this.random, work2) : null;
         const step2 = {
           id,
           number: Math.max(...this.steps.map((one) => one.number)) + 1,
@@ -2389,7 +2388,7 @@
         ...this.humans,
         ...this.agents
       ].filter((id) => id !== null));
-      const focus = this.params.focus ?? efficiencyOf(plan);
+      const focus2 = this.params.focus ?? efficiencyOf(plan);
       const eligible = (agent) => {
         const busy = running();
         const now = current();
@@ -2439,7 +2438,7 @@
       for (let guard = 0; guard < 1e4; guard += 1) {
         assign();
         const busyAgents = this.agents.filter((id) => id !== null).length;
-        const human = Math.max(0.05, focus - this.params.agentLoad * busyAgents / Math.max(1, this.humans.length));
+        const human = Math.max(0.05, focus2 - this.params.agentLoad * busyAgents / Math.max(1, this.humans.length));
         const busy = [
           ...this.agents.filter((id) => id !== null).map((id) => [
             id,
@@ -2895,10 +2894,10 @@
       out.push(polyline(data.actual, panel, g2, INK));
       const [when, share] = data.actual[data.actual.length - 1];
       out.push(marker(g2.x(when), g2.y(panel, share), INK, SURFACE));
-      const words = standingWords(data.standing);
-      if (words) {
-        const flipped = g2.x(when) + 8 + textWidth(words) > g2.right;
-        out.push(`<text class="standing" x="${n(g2.x(when) + (flipped ? -8 : 8))}" y="${n(g2.y(panel, share))}" dominant-baseline="central" text-anchor="${flipped ? "end" : "start"}" style="fill:${INK}" font-weight="600">${esc(words)}</text>`);
+      const words2 = standingWords(data.standing);
+      if (words2) {
+        const flipped = g2.x(when) + 8 + textWidth(words2) > g2.right;
+        out.push(`<text class="standing" x="${n(g2.x(when) + (flipped ? -8 : 8))}" y="${n(g2.y(panel, share))}" dominant-baseline="central" text-anchor="${flipped ? "end" : "start"}" style="fill:${INK}" font-weight="600">${esc(words2)}</text>`);
       }
     }
     return out.join("");
@@ -3061,11 +3060,11 @@
   // src/ui/figures.ts
   var MONDAY = fromYMD(2026, 9, 7);
   var TODAY = MONDAY + 4;
-  function step(id, number, title2, estimate, requires, milestone = null) {
+  function step(id, number, title3, estimate, requires, milestone = null) {
     return {
       id,
       number,
-      title: title2,
+      title: title3,
       requires,
       estimate: milestone ? null : estimate,
       estimateOff: milestone !== null,
@@ -3243,14 +3242,14 @@
     picks.forEach(([label2, pick, asked], index) => {
       const y = top + (index + 1) * row;
       const found = resolve(pick, rows, saved, live, pick.kind === "start" ? asked : MONDAY);
-      const words = pickWords(pick, found, TODAY) || "nothing to compare with";
+      const words2 = pickWords(pick, found, TODAY) || "nothing to compare with";
       out.push(`<text x="0" y="${y}" dominant-baseline="central" style="fill:${INK}">${esc(label2)}</text>`);
       out.push(`<circle cx="${n(x(asked))}" cy="${y}" r="3" style="fill:none;stroke:${INK}"/>`);
       if (found) {
         out.push(`<line x1="${n(x(asked))}" x2="${n(x(found.day))}" y1="${y}" y2="${y}" style="stroke:${INK}" stroke-width="1.5"/>`);
         out.push(`<circle cx="${n(x(found.day))}" cy="${y}" r="5" style="fill:${INK}"/>`);
       }
-      out.push(`<text x="${right + 24}" y="${y}" dominant-baseline="central" style="fill:${SECONDARY}">${esc(`\u2192 ${words}`)}</text>`);
+      out.push(`<text x="${right + 24}" y="${y}" dominant-baseline="central" style="fill:${SECONDARY}">${esc(`\u2192 ${words2}`)}</text>`);
     });
     out.push(`<text x="${left}" y="${height - 6}" style="fill:${SECONDARY}">\u25CB the day asked for \xB7 \u25CF the record that answers \xB7 Tuesday has no record: the window was closed</text>`);
     out.push("</svg>");
@@ -3490,8 +3489,8 @@
     }
     const left = h("div", {
       class: "left"
-    }, staffing(view, state.lens, (team) => on.whatIf({
-      team
+    }, staffing(view, state.lens, (team2) => on.whatIf({
+      team: team2
     })), milestoneTable(view, state, on));
     const right = h("div", {
       class: "right"
@@ -3506,14 +3505,14 @@
   }
   function toolbar(view, state, on) {
     const efficiency = Math.round((view.plan.assumptions.efficiency ?? DEFAULT_EFFICIENCY) * 100);
-    const focus = h("select", {
+    const focus2 = h("select", {
       title: "Human focus: how much of a person's working day this project gets",
       onchange: (event) => on.whatIf({
         efficiency: Number(event.target.value) / 100
       })
     });
     for (let value = 10; value <= 100; value += 5) {
-      focus.append(h("option", {
+      focus2.append(h("option", {
         value: String(value),
         selected: value === efficiency
       }, `${value}% focus`));
@@ -3553,7 +3552,7 @@
       class: "strip"
     }, saveButton(view, on.save), h("span", {
       class: "divider"
-    }), focus, lens, swatch, palette, h("span", {
+    }), focus2, lens, swatch, palette, h("span", {
       class: "divider"
     }), h("span", {
       class: "label"
@@ -3571,18 +3570,18 @@
       onclick: () => on.whatIf(null)
     }, "reset")) : null);
   }
-  function describeWhatIf(whatIf2, view) {
+  function describeWhatIf(whatIf3, view) {
     const parts = [];
-    if (whatIf2.efficiency !== void 0) parts.push(`focus ${percent(whatIf2.efficiency)}`);
-    if (whatIf2.team) parts.push(`team ${whatIf2.team[0]}+${whatIf2.team[1]}`);
-    if (whatIf2.palette) parts.push(`colours ${paletteById(whatIf2.palette).name}`);
-    if (whatIf2.start !== void 0) parts.push(`start ${shortDate(whatIf2.start, view.today)}`);
-    const begins = Object.keys(whatIf2.begins ?? {}).length;
+    if (whatIf3.efficiency !== void 0) parts.push(`focus ${percent(whatIf3.efficiency)}`);
+    if (whatIf3.team) parts.push(`team ${whatIf3.team[0]}+${whatIf3.team[1]}`);
+    if (whatIf3.palette) parts.push(`colours ${paletteById(whatIf3.palette).name}`);
+    if (whatIf3.start !== void 0) parts.push(`start ${shortDate(whatIf3.start, view.today)}`);
+    const begins = Object.keys(whatIf3.begins ?? {}).length;
     if (begins) parts.push(`${begins} milestone date${begins === 1 ? "" : "s"}`);
     return parts.join(", ");
   }
   function saveButton(view, save) {
-    const title2 = h("input", {
+    const title3 = h("input", {
       type: "text",
       placeholder: `What we thought on ${formatDate(view.today, view.today)}`
     });
@@ -3598,7 +3597,7 @@
       hidden: true
     }, h("div", {
       class: "caption"
-    }, "Title"), title2, refusal, h("div", {
+    }, "Title"), title3, refusal, h("div", {
       class: "caption"
     }, "Note"), note, h("div", {
       class: "footer"
@@ -3607,7 +3606,7 @@
     }, "Cancel"), h("button", {
       class: "primary",
       onclick: () => {
-        const refused = save(title2.value, note.value);
+        const refused = save(title3.value, note.value);
         refusal.textContent = refused ?? "";
       }
     }, "Save")));
@@ -3867,6 +3866,81 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     }, pages, holder);
   }
 
+  // src/ui/compare.ts
+  function resolvePick(pick, today) {
+    return pick.kind === "week" ? {
+      kind: "day",
+      day: today - 7
+    } : pick;
+  }
+  function basisName(pick, view) {
+    if (pick.kind === "start") return "the plan at start";
+    if (pick.kind === "week") return "the plan a week ago";
+    if (pick.kind === "saved") return pick.title;
+    if (pick.kind === "now") return "the plan now";
+    return `the plan at ${shortDate(pick.day, view.today)}`;
+  }
+  function comparePicker(view, pick, picked) {
+    const select = h("select", {
+      title: pickWords(resolvePick(pick, view.today), view.then, view.today) || "Nothing recorded to compare with yet",
+      onchange: (event) => {
+        const value = event.target.value;
+        if (value === "start") picked({
+          kind: "start"
+        });
+        else if (value === "week") picked({
+          kind: "week"
+        });
+        else if (value === "day") picked({
+          kind: "day",
+          day: view.today - 14
+        });
+        else picked({
+          kind: "saved",
+          title: value.slice(6)
+        });
+      }
+    });
+    select.append(h("option", {
+      value: "start",
+      selected: pick.kind === "start"
+    }, "the plan at start"));
+    select.append(h("option", {
+      value: "week",
+      selected: pick.kind === "week"
+    }, "the plan a week ago"));
+    for (const row of view.recording.saved) {
+      select.append(h("option", {
+        value: `saved:${row.title}`,
+        selected: pick.kind === "saved" && pick.title.toLowerCase() === row.title.toLowerCase(),
+        title: row.note
+      }, `${row.title} \xB7 ${shortDate(row.day, view.today)}`));
+    }
+    select.append(h("option", {
+      value: "day",
+      selected: pick.kind === "day"
+    }, "a day\u2026"));
+    const day = pick.kind === "day" ? h("input", {
+      type: "date",
+      value: isoDay(pick.day),
+      onchange: (event) => {
+        const when = parseDay(event.target.value);
+        if (when !== null) picked({
+          kind: "day",
+          day: when
+        });
+      }
+    }) : null;
+    const found = view.then && view.then.day !== view.today ? h("span", {
+      class: "recorded"
+    }, `recorded ${shortDate(view.then.day, view.today)}`) : h("span", {
+      class: "recorded missing"
+    }, "nothing recorded before today");
+    return h("label", {
+      class: "compare"
+    }, "Compared with ", select, day, found);
+  }
+
   // src/ui/v2/state.ts
   var V2_START = {
     then: {
@@ -3880,12 +3954,6 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       calendar: false
     }
   };
-  function resolvePick(pick, today) {
-    return pick.kind === "week" ? {
-      kind: "day",
-      day: today - 7
-    } : pick;
-  }
 
   // src/brief.ts
   var EPSILON2 = 1e-9;
@@ -3922,7 +3990,8 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       short: Math.max(0, promised - done),
       earned,
       due,
-      lag: due !== null && due < today ? landingShift(due, today) : 0
+      // Work still undone can be done today at the soonest, or on Monday if today is a weekend.
+      lag: due !== null && due < today ? landingShift(due, nextWorkingDay(today)) : 0
     };
   }
   function ownTally(snapshot, key) {
@@ -3990,8 +4059,8 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       verdict: verdictOf(partial, compared2, then, today)
     };
   }
-  function attentionOf(milestones2) {
-    const overdue = milestones2.filter((scope) => scope.verdict === "overdue").sort((a, b) => a.move.planned - b.move.planned);
+  function attentionOf(milestones3) {
+    const overdue = milestones3.filter((scope) => scope.verdict === "overdue").sort((a, b) => a.move.planned - b.move.planned);
     if (overdue.length) return {
       scope: overdue[0],
       kind: "overdue",
@@ -4008,7 +4077,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       pace: 0,
       total: 0
     };
-    for (const scope of milestones2) {
+    for (const scope of milestones3) {
       const move = scope.move;
       if (move.total === null) continue;
       const days = move.total - (before.total ?? 0);
@@ -4033,7 +4102,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       badge: "",
       color: WHOLE_COLOR
     }, compared2);
-    const milestones2 = view.stretches.map(({ phase, key, label: label2, color }) => scopeOf(view, key, {
+    const milestones3 = view.stretches.map(({ phase, key, label: label2, color }) => scopeOf(view, key, {
       label: label2,
       title: phase.milestone && phase.milestone.title !== label2 ? phase.milestone.title : "",
       badge: phase.milestone ? `S${phase.milestone.number}` : "",
@@ -4043,8 +4112,8 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       today: view.today,
       compared: compared2,
       whole,
-      milestones: milestones2,
-      attention: attentionOf(milestones2)
+      milestones: milestones3,
+      attention: attentionOf(milestones3)
     };
   }
   function burnup(view, key, compared2) {
@@ -4121,7 +4190,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     };
   }
 
-  // src/ui/v2/glyphs.ts
+  // src/ui/glyphs.ts
   var CELL_W = 14;
   var CELL_H = 12;
   var GLYPH = 6;
@@ -4391,8 +4460,8 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     out.push(`<line x1="${n(x(today))}" x2="${n(x(today))}" y1="${TOP - 6}" y2="${HEIGHT - BOTTOM}" class="today-line"/>`);
     out.push(`<text x="${n(x(today))}" y="${TOP - 10}" text-anchor="middle" font-weight="600" style="fill:${INK}">today</text>`);
     for (const jump of data.jumps) {
-      const words = `${jump.steps >= 0 ? "+" : "\u2212"}${Math.abs(jump.steps)} step${Math.abs(jump.steps) === 1 ? "" : "s"}, ${jump.days >= 0 ? "+" : "\u2212"}${formatDays(Math.abs(jump.days)) || "0d"} on ${shortDate(jump.day, today)}`;
-      out.push(`<rect x="${n(x(jump.day) - 5)}" y="${TOP}" width="10" height="${HEIGHT - TOP - BOTTOM}" fill="transparent"><title>${esc(words)}</title></rect>`);
+      const words2 = `${jump.steps >= 0 ? "+" : "\u2212"}${Math.abs(jump.steps)} step${Math.abs(jump.steps) === 1 ? "" : "s"}, ${jump.days >= 0 ? "+" : "\u2212"}${formatDays(Math.abs(jump.days)) || "0d"} on ${shortDate(jump.day, today)}`;
+      out.push(`<rect x="${n(x(jump.day) - 5)}" y="${TOP}" width="10" height="${HEIGHT - TOP - BOTTOM}" fill="transparent"><title>${esc(words2)}</title></rect>`);
     }
     out.push("</svg>");
     return out.join("");
@@ -4568,13 +4637,6 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
   }
 
   // src/ui/v2/headline.ts
-  function basisName(pick, view) {
-    if (pick.kind === "start") return "the plan at start";
-    if (pick.kind === "week") return "the plan a week ago";
-    if (pick.kind === "saved") return pick.title;
-    if (pick.kind === "now") return "the plan now";
-    return `the plan at ${shortDate(pick.day, view.today)}`;
-  }
   function verdictChip(scope) {
     const verdict = VERDICTS[scope.verdict];
     return h("span", {
@@ -4582,77 +4644,6 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     }, h("span", {
       class: "glyph"
     }, verdict.glyph), verdict.word);
-  }
-  function comparePicker(view, state, on) {
-    const pick = state.then;
-    const select = h("select", {
-      title: pickWords(resolvePick(pick, view.today), view.then, view.today) || "Nothing recorded to compare with yet",
-      onchange: (event) => {
-        const value = event.target.value;
-        if (value === "start") on.state({
-          then: {
-            kind: "start"
-          }
-        });
-        else if (value === "week") on.state({
-          then: {
-            kind: "week"
-          }
-        });
-        else if (value === "day") on.state({
-          then: {
-            kind: "day",
-            day: view.today - 14
-          }
-        });
-        else on.state({
-          then: {
-            kind: "saved",
-            title: value.slice(6)
-          }
-        });
-      }
-    });
-    select.append(h("option", {
-      value: "start",
-      selected: pick.kind === "start"
-    }, "the plan at start"));
-    select.append(h("option", {
-      value: "week",
-      selected: pick.kind === "week"
-    }, "the plan a week ago"));
-    for (const row of view.recording.saved) {
-      select.append(h("option", {
-        value: `saved:${row.title}`,
-        selected: pick.kind === "saved" && pick.title.toLowerCase() === row.title.toLowerCase(),
-        title: row.note
-      }, `${row.title} \xB7 ${shortDate(row.day, view.today)}`));
-    }
-    select.append(h("option", {
-      value: "day",
-      selected: pick.kind === "day"
-    }, "a day\u2026"));
-    const day = pick.kind === "day" ? h("input", {
-      type: "date",
-      value: isoDay(pick.day),
-      onchange: (event) => {
-        const when = parseDay(event.target.value);
-        if (when !== null) on.state({
-          then: {
-            kind: "day",
-            day: when
-          }
-        });
-      }
-    }) : null;
-    const found = view.then && view.then.day !== view.today ? h("span", {
-      class: "recorded"
-    }, `recorded ${shortDate(view.then.day, view.today)}`) : h("span", {
-      class: "recorded missing"
-    }, "nothing recorded before today");
-    return h("label", {
-      class: "compare"
-    }, "Compared with ", select, day, found);
   }
   function headline(view, found, state, on) {
     const whole = found.whole;
@@ -4692,7 +4683,9 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       class: "v2-head"
     }, h("div", {
       class: "v2-controls"
-    }, comparePicker(view, state, on), whatIfChip(state, on)), answer, h("div", {
+    }, comparePicker(view, state.then, (then) => on.state({
+      then
+    })), whatIfChip(state, on)), answer, h("div", {
       class: "sub"
     }, planned + done), verdictLine, attentionLine(found, view, on));
   }
@@ -4701,7 +4694,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     if (!attention) return null;
     const { scope } = attention;
     const name = `${scope.badge ? scope.badge + " " : ""}${scope.label}`;
-    const words = attention.kind === "overdue" ? `${name} is overdue \u2014 planned ${shortDate(scope.move.planned, view.today)}, not done; ~${shortDate(scope.move.projected ?? view.today, view.today)} at today's pace.` : `Most of the move is added in ${name}'s own work: +${workingDays(attention.days)} (${[
+    const words2 = attention.kind === "overdue" ? `${name} is overdue \u2014 planned ${shortDate(scope.move.planned, view.today)}, not done; ~${shortDate(scope.move.projected ?? view.today, view.today)} at today's pace.` : `Most of the move is added in ${name}'s own work: +${workingDays(attention.days)} (${[
       attention.plan ? `${attention.plan > 0 ? "+" : "\u2212"}${Math.abs(attention.plan)} from changes to the plan` : "",
       attention.pace ? `+${attention.pace} from today's pace` : ""
     ].filter(Boolean).join(", ")}).`;
@@ -4721,7 +4714,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       }
     }, h("span", {
       class: `glyph tone-${tone}`
-    }, attention.kind === "overdue" ? "\u26A0" : "\u25B6"), ` ${words}`);
+    }, attention.kind === "overdue" ? "\u26A0" : "\u25B6"), ` ${words2}`);
   }
   function whatIfChip(state, on) {
     if (!Object.keys(state.whatIf).length) return null;
@@ -4947,11 +4940,11 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       holder.innerHTML = burnupSvg(data, scope, view, Math.max(420, holder.clientWidth), basis);
     });
     const own = scope.own;
-    const title2 = scope.key === null ? "All work" : `${scope.badge ? scope.badge + " " : ""}${scope.label}${scope.title ? " \u2014 " + scope.title : ""}`;
+    const title3 = scope.key === null ? "All work" : `${scope.badge ? scope.badge + " " : ""}${scope.label}${scope.title ? " \u2014 " + scope.title : ""}`;
     const lands = scope.landedBy !== null ? `recorded done by ${longDate(scope.landedBy, view.today)}` : scope.move.projected !== null ? `lands ${scope.move.projected !== scope.move.planned ? "~" : ""}${longDate(scope.move.projected, view.today)}` : "nothing estimated to land";
     return h("section", {
       class: "v2-section detail"
-    }, h("h2", {}, title2), h("div", {
+    }, h("h2", {}, title3), h("div", {
       class: "detail-sub"
     }, verdictChip(scope), ` ${lands} \xB7 own work: ${own.done} of ${own.steps} steps, ${Math.round(own.doneDays * 4) / 4} of ${Math.round(own.days * 4) / 4} days done`, scope.key !== null ? h("span", {
       class: "planned"
@@ -4962,11 +4955,11 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       html: burnupKey(basis, compared2)
     })), changesPanel(compared2 ? changes(view, scope) : null, scope, basis, view.today)));
   }
-  function fold(title2, open, toggled, ...inner) {
+  function fold(title3, open, toggled, ...inner) {
     const details = h("details", {
       class: "v2-fold",
       open
-    }, h("summary", {}, title2), ...inner);
+    }, h("summary", {}, title3), ...inner);
     details.addEventListener("toggle", () => {
       if (details.open !== open) toggled(details.open);
     });
@@ -4974,7 +4967,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
   }
   function whatIf(view, state, on) {
     const efficiency = Math.round((view.plan.assumptions.efficiency ?? DEFAULT_EFFICIENCY) * 100);
-    const focus = h("select", {
+    const focus2 = h("select", {
       onchange: (event) => on.state({
         whatIf: {
           ...state.whatIf,
@@ -4983,7 +4976,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       })
     });
     for (let value = 10; value <= 100; value += 5) {
-      focus.append(h("option", {
+      focus2.append(h("option", {
         value: String(value),
         selected: value === efficiency
       }, `${value}%`));
@@ -5010,15 +5003,15 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       class: "planned"
     }, "Every tile is how long the plan takes with that team; picking one re-dates everything above for this day only. Nothing is saved."), h("div", {
       class: "row"
-    }, h("label", {}, "Focus ", focus), h("label", {}, "Start ", start2), Object.keys(state.whatIf).length ? h("button", {
+    }, h("label", {}, "Focus ", focus2), h("label", {}, "Start ", start2), Object.keys(state.whatIf).length ? h("button", {
       class: "link",
       onclick: () => on.state({
         whatIf: {}
       })
-    }, "reset") : null), staffing(view, "calendar", (team) => on.state({
+    }, "reset") : null), staffing(view, "calendar", (team2) => on.state({
       whatIf: {
         ...state.whatIf,
-        team
+        team: team2
       }
     })));
   }
@@ -5046,6 +5039,773 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         start: day
       }
     }))) : null);
+  }
+
+  // src/ui/v3/state.ts
+  var V3_START = {
+    page: "milestones",
+    then: {
+      kind: "start"
+    },
+    scope: null,
+    whatIf: {}
+  };
+
+  // src/ui/v3/marks.ts
+  var CHECK_R = 8;
+  function landedCheck(x, y, color) {
+    return `<circle cx="${n(x)}" cy="${n(y)}" r="${CHECK_R}" fill="${color}" class="landed-check"/><path d="M${n(x - 3.8)},${n(y + 0.2)} L${n(x - 1)},${n(y + 3)} L${n(x + 4)},${n(y - 3)}" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>`;
+  }
+
+  // src/ui/v3/shifts.ts
+  var ROW_H2 = 34;
+  var LEFT2 = 230;
+  var RIGHT2 = 80;
+  var TOP2 = 28;
+  var BOTTOM2 = 26;
+  var DOT = 4.5;
+  function arrow3(from, to, y, color) {
+    const way = to >= from ? 1 : -1;
+    const tip = to - way * (DOT + 2);
+    if (Math.abs(tip - from) < 6) return "";
+    return `<line x1="${n(from + way * (DOT + 1))}" x2="${n(tip)}" y1="${n(y)}" y2="${n(y)}" stroke="${color}" stroke-width="1.5" stroke-opacity="0.85"/><path d="M${n(tip)},${n(y)} L${n(tip - way * 6)},${n(y - 3.5)} L${n(tip - way * 6)},${n(y + 3.5)} Z" fill="${color}" fill-opacity="0.85"/>`;
+  }
+  function words(scope, today) {
+    const parts = [
+      `${scope.badge} ${scope.label}${scope.title ? ` \u2014 ${scope.title}` : ""}`
+    ];
+    if (scope.move.then !== null) parts.push(`then: ${shortDate(scope.move.then, today)}`);
+    if (scope.landedBy !== null) parts.push(`done by ${shortDate(scope.landedBy, today)}`);
+    else if (scope.move.planned !== null) {
+      parts.push(`plan now: ${shortDate(scope.move.planned, today)}`);
+    }
+    return parts.join("\n");
+  }
+  function shiftsSvg(found, view, selected, width) {
+    const today = view.today;
+    const scopes = found.milestones.filter((scope) => scope.key);
+    const days = [
+      today
+    ];
+    for (const scope of scopes) {
+      for (const day of [
+        scope.move.then,
+        scope.move.planned,
+        scope.landedBy
+      ]) {
+        if (day !== null) days.push(day);
+      }
+    }
+    for (const row of view.recording.saved) days.push(row.day);
+    const [first, last] = [
+      Math.min(...days) - 2,
+      Math.max(...days) + 3
+    ];
+    const plotW = width - LEFT2 - RIGHT2;
+    const x = (day) => LEFT2 + (day - first) / (last - first) * plotW;
+    const height = TOP2 + Math.max(1, scopes.length) * ROW_H2 + BOTTOM2;
+    const bottom2 = height - BOTTOM2;
+    const out = [
+      `<svg class="chart shifts" viewBox="0 0 ${n(width)} ${n(height)}" width="${n(width)}" height="${n(height)}" font-size="12">`
+    ];
+    const rows = [];
+    const ticks2 = axisTicks(first, last, Math.max(1, Math.floor(plotW / 70)));
+    for (const [when, label2] of ticks2) {
+      out.push(`<line x1="${n(x(when))}" x2="${n(x(when))}" y1="${TOP2}" y2="${n(bottom2)}" style="stroke:${INK}" stroke-opacity="0.08"/>`);
+      if (Math.abs(x(when) - x(today)) < 34) continue;
+      out.push(`<text x="${n(x(when))}" y="${n(height - 8)}" text-anchor="middle" style="fill:${SECONDARY}" font-size="11">${esc(label2)}</text>`);
+    }
+    if (!scopes.length) {
+      out.push(`<text x="${LEFT2}" y="${TOP2 + ROW_H2 / 2}" dominant-baseline="central" style="fill:${SECONDARY}">No milestones yet</text>`);
+    }
+    scopes.forEach((scope, index) => {
+      const y = TOP2 + (index + 0.5) * ROW_H2;
+      rows.push({
+        key: scope.key,
+        top: y - ROW_H2 / 2,
+        bottom: y + ROW_H2 / 2
+      });
+      const faded = selected !== null && selected !== scope.key ? ` opacity="0.35"` : "";
+      out.push(`<g class="shift-row"${faded}><title>${esc(words(scope, today))}</title>`);
+      if (selected === scope.key) {
+        out.push(`<rect x="0" y="${n(y - ROW_H2 / 2)}" width="${n(width)}" height="${ROW_H2}" class="row-picked"/>`);
+      }
+      out.push(`<line x1="${LEFT2}" x2="${n(LEFT2 + plotW)}" y1="${n(y)}" y2="${n(y)}" style="stroke:${INK}" stroke-opacity="0.08"/>`);
+      const badgeW = textWidth(scope.badge, 10) + 10;
+      out.push(`<rect x="8" y="${n(y - 8)}" width="${n(badgeW)}" height="16" rx="4" fill="${scope.color}"/>`);
+      out.push(`<text x="${n(8 + badgeW / 2)}" y="${n(y)}" text-anchor="middle" dominant-baseline="central" fill="#fff" font-size="10" font-weight="600">${esc(scope.badge)}</text>`);
+      out.push(`<text x="${n(16 + badgeW)}" y="${n(y)}" dominant-baseline="central" style="fill:${INK}" font-weight="600">${esc(scope.label)}</text>`);
+      if (scope.title) {
+        const room = Math.floor((LEFT2 - 24 - badgeW - textWidth(scope.label, 12) - 8) / (12 * 0.56));
+        if (room > 4) {
+          out.push(`<text x="${n(24 + badgeW + textWidth(scope.label, 12))}" y="${n(y)}" dominant-baseline="central" style="fill:${SECONDARY}">${esc(clip(scope.title, room))}</text>`);
+        }
+      }
+      const then = scope.move.then;
+      const done = scope.landedBy;
+      const end = done ?? scope.move.planned;
+      if (end !== null) {
+        out.push(`<line x1="${n(x(end))}" x2="${n(x(end))}" y1="${n(y)}" y2="${n(bottom2)}" stroke="${scope.color}" stroke-opacity="0.3"/>`);
+      }
+      if (then !== null && end !== null && then !== end) {
+        out.push(arrow3(x(then), x(end), y, scope.color));
+      }
+      if (then !== null) {
+        out.push(`<circle cx="${n(x(then))}" cy="${n(y)}" r="${DOT + (then === end ? 2 : 0)}" style="fill:var(--surface)" stroke="${scope.color}" stroke-width="1.6"/>`);
+      }
+      if (done !== null) out.push(landedCheck(x(done), y, scope.color));
+      else if (end !== null) {
+        out.push(`<circle cx="${n(x(end))}" cy="${n(y)}" r="${DOT}" fill="${scope.color}"/>`);
+      }
+      const labels = [];
+      if (end !== null) {
+        const rightward = then === null || then <= end;
+        const offset = (done !== null ? CHECK_R : DOT) + 6;
+        labels.push([
+          shortDate(end, today),
+          rightward ? x(end) + offset : x(end) - offset,
+          rightward ? "start" : "end",
+          INK
+        ]);
+      }
+      if (then !== null && then !== end) {
+        const leftward = end === null || then <= end;
+        labels.push([
+          shortDate(then, today),
+          leftward ? x(then) - DOT - 6 : x(then) + DOT + 6,
+          leftward ? "end" : "start",
+          SECONDARY
+        ]);
+      }
+      const spans = labels.map(([text2, at, anchor]) => anchor === "start" ? [
+        at,
+        at + textWidth(text2, 11)
+      ] : [
+        at - textWidth(text2, 11),
+        at
+      ]);
+      labels.forEach(([text2, at, anchor, ink], position) => {
+        const [left, right] = spans[position];
+        const clash = position === 1 && spans[0] && left < spans[0][1] && spans[0][0] < right;
+        if (clash || left < LEFT2 - 4 || right > width - 2) return;
+        out.push(`<text x="${n(at)}" y="${n(y)}" text-anchor="${anchor}" dominant-baseline="central" font-size="11" style="fill:${ink}">${esc(text2)}</text>`);
+      });
+      out.push(`</g>`);
+    });
+    for (const row of view.recording.saved) {
+      const at = x(row.day);
+      out.push(`<line x1="${n(at)}" x2="${n(at)}" y1="${TOP2 - 4}" y2="${n(bottom2)}" style="stroke:${INK}" stroke-opacity="0.4" stroke-dasharray="4 3"><title>${esc(`saved: ${row.title}`)}</title></line>`);
+      out.push(`<text x="${n(at + 4)}" y="${TOP2 - 8}" style="fill:${SECONDARY}" font-size="11">${esc(clip(row.title, 20))}</text>`);
+    }
+    out.push(`<line x1="${n(x(today))}" x2="${n(x(today))}" y1="${TOP2 - 4}" y2="${n(bottom2)}" class="today-line"/>`);
+    out.push(`<text x="${n(x(today))}" y="${n(height - 8)}" text-anchor="middle" font-size="11" font-weight="600" style="fill:${INK}" class="today-label">today</text>`);
+    out.push("</svg>");
+    return {
+      svg: out.join(""),
+      rows
+    };
+  }
+
+  // src/ui/v3/toolbar.ts
+  var TABS = [
+    [
+      "milestones",
+      "Milestones"
+    ],
+    [
+      "work",
+      "Work"
+    ]
+  ];
+  function tabs(state, on) {
+    return h("span", {
+      class: "v3-tabs",
+      role: "tablist"
+    }, ...TABS.map(([page, name]) => h("button", {
+      role: "tab",
+      "aria-selected": String(state.page === page),
+      class: state.page === page ? "on" : "",
+      onclick: () => on.state({
+        page
+      })
+    }, name)));
+  }
+  function showing(found, state, on) {
+    const select = h("select", {
+      title: "Which work the plots show: everything, or one milestone's own",
+      onchange: (event) => {
+        const value = event.target.value;
+        on.state({
+          scope: value === "*" ? null : value
+        });
+      }
+    });
+    select.append(h("option", {
+      value: "*",
+      selected: state.scope === null
+    }, "All work"));
+    for (const scope of found.milestones) {
+      select.append(h("option", {
+        value: scope.key ?? "",
+        selected: state.scope === scope.key
+      }, scope.badge ? `${scope.badge} ${scope.label}` : scope.label));
+    }
+    return h("label", {
+      class: "showing"
+    }, "Showing ", select);
+  }
+  function team(view, state, on) {
+    const agents = view.report.hasAgentSteps ? AGENTS : [
+      1
+    ];
+    const select = h("select", {
+      title: "What if the team were different \u2014 how long the plan takes with each",
+      onchange: (event) => {
+        const [people, bots] = event.target.value.split("+").map(Number);
+        on.state({
+          whatIf: {
+            ...state.whatIf,
+            team: [
+              people,
+              bots
+            ]
+          }
+        });
+      }
+    });
+    for (const people of HUMANS) {
+      for (const bots of agents) {
+        const cell = cellAt(view.report.calendar, people, bots);
+        const chosen = view.team[0] === people && (view.team[1] === bots || !view.report.hasAgentSteps);
+        select.append(h("option", {
+          value: `${people}+${bots}`,
+          selected: chosen
+        }, `${people} ${people === 1 ? "person" : "people"}${view.report.hasAgentSteps ? ` + ${bots} agent${bots === 1 ? "" : "s"}` : ""} \xB7 ${formatDays(cell.days)}`));
+      }
+    }
+    return select;
+  }
+  function focus(view, state, on) {
+    const current = Math.round((view.plan.assumptions.efficiency ?? DEFAULT_EFFICIENCY) * 100);
+    const select = h("select", {
+      title: "What if people gave this project a different share of their day",
+      onchange: (event) => on.state({
+        whatIf: {
+          ...state.whatIf,
+          efficiency: Number(event.target.value) / 100
+        }
+      })
+    });
+    for (let value = 10; value <= 100; value += 5) {
+      select.append(h("option", {
+        value: String(value),
+        selected: value === current
+      }, `${value}% focus`));
+    }
+    return select;
+  }
+  var opened = /* @__PURE__ */ new Set();
+  document.addEventListener("pointerdown", (event) => {
+    for (const menu of document.querySelectorAll("details.popover-menu[open]")) {
+      if (!menu.contains(event.target)) menu.open = false;
+    }
+  });
+  function popover(name, summary, panel, tone = "") {
+    const details = h("details", {
+      class: `popover-menu ${name}${tone}`,
+      open: opened.has(name)
+    }, summary, panel);
+    details.addEventListener("toggle", () => {
+      if (details.open) opened.add(name);
+      else opened.delete(name);
+    });
+    return details;
+  }
+  function whatIfActive(state) {
+    const { team: team2, efficiency, start: start2, begins } = state.whatIf;
+    return team2 !== void 0 || efficiency !== void 0 || start2 !== void 0 || begins !== void 0;
+  }
+  function whatIf2(view, state, on) {
+    const active = whatIfActive(state);
+    const clear = () => {
+      const { palette } = state.whatIf;
+      on.state({
+        whatIf: palette === void 0 ? {} : {
+          palette
+        }
+      });
+    };
+    const menu = popover("what-if", h("summary", {
+      title: active ? "A what-if is active: the dates are this team's and focus, and nothing is saved" : "What if the team, or its focus, were different"
+    }, "What if\u2026"), h("div", {
+      class: "menu-panel"
+    }, h("label", {}, "Team ", team(view, state, on)), h("label", {}, "Focus ", focus(view, state, on))), active ? " active" : "");
+    return active ? [
+      menu,
+      h("button", {
+        class: "clear-what-if",
+        title: "Back to the plan as it is",
+        onclick: clear
+      }, "\u2715")
+    ] : [
+      menu
+    ];
+  }
+  function more(view, state, on) {
+    const palette = h("select", {
+      onchange: (event) => on.state({
+        whatIf: {
+          ...state.whatIf,
+          palette: event.target.value
+        }
+      })
+    });
+    for (const found of PALETTES) {
+      palette.append(h("option", {
+        value: found.id,
+        selected: found.id === paletteById(view.plan.assumptions.palette).id
+      }, found.name));
+    }
+    return popover("more", h("summary", {
+      title: "More"
+    }, "\u22EF"), h("div", {
+      class: "menu-panel"
+    }, h("label", {}, "Milestone colours ", palette)));
+  }
+  function toolbar2(view, found, state, on) {
+    return h("div", {
+      class: "v3-toolbar"
+    }, tabs(state, on), h("span", {
+      class: "divider"
+    }), comparePicker(view, state.then, (then) => on.state({
+      then
+    })), state.page === "work" ? showing(found, state, on) : null, h("span", {
+      class: "spacer"
+    }), ...whatIf2(view, state, on), saveButton(view, on.save), more(view, state, on));
+  }
+
+  // src/ui/v3/work.ts
+  var LEFT3 = 52;
+  var RIGHT3 = 90;
+  var TOP3 = 30;
+  var PLOT_H2 = 150;
+  var GAP = 46;
+  var BOTTOM3 = 26;
+  var MARK = 8;
+  function scopeMarks(jumps) {
+    const byDay = /* @__PURE__ */ new Map();
+    for (const jump of jumps) {
+      const sum = byDay.get(jump.day);
+      byDay.set(jump.day, sum ? {
+        day: jump.day,
+        steps: sum.steps + jump.steps,
+        days: sum.days + jump.days
+      } : jump);
+    }
+    return [
+      ...byDay.values()
+    ].flatMap((jump) => {
+      const sign = Math.abs(jump.days) > 1e-9 ? Math.sign(jump.days) : Math.sign(jump.steps);
+      return sign ? [
+        {
+          ...jump,
+          direction: sign > 0 ? "up" : "down"
+        }
+      ] : [];
+    });
+  }
+  function stepAt(points, day) {
+    let found = null;
+    for (const [when, value] of points) {
+      if (when > day) break;
+      found = value;
+    }
+    return found;
+  }
+  function stepsFrom(points, day) {
+    const at = stepAt(points, day);
+    return [
+      ...at === null ? [] : [
+        [
+          day,
+          at
+        ]
+      ],
+      ...points.filter(([when]) => when > day)
+    ];
+  }
+  function stepPath2(points, x, y, end) {
+    if (!points.length) return "";
+    let path = `M${n(x(points[0][0]))},${n(y(points[0][1]))}`;
+    points.forEach((_, index) => {
+      const next = index + 1 < points.length ? points[index + 1] : null;
+      path += ` H${n(x(next ? next[0] : end))}`;
+      if (next) path += ` V${n(y(next[1]))}`;
+    });
+    return path;
+  }
+  function scopeFills(points, baseline2, from, to, x, y) {
+    return points.flatMap(([day, value], index) => {
+      const [start2, end] = [
+        Math.max(day, from),
+        index + 1 < points.length ? points[index + 1][0] : to
+      ];
+      if (end <= start2 || Math.abs(value - baseline2) < 1e-9) return [];
+      const [top, bottom2] = [
+        y(Math.max(value, baseline2)),
+        y(Math.min(value, baseline2))
+      ];
+      return [
+        `<rect x="${n(x(start2))}" y="${n(top)}" width="${n(x(end) - x(start2))}" height="${n(bottom2 - top)}" class="scope-${value > baseline2 ? "up" : "down"}-fill"/>`
+      ];
+    });
+  }
+  function title2(name, keys, y, right) {
+    const out = [
+      `<text x="${LEFT3}" y="${n(y)}" dominant-baseline="central" font-size="12" font-weight="600" style="fill:${INK}">${esc(name)}</text>`
+    ];
+    let cursor = right;
+    for (const [mark, words2] of [
+      ...keys
+    ].reverse()) {
+      cursor -= words2.length * 6.2 + 4;
+      out.push(`<text x="${n(cursor)}" y="${n(y)}" dominant-baseline="central" font-size="11" style="fill:${SECONDARY}">${esc(words2)}</text>`);
+      cursor -= 22;
+      out.push(`<g transform="translate(${n(cursor)},${n(y - 7)})">${mark}</g>`);
+      cursor -= 12;
+    }
+    return out.join("");
+  }
+  function workSvg(data, marked, view, width, compared2) {
+    const today = view.today;
+    const days = [
+      today,
+      ...data.scope.map(([day]) => day),
+      ...data.promised.map(([day]) => day)
+    ];
+    for (const one of marked) {
+      for (const day of [
+        one.move.planned,
+        one.landedBy
+      ]) if (day !== null) days.push(day);
+    }
+    const [first, last] = [
+      Math.min(...days) - 1,
+      Math.max(...days) + 2
+    ];
+    const top = niceCeiling(Math.max(1, ...data.scope.map(([, v]) => v), ...data.promised.map(([, v]) => v), data.baseline ?? 0));
+    const right = width - RIGHT3;
+    const x = (day) => LEFT3 + (day - first) / (last - first) * (right - LEFT3);
+    const scopeTop = TOP3;
+    const workTop = TOP3 + PLOT_H2 + GAP;
+    const scopeY = (value) => scopeTop + (1 - value / top) * PLOT_H2;
+    const workY = (value) => workTop + (1 - value / top) * PLOT_H2;
+    const height = workTop + PLOT_H2 + BOTTOM3;
+    const out = [
+      `<svg class="chart work" viewBox="0 0 ${n(width)} ${n(height)}" width="${n(width)}" height="${n(height)}" font-size="11">`
+    ];
+    for (const y of [
+      scopeY,
+      workY
+    ]) {
+      for (const share of [
+        0,
+        0.5,
+        1
+      ]) {
+        out.push(`<line x1="${LEFT3}" x2="${n(right)}" y1="${n(y(top * share))}" y2="${n(y(top * share))}" style="stroke:${INK}" stroke-opacity="${share ? 0.1 : 0.25}"/>`);
+        out.push(`<text x="${LEFT3 - 8}" y="${n(y(top * share))}" text-anchor="end" dominant-baseline="central" style="fill:${SECONDARY}">${formatDays(top * share) || "0d"}</text>`);
+      }
+    }
+    for (const [when, label2] of axisTicks(first, last, Math.max(1, Math.floor((right - LEFT3) / 70)))) {
+      out.push(`<line x1="${n(x(when))}" x2="${n(x(when))}" y1="${scopeTop}" y2="${n(workTop + PLOT_H2)}" style="stroke:${INK}" stroke-opacity="0.07"/>`);
+      if (Math.abs(x(when) - x(today)) < 34) continue;
+      out.push(`<text x="${n(x(when))}" y="${n(height - 8)}" text-anchor="middle" style="fill:${SECONDARY}">${esc(label2)}</text>`);
+    }
+    const up = glyphPath({
+      x: 9,
+      y: 7,
+      size: 8
+    }, "up");
+    const down = glyphPath({
+      x: 9,
+      y: 7,
+      size: 8
+    }, "down");
+    const scopeKeys = [
+      [
+        `<line x1="0" x2="18" y1="7" y2="7" stroke="${PLAN}" stroke-width="2.5"/>`,
+        "scope"
+      ]
+    ];
+    if (compared2 && data.baseline !== null) {
+      scopeKeys.push([
+        `<line x1="0" x2="18" y1="7" y2="7" style="stroke:${SECONDARY}" stroke-dasharray="5 4"/>`,
+        "then"
+      ]);
+    }
+    scopeKeys.push([
+      `<rect x="0" y="1" width="18" height="12" class="scope-up-fill"/><path d="${up}" class="scope-up-glyph"/>`,
+      "added"
+    ], [
+      `<rect x="0" y="1" width="18" height="12" class="scope-down-fill"/><path d="${down}" class="scope-down-glyph"/>`,
+      "removed"
+    ]);
+    out.push(title2("Scope", scopeKeys, scopeTop - 16, right));
+    const scopeNow = data.scope.length ? data.scope[data.scope.length - 1][1] : 0;
+    if (compared2 && data.baseline !== null && view.then) {
+      out.push(...scopeFills(data.scope, data.baseline, view.then.day, today, x, scopeY));
+      const at = scopeY(data.baseline);
+      out.push(`<line x1="${n(x(view.then.day))}" x2="${n(right)}" y1="${n(at)}" y2="${n(at)}" style="stroke:${SECONDARY}" stroke-dasharray="5 4"/>`);
+      const clash = Math.abs(at - scopeY(scopeNow)) < 13;
+      out.push(`<text x="${n(right + 6)}" y="${n(at + (clash ? 7 : 0))}" dominant-baseline="central" style="fill:${SECONDARY}">${esc(`${formatDays(data.baseline) || "0d"} then`)}</text>`);
+    }
+    if (data.scope.length) {
+      out.push(`<path d="${stepPath2(data.scope, x, scopeY, today)}" fill="none" stroke="${PLAN}" stroke-width="2.5"/>`);
+      const clash = data.baseline !== null && Math.abs(scopeY(data.baseline) - scopeY(scopeNow)) < 13;
+      out.push(`<text x="${n(right + 6)}" y="${n(scopeY(scopeNow) - (clash ? 7 : 0))}" dominant-baseline="central" fill="${PLAN}" font-weight="600">${esc(`${formatDays(scopeNow) || "0d"} now`)}</text>`);
+    }
+    for (const mark of scopeMarks(data.jumps)) {
+      const level = stepAt(data.scope, mark.day) ?? 0;
+      const glyph = {
+        x: x(mark.day) + 6,
+        y: scopeY(level) + MARK,
+        size: MARK
+      };
+      const said = `${mark.steps >= 0 ? "+" : "\u2212"}${Math.abs(mark.steps)} step${Math.abs(mark.steps) === 1 ? "" : "s"}, ${mark.days >= 0 ? "+" : "\u2212"}${formatDays(Math.abs(mark.days)) || "0d"} on ${shortDate(mark.day, today)}`;
+      out.push(`<path d="${glyphPath(glyph, mark.direction)}" class="scope-${mark.direction}-glyph scope-mark"><title>${esc(said)}</title></path>`);
+    }
+    out.push(title2("Work done", [
+      [
+        `<rect x="0" y="2" width="18" height="10" style="fill:${INK}" fill-opacity="0.15"/><line x1="0" x2="18" y1="2" y2="2" style="stroke:${INK}" stroke-width="2"/>`,
+        "done"
+      ],
+      [
+        `<line x1="0" x2="18" y1="7" y2="7" style="stroke:${SECONDARY}" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"/>`,
+        "the plan's schedule"
+      ]
+    ], workTop - 16, right));
+    out.push(`<line x1="${LEFT3}" x2="${n(right)}" y1="${n(workY(scopeNow))}" y2="${n(workY(scopeNow))}" style="stroke:${PLAN}" stroke-opacity="0.35" stroke-dasharray="2 3"><title>${esc(`all of the work: ${formatDays(scopeNow) || "0d"}`)}</title></line>`);
+    if (data.promised.length > 1) {
+      out.push(`<path d="${stepPath2(data.promised, x, workY, data.promised[data.promised.length - 1][0])}" fill="none" style="stroke:${SECONDARY}" stroke-width="1.5" stroke-dasharray="1 3" stroke-linecap="round"/>`);
+    }
+    if (data.done.length) {
+      const line = stepPath2(data.done, x, workY, today);
+      out.push(`<path d="${line} V${n(workY(0))} H${n(x(data.done[0][0]))} Z" style="fill:${INK}" fill-opacity="0.1"/>`);
+      out.push(`<path d="${line}" fill="none" style="stroke:${INK}" stroke-width="2"/>`);
+    }
+    const labelled = [];
+    for (const one of marked) {
+      const done = one.landedBy;
+      const day = done ?? one.move.planned;
+      if (day === null) continue;
+      const [cx, cy] = [
+        x(day),
+        workY((done !== null ? stepAt(data.done, day) : stepAt(data.promised, day)) ?? 0)
+      ];
+      const said = `${one.badge} ${one.label}${one.title ? ` \u2014 ${one.title}` : ""}
+${done !== null ? "done by" : "the plan lands it"} ${shortDate(day, today)}`;
+      out.push(`<g class="milestone-mark"><title>${esc(said)}</title>`);
+      out.push(done !== null ? landedCheck(cx, cy, one.color) : `<circle cx="${n(cx)}" cy="${n(cy)}" r="5" fill="${one.color}" style="stroke:var(--surface)" stroke-width="1.5"/>`);
+      const [lx, ly] = [
+        cx,
+        cy - (done !== null ? CHECK_R : 5) - 6
+      ];
+      if (!labelled.some(([ax, ay]) => Math.abs(ax - lx) < 28 && Math.abs(ay - ly) < 14)) {
+        labelled.push([
+          lx,
+          ly
+        ]);
+        out.push(`<text x="${n(lx)}" y="${n(ly)}" text-anchor="middle" font-weight="600" style="fill:${INK}">${esc(one.label)}</text>`);
+      }
+      out.push("</g>");
+    }
+    for (const row of view.recording.saved) {
+      if (row.day < first || row.day > last) continue;
+      out.push(`<line x1="${n(x(row.day))}" x2="${n(x(row.day))}" y1="${scopeTop}" y2="${n(workTop + PLOT_H2)}" style="stroke:${INK}" stroke-opacity="0.35" stroke-dasharray="4 3"><title>${esc(`saved: ${row.title}`)}</title></line>`);
+    }
+    out.push(`<line x1="${n(x(today))}" x2="${n(x(today))}" y1="${scopeTop}" y2="${n(workTop + PLOT_H2)}" class="today-line"/>`);
+    out.push(`<text x="${n(x(today))}" y="${n(height - 8)}" text-anchor="middle" font-weight="600" style="fill:${INK}">today</text>`);
+    out.push(`<line class="hover" x1="0" x2="0" y1="${scopeTop}" y2="${n(workTop + PLOT_H2)}" style="stroke:${INK}" stroke-opacity="0.5" visibility="hidden"/>`);
+    out.push("</svg>");
+    return {
+      svg: out.join(""),
+      geometry: {
+        first,
+        last,
+        left: LEFT3,
+        right,
+        top: scopeTop,
+        bottom: workTop + PLOT_H2,
+        x,
+        day: (px) => Math.round(first + (px - LEFT3) / (right - LEFT3) * (last - first)),
+        scopeY,
+        workY
+      }
+    };
+  }
+
+  // src/ui/v3/view.ts
+  function v3View(view, state, on) {
+    if (view.report.cycle.length) {
+      const names = view.report.cycle.map((step2) => step2.title || "an untitled step").join(", ");
+      return h("div", {
+        class: "v3"
+      }, h("div", {
+        class: "banner error"
+      }, `These steps wait on each other, so nothing can be dated: ${names}.`));
+    }
+    const found = brief(view);
+    const basis = basisName(state.then, view);
+    return h("div", {
+      class: "v3"
+    }, keyFigures(found, view, basis), toolbar2(view, found, state, on), state.page === "milestones" ? milestones2(found, view, state, on) : work(found, view, state));
+  }
+  function keyFigures(found, view, basis) {
+    const whole = found.whole;
+    const today = view.today;
+    const figures = [];
+    if (whole.landedBy !== null) {
+      figures.push(h("span", {
+        class: "figure lead",
+        title: "All the work is done"
+      }, `\u2713 ${formatDate(whole.landedBy, today)}`));
+    } else if (whole.move.planned !== null) {
+      figures.push(h("span", {
+        class: "figure lead",
+        title: "Where the plan lands, re-planned from today"
+      }, formatDate(whole.move.planned, today)));
+    }
+    const moved = whole.move.plan;
+    if (moved !== null) {
+      figures.push(h("span", {
+        class: `figure move tone-${moved > 0 ? "later" : moved < 0 ? "earlier" : "ok"}`,
+        title: `Working days the landing moved against ${basis}`
+      }, moved === 0 ? "\xB1 0d" : `${moved > 0 ? "\u25B6 +" : "\u25C0 \u2212"}${Math.abs(moved)}d`));
+    }
+    const share = shareOf(whole.own);
+    if (share !== null) {
+      figures.push(h("span", {
+        class: "figure",
+        title: `${g(whole.own.doneDays)} of ${g(whole.own.days)} days of work done`
+      }, `${percent(share)} done`));
+    }
+    const unsized2 = view.unestimated.filter((step2) => !step2.estimateOff);
+    if (unsized2.length) {
+      figures.push(h("span", {
+        class: "figure tone-later",
+        title: `No estimate, so counted as 0 days:
+${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
+      }, `\u26A0 ${unsized2.length} unsized`));
+    }
+    return h("div", {
+      class: "v3-figures"
+    }, ...figures);
+  }
+  function milestones2(found, view, state, on) {
+    const holder = h("div", {
+      class: "shifts-holder"
+    });
+    queueMicrotask(() => {
+      const { svg, rows } = shiftsSvg(found, view, state.scope, Math.max(560, holder.clientWidth));
+      holder.innerHTML = svg;
+      const element = holder.querySelector("svg");
+      const rowAt = (event) => {
+        const box = element.getBoundingClientRect();
+        const y = (event.clientY - box.top) * (element.viewBox.baseVal.height / box.height);
+        return rows.find((row) => row.top <= y && y < row.bottom) ?? null;
+      };
+      element.addEventListener("click", (event) => {
+        const row = rowAt(event);
+        if (event.detail >= 2) {
+          if (row) on.state({
+            scope: row.key,
+            page: "work"
+          });
+        } else {
+          on.state({
+            scope: row && row.key !== state.scope ? row.key : null
+          });
+        }
+      });
+    });
+    const key = h("div", {
+      class: "v3-key"
+    }, h("span", {}, h("span", {
+      class: "k-then"
+    }), "then"), h("span", {}, h("span", {
+      class: "k-now"
+    }), "plan now"), h("span", {}, h("span", {
+      class: "k-done"
+    }, "\u2713"), "done"), h("span", {
+      class: "hint"
+    }, "click a milestone to pick it \xB7 double-click to see its work"));
+    return h("section", {
+      class: "v3-page"
+    }, holder, key);
+  }
+  function work(found, view, state) {
+    const scopes = [
+      found.whole,
+      ...found.milestones
+    ];
+    const scope = scopes.find((one) => one.key === state.scope) ?? found.whole;
+    const series = burnup(view, scope.key, found.compared);
+    const data = {
+      ...series,
+      promised: stepsFrom(series.promised, view.today)
+    };
+    const named = found.milestones.filter((one) => one.key);
+    const marked = scope.key !== null ? [
+      scope
+    ] : named.length ? named : [
+      scope
+    ];
+    const holder = h("div", {
+      class: "work-holder"
+    });
+    const tip = h("div", {
+      class: "tooltip",
+      hidden: true
+    });
+    queueMicrotask(() => {
+      const { svg, geometry: geometry2 } = workSvg(data, marked, view, Math.max(560, holder.clientWidth), found.compared);
+      holder.innerHTML = svg;
+      holder.append(tip);
+      const element = holder.querySelector("svg");
+      const line = element.querySelector(".hover");
+      element.addEventListener("mousemove", (event) => {
+        const box = element.getBoundingClientRect();
+        const scale = element.viewBox.baseVal.width / box.width;
+        const px = (event.clientX - box.left) * scale;
+        if (px < geometry2.left || px > geometry2.right) {
+          tip.hidden = true;
+          line.setAttribute("visibility", "hidden");
+          return;
+        }
+        const day = geometry2.day(px);
+        line.setAttribute("x1", String(geometry2.x(day)));
+        line.setAttribute("x2", String(geometry2.x(day)));
+        line.setAttribute("visibility", "visible");
+        const read = (label2, value) => value === null ? null : h("div", {}, `${label2}: ${g(Math.round(value * 4) / 4)}d`);
+        const lines = [
+          day <= view.today ? read("scope", stepAt(data.scope, day)) : null,
+          day <= view.today ? read("done", stepAt(data.done, day)) : null,
+          read("the plan's schedule", stepAt(data.promised, day))
+        ].filter((one) => one !== null);
+        tip.replaceChildren(h("b", {}, formatDate(day, view.today)), ...lines);
+        tip.hidden = false;
+        tip.style.left = `${Math.min(event.clientX - box.left + 14, box.width - 200)}px`;
+        tip.style.top = `${event.clientY - box.top + 14}px`;
+      });
+      element.addEventListener("mouseleave", () => {
+        tip.hidden = true;
+        line.setAttribute("visibility", "hidden");
+      });
+    });
+    return h("section", {
+      class: "v3-page"
+    }, holder);
   }
 
   // src/ui/debugger/track.ts
@@ -5098,7 +5858,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       class: "track"
     }, h("p", {
       class: "lede"
-    }, "Each line is one milestone's landing date, as the plan said it on each recorded day. A forecast that holds is flat; ", "where a line meets the diagonal, that day is the landing it promised. \u25C6 marks where the milestone really landed.", compared2 ? " Dashed lines are DPlanner as it is today; solid ones are the model with the variants switched on." : ""), h("div", {
+    }, "Each line is one milestone's landing date, as the plan said it on each recorded day. A forecast that holds is flat; ", "where a line meets the diagonal, that day is the landing it promised. \u25C6 marks where the milestone really landed.", compared2 ? " Dashed lines are DPlanner as it is today; solid ones are the model the page runs, re-planned from today with any variants switched on." : ""), h("div", {
       html: trendSvg(series, rows, others, today, timeline3)
     }), errorTable(series, rows, others, today, Boolean(compared2)), h("h3", {}, "What the Progress plot said each day"), h("p", {
       class: "lede"
@@ -5306,12 +6066,27 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
   }
 
   // src/main.ts
+  var VERSIONS = [
+    [
+      "v1",
+      "v1 \xB7 today"
+    ],
+    [
+      "v2",
+      "v2"
+    ],
+    [
+      "v3",
+      "v3 \xB7 latest"
+    ]
+  ];
   var VERSION_KEY = "te2.version";
   function readVersion() {
     try {
-      return localStorage.getItem(VERSION_KEY) === "v1" ? "v1" : "v2";
+      const stored = localStorage.getItem(VERSION_KEY);
+      return VERSIONS.find(([version]) => version === stored)?.[0] ?? "v3";
     } catch {
-      return "v2";
+      return "v3";
     }
   }
   var FOLDS_KEY = "te2.debugger";
@@ -5326,7 +6101,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     },
     cadence: "weekdays",
     options: {
-      ...FAITHFUL
+      ...ADOPTED
     },
     frame: -1,
     version: readVersion(),
@@ -5339,6 +6114,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       whatIf: {}
     },
     v2: V2_START,
+    v3: V3_START,
     saved: [],
     offset: 0
   };
@@ -5424,8 +6200,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         seed: app.seed
       };
       recording = record(timeline2, spec);
-      const variant = VARIANTS.some(({ key: key2 }) => app.options[key2]);
-      compared = variant && app.cadence !== "stored" ? record(timeline2, {
+      compared = app.cadence !== "stored" ? record(timeline2, {
         ...spec,
         options: FAITHFUL
       }) : null;
@@ -5450,7 +6225,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
   function renderContent() {
     const frame = timeline2.frames[app.frame];
     const upToDay = recordedBy(recording, frame.day);
-    content.replaceChildren(app.version === "v2" ? v2Content(frame.plan, frame.day, upToDay) : v1Content(frame.plan, frame.day, upToDay));
+    content.replaceChildren(app.version === "v3" ? v3Content(frame.plan, frame.day, upToDay) : app.version === "v2" ? v2Content(frame.plan, frame.day, upToDay) : v1Content(frame.plan, frame.day, upToDay));
     viewTitle.textContent = `${frame.plan.title} \u2014 Time Estimates`;
     viewTitle.dataset.version = app.version;
     happened.replaceChildren(events(frame.events));
@@ -5471,8 +6246,8 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
   }
   var NO_STEPS = "No steps yet \u2014 the staffing grid and the calendar date a plan once it has some.";
   function saver(day, upToDay) {
-    return (title2, note) => {
-      const named = title2.trim();
+    return (title3, note) => {
+      const named = title3.trim();
       if (!named) return "A snapshot needs a title.";
       if (upToDay.saved.some((row) => row.title.toLowerCase() === named.toLowerCase()) || app.saved.some((one) => one.title.toLowerCase() === named.toLowerCase())) {
         return `A snapshot called \u201C${named}\u201D is already saved.`;
@@ -5546,6 +6321,31 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       save: saver(day, upToDay)
     });
   }
+  function v3Content(plan, day, upToDay) {
+    const state = app.v3;
+    const view = present(plan, day, upToDay, {
+      picked: state.scope,
+      then: resolvePick(state.then, day),
+      now: LIVE,
+      lens: "calendar",
+      page: "progress",
+      whatIf: state.whatIf
+    }, app.options);
+    if (!view) return h("div", {
+      class: "empty"
+    }, NO_STEPS);
+    return v3View(view, state, {
+      state: (patch) => {
+        app.v3 = {
+          ...app.v3,
+          ...patch
+        };
+        renderContent();
+        writeHash();
+      },
+      save: saver(day, upToDay)
+    });
+  }
   function section(key, name, ...inner) {
     const details = h("details", {
       class: "debug-section",
@@ -5586,6 +6386,11 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         };
         app.v2 = {
           ...app.v2,
+          whatIf: {},
+          scope: null
+        };
+        app.v3 = {
+          ...app.v3,
           whatIf: {},
           scope: null
         };
@@ -5700,8 +6505,9 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     }, h("label", {
       title: "Which days the recorder ran \u2014 the window was open \u2014 and so wrote a row"
     }, "Recorder runs ", cadence), h("span", {
-      class: "label"
-    }, "Model variants:"), ...VARIANTS.map(({ key, label: label2, hint }) => h("label", {
+      class: "label",
+      title: "Always on: done steps cost nothing, and the first unfinished stretch starts no earlier than today (ISSUES.md F1)"
+    }, "Model: re-plans from today \xB7 variants:"), ...VARIANTS.map(({ key, label: label2, hint }) => h("label", {
       title: hint
     }, h("input", {
       type: "checkbox",
@@ -5787,13 +6593,10 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     }, "\u23ED"), h("span", {
       class: "segmented versions",
       title: "Which design of the view: today's tab, or the redesign"
-    }, ...[
-      "v1",
-      "v2"
-    ].map((version) => h("button", {
+    }, ...VERSIONS.map(([version, name]) => h("button", {
       class: app.version === version ? "on" : "",
       onclick: () => switchVersion(version)
-    }, version === "v1" ? "v1 \xB7 today" : "v2 \xB7 redesign"))), label, h("span", {
+    }, name))), label, h("span", {
       class: "scenario-name"
     }, scenario), h("nav", {}, h("a", {
       href: "explainer.html"
@@ -5878,7 +6681,9 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         variants: VARIANTS.filter(({ key }) => app.options[key]).map(({ key }) => key).join(","),
         ui: app.version
       });
-      if (app.version === "v2" && app.v2.scope !== null) state.set("scope", app.v2.scope || "rest");
+      const picked = app.version === "v3" ? app.v3.scope : app.version === "v2" ? app.v2.scope : null;
+      if (picked !== null) state.set("scope", picked || "rest");
+      if (app.version === "v3") state.set("page", app.v3.page);
       history.replaceState(null, "", `#${state}`);
     } catch {
     }
@@ -5903,7 +6708,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     if (cadence && CADENCES.some(({ key }) => key === cadence)) app.cadence = cadence;
     const variants = (state.get("variants") ?? "").split(",");
     app.options = {
-      ...FAITHFUL
+      ...ADOPTED
     };
     for (const { key } of VARIANTS) app.options[key] = variants.includes(key);
     const tab = state.get("tab");
@@ -5913,11 +6718,21 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       [tab]: true
     };
     const ui = state.get("ui");
-    if (ui === "v1" || ui === "v2") app.version = ui;
-    const scope = state.get("scope");
+    const named = VERSIONS.find(([version]) => version === ui);
+    if (named) app.version = named[0];
+    const scoped = state.get("scope");
+    const scope = scoped === null ? null : scoped === "rest" ? "" : scoped;
     app.v2 = {
       ...app.v2,
-      scope: scope === null ? null : scope === "rest" ? "" : scope
+      scope
+    };
+    const page = state.get("page");
+    app.v3 = {
+      ...app.v3,
+      scope,
+      ...page === "milestones" || page === "work" ? {
+        page
+      } : {}
     };
     currentTimeline();
     const asked = state.get("day");

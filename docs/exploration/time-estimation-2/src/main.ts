@@ -21,7 +21,7 @@ import {
   weekdayName,
 } from "./model/calendar.ts";
 import { isMilestone, placed, type Plan } from "./model/graph.ts";
-import { FAITHFUL, type ModelOptions, VARIANTS } from "./model/options.ts";
+import { ADOPTED, FAITHFUL, type ModelOptions, VARIANTS } from "./model/options.ts";
 import { milestoneColors } from "./model/palettes.ts";
 import { AT_START, LIVE } from "./model/progress.ts";
 import { type ExportFile, isExport } from "./data.ts";
@@ -43,8 +43,11 @@ import { renderFigures } from "./ui/figures.ts";
 import { recordsView } from "./ui/debugger/records.ts";
 import { h } from "./ui/markup.ts";
 import { timeTab } from "./ui/v1/timetab.ts";
-import { resolvePick, V2_START, type V2State } from "./ui/v2/state.ts";
+import { resolvePick } from "./ui/compare.ts";
+import { V2_START, type V2State } from "./ui/v2/state.ts";
 import { v2View } from "./ui/v2/view.ts";
+import { V3_START, type V3Page, type V3State } from "./ui/v3/state.ts";
+import { v3View } from "./ui/v3/view.ts";
 import { trackRecord } from "./ui/debugger/track.ts";
 
 interface App {
@@ -58,19 +61,22 @@ interface App {
   version: Version;
   view: ViewState; // v1's.
   v2: V2State;
+  v3: V3State;
   saved: SavedSpec[]; // Saved by hand on this page.
   offset: number;
 }
 
-/** Which design of the view is shown: v1 is today's tab, v2 the redesign. */
-type Version = "v1" | "v2";
+/** Which design of the view is shown: v1 is today's tab, v2 and v3 the redesigns. */
+type Version = "v1" | "v2" | "v3";
+const VERSIONS: [Version, string][] = [["v1", "v1 · today"], ["v2", "v2"], ["v3", "v3 · latest"]];
 const VERSION_KEY = "te2.version";
 
 function readVersion(): Version {
   try {
-    return localStorage.getItem(VERSION_KEY) === "v1" ? "v1" : "v2";
+    const stored = localStorage.getItem(VERSION_KEY);
+    return VERSIONS.find(([version]) => version === stored)?.[0] ?? "v3";
   } catch {
-    return "v2";
+    return "v3";
   }
 }
 
@@ -91,11 +97,12 @@ const app: App = {
   scenario: SCENARIOS[0].id,
   world: { ...DEFAULT_WORLD, ...SCENARIOS[0].world },
   cadence: "weekdays",
-  options: { ...FAITHFUL },
+  options: { ...ADOPTED },
   frame: -1,
   version: readVersion(),
   view: { picked: null, then: AT_START, now: LIVE, lens: "calendar", page: "progress", whatIf: {} },
   v2: V2_START,
+  v3: V3_START,
   saved: [],
   offset: 0,
 };
@@ -172,10 +179,8 @@ function currentRecording(): Recording {
       seed: app.seed,
     };
     recording = record(timeline, spec);
-    const variant = VARIANTS.some(({ key }) => app.options[key]);
-    compared = variant && app.cadence !== "stored"
-      ? record(timeline, { ...spec, options: FAITHFUL })
-      : null;
+    // The page never runs DPlanner as it is today, so Track record draws that beside it.
+    compared = app.cadence !== "stored" ? record(timeline, { ...spec, options: FAITHFUL }) : null;
   }
   return recording;
 }
@@ -204,7 +209,9 @@ function renderContent(): void {
   const frame = timeline.frames[app.frame];
   const upToDay = recordedBy(recording, frame.day);
   content.replaceChildren(
-    app.version === "v2"
+    app.version === "v3"
+      ? v3Content(frame.plan, frame.day, upToDay)
+      : app.version === "v2"
       ? v2Content(frame.plan, frame.day, upToDay)
       : v1Content(frame.plan, frame.day, upToDay),
   );
@@ -294,6 +301,27 @@ function v2Content(plan: Plan, day: Day, upToDay: Recording): HTMLElement {
   });
 }
 
+function v3Content(plan: Plan, day: Day, upToDay: Recording): HTMLElement {
+  const state = app.v3;
+  const view = present(plan, day, upToDay, {
+    picked: state.scope,
+    then: resolvePick(state.then, day),
+    now: LIVE,
+    lens: "calendar",
+    page: "progress",
+    whatIf: state.whatIf,
+  }, app.options);
+  if (!view) return h("div", { class: "empty" }, NO_STEPS);
+  return v3View(view, state, {
+    state: (patch) => {
+      app.v3 = { ...app.v3, ...patch };
+      renderContent();
+      writeHash();
+    },
+    save: saver(day, upToDay),
+  });
+}
+
 // -- the debugger's body -----------------------------------------------------------------------------
 
 /** A foldable part of the debugger, its fold remembered. */
@@ -338,6 +366,7 @@ function setupRows(): HTMLElement[] {
         app.saved = [];
         app.view = { ...app.view, whatIf: {}, picked: null, then: AT_START, now: LIVE };
         app.v2 = { ...app.v2, whatIf: {}, scope: null };
+        app.v3 = { ...app.v3, whatIf: {}, scope: null };
         render();
       },
     },
@@ -516,7 +545,11 @@ function modelRow(replaying: boolean): HTMLElement {
       "Recorder runs ",
       cadence,
     ),
-    h("span", { class: "label" }, "Model variants:"),
+    h("span", {
+      class: "label",
+      title:
+        "Always on: done steps cost nothing, and the first unfinished stretch starts no earlier than today (ISSUES.md F1)",
+    }, "Model: re-plans from today · variants:"),
     ...VARIANTS.map(({ key, label, hint }) =>
       h(
         "label",
@@ -616,11 +649,11 @@ function debuggerBar(): HTMLElement {
           class: "segmented versions",
           title: "Which design of the view: today's tab, or the redesign",
         },
-        ...(["v1", "v2"] as Version[]).map((version) =>
+        ...VERSIONS.map(([version, name]) =>
           h("button", {
             class: app.version === version ? "on" : "",
             onclick: () => switchVersion(version),
-          }, version === "v1" ? "v1 · today" : "v2 · redesign")
+          }, name)
         ),
       ),
       label,
@@ -732,7 +765,9 @@ function writeHash(): void {
       ui: app.version,
     });
     // v2's pick of a milestone: its step id, "rest" for the work after the last one.
-    if (app.version === "v2" && app.v2.scope !== null) state.set("scope", app.v2.scope || "rest");
+    const picked = app.version === "v3" ? app.v3.scope : app.version === "v2" ? app.v2.scope : null;
+    if (picked !== null) state.set("scope", picked || "rest");
+    if (app.version === "v3") state.set("page", app.v3.page);
     history.replaceState(null, "", `#${state}`);
   } catch {
     // A page opened from disk in some browsers refuses replaceState; the page works without it.
@@ -755,16 +790,24 @@ function readHash(): void {
   const cadence = state.get("cadence") as Cadence | null;
   if (cadence && CADENCES.some(({ key }) => key === cadence)) app.cadence = cadence;
   const variants = (state.get("variants") ?? "").split(",");
-  app.options = { ...FAITHFUL };
+  app.options = { ...ADOPTED };
   for (const { key } of VARIANTS) app.options[key] = variants.includes(key);
   // A link naming one of the debugger's readings opens it, as the tabs of the first cut did.
   const tab = state.get("tab");
   if (tab === "track" || tab === "records") folds = { ...folds, open: true, [tab]: true };
   // The address bar wins over what this browser last chose.
   const ui = state.get("ui");
-  if (ui === "v1" || ui === "v2") app.version = ui;
-  const scope = state.get("scope");
-  app.v2 = { ...app.v2, scope: scope === null ? null : scope === "rest" ? "" : scope };
+  const named = VERSIONS.find(([version]) => version === ui);
+  if (named) app.version = named[0];
+  const scoped = state.get("scope");
+  const scope = scoped === null ? null : scoped === "rest" ? "" : scoped;
+  app.v2 = { ...app.v2, scope };
+  const page = state.get("page");
+  app.v3 = {
+    ...app.v3,
+    scope,
+    ...(page === "milestones" || page === "work" ? { page: page as V3Page } : {}),
+  };
   currentTimeline();
   // A day, or "end" for the last one — a scenario's length depends on how it plays out.
   const asked = state.get("day");
