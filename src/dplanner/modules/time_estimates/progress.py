@@ -88,7 +88,15 @@ def _to_format_2(data: dict[str, Any]) -> dict[str, Any]:
     return dict(data)
 
 
-DATA_FORMAT = ModuleDataFormat(HISTORY_ID, 2, (_to_format_2,))
+def _to_format_3(data: dict[str, Any]) -> dict[str, Any]:
+    """Format 3 counts, per stretch, the steps whose status changed on the row's day
+    (``changed``, absent when none did). Older rows say nothing about it, and a reader takes
+    their silence as a day nobody can vouch for; the bump is so an older build, whose
+    writer rebuilds every row, knows it would drop the counts."""
+    return dict(data)
+
+
+DATA_FORMAT = ModuleDataFormat(HISTORY_ID, 3, (_to_format_2, _to_format_3))
 
 # Two shares within this of each other are "on plan" — a chart's line width, in share.
 ON_PLAN = 0.005
@@ -102,6 +110,9 @@ class Tally:
     done: int = 0
     days: float = 0.0  # Estimated project days, unestimated steps counting nothing.
     done_days: float = 0.0
+    # How many of the steps' statuses changed on the day recorded: a day of work, told
+    # from a day nothing moved even when nothing finished.
+    changed: int = 0
 
     def __add__(self, other: "Tally") -> "Tally":
         return Tally(
@@ -109,6 +120,7 @@ class Tally:
             self.done + other.done,
             self.days + other.days,
             self.done_days + other.done_days,
+            self.changed + other.changed,
         )
 
     def share(self) -> float | None:
@@ -183,8 +195,18 @@ class Snapshot:
         return self.stretches[0].start
 
     def same_plan(self, other: "Snapshot") -> bool:
-        """Whether two days recorded the same state — everything but the day itself."""
-        return self.stretches == other.stretches
+        """Whether two days recorded the same plan — everything but the day, and how many
+        statuses changed on it."""
+        return _plan(self) == _plan(other)
+
+    @property
+    def changed(self) -> int:
+        """How many statuses changed on the day recorded, across every stretch."""
+        return sum(stretch.tally.changed for stretch in self.stretches)
+
+
+def _plan(snapshot: Snapshot) -> tuple[Stretch, ...]:
+    return tuple(replace(s, tally=replace(s.tally, changed=0)) for s in snapshot.stretches)
 
 
 @dataclass(frozen=True)
@@ -271,6 +293,7 @@ def take(
     days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
     status_for: Callable[[Step], str],
+    since_for: Callable[[Step], date | None],
     *,
     humans: int,
     agents: int,
@@ -285,28 +308,46 @@ def take(
     there is nothing honest to record about either."""
     if not project.steps or cyclic(library, project):
         return None
-    stretches = tuple(
-        Stretch(
-            key=phase.milestone.id if phase.milestone else "",
-            tally=tally(phase.steps, days_for, status_for),
-            start=phase.start,
-            finish=phase.finish,
-            landings=landings(phase, days_for),
-        )
-        for phase in calendar_phases(
-            library,
-            project,
-            days_for,
-            is_agent,
-            humans=humans,
-            agents=agents,
-            start=start,
-            efficiency=efficiency,
-            is_milestone=is_milestone,
-            start_for=start_for,
-        )
+    phases = calendar_phases(
+        library,
+        project,
+        days_for,
+        is_agent,
+        humans=humans,
+        agents=agents,
+        start=start,
+        efficiency=efficiency,
+        is_milestone=is_milestone,
+        start_for=start_for,
     )
-    return Snapshot(day=today, stretches=stretches)
+    return snapshot_of(phases, today, days_for, status_for, since_for)
+
+
+def snapshot_of(
+    phases: Sequence[Phase],
+    day: date,
+    days_for: Callable[[Step], float | None],
+    status_for: Callable[[Step], str],
+    since_for: Callable[[Step], date | None],
+) -> Snapshot:
+    """The plan on ``day`` from its dated stretches: each with what has landed in it and
+    how many of its steps' statuses changed that day."""
+    return Snapshot(
+        day=day,
+        stretches=tuple(
+            Stretch(
+                key=phase.milestone.id if phase.milestone else "",
+                tally=replace(
+                    tally(phase.steps, days_for, status_for),
+                    changed=sum(1 for step in phase.steps if since_for(step) == day),
+                ),
+                start=phase.start,
+                finish=phase.finish,
+                landings=landings(phase, days_for),
+            )
+            for phase in phases
+        ),
+    )
 
 
 def calendar_phases(
@@ -641,6 +682,7 @@ def _stretch(row: dict[str, Any]) -> Stretch | None:
             done=_count(row.get("done")),
             days=_amount(row.get("days")),
             done_days=_amount(row.get("done_days")),
+            changed=_count(row.get("changed")),
         ),
         start=start,
         finish=finish,
@@ -698,6 +740,7 @@ def _row(row: Snapshot) -> dict[str, Any]:
                 "done": s.tally.done,
                 "days": float(s.tally.days),
                 "done_days": float(s.tally.done_days),
+                **({"changed": s.tally.changed} if s.tally.changed else {}),
                 "start": s.start.isoformat(),
                 **({"finish": s.finish.isoformat()} if s.finish else {}),
                 **(
@@ -728,11 +771,13 @@ def recorded(history: Sequence[Snapshot], now: Snapshot) -> list[Snapshot] | Non
     now = replace(now, title="", note="")
     rows = list(history)
     if rows and rows[-1].day == now.day:
-        if rows[-1].same_plan(now):
+        if rows[-1].stretches == now.stretches:
             return None
         rows[-1] = now
         return rows
-    if rows and rows[-1].same_plan(now):
+    # A new day is written when the plan moved or a status changed on it — never merely
+    # because yesterday's row counted changes today does not.
+    if rows and rows[-1].same_plan(now) and not now.changed:
         return None
     rows.append(now)
     return rows

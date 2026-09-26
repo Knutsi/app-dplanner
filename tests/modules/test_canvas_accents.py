@@ -5,6 +5,8 @@ translates the aspects into a :class:`NodeAccent`, and these tests drive the rea
 end to end.
 """
 
+from datetime import date
+
 import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
@@ -57,7 +59,11 @@ def test_the_key_letter_follows_the_kind_and_the_number_stays(services, project,
 
 def test_a_done_step_is_muted_with_a_green_body(services, project, tab):
     step = project.steps[0]
-    services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
+    services.undo.push(
+        SetModuleDataCommand(
+            step.id, status.MODULE_ID, status.write("done", today=date(2026, 9, 21))
+        )
+    )
     accent = node(tab, step)._accent
     assert accent.muted is True
     assert accent.body_tone == "good"
@@ -68,7 +74,11 @@ def test_a_shipped_milestone_reads_finished(services, project, tab):
     """Done outranks the milestone purple on the body; the tag still says what it was."""
     step = project.steps[1]
     services.undo.push(SetModuleDataCommand(step.id, milestone.MODULE_ID, milestone.write("MVP")))
-    services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
+    services.undo.push(
+        SetModuleDataCommand(
+            step.id, status.MODULE_ID, status.write("done", today=date(2026, 9, 21))
+        )
+    )
     accent = node(tab, step)._accent
     assert accent.body_tone == "good"
     assert "tag" in accent.icons and accent.badge == "MVP"
@@ -104,7 +114,11 @@ def test_a_milestone_outranks_a_feature_on_the_body(services, project, tab):
 def test_a_done_feature_reads_finished(services, project, tab):
     step = project.steps[0]
     services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write()))
-    services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
+    services.undo.push(
+        SetModuleDataCommand(
+            step.id, status.MODULE_ID, status.write("done", today=date(2026, 9, 21))
+        )
+    )
     accent = node(tab, step)._accent
     assert accent.body_tone == "good" and accent.muted is True
 
@@ -131,7 +145,11 @@ def test_a_release_stat_is_the_accumulated_days_and_date(services, project, tab)
 
 def test_in_progress_gets_a_busy_bar(services, project, tab):
     step = project.steps[0]
-    services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("in-progress")))
+    services.undo.push(
+        SetModuleDataCommand(
+            step.id, status.MODULE_ID, status.write("in-progress", today=date(2026, 9, 21))
+        )
+    )
     accent = node(tab, step)._accent
     assert accent.spine_tone == "busy"
     assert accent.muted is False
@@ -139,7 +157,11 @@ def test_in_progress_gets_a_busy_bar(services, project, tab):
 
 def test_blocked_gets_a_bad_bar(services, project, tab):
     step = project.steps[0]
-    services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("blocked")))
+    services.undo.push(
+        SetModuleDataCommand(
+            step.id, status.MODULE_ID, status.write("blocked", today=date(2026, 9, 21))
+        )
+    )
     assert node(tab, step)._accent.spine_tone == "bad"
 
 
@@ -185,7 +207,11 @@ def test_agent_run_states_become_chips(services, project, tab, state, chip_text,
 
 def test_clearing_the_status_unmutes(services, project, tab):
     step = project.steps[0]
-    services.undo.push(SetModuleDataCommand(step.id, status.MODULE_ID, status.write("done")))
+    services.undo.push(
+        SetModuleDataCommand(
+            step.id, status.MODULE_ID, status.write("done", today=date(2026, 9, 21))
+        )
+    )
     services.undo.undo()
     assert node(tab, step)._accent.muted is False
 

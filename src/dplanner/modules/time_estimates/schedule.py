@@ -40,7 +40,7 @@ print and store them; the view turns them into paint.
 
 from collections.abc import Callable
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 from math import ceil
 from typing import Any, TypeGuard
 
@@ -56,8 +56,18 @@ from dplanner.domain.schedule import (
 from dplanner.theme.palettes import DEFAULT_PALETTE, Palette, palette, shades
 
 MODULE_ID = "time_estimates"
-DATA_FORMAT = ModuleDataFormat(MODULE_ID)
+
+
+def _to_format_2(entry: dict[str, Any]) -> dict[str, Any]:
+    """Format 2 remembers the focus before its last change (``efficiency_was``). A format-1
+    entry has no such memory and none to derive; the bump is so an older build, whose
+    writer rebuilds the entry, knows it would drop one."""
+    return entry
+
+
+DATA_FORMAT = ModuleDataFormat(MODULE_ID, 2, (_to_format_2,))
 EFFICIENCY_KEY = "efficiency"
+EFFICIENCY_WAS_KEY = "efficiency_was"
 DEFAULT_EFFICIENCY = 0.5
 PALETTE_KEY = "palette"
 TEAM_KEY = "team"
@@ -87,6 +97,19 @@ def read_palette(project: Project) -> Palette:
 
 
 @dataclass(frozen=True)
+class FocusChange:
+    """The focus the project had before its last change, and the day the new one began.
+
+    The one piece of past budget a forecast needs: work already under way ran at the old
+    focus until ``until``, and crediting it at the new one would re-date it. Every other
+    past budget is unneeded — a forecast looks forward, and each past day's is in its row.
+    """
+
+    until: date
+    efficiency: float
+
+
+@dataclass(frozen=True)
 class Assumptions:
     """What the project node stores about its staffing: each None where the file is
     silent and the default answers. Read whole, changed with ``replace``, written whole."""
@@ -94,28 +117,41 @@ class Assumptions:
     efficiency: float | None = None
     palette: str | None = None
     team: tuple[int, int] | None = None  # (people, agents)
+    efficiency_was: FocusChange | None = None
 
 
 def read_assumptions(project: Project) -> Assumptions:
     """The project's stored assumptions exactly as written — None for an absent key, and
     for an unreadable one, so a rewrite drops it rather than carrying nonsense along."""
     entry = project.module_data.get(MODULE_ID) or {}
-    efficiency = entry.get(EFFICIENCY_KEY)
-    # A bool is not a number here, and a factor outside (0, 1] would divide an estimate
-    # into nonsense — either reads as the default.
-    if (
-        isinstance(efficiency, bool)
-        or not isinstance(efficiency, int | float)
-        or not 0.0 < efficiency <= 1.0
-    ):
-        efficiency = None
+    efficiency = _factor_in(entry.get(EFFICIENCY_KEY))
     written = entry.get(PALETTE_KEY)
     palette_id = written if isinstance(written, str) and palette(written).id == written else None
     return Assumptions(
-        efficiency=float(efficiency) if efficiency is not None else None,
+        efficiency=efficiency,
         palette=palette_id,
         team=_team_in(entry.get(TEAM_KEY)),
+        efficiency_was=_change_in(entry.get(EFFICIENCY_WAS_KEY)),
     )
+
+
+def _factor_in(value: object) -> float | None:
+    # A bool is not a number here, and a factor outside (0, 1] would divide an estimate
+    # into nonsense — either reads as the default.
+    if isinstance(value, bool) or not isinstance(value, int | float) or not 0.0 < value <= 1.0:
+        return None
+    return float(value)
+
+
+def _change_in(value: object) -> FocusChange | None:
+    if not isinstance(value, dict):
+        return None
+    efficiency = _factor_in(value.get(EFFICIENCY_KEY))
+    try:
+        until = date.fromisoformat(value["until"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return FocusChange(until, efficiency) if efficiency is not None else None
 
 
 def _team_in(value: object) -> tuple[int, int] | None:
@@ -142,34 +178,61 @@ def write_assumptions(assumptions: Assumptions) -> dict[str, Any]:
         if humans < 1 or agents < 1:
             raise ValueError("a team needs at least one person and one agent")
         entry[TEAM_KEY] = [int(humans), int(agents)]
+    if assumptions.efficiency_was is not None:
+        was = assumptions.efficiency_was
+        entry[EFFICIENCY_WAS_KEY] = {
+            "until": was.until.isoformat(),
+            EFFICIENCY_KEY: float(was.efficiency),
+        }
     return stamped(entry, DATA_FORMAT.version) if entry else {}
 
 
 def write_project(
     project: Project,
     *,
+    today: date,
     efficiency: float | None = None,
     palette_id: str | None = None,
     team: tuple[int, int] | None = None,
     clear: str = "",
 ) -> dict[str, Any]:
     """The project's entry with one assumption changed and the rest as stored — what
-    every control and verb pushes. ``clear`` names a field going back to its default."""
+    every control and verb pushes. ``clear`` names a field going back to its default.
+
+    A change of focus remembers the one it replaced (``efficiency_was``), the new one
+    beginning tomorrow — today's work was done at the old. A second change the same day
+    keeps the focus the day began with, as an estimate's history keeps the day's first.
+    """
     current = read_assumptions(project)
     changed = Assumptions(
         efficiency=efficiency if efficiency is not None else current.efficiency,
         palette=palette_id if palette_id is not None else current.palette,
         team=team if team is not None else current.team,
+        efficiency_was=current.efficiency_was,
     )
     if clear:
         changed = replace(changed, **{clear: None})
+    was, now = _effective(current.efficiency), _effective(changed.efficiency)
+    if now != was:
+        began = today + timedelta(days=1)
+        earlier = current.efficiency_was
+        kept = earlier.efficiency if earlier is not None and earlier.until == began else was
+        changed = replace(changed, efficiency_was=FocusChange(began, kept))
     return write_assumptions(changed)
+
+
+def _effective(efficiency: float | None) -> float:
+    return efficiency if efficiency is not None else DEFAULT_EFFICIENCY
+
+
+def read_efficiency_was(project: Project) -> FocusChange | None:
+    """The focus before the last change, and the day the new one began — or None."""
+    return read_assumptions(project).efficiency_was
 
 
 def read_efficiency(project: Project) -> float:
     """The stored focus factor, or the default."""
-    efficiency = read_assumptions(project).efficiency
-    return DEFAULT_EFFICIENCY if efficiency is None else efficiency
+    return _effective(read_assumptions(project).efficiency)
 
 
 def read_team(project: Project) -> tuple[int, int]:

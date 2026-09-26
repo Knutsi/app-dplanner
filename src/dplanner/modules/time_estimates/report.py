@@ -9,7 +9,6 @@ a second computation of anything the tab shows.
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -74,20 +73,7 @@ WHOLE_LABEL = "All work"
 REMAINDER_LABEL = "Remaining work"
 
 
-def report_source(
-    *,
-    days_for: Callable[[Step], float | None],
-    is_agent: Callable[[Step], bool],
-    status_for: Callable[[Step], str],
-    start_of: Callable[[Project, date], date],
-    milestone_label: Callable[[Step], str],
-    estimate_history: Callable[[Step], list[tuple[date, float]]],
-    key_of: Callable[[Step], str],
-) -> ReportSource:
-    readers = Readers(
-        days_for, is_agent, status_for, start_of, milestone_label, estimate_history, key_of
-    )
-
+def report_source(readers: Readers) -> ReportSource:
     def source(library: Library, project: Project, _files: FilesFor, day: date) -> Contribution:
         if not project.steps:
             return NOTHING
@@ -105,6 +91,7 @@ def report_source(
             readers.days_for,
             readers.is_agent,
             readers.status_for,
+            readers.since_for,
             humans=team.humans,
             agents=team.agents,
             start=dated.start,

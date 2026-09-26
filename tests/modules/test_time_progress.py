@@ -6,6 +6,7 @@ No ``qapp`` fixture: ``progress.py`` is Qt-free by rule, and this file proves it
 without one.
 """
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -87,6 +88,7 @@ def snapshot(plan, *, finished=("A", "B"), closing=("B", "D"), today=date(2026, 
         days_for,
         is_agent,
         done(*finished),
+        lambda _s: None,
         humans=1,
         agents=1,
         start=MONDAY,
@@ -144,6 +146,7 @@ def test_a_stepless_or_looped_project_has_no_snapshot(plan):
             days_for,
             is_agent,
             done(),
+            lambda _s: None,
             humans=1,
             agents=1,
             start=MONDAY,
@@ -352,7 +355,7 @@ def test_the_history_round_trips_with_absence_for_the_defaults(plan):
         ],
     }
     assert "milestone" not in row["stretches"][1]  # the work after the last milestone
-    assert entry["format"] == 2 and "saved" not in entry
+    assert entry["format"] == 3 and "saved" not in entry
     project = Project(title="P")
     project.module_data["progress_history"] = entry
     assert read_history(project) == [now]
@@ -435,6 +438,7 @@ def test_a_milestone_whose_start_is_later_opens_a_gap_the_plan_holds_flat(plan):
         days_for,
         is_agent,
         done("A", "B"),
+        lambda _s: None,
         humans=1,
         agents=1,
         start=MONDAY,
@@ -497,3 +501,53 @@ def test_the_volume_is_a_step_curve_of_each_recorded_days_total(plan):
         50.0,
         200.0,
     ]
+
+
+# -- the days a status changed on --------------------------------------------------------------
+
+
+def test_a_row_counts_the_statuses_that_changed_on_its_day(plan):
+    """A step started or finished on the day recorded is a day of work, even when nothing
+    landed — counted per stretch, and written only where it is not zero."""
+    library, project = plan
+    day = date(2026, 9, 10)
+    moved = {"B": day, "C": day, "A": date(2026, 9, 8)}
+    now = take(
+        library,
+        project,
+        days_for,
+        is_agent,
+        done("A", "B"),
+        lambda step: moved.get(step.title),
+        humans=1,
+        agents=1,
+        start=MONDAY,
+        efficiency=1.0,
+        is_milestone=milestones("B", "D"),
+        start_for=lambda _s: None,
+        today=day,
+    )
+    assert now is not None
+    assert [s.tally.changed for s in now.stretches] == [1, 1] and now.changed == 2
+    entry = write_history([now])
+    assert [s.get("changed") for s in entry["days"][0]["stretches"]] == [1, 1]
+    project.module_data["progress_history"] = entry
+    assert read_history(project) == [now]
+    quiet = write_history([snapshot(plan)])
+    assert all("changed" not in s for s in quiet["days"][0]["stretches"])
+
+
+def test_a_quiet_day_is_not_written_and_a_day_of_work_is(plan):
+    """A new day's row is written when the plan moved or a status changed on it — never
+    just because yesterday's row counted changes that today does not."""
+    first = snapshot(plan, today=date(2026, 9, 10))
+    busy = replace(
+        first,
+        stretches=tuple(replace(s, tally=replace(s.tally, changed=1)) for s in first.stretches),
+    )
+    quiet = snapshot(plan, today=date(2026, 9, 11))
+    assert quiet.same_plan(busy)
+    assert recorded([busy], quiet) is None
+    worked = replace(quiet, stretches=busy.stretches)
+    rows = recorded([busy], worked)
+    assert rows is not None and [row.day for row in rows] == [date(2026, 9, 10), date(2026, 9, 11)]

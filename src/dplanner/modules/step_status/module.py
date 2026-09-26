@@ -9,6 +9,7 @@ table's, the menu bar and the command palette at once, because that is what regi
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from dplanner.core.clock import Clock
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library
 from dplanner.framework.action_registry import (
@@ -34,6 +35,7 @@ class StepStatusDeps:
     library: Library
     undo: UndoService[Library]
     actions: ActionRegistry
+    clock: Clock  # The day a status change is stamped with.
 
 
 class StepStatusModule:
@@ -75,8 +77,11 @@ class StepStatusModule:
             step = focused_step(context, self._deps.library)
             if step is None or read(step) == status:
                 return
+            entry = write(
+                status, today=self._deps.clock.today(), previous=step.module_data.get(MODULE_ID)
+            )
             self._deps.undo.push(
-                SetModuleDataCommand(step.id, MODULE_ID, write(status), label="Set Status")
+                SetModuleDataCommand(step.id, MODULE_ID, entry, label="Set Status")
             )
 
         return run

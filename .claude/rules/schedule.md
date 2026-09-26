@@ -72,11 +72,16 @@ paths:
   (`domain/schedule.py`'s `ParallelFinish.landings`, carried on each `Phase`). The one
   thing that cannot be derived is the past: a `Snapshot` — one row per stretch, steps,
   done, days, done days, start, landing, and the **landing knots** the curve is drawn
-  through — is written under a second module id, `progress_history` (format 2), in two
+  through — is written under a second module id, `progress_history` (format 3), in two
   lists. **Automatic** days, **only on a day something in the plan changed** (a step or
-  an estimate added or removed, a link, a status, a milestone dated), last-wins within
-  the day, by `recorder.py` after every settled change in the window and by `dplanner
-  progress record` from the terminal — directly, with its own origin, off the undo stack
+  an estimate added or removed, a link, a status, a milestone dated) **or a status was
+  set** — each stretch counting the steps whose status changed that day (`changed`, from
+  the status aspect's `since`), so a day of work is told from a quiet one when nothing
+  landed, while a day that only differs from yesterday by that count is not written —
+  last-wins within the day, by `recorder.py` after every settled change in the window, by
+  `dplanner status set`/`clear` (the root's `_recording_status`, since an agent reports
+  with no window open) and by `dplanner progress record` from the terminal — directly,
+  with its own origin, off the undo stack
   (the PR refresher's rule — Ctrl+Z undoes the status, not the record). And **saved**
   snapshots, taken on purpose under a title and a note — *Save snapshot…* in the tab's
   strip (`snapshots.py`), `dplanner progress save|list|remove` — a decision, so pushed

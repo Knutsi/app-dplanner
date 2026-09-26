@@ -356,7 +356,11 @@ def _description(h: Harness) -> None:
 def _status(h: Harness) -> None:
     words = ("in-progress", "done", "blocked", "pending")
     for i in range(PUSHES):
-        h.push(SetModuleDataCommand(h.target.id, "step_status", status(words[i % 4])))
+        h.push(
+            SetModuleDataCommand(
+                h.target.id, "step_status", status(words[i % 4], today=date.today())
+            )
+        )
 
 
 @scenario("link")

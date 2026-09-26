@@ -108,8 +108,9 @@ you work. So:
   now side from one too): what was added since, how the landing moved, which steps were
   born or re-estimated (`estimate show <step>` prints an estimate's earlier values), and
   the volume the plan came to on each recorded day. That history is what the window
-  writes as the plan changes; when you finish a step with no window open, `dplanner
-  progress record <project>` writes the day's row yourself. **`dplanner progress save
+  writes as the plan changes, and what `status set` writes for you when you report; after
+  any other change with no window open, `dplanner progress record <project>` writes the
+  day's row. **`dplanner progress save
   <project> "<title>"`** keeps today's plan under a name on purpose — the outlook at a
   review, the day the ground was broken — for later comparisons to name; the developer
   asks for one, you never save unasked.

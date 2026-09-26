@@ -225,7 +225,7 @@ def test_picking_a_map_is_one_undoable_write_every_surface_follows(services, pro
 
     services.actions.run("appearance.milestones.mako", services.context.current())
     assert read_palette(project) is MAKO
-    assert project.module_data[TIME_ID] == {"palette": "mako", "format": 1}
+    assert project.module_data[TIME_ID] == {"palette": "mako", "format": 2}
     assert dealt(services, project)[v1.id] == shades(MAKO, 2)[0]
     assert order_rows(services, project)[v1.id][0] == shades(MAKO, 2)[0]
 
@@ -241,9 +241,9 @@ def test_the_tick_follows_a_map_changed_from_outside_the_menu(services, project)
     services.tabs.open("project", project.id)
     services.context.refresh()
 
-    SetModuleDataCommand(project.id, TIME_ID, write_project(project, palette_id="rocket")).redo(
-        library
-    )
+    SetModuleDataCommand(
+        project.id, TIME_ID, write_project(project, today=date(2026, 9, 21), palette_id="rocket")
+    ).redo(library)
     library.module_data_changed.emit(project.id, TIME_ID, "outside")
 
     ticked = [a.text() for a in milestone_menu(services).actions() if a.isChecked()]
