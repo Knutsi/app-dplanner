@@ -116,11 +116,13 @@ function keyFigures(found: Brief, view: TimeView, basis: string): HTMLElement {
 
 // -- Milestones -----------------------------------------------------------------------------------
 
+/** `drill`: a double-click opens the milestone's own work (v3, v4); v5's Work shows it all. */
 export function milestonesPage(
   found: Brief,
   view: TimeView,
   state: V3State,
   on: V3Handlers,
+  drill = true,
 ): HTMLElement {
   const holder = h("div", { class: "shifts-holder" });
   // After the caller has put this on the page — the width is read from where it landed.
@@ -138,7 +140,7 @@ export function milestonesPage(
     element.addEventListener("click", (event) => {
       const row = rowAt(event);
       if (event.detail >= 2) {
-        if (row) on.state({ scope: row.key, page: "work" });
+        if (row && drill) on.state({ scope: row.key, page: "work" });
       } else {
         on.state({ scope: row && row.key !== state.scope ? row.key : null });
       }
@@ -150,7 +152,13 @@ export function milestonesPage(
     h("span", {}, h("span", { class: "k-then" }), "then"),
     h("span", {}, h("span", { class: "k-now" }), "plan now"),
     h("span", {}, h("span", { class: "k-done" }, "✓"), "done"),
-    h("span", { class: "hint" }, "click a milestone to pick it · double-click to see its work"),
+    h(
+      "span",
+      { class: "hint" },
+      drill
+        ? "click a milestone to pick it · double-click to see its work"
+        : "click a milestone to pick it",
+    ),
   );
   return h("section", { class: "v3-page" }, holder, key);
 }

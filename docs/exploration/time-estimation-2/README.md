@@ -61,8 +61,8 @@ remembered in the browser:
     stand while what is done matches them. Otherwise the rest resumes from tomorrow, with
     work in flight credited for the days already spent. The rounding is fixed (I1, Q3).
     That is decided for the backport, so it has no switch. The parity tools alone run
-    DPlanner exactly as it is today. v5's *Pace so far* is the reader's own switch, in the
-    view (F6).
+    DPlanner exactly as it is today. v5's *Adjust for efficiency* is the reader's own
+    switch, in the view (F6).
   - *Lock the Work plot's axes to the whole run* (v5): the date axis ends at the last
     landing and the scale holds the most work the run ever has, so scrubbing moves only
     the lines. It is how `work.gif` was recorded.
@@ -94,8 +94,8 @@ the choice is remembered; v5 is the default.
 - **v4** is v3 with the **Budget** in place of the what-ifs. Its Work tab marks weekends,
   the days nothing changed, and the waits of Delay steps.
 - **v5** is v4 with the **Calendar** back as a third tab, **History** to look back at any
-  recorded day, and **Pace so far** to re-estimate what is left at the pace work has
-  actually gone.
+  recorded day, and **Adjust for efficiency** to re-estimate what is left at the focus work
+  has actually had.
 
 In v1 to v3, focus, team, palette, start and a milestone's begin date are *what-ifs* on the
 day's live plan. In v4 the Budget is not a what-if: a choice is saved at once, and applies
@@ -110,20 +110,24 @@ v5 is v4, with these additions:
   milestone's colour, each milestone's name on the day it lands, and each Delay's wait
   hatched. ◂ ▸ page a month at a time.
 - **History**, in the toolbar: a slider over every day the recorder wrote, with ◂ ▸ steps
-  and *back to today*. On a day before today, the key figures, both tabs' plots and the
-  calendar show the tab as it read that day, from the records alone. Unsized steps and
-  Delay steps are left out, since no record holds them. The Budget, *Pace so far* and
-  *Save snapshot…* are greyed, because the past cannot be changed.
-- **Pace so far**, in the toolbar: re-estimates what is left at the pace people's finished
-  steps actually went, each step's estimate against the working days it took. The label
-  carries the pace ("Pace so far · 77%"), and the tooltip says what it means ("taking
-  1.3× their estimates").
+  and *back to today* (or ✕).
+  - The view follows the slider as it moves. On a day before today, the key figures, the
+    plots and the calendar show the tab as it read that day, from the records alone.
+  - Unsized steps and Delay steps are left out, since no record holds them.
+  - Everything that writes is greyed until you are back to today: the Budget, *Adjust for
+    efficiency*, *Save snapshot…* and ⋯ (colours).
+- **Adjust for efficiency**, in the toolbar: re-estimates what is left at the focus
+  people's finished steps actually had, each step's estimate against the working days it
+  took. The label carries the focus measured ("Adjust for efficiency · 38%"), beside the
+  Budget's planned 50%. The tooltip says it in estimates ("taking 1.3× their estimates").
   - It is greyed until there are five working days of work and three finished steps.
-  - A pace within a tenth of the plan's leaves the dates alone.
+  - A focus within a tenth of the planned one leaves the dates alone.
   - It applies only once the plan no longer holds, so By the book never moves.
   - It is off by default. On Optimistic estimates it cuts the forecast's error by a
     third; on plans whose estimates are right, it costs up to half a day of error and
     moves the date more. A blocked step's stall reads as slowness (ISSUES.md F6).
+- **No *Showing***: the Work tab always shows all the work. A click on a milestone still
+  picks it, fading the others in Milestones and the Calendar.
 - **The debugger's bar** keeps its size whatever the day's words: they cut off with an
   ellipsis before they wrap, so the page never jumps while scrubbing.
 
@@ -156,8 +160,8 @@ F5 has the numbers).
   working days it moved against the plan compared with (▶ +13d), the share done, and a
   warning count of unsized steps.
 - **The toolbar**, in the order the controls are reached for. The tabs come first, then
-  *Compared with* and, on the Work tab, *Showing* (all work or one milestone). On the
-  right, folded away: *What if…* (team and focus, tinted with a one-click ✕ while set),
+  *Compared with* and, on the Work tab, *Showing* (all work or one milestone; not in
+  v5). On the right, folded away: *What if…* (team and focus, tinted with a one-click ✕ while set),
   *Save snapshot…*, and ⋯ for the colour map.
 - **Milestones** is v1's shift view, restored. Each row shows where the plan compared with
   landed a milestone (a ring) and where the plan now lands it (a dot), with an arrow between
@@ -229,7 +233,7 @@ page where you left it:
 - `ui=v1` to `ui=v5` picks the design, and `scope=<step id>` the milestone it shows;
 - `page=milestones` or `page=work` picks the tab in v3 to v5, and `page=calendar` in v5;
 - `asof=2026-11-02` is the recorded day v5's History shows;
-- `pace=on` runs v5's dates at the pace so far;
+- `adjust=on` adjusts v5's dates for the efficiency so far;
 - `axes=run` locks the Work plot's axes to the whole run;
 - `budget=2026-11-02:2+1@60` holds re-budgets: the day, people + agents, and focus;
 - `delay=2026-10-12:s14:until:2026-11-04` (or `…:days:3`) holds Delay steps: the day made,
@@ -326,7 +330,7 @@ src/ui/v3/              the second: view.ts (key figures and the tabs), toolbar,
                         (Milestones), work (Work, and v4's marks), marks (the ✓), state
 src/ui/v4/              the third: view.ts (v3's layout, v4's toolbar), budget (the Budget)
 src/ui/v5/              the fourth: view.ts (v4 and the Calendar tab), history (History),
-                        pace (Pace so far)
+                        efficiency (Adjust for efficiency)
 src/ui/compare.ts       the Compared with picker v2 to v5 share
 src/ui/glyphs.ts        the ▲▼◀▶ arrows v2 to v5 share
 src/ui/debugger/        the debugger's readings: track.ts, records.ts
@@ -371,7 +375,7 @@ Each step contributes:
   - Once decided, move it into `ADOPTED` and out of `VARIANTS`, as the rounding fixes and
     `resume` were.
   - A change that helps some scenarios and costs others is not adopted. At most it is the
-    reader's choice, as *Pace so far* is (ISSUES.md F6).
+    reader's choice, as *Adjust for efficiency* is (ISSUES.md F6).
   - If it fixes an issue, flip that issue's test in `tests/issues_test.ts`, say so in
     ISSUES.md, and add it to BACKPORT.md.
 - **A new scenario** is an entry in `src/sim/scenarios.ts`: the world parameters, the one

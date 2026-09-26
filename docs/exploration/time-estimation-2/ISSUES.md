@@ -274,7 +274,7 @@ The same run, whole-plan landing: mean |error| · total movement · days moved.
 **Why it matters.** It helps where estimates are systematically short, and costs where they
 are not. That is a judgement about the team, and only the reader can make it.
 
-**Direction — a v5 toggle, off by default (*Pace so far*):**
+**Direction — a v5 toggle, off by default (*Adjust for efficiency*):**
 
 - It applies only once the plan no longer holds, so a plan on track never moves.
 - It is offered after five working days of work and three finished steps, and greyed
@@ -665,6 +665,6 @@ Each of these is in BACKPORT.md with its format.
     against a real 16 December. With the old focus remembered it reads 18 December.
 - **A Delay step.** "Testing starts Wednesday" is a wait, not work. DPlanner can only say it
   as a milestone's own start date, which cannot hold one branch.
-- **The day a step first went in progress (`started`)**, for v5's *Pace so far*. `since`
-  cannot stand in: a done step's `since` is the day it was done, and the day it began is
-  gone ([F6](#f6)).
+- **The day a step first went in progress (`started`)**, for v5's *Adjust for
+  efficiency*. `since` cannot stand in: a done step's `since` is the day it was done, and
+  the day it began is gone ([F6](#f6)).

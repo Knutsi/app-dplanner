@@ -1012,9 +1012,10 @@ main {
   font-variant-numeric: tabular-nums;
 }
 .calendar-page .months {
-  margin-top: 6px;
+  margin-top: 14px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px 24px;
+  gap: 36px 56px;
+  padding: 0 8px 8px;
 }
 @media (max-width: 900px) {
   .calendar-page .months {

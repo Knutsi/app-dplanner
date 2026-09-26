@@ -5567,7 +5567,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     whatIf: {},
     offset: 0,
     asOf: null,
-    pace: false
+    adjust: false
   };
 
   // src/ui/v3/marks.ts
@@ -5873,7 +5873,12 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       menu
     ];
   }
-  function more(view, state, on) {
+  function more(view, state, on, off) {
+    if (off) return h("button", {
+      class: "budget-off",
+      disabled: true,
+      title: off
+    }, "\u22EF");
     const palette = h("select", {
       onchange: (event) => on.state({
         whatIf: {
@@ -6333,7 +6338,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       class: "v3-figures"
     }, ...figures);
   }
-  function milestonesPage(found, view, state, on) {
+  function milestonesPage(found, view, state, on, drill = true) {
     const holder = h("div", {
       class: "shifts-holder"
     });
@@ -6349,7 +6354,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       element.addEventListener("click", (event) => {
         const row = rowAt(event);
         if (event.detail >= 2) {
-          if (row) on.state({
+          if (row && drill) on.state({
             scope: row.key,
             page: "work"
           });
@@ -6370,7 +6375,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       class: "k-done"
     }, "\u2713"), "done"), h("span", {
       class: "hint"
-    }, "click a milestone to pick it \xB7 double-click to see its work"));
+    }, drill ? "click a milestone to pick it \xB7 double-click to see its work" : "click a milestone to pick it"));
     return h("section", {
       class: "v3-page"
     }, holder, key);
@@ -6522,9 +6527,26 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     return tabbedView(view, state, (found) => toolbar3(view, found, state, on), (found) => state.page === "milestones" ? milestonesPage(found, view, state, on) : workPage(found, view, state, V4_MARKS));
   }
 
+  // src/ui/v5/efficiency.ts
+  var pct = (share) => `${Math.round(share * 100)}%`;
+  function efficiencyToggle(view, on, toggle2, off) {
+    const { pace } = view;
+    const planned = efficiencyOf(view.plan);
+    const measured = pace === null ? null : planned * pace;
+    const title3 = off ?? (pace === null || measured === null ? `Adjusting for efficiency needs ${PACE_AFTER} working days of work and ${PACE_STEPS} finished steps` : asPlanned(pace) ? `Finished steps ran at about the planned focus (${pct(measured)} against ${pct(planned)}): adjusting leaves the dates as they are` : `Finished steps ran at ${pct(measured)} focus against the ${pct(planned)} planned, taking ${(1 / pace).toFixed(1)}\xD7 their estimates: adjust what is left to it`);
+    const applied = on && !off && pace !== null;
+    return h("button", {
+      class: `efficiency-toggle${applied ? " on" : ""}`,
+      disabled: Boolean(off) || pace === null,
+      title: title3,
+      "aria-pressed": String(applied),
+      onclick: () => toggle2(!on)
+    }, measured === null || off ? "Adjust for efficiency" : `Adjust for efficiency \xB7 ${pct(measured)}`);
+  }
+
   // src/ui/v5/history.ts
   var stepping = false;
-  function historyMenu(view, on, recorded2) {
+  function historyMenu(view, on, recorded2, scrub) {
     const today = view.today;
     const days = [
       ...new Set(recorded2.filter((day) => day < today)),
@@ -6539,9 +6561,14 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       });
     };
     const said = (day) => day === today ? "today" : `as recorded ${formatDate(day, today)}`;
+    const named = (day) => day === today ? "History" : `History \xB7 ${shortDate(day, today)}`;
     const label2 = h("span", {
       class: "history-day"
     }, said(days[at]));
+    const back = lookingBack(view);
+    const summary = h("summary", {
+      title: back ? `Showing the tab as recorded ${formatDate(shown, today)}; nothing can be changed` : "Look back at the tab as it was recorded on an earlier day"
+    }, named(shown));
     const slider2 = h("input", {
       type: "range",
       min: "0",
@@ -6549,7 +6576,12 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       step: "1",
       value: String(at),
       "aria-label": "The day shown",
-      oninput: () => label2.textContent = said(days[Number(slider2.value)]),
+      oninput: () => {
+        const day = days[Number(slider2.value)];
+        label2.textContent = said(day);
+        summary.textContent = named(day);
+        scrub(day === today ? null : day);
+      },
       onchange: () => {
         stepping = true;
         show(Number(slider2.value));
@@ -6559,7 +6591,6 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       stepping = false;
       queueMicrotask(() => slider2.focus());
     }
-    const back = lookingBack(view);
     const step2 = (by, words2, glyph) => h("button", {
       title: words2,
       disabled: at + by < 0 || at + by >= days.length,
@@ -6577,9 +6608,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     }, "back to today") : null), h("div", {
       class: "budget-note"
     }, days.length > 1 ? `${days.length - 1} recorded day${days.length === 2 ? "" : "s"}, from ${shortDate(days[0], today)}. Looking back, the page reads each day's record; nothing is written.` : "Nothing recorded before today yet."));
-    const menu = popover("history", h("summary", {
-      title: back ? `Showing the tab as recorded ${formatDate(shown, today)}; nothing can be changed` : "Look back at the tab as it was recorded on an earlier day"
-    }, back ? `History \xB7 ${shortDate(shown, today)}` : "History"), panel, back ? " active" : "");
+    const menu = popover("history", summary, panel, back ? " active" : "");
     return back ? [
       menu,
       h("button", {
@@ -6592,21 +6621,6 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     ];
   }
 
-  // src/ui/v5/pace.ts
-  var pct = (share) => `${Math.round(share * 100)}%`;
-  function paceToggle(view, on, toggle2, off) {
-    const { pace } = view;
-    const title3 = off ?? (pace === null ? `The pace so far needs ${PACE_AFTER} working days of work and ${PACE_STEPS} finished steps` : asPlanned(pace) ? `Finished steps took about their estimates (${pct(pace)} of the planned pace): the dates stay as planned` : `Re-estimate what is left at the pace so far: finished steps went at ${pct(pace)} of the planned pace, taking ${(1 / pace).toFixed(1)}\xD7 their estimates`);
-    const applied = on && !off && pace !== null;
-    return h("button", {
-      class: `pace-toggle${applied ? " on" : ""}`,
-      disabled: Boolean(off) || pace === null,
-      title: title3,
-      "aria-pressed": String(applied),
-      onclick: () => toggle2(!on)
-    }, pace === null || off ? "Pace so far" : `Pace so far \xB7 ${pct(pace)}`);
-  }
-
   // src/ui/v5/view.ts
   var PAGES2 = [
     ...TABS,
@@ -6617,7 +6631,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
   ];
   var PAST = "History shows a recorded day: back to today to change the plan";
   var ASKED = "History shows the dates as they were recorded";
-  function toolbar4(view, found, state, on, recorded2) {
+  function toolbar4(view, state, on, recorded2) {
     const off = lookingBack(view) ? PAST : void 0;
     return h("div", {
       class: "v3-toolbar"
@@ -6625,11 +6639,11 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       class: "divider"
     }), comparePicker(view, state.then, (then) => on.state({
       then
-    })), state.page === "work" ? showing(found, state, on) : null, h("span", {
+    })), h("span", {
       class: "spacer"
-    }), ...historyMenu(view, on, recorded2), budgetMenu(view, on.budget, off), paceToggle(view, state.pace, (pace) => on.state({
-      pace
-    }), off && ASKED), saveButton(view, on.save, off), more(view, state, on));
+    }), ...historyMenu(view, on, recorded2, on.scrub), budgetMenu(view, on.budget, off), efficiencyToggle(view, state.adjust, (adjust) => on.state({
+      adjust
+    }), off && ASKED), saveButton(view, on.save, off), more(view, state, on, off));
   }
   function calendarPage(view, state, on) {
     const waits = lookingBack(view) ? [] : delaySpans(view);
@@ -6676,7 +6690,10 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       delays: !lookingBack(view),
       reach
     };
-    return tabbedView(view, state, (found) => toolbar4(view, found, state, on, recorded2), (found) => state.page === "milestones" ? milestonesPage(found, view, state, on) : state.page === "calendar" ? calendarPage(view, state, on) : workPage(found, view, state, marks));
+    return tabbedView(view, state, () => toolbar4(view, state, on, recorded2), (found) => state.page === "milestones" ? milestonesPage(found, view, state, on, false) : state.page === "calendar" ? calendarPage(view, state, on) : workPage(found, view, {
+      ...state,
+      scope: null
+    }, marks));
   }
 
   // src/ui/debugger/track.ts
@@ -7242,7 +7259,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       whatIf: state.whatIf
     }, {
       ...app.options,
-      pace: version === "v5" && state.pace
+      pace: version === "v5" && state.adjust
     });
     if (!view) return h("div", {
       class: "empty"
@@ -7268,8 +7285,44 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       }
     };
     if (version === "v4") return v4View(view, state, budgeted);
+    const scrubbed = {
+      ...budgeted,
+      // While History's slider moves: the view redrawn around the toolbar that holds it.
+      scrub: (asOf2) => {
+        app.v5 = {
+          ...app.v5,
+          asOf: asOf2
+        };
+        const live = content.firstElementChild;
+        const fresh = tabbedContent(version, plan, day, upToDay);
+        if (live) redrawAround(live, fresh, [
+          ".v3-toolbar",
+          ".popover-menu.history"
+        ]);
+        else content.replaceChildren(fresh);
+        writeHash();
+      }
+    };
     const reach = app.locked ? runReach(state) : void 0;
-    return v5View(view, state, budgeted, upToDay.rows.map((row) => row.day), reach);
+    return v5View(view, state, scrubbed, upToDay.rows.map((row) => row.day), reach);
+  }
+  function redrawAround(live, fresh, path) {
+    const [selector, ...deeper] = path;
+    const kept = live.querySelector(`:scope > ${selector}`);
+    const children = [
+      ...fresh.children
+    ];
+    const at = children.findIndex((child) => child.matches(selector));
+    if (!kept || at < 0) {
+      live.replaceWith(fresh);
+      return;
+    }
+    for (const child of [
+      ...live.children
+    ]) if (child !== kept) child.remove();
+    kept.before(...children.slice(0, at));
+    kept.after(...children.slice(at + 1));
+    if (deeper.length) redrawAround(kept, children[at], deeper);
   }
   function runReach(state) {
     const last = timeline2.frames[timeline2.frames.length - 1];
@@ -7284,7 +7337,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       page: "progress",
       whatIf: {}
     }, app.options);
-    return view ? reachOf(view, state.scope) : void 0;
+    return view ? reachOf(view, null) : void 0;
   }
   function section(key, name, ...inner) {
     const details = h("details", {
@@ -7747,7 +7800,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       if (tabbed) state.set("page", tabbed.page);
       if (tabbed?.asOf != null) state.set("asof", isoDay(tabbed.asOf));
       if (app.locked) state.set("axes", "run");
-      if (app.version === "v5" && app.v5.pace) state.set("pace", "on");
+      if (app.version === "v5" && app.v5.adjust) state.set("adjust", "on");
       history.replaceState(null, "", `#${state}`);
     } catch {
     }
@@ -7811,7 +7864,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     app.v5 = {
       ...app.v5,
       asOf: parseDay(state.get("asof") ?? ""),
-      pace: state.get("pace") === "on"
+      adjust: state.get("adjust") === "on"
     };
     app.locked = state.get("axes") === "run";
     currentTimeline();

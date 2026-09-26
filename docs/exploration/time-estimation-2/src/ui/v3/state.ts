@@ -1,7 +1,7 @@
 /**
  * The tabbed designs' view state (v3, and v4 and v5 after it): which tab, which plan it is
  * compared with, which milestone the Work tab shows, and any what-if; v5 adds the calendar's
- * month, the day History looks back to, and whether what is left runs at the pace so far. Each design keeps its own copy, so a pick in one
+ * month, the day History looks back to, and whether what is left is adjusted for efficiency. Each design keeps its own copy, so a pick in one
  * never leaks into another.
  */
 
@@ -18,7 +18,7 @@ export interface V3State {
   whatIf: WhatIf;
   offset: number; // The calendar's month pager.
   asOf: Day | null; // The recorded day History shows; null for today.
-  pace: boolean; // What is left re-estimated at the pace so far (ModelOptions.pace).
+  adjust: boolean; // What is left adjusted for the efficiency so far (ModelOptions.pace).
 }
 
 export const V3_START: V3State = {
@@ -28,7 +28,7 @@ export const V3_START: V3State = {
   whatIf: {},
   offset: 0,
   asOf: null,
-  pace: false,
+  adjust: false,
 };
 
 export interface V3Handlers {

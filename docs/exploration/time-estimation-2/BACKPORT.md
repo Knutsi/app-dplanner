@@ -195,10 +195,17 @@ The layout is `src/ui/v5/view.ts` over v4's.
     recorded by then: `present()`'s `now` pick is `{kind: "day"}`, and every derivation
     reads `view.now`. `tests/v5_test.ts` proves it equals what the tab showed that day.
   - Unsized steps and Delay steps are left out: no record holds them.
-  - The Budget, *Pace so far* and *Save snapshot…* are greyed while looking back, each
-    saying why.
-- [ ] **Pace so far**, a toolbar toggle (`src/ui/v5/pace.ts`).
-  - The label carries the pace ("Pace so far · 77%"), and the tooltip says it in estimates
+  - The view follows the slider as it moves. The prototype redraws everything but the
+    slider's own ancestors (`redrawAround` in `src/main.ts`): a range input taken out of the
+    document mid-drag loses the drag. In Qt, a slider's `valueChanged` does the same with
+    the tab's `Debounced` at 0 ms.
+  - Everything that writes is greyed while looking back, each saying why: the Budget,
+    *Adjust for efficiency*, *Save snapshot…* and ⋯ (colours).
+- [ ] **No *Showing*.** v5's Work tab always shows all the work; a click on a milestone only
+  picks it, and a double-click does not drill in.
+- [ ] **Adjust for efficiency**, a toolbar toggle (`src/ui/v5/efficiency.ts`).
+  - The label carries the focus measured, the planned focus times the pace ("Adjust for
+    efficiency · 38%"), to read beside the Budget's 50%. The tooltip says it in estimates
     ("taking 1.3× their estimates").
   - Greyed, and never shown pressed, before there is a pace and while History looks back.
   - Kept on across days; it waits out a day too early rather than switching itself off.

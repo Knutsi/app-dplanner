@@ -5,6 +5,9 @@
  * reads that day's record — its dates, its scope, what was done — as today it reads the live
  * plan; nothing on the page can write while it looks back. It needs nothing DPlanner does not
  * already store (`progress_history`).
+ *
+ * The view follows the slider as it moves (`scrub`, which leaves the toolbar in place), and
+ * the whole view — the toolbar's greyed writers too — is redrawn when it is let go.
  */
 
 import { type Day, formatDate, shortDate } from "../../model/calendar.ts";
@@ -20,6 +23,7 @@ export function historyMenu(
   view: TimeView,
   on: V3Handlers,
   recorded: readonly Day[],
+  scrub: (asOf: Day | null) => void,
 ): HTMLElement[] {
   const today = view.today;
   const days = [...new Set(recorded.filter((day) => day < today)), today].sort((a, b) => a - b);
@@ -30,7 +34,14 @@ export function historyMenu(
     on.state({ asOf: day === today ? null : day });
   };
   const said = (day: Day) => day === today ? "today" : `as recorded ${formatDate(day, today)}`;
+  const named = (day: Day) => day === today ? "History" : `History · ${shortDate(day, today)}`;
   const label = h("span", { class: "history-day" }, said(days[at]));
+  const back = lookingBack(view);
+  const summary = h("summary", {
+    title: back
+      ? `Showing the tab as recorded ${formatDate(shown, today)}; nothing can be changed`
+      : "Look back at the tab as it was recorded on an earlier day",
+  }, named(shown));
   const slider = h("input", {
     type: "range",
     min: "0",
@@ -38,7 +49,12 @@ export function historyMenu(
     step: "1",
     value: String(at),
     "aria-label": "The day shown",
-    oninput: () => (label.textContent = said(days[Number(slider.value)])),
+    oninput: () => {
+      const day = days[Number(slider.value)];
+      label.textContent = said(day);
+      summary.textContent = named(day);
+      scrub(day === today ? null : day);
+    },
     onchange: () => {
       stepping = true;
       show(Number(slider.value));
@@ -48,7 +64,6 @@ export function historyMenu(
     stepping = false;
     queueMicrotask(() => slider.focus());
   }
-  const back = lookingBack(view);
   const step = (by: number, words: string, glyph: string) =>
     h("button", {
       title: words,
@@ -83,16 +98,7 @@ export function historyMenu(
         : "Nothing recorded before today yet.",
     ),
   );
-  const menu = popover(
-    "history",
-    h("summary", {
-      title: back
-        ? `Showing the tab as recorded ${formatDate(shown, today)}; nothing can be changed`
-        : "Look back at the tab as it was recorded on an earlier day",
-    }, back ? `History · ${shortDate(shown, today)}` : "History"),
-    panel,
-    back ? " active" : "",
-  );
+  const menu = popover("history", summary, panel, back ? " active" : "");
   return back
     ? [
       menu,

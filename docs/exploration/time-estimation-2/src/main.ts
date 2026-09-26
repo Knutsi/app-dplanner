@@ -366,7 +366,7 @@ function tabbedContent(
     lens: "calendar",
     page: "progress",
     whatIf: state.whatIf,
-  }, { ...app.options, pace: version === "v5" && state.pace });
+  }, { ...app.options, pace: version === "v5" && state.adjust });
   if (!view) return h("div", { class: "empty" }, NO_STEPS);
   const handlers = {
     state: (patch: Partial<V3State>) => {
@@ -387,8 +387,40 @@ function tabbedContent(
     },
   };
   if (version === "v4") return v4View(view, state, budgeted);
+  const scrubbed = {
+    ...budgeted,
+    // While History's slider moves: the view redrawn around the toolbar that holds it.
+    scrub: (asOf: Day | null) => {
+      app.v5 = { ...app.v5, asOf };
+      const live = content.firstElementChild;
+      const fresh = tabbedContent(version, plan, day, upToDay);
+      if (live) redrawAround(live, fresh, [".v3-toolbar", ".popover-menu.history"]);
+      else content.replaceChildren(fresh);
+      writeHash();
+    },
+  };
   const reach = app.locked ? runReach(state) : undefined;
-  return v5View(view, state, budgeted, upToDay.rows.map((row) => row.day), reach);
+  return v5View(view, state, scrubbed, upToDay.rows.map((row) => row.day), reach);
+}
+
+/**
+ * `fresh` in place of `live`, except down `path` — one selector per level — where the element
+ * is kept and redrawn around in turn, and the last is never touched: a range input dragged
+ * loses the drag the moment it leaves the document.
+ */
+function redrawAround(live: Element, fresh: Element, path: readonly string[]): void {
+  const [selector, ...deeper] = path;
+  const kept = live.querySelector(`:scope > ${selector}`);
+  const children = [...fresh.children];
+  const at = children.findIndex((child) => child.matches(selector));
+  if (!kept || at < 0) {
+    live.replaceWith(fresh);
+    return;
+  }
+  for (const child of [...live.children]) if (child !== kept) child.remove();
+  kept.before(...children.slice(0, at));
+  kept.after(...children.slice(at + 1));
+  if (deeper.length) redrawAround(kept, children[at], deeper);
 }
 
 /** How far the Work plot reaches over the whole run: to its last landing, if it landed. */
@@ -405,7 +437,7 @@ function runReach(state: V3State): Reach | undefined {
     page: "progress",
     whatIf: {},
   }, app.options);
-  return view ? reachOf(view, state.scope) : undefined;
+  return view ? reachOf(view, null) : undefined;
 }
 
 // -- the debugger's body -----------------------------------------------------------------------------
@@ -980,7 +1012,7 @@ function writeHash(): void {
     if (tabbed) state.set("page", tabbed.page);
     if (tabbed?.asOf != null) state.set("asof", isoDay(tabbed.asOf));
     if (app.locked) state.set("axes", "run");
-    if (app.version === "v5" && app.v5.pace) state.set("pace", "on");
+    if (app.version === "v5" && app.v5.adjust) state.set("adjust", "on");
     history.replaceState(null, "", `#${state}`);
   } catch {
     // A page opened from disk in some browsers refuses replaceState; the page works without it.
@@ -1029,7 +1061,11 @@ function readHash(): void {
         : {}),
     };
   }
-  app.v5 = { ...app.v5, asOf: parseDay(state.get("asof") ?? ""), pace: state.get("pace") === "on" };
+  app.v5 = {
+    ...app.v5,
+    asOf: parseDay(state.get("asof") ?? ""),
+    adjust: state.get("adjust") === "on",
+  };
   app.locked = state.get("axes") === "run";
   currentTimeline();
   // A day, or "end" for the last one — a scenario's length depends on how it plays out.

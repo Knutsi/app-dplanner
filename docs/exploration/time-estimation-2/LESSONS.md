@@ -47,10 +47,14 @@ backport (BACKPORT.md) and for the next exploration.
 - **A redraw on the first click swallows `dblclick`.** Read the click event's `detail`
   count instead.
 - **A popover must survive the re-render its own controls cause,** and close on any click
-  outside it. A slider inside one must too: History's applies on `change`, updates its
-  label on `input`, and takes its focus back after the render it causes.
-- **A greyed toggle is never shown pressed.** *Pace so far* stays on across days, but it
-  looks pressed only while the dates actually run at it.
+  outside it. A slider inside one must too: the view follows it on `input` redrawn *around*
+  it, since a range input taken out of the document mid-drag drops the drag; on `change`
+  the whole view is redrawn and the slider takes its focus back.
+- **Name a control for what the reader wants, and label it with their number.** "Pace so
+  far · 77%" became "Adjust for efficiency · 38%": the focus measured reads beside the
+  Budget's planned 50%, where a pace was a ratio of ratios.
+- **A greyed toggle is never shown pressed.** *Adjust for efficiency* stays on across
+  days, but it looks pressed only while the dates actually run at it.
 - **A `+` typed into the address bar arrives as a space.** Links the page writes encode it;
   links people type do not.
 - **Hidden windows starve `requestAnimationFrame`, and background tabs throttle timers to
@@ -82,8 +86,8 @@ backport (BACKPORT.md) and for the next exploration.
   focus ran at the old one. Credited at the new one, a cut to 10% read February for a
   December landing.
 - **`resume` trusts the estimates of unfinished work.** Where every estimate is low it lags,
-  and v3's pessimism happened to be closer. v5's *Pace so far* learns from done work
-  (ISSUES F6).
+  and v3's pessimism happened to be closer. v5's *Adjust for efficiency* learns from done
+  work (ISSUES F6).
 - **A ratio against the plan's schedule is too jumpy to steer by.** The first pace
   estimator compared work done with work planned done. It needed no new data, and every
   long step landing late flipped it: ten times the movement, for almost no gain.

@@ -178,7 +178,9 @@ function whatIf(view: TimeView, state: V3State, on: V3Handlers): HTMLElement[] {
     : [menu];
 }
 
-export function more(view: TimeView, state: V3State, on: V3Handlers): HTMLElement {
+/** ⋯: the milestone colours — greyed, saying why, when `off` (v5 looking back). */
+export function more(view: TimeView, state: V3State, on: V3Handlers, off?: string): HTMLElement {
+  if (off) return h("button", { class: "budget-off", disabled: true, title: off }, "⋯");
   const palette = h("select", {
     onchange: (event: Event) =>
       on.state({ whatIf: { ...state.whatIf, palette: (event.target as HTMLSelectElement).value } }),
