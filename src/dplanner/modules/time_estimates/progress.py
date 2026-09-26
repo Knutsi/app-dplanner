@@ -52,7 +52,8 @@ record that answered, so a heading never hides which plan it is comparing.
 estimated days into a step curve — the sum the plan came to on each recorded day — and
 :func:`remaining` the same less what had landed; together they say how the scope grew as
 the work went on and how much of it was still ahead. Qt-free by rule
-(``HEADLESS_FILES``); the chart renders, the CLI prints, and both read this.
+(``HEADLESS_FILES``): ``dplanner progress show`` prints what is here, and ``present.py``
+reads it for the tab and the report.
 """
 
 from collections.abc import Callable, Sequence
@@ -236,38 +237,6 @@ def landing_shift(then: date, now: date) -> int:
     return -(working_days_between(now, then) - 1)
 
 
-def span_of(snapshot: "Snapshot | None", key: str) -> tuple[date, date] | None:
-    """Where the stretch ``key`` closes ran in a snapshot: its start and its landing, or
-    None when that plan never knew it or could not date it."""
-    if snapshot is None:
-        return None
-    for stretch in snapshot.stretches:
-        if stretch.key == key:
-            return (stretch.start, stretch.finish) if stretch.finish is not None else None
-    return None
-
-
-def shift_words(label: str, then: date | None, now: date | None, basis: str, today: date) -> str:
-    """A milestone's row in words: where it lands, and how that moved against the plan
-    it is compared with — ``basis`` is that plan named (:func:`pick_words`), empty when
-    there is none to compare with."""
-    if now is None:
-        return f"{label} — nothing estimated, so no date"
-    said = f"{label} lands {format_date(now, today=today)}"
-    if not basis:
-        return said
-    if then is None:
-        return f"{said} — not in {basis}"
-    moved = landing_shift(then, now)
-    if moved == 0:
-        return f"{said} — unchanged since {basis}"
-    direction = "later" if moved > 0 else "earlier"
-    return (
-        f"{said} — {abs(moved)} working day{'' if abs(moved) == 1 else 's'} {direction} "
-        f"than {basis} said ({format_date(then, today=today)})"
-    )
-
-
 # -- taking a snapshot ------------------------------------------------------------------------
 
 
@@ -352,7 +321,7 @@ def calendar_phases(
     facts: ScheduleFacts | None = None,
 ) -> list[Phase]:
     """The plan's stretches dated on the calendar — the simulation over stretched
-    estimates, the one the landing list prints, re-dated from ``facts`` where given."""
+    estimates, the one the tab and the recorder read, re-dated from ``facts`` where given."""
     return phases(
         library,
         project,
@@ -403,16 +372,6 @@ def _through(snapshot: Snapshot, key: str | None) -> list[Stretch]:
         if stretch.key == key:
             break
     return chosen
-
-
-def marks(snapshot: Snapshot, key: str | None) -> list[tuple[date, str]]:
-    """Where each milestone through ``key`` was expected to land, with its key. The
-    remainder after the last milestone is no milestone and has no mark."""
-    return [
-        (stretch.finish, stretch.key)
-        for stretch in _through(snapshot, key)
-        if stretch.key and stretch.finish is not None
-    ]
 
 
 def idle(snapshot: Snapshot, key: str | None) -> list[tuple[date, date]]:
@@ -505,14 +464,6 @@ def baseline(
     if before:
         return before[-1]
     return earlier[0] if earlier else None
-
-
-def scope_words(basis: str) -> str:
-    """The scope plot's heading: what the plan now is measured against, named by
-    :func:`pick_words` — empty when the pick found no record. Worded here rather than
-    in either surface because the window and the report may not word one fact two
-    ways."""
-    return f"Scope change — versus {basis}" if basis else "Scope change — nothing to compare with"
 
 
 def delta(then: Snapshot, now: Snapshot, key: str | None) -> Delta | None:
@@ -798,14 +749,17 @@ def saved_without(saved: Sequence[Snapshot], title: str) -> list[Snapshot]:
 
 # -- which plan a comparison reads ---------------------------------------------------------------
 
-PickKind = Literal["start", "now", "saved", "day"]
+PickKind = Literal["start", "week", "now", "saved", "day"]
+# The anchor of a weekly review: the plan as it stood this many days before the day shown.
+WEEK = timedelta(days=7)
 
 
 @dataclass(frozen=True)
 class Pick:
     """Which recorded plan one side of the comparison reads: the plan at the project's
-    start, the live plan now, a saved snapshot by ``title``, or the plan as recorded on
-    ``day``. View state, never stored — a way of looking, like the picked milestone."""
+    start, the plan a week before the day shown, the live plan now, a saved snapshot by
+    ``title``, or the plan as recorded on ``day``. View state, never stored — a way of
+    looking, like the picked milestone."""
 
     kind: PickKind
     title: str = ""
@@ -813,6 +767,7 @@ class Pick:
 
 
 AT_START = Pick("start")
+A_WEEK_AGO = Pick("week")
 LIVE = Pick("now")
 
 
@@ -834,7 +789,10 @@ def resolve(
         return live
     if pick.kind == "saved":
         return find_saved(saved, pick.title)
-    when = start if pick.kind == "start" else pick.day
+    if pick.kind == "week":
+        when = live.day - WEEK if live is not None else None
+    else:
+        when = start if pick.kind == "start" else pick.day
     if when is None:
         return None
     return baseline(history, when, today=live.day if live is not None else None)
@@ -849,7 +807,13 @@ def pick_words(pick: Pick, found: Snapshot | None, today: date) -> str:
     if pick.kind == "saved":
         return f"{pick.title} ({format_date(found.day, today=today)})" if found else ""
     when = pick.day if pick.kind == "day" else None
-    asked = f"the plan at {format_date(when, today=today)}" if when else "the plan at start"
+    if pick.kind == "week":
+        asked = "the plan a week ago"
+        when = today - WEEK
+    elif when is not None:
+        asked = f"the plan at {format_date(when, today=today)}"
+    else:
+        asked = "the plan at start"
     if found is None:
         return ""
     if when is not None and found.day == when:
@@ -873,25 +837,6 @@ def remaining(history: Sequence[Snapshot], now: Snapshot | None) -> list[tuple[d
     return _steps(until(history, now), lambda reached: reached.remaining)
 
 
-def nice_ceiling(value: float) -> float:
-    """The least of 1, 2 or 5 times a power of ten at or above ``value`` — at least one
-    day, so an empty scale still has a top. What the volume plots' scale is set to, in
-    the window and in the report alike."""
-    if value <= 1.0:
-        return 1.0
-    magnitude = 10 ** int(f"{value:e}".split("e")[1])
-    for step in (1, 2, 5, 10):
-        if step * magnitude >= value:
-            return float(step * magnitude)
-    return float(10 * magnitude)
-
-
-def volume_scale(total: Sequence[tuple[date, float]], left: Sequence[tuple[date, float]]) -> float:
-    """One scale for both volume plots — the largest value either reaches, rounded up
-    (:func:`nice_ceiling`) — so the gap between them is read by eye."""
-    return nice_ceiling(max((value for _, value in (*total, *left)), default=0.0))
-
-
 def _steps(
     rows: Sequence[Snapshot], value_of: Callable[[Tally], float]
 ) -> list[tuple[date, float]]:
@@ -905,43 +850,3 @@ def _steps(
             points.append((row.day, points[-1][1]))  # Held flat until the day it changed.
         points.append((row.day, value))
     return points
-
-
-@dataclass(frozen=True)
-class ScopeView:
-    """One scope of the plan as the chart draws it: the plan now, the plan as recorded on
-    the basis day, what landed, and where the milestones through it stand.
-
-    The Time tab, ``dplanner progress show`` and the report each read this once per scope
-    rather than assembling the same eight calls three ways.
-    """
-
-    key: str | None
-    reached: Tally
-    finish: date | None
-    expected: tuple[tuple[date, float], ...]
-    actual: tuple[tuple[date, float], ...]
-    baseline: tuple[tuple[date, float], ...]
-    baseline_day: date | None
-    baseline_finish: date | None
-    moved: Delta | None
-    marks: tuple[tuple[date, str], ...]  # (the day it lands, the milestone's step id)
-    idle: tuple[tuple[date, date], ...]
-
-
-def view_scope(
-    now: Snapshot, history: Sequence[Snapshot], then: Snapshot | None, key: str | None
-) -> ScopeView:
-    return ScopeView(
-        key=key,
-        reached=now.toward(key),
-        finish=now.landing(key),
-        expected=tuple(expected(now, key)),
-        actual=tuple(actual(history, now, key)),
-        baseline=tuple(expected(then, key)) if then is not None else (),
-        baseline_day=then.day if then is not None else None,
-        baseline_finish=then.landing(key) if then is not None else None,
-        moved=delta(then, now, key) if then is not None else None,
-        marks=tuple(marks(now, key)),
-        idle=tuple(idle(now, key)),
-    )

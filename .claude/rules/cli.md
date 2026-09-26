@@ -180,11 +180,11 @@ paths:
   timeline spans, prose, the graph, per-step *facets* — and the root assembles the tuple
   (`_report_sources`) for both `dplanner report` and the window. **Every part is plain
   data** (a test walks it): the window builds on the GUI thread and renders on a worker,
-  the CLI inline, and the same plan gives the same bytes. **A chart part is the window's
-  chart said as data** — a `Chart` of `Plot`s (status, scope, shift) over one axis, with
-  the `Stretch`es all three read — so the page and the paper draw what the tab draws;
-  `drawings.py` slices a polyline per stretch rather than clipping one, because the PDF
-  goes through a renderer that honours no `clipPath`. **Drill-down is the step id**:
+  the CLI inline, and the same plan gives the same bytes. **A chart part is the Time tab's
+  page said as data** — a `Chart` of `Plot`s (`shift`, `scope`, `done`) over one axis, with
+  the `Stretch`es they read, built from the tab's own `present.py` — so the page and the
+  paper draw what the tab draws; `drawings.py` draws with no `clipPath`, because the PDF
+  goes through a renderer that honours none. **Drill-down is the step id**:
   the page has one selection, and a facet carries the id rather than the module knowing
   the graph. **Save publishes before it commits**: the sync module asks the reporting
   module for a publication per dirty repository, runs it inside the save task and commits

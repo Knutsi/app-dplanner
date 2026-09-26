@@ -36,7 +36,6 @@ while things go to plan and moves only when they do not.
 from collections.abc import Callable, Container, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
-from itertools import pairwise
 from math import ceil, floor
 
 from dplanner.domain.model import Library, Project, Step, StepId, local_day
@@ -795,27 +794,6 @@ def critical_path(
 Tick = tuple[date, str]  # A date on the axis and the label it wears.
 
 
-def share_at(points: Sequence[tuple[date, float]], when: date) -> float | None:
-    """A line's value on ``when`` — held flat before the first point and after the last,
-    interpolated between corners — or None when there is no line, or when ``when`` falls
-    where the line has nothing to say.
-
-    Here beside :func:`axis_ticks` for the same reason: reading a plotted line at a date
-    is what every surface drawing one does, and the window's chart, the progress figures
-    and the report's renderer must not each round it their own way.
-    """
-    if not points:
-        return None
-    if when <= points[0][0]:
-        return points[0][1] if when == points[0][0] or len(points) == 1 else None
-    for (left, low), (right, high) in pairwise(points):
-        if left <= when <= right:
-            span = (right - left).days
-            share = (when - left).days / span if span else 1.0
-            return low + (high - low) * share
-    return points[-1][1]
-
-
 def _day_label(when: date) -> str:
     return f"{when.day} {MONTHS[when.month - 1][:ABBREVIATION]}"
 
@@ -856,62 +834,6 @@ def _month_starts(first: date, last: date) -> Iterator[date]:
     while date(year, month, 1) <= last:
         yield date(year, month, 1)
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-
-
-# Two shares within this of each other are the same line: what "unchanged" means to a
-# chart that fills the area between two plans.
-SAME_SHARE = 0.002
-
-# A sample of two lines on one day: the day, the higher share, the lower share.
-Sample = tuple[date, float, float]
-
-
-def change_runs(
-    plan: Sequence[tuple[date, float]],
-    base: Sequence[tuple[date, float]],
-    *,
-    same: float = SAME_SHARE,
-) -> list[tuple[int, list[Sample]]]:
-    """Two lines sampled together and cut into runs of one sign.
-
-    The sign says which line is on top through the run — 1 ``plan``, -1 ``base``, 0 where
-    they agree within ``same``. A run is closed at the day the lines *cross*, and the
-    crossing belongs to both runs, so a chart filling the area between two plans changes
-    colour exactly where they meet rather than at the next knot.
-
-    Here rather than in either chart because the window and the report draw that area from
-    the same two lines, and an area that changed colour a day apart on screen and on paper
-    would be two answers to one question.
-    """
-    days = sorted({when for when, _ in plan} | {when for when, _ in base})
-    samples: list[Sample] = []
-    for when in days:
-        above, below = share_at(plan, when), share_at(base, when)
-        if above is not None and below is not None:
-            samples.append((when, above, below))
-    runs: list[tuple[int, list[Sample]]] = []
-    for sample in samples:
-        _when, above, below = sample
-        sign = 0 if abs(above - below) <= same else (1 if above > below else -1)
-        if runs and runs[-1][0] == sign:
-            runs[-1][1].append(sample)
-        elif runs:
-            crossing = _crossing(runs[-1][1][-1], sample)
-            runs[-1][1].append(crossing)
-            runs.append((sign, [crossing, sample]))
-        else:
-            runs.append((sign, [sample]))
-    return [(sign, run) for sign, run in runs if len(run) >= 2]
-
-
-def _crossing(left: Sample, right: Sample) -> Sample:
-    """Where the two lines meet between two samples."""
-    (day_a, above_a, below_a), (day_b, above_b, below_b) = left, right
-    gap_a, gap_b = above_a - below_a, above_b - below_b
-    total = gap_a - gap_b
-    share = 0.5 if not total else max(0.0, min(1.0, gap_a / total))
-    when = day_a + timedelta(days=round((day_b - day_a).days * share))
-    return (when, above_a + (above_b - above_a) * share, below_a + (below_b - below_a) * share)
 
 
 def axis_ticks(first: date, last: date, room: int) -> tuple[Tick, ...]:

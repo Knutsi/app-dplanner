@@ -48,6 +48,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.schedule import Phase, ScheduleFacts, format_date, format_days
 from dplanner.modules.time_estimates.progress import (
+    A_WEEK_AGO,
     AT_START,
     HISTORY_ID,
     LIVE,
@@ -328,7 +329,8 @@ def _configure_progress(parser: ArgumentParser) -> None:
         "--basis",
         metavar="DAY|TITLE",
         help="compare against the plan as recorded on this day (YYYY-MM-DD), a saved "
-        "snapshot's title, 'start' or 'now' (default: the project's start)",
+        "snapshot's title, 'start', 'week' (the plan a week ago) or 'now' (default: the "
+        "project's start)",
     )
     parser.add_argument(
         "--as-of",
@@ -783,13 +785,15 @@ def _saved_row(row: Snapshot) -> dict[str, Any]:
 
 
 def _pick_arg(value: str | None, saved: list[Snapshot], default: Pick, flag: str) -> Pick:
-    """A ``--basis`` or ``--as-of`` value as a pick: a day, a saved snapshot's title, or
-    the two words for the sides' own defaults."""
+    """A ``--basis`` or ``--as-of`` value as a pick: a day, a saved snapshot's title,
+    the two words for the sides' own defaults, or ``week`` for the plan a week ago."""
     if value is None:
         return default
     word = value.strip()
     if word.lower() == "start":
         return AT_START
+    if word.lower() == "week":
+        return A_WEEK_AGO
     if word.lower() == "now":
         return LIVE
     try:
@@ -800,7 +804,8 @@ def _pick_arg(value: str | None, saved: list[Snapshot], default: Pick, flag: str
     if found is not None:
         return Pick("saved", title=found.title)
     raise CliError(
-        f"{flag} is a date (YYYY-MM-DD), a saved snapshot's title, 'start' or 'now': {value!r}"
+        f"{flag} is a date (YYYY-MM-DD), a saved snapshot's title, 'start', 'week' or 'now': "
+        f"{value!r}"
     )
 
 
@@ -915,7 +920,7 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
         "saved": [_saved_row(row) for row in saved],
         "scopes": rows,
         # The scope over time: the total of estimated days on each recorded day, and what
-        # was still ahead — the step curves the Volume page draws.
+        # was still ahead, as step curves.
         "volume": [
             {"date": when.isoformat(), "days": days, "remaining": ahead}
             for (when, days), (_, ahead) in zip(total[::2], left[::2], strict=True)

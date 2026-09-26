@@ -6,7 +6,7 @@ renders the same strings through ``QSvgRenderer``. QtSvg reads no CSS variables 
 — and a class beside them, so the page's stylesheet can restyle the same shapes for a dark
 theme, which wins over a presentation attribute.
 
-The grammar is the window's (``project_editor/renderers.py``, ``time_estimates/chart.py``):
+The grammar is the window's (``project_editor/renderers.py``, ``time_estimates/work_view.py``):
 cards with an 8 px radius, a 26 px spine carrying the key rotated a quarter turn and washed
 by status, the body tinted by kind — a milestone its own shade of the project's colour map,
 teal a feature, green a done step —
@@ -34,12 +34,11 @@ from dplanner.cli.report.parts import (
     Timeline,
 )
 from dplanner.domain.schedule import (
+    SATURDAY,
     Tick,
     axis_ticks,
-    change_runs,
     format_date,
     format_days,
-    share_at,
     short_date,
 )
 
@@ -59,6 +58,8 @@ class Colors:
     feature: str
     plan: str
     attention: str
+    warm: str
+    cool: str
 
 
 # The hex twins of ``theme/themes.py``'s LIGHT and DARK and ``theme/tones.py``'s tones.
@@ -76,6 +77,10 @@ _TONES = {
     # The attention amber, the hex twin of ``theme/tones.py``'s CHIP_ATTENTION_TINT: a
     # change worth noticing that is not a problem.
     "attention": "#dcaa5a",
+    # The work plots' tints, the twins of ``time_estimates/plotting.py``'s WARM and COOL:
+    # the plan holding more work than the plan compared with, and less.
+    "warm": "#e89646",
+    "cool": "#2fa0aa",
 }
 LIGHT = Colors(
     ink="#23262b",
@@ -318,30 +323,37 @@ def _text_width(text: str, font: float) -> float:
 # -- the progress chart ------------------------------------------------------------------------
 
 CHART_W = 720.0
-PLOT_H = 130.0  # A share plot; the shift plot is a row per milestone.
+AMOUNT_H = 130.0  # A work plot; the shift plot is a row per milestone.
 SHIFT_ROW_H = 26.0
 TITLE_H = 18.0  # The band over each plot: its name at the left, its keys at the right.
 PLOT_GAP = 18.0
 CHART_RIGHT = 16.0
 CHART_TOP = 4.0  # Air over the first plot's title.
 CHART_BOTTOM = 26.0  # The one date gutter, under the last plot.
-GUTTER_MIN = 46.0  # Room for "100%".
+GUTTER_MIN = 46.0  # Room for "7.5w".
 GUTTER_MAX = 150.0  # A long milestone name is clipped rather than pushing the plots over.
 GUTTER_PAD = 12.0
 TICK_ROOM = 64.0
+TODAY_ROOM = 34.0  # A date closer than this to today's word gives way to it.
 PAD_DAYS = 1
 LINE_W = 2.0
 MARKER = 4.0
 LANDING_MARK = 3.5
+CHECK_MARK = 6.0  # A done milestone's circle, with its check.
+CHANGE_MARK = 7.0  # A day's ▲ or ▼ under the scope line.
 ARROW_HEAD = 5.0
-# Two shares within this of each other are the same: the scope plot's "unchanged" run.
-SAME = 0.002
+# The window's alphas (``time_estimates/plotting.py``), as opacities.
+FILL_OPACITY = "0.19"
+WEEKEND_OPACITY = "0.05"
+DONE_OPACITY = "0.1"
+SAME = 1e-9  # Two amounts of work closer than this are the same.
+_ONE_DAY = timedelta(days=1)
 
 
 @dataclass(frozen=True)
 class _Panel:
     """One stacked plot's box, and the band above it its title sits in. ``scale`` is
-    what its top stands for: a share of one, or a plot's ceiling in days."""
+    what an amount plot's top stands for, in days."""
 
     kind: PlotKind
     top: float
@@ -354,30 +366,28 @@ class _Panel:
 
 
 def _panels(chart: Chart) -> list[_Panel]:
-    """The plots top to bottom. A shift plot is as tall as it has milestones; a share
-    plot and an amount plot are a fixed box, because their scale is the data's."""
+    """The plots top to bottom. A shift plot is as tall as it has milestones; an amount
+    plot is a fixed box, because its scale is the data's."""
     found: list[_Panel] = []
     cursor = CHART_TOP + TITLE_H
     for plot in chart.plots:
         rows = len(chart.milestones)
         if plot.kind == "shift" and not rows:
             continue
-        height = rows * SHIFT_ROW_H if plot.kind == "shift" else PLOT_H
-        scale = plot.ceiling if plot.kind in AMOUNT_PLOTS else 1.0
-        found.append(_Panel(plot.kind, cursor, height, scale))
+        height = rows * SHIFT_ROW_H if plot.kind == "shift" else AMOUNT_H
+        found.append(_Panel(plot.kind, cursor, height, plot.ceiling))
         cursor += height + PLOT_GAP + TITLE_H
     return found
 
 
 def chart_svg(chart: Chart, colors: Colors) -> str:
-    """Stacked plots on one locked time axis.
+    """Stacked plots on one locked time axis — the Time tab's Milestones and Work pages.
 
     Every plot is drawn against the same first and last day — the earliest and latest
     date anything in the chart has to show — so a point placed in one plot is placed in
     all of them; the date marks fall as hairlines through each, and their labels are
-    printed once, under the last. The plan line is coloured by the stretch it is
-    crossing, the scope plot fills the change between the two plans, and the shift plot
-    gives each milestone a row.
+    printed once, under the last. The shift plot gives each milestone a row; the scope
+    plot and the done plot share one scale in days, with weekends as pale bands.
     """
     panels = _panels(chart)
     if not panels:
@@ -387,17 +397,14 @@ def chart_svg(chart: Chart, colors: Colors) -> str:
         for series in plot.series:
             days += [when for when, _ in series.points]
     for stretch in chart.stretches:
-        days += [
-            when
-            for when in (stretch.start, stretch.finish, stretch.was_start, stretch.was_finish)
-            if when is not None
-        ]
+        days += [when for when in (stretch.finish, stretch.was_finish) if when is not None]
     first, last = min(days) - timedelta(days=PAD_DAYS), max(days) + timedelta(days=PAD_DAYS)
     if last <= first:
         last = first + timedelta(days=1)
     span = (last - first).days
     left = _gutter(chart)
     plot_w = CHART_W - left - CHART_RIGHT
+    right = left + plot_w
     height = panels[-1].bottom + CHART_BOTTOM
 
     def x(when: date) -> float:
@@ -412,50 +419,59 @@ def chart_svg(chart: Chart, colors: Colors) -> str:
         f'<svg class="chart" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {_n(CHART_W)} '
         f'{_n(height)}" width="{_n(CHART_W)}" height="{_n(height)}" font-family="{FONT}" '
         f'font-size="11" data-first="{first.isoformat()}" data-last="{last.isoformat()}" '
-        f'data-left="{_n(left)}" data-right="{_n(left + plot_w)}" '
+        f'data-left="{_n(left)}" data-right="{_n(right)}" '
         f'data-top="{_n(panels[0].top)}" data-bottom="{_n(panels[-1].bottom)}">'
     ]
     by_kind = {plot.kind: plot for plot in chart.plots}
     for panel in panels:
         plot = by_kind[panel.kind]
-        unit = "days" if panel.kind in AMOUNT_PLOTS else "share"
+        amount = panel.kind in AMOUNT_PLOTS
         out.append(
-            f'<g class="plot plot-{panel.kind}" data-kind="{panel.kind}" data-unit="{unit}" '
-            f'data-top="{_n(panel.top)}" data-bottom="{_n(panel.bottom)}">'
+            f'<g class="plot plot-{panel.kind}" data-kind="{panel.kind}"'
+            f'{' data-unit="days"' if amount else ""} data-top="{_n(panel.top)}" '
+            f'data-bottom="{_n(panel.bottom)}">'
         )
         out.append(_plot_title(plot, panel, left, plot_w, colors))
+        if amount:
+            out.append(_weekends(panel, first, last, x, left, right, colors))
         out.append(_plot_grid(chart, panel, ticks, x, y, left, plot_w, colors))
-        if panel.kind == "status":
-            out.append(_status_plot(chart, plot, panel, x, y, colors))
-        elif panel.kind == "scope":
-            out.append(_scope_plot(chart, plot, panel, x, y, colors))
-        elif panel.kind in AMOUNT_PLOTS:
-            out.append(_amount_plot(plot, panel, x, y, colors))
+        if panel.kind == "scope":
+            out.append(_scope_plot(chart, plot, panel, x, y, last, colors))
+        elif panel.kind == "done":
+            out.append(_done_plot(chart, plot, panel, x, y, colors))
         else:
-            out.append(_shift_plot(chart, panel, x, left, left + plot_w, colors))
+            out.append(_shift_plot(chart, panel, x, left, right, colors))
         out.append("</g>")
-    # A saved snapshot's day: a hairline through every plot, its title at the top.
+    # A saved snapshot's day: a dashed hairline through every plot, named in its tooltip
+    # — a title printed over the plots ran into the first one's dates, and the chart's
+    # note names them for paper.
     for when, title in chart.marks:
         if not first <= when <= last:
             continue
         at = x(when)
         out.append(
-            f'<g class="mark" data-title="{_t(title)}"><line x1="{_n(at)}" x2="{_n(at)}" '
-            f'y1="{_n(panels[0].top)}" y2="{_n(panels[-1].bottom)}" stroke="{colors.ink}" '
-            f'stroke-opacity="0.45" stroke-dasharray="4 3"/>'
-            f'<text x="{_n(at + 4)}" y="{_n(panels[0].top + 10)}" '
-            f'fill="{colors.secondary}">{_t(_clip(title, 18))}</text></g>'
+            f'<g class="mark" data-title="{_t(title)}"><title>{_t(title)}</title>'
+            f'<line x1="{_n(at)}" x2="{_n(at)}" y1="{_n(panels[0].top)}" '
+            f'y2="{_n(panels[-1].bottom)}" stroke="{colors.ink}" stroke-opacity="0.45" '
+            f'stroke-dasharray="4 3"/></g>'
         )
-    # Today, and the dates: one line down every plot, one row of labels under the last.
-    if first <= chart.today <= last:
+    # Today, and the dates: one line down every plot, one row of labels under the last,
+    # with today's own word under its line and any date that would touch it left out.
+    base = panels[-1].bottom + 15
+    showing = first <= chart.today <= last
+    if showing:
+        now = x(chart.today)
         out.append(
-            f'<line class="today" x1="{_n(x(chart.today))}" x2="{_n(x(chart.today))}" '
-            f'y1="{_n(panels[0].top)}" y2="{_n(panels[-1].bottom)}" stroke="{colors.ink}" '
-            f'stroke-opacity="0.35" stroke-dasharray="3 3"/>'
+            f'<line class="today" x1="{_n(now)}" x2="{_n(now)}" y1="{_n(panels[0].top)}" '
+            f'y2="{_n(panels[-1].bottom)}" stroke="{colors.ink}" stroke-opacity="0.35" '
+            f'stroke-dasharray="3 3"/><text class="today-word" x="{_n(now)}" y="{_n(base)}" '
+            f'text-anchor="middle" font-weight="600" fill="{colors.ink}">today</text>'
         )
     for when, label in ticks:
+        if showing and abs(x(when) - x(chart.today)) < TODAY_ROOM:
+            continue
         out.append(
-            f'<text class="axis" x="{_n(x(when))}" y="{_n(panels[-1].bottom + 15)}" '
+            f'<text class="axis" x="{_n(x(when))}" y="{_n(base)}" '
             f'text-anchor="middle" fill="{colors.secondary}">{_t(label)}</text>'
         )
     out.append("</svg>")
@@ -463,8 +479,8 @@ def chart_svg(chart: Chart, colors: Colors) -> str:
 
 
 def _gutter(chart: Chart) -> float:
-    """The left gutter: room for "100%" and for the milestone names the shift plot puts
-    there, clipped so one long name cannot push every plot to the right."""
+    """The left gutter: room for the scale's labels and for the milestone names the shift
+    plot puts there, clipped so one long name cannot push every plot to the right."""
     widest = max(
         (_text_width(_clip(stretch.label, 20), 11.0) for stretch in chart.milestones),
         default=0.0,
@@ -496,13 +512,13 @@ def _plot_title(plot: Plot, panel: _Panel, left: float, plot_w: float, colors: C
 
 
 def _keys(plot: Plot, colors: Colors) -> list[tuple[str, Callable[[float, float], str]]]:
-    """A key per thing the plot draws: a line for a series, a mark for the shift rows."""
+    """A key per thing the plot draws, each a small sample of it."""
 
-    def line(color: str, opacity: str, dash: str) -> Callable[[float, float], str]:
+    def line(color: str, css: str, dash: str = "") -> Callable[[float, float], str]:
         def draw(cursor: float, y: float) -> str:
             return (
-                f'<line x1="{_n(cursor)}" x2="{_n(cursor + 18)}" y1="{_n(y)}" y2="{_n(y)}" '
-                f'stroke="{color}" stroke-opacity="{opacity}" stroke-width="2"{dash}/>'
+                f'<line class="{css}" x1="{_n(cursor)}" x2="{_n(cursor + 18)}" y1="{_n(y)}" '
+                f'y2="{_n(y)}" stroke="{color}" stroke-width="2"{dash}/>'
             )
 
         return draw
@@ -510,61 +526,73 @@ def _keys(plot: Plot, colors: Colors) -> list[tuple[str, Callable[[float, float]
     def dot(fill: str, ring: str) -> Callable[[float, float], str]:
         def draw(cursor: float, y: float) -> str:
             return (
-                f'<circle cx="{_n(cursor + 9)}" cy="{_n(y)}" r="{_n(MARKER)}" fill="{fill}" '
-                f'stroke="{ring}" stroke-width="1.5"/>'
+                f'<circle class="then" cx="{_n(cursor + 9)}" cy="{_n(y)}" r="{_n(MARKER)}" '
+                f'fill="{fill}" stroke="{ring}" stroke-width="1.5"/>'
             )
 
         return draw
 
-    def patch(color: str) -> Callable[[float, float], str]:
+    def check(cursor: float, y: float) -> str:
+        return _check(cursor + 9, y, colors.secondary, CHECK_MARK - 1)
+
+    def patch(color: str, up: bool) -> Callable[[float, float], str]:
         def draw(cursor: float, y: float) -> str:
             return (
-                f'<rect x="{_n(cursor)}" y="{_n(y - 5)}" width="18" height="10" rx="2" '
-                f'fill="{color}" fill-opacity="0.22"/>'
+                f'<rect x="{_n(cursor)}" y="{_n(y - 6)}" width="18" height="12" rx="2" '
+                f'fill="{color}" fill-opacity="{FILL_OPACITY}"/>'
+                + _triangle(cursor + 9, y, CHANGE_MARK, up, color)
             )
 
         return draw
 
+    dashed = ' stroke-dasharray="6 4"'
     if plot.kind == "shift":
         return [
             ("then", dot(colors.surface, colors.secondary)),
             ("now", dot(colors.secondary, colors.secondary)),
+            ("done", check),
         ]
-    found: list[tuple[str, Callable[[float, float], str]]] = []
-    for series in plot.series:
-        if series.role == "actual":
-            found.append((series.label, line(colors.ink, "1", "")))
-        elif series.role == "baseline":
-            found.append((series.label, line(colors.plan, "0.55", ' stroke-dasharray="6 4"')))
-        else:
-            found.append((series.label, line(colors.plan, "1", "")))
     if plot.kind == "scope":
-        found += [("pulled in", patch(colors.attention)), ("slipped", patch(colors.bad))]
-    return found
+        found = [("scope", line(colors.plan, "key-plan"))]
+        if any(series.role == "baseline" for series in plot.series):
+            found.append(("then", line(colors.secondary, "key-secondary", dashed)))
+        return [*found, ("added", patch(colors.warm, True)), ("removed", patch(colors.cool, False))]
+    return [
+        ("done", line(colors.ink, "key-ink")),
+        (
+            "no status change",
+            line(colors.ink, "key-ink", ' stroke-dasharray="0.1 4" stroke-linecap="round"'),
+        ),
+        ("the plan's schedule", line(colors.secondary, "key-secondary", dashed)),
+    ]
 
 
-def _amount_plot(
-    plot: Plot,
+def _weekends(
     panel: _Panel,
+    first: date,
+    last: date,
     x: Callable[[date], float],
-    y: Callable[[_Panel, float], float],
+    left: float,
+    right: float,
     colors: Colors,
 ) -> str:
-    """The scope over time: the total in the plan's colour with its last reading marked
-    and — on the remaining plot — the total under it in a paler dash, so the gap between
-    the two is what has landed. Step curves, because a record holds until the next."""
+    """A pale band over each weekend: a day runs from the point before to its own, the
+    window's rule."""
     out = []
-    for series in plot.series:
-        if not series.points:
+    day = first + _ONE_DAY
+    while day <= last:
+        if day.weekday() < SATURDAY:
+            day += _ONE_DAY
             continue
-        if series.role == "baseline":
-            out.append(
-                _polyline(series, panel, x, y, colors.plan, "0.55", ' stroke-dasharray="6 4"')
-            )
-            continue
-        out.append(_polyline(series, panel, x, y, colors.plan, "1", ""))
-        when, value = series.points[-1]
-        out.append(_marker(x(when), y(panel, value), colors.plan, colors.surface))
+        end = day
+        while end + _ONE_DAY <= last and (end + _ONE_DAY).weekday() >= SATURDAY:
+            end += _ONE_DAY
+        x0, x1 = max(left, x(day - _ONE_DAY)), min(right, x(end))
+        out.append(
+            f'<rect class="weekend" x="{_n(x0)}" y="{_n(panel.top)}" width="{_n(x1 - x0)}" '
+            f'height="{_n(panel.height)}" fill="{colors.ink}" fill-opacity="{WEEKEND_OPACITY}"/>'
+        )
+        day = end + _ONE_DAY
     return "".join(out)
 
 
@@ -578,9 +606,8 @@ def _plot_grid(
     plot_w: float,
     colors: Colors,
 ) -> str:
-    """Hairlines at every date mark down the plot, and — on a share plot — every quarter
-    with the percent labels at the ends and the middle; a guide per row on the shift
-    plot, with its milestone's name in the gutter."""
+    """Hairlines at every date mark down the plot, and — on an amount plot — at nothing,
+    half and the top of its scale, labelled in days; a guide per row on the shift plot."""
     out = []
     if panel.kind == "shift":
         for index in range(len(chart.milestones)):
@@ -590,22 +617,16 @@ def _plot_grid(
                 f'y2="{_n(row)}" stroke="{colors.ink}" stroke-opacity="0.1"/>'
             )
     else:
-        for share in (0.0, 0.25, 0.5, 0.75, 1.0):
+        for share in (0.0, 0.5, 1.0):
             at = y(panel, share * panel.scale)
+            opacity = 0.12 if share else 0.25  # The floor is the stronger line.
             out.append(
                 f'<line class="grid" x1="{_n(left)}" x2="{_n(left + plot_w)}" y1="{_n(at)}" '
-                f'y2="{_n(at)}" stroke="{colors.ink}" stroke-opacity="0.12"/>'
+                f'y2="{_n(at)}" stroke="{colors.ink}" stroke-opacity="{opacity}"/>'
+                f'<text class="axis" x="{_n(left - 8)}" y="{_n(at)}" text-anchor="end" '
+                f'dominant-baseline="central" fill="{colors.secondary}">'
+                f"{format_days(share * panel.scale) or '0d'}</text>"
             )
-            if share in (0.0, 0.5, 1.0):
-                label = (
-                    format_days(share * panel.scale)
-                    if panel.kind in AMOUNT_PLOTS
-                    else f"{share:.0%}"
-                )
-                out.append(
-                    f'<text class="axis" x="{_n(left - 8)}" y="{_n(at)}" text-anchor="end" '
-                    f'dominant-baseline="central" fill="{colors.secondary}">{label}</text>'
-                )
     for when, _ in ticks:
         out.append(
             f'<line class="grid" x1="{_n(x(when))}" x2="{_n(x(when))}" y1="{_n(panel.top)}" '
@@ -614,185 +635,180 @@ def _plot_grid(
     return "".join(out)
 
 
-def _status_plot(
-    chart: Chart,
-    plot: Plot,
-    panel: _Panel,
-    x: Callable[[date], float],
-    y: Callable[[_Panel, float], float],
-    colors: Colors,
-) -> str:
-    """The plan now — in each stretch's shade, dotted where the plan leaves a gap — and
-    what actually landed, in ink, to a dot at its last reading."""
-    roles = {series.role: series for series in plot.series}
-    plan, actual = roles.get("plan"), roles.get("actual")
-    out = []
-    if plan is not None and plan.points:
-        out.append(_plan_line(chart, plan, panel, x, y, colors))
-        out.append(_landings(chart, plan, panel, x, y, colors))
-        out.append(
-            _marker(
-                x(plan.points[-1][0]), y(panel, plan.points[-1][1]), colors.plan, colors.surface
-            )
-        )
-    if actual is not None and actual.points:
-        out.append(_polyline(actual, panel, x, y, colors.ink, "1", ""))
-        when, share = actual.points[-1]
-        out.append(_marker(x(when), y(panel, share), colors.ink, colors.surface))
-    return "".join(out)
-
-
-def _landings(
-    chart: Chart,
-    plan: Series,
-    panel: _Panel,
-    x: Callable[[date], float],
-    y: Callable[[_Panel, float], float],
-    colors: Colors,
-) -> str:
-    """Where each milestone lands on the plan line: a mark in its stretch's shade with its
-    name above it, ending a gap short of the mark. The window's rule (``landing_marks``):
-    the line already changes shade at every landing, and what it cannot say is which
-    milestone that was — and a name is dropped rather than drawn over the one before it."""
-    out = []
-    reached = 0.0
-    for stretch in chart.milestones:
-        share = share_at(plan.points, stretch.finish) if stretch.finish else None
-        if stretch.finish is None or share is None:
-            continue
-        at, level = x(stretch.finish), y(panel, share)
-        out.append(
-            f'<circle class="landing" cx="{_n(at)}" cy="{_n(level)}" r="{_n(LANDING_MARK)}" '
-            f'fill="{stretch.color}"/>'
-        )
-        name = _clip(stretch.label, 16)
-        left = at - _text_width(name, 11.0) - 6
-        if left < reached:
-            continue
-        # Above the mark, where a rising line leaves the room — and inside the plot for a
-        # milestone that lands the whole thing at the top of it.
-        out.append(
-            f'<text class="landing-name" x="{_n(at - 6)}" y="{_n(max(panel.top + 6, level - 12))}" '
-            f'text-anchor="end" dominant-baseline="central" fill="{colors.secondary}">'
-            f"{_t(name)}</text>"
-        )
-        reached = at - 6
-    return "".join(out)
-
-
-def _plan_line(
-    chart: Chart,
-    plan: Series,
-    panel: _Panel,
-    x: Callable[[date], float],
-    y: Callable[[_Panel, float], float],
-    colors: Colors,
-) -> str:
-    """The plan, drawn once per stretch in that stretch's shade — the calendar's colours
-    on the curve — then dotted across every span the plan leaves empty.
-
-    Sliced rather than clipped: ``clipPath`` is not something every SVG renderer honours,
-    and the PDF goes through one that does not.
-    """
-    out = []
-    runs = [
-        (stretch.start, stretch.finish, stretch.color)
-        for stretch in chart.stretches
-        if stretch.start is not None and stretch.finish is not None
-    ]
-    if not runs:
-        out.append(_polyline(plan, panel, x, y, colors.plan, "1", ""))
-    previous: date | None = None
-    for start, finish, color in runs:
-        cut = _slice(plan.points, previous or start, finish)
-        if len(cut) >= 2:
-            out.append(_polyline(Series(plan.label, cut, plan.role), panel, x, y, color, "1", ""))
-        previous = finish
-    for since, until in chart.idle:
-        level = share_at(plan.points, since)
-        if level is None:
-            continue
-        at = y(panel, level)
-        out.append(
-            f'<line class="idle" x1="{_n(x(since))}" x2="{_n(x(until))}" y1="{_n(at)}" '
-            f'y2="{_n(at)}" stroke="{colors.surface}" stroke-width="{_n(LINE_W + 1)}"/>'
-            f'<line class="idle" x1="{_n(x(since))}" x2="{_n(x(until))}" y1="{_n(at)}" '
-            f'y2="{_n(at)}" stroke="{colors.plan}" stroke-width="{_n(LINE_W)}" '
-            f'stroke-dasharray="0.1 4" stroke-linecap="round"/>'
-        )
-    return "".join(out)
-
-
-def _slice(
-    points: Sequence[tuple[date, float]], since: date, until: date
-) -> tuple[tuple[date, float], ...]:
-    """``points`` between two days, with the ends interpolated onto the line."""
-    if until <= since:
-        return ()
-    cut = [(when, share) for when, share in points if since < when < until]
-    head, tail = share_at(points, since), share_at(points, until)
-    if head is not None:
-        cut.insert(0, (since, head))
-    if tail is not None:
-        cut.append((until, tail))
-    return tuple(cut)
-
-
 def _scope_plot(
     chart: Chart,
     plot: Plot,
     panel: _Panel,
     x: Callable[[date], float],
     y: Callable[[_Panel, float], float],
+    last: date,
     colors: Colors,
 ) -> str:
-    """How the plan itself moved: the area between the plan on the basis day and the plan
-    now, filled by which way it went.
-
-    The overlap is the point, so the fill says the direction rather than the legend: the
-    plan now **above** the baseline is work pulled in — the same amount promised sooner —
-    and wears the attention amber; **below** it is work that slipped, and wears the bad
-    red; where the two agree there is no area to fill, so the run is drawn as a line in
-    the good green. Muted, because it is a region tint and the two curves are what a
-    reader measures against (DESIGN.md's deliberate exception #2).
-    """
+    """The work the plan held on each recorded day against the plan compared with, the
+    area between them warm where the plan holds more than it did and cool where less, and
+    a ▲ or ▼ under the line each day the scope changed, by the day's sum."""
     roles = {series.role: series for series in plot.series}
-    plan, base = roles.get("plan"), roles.get("baseline")
+    scope, base = roles.get("plan"), roles.get("baseline")
+    if scope is None or not scope.points:
+        return ""
     out = []
-    if plan is not None and base is not None and plan.points and base.points:
-        for sign, run in change_runs(plan.points, base.points, same=SAME):
-            if sign == 0:
-                line = " ".join(f"{_n(x(when))},{_n(y(panel, high))}" for when, high, _ in run)
-                out.append(
-                    f'<polyline class="same" points="{line}" fill="none" stroke="{colors.good}" '
-                    f'stroke-width="{_n(LINE_W + 1)}" stroke-opacity="0.8" '
-                    f'stroke-linecap="round" stroke-linejoin="round"/>'
-                )
-                continue
-            fill = colors.attention if sign > 0 else colors.bad
-            ring = [f"{_n(x(when))},{_n(y(panel, high))}" for when, high, _ in run]
-            ring += [f"{_n(x(when))},{_n(y(panel, low))}" for when, _, low in reversed(run)]
-            out.append(
-                f'<polygon class="band band-{"pulled" if sign > 0 else "slipped"}" '
-                f'points="{" ".join(ring)}" fill="{fill}" fill-opacity="0.22"/>'
-            )
     if base is not None and base.points:
-        out.append(_polyline(base, panel, x, y, colors.plan, "0.55", ' stroke-dasharray="6 4"'))
+        since, level = base.points[0]
+        for index, (when, value) in enumerate(scope.points):
+            start = max(when, since)
+            end = scope.points[index + 1][0] if index + 1 < len(scope.points) else chart.today
+            if end <= start or abs(value - level) < SAME:
+                continue
+            upper, lower = y(panel, max(value, level)), y(panel, min(value, level))
+            more = value > level
+            out.append(
+                f'<rect class="change-{"more" if more else "less"}" x="{_n(x(start))}" '
+                f'y="{_n(upper)}" width="{_n(x(end) - x(start))}" height="{_n(lower - upper)}" '
+                f'fill="{colors.warm if more else colors.cool}" fill-opacity="{FILL_OPACITY}"/>'
+            )
+        at = y(panel, level)
         out.append(
-            _marker(
-                x(base.points[-1][0]),
-                y(panel, base.points[-1][1]),
-                colors.surface,
-                colors.plan,
+            _series_line(
+                base,
+                [(x(since), at), (x(last), at)],
+                colors.secondary,
+                1.0,
+                ' stroke-dasharray="6 4"',
             )
         )
-    if plan is not None and plan.points:
-        out.append(_polyline(plan, panel, x, y, colors.plan, "1", ""))
+    corners = _step_corners(scope.points, chart.today, x, lambda value: y(panel, value))
+    out.append(_series_line(scope, corners, colors.plan, LINE_W, ""))
+    if len(corners) == 1:
+        out.append(_marker(*corners[0], colors.plan, colors.surface))
+    for change in plot.changes:
+        # Under the line, just after the day: the window's place for it.
+        cx = x(change.day) + 6
+        cy = y(panel, _step_at(scope.points, change.day) or 0.0) + CHANGE_MARK
+        mark = _triangle(cx, cy, CHANGE_MARK, change.up, colors.warm if change.up else colors.cool)
+        out.append(f'<g class="change"><title>{_t(change.words)}</title>{mark}</g>')
+    return "".join(out)
+
+
+def _done_plot(
+    chart: Chart,
+    plot: Plot,
+    panel: _Panel,
+    x: Callable[[date], float],
+    y: Callable[[_Panel, float], float],
+    colors: Colors,
+) -> str:
+    """What was done — solid across a day some step changed status, dotted across one none
+    did — the plan's schedule from today on, dashed, and each milestone where it ends: a
+    check on the done line once its work is done, a dot on the schedule until then."""
+    roles = {series.role: series for series in plot.series}
+    done, schedule = roles.get("actual"), roles.get("plan")
+
+    def level(value: float) -> float:
+        return y(panel, value)
+
+    out = []
+    if schedule is not None and len(schedule.points) > 1:
+        corners = _step_corners(schedule.points, schedule.points[-1][0], x, level)
         out.append(
-            _marker(
-                x(plan.points[-1][0]), y(panel, plan.points[-1][1]), colors.plan, colors.surface
+            _series_line(
+                schedule, corners, colors.secondary, 1.5, ' stroke-dasharray="6 4"', css="schedule"
             )
         )
+    if done is not None and done.points:
+        corners = _step_corners(done.points, chart.today, x, level)
+        floor = level(0.0)
+        ring = [*corners, (corners[-1][0], floor), (corners[0][0], floor)]
+        out.append(
+            f'<polygon class="done-area" points="{_points(ring)}" fill="{colors.ink}" '
+            f'fill-opacity="{DONE_OPACITY}"/>'
+        )
+        out.append(_series_line(done, corners, colors.ink, LINE_W, ""))
+        out.append(_idle(done.points, set(plot.active), chart.today, x, level, colors))
+        if len(corners) == 1:
+            out.append(_marker(*corners[0], colors.ink, colors.surface))
+    out.append(_milestone_marks(chart, done, schedule, panel, x, level, colors))
+    return "".join(out)
+
+
+def _idle(
+    points: Sequence[tuple[date, float]],
+    active: set[date],
+    today: date,
+    x: Callable[[date], float],
+    level: Callable[[float], float],
+    colors: Colors,
+) -> str:
+    """Each run of days no step changed status, dotted: the solid line masked in the
+    surface, then dotted over it. The level holds across a run — only a day some step
+    changed status moves it."""
+    out = []
+    day = points[0][0] + _ONE_DAY
+    while day <= today:
+        if day in active:
+            day += _ONE_DAY
+            continue
+        end = day
+        while end + _ONE_DAY <= today and end + _ONE_DAY not in active:
+            end += _ONE_DAY
+        at = level(_step_at(points, day - _ONE_DAY) or 0.0)
+        x0, x1 = x(day - _ONE_DAY), x(end)
+        out.append(
+            f'<line class="idle-mask" x1="{_n(x0)}" x2="{_n(x1)}" y1="{_n(at)}" y2="{_n(at)}" '
+            f'stroke="{colors.surface}" stroke-width="{_n(LINE_W + 1)}"/>'
+            f'<line class="idle" x1="{_n(x0)}" x2="{_n(x1)}" y1="{_n(at)}" y2="{_n(at)}" '
+            f'stroke="{colors.ink}" stroke-width="{_n(LINE_W)}" stroke-dasharray="0.1 4" '
+            f'stroke-linecap="round"/>'
+        )
+        day = end + _ONE_DAY
+    return "".join(out)
+
+
+def _milestone_marks(
+    chart: Chart,
+    done: Series | None,
+    schedule: Series | None,
+    panel: _Panel,
+    x: Callable[[date], float],
+    level: Callable[[float], float],
+    colors: Colors,
+) -> str:
+    """Each milestone where it ends, named over its mark — beside it where over would
+    leave the plot — and a name that would sit on another's left to the tooltip."""
+    out = []
+    labelled: list[tuple[float, float]] = []
+    for stretch in chart.marked:
+        if stretch.finish is None:
+            continue
+        line = done if stretch.done else schedule
+        value = _step_at(line.points, stretch.finish) if line is not None else None
+        cx, cy = x(stretch.finish), level(value or 0.0)
+        out.append(
+            f'<g class="landing" data-step="{_t(stretch.step_id)}">'
+            f"<title>{_t(stretch.note)}</title>"
+        )
+        if stretch.done:
+            radius = CHECK_MARK
+            out.append(_check(cx, cy, stretch.color, radius))
+        else:
+            radius = LANDING_MARK + 1
+            out.append(
+                f'<circle class="ring" cx="{_n(cx)}" cy="{_n(cy)}" r="{_n(radius)}" '
+                f'fill="{stretch.color}" stroke="{colors.surface}" stroke-width="1.5"/>'
+            )
+        name = _clip(stretch.label, 16)
+        width = _text_width(name, 11.0)
+        spot, anchor = (cx, cy - radius - 7), "middle"
+        if spot[1] - 6 < panel.top:
+            spot, anchor = (cx - radius - 4, cy), "end"
+        middle = spot[0] if anchor == "middle" else spot[0] - width / 2
+        if not any(abs(middle - px) < 28 and abs(spot[1] - py) < 14 for px, py in labelled):
+            labelled.append((middle, spot[1]))
+            out.append(
+                f'<text class="landing-name" x="{_n(spot[0])}" y="{_n(spot[1])}" '
+                f'text-anchor="{anchor}" dominant-baseline="central" font-weight="600" '
+                f'fill="{colors.ink}">{_t(name)}</text>'
+            )
+        out.append("</g>")
     return "".join(out)
 
 
@@ -804,9 +820,10 @@ def _shift_plot(
     right: float,
     colors: Colors,
 ) -> str:
-    """A row per milestone: its name in the gutter, a line dropping from where it lands to
-    the axis, a hollow mark where the plan on the basis day landed it, a filled one where
-    the plan now does, an arrow between them and the dates beside them."""
+    """A row per milestone: its name in the gutter, a line dropping from where it ends to
+    the axis, a hollow mark where the plan compared with landed it, a filled one where the
+    plan now does — a check where its work is done — an arrow between them and the dates
+    beside them."""
     out = []
     for index, stretch in enumerate(chart.milestones):
         row = panel.top + (index + 0.5) * SHIFT_ROW_H
@@ -814,7 +831,7 @@ def _shift_plot(
             f'<g class="shift" data-step="{_t(stretch.step_id)}" data-words="{_t(stretch.note)}">'
         )
         if stretch.finish is not None:
-            # Down to the axis, so the day it lands can be read off the scale. Drawn
+            # Down to the axis, so the day it ends can be read off the scale. Drawn
             # first: every mark and every date is painted over it.
             drop = x(stretch.finish)
             out.append(
@@ -836,7 +853,9 @@ def _shift_plot(
                 f'<circle class="then" cx="{_n(x(then))}" cy="{_n(row)}" r="{_n(radius)}" '
                 f'fill="{colors.surface}" stroke="{stretch.color}" stroke-width="1.5"/>'
             )
-        if now is not None:
+        if now is not None and stretch.done:
+            out.append(_check(x(now), row, stretch.color, CHECK_MARK))
+        elif now is not None:
             out.append(
                 f'<circle class="now" cx="{_n(x(now))}" cy="{_n(row)}" r="{_n(LANDING_MARK)}" '
                 f'fill="{stretch.color}"/>'
@@ -855,8 +874,8 @@ def _shift_plot(
 def _row_dates(
     stretch: Stretch, today: date, x: Callable[[date], float], left: float, right: float
 ) -> list[tuple[str, float]]:
-    """A milestone row's dates and where they start: where the plan now lands it, and —
-    when it moved — where the plan then did. The window's rule, said in SVG: a date sits
+    """A milestone row's dates and where they start: where it ends now, and — when it
+    moved — where the plan then landed it. The window's rule, said in SVG: a date sits
     beside its own mark, outside the pair when there is room and inside it otherwise, and
     is left out rather than squeezed."""
     found = []
@@ -897,22 +916,73 @@ def _arrow(start: float, end: float, row: float, color: str) -> str:
     )
 
 
-def _polyline(
-    series: Series,
-    panel: _Panel,
-    x: Callable[[date], float],
-    y: Callable[[_Panel, float], float],
-    color: str,
-    opacity: str,
-    extra: str,
-) -> str:
-    points = " ".join(f"{_n(x(when))},{_n(y(panel, share))}" for when, share in series.points)
-    data = ";".join(f"{when.isoformat()}:{share:.4f}" for when, share in series.points)
+def _check(cx: float, cy: float, color: str, radius: float) -> str:
+    """A circle with a check, in the milestone's colour: its work is done. The check is
+    white on either theme, as in the window."""
+    k = radius / 8.0  # The window's check is drawn for a circle of eight.
+    tick = (
+        f"M{_n(cx - 3.8 * k)},{_n(cy + 0.2 * k)} L{_n(cx - 1.0 * k)},{_n(cy + 3.0 * k)} "
+        f"L{_n(cx + 4.0 * k)},{_n(cy - 3.0 * k)}"
+    )
     return (
-        f'<polyline class="series series-{series.role}" data-label="{_t(series.label)}" '
-        f'data-points="{data}" points="{points}" fill="none" stroke="{color}" '
-        f'stroke-opacity="{opacity}" stroke-width="{_n(LINE_W)}" stroke-linejoin="round" '
-        f'stroke-linecap="round"{extra}/>'
+        f'<circle class="done-mark" cx="{_n(cx)}" cy="{_n(cy)}" r="{_n(radius)}" '
+        f'fill="{color}"/><path d="{tick}" fill="none" stroke="#ffffff" '
+        f'stroke-width="{_n(max(1.5, 2 * k))}" stroke-linecap="round" stroke-linejoin="round"/>'
+    )
+
+
+def _triangle(cx: float, cy: float, size: float, up: bool, color: str) -> str:
+    """A ▲ or ▼ ``size`` across, filled."""
+    half = size / 2
+    tip = -half if up else half
+    corners = [(cx, cy + tip), (cx - half, cy - tip), (cx + half, cy - tip)]
+    return f'<polygon points="{_points(corners)}" fill="{color}"/>'
+
+
+def _step_at(points: Sequence[tuple[date, float]], when: date) -> float | None:
+    """A step curve's value on ``when``: what the last point at or before it said."""
+    found = None
+    for day, value in points:
+        if day > when:
+            break
+        found = value
+    return found
+
+
+def _step_corners(
+    points: Sequence[tuple[date, float]],
+    end: date,
+    x: Callable[[date], float],
+    level: Callable[[float], float],
+) -> list[tuple[float, float]]:
+    """A step curve's corners: each value held level until the next, the last until
+    ``end`` — a record holds until the next one."""
+    corners: list[tuple[float, float]] = []
+    for when, value in points:
+        if corners:
+            corners.append((x(when), corners[-1][1]))
+        corners.append((x(when), level(value)))
+    if points and end > points[-1][0]:
+        corners.append((x(end), corners[-1][1]))
+    return corners
+
+
+def _series_line(
+    series: Series,
+    corners: Sequence[tuple[float, float]],
+    color: str,
+    width: float,
+    extra: str,
+    *,
+    css: str = "",
+) -> str:
+    """A series drawn through ``corners``, carrying its own points for the page's tooltip."""
+    data = ";".join(f"{when.isoformat()}:{value:.4f}" for when, value in series.points)
+    classes = f"series series-{series.role}" + (f" {css}" if css else "")
+    return (
+        f'<polyline class="{classes}" data-label="{_t(series.label)}" data-points="{data}" '
+        f'points="{_points(corners)}" fill="none" stroke="{color}" '
+        f'stroke-width="{_n(width)}" stroke-linejoin="round" stroke-linecap="round"{extra}/>'
     )
 
 
@@ -921,6 +991,10 @@ def _marker(cx: float, cy: float, fill: str, ring: str) -> str:
         f'<circle class="marker" cx="{_n(cx)}" cy="{_n(cy)}" r="{_n(MARKER)}" fill="{fill}" '
         f'stroke="{ring}" stroke-width="2"/>'
     )
+
+
+def _points(corners: Sequence[tuple[float, float]]) -> str:
+    return " ".join(f"{_n(px)},{_n(py)}" for px, py in corners)
 
 
 # -- the timeline ------------------------------------------------------------------------------

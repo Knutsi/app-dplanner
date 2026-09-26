@@ -1,12 +1,13 @@
 """Debug ▸ Time Simulation: the real Time tab over a simulated plan, in a world of its own."""
 
 from dplanner.framework.context import Context
+from dplanner.modules.time_estimates.activity import TimeEstimatesActivity
 from dplanner.modules.time_estimates.debugger import (
     OPENS_AFTER,
     SIMULATION_KIND,
     TimeSimulationActivity,
 )
-from dplanner.modules.time_estimates.module import TimeEstimatesActivity, TimeEstimatesDeps
+from dplanner.modules.time_estimates.module import TimeEstimatesDeps
 from dplanner.modules.time_estimates.progress import read_history
 from dplanner.modules.time_estimates.simulation.replay import keep
 from dplanner.modules.time_estimates.simulation.sample import SAMPLE_START

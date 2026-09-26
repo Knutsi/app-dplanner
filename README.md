@@ -485,12 +485,15 @@ src/dplanner/
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
 │   ├── progression/         the *Ready to start* board and `dplanner progression show`
-│   ├── time_estimates/      the staffing matrix, the start dates and milestones in sequence and the calendar
-│   │                        they date — `dplanner schedule matrix`, `schedule palette`, `schedule team`,
-│   │                        `schedule milestone`; and progress against the plan (progress.py derives it,
-│   │                        recorder.py writes the day's history, snapshots.py picks the two plans compared
-│   │                        and saves one on purpose, chart.py draws the plots on one time axis, a page at
-│   │                        a time: milestone shifts, progress and scope change, volume) —
+│   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab
+│   │                        (activity.py: four figures, then a page at a time — shift_view.py the
+│   │                        milestones against the plan compared with, work_view.py the scope and the
+│   │                        work done, months.py the calendar — with budget.py's team and focus and
+│   │                        snapshots.py's pick of the plan compared with), what a page shows as data
+│   │                        (present.py, which report.py reads too), a milestone's start and colour on
+│   │                        its Details tab (section.py) — `dplanner schedule matrix`, `schedule palette`,
+│   │                        `schedule team`, `schedule milestone`; progress against the plan (progress.py
+│   │                        derives it, recorder.py writes the day's history) —
 │   │                        `dplanner progress show|record|save|list|remove`; simulation/ plays the
 │   │                        HTML prototype's scenarios day by day (the world, the replay through the
 │   │                        real aspect writers, the accuracy `scripts/time_accuracy.py` prints) and

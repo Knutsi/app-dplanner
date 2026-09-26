@@ -1,19 +1,20 @@
-"""What the time estimates say in a report: when it lands, how the plan moved, the
-progress and volume plots, the milestones in sequence and the staffing what-ifs.
+"""What the time estimates say in a report: where the plan lands, how far that moved and
+how much of the work is done; each milestone against the plan at start, the scope and the
+work done over the recorded days; and the milestones in sequence.
 
-The same derivations the Time tab renders and ``dplanner schedule matrix`` /
-``progress show`` print — ``time_report``, ``take``, ``view_scope`` — read once for the
-project's stored team, focus and palette, and handed over as plain parts. Nothing here is
-a second computation of anything the tab shows.
+The Time tab's own reading — ``Readers.snapshot`` for the stored team, focus and start,
+then ``present.py``'s :func:`present` against the plan at start — handed over as plain
+parts, so the page draws what the tab draws. Nothing here is a second computation of
+anything the tab shows.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
-from dataclasses import dataclass
 from datetime import date
 
 from dplanner.cli.report.parts import (
     NOTHING,
+    Change,
     Chart,
     Column,
     Contribution,
@@ -29,140 +30,58 @@ from dplanner.cli.report.parts import (
     Timeline,
     Tone,
 )
-from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.schedule import Phase, format_date, format_days
+from dplanner.domain.model import Library, Project
+from dplanner.domain.ordering import cyclic
+from dplanner.domain.schedule import format_date, format_days, short_date
 from dplanner.domain.store import FilesFor
 from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.progress import (
-    AT_START,
-    Delta,
-    ScopeView,
-    Snapshot,
-    delta_words,
-    pick_words,
-    read_history,
-    read_saved,
-    remaining,
-    resolve,
-    scope_words,
-    shift_words,
-    span_of,
-    take,
-    tally,
-    view_scope,
-    volume,
-    volume_scale,
+from dplanner.modules.time_estimates.present import (
+    Presented,
+    change_words,
+    milestone_words,
+    moved_words,
+    names_of,
+    present,
 )
-from dplanner.modules.time_estimates.schedule import (
-    Cell,
-    TimeReport,
-    milestone_colors,
-    phase_colors,
-    read_efficiency,
-    read_start,
-    read_team,
-    time_report,
-)
+from dplanner.modules.time_estimates.progress import AT_START, read_history, read_saved
+from dplanner.modules.time_estimates.schedule import read_efficiency, read_start, read_team
 
 CHART_ID = "progress"
 TIMELINE_ID = "milestones"
 MILESTONES_TABLE_ID = "milestones"
-MATRIX_TABLE_ID = "staffing"
-WHOLE_LABEL = "All work"
-REMAINDER_LABEL = "Remaining work"
 
 
 def report_source(readers: Readers) -> ReportSource:
     def source(library: Library, project: Project, _files: FilesFor, day: date) -> Contribution:
         if not project.steps:
             return NOTHING
-        dated = _dated(library, project, readers, day)
-        if dated is None:
-            return NOTHING
-        if dated.cycle:
-            names = ", ".join(step.title or "Untitled step" for step in dated.cycle)
+        cycle = cyclic(library, project)
+        if cycle:
+            names = ", ".join(step.title or "Untitled step" for step in cycle)
             figure = Figure("Lands", "—", note=f"steps wait on each other: {names}", tone="bad")
             return Contribution(placed=(Placed("overview", 12, figure),))
-        team, today = dated.team, dated.today
-        now = take(
-            library,
-            project,
-            readers.days_for,
-            readers.is_agent,
-            readers.status_for,
-            readers.since_for,
-            humans=team.humans,
-            agents=team.agents,
-            start=dated.start,
-            efficiency=dated.efficiency,
-            is_milestone=readers.is_milestone,
-            start_for=read_start,
-            today=today,
-            facts=readers.facts(project, today),
-        )
-        if now is None:
+        shown = _presented(library, project, readers, day)
+        if shown is None:
             return NOTHING
-        history = read_history(project)
-        saved = read_saved(project)
-        then = resolve(AT_START, history=history, saved=saved, live=now, start=dated.start)
-        basis = pick_words(AT_START, then, today)
-        view = view_scope(now, history, then, None)
-        colors = phase_colors(team.phases, milestone_colors(library, project, readers.is_milestone))
-        labels = dated.labels
         placed = [
-            Placed(
-                "overview",
-                12,
-                Figure(
-                    "Lands",
-                    format_date(team.finish, today=today) if team.finish else "—",
-                    note=f"{_people(team)} · {dated.efficiency:.0%} focus",
-                ),
-            ),
-            Placed("overview", 14, _change_figure(view.moved, then, today)),
-            Placed(
-                "overview",
-                30,
-                Chart(
-                    CHART_ID,
-                    "Progress against the plan",
-                    today,
-                    plots=_plots(view, then, basis, history, now),
-                    stretches=_stretches(team, colors, labels, now, then, basis, today),
-                    idle=view.idle,
-                    marks=tuple((row.day, row.title) for row in saved),
-                    note="Plots on one time axis, by estimated days: where the work "
-                    "stands against the plan, how the plan itself has moved since it was "
-                    "recorded, where each milestone has slid, and how much work the plan "
-                    "came to on each recorded day.",
-                ),
-            ),
-            Placed(
-                "timeline",
-                10,
-                Timeline(
-                    TIMELINE_ID,
-                    "Milestones in sequence",
-                    today,
-                    tuple(
-                        Span(
-                            labels[id(phase)],
-                            phase.began,
-                            phase.finish,
-                            color,
-                            step_id=phase.milestone.id if phase.milestone else "",
-                            asked=phase.asked,
-                            share=tally(phase.steps, readers.days_for, readers.status_for).share(),
-                        )
-                        for phase, color in zip(team.phases, colors, strict=True)
-                    ),
-                ),
-            ),
-            Placed("timeline", 20, _milestones_table(dated, readers)),
+            Placed("overview", 12, _landing_figure(shown, project)),
+            Placed("overview", 13, _moved_figure(shown)),
+            Placed("overview", 14, _done_figure(shown)),
         ]
-        matrix = _matrix_table(dated.report, today)
-        if matrix is not None:
-            placed.append(Placed("timeline", 30, matrix))
+        unsized = sum(
+            1
+            for step in project.steps
+            if readers.days_for(step) is None and not readers.is_marker(step)
+        )
+        if unsized:
+            placed.append(
+                Placed("overview", 15, Figure("Unsized", str(unsized), note="counted as 0 days"))
+            )
+        placed += [
+            Placed("overview", 30, _chart(shown)),
+            Placed("timeline", 10, _timeline(shown, project)),
+            Placed("timeline", 20, _milestones_table(shown, project)),
+        ]
         return Contribution(placed=tuple(placed))
 
     return source
@@ -173,192 +92,164 @@ def milestones_table(
 ) -> Table | None:
     """The milestones as the report tabulates them — what *Milestones (CSV)…* writes.
     None when the project has no steps or cannot be dated."""
-    dated = _dated(library, project, readers, today)
-    if dated is None or dated.cycle:
+    shown = _presented(library, project, readers, today)
+    return _milestones_table(shown, project) if shown is not None else None
+
+
+def _presented(library: Library, project: Project, readers: Readers, day: date) -> Presented | None:
+    """The plan today against the plan at start, as the tab first opens on it."""
+    now = readers.snapshot(library, project, day)
+    if now is None:
         return None
-    return _milestones_table(dated, readers)
-
-
-@dataclass(frozen=True)
-class _Dated:
-    """The plan dated for its stored team and focus, read once for every part here."""
-
-    report: TimeReport
-    team: Cell
-    start: date
-    efficiency: float
-    today: date
-    labels: dict[int, str]  # A phase (by identity) and what it is called.
-
-    @property
-    def cycle(self) -> tuple[Step, ...]:
-        return self.report.cycle
-
-
-def _dated(library: Library, project: Project, readers: Readers, day: date) -> _Dated | None:
-    start = readers.start_of(project, day)
-    efficiency = read_efficiency(project)
-    report = time_report(
-        library,
-        project,
-        readers.days_for,
-        readers.is_agent,
-        start=start,
-        efficiency=efficiency,
-        is_milestone=readers.is_milestone,
-        start_for=read_start,
-        facts=readers.facts(project, day),
+    return present(
+        now,
+        history=read_history(project),
+        saved=read_saved(project),
+        pick=AT_START,
+        start=readers.start_of(project, day),
+        named=names_of(library, project, now, readers),
     )
-    if report is None or (not report.cycle and not report.calendar):
-        return None
+
+
+def _people(project: Project) -> str:
     humans, agents = read_team(project)
-    team = next(
-        (cell for cell in report.calendar if (cell.humans, cell.agents) == (humans, agents)),
-        report.calendar[0] if report.calendar else Cell(humans, agents, 0.0),
-    )
-    labels = {id(phase): _label(phase, team.phases, readers) for phase in team.phases}
-    return _Dated(report, team, start, efficiency, day, labels)
+    people = "person" if humans == 1 else "people"
+    bots = "agent" if agents == 1 else "agents"
+    return f"{humans} {people} + {agents} {bots} at {read_efficiency(project):.0%} focus"
 
 
-def _label(phase: Phase, phases: tuple[Phase, ...], readers: Readers) -> str:
-    if phase.milestone is None:
-        alone = all(other.milestone is None for other in phases)
-        return WHOLE_LABEL if alone else REMAINDER_LABEL
-    return readers.milestone_label(phase.milestone) or phase.milestone.title or "Milestone"
+def _landing_figure(shown: Presented, project: Project) -> Figure:
+    whole = shown.whole
+    if whole.landed_by is not None:
+        return Figure("Landed", f"✓ {format_date(whole.landed_by, shown.day)}", tone="good")
+    if whole.planned is None:
+        return Figure("Lands", "—", note="nothing estimated, so nothing to date")
+    return Figure("Lands", format_date(whole.planned, shown.day), note=_people(project))
 
 
-def _people(team: Cell) -> str:
-    people = "person" if team.humans == 1 else "people"
-    agents = "agent" if team.agents == 1 else "agents"
-    return f"{team.humans} {people} + {team.agents} {agents}"
-
-
-def _change_figure(moved: Delta | None, then: Snapshot | None, today: date) -> Figure:
-    if then is None:
-        return Figure("Change since the plan", "—", note="no earlier plan recorded yet")
-    label = f"Since the plan of {format_date(then.day, today=today)}"
+def _moved_figure(shown: Presented) -> Figure:
+    moved = shown.whole.moved
     if moved is None:
-        return Figure(label, "—", note="not in the plan then")
-    words = delta_words(moved, then.day, today)
-    tone: Tone = "" if moved.unchanged else "busy"
-    shift = moved.shift
-    if shift is not None and shift > 0:
-        tone = "bad"
-    return Figure(label, words, tone=tone)
+        return Figure("Moved", "—", note="no earlier plan recorded yet")
+    tone: Tone = "bad" if moved > 0 else "good" if moved < 0 else ""
+    return Figure(
+        "Moved", moved_words(moved), note=f"working days, against {shown.basis}", tone=tone
+    )
 
 
-def _plots(
-    view: ScopeView,
-    then: Snapshot | None,
-    basis: str,
-    history: list[Snapshot],
-    now: Snapshot,
-) -> tuple[Plot, ...]:
-    """The plots the chart stacks — the window's every page, said as data.
+def _done_figure(shown: Presented) -> Figure:
+    own = shown.whole.own
+    share = own.share()
+    return Figure(
+        "Work done",
+        f"{share:.0%}" if share is not None else "—",
+        note=f"{format_days(own.done_days) or '0d'} of {format_days(own.days) or '0d'} estimated",
+    )
 
-    The scope plot is left out when there is no earlier plan to compare against: an empty
-    box saying "nothing recorded yet" is the placeholder the card rule forbids. The
-    volume plots share one scale in days, the window's rule, so the gap between them is
-    read by eye.
-    """
-    plan = Series("Plan now" if then is not None else "Plan", view.expected, "plan")
-    found = [
-        Plot(
-            "status",
-            "Progress",
-            (plan, Series("Landed", view.actual, "actual")),
-        )
-    ]
-    if then is not None and view.baseline:
-        found.append(
+
+def _chart(shown: Presented) -> Chart:
+    """The tab's Milestones and Work pages on one time axis, said as data — under one
+    heading naming the plan they are compared with, as the tab's *Compared with* does."""
+    data, today = shown.burnup, shown.day
+    scope = [Series("Scope", data.scope, "plan")]
+    if shown.compared and shown.then is not None and data.baseline is not None:
+        scope.append(Series("Plan then", ((shown.then.day, data.baseline),), "baseline"))
+    saved = "; ".join(f"{title} ({short_date(when, today)})" for when, title in shown.saved)
+    return Chart(
+        CHART_ID,
+        f"Progress — versus {shown.basis}" if shown.compared and shown.basis else "Progress",
+        today,
+        plots=(
+            Plot("shift", "Milestones"),
             Plot(
                 "scope",
-                scope_words(basis),
-                (plan, Series("Plan then", view.baseline, "baseline")),
-                note="Amber where the plan now promises more by a date than it did then, "
-                "red where it promises less, green where the two agree.",
-            )
-        )
-    found.append(Plot("shift", "Milestones"))
-    total, left = tuple(volume(history, now)), tuple(remaining(history, now))
-    scale = volume_scale(total, left)
-    found.append(
-        Plot(
-            "volume",
-            "Scope volume",
-            (Series("Estimated days", total, "plan"),),
-            ceiling=scale,
-            note="The total of estimated days the plan came to on each recorded day.",
-        )
-    )
-    found.append(
-        Plot(
-            "remaining",
-            "Remaining work",
-            (Series("Total", total, "baseline"), Series("Remaining", left, "plan")),
-            ceiling=scale,
-            note="The same less what had landed: the gap between the two is what is done.",
-        )
-    )
-    return tuple(found)
-
-
-def _stretches(
-    team: Cell,
-    colors: list[str],
-    labels: dict[int, str],
-    now: Snapshot,
-    then: Snapshot | None,
-    basis: str,
-    today: date,
-) -> tuple[Stretch, ...]:
-    """Every stretch of the plan: its shade, where it runs now and where it ran in the
-    plan compared with. One shape for every plot, as in the window."""
-    found = []
-    for phase, color in zip(team.phases, colors, strict=True):
-        key = phase.milestone.id if phase.milestone else ""
-        span, was = span_of(now, key), span_of(then, key)
-        found.append(
-            Stretch(
-                label=labels[id(phase)],
-                color=color,
-                start=span[0] if span else None,
-                finish=span[1] if span else None,
-                was_start=was[0] if was else None,
-                was_finish=was[1] if was else None,
-                step_id=key,
-                note=shift_words(
-                    labels[id(phase)],
-                    was[1] if was else None,
-                    span[1] if span else None,
-                    basis if then is not None else "",
-                    today,
+                "Scope",
+                tuple(scope),
+                ceiling=shown.scale,
+                changes=tuple(
+                    Change(mark.day, mark.up, change_words(mark, today)) for mark in data.marks
                 ),
+            ),
+            Plot(
+                "done",
+                "Work done",
+                (
+                    Series("Done", data.done, "actual"),
+                    Series("The plan's schedule", shown.schedule, "plan"),
+                ),
+                ceiling=shown.scale,
+                active=data.active,
+            ),
+        ),
+        stretches=tuple(
+            Stretch(
+                label=scope.named.label,
+                color=scope.named.color,
+                finish=scope.end,
+                was_finish=scope.then,
+                done=scope.landed_by is not None,
+                step_id=scope.key or "",
+                note=milestone_words(scope, today),
             )
-        )
-    return tuple(found)
+            for scope in shown.stretches
+        ),
+        marks=shown.saved,
+        note="On one time axis, in estimated days: where each milestone lands against the "
+        "plan compared with — a check where its work is done — the work the plan held on "
+        "each recorded day, ▲ where some was added and ▼ where some was taken away, and "
+        "what was done by then, dotted across a day no step changed status, beside the "
+        "plan's schedule from today on."
+        + (f" Dashed lines are the saved snapshots: {saved}." if saved else ""),
+    )
 
 
-def _milestones_table(dated: _Dated, readers: Readers) -> Table:
-    team, labels, efficiency, today = dated.team, dated.labels, dated.efficiency, dated.today
+def _timeline(shown: Presented, project: Project) -> Timeline:
+    began = {stretch.key: stretch.start for stretch in shown.now.stretches}
+    return Timeline(
+        TIMELINE_ID,
+        "Milestones in sequence",
+        shown.day,
+        tuple(
+            Span(
+                scope.named.label,
+                began[scope.key or ""],
+                scope.planned,
+                scope.named.color,
+                step_id=scope.key or "",
+                asked=_asked(project, scope.key),
+                share=scope.own.share(),
+            )
+            for scope in shown.stretches
+        ),
+    )
+
+
+def _asked(project: Project, key: str | None) -> date | None:
+    """The start date a milestone was given, when it was given one."""
+    step = project.step(key) if key else None
+    return read_start(step) if step is not None else None
+
+
+def _milestones_table(shown: Presented, project: Project) -> Table:
+    began = {stretch.key: stretch.start for stretch in shown.now.stretches}
+    today = shown.day
     rows = []
-    for phase in team.phases:
-        key = phase.milestone.id if phase.milestone else None
-        reached = tally(phase.steps, readers.days_for, readers.status_for)
-        share = reached.share()
+    for scope in shown.stretches:
+        asked = _asked(project, scope.key)
+        share = scope.own.share()
         rows.append(
             Row(
                 (
-                    labels[id(phase)],
-                    format_date(phase.asked, today=today) if phase.asked else "",
-                    format_date(phase.finish, today=today) if phase.finish else "",
-                    format_days(phase.days),
-                    str(reached.steps),
+                    scope.named.label,
+                    format_date(asked, today=today) if asked else "",
+                    format_date(scope.planned, today=today) if scope.planned else "",
+                    format_days(scope.own.days),
+                    str(scope.own.steps),
                     f"{share:.0%}" if share is not None else "",
-                    "pushed" if phase.pushed else "",
+                    "pushed" if asked is not None and began[scope.key or ""] > asked else "",
                 ),
-                step_id=key or "",
-                strong=phase.milestone is not None,
+                step_id=scope.key or "",
+                strong=bool(scope.key),
             )
         )
     return Table(
@@ -374,51 +265,7 @@ def _milestones_table(dated: _Dated, readers: Readers) -> Table:
             Column(""),
         ),
         tuple(rows),
-        note=f"Dated for {_people(team)} at {efficiency:.0%} focus; *Done* is the share of "
-        "the stretch's estimated days that has landed. A milestone whose set date the work "
-        "cannot meet is pushed, never overlapped.",
-    )
-
-
-def _matrix_table(report: TimeReport, today: date) -> Table | None:
-    cells = report.calendar
-    if not cells:
-        return None
-    humans = sorted({cell.humans for cell in cells})
-    agents = (
-        sorted({cell.agents for cell in cells}) if report.has_agent_steps else [cells[0].agents]
-    )
-    at = {(cell.humans, cell.agents): cell for cell in cells}
-
-    def said(cell: Cell | None) -> str:
-        if cell is None:
-            return ""
-        if cell.finish is not None:
-            return format_date(cell.finish, today=today)
-        return format_days(cell.days)
-
-    columns = [Column("Team")]
-    columns += [
-        Column(
-            f"{count} agent{'s' if count != 1 else ''}" if report.has_agent_steps else "Lands",
-            "date",
-        )
-        for count in agents
-    ]
-    rows = tuple(
-        Row(
-            (
-                f"{count} {'person' if count == 1 else 'people'}",
-                *(said(at.get((count, agent))) for agent in agents),
-            )
-        )
-        for count in humans
-    )
-    return Table(
-        MATRIX_TABLE_ID,
-        "Staffing",
-        tuple(columns),
-        rows,
-        note=f"When the work lands with that many people and coding agents, at "
-        f"{report.efficiency:.0%} focus. The rest of this page is dated for the stored team.",
+        note=f"Dated for {_people(project)}; *Done* is the share of the stretch's estimated "
+        "days that has landed. A milestone whose set date the work cannot meet is pushed, "
+        "never overlapped.",
     )

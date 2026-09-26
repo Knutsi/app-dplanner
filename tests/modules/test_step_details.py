@@ -36,10 +36,11 @@ def test_blocks_come_in_registry_order_with_the_description_taking_the_stretch(d
     assert [b.section.id for b in details._blocks] == [
         "step_properties.name",
         "estimation.details",
+        "time_estimates.details",
         "step_description.details",
         "spec.figures",
     ]
-    assert [b.section.stretch for b in details._blocks] == [0, 0, 1, 0]
+    assert [b.section.stretch for b in details._blocks] == [0, 0, 0, 1, 0]
 
 
 def test_figures_follow_the_aspect_without_reselecting(services, step, details):

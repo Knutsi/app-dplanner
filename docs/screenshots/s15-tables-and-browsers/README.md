@@ -33,7 +33,7 @@ up* is the list of what to compare.
 | `assets-*`, `assets-picked-*` | The Assets tab: two tables under one strip — attach, open, copy the path, delete, clean up — and a filter over *unused* and each source. |
 | `notes-*`, `notes-picked-*` | The Implementation notes tab: a `RichList` under a strip with *Add Note…*, *Remove Note* and a label filter. |
 | `estimates-*`, `estimates-picked-*` | The bulk Estimates tab: the quick sizes painted in the cell, one lit per row so the column reads as a grid; zero past a rule, a last chip that opens the number and shows one off the scale. |
-| `time-*`, `time-picked-*` | The Time tab: one `Toolbar` for its verbs and its controls, and the milestones as a table with the day each begins set in the cell. |
+| `time-*` | The Time tab (v5): four figures over one `Toolbar` — the pages as a `Segmented`, the plan compared with, the Budget — and the Milestones page, a row per milestone. |
 | `tasks-*` | The task browser: a `RowWell` on the dialog frame, a busy line where no fraction is known and a 4 px bar where one is. |
 | `agents-*` | The Agents browser: the same well, the run's mood as the status line's tone, the way back in as a note. |
 | `palette-*`, `palette-filtered-*`, `palette-nothing-*` | The command palette, filtered, and saying so when nothing matches. |

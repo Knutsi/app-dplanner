@@ -99,7 +99,7 @@ def test_the_canvas_the_order_table_and_the_calendar_paint_one_milestone_one_col
     """The whole point, asserted between surfaces rather than against a literal.
 
     Three painters, three vocabularies — a ``NodeAccent``'s ``tone_color``, a table row's
-    ``COLOR_ROLE`` and the calendar's ``QColor`` bands — and one hex behind all of them.
+    ``COLOR_ROLE`` and the Time tab's milestone rows — and one hex behind all of them.
     """
     v1, v2 = milestones(project)
     colors = dealt(services, project)
@@ -114,15 +114,7 @@ def test_the_canvas_the_order_table_and_the_calendar_paint_one_milestone_one_col
     assert rows[v2.id][0] == colors[v2.id]
 
     time_tab = services.tabs.open("time", project.id)
-    from dplanner.modules.time_estimates.milestones import COLOR_ROLE
-
-    table = time_tab.milestones
-    bands = [
-        table.item(row, 0).data(COLOR_ROLE)
-        for row in range(table.rowCount())
-        if table.key_at(row) in table.keys
-    ]
-    assert bands == list(colors.values())
+    assert [row.named.color for row in time_tab.shifts.rows] == list(colors.values())
 
 
 def test_a_milestones_row_wears_its_key_as_a_badge_and_a_plain_step_does_not(services, project):
@@ -183,19 +175,14 @@ def test_a_chosen_colour_wins_everywhere_without_moving_the_others(services, pro
     assert order_rows(services, project)[v1.id][0] == "#c98500"
 
 
-def test_the_phase_order_and_the_placed_order_are_the_same_sequence(services, project):
+def test_the_stretch_order_and_the_placed_order_are_the_same_sequence(services, project):
     """``phase_colors`` looks a stretch's milestone up in the deal, which assumes the two
     walks agree — they are both the topological order, and this is what says so."""
-    from dplanner.modules.time_estimates.schedule import phase_colors
-
     time_tab = services.tabs.open("time", project.id)
-    phases = time_tab._report.calendar[0].phases
     colors = dealt(services, project)
-    named = [phase for phase in phases if phase.milestone is not None]
-    # The stretches name the milestones in the deal's own order, so zipping them is honest.
-    assert [phase.milestone.id for phase in named] == list(colors)
-    painted = phase_colors(phases, colors)
-    assert [painted[phases.index(phase)] for phase in named] == list(colors.values())
+    snapshot = time_tab.snapshot()
+    assert snapshot is not None
+    assert [stretch.key for stretch in snapshot.stretches if stretch.key] == list(colors)
 
 
 # -- View ▸ Milestone Colours --------------------------------------------------------------

@@ -31,7 +31,7 @@ styling one surface by name.
 |---|---|---|---|
 | a dialog, a confirmation, a one-line prompt, what a gesture came to | `DialogFrame`, `confirm()`, `LinePrompt`, `notice()` | `framework/dialog.py`, `framework/widgets.py` | the modal: `dialog-*`, `dialog-refused-*`; every dialog on it: `s16-dialogs/` |
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
-| a value set in a table's row | `Column(editor=NumberEditor(…) \| DateEditor(…))`, and `chips=` for its usual values | `framework/table.py` | `s15-tables-and-browsers/estimates-*`, `time-*` |
+| a value set in a table's row | `Column(editor=NumberEditor(…) \| DateEditor(…))`, and `chips=` for its usual values | `framework/table.py` | `s15-tables-and-browsers/estimates-*` |
 | rows that each carry their own verbs and outlive a refresh | `RowWell`, `WellRow` | `framework/row_well.py` | `s15-tables-and-browsers/tasks-*`, `agents-*` |
 | words in the status bar that open what they sum up | `StatusBarButton` | `framework/widgets.py` | — |
 | a fact that holds until it stops holding, over the whole window | `Notice`, `NoticeBar` | `framework/notices.py` | the modal's *Signalling* block |
@@ -840,8 +840,8 @@ Dialogs:
   `GhRepoListDialog` — on the frame; the repository picker's four glyph buttons one ⋯
   menu and its note a `StatusLine`; the GitHub list captioned, its listing in the status
   slot; the prompts `LinePrompt`s and the result boxes `notice()`s.
-- *(done — S16)* `ExpandedTextDialog`, `ChartDialog`, `ImagePreviewDialog` — two editor
-  dialogs and a fit one, Close alone; the preview's two verbs quiet secondaries that say
+- *(done — S16)* `ExpandedTextDialog`, `ChartDialog` (gone since, with the plots it
+  expanded), `ImagePreviewDialog` — two editor dialogs and a fit one, Close alone; the preview's two verbs quiet secondaries that say
   what they did in the status slot rather than in a box.
 - *(done — S16)* `AssetPickerDialog` — *Insert* the primary, refused until something is
   picked; the empty page an `EmptyState` standing in for the grid.
@@ -906,7 +906,9 @@ Tables and lists:
 - *(done — S15)* Task and Agents browsers — one `RowWell` on the dialog frame; a task
   with no known fraction is a busy line. Milestones list — a `Table` with the day each
   milestone begins set in the cell, its colour and *Begin When the Previous Lands* on the
-  Time tab's one `Toolbar`.
+  Time tab's one `Toolbar`. *(Replaced since by the v5 page: a `Segmented` over the
+  Milestones, Work and Calendar pages, the Budget a `PopoverButton`, and a milestone's own
+  start and colour on its Details tab.)*
 - *(done — the signalling pass)* Every debounced view now carries the indicator, and the
   Time tab's hand-shown *Recalculating…* label is gone; `ExitDialog` is on the frame, and
   the quit-time save has a progress dialog over its repositories.

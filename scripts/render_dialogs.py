@@ -5,7 +5,7 @@
 S16 brought the dialog-shaped surfaces onto ``DialogFrame``: the Settings dialog and its
 pages, the Project dialog in both modes and the dialogs around it, Install DPlanner, the
 run fallback and the Run Anyway question, the asset picker, the image preview, the diff,
-Connect, the conflict question, and the chart and text windows. What each shows is
+Connect, the conflict question, and the text window. What each shows is
 invented rather than probed — a screenshot of the developer's own machine would show
 whatever it happens to have — and the dialogs a module builds over services are built
 over a whole application on a throwaway library, torn down per theme. ``HOME`` and
@@ -20,7 +20,7 @@ import sys
 import time
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -80,12 +80,10 @@ from dplanner.modules.step_agent_instruction.run_dialog import (
     RunAnywayDialog,
 )
 from dplanner.modules.sync.view import DIFF_DIALOG_SIZE, DiffDialog
-from dplanner.modules.time_estimates.chart import ChartData, ChartDialog, Segment
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
 FIT_WIDTH = 520  # A fit dialog at the width a person's first sentence would give it.
-CHART_SIZE = (1000, 720)
 EDITOR_SIZE = (900, 600)
 CODE_URL = "https://github.com/acme/widget"
 PLANS_URL = "https://github.com/acme/plans"
@@ -425,39 +423,6 @@ def render_bare(app: QApplication, theme: Theme, out: Path) -> None:
     fitted(conflict_refused, app, 560)
     save(conflict_refused, out, "conflict-refused", theme, app)
     discard(conflict_refused)
-
-    violet, teal, blue = QColor("#8e6fd8"), QColor("#2a9d8f"), QColor("#4a7fd6")
-    start, today, end = date(2026, 8, 3), date(2026, 9, 13), date(2026, 10, 16)
-    data = ChartData(
-        today,
-        expected=((start, 0.0), (date(2026, 9, 1), 0.38), (date(2026, 9, 18), 0.62), (end, 1.0)),
-        actual=((start, 0.0), (date(2026, 8, 20), 0.2), (today, 0.46)),
-        baseline=((start, 0.0), (date(2026, 9, 10), 0.55), (date(2026, 10, 2), 1.0)),
-        basis="the plan at start, recorded 3 Aug",
-        segments=(
-            Segment(
-                "M1",
-                "Improvements #1",
-                violet,
-                now=(start, date(2026, 9, 18)),
-                then=(start, date(2026, 9, 10)),
-            ),
-            Segment(
-                "M2",
-                "Improvements #2",
-                teal,
-                now=(date(2026, 9, 21), end),
-                then=(date(2026, 9, 11), date(2026, 10, 2)),
-            ),
-            Segment("", "Remaining work", blue),
-        ),
-        volume=((start, 40.0), (date(2026, 9, 1), 52.0), (today, 58.0)),
-        remaining=((start, 40.0), (date(2026, 9, 1), 33.0), (today, 31.0)),
-    )
-    chart = ChartDialog(data, data.today, title="Discovery — Progress")
-    framed(chart, CHART_SIZE, app)
-    save(chart, out, "chart", theme, app)
-    discard(chart)
 
 
 # -- the dialogs a module builds over the application's services -------------------------------

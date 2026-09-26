@@ -27,22 +27,16 @@ from PySide6.QtCore import QObject
 
 from dplanner.core.clock import Clock
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, Project, ProjectId, Step
+from dplanner.domain.model import Library, Project
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
+from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.progress import (
     HISTORY_ID,
     Snapshot,
     read_history,
     read_saved,
     recorded,
-    take,
     write_history,
-)
-from dplanner.modules.time_estimates.schedule import (
-    read_efficiency,
-    read_start,
-    read_team,
-    schedule_facts,
 )
 
 # The recorder's origin: no view claims it, so every surface repaints — a chart reading
@@ -58,26 +52,14 @@ class ProgressRecorder(QObject):
         library: Library,
         debounce: DebounceService,
         *,
-        days_for: Callable[[Step], float | None],
-        is_agent: Callable[[Step], bool],
-        status_for: Callable[[Step], str],
-        since_for: Callable[[Step], date | None],
-        is_marker: Callable[[Step], bool],
-        is_milestone: Callable[[Step], bool],
-        start_of: Callable[[ProjectId], date],
+        readers: Readers,
         clock: Clock,
         parent: QObject,
     ) -> None:
         super().__init__(parent)
         self._product = library
         self._clock = clock
-        self._days_for = days_for
-        self._is_agent = is_agent
-        self._status_for = status_for
-        self._since_for = since_for
-        self._is_marker = is_marker
-        self._is_milestone = is_milestone
-        self._start_of = start_of
+        self._readers = readers
         self._settle = Debounced(self.record_all, SETTLE_MS, parent=self, service=debounce)
         self._unsubscribes: list[Callable[[], None]] = []
 
@@ -103,32 +85,8 @@ class ProgressRecorder(QObject):
         self._settle.cancel()
 
     def snapshot(self, project: Project, today: date | None = None) -> Snapshot | None:
-        humans, agents = read_team(project)
-        day = today or self._clock.today()
-        facts = schedule_facts(
-            project,
-            day,
-            is_agent=self._is_agent,
-            status_for=self._status_for,
-            since_for=self._since_for,
-            is_marker=self._is_marker,
-        )
-        return take(
-            self._product,
-            project,
-            self._days_for,
-            self._is_agent,
-            self._status_for,
-            self._since_for,
-            humans=humans,
-            agents=agents,
-            start=self._start_of(project.id),
-            efficiency=read_efficiency(project),
-            is_milestone=self._is_milestone,
-            start_for=read_start,
-            today=day,
-            facts=facts,
-        )
+        """The day's plan, dated for the stored team as the tab dates it."""
+        return self._readers.snapshot(self._product, project, today or self._clock.today())
 
     def record_all(self) -> None:
         """Every project's day, written where it changed."""

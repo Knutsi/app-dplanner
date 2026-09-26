@@ -1,13 +1,12 @@
-"""Choosing which two plans the plots compare, and saving one on purpose.
+"""Choosing which plan the page compares with, and saving one on purpose.
 
-A comparison is two snapshots — a *then* and a *now* — and both are picked here, in the
-strip over the page, where the whole page's assumptions are set. Each side is one
-:class:`SnapshotPicker`: a button wearing the name of the plan it reads, dropping a menu
-built when it opens (the swatch's pattern) that offers the side's own default — the plan
-at the project's start, or the live plan now — every snapshot somebody saved, by title
-and day, and *Day…*, which asks for any recorded day. The button's tooltip names the
-record that stood in for the pick, so which plans are compared is never a guess; the
-picker only reports a :class:`Pick`, and the hosting page resolves it and re-renders —
+The page compares the plan now with a plan *then*, picked here in the strip over it,
+where the whole page's assumptions are set: a :class:`SnapshotPicker`, a button wearing
+the name of the plan it reads, dropping a menu built when it opens (the swatch's pattern)
+that offers the plan at the project's start, the plan a week ago, every snapshot somebody
+saved, by title and day, and *Day…*, which asks for any recorded day. The button's tooltip
+names the record that stood in for the pick, so which plans are compared is never a guess;
+the picker only reports a :class:`Pick`, and the hosting page resolves it and re-renders —
 the contract every input here keeps.
 
 :class:`SaveSnapshotDialog` asks for the title a saved snapshot is found by, and a note
@@ -27,14 +26,19 @@ from dplanner.domain.schedule import format_date
 from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.signalling import StatusLine
 from dplanner.framework.widgets import block, caption
-from dplanner.modules.time_estimates.progress import Pick, Snapshot, find_saved
+from dplanner.modules.time_estimates.progress import (
+    A_WEEK_AGO,
+    AT_START,
+    Pick,
+    Snapshot,
+    find_saved,
+)
 from dplanner.theme.tokens import SECTION_GAP
 
 NOTE_LINES = 4
 
-# What the leading entry of each side is called.
 START_LABEL = "Plan at start"
-NOW_LABEL = "Now"
+WEEK_LABEL = "Plan a week ago"
 DAY_LABEL = "Day…"
 FORGET_LABEL = "Forget saved snapshot"
 
@@ -42,10 +46,10 @@ FORGET_LABEL = "Forget saved snapshot"
 def short_pick_words(pick: Pick, found: Snapshot | None, today: date) -> str:
     """The pick as the button wears it — short enough for a strip, where the tooltip
     carries ``progress.pick_words``'s full sentence."""
-    if pick.kind == "now":
-        return NOW_LABEL
     if pick.kind == "start":
         return START_LABEL
+    if pick.kind == "week":
+        return WEEK_LABEL
     if pick.kind == "saved":
         return pick.title
     if pick.day is None:
@@ -54,20 +58,15 @@ def short_pick_words(pick: Pick, found: Snapshot | None, today: date) -> str:
 
 
 class SnapshotPicker(QToolButton):
-    """One side of the comparison: which recorded plan it reads.
-
-    ``picked`` reports the :class:`Pick` the reader chose; ``forget`` names a saved
-    snapshot to drop. ``leading`` is the side's own default — the plan at start for the
-    then side, the live plan for the now side.
-    """
+    """Which recorded plan the page compares with: ``picked`` reports the :class:`Pick`
+    the reader chose, ``forget`` names a saved snapshot to drop."""
 
     picked = Signal(object)  # Pick
     forget = Signal(str)  # A saved snapshot's title.
 
-    def __init__(self, leading: Pick, today: date, parent: QWidget | None = None) -> None:
+    def __init__(self, today: date, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._leading = leading
-        self._pick = leading
+        self._pick = AT_START
         self._saved: tuple[Snapshot, ...] = ()
         self._today = today
         self.setObjectName("ToolbarButton")
@@ -76,7 +75,7 @@ class SnapshotPicker(QToolButton):
         self._menu = QMenu(self)
         self._menu.aboutToShow.connect(self._fill)
         self.setMenu(self._menu)
-        self.setText(short_pick_words(leading, None, self._today))
+        self.setText(START_LABEL)
 
     # -- the host's side of the contract -------------------------------------------------------
 
@@ -104,10 +103,9 @@ class SnapshotPicker(QToolButton):
 
     def _fill(self) -> None:
         self._menu.clear()
-        leading = START_LABEL if self._leading.kind == "start" else NOW_LABEL
-        self._entry(
-            self._menu, leading, self._leading, checked=self._pick.kind == self._leading.kind
-        )
+        self._entry(self._menu, START_LABEL, AT_START, checked=self._pick.kind == "start")
+        # The anchor of a weekly review, beside the plan at start.
+        self._entry(self._menu, WEEK_LABEL, A_WEEK_AGO, checked=self._pick.kind == "week")
         if self._saved:
             self._menu.addSeparator()
             for row in self._saved:
