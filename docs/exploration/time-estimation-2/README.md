@@ -113,6 +113,8 @@ v5 is v4, with these additions:
   and *back to today* (or ✕).
   - The view follows the slider as it moves. On a day before today, the key figures, the
     plots and the calendar show the tab as it read that day, from the records alone.
+  - The axes hold still while you scrub: both tabs' date axes and the Work scale span every
+    record up to today and today's plan, so only the lines move.
   - Unsized steps and Delay steps are left out, since no record holds them.
   - Everything that writes is greyed until you are back to today: the Budget, *Adjust for
     efficiency*, *Save snapshot…* and ⋯ (colours).

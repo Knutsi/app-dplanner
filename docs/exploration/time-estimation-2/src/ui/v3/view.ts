@@ -7,7 +7,7 @@
 import { type Day, formatDate, g, percent } from "../../model/calendar.ts";
 import { stepKey } from "../../model/graph.ts";
 import { shareOf } from "../../model/progress.ts";
-import { type Brief, brief, burnup, type Scope } from "../../brief.ts";
+import { type Brief, brief, burnup, type Reach, type Scope } from "../../brief.ts";
 import { lookingBack, type TimeView } from "../../present.ts";
 import { basisName } from "../compare.ts";
 import { h } from "../markup.ts";
@@ -116,18 +116,22 @@ function keyFigures(found: Brief, view: TimeView, basis: string): HTMLElement {
 
 // -- Milestones -----------------------------------------------------------------------------------
 
-/** `drill`: a double-click opens the milestone's own work (v3, v4); v5's Work shows it all. */
+/**
+ * `drill`: a double-click opens the milestone's own work (v3, v4; v5's Work shows it all).
+ * `reach`: the least the date axis holds (v5, so History moves only the rows).
+ */
 export function milestonesPage(
   found: Brief,
   view: TimeView,
   state: V3State,
   on: V3Handlers,
-  drill = true,
+  { drill = true, reach }: { drill?: boolean; reach?: Reach } = {},
 ): HTMLElement {
   const holder = h("div", { class: "shifts-holder" });
   // After the caller has put this on the page — the width is read from where it landed.
   queueMicrotask(() => {
-    const { svg, rows } = shiftsSvg(found, view, state.scope, Math.max(560, holder.clientWidth));
+    const width = Math.max(560, holder.clientWidth);
+    const { svg, rows } = shiftsSvg(found, view, state.scope, width, reach);
     holder.innerHTML = svg;
     const element = holder.querySelector("svg")!;
     const rowAt = (event: MouseEvent) => {

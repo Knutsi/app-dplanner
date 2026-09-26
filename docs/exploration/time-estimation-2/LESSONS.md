@@ -32,8 +32,11 @@ backport (BACKPORT.md) and for the next exploration.
   - Six months in two rows beat a single row of six: tall cells can carry a milestone's
     name on the day it lands.
 - **A scale must fit what it holds.** 1-2-5 steps drew 10.2 weeks in a 20-week plot, half
-  of it empty. Finer steps with a little headroom fixed that. For a recording, the axes are
-  locked to the whole run, so only the lines move.
+  of it empty. Finer steps with a little headroom fixed that.
+- **When the reader moves through time, the axes stay put.** Fitted to the day shown, every
+  step of History rescaled the plots, and the eye tracked the frame instead of the lines.
+  Held to every record up to today (and, for a recording, to the whole run), only the lines
+  move.
 - **Text whose length changes must not decide a layout.** The debugger's day line wrapped
   on long dates, and the whole page jumped while scrubbing. It now has a fixed basis and
   an ellipsis.

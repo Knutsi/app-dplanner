@@ -325,6 +325,29 @@ export function burnup(view: TimeView, key: string | null, compared: boolean): B
   };
 }
 
+/** How far the plots reach: the first day and the last on the date axis, and the most work. */
+export interface Reach {
+  from: Day;
+  day: Day;
+  days: number;
+}
+
+/**
+ * The reach that holds every one of `snapshots` — each record up to today and the live plan,
+ * or a whole run's records: from the first day any starts to the last any lands, and the most
+ * work any holds. Drawn to it, moving between them moves only the lines. `snapshots` is never
+ * empty.
+ */
+export function reachOf(snapshots: readonly Snapshot[]): Reach {
+  const [starts, ends, work] = [[] as Day[], [] as Day[], [] as number[]];
+  for (const one of snapshots) {
+    starts.push(one.day, ...one.stretches.map((stretch) => stretch.start));
+    ends.push(one.day, landingIn(one, null) ?? one.day);
+    work.push(toward(one, null).days, ...promisedCurve(one.stretches).map(([, days]) => days));
+  }
+  return { from: Math.min(...starts), day: Math.max(...ends), days: Math.max(0, ...work) };
+}
+
 // -- what changed since the plan compared with ----------------------------------------------------
 
 export interface ChangeList {

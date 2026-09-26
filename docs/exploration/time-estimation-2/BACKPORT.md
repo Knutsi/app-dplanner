@@ -199,6 +199,9 @@ The layout is `src/ui/v5/view.ts` over v4's.
     slider's own ancestors (`redrawAround` in `src/main.ts`): a range input taken out of the
     document mid-drag loses the drag. In Qt, a slider's `valueChanged` does the same with
     the tab's `Debounced` at 0 ms.
+  - The axes never move while scrubbing. Both tabs' date axes and the Work scale span every
+    record up to today and the live plan (`reachOf` in `src/brief.ts`), so only the lines
+    move. `tests/v5_test.ts` holds both tabs to it.
   - Everything that writes is greyed while looking back, each saying why: the Budget,
     *Adjust for efficiency*, *Save snapshot…* and ⋯ (colours).
 - [ ] **No *Showing*.** v5's Work tab always shows all the work; a click on a milestone only

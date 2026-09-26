@@ -25,6 +25,7 @@ import { ADOPTED, FAITHFUL, type ModelOptions, VARIANTS } from "./model/options.
 import { milestoneColors } from "./model/palettes.ts";
 import { AT_START, LIVE } from "./model/progress.ts";
 import { type ExportFile, isExport } from "./data.ts";
+import { type Reach, reachOf } from "./brief.ts";
 import { present, type ViewState, type WhatIf } from "./present.ts";
 import { type Parity, parity, replay } from "./sim/replay.ts";
 import { SAMPLE_START, samplePlan } from "./sim/sample.ts";
@@ -36,6 +37,7 @@ import {
   recordedBy,
   type Recording,
   type SavedSpec,
+  snapshotOf,
   type Timeline,
 } from "./sim/timeline.ts";
 import { DEFAULT_WORLD, run, type WorldParams } from "./sim/world.ts";
@@ -64,7 +66,6 @@ import { v2View } from "./ui/v2/view.ts";
 import { V3_START, type V3Page, type V3State } from "./ui/v3/state.ts";
 import { v3View } from "./ui/v3/view.ts";
 import { v4View } from "./ui/v4/view.ts";
-import { type Reach, reachOf } from "./ui/v3/work.ts";
 import { v5View } from "./ui/v5/view.ts";
 import { trackRecord } from "./ui/debugger/track.ts";
 
@@ -399,8 +400,15 @@ function tabbedContent(
       writeHash();
     },
   };
-  const reach = app.locked ? runReach(state) : undefined;
-  return v5View(view, state, scrubbed, upToDay.rows.map((row) => row.day), reach);
+  const locked = app.locked ? runReach() : undefined;
+  return v5View(view, state, scrubbed, upToDay.rows, locked);
+}
+
+/** The debugger's lock: the axes of the whole run — every record, and its last day's plan. */
+function runReach(): Reach {
+  const last = timeline.frames[timeline.frames.length - 1];
+  const end = snapshotOf(last.plan, last.day, app.options);
+  return reachOf(end ? [...recording.rows, end] : recording.rows);
 }
 
 /**
@@ -421,23 +429,6 @@ function redrawAround(live: Element, fresh: Element, path: readonly string[]): v
   kept.before(...children.slice(0, at));
   kept.after(...children.slice(at + 1));
   if (deeper.length) redrawAround(kept, children[at], deeper);
-}
-
-/** How far the Work plot reaches over the whole run: to its last landing, if it landed. */
-function runReach(state: V3State): Reach | undefined {
-  const last = timeline.frames[timeline.frames.length - 1];
-  const landed = last.plan.steps.every((step) => isDelay(step) || step.status === "done");
-  const end = landed && timeline.finished.size ? Math.max(...timeline.finished.values()) : last.day;
-  const frame = timeline.frames.find((one) => one.day === end) ?? last;
-  const view = present(frame.plan, frame.day, recordedBy(recording, frame.day), {
-    picked: state.scope,
-    then: resolvePick(state.then, frame.day),
-    now: LIVE,
-    lens: "calendar",
-    page: "progress",
-    whatIf: {},
-  }, app.options);
-  return view ? reachOf(view, null) : undefined;
 }
 
 // -- the debugger's body -----------------------------------------------------------------------------

@@ -1644,6 +1644,264 @@
     return typeof value === "object" && value !== null && value.format === EXPORT_FORMAT && Array.isArray(value.frames);
   }
 
+  // src/brief.ts
+  var EPSILON = 1e-9;
+  var NOTICEABLE = 2;
+  function promisedCurve(stretches) {
+    const byDay = /* @__PURE__ */ new Map();
+    for (const stretch of stretches) {
+      for (const knot of stretch.landings) {
+        byDay.set(knot.day, (byDay.get(knot.day) ?? 0) + knot.days);
+      }
+    }
+    let running = 0;
+    return [
+      ...byDay.keys()
+    ].sort((a, b) => a - b).map((day) => [
+      day,
+      running += byDay.get(day)
+    ]);
+  }
+  function paceOf(live, key, today) {
+    const knots = promisedCurve(through(live, key));
+    const done = toward(live, key).doneDays;
+    let earned = null;
+    let due = null;
+    let promised = 0;
+    for (const [day, cumulative] of knots) {
+      if (day <= today) promised = cumulative;
+      if (due === null && cumulative <= done + EPSILON) earned = day;
+      else if (due === null) due = day;
+    }
+    return {
+      done,
+      promised,
+      short: Math.max(0, promised - done),
+      earned,
+      due,
+      // Work still undone can be done today at the soonest, or on Monday if today is a weekend.
+      lag: due !== null && due < today ? landingShift(due, nextWorkingDay(today)) : 0
+    };
+  }
+  function ownTally(snapshot, key) {
+    if (key === null) return toward(snapshot, null);
+    return snapshot.stretches.find((stretch) => stretch.key === key)?.tally ?? null;
+  }
+  function ownSpan(snapshot, key) {
+    if (!snapshot.stretches.length) return null;
+    if (key === null) return [
+      snapshot.stretches[0].start,
+      landingIn(snapshot, null)
+    ];
+    const stretch = snapshot.stretches.find((one) => one.key === key);
+    return stretch ? [
+      stretch.start,
+      stretch.finish
+    ] : null;
+  }
+  function landedBy(rows, live, key) {
+    const landed = (row) => {
+      const reached = toward(row, key);
+      return has(row, key) && reached.steps > 0 && reached.done === reached.steps;
+    };
+    if (!landed(live)) return null;
+    return until(rows, live).find(landed)?.day ?? live.day;
+  }
+  function verdictOf(scope, compared2, then, today) {
+    if (scope.landedBy !== null) return "landed";
+    if (scope.move.planned !== null && scope.move.planned < today) return "overdue";
+    if (!compared2) return "no-baseline";
+    if (then && !has(then, scope.key)) return "new";
+    const total = scope.move.total;
+    if (total !== null && total >= NOTICEABLE) return "later";
+    if (total !== null && total <= -NOTICEABLE) return "earlier";
+    return "on-track";
+  }
+  function scopeOf(view, key, labels, compared2) {
+    const { now, then } = view;
+    const today = now.day;
+    const pace = paceOf(now, key, today);
+    const planned = landingIn(now, key);
+    const landed = landedBy(view.recording.rows, now, key);
+    const projected = landed !== null || planned === null ? null : addWorkingDays(planned, pace.lag);
+    const was = compared2 && then ? landingIn(then, key) : null;
+    const move = {
+      then: was,
+      planned,
+      projected,
+      plan: was !== null && planned !== null ? landingShift(was, planned) : null,
+      pace: pace.lag,
+      total: was !== null && projected !== null ? landingShift(was, projected) : null
+    };
+    const partial = {
+      key,
+      ...labels,
+      own: ownTally(now, key) ?? EMPTY_TALLY,
+      thenOwn: compared2 && then ? ownTally(then, key) : null,
+      span: ownSpan(now, key),
+      thenSpan: compared2 && then ? ownSpan(then, key) : null,
+      pace,
+      move,
+      landedBy: landed
+    };
+    return {
+      ...partial,
+      verdict: verdictOf(partial, compared2, then, today)
+    };
+  }
+  function attentionOf(milestones2) {
+    const overdue = milestones2.filter((scope) => scope.verdict === "overdue").sort((a, b) => a.move.planned - b.move.planned);
+    if (overdue.length) return {
+      scope: overdue[0],
+      kind: "overdue",
+      days: 0,
+      plan: 0,
+      pace: 0
+    };
+    let best = null;
+    let before = {
+      then: null,
+      planned: null,
+      projected: null,
+      plan: 0,
+      pace: 0,
+      total: 0
+    };
+    for (const scope of milestones2) {
+      const move = scope.move;
+      if (move.total === null) continue;
+      const days = move.total - (before.total ?? 0);
+      if (days >= NOTICEABLE && (!best || days > best.days)) {
+        best = {
+          scope,
+          kind: "origin",
+          days,
+          plan: (move.plan ?? 0) - (before.plan ?? 0),
+          pace: move.pace - before.pace
+        };
+      }
+      before = move;
+    }
+    return best;
+  }
+  function brief(view) {
+    const compared2 = view.then !== null && view.then.day !== view.now.day;
+    const whole = scopeOf(view, null, {
+      label: "All work",
+      title: "",
+      badge: "",
+      color: WHOLE_COLOR
+    }, compared2);
+    const milestones2 = view.stretches.map(({ phase, key, label: label2, color }) => scopeOf(view, key, {
+      label: label2,
+      title: phase.milestone && phase.milestone.title !== label2 ? phase.milestone.title : "",
+      badge: phase.milestone ? `S${phase.milestone.number}` : "",
+      color
+    }, compared2));
+    return {
+      today: view.now.day,
+      compared: compared2,
+      whole,
+      milestones: milestones2,
+      attention: attentionOf(milestones2)
+    };
+  }
+  function burnup(view, key, compared2) {
+    const scope = [];
+    const done = [];
+    const jumps = [];
+    const active = /* @__PURE__ */ new Set();
+    let before = null;
+    for (const row of until(view.recording.rows, view.now)) {
+      const own = ownTally(row, key);
+      if (!own) continue;
+      if (scope.length && scope[scope.length - 1][0] === row.day) {
+        scope.pop();
+        done.pop();
+      }
+      if (before && (own.steps !== before.steps || Math.abs(own.days - before.days) > EPSILON)) {
+        jumps.push({
+          day: row.day,
+          steps: own.steps - before.steps,
+          days: own.days - before.days
+        });
+      }
+      if (own.changed > 0 || before && own.done !== before.done) active.add(row.day);
+      scope.push([
+        row.day,
+        own.days
+      ]);
+      done.push([
+        row.day,
+        own.doneDays
+      ]);
+      before = own;
+    }
+    const stretches = key === null ? view.now.stretches : view.now.stretches.filter((one) => one.key === key);
+    const promised = promisedCurve(stretches);
+    const start2 = stretches[0]?.start;
+    const baseline2 = compared2 && view.then ? ownTally(view.then, key)?.days ?? null : null;
+    return {
+      scope,
+      done,
+      baseline: baseline2,
+      promised: start2 !== void 0 ? [
+        [
+          start2,
+          0
+        ],
+        ...promised
+      ] : promised,
+      jumps,
+      active: [
+        ...active
+      ].sort((a, b) => a - b)
+    };
+  }
+  function reachOf(snapshots) {
+    const [starts, ends, work] = [
+      [],
+      [],
+      []
+    ];
+    for (const one of snapshots) {
+      starts.push(one.day, ...one.stretches.map((stretch) => stretch.start));
+      ends.push(one.day, landingIn(one, null) ?? one.day);
+      work.push(toward(one, null).days, ...promisedCurve(one.stretches).map(([, days]) => days));
+    }
+    return {
+      from: Math.min(...starts),
+      day: Math.max(...ends),
+      days: Math.max(0, ...work)
+    };
+  }
+  function stepsOf(view, plan, key) {
+    if (key === null) return plan.steps;
+    return view.stretches.find((one) => one.key === key)?.phase.steps ?? [];
+  }
+  function changes(view, scope) {
+    const then = view.then;
+    if (!then || !scope.thenOwn) return null;
+    const now = scope.own;
+    const listed = changesSince(stepsOf(view, view.plan, scope.key), then.day);
+    const unnamed = now.steps - scope.thenOwn.steps - listed.added.length;
+    const whole = toward(view.now, null).steps - toward(then, null).steps - changesSince(view.plan.steps, then.day).added.length;
+    const throughNow = toward(view.now, scope.key);
+    const throughThen = toward(then, scope.key);
+    return {
+      since: then.day,
+      steps: now.steps - scope.thenOwn.steps,
+      days: now.days - scope.thenOwn.days,
+      added: listed.added,
+      estimates: listed.estimates,
+      unnamed,
+      moved: scope.key !== null && unnamed !== 0 && whole === 0,
+      doneSteps: now.done - scope.thenOwn.done,
+      doneDays: now.doneDays - scope.thenOwn.doneDays,
+      unexplained: (scope.move.plan ?? 0) !== 0 && throughNow.steps === throughThen.steps && Math.abs(throughNow.days - throughThen.days) < EPSILON
+    };
+  }
+
   // src/present.ts
   var ALL_KEY = "*";
   var ALL_LABEL = "All milestones";
@@ -2551,7 +2809,7 @@
     tail: 5,
     maxDays: 400
   };
-  var EPSILON = 1e-9;
+  var EPSILON2 = 1e-9;
   function run(start2, params, begin) {
     const world = new World(start2, params, begin);
     return world.play();
@@ -2884,7 +3142,7 @@
             const opens2 = "days" in delay ? now + delay.days : workingDaysBetween(this.begin, nextWorkingDay(delay.until)) - 1;
             this.waits.set(step2.id, opens2);
           }
-          if (this.waits.get(step2.id) <= now + EPSILON) {
+          if (this.waits.get(step2.id) <= now + EPSILON2) {
             this.over.add(step2.id);
             this.finished.set(step2.id, day);
             ended = true;
@@ -2914,7 +3172,7 @@
               if (step2.status === "pending") this.update(step2.id, {
                 status: "in-progress"
               });
-              if (this.effortOf(step2) - (this.progress.get(step2.id) ?? 0) <= EPSILON) land(step2.id);
+              if (this.effortOf(step2) - (this.progress.get(step2.id) ?? 0) <= EPSILON2) land(step2.id);
               else lane[slot] = step2.id;
             }
           }
@@ -2937,15 +3195,15 @@
         ];
         const ending = [
           ...this.waits
-        ].filter(([id]) => !this.over.has(id)).map(([, end]) => end - base - time).filter((left) => left > EPSILON && left <= 1 - time + EPSILON);
-        if (!busy.length && !ending.length || time >= 1 - EPSILON) return;
+        ].filter(([id]) => !this.over.has(id)).map(([, end]) => end - base - time).filter((left) => left > EPSILON2 && left <= 1 - time + EPSILON2);
+        if (!busy.length && !ending.length || time >= 1 - EPSILON2) return;
         const step2 = Math.min(1 - time, ...ending, ...busy.map(([id, rate]) => (this.effortOf(this.find(id)) - (this.progress.get(id) ?? 0)) / rate));
         for (const [id, rate] of busy) {
           this.progress.set(id, (this.progress.get(id) ?? 0) + rate * step2);
         }
         time += step2;
         for (const [id] of busy) {
-          if (this.effortOf(this.find(id)) - this.progress.get(id) <= EPSILON) land(id);
+          if (this.effortOf(this.find(id)) - this.progress.get(id) <= EPSILON2) land(id);
         }
       }
     }
@@ -4463,247 +4721,6 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     }
   };
 
-  // src/brief.ts
-  var EPSILON2 = 1e-9;
-  var NOTICEABLE = 2;
-  function promisedCurve(stretches) {
-    const byDay = /* @__PURE__ */ new Map();
-    for (const stretch of stretches) {
-      for (const knot of stretch.landings) {
-        byDay.set(knot.day, (byDay.get(knot.day) ?? 0) + knot.days);
-      }
-    }
-    let running = 0;
-    return [
-      ...byDay.keys()
-    ].sort((a, b) => a - b).map((day) => [
-      day,
-      running += byDay.get(day)
-    ]);
-  }
-  function paceOf(live, key, today) {
-    const knots = promisedCurve(through(live, key));
-    const done = toward(live, key).doneDays;
-    let earned = null;
-    let due = null;
-    let promised = 0;
-    for (const [day, cumulative] of knots) {
-      if (day <= today) promised = cumulative;
-      if (due === null && cumulative <= done + EPSILON2) earned = day;
-      else if (due === null) due = day;
-    }
-    return {
-      done,
-      promised,
-      short: Math.max(0, promised - done),
-      earned,
-      due,
-      // Work still undone can be done today at the soonest, or on Monday if today is a weekend.
-      lag: due !== null && due < today ? landingShift(due, nextWorkingDay(today)) : 0
-    };
-  }
-  function ownTally(snapshot, key) {
-    if (key === null) return toward(snapshot, null);
-    return snapshot.stretches.find((stretch) => stretch.key === key)?.tally ?? null;
-  }
-  function ownSpan(snapshot, key) {
-    if (!snapshot.stretches.length) return null;
-    if (key === null) return [
-      snapshot.stretches[0].start,
-      landingIn(snapshot, null)
-    ];
-    const stretch = snapshot.stretches.find((one) => one.key === key);
-    return stretch ? [
-      stretch.start,
-      stretch.finish
-    ] : null;
-  }
-  function landedBy(rows, live, key) {
-    const landed = (row) => {
-      const reached = toward(row, key);
-      return has(row, key) && reached.steps > 0 && reached.done === reached.steps;
-    };
-    if (!landed(live)) return null;
-    return until(rows, live).find(landed)?.day ?? live.day;
-  }
-  function verdictOf(scope, compared2, then, today) {
-    if (scope.landedBy !== null) return "landed";
-    if (scope.move.planned !== null && scope.move.planned < today) return "overdue";
-    if (!compared2) return "no-baseline";
-    if (then && !has(then, scope.key)) return "new";
-    const total = scope.move.total;
-    if (total !== null && total >= NOTICEABLE) return "later";
-    if (total !== null && total <= -NOTICEABLE) return "earlier";
-    return "on-track";
-  }
-  function scopeOf(view, key, labels, compared2) {
-    const { now, then } = view;
-    const today = now.day;
-    const pace = paceOf(now, key, today);
-    const planned = landingIn(now, key);
-    const landed = landedBy(view.recording.rows, now, key);
-    const projected = landed !== null || planned === null ? null : addWorkingDays(planned, pace.lag);
-    const was = compared2 && then ? landingIn(then, key) : null;
-    const move = {
-      then: was,
-      planned,
-      projected,
-      plan: was !== null && planned !== null ? landingShift(was, planned) : null,
-      pace: pace.lag,
-      total: was !== null && projected !== null ? landingShift(was, projected) : null
-    };
-    const partial = {
-      key,
-      ...labels,
-      own: ownTally(now, key) ?? EMPTY_TALLY,
-      thenOwn: compared2 && then ? ownTally(then, key) : null,
-      span: ownSpan(now, key),
-      thenSpan: compared2 && then ? ownSpan(then, key) : null,
-      pace,
-      move,
-      landedBy: landed
-    };
-    return {
-      ...partial,
-      verdict: verdictOf(partial, compared2, then, today)
-    };
-  }
-  function attentionOf(milestones2) {
-    const overdue = milestones2.filter((scope) => scope.verdict === "overdue").sort((a, b) => a.move.planned - b.move.planned);
-    if (overdue.length) return {
-      scope: overdue[0],
-      kind: "overdue",
-      days: 0,
-      plan: 0,
-      pace: 0
-    };
-    let best = null;
-    let before = {
-      then: null,
-      planned: null,
-      projected: null,
-      plan: 0,
-      pace: 0,
-      total: 0
-    };
-    for (const scope of milestones2) {
-      const move = scope.move;
-      if (move.total === null) continue;
-      const days = move.total - (before.total ?? 0);
-      if (days >= NOTICEABLE && (!best || days > best.days)) {
-        best = {
-          scope,
-          kind: "origin",
-          days,
-          plan: (move.plan ?? 0) - (before.plan ?? 0),
-          pace: move.pace - before.pace
-        };
-      }
-      before = move;
-    }
-    return best;
-  }
-  function brief(view) {
-    const compared2 = view.then !== null && view.then.day !== view.now.day;
-    const whole = scopeOf(view, null, {
-      label: "All work",
-      title: "",
-      badge: "",
-      color: WHOLE_COLOR
-    }, compared2);
-    const milestones2 = view.stretches.map(({ phase, key, label: label2, color }) => scopeOf(view, key, {
-      label: label2,
-      title: phase.milestone && phase.milestone.title !== label2 ? phase.milestone.title : "",
-      badge: phase.milestone ? `S${phase.milestone.number}` : "",
-      color
-    }, compared2));
-    return {
-      today: view.now.day,
-      compared: compared2,
-      whole,
-      milestones: milestones2,
-      attention: attentionOf(milestones2)
-    };
-  }
-  function burnup(view, key, compared2) {
-    const scope = [];
-    const done = [];
-    const jumps = [];
-    const active = /* @__PURE__ */ new Set();
-    let before = null;
-    for (const row of until(view.recording.rows, view.now)) {
-      const own = ownTally(row, key);
-      if (!own) continue;
-      if (scope.length && scope[scope.length - 1][0] === row.day) {
-        scope.pop();
-        done.pop();
-      }
-      if (before && (own.steps !== before.steps || Math.abs(own.days - before.days) > EPSILON2)) {
-        jumps.push({
-          day: row.day,
-          steps: own.steps - before.steps,
-          days: own.days - before.days
-        });
-      }
-      if (own.changed > 0 || before && own.done !== before.done) active.add(row.day);
-      scope.push([
-        row.day,
-        own.days
-      ]);
-      done.push([
-        row.day,
-        own.doneDays
-      ]);
-      before = own;
-    }
-    const stretches = key === null ? view.now.stretches : view.now.stretches.filter((one) => one.key === key);
-    const promised = promisedCurve(stretches);
-    const start2 = stretches[0]?.start;
-    const baseline2 = compared2 && view.then ? ownTally(view.then, key)?.days ?? null : null;
-    return {
-      scope,
-      done,
-      baseline: baseline2,
-      promised: start2 !== void 0 ? [
-        [
-          start2,
-          0
-        ],
-        ...promised
-      ] : promised,
-      jumps,
-      active: [
-        ...active
-      ].sort((a, b) => a - b)
-    };
-  }
-  function stepsOf(view, plan, key) {
-    if (key === null) return plan.steps;
-    return view.stretches.find((one) => one.key === key)?.phase.steps ?? [];
-  }
-  function changes(view, scope) {
-    const then = view.then;
-    if (!then || !scope.thenOwn) return null;
-    const now = scope.own;
-    const listed = changesSince(stepsOf(view, view.plan, scope.key), then.day);
-    const unnamed = now.steps - scope.thenOwn.steps - listed.added.length;
-    const whole = toward(view.now, null).steps - toward(then, null).steps - changesSince(view.plan.steps, then.day).added.length;
-    const throughNow = toward(view.now, scope.key);
-    const throughThen = toward(then, scope.key);
-    return {
-      since: then.day,
-      steps: now.steps - scope.thenOwn.steps,
-      days: now.days - scope.thenOwn.days,
-      added: listed.added,
-      estimates: listed.estimates,
-      unnamed,
-      moved: scope.key !== null && unnamed !== 0 && whole === 0,
-      doneSteps: now.done - scope.thenOwn.done,
-      doneDays: now.doneDays - scope.thenOwn.doneDays,
-      unexplained: (scope.move.plan ?? 0) !== 0 && throughNow.steps === throughThen.steps && Math.abs(throughNow.days - throughThen.days) < EPSILON2
-    };
-  }
-
   // src/ui/glyphs.ts
   var CELL_W = 14;
   var CELL_H = 12;
@@ -5603,7 +5620,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     for (const step2 of stretch?.phase.steps.filter(isDelay) ?? []) parts.push(`waits: ${step2.title}`);
     return parts.join("\n");
   }
-  function shiftsSvg(found, view, selected, width) {
+  function shiftsSvg(found, view, selected, width, reach) {
     const today = view.now.day;
     const scopes = found.milestones.filter((scope) => scope.key);
     const days = [
@@ -5619,6 +5636,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       }
     }
     for (const row of view.recording.saved) days.push(row.day);
+    if (reach) days.push(reach.from, reach.day);
     const [first, last] = [
       Math.min(...days) - 2,
       Math.max(...days) + 3
@@ -5724,7 +5742,9 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     out.push("</svg>");
     return {
       svg: out.join(""),
-      rows
+      rows,
+      first,
+      last
     };
   }
 
@@ -5972,17 +5992,6 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       ...points.filter(([when]) => when > day)
     ];
   }
-  function reachOf(view, key) {
-    const series = burnup(view, key, false);
-    const points = [
-      ...series.scope,
-      ...series.promised
-    ];
-    return {
-      day: Math.max(view.now.day, ...points.map(([day]) => day)),
-      days: Math.max(0, ...points.map(([, value]) => value))
-    };
-  }
   function delaySpans(view) {
     return view.stretches.flatMap(({ phase }) => phase.steps.filter(isDelay).flatMap((step2) => {
       const [begins, ends] = [
@@ -6048,7 +6057,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       ...data.scope.map(([day]) => day),
       ...data.promised.map(([day]) => day)
     ];
-    if (marks.reach) days.push(marks.reach.day);
+    if (marks.reach) days.push(marks.reach.from, marks.reach.day);
     for (const one of marked) {
       for (const day of [
         one.move.planned,
@@ -6338,12 +6347,13 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       class: "v3-figures"
     }, ...figures);
   }
-  function milestonesPage(found, view, state, on, drill = true) {
+  function milestonesPage(found, view, state, on, { drill = true, reach } = {}) {
     const holder = h("div", {
       class: "shifts-holder"
     });
     queueMicrotask(() => {
-      const { svg, rows } = shiftsSvg(found, view, state.scope, Math.max(560, holder.clientWidth));
+      const width = Math.max(560, holder.clientWidth);
+      const { svg, rows } = shiftsSvg(found, view, state.scope, width, reach);
       holder.innerHTML = svg;
       const element = holder.querySelector("svg");
       const rowAt = (event) => {
@@ -6684,13 +6694,21 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       named: true
     }), key);
   }
-  function v5View(view, state, on, recorded2, reach) {
+  function v5View(view, state, on, rows, locked) {
+    const reach = locked ?? reachOf([
+      ...rows,
+      view.live
+    ]);
     const marks = {
       ...V4_MARKS,
       delays: !lookingBack(view),
       reach
     };
-    return tabbedView(view, state, () => toolbar4(view, state, on, recorded2), (found) => state.page === "milestones" ? milestonesPage(found, view, state, on, false) : state.page === "calendar" ? calendarPage(view, state, on) : workPage(found, view, {
+    const recorded2 = rows.map((row) => row.day);
+    return tabbedView(view, state, () => toolbar4(view, state, on, recorded2), (found) => state.page === "milestones" ? milestonesPage(found, view, state, on, {
+      drill: false,
+      reach
+    }) : state.page === "calendar" ? calendarPage(view, state, on) : workPage(found, view, {
       ...state,
       scope: null
     }, marks));
@@ -7303,8 +7321,16 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
         writeHash();
       }
     };
-    const reach = app.locked ? runReach(state) : void 0;
-    return v5View(view, state, scrubbed, upToDay.rows.map((row) => row.day), reach);
+    const locked = app.locked ? runReach() : void 0;
+    return v5View(view, state, scrubbed, upToDay.rows, locked);
+  }
+  function runReach() {
+    const last = timeline2.frames[timeline2.frames.length - 1];
+    const end = snapshotOf(last.plan, last.day, app.options);
+    return reachOf(end ? [
+      ...recording.rows,
+      end
+    ] : recording.rows);
   }
   function redrawAround(live, fresh, path) {
     const [selector, ...deeper] = path;
@@ -7323,21 +7349,6 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     kept.before(...children.slice(0, at));
     kept.after(...children.slice(at + 1));
     if (deeper.length) redrawAround(kept, children[at], deeper);
-  }
-  function runReach(state) {
-    const last = timeline2.frames[timeline2.frames.length - 1];
-    const landed = last.plan.steps.every((step2) => isDelay(step2) || step2.status === "done");
-    const end = landed && timeline2.finished.size ? Math.max(...timeline2.finished.values()) : last.day;
-    const frame = timeline2.frames.find((one) => one.day === end) ?? last;
-    const view = present(frame.plan, frame.day, recordedBy(recording, frame.day), {
-      picked: state.scope,
-      then: resolvePick(state.then, frame.day),
-      now: LIVE,
-      lens: "calendar",
-      page: "progress",
-      whatIf: {}
-    }, app.options);
-    return view ? reachOf(view, null) : void 0;
   }
   function section(key, name, ...inner) {
     const details = h("details", {

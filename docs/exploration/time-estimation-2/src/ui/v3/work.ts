@@ -15,7 +15,7 @@ import { axisTicks, type Day, formatDays, isWorkingDay, shortDate } from "../../
 import { isDelay } from "../../model/graph.ts";
 import { landingOf, startDayOf } from "../../model/simulate.ts";
 import { niceCeiling, type Point } from "../../model/progress.ts";
-import { type Burnup, burnup, type Jump, type Scope } from "../../brief.ts";
+import type { Burnup, Jump, Reach, Scope } from "../../brief.ts";
 import { dayWord, type TimeView } from "../../present.ts";
 import { glyphPath } from "../glyphs.ts";
 import { esc, INK, n, PLAN, SECONDARY } from "../markup.ts";
@@ -78,29 +78,13 @@ export function stepsFrom(points: readonly Point[], day: Day): Point[] {
  * - `weekends`: a pale band on each day off, through both plots;
  * - `idle`: the done line dotted across a day on which no step changed status;
  * - `delays`: a hatched band over each wait still in the plan, named;
- * - `reach`: the least the axes hold, so a recording of the days holds still (the debugger's lock).
+ * - `reach`: the least the axes hold, so moving between days moves only the lines (`reachOf`).
  */
 export interface WorkMarks {
   weekends?: boolean;
   idle?: boolean;
   delays?: boolean;
   reach?: Reach;
-}
-
-/** A plot's extent: the last day on its axis, and the most work it holds. */
-export interface Reach {
-  day: Day;
-  days: number;
-}
-
-/** How far a Work plot of `key` reaches in `view` — at a run's end, the whole run. */
-export function reachOf(view: TimeView, key: string | null): Reach {
-  const series = burnup(view, key, false);
-  const points = [...series.scope, ...series.promised];
-  return {
-    day: Math.max(view.now.day, ...points.map(([day]) => day)),
-    days: Math.max(0, ...points.map(([, value]) => value)),
-  };
 }
 
 /** Each Delay in the plan that still waits: its title and the days it covers. */
@@ -209,7 +193,7 @@ export function workSvg(
 ): { svg: string; geometry: WorkGeometry } {
   const today = view.now.day;
   const days = [today, ...data.scope.map(([day]) => day), ...data.promised.map(([day]) => day)];
-  if (marks.reach) days.push(marks.reach.day);
+  if (marks.reach) days.push(marks.reach.from, marks.reach.day);
   for (const one of marked) {
     for (const day of [one.move.planned, one.landedBy]) if (day !== null) days.push(day);
   }

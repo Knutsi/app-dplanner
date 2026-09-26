@@ -6,6 +6,8 @@
  */
 
 import type { Day } from "../../model/calendar.ts";
+import type { Snapshot } from "../../model/progress.ts";
+import { type Reach, reachOf } from "../../brief.ts";
 import { lookingBack, type TimeView } from "../../present.ts";
 import { comparePicker } from "../compare.ts";
 import { h } from "../markup.ts";
@@ -14,7 +16,7 @@ import { saveButton } from "../v1/timetab.ts";
 import type { V3Page, V3State } from "../v3/state.ts";
 import { more, TABS, tabs } from "../v3/toolbar.ts";
 import { milestonesPage, tabbedView, workPage } from "../v3/view.ts";
-import { delaySpans, type Reach } from "../v3/work.ts";
+import { delaySpans } from "../v3/work.ts";
 import { budgetMenu } from "../v4/budget.ts";
 import { V4_MARKS, type V4Handlers } from "../v4/view.ts";
 import { efficiencyToggle } from "./efficiency.ts";
@@ -83,22 +85,29 @@ function calendarPage(view: TimeView, state: V3State, on: V4Handlers): HTMLEleme
   );
 }
 
+/**
+ * `rows`: every record up to today. `locked`: the debugger's whole-run axes, where it holds
+ * them; otherwise the axes hold every record up to today and the live plan, so History
+ * moves only the lines.
+ */
 export function v5View(
   view: TimeView,
   state: V3State,
   on: V5Handlers,
-  recorded: readonly Day[],
-  reach?: Reach,
+  rows: readonly Snapshot[],
+  locked?: Reach,
 ): HTMLElement {
+  const reach = locked ?? reachOf([...rows, view.live]);
   // Weekends and idle days come from the records; the waits are the live plan's alone.
   const marks = { ...V4_MARKS, delays: !lookingBack(view), reach };
+  const recorded = rows.map((row) => row.day);
   return tabbedView(
     view,
     state,
     () => toolbar(view, state, on, recorded),
     (found) =>
       state.page === "milestones"
-        ? milestonesPage(found, view, state, on, false)
+        ? milestonesPage(found, view, state, on, { drill: false, reach })
         : state.page === "calendar"
         ? calendarPage(view, state, on)
         : workPage(found, view, { ...state, scope: null }, marks),

@@ -9,7 +9,7 @@
 
 import { axisTicks, type Day, shortDate } from "../../model/calendar.ts";
 import { isDelay } from "../../model/graph.ts";
-import type { Brief, Scope } from "../../brief.ts";
+import type { Brief, Reach, Scope } from "../../brief.ts";
 import { dayWord, lookingBack, type TimeView } from "../../present.ts";
 import { clip, esc, INK, n, SECONDARY, textWidth } from "../markup.ts";
 import { CHECK_R, landedCheck } from "./marks.ts";
@@ -30,6 +30,8 @@ export interface ShiftRow {
 export interface Shifts {
   svg: string;
   rows: ShiftRow[];
+  first: Day; // The date axis.
+  last: Day;
 }
 
 function arrow(from: number, to: number, y: number, color: string): string {
@@ -60,11 +62,13 @@ function words(scope: Scope, view: TimeView): string {
   return parts.join("\n");
 }
 
+/** `reach`: the least the date axis holds, so moving between days moves only the rows. */
 export function shiftsSvg(
   found: Brief,
   view: TimeView,
   selected: string | null,
   width: number,
+  reach?: Reach,
 ): Shifts {
   const today = view.now.day;
   const scopes = found.milestones.filter((scope) => scope.key);
@@ -75,6 +79,7 @@ export function shiftsSvg(
     }
   }
   for (const row of view.recording.saved) days.push(row.day);
+  if (reach) days.push(reach.from, reach.day);
   const [first, last] = [Math.min(...days) - 2, Math.max(...days) + 3];
   const plotW = width - LEFT - RIGHT;
   const x = (day: Day) => LEFT + ((day - first) / (last - first)) * plotW;
@@ -251,5 +256,5 @@ export function shiftsSvg(
     }</text>`,
   );
   out.push("</svg>");
-  return { svg: out.join(""), rows };
+  return { svg: out.join(""), rows, first, last };
 }
