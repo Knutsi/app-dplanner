@@ -26,7 +26,7 @@ from dplanner.modules.step_order.module import ORDER_KIND, OrderActivity
 
 # The module rather than the class: a name starting with "Test" bound here would be collected.
 from dplanner.modules.testing import activity as testing
-from dplanner.modules.time_estimates.module import TIME_KIND, TimeEstimatesActivity
+from dplanner.modules.time_estimates.activity import TIME_KIND, TimeEstimatesActivity
 
 VIEWS = [
     pytest.param(PROJECT_KIND, ProjectActivity, "_sync", id="canvas"),

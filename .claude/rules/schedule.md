@@ -3,7 +3,7 @@ paths:
   - "src/dplanner/modules/{time_estimates,progression,step_order,estimation}/**"
   - "src/dplanner/domain/{schedule,progression,ordering}.py"
   - "src/dplanner/theme/palettes.py"
-  - "tests/modules/test_{time_estimates,time_progress,progress_chart,progression_board,step_order,milestone_colors,estimation_bulk}.py"
+  - "tests/modules/test_{time_estimates,time_progress,time_present,progression_board,step_order,milestone_colors,estimation_bulk}.py"
   - "tests/domain/test_{schedule,progression,ordering}.py"
   - "tests/cli/test_time_matrix.py"
   - "scripts/render_boards.py"
@@ -33,11 +33,13 @@ paths:
   **wave 1 is called *Wave 1***, the words *Ready to start* now naming the board alone.
   The CSV export and the published report keep the day counts and the dates, because a
   spreadsheet is opened to sort and sum.
-- **Staffing what-ifs are derived; only the assumptions are stored.** The time estimates
-  tab and `dplanner schedule matrix` are one derivation — `domain/schedule.py`'s
-  `phases` over `parallel_finish`, a deterministic two-pool greedy simulation (longest
-  remaining chain first, ties by project order) handed `days_for`, `is_agent` and
-  `is_milestone` as functions. **Milestones run in sequence**: each stretch is a
+- **Staffing what-ifs are derived; only the assumptions are stored.** `dplanner schedule
+  matrix` and the Time tab are one derivation — `domain/schedule.py`'s `phases` over
+  `parallel_finish`, a deterministic two-pool greedy simulation (longest remaining chain
+  first, ties by project order) handed `days_for`, `is_agent` and `is_milestone` as
+  functions. The matrix prints the grid of teams; **the tab runs one staffing, the stored
+  one** (`Readers.snapshot`, the recorder's own call) — trying another team is choosing it.
+  **Milestones run in sequence**: each stretch is a
   milestone's `scope.cone` truncated at the milestones before it, simulated on its own
   (`parallel_finish`'s `among`) from where the previous one lands — with what is left of
   that day — or from a date of its own, when it has one and that is later; an earlier
@@ -48,20 +50,20 @@ paths:
   factor, the colour map and the **team** the calendar is dated for on the project node
   (one `Assumptions` record, `schedule.py`'s `read_assumptions`/`write_project` — a
   control changing one carries the others as stored), and a milestone's start date and
-  colour on its step — written by the tab's controls (a matrix tile click *is* the
-  team) and `dplanner schedule focus` / `schedule palette` / `schedule team` / `schedule
-  milestone` alike. **Milestones are shades of one map, dealt by place in the
-  sequence** (`theme/palettes.py`'s `PALETTES` and `shades`), never a list of hues. Under the
-  staffing grid, **Milestones** is one table (`milestones.py`'s `MilestoneTable`): a row
-  per stretch, led by *All milestones*, the whole plan — when it begins (the day the
-  sequence gives it, quieter than a day of its own, which is typed in the cell), where it
-  lands, its days and how much of it has landed. Picking a row **highlights, never hides**: the calendar and every plot keep the
-  whole project and fade what is outside the picked stretch. *Save Snapshot…*, Export, the
-  picked milestone's colour and *Begin When the Previous Lands*, then the focus factor, the
-  calendar-or-project-days lens, the palette and the two plans compared sit in one
-  `Toolbar` over the page, and a banner over the answer counts
-  the steps running as zero, with *Estimate missing* opening the Estimates tab on them
-  through `TimeEstimatesDeps.estimate_missing`. A cycle a
+  colour on its step — written by the tab's **Budget** (`budget.py`: people, agents and
+  focus in one popover, one undoable *Set Budget* writing only what the pick changed, from
+  today on), its ⋯ palette, the milestone's own **Schedule** block on its Details tab
+  (`section.py`, `shown_for` milestones — a milestone's assumptions are edited where the
+  milestone is) and `dplanner schedule focus` / `schedule palette` / `schedule team` /
+  `schedule milestone` alike. **Milestones are shades of one map, dealt by place in the
+  sequence** (`theme/palettes.py`'s `PALETTES` and `shades`), never a list of hues. **Four
+  figures lead the tab** (`activity.py`) — where the plan lands (✓ and the day once done),
+  how far that moved in working days against the plan compared with, how much is done by
+  estimated days, and how many steps nobody sized, a click opening the Estimates tab on
+  them through `TimeEstimatesDeps.estimate_missing` — over one `Toolbar`: the pages (a
+  `Segmented`: *Milestones*, *Work*, *Calendar*), *Compared with*, the Budget, *Save
+  Snapshot…*, ⋯ and Export. A pick on the Milestones page **highlights, never hides**:
+  the calendar fades the other stretches. A cycle a
   hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says so instead
   of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
   worker pools, one greedy simulation* has the reasoning.
@@ -114,52 +116,38 @@ paths:
   snapshots, taken on purpose under a title and a note — *Save snapshot…* in the tab's
   strip (`snapshots.py`), `dplanner progress save|list|remove` — a decision, so pushed
   through the undo stack, never replaced by a later change and carried along by every
-  automatic write. **The plots compare a then with a now, and both are picked in the
-  strip** (`Pick`, `resolve`, `pick_words`): the then side is the plan at the project's
-  start unless a saved snapshot or a day is chosen, resolved as the last record on or
+  automatic write. **The page compares the plan now with a plan then, picked in the
+  strip** (`Pick`, `resolve`, `pick_words`): the plan at the project's start unless the
+  plan a week ago, a saved snapshot or a day is chosen, resolved as the last record on or
   before the day (the earliest row for a project older than its history, but **never
   today's own record** — not even for a plan whose start is still to come — which is the
-  plan now and no comparison at all); the now side is the live plan unless a saved snapshot or a day is chosen, and read as of one the
-  curves stop at its day. **Every heading names the plan it is compared with, record
-  included** — *Scope change — versus the plan at start, recorded 9 Sep*, *versus
-  Kickoff review (1 Nov)*, *Progress — as of Review 2 (1 Dec)* — worded once
-  (`pick_words`, `scope_words`, `shift_words`) for the picker's tooltip, the window and
-  the report, so which two plans are compared is never a guess; a saved snapshot's day
-  is a hairline through every plot with its title. **The plots are read a page at a
-  time** (`chart.py`'s `PAGES`, toggles over them): *Milestone shifts* (a row each: the
-  landing then hollow, the landing now filled, an arrow between), *Progress* (the plan
-  now in each stretch's shade against what landed in ink — no *ahead* or *behind*:
-  re-dated from what is done, the two agree by today; and *Scope change* — the plan then
-  dashed **over** the plan now, opaque and paler — so a plan unchanged since reads as two lines in one place —
-  and **the area between them filled by direction**: the attention amber where the plan
-  now promises more by a date than it did, the bad red where it promises less, the good
-  green as a line where the two agree) and *Volume* (`progress.volume` and `remaining`:
-  the total of estimated days the plan came to on each recorded day as a step curve,
-  and the same less what had landed, on one scale in days — `volume_scale`, shared
-  with the report); *⤢* opens `ChartDialog` with every page at once, the same widget fed
-  the same record, so both redraw together. Every page shares one locked time axis —
-  the date marks (days, Mondays or month firsts, `axis_ticks`) as hairlines through
-  every plot, the labels printed once under the last, the edges the earliest and
-  latest date any plot has to show. A span a milestone's own start date leaves empty is
-  flat and dotted (`progress.idle`, the same one `progress show` prints). **Both
-  surfaces draw the same plots** — `time_estimates/chart.py` in the window, `cli/report/`'s
-  `Chart` of `Plot`s and `Stretch`es on the page and the PDF — so what they share is
-  `domain/schedule.py`: `share_at` reads a line at a date and `change_runs` cuts two
-  plans into the runs the fill is coloured by, and `progress.py` words `shift_words`
-  once. **Every milestone's landing is marked and named on the
-  progress line** — a name elided, and dropped rather than squeezed when its neighbour's
-  reaches that far — **a milestone row dates both its marks and drops a hairline to the
-  axis** (`row_dates`, the same fit rule, both surfaces), a page's plots grow with the
-  window to a ceiling of twice their floor (bounds set from the data, never from a
-  resize), and their names are set bold. **A change re-runs the page after a quiet
-  spell, and the strip says *Recalculating…* until it has** — the debounce is the
-  coalescing, and a worker thread is not the answer (*A view refresh is coalesced*). The
-  delta in words (`delta`, `delta_words`) and `changes_since` — the steps born and the
-  estimates changed after the baseline's recorded day, from the step's `created` stamp
-  and the estimate aspect's own history (`estimation`'s `read_history`; every `write`
-  carries the value it replaced, one row per day, format 2; `dplanner estimate show`
-  reads it back) — are the terminal's and the report's prose; the charts say it with
-  the plots. `ARCHITECTURE.md`'s *Progress against the plan* has the reasoning.
+  plan now and no comparison at all; a snapshot saved earlier today is one). **Which plan
+  is compared with is named, record included** — *the plan at start, recorded 9 Sep*,
+  *Kickoff review (1 Nov)* — worded once (`pick_words`) for the picker's tooltip, the
+  report's chart heading and `progress show`; a saved snapshot's day is a dashed hairline
+  through every plot. **What a page draws is one `Presented`** (`present.py`, Qt-free,
+  the prototype's `present.ts`): the figures, each milestone's landing then and now, and
+  the work over the recorded days (`Burnup`), with **the axes holding the reach of every
+  record** (`reach_of`) so moving between days moves only the lines. *Milestones*
+  (`shift_view.py`) is a row per milestone — the landing then hollow, now filled, a check
+  once done, an arrow between, each mark dated (`row_dates`'s rule) and a hairline to the
+  axis. *Work* (`work_view.py`) is two plots on **one scale in days**
+  (`Presented.scale`): the scope against the plan compared with, warm where it holds more
+  and cool where less, a ▲ or ▼ each day it changed (`scope_marks`, by the day's sum);
+  and the work done, **dotted across a day no step changed status** (`Burnup.active`),
+  beside the plan's schedule from the day shown on, each milestone marked where it ends.
+  Weekends are pale bands through both. **Both surfaces draw the same page**: the report's
+  `Chart` of `Plot`s (`shift`, `scope`, `done`) and `Stretch`es is `present.py`'s output
+  said as plain data (`time_estimates/report.py`), drawn by `cli/report/drawings.py`.
+  **A change re-runs the page after a quiet spell, and the strip's indicator turns until
+  it has** — the debounce is the coalescing, and a worker thread is not the answer (*A
+  view refresh is coalesced*). The delta in words (`delta`, `delta_words`) and
+  `changes_since` — the steps born and the estimates changed after the baseline's
+  recorded day, from the step's `created` stamp and the estimate aspect's own history
+  (`estimation`'s `read_history`; every `write` carries the value it replaced, one row
+  per day, format 2; `dplanner estimate show` reads it back) — are the terminal's prose;
+  the page says it with the plots. `ARCHITECTURE.md`'s *Progress against the plan* has
+  the reasoning.
 - **Today is the clock's, never the machine's.** Whatever dates a plan reads the day from
   `core/clock.py`'s `Clock` — `TimeEstimatesDeps.clock` and the reporting module's in the
   window (`services.clock`), `CliContext.clock` in a verb — and `format_date`/`short_date`

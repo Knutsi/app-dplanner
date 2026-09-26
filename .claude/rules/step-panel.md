@@ -83,8 +83,9 @@ paths:
   asked for.
 - **The step panel's first tab is Details, composed from blocks.** A module that wants its
   editor there instead of behind a tab of its own registers into `services.step_details` —
-  the `InspectorSectionRegistry`'s third instantiation; estimate, description and the spec
-  figures are the registrants, and `modules/step_properties/details.py` stacks them
+  the `InspectorSectionRegistry`'s third instantiation; estimate, a milestone's schedule
+  (`time_estimates/section.py`), description and the spec figures are the registrants, and
+  `modules/step_properties/details.py` stacks them
   (`stretch` on the section says who gets the leftover height, `shown_for` hides a block
   with nothing to say). **A block host gives the leftover to a trailing `addStretch(0)`
   and caps every stretch-0 block at `QSizePolicy.Maximum`** — both halves, or the blocks

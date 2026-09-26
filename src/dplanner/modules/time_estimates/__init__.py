@@ -1,1 +1,2 @@
-"""The staffing matrix: people-by-agents over the graph, and the focus factor behind it."""
+"""When the plan lands with its team, and the work behind it: the Time tab, the staffing
+matrix and the progress history."""

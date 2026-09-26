@@ -1,9 +1,10 @@
 """The plan's assumptions, and the staffing matrix they turn the estimates into.
 
 The derivation is the domain's (``domain/schedule.py``'s ``phases`` over ``parallel_finish``);
-this is the module's half — where the stored assumptions live, and the report both surfaces
-render. The tab and ``dplanner schedule matrix`` read :func:`time_report`, so the window and
-the terminal cannot answer "how long with two people and three agents" two different ways.
+this is the module's half — where the stored assumptions live, and the grid of teams
+``dplanner schedule matrix`` prints (:func:`time_report`). The tab, the recorder and the
+report date the plan for the stored team through the same walk (``progress.take``), so the
+window and the terminal cannot answer "when does this team land it" two different ways.
 
 **Qt-free**, like ``estimation/schedule.py``: the CLI reaches this file and must start on a
 machine with no graphics stack. ``tests/test_architecture.py``'s ``HEADLESS_FILES`` names it.
@@ -87,7 +88,7 @@ DEFAULT_TEAM = (HUMANS[0], AGENTS[0])
 # enough to name.
 SWATCH_SHADES = 8
 
-# A project with no milestones is one stretch, in the report's own blue — the matrix's tint.
+# A project with no milestones is one stretch, in the report's own blue.
 WHOLE_COLOR = "#5f87d7"
 # Work after the last milestone has no milestone to be coloured for.
 REMAINDER_COLOR = "#8b8f96"

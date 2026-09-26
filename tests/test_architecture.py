@@ -92,6 +92,8 @@ HEADLESS_FILES = (
     "gh.py",
     "pdf.py",
     "report.py",
+    # What the Time tab shows, as data: the report reads it too.
+    "present.py",
     "themes.py",
     "dictation.py",
     # The Time tab's simulator (`time_estimates/simulation/`): a script and the tests play

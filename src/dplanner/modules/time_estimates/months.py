@@ -1,23 +1,21 @@
-"""A run of months with the plan lit on it — each milestone's stretch in its own colour.
+"""Six months with the plan lit on them — each milestone's stretch in its own colour.
 
-The landing list under it says "v1 · 24 September"; this shows it: from the start date
-to the last landing, every stretch of work filled with its milestone's hue, fainter over
-the weekends the schedule skips, and the day a milestone lands drawn as a filled mark. One
-stretch can be *emphasised* (the host says which, from either list beside the calendar),
-and the others fade so the work leading up to that milestone stands alone.
+From the month before the work starts, two rows of three: every stretch of work filled with
+its milestone's hue, fainter over the weekends the schedule skips, and the day a milestone
+lands drawn as a filled mark carrying the milestone's name, white on its colour in either
+theme, where the cell has room for it. One stretch can be *emphasised* (the host says
+which, from the milestone picked on another page), and the others fade so the work leading
+up to that milestone stands alone. The arrows beside it page through time.
 
-**The calendar fills the width it is given.** It is the one surface on the page that is
-not a fixed-size drawing: the number of months across follows the width and the day cells
-grow with it, so a wide window shows a wide calendar rather than a small one in a corner.
-The height follows from the rows, which is why it is `Expanding` by `Fixed` and sets its own
-height. The window of months runs from the month before the work starts, covers at least
-six, grows to keep the last landing in view (capped — a multi-year plan keeps its dates in
-the list rather than a wall of months), and rounds up to fill its last row.
+**The calendar fills the width it is given.** The day cells grow with the width, so a wide
+window shows a wide calendar rather than a small one in a corner, and a narrow one drops
+to fewer months across; the height follows from the rows (``heightForWidth``).
 
 Every colour but the milestone shades comes from the palette at paint time; the shades are
-the ones the list under it wears (``schedule.py``'s ``phase_colors``), so the calendar and
-the list read as one report. Hovering a day answers precisely — which stretch, which
-working day of how many, a weekend, a landing — so the calendar itself stays wordless.
+the milestones' own (``schedule.py``'s ``milestone_colors``, named by ``present.names_of``),
+so the calendar and the Milestones page read as one. Hovering a day answers precisely —
+which stretch, which working day of how many, a weekend, a landing — so the calendar itself
+stays wordless but for the names on the days milestones land.
 """
 
 from dataclasses import dataclass
@@ -28,6 +26,7 @@ from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
     QColor,
     QFont,
+    QFontMetricsF,
     QHelpEvent,
     QMouseEvent,
     QPainter,
@@ -40,15 +39,16 @@ from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 from dplanner.domain.schedule import SATURDAY, format_date, working_days_between
 from dplanner.theme.tokens import SECONDARY_ALPHA
 
-MONTHS_SHOWN_AT_LEAST = 6
-MONTHS_SHOWN_AT_MOST = 12
-MONTHS_ACROSS_AT_MOST = 4
+MONTHS_SHOWN = 6
+MONTHS_ACROSS_AT_MOST = 3
 
-# Day cells grow with the width between these, on the 4-point scale's neighbours.
+# Day cells grow with the width between these — tall enough, at the top, to name what lands.
 CELL_MIN = 18
-CELL_MAX = 28
+CELL_MAX = 44
 CELL_GAP = 2
-MONTH_GAP = 16
+MONTH_GAP = 28
+# A landing names its milestone once its cell is at least this big.
+NAMED_AT = 30
 TITLE_HEIGHT = 20
 DAY_RADIUS = 3
 
@@ -66,6 +66,7 @@ FADE = 0.4
 # reversed on a landing, which is filled.
 DAY_ALPHA = 190
 WEEKEND_ALPHA = 90
+LANDING_INK = "#ffffff"
 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
@@ -98,13 +99,9 @@ def _add_months(first: date, count: int) -> date:
     return date(total // 12, total % 12 + 1, 1)
 
 
-def _month_span(start: date, finish: date | None) -> tuple[date, int]:
-    """The first month shown and how many: one before the start, six at least, the
-    landing kept in view, capped."""
-    begin = _add_months(_first_of(start), -1)
-    last = _add_months(_first_of(finish or start), 1)
-    count = (last.year - begin.year) * 12 + (last.month - begin.month) + 1
-    return begin, max(MONTHS_SHOWN_AT_LEAST, min(MONTHS_SHOWN_AT_MOST, count))
+def _first_shown(start: date) -> date:
+    """The first month shown: the one before the work starts."""
+    return _add_months(_first_of(start), -1)
 
 
 class MonthsView(QWidget):
@@ -147,9 +144,8 @@ class MonthsView(QWidget):
         self._start = start
         self._bands = bands
         self._today = today
-        finish = max((band.finish for band in bands), default=None)
-        self._begin, self._wanted = _month_span(start, finish)
-        self._begin = _add_months(self._begin, self._offset)
+        self._begin = _add_months(_first_shown(start), self._offset)
+        self._wanted = MONTHS_SHOWN
         self._relayout()
         self.updateGeometry()  # The month count changed, so the height for this width did.
 
@@ -352,15 +348,26 @@ class MonthsView(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), DAY_RADIUS, DAY_RADIUS)
         number = QColor(ink)
-        if landing:
-            # A filled mark takes the ground's colour for its number, so it reads on the hue.
-            number = QColor(self.palette().base().color())
-            if self._emphasised is not None and band is not None and band.key != self._emphasised:
-                number = QColor(ink)
+        faded = self._emphasised is not None and band is not None and band.key != self._emphasised
+        if landing and not faded:
+            number = QColor(LANDING_INK)  # White on the hue, in either theme, as the ✓ is.
         elif band is None:
             number.setAlpha(WEEKEND_ALPHA if weekend else DAY_ALPHA)
         painter.setPen(number)
-        painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(when.day))
+        named = landing and band is not None and rect.height() >= NAMED_AT
+        if not named:
+            painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(when.day))
+            return
+        assert band is not None
+        upper, lower = (
+            rect.adjusted(0, 2, 0, -rect.height() / 2),
+            rect.adjusted(2, rect.height() / 2 - 2, -2, -2),
+        )
+        painter.drawText(upper, Qt.AlignmentFlag.AlignCenter, str(when.day))
+        name = QFontMetricsF(painter.font()).elidedText(
+            band.label, Qt.TextElideMode.ElideRight, lower.width()
+        )
+        painter.drawText(lower, Qt.AlignmentFlag.AlignCenter, name)
 
     # -- input ---------------------------------------------------------------------------------
 

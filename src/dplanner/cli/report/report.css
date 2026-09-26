@@ -56,7 +56,11 @@
   svg .marker[fill="#fcfbf9"] { fill: var(--surface); }
   svg .pill text { fill: var(--surface); }
   svg .pill rect { stroke: var(--surface); }
-  svg .idle[stroke="#fcfbf9"] { stroke: var(--surface); }
+  svg .idle-mask, svg .ring { stroke: var(--surface); }
+  svg .idle, svg .key-ink { stroke: var(--ink); }
+  svg .series-baseline, svg .schedule, svg .key-secondary { stroke: var(--secondary); }
+  svg .weekend, svg .done-area { fill: var(--ink); }
+  svg .landing-name, svg .today-word { fill: var(--ink); }
   svg .asked { fill: var(--ink); }
 }
 

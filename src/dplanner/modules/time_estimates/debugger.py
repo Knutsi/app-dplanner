@@ -36,8 +36,9 @@ from dplanner.framework.debounce import DebounceService
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import note
+from dplanner.modules.time_estimates.activity import TimeEstimatesActivity
 from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.module import TimeEstimatesActivity, TimeEstimatesDeps
+from dplanner.modules.time_estimates.module import TimeEstimatesDeps
 from dplanner.modules.time_estimates.months import WEEKDAYS
 from dplanner.modules.time_estimates.simulation.edits import Budget, budget_of, rebudget
 from dplanner.modules.time_estimates.simulation.frames import Writers

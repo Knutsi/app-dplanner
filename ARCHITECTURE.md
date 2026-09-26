@@ -4511,10 +4511,10 @@ clock's*.
 ## Time estimates: two worker pools, one greedy simulation
 
 `schedule()` and `critical_path()` print the honest brackets — one worker, unlimited
-workers. The time estimates tab and `dplanner schedule matrix` answer what lands between
-them: `domain/schedule.py`'s `parallel_finish` simulates the graph under a stated cap of
-*humans* and *coding agents*, and a small grid of those simulations is the report. The
-decisions worth writing down:
+workers. `dplanner schedule matrix` answers what lands between them:
+`domain/schedule.py`'s `parallel_finish` simulates the graph under a stated cap of
+*humans* and *coding agents*, and a small grid of those simulations is its report; the
+Time tab runs the one the project is staffed for. The decisions worth writing down:
 
 - **Two pools, pure.** An agent step waits for an agent slot, every other step for a human
   one, and neither pool takes the other's work — even an idle human never picks up an agent
@@ -4538,12 +4538,14 @@ decisions worth writing down:
   on every change for the ordering's reason — `dplanner estimate set` changes the answer
   with no window running to notice. The factor is an assumption a person chose, so it
   persists like the start date does: project-node module data, written through one command
-  (the tab's spinbox and `dplanner schedule focus` push the same write).
-- **The grid is a heatmap: more time is more ink.** Tiles carry one constant low-alpha
-  hue scaled by the makespan (the diff tint's trick, so it reads on every theme), which
-  makes the dependency floor visible as the flat, lightest region — "more capacity
-  changes nothing" needs no legend. The printed number is the dependable channel; the
-  tint only orients. The two units are a lens toggle over one grid, never two tables.
+  (the tab's Budget and `dplanner schedule focus` push the same write).
+- **The tab asks one question, so it runs one staffing.** The tab once drew the whole
+  grid — a heatmap of twelve simulations under a lens between calendar and project days —
+  and a tile click chose the team. Twelve answers made the one a person came for, *when
+  does this team land it*, a tile among many, and every refresh paid for eleven nobody
+  read. The tab now runs the stored team (`Readers.snapshot`, the recorder's own call), and
+  trying another team is choosing it in the Budget, one undo away; `schedule matrix` keeps
+  the grid for the terminal, where comparing teams is the point.
 - **Milestones run in sequence, and a stretch is a cone.** A plan with milestones is not
   one simulation but one per milestone: its stretch is `scope.cone` truncated at the
   milestones before it — what is new since the last one — plus itself, and a step two
@@ -4561,7 +4563,7 @@ decisions worth writing down:
   (the aspect that names a milestone is explicit that a landing date is the schedule's to
   answer, never stored). A date later than the previous landing opens a gap, which the
   calendar shows as one; a date earlier than it is **pushed** to the sequence's own day
-  and reported (`Phase.pushed`, the ⚠ in the landing list, the sentence in the CLI) rather
+  and reported (`Phase.pushed`, the report's milestone table, the sentence in the CLI) rather
   than honoured by overlapping — overlap would make the sequence a lie one milestone at a
   time. The first milestone is the exception: nothing lands before it, so its date wins
   over the project's start, which is only the default. Both writes — the date and the
@@ -4579,8 +4581,8 @@ decisions worth writing down:
   sequence*, which is exactly what changed. An override still pins one milestone without
   renumbering the rest, and the swatch's menu offers the map's own shades first so an
   override usually stays in the family. A project without milestones is one stretch in
-  the report's own blue (`WHOLE_COLOR`), as it always was. The calendar and the list
-  share the hex through `schedule.py` and never store a `QColor`, for the
+  the report's own blue (`WHOLE_COLOR`), as it always was. The calendar and the
+  Milestones page share the hex through `schedule.py` and never store a `QColor`, for the
   palette-snapshot reason in *The palette a painter is handed is a snapshot*.
 - **And the map is the project's, which is what let the shade leave this tab.** For a
   while the shades lived only here: the calendar said *this is milestone 2 of 4* and the
@@ -4609,39 +4611,41 @@ decisions worth writing down:
   map changed from a terminal, from the Time tab or by an undo, because the module
   subscribes to `module_data_changed` for that one id — a state callback must never read a
   file (*The context is announced once per turn*).
-- **The page is split at a seam, and the calendar takes the width.** What you set on the
-  left — focus, the staffing picker — and what it answers on the right — the colour map
-  and the month arrows on one strip, the calendar, then the milestones. The seam starts
-  off-centre: the left holds nothing wider than the staffing grid, so the calendar gets
-  the rest. The milestones were once two lists, the settable
-  one on the left and the landing one on the right, painted alike so a reader could cross
-  between them; the first real project showed nobody wants to cross. **One list now, one
-  row per stretch, the date you set and the date it lands on the same line** — the one
-  place on the page where a control sits on the answering side, and worth the exception
-  because the answer is what you set the date *against*. The months view is the one
-  drawing on the page that is not fixed-size: months across follow the width, cells grow
-  with it, the last row fills out. Picking a milestone in the list emphasises its stretch
-  in the calendar and fades the rest, which is how "the work leading up to it" is shown
-  without a word. There is no headline and no explainer: the list's last row *is* the
-  answer, and every number's meaning is in a tooltip.
+- **A page at a time, under four figures.** The page was split at a seam — what you set
+  on the left, the calendar, the milestone list and the plots on the right — and each
+  redesign added to both halves until neither fitted a laptop. The v5 prototype settled
+  it: four figures lead — where the plan lands (✓ and the day, once it is done), how far
+  that moved against the plan compared with, how much is done, how many steps nobody
+  sized (a click opens the Estimates tab on them) — and one strip holds everything that is
+  set: the pages (*Milestones*, *Work*, *Calendar*; a `Segmented`), what the plan is
+  compared with, the Budget, *Save Snapshot…*, ⋯ for the colour map and Export. **A
+  milestone's own start date and colour left the page for its Details tab** (`section.py`'s
+  *Schedule* block, `shown_for` milestones): they are assumptions about one milestone,
+  edited where the milestone is, and the list that carried them was the page's widest
+  control. The calendar is the one drawing that is not fixed-size — months across follow
+  the width, cells grow with it, a landing day names its milestone once the cell has room.
+  Picking a milestone on the Milestones page emphasises its stretch in the calendar and
+  fades the rest, which is how "the work leading up to it" is shown without a word; a pick
+  hides nothing. Every number's meaning is in its tooltip.
 - **A plan that cannot be dated says so.** The model refuses to create a cycle, but every
   walk here guards against one a hand-edited file carries — and until now guarded
   *silently*, placing the looped steps at depth zero and dating a plan that has no order.
   `ordering.cyclic()` names them (Kahn's peeling: whatever cannot be shed sits on or behind
-  a loop), `time_report` returns a report with `cycle` set and empty grids, the tab shows
-  the names in place of the calendar, and `schedule matrix` exits non-zero with them.
+  a loop), `time_report` returns a report with `cycle` set and empty grids,
+  `Readers.snapshot` returns nothing, the tab shows the names in place of the pages, and
+  `schedule matrix` exits non-zero with them.
   A view that computes on every change has to be robust to every state the file can be
   in, or it is a view that sometimes shows a picture of nothing.
-- **The team is an assumption, so it is stored — and a tile click is the write.** The
+- **The team is an assumption, so it is stored — and the Budget is the write.** The
   matrix's selection used to be view state that reset on every open, which meant the
   calendar, the landing list and `schedule matrix` could each be dating the plan for a
   different team. It is the project's now — `{"team": [2, 3]}` beside the focus factor
   and the palette, one `Assumptions` record read and written whole so no control has to
-  juggle the other two — pushed by the tile click as *Choose Team* and by `dplanner
-  schedule team`, restored when the tab reopens, and the team every stretch, every row's
-  percentage and every recorded day are computed for. When the agent columns collapse
-  (no agent steps), a stored team the grid cannot show selects the nearest seat it can,
-  and a sync is never a click.
+  juggle the other two — pushed by the Budget popover as *Set Budget* (people, agents when
+  the plan has agent steps, and the focus: a pick writes only what it changed, and applies
+  from today on, because `write_project` keeps the focus work in flight ran at) and by
+  `dplanner schedule team`, and the team every stretch and every recorded day are
+  computed for.
 
 ### The plan re-dates itself from what has happened
 
@@ -4787,16 +4791,11 @@ decisions that carry it:
   over itself and called the pair a comparison — two lines in one place under a heading
   saying *scope change*, which is a claim nobody recorded. `baseline()` takes `today` and
   all three surfaces pass it, so the window, the report and `progress show` agree on when
-  there is nothing to compare with. The baseline is painted *last*, in a paler shade
-  mixed opaque: a plan unchanged since the basis has a baseline that coincides with it,
-  and a translucent dash of the same hue under the solid line was invisible — the first
-  cut showed one line under a caption saying *unchanged*, and the reader took the other
-  for a line that had failed to draw. Dashes riding on the solid line say *two lines in
-  the same place*, which is the fact. A span the plan leaves empty (a milestone's own
-  start date holding its work back past the previous landing) is dotted and pulled toward
-  the surface, with a knot in the expected line at the day work resumes so the gap is flat
-  rather than a slope through days nothing is planned for; `progress.idle` derives it
-  from the snapshot's stretches, so `progress show` prints the same gaps. The change
+  there is nothing to compare with. A span the plan leaves empty (a milestone's own
+  start date holding its work back past the previous landing) is flat in the expected
+  line, with a knot at the day work resumes rather than a slope through days nothing is
+  planned for; `progress.idle` derives it from the snapshot's stretches, and `progress
+  show` prints it. The change
   list behind the delta needed a fact nobody kept: **an estimate now remembers what it
   was** — every write of the aspect carries the value it replaced with the day, one row
   per day (the value that stood when the day began), format 2 so an older build refuses
@@ -4806,100 +4805,55 @@ decisions that carry it:
   delta compares against, so what the list names is what moved it, and a change on the
   record's own day is inside that day's record (last-wins). The basis is a way of
   looking — view state, never stored.
-- **The scope plot fills the area between the two plans, by direction.** Drawing both
-  curves and washing the space between them in one hue said *something moved* and left
-  the reader to work out which way. The fill now carries the answer: where the plan now
-  runs **above** the plan at the basis day it promises the same work sooner — pulled in —
-  and the area wears the attention amber; **below** it, work has slipped, and the area
-  wears the bad red; where the two agree there is no area to fill at all, so that run is
-  drawn as a line in the good green, which is also the only way "unchanged" can be a
-  visible state on an area chart. Muted throughout (a region tint, DESIGN.md's exception
-  #2) because the two curves are still what a reader measures against. The runs come from
-  `domain/schedule.py`'s `change_runs`, which samples the two lines together and closes a
-  run **at the day they cross** rather than at the next knot — so the colour changes
-  exactly where the plan did — and both surfaces read it, because an area that changed
-  colour a day apart on screen and on paper would be two answers to one question.
-- **Three plots on one locked axis, not three lines on one plot.** The baseline, the
-  plan now and what actually landed shared a plot for a while, and a reader had to
-  untangle three curves and a legend to answer any one question. Each question now
-  has a plot of its own, stacked (`chart.py`): *Progress* — the plan now against what
-  landed, re-dated from what is done (the words *ahead* and *behind* that sat beside
-  today's dot went with that — *The plan re-dates itself from what has happened*); *Scope change* —
-  the baseline against the plan now, with the band between them; *Milestones* — a row
-  per milestone, its landing then hollow, its landing now filled, an arrow between
-  them saying which way it went, because a landing that moved was the hardest thing to
-  read off the 100 % line. What makes three plots one chart is the **axis**: the same
-  dates run under all three, the marks (`axis_ticks`: every day, every Monday or every
-  month's first, the finest whose labels fit the width — a reader places a point by the
-  nearest mark, and two labels at the ends of a span were not a scale) drop as
-  hairlines through every plot, the labels are printed once under the last, and the
-  edges are the earliest and latest date any of the three has to show — so a point
-  placed in one plot is placed in all of them. The plan line runs in each stretch's
-  shade, the calendar's colours on the curve, and **picking a milestone highlights, it
-  never hides**: the whole project stays on every plot and everything outside the
-  picked stretch fades to a third, which is what the calendar already did with its
-  bands. Scoping the plots to the pick was tried first and lost the comparison the
-  reader came for — where this milestone sits in the plan it is part of. The delta in
-  words and the list of what moved it left the screen with that redesign: the plots say
-  it, the rows say the percentages, and the sentence is the terminal's and the
-  report's (`delta_words`, `changes_since`). **The report draws the same three plots**,
-  from the same data: `cli/report/parts.py`'s `Chart` carries `Plot`s and the `Stretch`es
-  all three read, `drawings.py` stacks them in one SVG, and what the two surfaces must
-  agree on lives below both — `share_at` and `change_runs` in `domain/schedule.py`,
-  `shift_words` in `progress.py`. The renderer *slices* the plan
-  polyline per stretch instead of clipping it: `clipPath` is not something QtSvg honours,
-  and the PDF is rendered through it. The same pass moved the milestone list
-  under the staffing grid with a **Start dates** table above it — the project's own
-  start and each milestone's *Begin…* are what you set, and they now sit on the side of
-  the seam that holds what you set — put the focus factor, the lens, the palette and
-  Export in one control strip over the page, and gave the answer a banner: *n steps
-  unestimated · counted as 0d*, with *Estimate missing* opening the Estimates tab on
-  exactly those rows through a callback on the module's Deps, so the Time tab never
-  names the estimation module.
-- **The milestones are one list, not a table of names above a list of the same names.**
-  *Start dates* and *Milestones* listed the same stretches one under the other: a reader
-  had to match a name in the first against a name in the second, and the panel spent
-  twice its height saying it. One row now carries the cause and the effect — *begins
-  21 Jun · lands 3 Aug* — with the step's own title beside the label, so the list says
-  which step each milestone is without a second column of names. The row that leads the
-  list is the whole plan, and what *it* begins on is the project's own start (a row
-  declares that with `MilestoneEntry.sets_project` rather than the list inferring it from
-  the position). Under an undated row the caption says the day the sequence gives it, so
-  every row says when its work runs and not only when it ends. **The list scrolls under
-  the staffing grid**, which stays: the grid is the question the whole page answers, and
-  a plan with thirty milestones would scroll it away exactly when the answers are being
-  compared. That is why the left half is no longer a scroll area of its own — it is a
-  pinned head and a scrolling list, and only the answer side scrolls whole.
-- **A comparison is two snapshots, and both are picked where the reader can see them.**
-  The first cut compared "the plan at the basis day" with "now", the basis a date field
-  under the plots, and the day the record was actually taken on reported only by the
-  terminal. Users read the plots without knowing what they were comparing: the concept
-  of a snapshot was in the file and nowhere on the screen. So the strip now carries
-  *Compare [then] with [now]* — two `SnapshotPicker`s (`snapshots.py`), each a button
-  wearing the name of the plan it reads and dropping a menu built when it opens: the
-  side's own default (the plan at the project's start; the live plan now), every
-  snapshot somebody saved, and *Day…* for any recorded day. The choice is a `Pick`
-  (`progress.py`), view state like the picked milestone, and `resolve` finds the record
-  that stands for it: the start and a day through the baseline rule — the last record
-  on or before the day, else the earliest, but **never today's own record** standing in
-  for an earlier day, which would draw the plan over itself and call it a comparison —
-  a saved snapshot by title, the live plan for *Now*. Two sides rather than one because
-  the question at a review is as often *what did we think on 1 November against what we
-  thought on 1 December* as *against now*, and read as of an earlier snapshot the
-  curves stop at its day (`progress.until`). Three was considered and left: two answers
-  every question anybody asked, and a third picker is a third thing to explain.
-- **Every heading names the plan it is compared with — the record included.** The
-  earlier rule named the day the reader asked for and hid which record stood in for it,
-  because a control saying *1 June* under a heading saying *7 September* read as a
-  contradiction. With the pick explicit that reasoning inverts: the pick *is* the thing
-  compared, and hiding the record made the comparison untrustworthy. `pick_words`
-  words a pick once — *the plan at start, recorded 9 September*, *Kickoff review
-  (1 November)*, *the plan at 3 September* when a record fell on that very day, *now* —
-  and the picker's tooltip, the scope plot's heading (`scope_words`), every milestone
-  row's sentence (`shift_words`, *3 working days later than Kickoff review said*), the
-  report and `progress show` all read that one sentence. A saved snapshot's day is a
-  hairline through every plot with its title at the top, so the moments somebody chose
-  to remember are on the axis every plot shares.
+- **The Work page: the scope and the work done, on one scale in days.** The plots once
+  answered in shares — the plan's curve against what landed, the plan then against the
+  plan now with the band between filled by direction — and a share hides the question a
+  growing plan raises first: a plan that doubled overnight and landed half of it reads
+  *50 %* on both days. The v5 page (the prototype in `docs/exploration/time-estimation-2`)
+  reads days instead, two plots on **one scale** (`Presented.scale`, in steps finer than
+  1-2-5 because two stacked plots cannot afford half of each left empty), so a height in
+  one is the same work in the other. *Scope* is the work the plan held on each recorded
+  day against what the plan compared with held, the area between warm where it holds more
+  and cool where less, with one ▲ or ▼ on each day it changed, by the day's sum
+  (`scope_marks`: a day that added a step and took one away nets to nothing and says
+  nothing). *Work done* is what was done by then, **dotted across a day no step changed
+  status** (`Burnup.active`, from each row's `changed` count — or a moved done count, for
+  a row written before the count was kept), so a day of work that finished nothing is told
+  from a quiet one; beside it the plan's schedule from the day shown on, dashed, and each
+  milestone where it ends — a check on the done line once its work is done, a dot on the
+  schedule until then. Weekends are pale bands, because a flat week reads differently when
+  two of its days were never working ones.
+- **The Milestones page is a row per milestone.** Where the plan compared with landed it
+  (hollow), where the plan now does (filled — a check once its work is done), an arrow
+  between, each mark's date beside it — outside the pair where there is room, inside where
+  there is not, left out rather than squeezed (`row_dates`'s rule, both surfaces) — and a
+  hairline to the axis, so the day is read off the scale. The sentence the old rows
+  carried is the row's tooltip (`milestone_words`), and the figure over the page says the
+  whole plan's move in working days (`moved_words`: *▶ +3d*).
+- **The axes hold still.** Every plot is drawn against the reach of every record up to the
+  day shown and the live plan (`reach_of`: the first day any starts, the last any lands,
+  the most work any holds), so moving between days moves only the lines.
+- **What a page draws is one `Presented`, and the report draws the same one.**
+  `present.py` (Qt-free) is the prototype's `present.ts` and `brief.ts` less what the
+  resume model made redundant: re-dated from what has happened, a plan is never behind
+  itself, so there is no lag, no projection at today's pace and no verdict. The tab and
+  `time_estimates/report.py` both read it, and `cli/report/parts.py`'s `Chart` of `Plot`s
+  (`shift`, `scope`, `done`) and `Stretch`es is that page said as plain data, which
+  `drawings.py` draws for the page and, through QtSvg, the PDF. Weekends and today's word
+  are the renderer's own, facts of the calendar rather than of the plan. The report heads
+  the chart with the plan it compares with — one heading for all three plots, as the tab's
+  one picker is — and names the saved snapshots in its note, because paper has no tooltip.
+- **One picker names the plan compared with; the page is the plan now.** The strip once
+  carried *Compare [then] with [now]*, two pickers, because a review asks *1 November
+  against 1 December* as often as *against now*. The v5 page keeps the then side — the plan
+  at start, **the plan a week ago** (`A_WEEK_AGO`, the anchor of a weekly review), a saved
+  snapshot, *Day…* — and the other side becomes History, a slider through the recorded
+  days, rather than a second picker to explain. `resolve` finds the record a pick names —
+  the last on or before the day, else the earliest, **never today's own record**, which is
+  the plan now — and `pick_words` words it once for the picker's tooltip, the report's
+  heading and `progress show`. A snapshot saved earlier today *is* something to compare
+  with: `Presented.compared` asks whether the then side is the plan now, not whether it
+  carries today's date. A saved snapshot's day is a dashed hairline through every plot.
 - **Saved snapshots are a second list, kept whole; automatic days stay last-wins.** A
   snapshot a person saves — *"What we thought on 1 November"*, with a note on the
   occasion — is a record of a decision, and it must mean the plan *at that moment*:
@@ -4919,78 +4873,20 @@ decisions that carry it:
   copy of the project, and the comparison it enables ("what would last month's plan
   have said with two more agents") is not the one the plots exist for. What a snapshot
   keeps is what the plan *promised* that day, for the team and focus of that day, and
-  that is what a comparison against it must hold still. The volume plots are the part
-  of a snapshot the team never touches — a total of estimated days is the same under
-  any staffing — which is why they can be read across every snapshot without a
-  re-simulation.
-- **Volume is derived from the snapshots, so it costs the file nothing.** The scope
-  over time — how much work the plan came to on each recorded day, and how much of it
-  was still ahead — is the one question the progress and scope plots cannot answer,
-  because both draw shares: a plan that doubled overnight and landed half of it reads as
-  *50 %* on both days. Every automatic row already carries each stretch's tally, so
-  `progress.volume` and `remaining` read the total and the total less the done days
-  off the rows through *now* as **step curves** (a record is what the plan was until the
-  next one; a slope between two records would claim a change on days nothing was
-  recorded). The two plots share **one scale in days** (`volume_scale`, the largest value
-  either reaches rounded up to 1, 2 or 5 times a power of ten, in the window and the
-  report alike), so the gap between the total and the remaining is read by eye as what
-  has landed; the remaining plot draws the total under it in a paler dash for the same
-  reason the scope plot draws the plan then over the plan now.
-- **The plots are read a page at a time, and the window of their own shows every page.**
-  Five plots stacked under a calendar outran any screen, and the two that answer one
-  question were rarely the two on it. `chart.py`'s `PAGES` — *Milestone shifts*,
-  *Progress* (the plan against what landed, and the scope change), *Volume* — are three
-  pages of one widget over one `ChartData`, toggled by the row over the plots where the
-  measure toggle used to be, and the page decides the plots and the height while the
-  data is one record whichever page is up. Progress is what the tab opens on, because
-  it is where a reader almost always is; a milestone plot with nothing to row says *No
-  milestones yet* in one row's height rather than leaving the page. `ChartDialog` is
-  the same widget on the `all` page: where the tab has to choose, a window of its own
-  has the room, and a reader comparing pages wants them under each other.
+  that is what a comparison against it must hold still. The scope is the part of a
+  snapshot the team never touches — a total of estimated days is the same under any
+  staffing — which is why the Scope plot reads across every snapshot without a
+  re-simulation, and why `progress.volume` and `remaining` (what `progress show` prints)
+  are step curves over the rows and cost the file nothing.
 - **A change re-runs the page after a quiet spell, and the strip says so meanwhile.**
-  The refresh is the heaviest reaction in the application — two dozen simulations, the
-  matrix, the calendar, the list and every plot — and it was already coalesced
-  (`REFRESH_DELAY_MS`, *A view refresh is coalesced*). What it lacked was a word: for
-  half a second after an edit the page showed a plan that had since changed, with
-  nothing to say it was stale. *Recalculating…* in the strip appears when a change
-  arrives and leaves when the report has re-run. Moving the derivation to a worker
-  thread was considered and rejected for the reason that section gives — pure Python
-  competing for the GIL, and a thread alive at teardown is the suite's SIGSEGV shape —
-  so the answer to "the recalculation must not lag the UI" stays the debounce, and the
-  answer to "the user must see it is recalculating" is one label.
-- **A plot is given the room the window has, up to a ceiling.** The two share plots were
-  a fixed 112 px whatever the screen, so a tall window ran out of page and a laptop
-  ran out of plot. They now take whatever height the host gives the chart over its
-  minimum, in equal parts, and stop at twice their floor: past that a line stretches
-  into a wall and says no more than it did. The milestone rows never grow — a row is a
-  row. The bound is set from the *data* (`_bound_height`), never from a resize, because
-  a widget that resizes itself inside its own resize event is what put a scroll area
-  into the loop `months.py` documents. And a plot's name is set **bold** with air above
-  it, so the three read as three headings rather than as captions under the plot above.
-- **Expanding the plots is the same widget with more room.** *⤢* beside the page toggles
-  opens `ChartDialog` — a second `ProgressChart` fed the same `ChartData` the tab feeds
-  the inline one, so a plan that changes while the window is open redraws in both and
-  there is no second rendering to drift. It holds no state, so closing it loses nothing: the
-  text dialog's rule (*expanding an editor is a second binding, not a copy*) applied to
-  a view that has nothing to bind.
-- **A milestone row dates both its marks and drops a line to the axis.** The axis marks
-  weeks or months, and the shift a row draws is often days: the size a reader wants is in
-  figures, so each mark carries its own date — the landing now on the far side of the
-  pair, the plan then's on its own, outside them where there is room and inside where
-  there is not, and left out rather than squeezed (`row_dates`, the landing names' rule
-  applied to a row). A hairline falls from the landing to the axis, so the day it lands
-  can be read off the scale under the plot rather than estimated by eye. Both surfaces
-  draw them: `drawings.py`'s shift plot does the same, with the report's own
-  character-width estimate standing in for font metrics.
-- **Every milestone landing is marked and named on the progress line.** The plan line
-  already changes shade at each landing; what it could not say was *which* milestone
-  that was, and a reader had to count rows in the plot below to find out. Each landing
-  now carries a mark in its stretch's shade with the milestone's name in secondary ink
-  a gap to its left, above the line where a rising curve leaves the room. A name is
-  elided past 90 px and **dropped** when the name before it reaches that far: two names
-  squeezed together say less than one, and the milestone plot below names every one of
-  them anyway. Only the first plot carries them — the milestone plot's rows are its
-  subject, and a name beside every mark there would be the row header said twice.
+  The refresh is the heaviest reaction on the tab — a simulation, the calendar and every
+  plot — and it is coalesced (`REFRESH_DELAY_MS`, *A view refresh is coalesced*). For half
+  a second after an edit the page shows a plan that has since changed, so the strip's
+  `UpdatingIndicator` turns from the moment a change arrives until the page has re-run.
+  Moving the derivation to a worker thread was considered and rejected for the reason that
+  section gives — pure Python competing for the GIL, and a thread alive at teardown is the
+  suite's SIGSEGV shape — so the answer to "the recalculation must not lag the UI" stays
+  the debounce, and the answer to "the user must see it is recalculating" is the indicator.
 
 ## A test belongs to a step, and a step carries several
 

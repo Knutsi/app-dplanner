@@ -48,11 +48,10 @@ ColumnKind = Literal["text", "number", "days", "date", "status", "key"]
 FacetKind = Literal["text", "markdown", "link", "status", "days", "date"]
 EdgeKind = Literal["requires", "relates"]
 SeriesRole = Literal["plan", "baseline", "actual"]
-# Which of a chart's stacked plots a series belongs to: where the work stands against
-# the plan, how the plan itself changed, where each milestone moved, and how much work
-# the plan came to over time — the total, and what was still ahead.
-PlotKind = Literal["status", "scope", "shift", "volume", "remaining"]
-AMOUNT_PLOTS: Final[tuple[PlotKind, ...]] = ("volume", "remaining")
+# A chart's stacked plots: where each milestone lands against the plan compared with, how
+# much work the plan held on each recorded day, and how much of it was done by then.
+PlotKind = Literal["shift", "scope", "done"]
+AMOUNT_PLOTS: Final[tuple[PlotKind, ...]] = ("scope", "done")
 
 
 @dataclass(frozen=True)
@@ -113,32 +112,44 @@ class Series:
 
 @dataclass(frozen=True)
 class Stretch:
-    """One milestone's stretch of work: its shade, where the plan now runs it, and where
-    the plan on the basis day ran it.
+    """One stretch of work: its shade, where it ends now — the day its work was done
+    (``done``), else where the plan lands it — and where the plan compared with landed it.
 
-    One shape, three readers, as in the window: the status plot colours the plan line by
-    the stretch it is crossing, the scope plot compares the two spans, and the shift plot
-    gives each a row. ``note`` is the row's sentence — worded by the module that owns the
-    plan, never here.
+    One shape, two readers, as in the window: the shift plot gives each milestone a row,
+    and the done plot marks each where it ends — a check on the done line, or a dot on
+    the schedule. ``note`` is the row's words — worded by the module that owns the plan,
+    never here.
     """
 
     label: str
     color: str  # "#rrggbb"
-    start: date | None = None  # Where the plan now runs it.
     finish: date | None = None
-    was_start: date | None = None  # Where the plan on the basis day ran it.
     was_finish: date | None = None
+    done: bool = False
     step_id: StepId = ""
     note: str = ""
+
+
+@dataclass(frozen=True)
+class Change:
+    """A day the scope changed, in sum: work added (``up``) or taken away, in words."""
+
+    day: date
+    up: bool
+    words: str
 
 
 @dataclass(frozen=True)
 class Plot:
     """One of a chart's stacked plots: what it draws and what it is called.
 
-    A ``shift`` plot draws the chart's stretches and carries no series of its own.
-    A share plot runs 0..1; an amount plot (``volume``, ``remaining``) runs
-    0..``ceiling``, in days, and its series are step curves.
+    A ``shift`` plot draws the chart's milestones and carries no series of its own. The
+    two amount plots run 0..``ceiling`` in days on one scale, so a height in one is the
+    same work in the other, and their series are step curves. ``scope`` holds the scope
+    (``plan``) against the plan compared with (``baseline``: one point, held flat from its
+    day) and marks each of its ``changes``; ``done`` holds what was done (``actual``) —
+    solid across its ``active`` days, when some step changed status, dotted across the
+    rest — and the plan's schedule from today on (``plan``).
     """
 
     kind: PlotKind
@@ -146,6 +157,8 @@ class Plot:
     series: tuple[Series, ...] = ()
     note: str = ""
     ceiling: float = 1.0
+    changes: tuple[Change, ...] = ()
+    active: tuple[date, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -155,8 +168,7 @@ class Chart:
     The renderer takes the axis from every plot at once: the same dates run under all of
     them, the date marks fall as hairlines through each, the labels are printed once
     under the last, and the edges are the earliest and latest date anything here has to
-    show. ``idle`` names the spans the plan leaves empty, drawn flat and dotted;
-    ``marks`` are the saved snapshots — a day and its title — drawn as a hairline
+    show. ``marks`` are the saved snapshots — a day and its title — drawn as a hairline
     through every plot.
     """
 
@@ -165,7 +177,6 @@ class Chart:
     today: date
     plots: tuple[Plot, ...] = ()
     stretches: tuple[Stretch, ...] = ()
-    idle: tuple[tuple[date, date], ...] = ()
     marks: tuple[tuple[date, str], ...] = ()
     note: str = ""
 
@@ -173,6 +184,11 @@ class Chart:
     def milestones(self) -> tuple[Stretch, ...]:
         """The stretches a milestone closes — the shift plot's rows."""
         return tuple(stretch for stretch in self.stretches if stretch.step_id)
+
+    @property
+    def marked(self) -> tuple[Stretch, ...]:
+        """What the done plot marks: the milestones — the whole plan where there are none."""
+        return self.milestones or self.stretches[:1]
 
 
 @dataclass(frozen=True)

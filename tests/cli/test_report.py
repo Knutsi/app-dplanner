@@ -11,7 +11,7 @@ import json
 import re
 import zipfile
 from dataclasses import fields, is_dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pytest
@@ -19,7 +19,16 @@ import pytest
 from dplanner.cli.discovery import open_library
 from dplanner.cli.report import website
 from dplanner.cli.report.assemble import build
-from dplanner.cli.report.parts import Chart, Contribution, Graph, Table
+from dplanner.cli.report.parts import (
+    Change,
+    Chart,
+    Contribution,
+    Graph,
+    Plot,
+    Series,
+    Stretch,
+    Table,
+)
 from dplanner.core.png import encode_rgb
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
@@ -104,10 +113,11 @@ def test_every_source_speaks_plain_data(cli_library, plan):
     assert [c.label for c in steps.columns][:5] == ["Key", "Step", "Kind", "Status", "Estimate"]
 
 
-def test_the_progress_chart_is_the_windows_plots_on_one_axis(cli_library, plan):
-    """Each plot answers one question, and the renderer takes the axis from all of them at
-    once: the same first and last day, the labels drawn once under the last plot. The
-    volume plots share one scale, in days."""
+def test_the_progress_chart_is_the_tabs_pages_on_one_axis(cli_library, plan):
+    """The Time tab's Milestones and Work pages, said as data: a row per milestone, then
+    the scope and the work done on one scale in days. The renderer takes the axis from
+    every plot at once: the same first and last day, the labels drawn once under the
+    last plot."""
     from dplanner.cli.report.drawings import LIGHT, chart_svg
 
     with open_library(cli_library, default_module_formats(), io.StringIO()) as context:
@@ -122,27 +132,27 @@ def test_the_progress_chart_is_the_windows_plots_on_one_axis(cli_library, plan):
             today=date(2026, 9, 6),
         )
     chart = next(p for p in report.sections["overview"] if isinstance(p, Chart))
-    # No earlier plan is recorded, so there is nothing to compare scope against and that
-    # plot is left out rather than drawn empty.
-    assert [plot.kind for plot in chart.plots] == ["status", "shift", "volume", "remaining"]
-    status = chart.plots[0]
-    volume, remaining = chart.plots[2:]
-    assert volume.ceiling == remaining.ceiling >= 1.0
-    assert [series.role for series in remaining.series] == ["baseline", "plan"]
-    assert [series.role for series in status.series] == ["plan", "actual"]
+    assert [plot.kind for plot in chart.plots] == ["shift", "scope", "done"]
+    _shift, scope, done = chart.plots
+    assert scope.ceiling == done.ceiling >= 1.0
+    # No earlier plan is recorded, so the scope has nothing to be compared with and the
+    # heading names none.
+    assert [series.role for series in scope.series] == ["plan"]
+    assert [series.role for series in done.series] == ["actual", "plan"]
+    assert chart.title == "Progress"
     # One stretch per milestone plus the work after the last one; only the milestone gets
-    # a row, and its sentence is the one the window's tooltip says.
+    # a row, and its words are the ones the window's tooltip says.
     assert [stretch.label for stretch in chart.stretches] == ["v1"]
     (v1,) = chart.milestones
-    assert v1.step_id and v1.note.startswith("v1 lands ")
-    assert "by estimated days" in chart.note  # the measure the whole report reads
+    assert v1.step_id and "v1" in v1.note and "plan now:" in v1.note
+    assert "estimated days" in chart.note  # the measure the whole report reads
     svg = chart_svg(chart, LIGHT)
-    assert svg.count('class="plot ') == 4
+    assert svg.count('class="plot ') == 3
     assert svg.count('data-unit="days"') == 2  # the page's tooltip reads those in days
-    assert 'data-kind="status"' in svg and 'data-kind="shift"' in svg
-    # The window's decorations, drawn the same way here: the milestone's landing named on
-    # the progress line, and on its own row a date beside the mark with a line dropping
-    # from it to the axis.
+    assert 'data-kind="shift"' in svg and 'data-kind="done"' in svg
+    # The window's decorations, drawn the same way here: the milestone named where it
+    # ends on the done plot, and on its own row a date beside the mark with a line
+    # dropping from it to the axis.
     assert 'class="landing-name"' in svg and ">v1</text>" in svg
     assert svg.count('class="drop"') == 1
     assert svg.count('class="row-date"') == 1
@@ -154,6 +164,69 @@ def test_the_progress_chart_is_the_windows_plots_on_one_axis(cli_library, plan):
         for y in re.findall(r'class="axis" x="[\d.]+" y="([\d.]+)" text-anchor="middle"', svg)
     ]
     assert dates and all(y > last_plot for y in dates)
+
+
+def test_the_work_plots_draw_what_the_tabs_do():
+    """The renderer alone, over parts built by hand: the scope warm from the day it grew
+    past the plan compared with, with its ▲ and the day's words; the done line dotted
+    across the days no step changed status; a done milestone checked on its row and on
+    the done line; weekends banded; and today's own word under the axis."""
+    from dplanner.cli.report.drawings import LIGHT, chart_svg
+
+    monday = date(2026, 9, 7)
+    day = timedelta(days=1)
+    chart = Chart(
+        "progress",
+        "Progress",
+        monday + 9 * day,
+        plots=(
+            Plot("shift", "Milestones"),
+            Plot(
+                "scope",
+                "Scope",
+                (
+                    Series("Scope", ((monday, 10.0), (monday + 2 * day, 12.0)), "plan"),
+                    Series("Plan then", ((monday, 10.0),), "baseline"),
+                ),
+                ceiling=15.0,
+                changes=(Change(monday + 2 * day, True, "+1 step, +2d on 9 Sep"),),
+            ),
+            Plot(
+                "done",
+                "Work done",
+                (
+                    Series("Done", ((monday, 0.0), (monday + day, 3.0)), "actual"),
+                    Series(
+                        "The plan's schedule",
+                        ((monday + 9 * day, 3.0), (monday + 14 * day, 12.0)),
+                        "plan",
+                    ),
+                ),
+                ceiling=15.0,
+                active=(monday + day,),
+            ),
+        ),
+        stretches=(
+            Stretch(
+                "v1",
+                "#445566",
+                finish=monday + day,
+                was_finish=monday + 2 * day,
+                done=True,
+                step_id="s1",
+                note="S1 v1\nthen: 9 Sep\ndone by 8 Sep",
+            ),
+        ),
+    )
+    svg = chart_svg(chart, LIGHT)
+    assert svg.count('class="change-more"') == 1 and svg.count('class="change-less"') == 0
+    assert "<title>+1 step, +2d on 9 Sep</title>" in svg
+    assert 'class="series series-baseline"' in svg
+    # Wednesday to today — a week and a day — is one run in which nobody changed a status.
+    assert svg.count('class="idle"') == 1
+    assert svg.count('class="done-mark"') == 3  # the shift plot's key, its row, its mark
+    assert svg.count('class="weekend"') >= 2  # a band in each of the two work plots
+    assert 'class="today-word"' in svg
 
 
 def test_report_html_carries_every_step_and_escapes_what_people_typed(cli, plan, tmp_path):

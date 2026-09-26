@@ -1025,9 +1025,6 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     ) -> TimeEstimatesDeps:
         """The Time tab's deps over ``library``: the window's, or the simulator's scratch
         world, which differs only in what is handed in here — one recipe, never two."""
-        # Estimates, agent-ness, statuses and milestones through the owners' Qt-free
-        # readers — the tab never learns what any of them is stored as.
-        readers = _time_readers()
         return TimeEstimatesDeps(
             library=library,
             debounce=debounce,
@@ -1037,17 +1034,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             tabs=services.tabs,
             clock=clock,
             day_over=day_over,
-            days_for=readers.days_for,
-            is_agent=readers.is_agent,
-            milestone_label=readers.milestone_label,
-            status_for=readers.status_for,
-            since_for=readers.since_for,
-            is_marker=readers.is_marker,
-            estimate_history=readers.estimate_history,
-            step_key=readers.key_of,
-            start_of=lambda project_id: readers.start_of(
-                library.project(project_id), clock.today()
-            ),
+            # Estimates, agent-ness, statuses and milestones through the owners' Qt-free
+            # readers — the tab never learns what any of them is stored as.
+            readers=_time_readers(),
             # Clicking the calendar re-dates the plan: one undoable write of the
             # estimation module's own entry, composed here so neither module imports
             # the other.
@@ -1057,10 +1046,11 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 )
             ),
             estimate_missing=estimate_missing,
+            details=services.step_details,
             parent=services.window,
         )
 
-    # Constructed before the list because the projects index opens the matrix through it.
+    # Constructed before the list because the projects index opens the tab through it.
     time_estimates = TimeEstimatesModule(
         time_deps(
             library,

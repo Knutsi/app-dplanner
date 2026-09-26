@@ -27,7 +27,6 @@ from dplanner.modules.time_estimates.progress import (
     delta,
     delta_words,
     expected,
-    nice_ceiling,
     pick_words,
     read_history,
     read_saved,
@@ -36,8 +35,6 @@ from dplanner.modules.time_estimates.progress import (
     resolve,
     saved_with,
     saved_without,
-    scope_words,
-    shift_words,
     take,
     volume,
     write_history,
@@ -266,23 +263,6 @@ def test_a_pick_names_which_recorded_plan_a_side_of_the_comparison_reads(plan):
     assert pick_words(AT_START, None, today) == ""
 
 
-def test_the_scope_heading_names_the_plan_compared_with():
-    """The pick the reader made, with the record that stood in for it — and it says so
-    plainly when nothing was recorded to compare against."""
-    assert scope_words("the plan at start, recorded 7 September") == (
-        "Scope change — versus the plan at start, recorded 7 September"
-    )
-    assert scope_words("") == "Scope change — nothing to compare with"
-    today = date(2026, 9, 10)
-    assert shift_words("v2", date(2026, 9, 18), date(2026, 9, 23), "Kickoff review", today) == (
-        "v2 lands 23 September — 3 working days later than Kickoff review said (18 September)"
-    )
-    assert shift_words("v2", None, date(2026, 9, 23), "Kickoff review", today) == (
-        "v2 lands 23 September — not in Kickoff review"
-    )
-    assert shift_words("v2", None, date(2026, 9, 23), "", today) == "v2 lands 23 September"
-
-
 def test_the_delta_says_what_was_added_and_how_the_landing_moved(plan):
     library, project = plan
     key = key_of(plan, "D")
@@ -426,10 +406,10 @@ def test_recording_writes_only_when_the_day_says_something_new(plan):
 
 
 def test_a_milestone_whose_start_is_later_opens_a_gap_the_plan_holds_flat(plan):
-    """D's own start date holds its stretch back past B's landing: the span is idle, each
-    milestone is marked where it lands, and the expected line holds flat from B's landing
-    to the day work resumes. A weekend between two stretches is not a gap."""
-    from dplanner.modules.time_estimates.progress import idle, marks
+    """D's own start date holds its stretch back past B's landing: the span is idle, and
+    the expected line holds flat from B's landing to the day work resumes. A weekend
+    between two stretches is not a gap."""
+    from dplanner.modules.time_estimates.progress import idle
 
     library, project = plan
     later = date(2026, 9, 21)
@@ -449,11 +429,9 @@ def test_a_milestone_whose_start_is_later_opens_a_gap_the_plan_holds_flat(plan):
         today=date(2026, 9, 10),
     )
     assert now is not None
-    b, d = key_of(plan, "B"), key_of(plan, "D")
+    b = key_of(plan, "B")
     assert idle(now, None) == [(date(2026, 9, 9), later)]
     assert idle(now, b) == []
-    assert [milestone for _, milestone in marks(now, None)] == [b, d]
-    assert marks(now, b) == [(date(2026, 9, 9), b)]
     curve = expected(now, None)
     assert (date(2026, 9, 9), 0.3) in curve and (later, 0.3) in curve
     assert idle(snapshot(plan), None) == []
@@ -493,15 +471,6 @@ def test_the_volume_is_a_step_curve_of_each_recorded_days_total(plan):
         assert volume([], None) == []
     finally:
         del DAYS["E"]
-    assert [nice_ceiling(value) for value in (0.0, 1.0, 3.0, 12.0, 20.0, 41.0, 130.0)] == [
-        1.0,
-        1.0,
-        5.0,
-        20.0,
-        20.0,
-        50.0,
-        200.0,
-    ]
 
 
 # -- the days a status changed on --------------------------------------------------------------
