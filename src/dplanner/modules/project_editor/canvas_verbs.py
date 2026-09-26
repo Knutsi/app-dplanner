@@ -117,7 +117,7 @@ class CanvasVerbs:
                 group="link",
                 order=5,
                 icon=connect_icon,
-                tip="Pick a step, then the step that waits on it. Esc leaves",
+                tip="Pick a step — or select several — then the step that waits on it. Esc leaves",
                 state=self._mode_state(CONNECT),
                 run=self._mode_toggle(CONNECT),
             ),
