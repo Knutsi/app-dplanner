@@ -737,6 +737,55 @@ def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services
     assert services.undo.undo_text() == before
 
 
+# -- History ---------------------------------------------------------------------------------
+
+
+def test_history_reads_an_earlier_days_record_and_nothing_on_the_page_writes(services, staged):
+    """The slider runs over the recorded days and today. On an earlier day the page reads
+    that day's record in the live plan's place — the axes holding still — and every writer
+    is greyed, saying why, until the page is back on today."""
+    library = services.document
+    _read, draft, _docs, ship = staged.steps
+    old = _old_plan(draft.id, ship.id, date(2026, 9, 1))
+    SetModuleDataCommand(staged.id, HISTORY_ID, write_history([old])).redo(library)
+    tab = services.tabs.open("time", staged.id)
+    history = tab.history
+    assert history.text() == "History" and not history.looking_back
+    assert history.days.value() == 1  # the 1st's record, then today's
+    assert "1 recorded day, from 1 Sep" in history.how_many.text()
+    reach = tab.shown.reach
+    history.days.set_value(0, say=True)
+    assert tab.as_of == date(2026, 9, 1) and tab.shown.day == date(2026, 9, 1)
+    assert tab.landing == date(2026, 9, 18)  # as the record had it
+    assert tab.shown.reach == reach  # the axes held still
+    assert history.text() == "History · 1 Sep" and history.said.text().startswith("as recorded")
+    assert tab.controls.is_shown(tab.back_to_today)
+    why = tab.writers_refusal()
+    assert why.startswith("Showing the plan as recorded 1 September")
+    assert not tab.budget.isEnabled() and tab.budget.toolTip() == why
+    assert not tab.more.isEnabled() and not tab.save_snapshot.isEnabled()
+    assert not tab.months.pickable
+    tab.months.day_picked.emit(date(2026, 9, 14))  # a click cannot write either
+    assert staged.module_data[ESTIMATION_ID]["start"] == "2026-09-07"
+    assert not tab.unsized.isVisibleTo(tab.widget)
+    tab.back_to_today.click()
+    assert tab.as_of is None and tab.landing == date(2026, 9, 23)
+    assert tab.writers_refusal() == "" and tab.budget.isEnabled() and tab.months.pickable
+    assert not tab.controls.is_shown(tab.back_to_today) and history.text() == "History"
+
+
+def test_history_with_nothing_recorded_before_today_has_only_today(tab):
+    assert tab.history.days.slider.maximum() == 0
+    assert tab.history.how_many.text() == "Nothing recorded before today yet."
+
+
+def test_a_host_may_grey_the_writers_for_a_reason_of_its_own(tab):
+    tab.set_read_only("Not here")
+    assert tab.writers_refusal() == "Not here" and not tab.budget.isEnabled()
+    tab.set_read_only("")
+    assert tab.budget.isEnabled()
+
+
 # -- the recorder ----------------------------------------------------------------------------
 
 

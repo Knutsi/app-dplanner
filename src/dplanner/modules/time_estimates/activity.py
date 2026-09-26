@@ -6,20 +6,25 @@ done, and how many steps nobody has sized (a click opens the Estimates tab on th
 them a strip holds, in the order they are reached for: the **pages** — *Milestones* (where
 each lands against the plan compared with, ``shift_view.py``), *Work* (the scope and the
 work done on one scale, ``work_view.py``) and *Calendar* (six months with the stretches lit,
-``months.py``); what the plan is **compared with**; and on the right the **Budget** — who
+``months.py``); what the plan is **compared with**; **History**; and the **Budget** — who
 works on it and how much of their day, from today on (``budget.py``) — *Save Snapshot…*,
 ⋯ for the milestone colours, and Export.
 
 Everything on the page is one :class:`~dplanner.modules.time_estimates.present.Presented`,
 read after a quiet spell from the plan dated for its stored team (``Readers.snapshot``, the
-recorder's own call) and the recorded history — the report draws the same. A milestone
-picked on one page is held in full ink on the others; nothing is hidden by a pick. A plan a
-hand-edited file has looped says which steps wait on each other instead of being dated.
+recorder's own call) and the recorded history — the report draws the same. **History**
+(``history.py``) reads an earlier day's record in the live plan's place, and while it looks
+back every writer on the page is greyed, saying why; a host may grey them for a reason of
+its own (:meth:`TimeEstimatesActivity.set_read_only` — the simulator, whose world is not
+this page's to change). A milestone picked on one page is held in full ink on the others;
+nothing is hidden by a pick. A plan a hand-edited file has looped says which steps wait on
+each other instead of being dated.
 
 A milestone's own start date and colour are not set here: they are the milestone's, on its
 Details tab (``section.py``).
 """
 
+from collections.abc import Sequence
 from datetime import date
 from typing import TYPE_CHECKING, cast
 
@@ -43,7 +48,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId, Project, StepId
 from dplanner.domain.ordering import cyclic
-from dplanner.domain.schedule import format_date, format_days
+from dplanner.domain.schedule import format_date, format_days, short_date
 from dplanner.framework.activity import EntityActivity, follow_project
 from dplanner.framework.context import (
     SCOPE_SELECTION,
@@ -59,8 +64,9 @@ from dplanner.framework.segmented import Segmented
 from dplanner.framework.signalling import StatusLine, UpdatingIndicator
 from dplanner.framework.table import DATE_FORMAT
 from dplanner.framework.toolbar import Toolbar
-from dplanner.framework.widgets import EmptyState, caption, quiet
+from dplanner.framework.widgets import EmptyState, GlyphButton, caption, quiet
 from dplanner.modules.time_estimates.budget import BudgetButton
+from dplanner.modules.time_estimates.history import BACK_TO_TODAY, HistoryButton
 from dplanner.modules.time_estimates.months import Band, MonthsView
 from dplanner.modules.time_estimates.present import Presented, moved_words, names_of, present
 from dplanner.modules.time_estimates.progress import (
@@ -86,7 +92,7 @@ from dplanner.modules.time_estimates.shift_view import ShiftView
 from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog, SnapshotPicker
 from dplanner.modules.time_estimates.work_view import WorkView
 from dplanner.theme.cards import title_font
-from dplanner.theme.icons import PALETTE_STRIP, camera_icon, palette_strip_icon
+from dplanner.theme.icons import PALETTE_STRIP, camera_icon, close_icon, palette_strip_icon
 from dplanner.theme.palettes import PALETTES, Palette
 from dplanner.theme.tokens import CAPTION_GAP, DENSE_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
@@ -96,6 +102,7 @@ if TYPE_CHECKING:
 TIME_KIND = "time"
 REFRESH_DELAY_MS = 500
 NO_STEPS = "No steps yet — the tab dates a plan once it has some."
+SAVE_SNAPSHOT_TIP = "Keep the plan as it stands today, under a title, to compare against later"
 MILESTONES_PAGE, WORK_PAGE, CALENDAR_PAGE = "milestones", "work", "calendar"
 PAGES = (
     (MILESTONES_PAGE, "Milestones", "Where each milestone lands against the plan compared with"),
@@ -139,6 +146,10 @@ class TimeEstimatesActivity(EntityActivity):
         # What the plan is compared with: the plan at the project's start unless picked
         # otherwise — a way of looking, never stored.
         self._then: Pick = AT_START
+        # The recorded day History shows in the live plan's place — None for today.
+        self._as_of: date | None = None
+        self._read_only = ""  # Why the host says nothing here may write, when it does.
+        self._held: tuple[Snapshot, ...] = ()  # More plans the axes must hold still for.
         self._loading_day = False
         today = deps.clock.today()
 
@@ -185,15 +196,19 @@ class TimeEstimatesActivity(EntityActivity):
         self.then_day.dateChanged.connect(self._on_then_day)
         self.controls.add_widget(self.then_day)
         self.controls.set_shown(self.then_day, False)
+        self.history = HistoryButton(self.controls)
+        self.history.moved.connect(self._on_history)
+        self.controls.add_widget(self.history)
+        self.back_to_today = GlyphButton("", close_icon, self.controls, tip=BACK_TO_TODAY)
+        self.back_to_today.clicked.connect(self.history.back_to_today)
+        self.controls.add_widget(self.back_to_today)
+        self.controls.set_shown(self.back_to_today, False)
         self.controls.add_divider()
         self.budget = BudgetButton(self.controls)
         self.budget.chosen.connect(self._on_budget)
         self.controls.add_widget(self.budget)
         self.save_snapshot = self.controls.add_verb(
-            "Save Snapshot…",
-            camera_icon,
-            self._on_save_snapshot,
-            tip="Keep the plan as it stands today, under a title, to compare against later",
+            "Save Snapshot…", camera_icon, self._on_save_snapshot, tip=SAVE_SNAPSHOT_TIP
         )
         self.more = PopoverButton("⋯", self.controls, tip="Milestone colours")
         self.more.popover.body.addWidget(caption("Milestone colours", self.more.popover))
@@ -267,6 +282,8 @@ class TimeEstimatesActivity(EntityActivity):
             self._refresh, REFRESH_DELAY_MS, parent=frame, service=deps.debounce
         )
         self.updating.follow(self._refresh_soon)
+        # History's slider: the page follows it as it moves, once per event-loop turn.
+        self._scrub = Debounced(self._render, 0, parent=frame, service=deps.debounce)
         self._unsubscribes = [
             follow_project(self._library, self.project_id, self._refresh_soon.trigger),
             # A turned day re-dates the plan like any change to it would.
@@ -346,6 +363,32 @@ class TimeEstimatesActivity(EntityActivity):
     def then_pick(self) -> Pick:
         return self._then
 
+    @property
+    def as_of(self) -> date | None:
+        """The recorded day History shows — None while the page shows today."""
+        return self._as_of
+
+    def writers_refusal(self) -> str:
+        """Why nothing on the page may write right now — "" when it may."""
+        if self._read_only:
+            return self._read_only
+        if self._as_of is not None:
+            day = format_date(self._as_of, self._deps.clock.today())
+            return f"Showing the plan as recorded {day} — back to today to change it"
+        return ""
+
+    # -- what a host may say -------------------------------------------------------------------
+
+    def set_read_only(self, reason: str) -> None:
+        """Grey every writer on the page, saying ``reason`` — "" hands them back."""
+        self._read_only = reason
+        self._show_writers()
+
+    def hold_reach(self, rows: Sequence[Snapshot]) -> None:
+        """Hold the axes still for ``rows`` as well — every plan a host will show here."""
+        self._held = tuple(rows)
+        self._render()
+
     def snapshot(self) -> Snapshot | None:
         """The plan today, stretch by stretch, for the stored team — what *Save Snapshot…*
         keeps and the recorder writes."""
@@ -360,6 +403,11 @@ class TimeEstimatesActivity(EntityActivity):
         """A way of looking, not a plan fact: re-rendered, never stored."""
         self._then = pick
         self._render()
+
+    def _on_history(self, day: object) -> None:
+        """A day History reached: the page follows at once, and its writers stand down."""
+        self._as_of = cast("date | None", day)
+        self._scrub.trigger()
 
     def _on_then_day(self, picked: QDate) -> None:
         if not self._loading_day:
@@ -377,6 +425,8 @@ class TimeEstimatesActivity(EntityActivity):
     def _on_start_picked(self, when: date) -> None:
         """A day clicked in the calendar: the project's start, one undoable write."""
         project = self._project()
+        if self.writers_refusal():
+            return
         if when != self._deps.readers.start_of(project, self._deps.clock.today()):
             self._deps.set_start(self.project_id, when)  # The model change refreshes the tab.
 
@@ -479,14 +529,29 @@ class TimeEstimatesActivity(EntityActivity):
         if live is None:
             self._shown = None
             self._show_figures()
+            self._show_writers()
             return
         history, saved = read_history(project), read_saved(project)
         start = deps.readers.start_of(project, today)
-        names = names_of(self._library, project, live, deps.readers)
+        now = live
+        if self._as_of is not None:
+            now = next((row for row in history if row.day == self._as_of), live)
+            if now is live:
+                self._as_of = None  # The record is gone — an undo past it, a reload.
+        names = names_of(self._library, project, now, deps.readers)
         shown = present(
-            live, history=history, saved=saved, pick=self._then, start=start, named=names
+            now,
+            history=history,
+            saved=saved,
+            pick=self._then,
+            start=start,
+            named=names,
+            reach_of_rows=(live, *self._held),
         )
         self._shown = shown
+        self.history.show_history([row.day for row in history], today, shown.day)
+        self.controls.set_shown(self.back_to_today, self._as_of is not None)
+        self._show_writers()
         if self._picked is not None and all(
             scope.key != self._picked for scope in shown.milestones
         ):
@@ -494,8 +559,9 @@ class TimeEstimatesActivity(EntityActivity):
         self.then_picker.show_pick(self._then, shown.then, saved, shown.basis, shown.day)
         self._show_then_day()
         self._show_figures()
-        self.shifts.show_presented(shown, self._picked, "today")
-        self.work.show_presented(shown, "today")
+        day_word = "today" if self._as_of is None else short_date(shown.day, today)
+        self.shifts.show_presented(shown, self._picked, day_word)
+        self.work.show_presented(shown, day_word)
         by_key = {one.key: one for one in names}
         bands = tuple(
             Band(
@@ -506,7 +572,7 @@ class TimeEstimatesActivity(EntityActivity):
                 color=_color(by_key[stretch.key].color) if stretch.key in by_key else _color(""),
                 lands=bool(stretch.key),
             )
-            for stretch in live.stretches
+            for stretch in now.stretches
             if stretch.finish is not None
         )
         self.months.show_bands(start, bands, shown.day)
@@ -520,6 +586,20 @@ class TimeEstimatesActivity(EntityActivity):
             has_agent_steps=any(deps.readers.is_agent(step) for step in project.steps),
             today=today,
         )
+
+    def _show_writers(self) -> None:
+        """Every control that writes, enabled — or greyed, saying why nothing may."""
+        why = self.writers_refusal()
+        for control in (self.budget, self.more):
+            control.setEnabled(not why)
+        if why:
+            self.budget.setToolTip(why)
+            self.more.setToolTip(why)
+        else:
+            self.more.setToolTip("Milestone colours")
+        self.save_snapshot.setEnabled(not why)
+        self.save_snapshot.setToolTip(why or SAVE_SNAPSHOT_TIP)
+        self.months.set_pickable(not why)
 
     def _show_then_day(self) -> None:
         """A *Day…* pick shows its field beside the picker, loaded with the day and never
@@ -543,7 +623,8 @@ class TimeEstimatesActivity(EntityActivity):
             for step in project.steps
             if deps.readers.days_for(step) is None and not deps.readers.is_marker(step)
         ]
-        self.unsized.setVisible(bool(unsized))
+        # No record holds the unsized steps, so a look back cannot say how many there were.
+        self.unsized.setVisible(bool(unsized) and self._as_of is None)
         self.unsized.setText(f"⚠ {len(unsized)} unsized")
         self.unsized.setToolTip(
             "No estimate, so counted as 0 days — click to size them:\n"

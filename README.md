@@ -488,8 +488,9 @@ src/dplanner/
 │   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab
 │   │                        (activity.py: four figures, then a page at a time — shift_view.py the
 │   │                        milestones against the plan compared with, work_view.py the scope and the
-│   │                        work done, months.py the calendar — with budget.py's team and focus and
-│   │                        snapshots.py's pick of the plan compared with), what a page shows as data
+│   │                        work done, months.py the calendar — with budget.py's team and focus,
+│   │                        snapshots.py's pick of the plan compared with and history.py's look back
+│   │                        at an earlier day's record), what a page shows as data
 │   │                        (present.py, which report.py reads too), a milestone's start and colour on
 │   │                        its Details tab (section.py) — `dplanner schedule matrix`, `schedule palette`,
 │   │                        `schedule team`, `schedule milestone`; progress against the plan (progress.py

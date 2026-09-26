@@ -4,6 +4,7 @@ from dplanner.framework.context import Context
 from dplanner.modules.time_estimates.activity import TimeEstimatesActivity
 from dplanner.modules.time_estimates.debugger import (
     OPENS_AFTER,
+    SIMULATED,
     SIMULATION_KIND,
     TimeSimulationActivity,
 )
@@ -42,6 +43,35 @@ def test_the_simulated_world_shares_nothing_that_holds_state(services):
     before = services.undo.can_undo()
     tab.show_day(3)
     assert services.undo.can_undo() == before
+
+
+def test_the_embedded_tabs_writers_are_the_simulators(services):
+    """A Budget change there would be undone by the next day restored, so the tab says who
+    writes this plan and greys its own writers."""
+    tab = _opened(services)
+    inner = tab.inner
+    assert inner is not None
+    assert inner.writers_refusal() == SIMULATED
+    assert not inner.budget.isEnabled() and not inner.save_snapshot.isEnabled()
+    assert not inner.months.pickable
+
+
+def test_the_axes_hold_the_whole_run_until_let_go(services):
+    """Held, every day is drawn against the reach of the whole run, so a day early in the
+    work already has the axis its last landing needs; let go, the axes follow the day. Scope
+    creep, so the landing moves out as the days play."""
+    tab = _opened(services)
+    tab.scenario.setCurrentIndex(tab.scenario.findData("scope-creep"))
+    inner, found = tab.inner, tab.simulated
+    assert inner is not None and found is not None and tab.hold.isChecked()
+    last = max(row.landing(None) or row.day for row in found.recorded.rows)
+    tab.show_day(3)
+    assert inner.shown is not None and inner.shown.reach.last >= last
+    tab.hold.trigger()
+    assert not tab.hold.isChecked()
+    assert inner.shown is not None and inner.shown.reach.last < last
+    tab.hold.trigger()
+    assert inner.shown.reach.last >= last
 
 
 def test_a_day_is_restored_in_place_whichever_way_the_slider_moves(services):

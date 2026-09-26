@@ -126,6 +126,7 @@ class MonthsView(QWidget):
         self._columns = 1
         self._cell = CELL_MIN
         self._offset = 0  # months the user has paged away from the plan's own window
+        self._pickable = True
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         # A height-for-width widget: how tall it is follows from how wide it is, and the
         # *layout* asks (`heightForWidth`) rather than the widget resizing itself in its
@@ -154,6 +155,17 @@ class MonthsView(QWidget):
         if key != self._emphasised:
             self._emphasised = key
             self.update()
+
+    def set_pickable(self, pickable: bool) -> None:
+        """Whether a click on a day picks the plan's start — not while the host shows a plan
+        nothing may change, and then the calendar stops offering it."""
+        self._pickable = pickable
+        cursor = Qt.CursorShape.PointingHandCursor if pickable else Qt.CursorShape.ArrowCursor
+        self.setCursor(cursor)
+
+    @property
+    def pickable(self) -> bool:
+        return self._pickable
 
     def page(self, months: int) -> None:
         """Move the window through time; the plan's own window is offset zero."""
@@ -194,7 +206,7 @@ class MonthsView(QWidget):
         said = f"{WEEKDAYS[when.weekday()]} {format_date(when, today=self._today)}"
         band = self.band_at(when)
         if band is None:
-            said += " — click to start the work here"
+            said += " — click to start the work here" if self._pickable else ""
         elif when == band.finish and band.lands:
             said += f" — {band.label} lands"
         elif when.weekday() >= SATURDAY:
@@ -373,7 +385,7 @@ class MonthsView(QWidget):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
         when = self._day_at(event.position())
-        if when is not None:
+        if when is not None and self._pickable:
             self.day_picked.emit(when)
         super().mousePressEvent(event)
 

@@ -16,6 +16,11 @@ have. It is never activated, so it never speaks for the user. Moving the slider 
 day into that one library (``replay.restore``), pins the clock to it and flushes the tab's
 rebuild at once, so every day is drawn while the days play. Nothing is simulated until the
 tab is first shown: a restored Debug tab costs nothing at startup.
+
+The embedded tab's writers are greyed (``set_read_only``): the simulator writes that plan, and
+a Budget change there would be undone by the next day restored — the re-budget above is the
+one that changes the world. *Hold the Axes Still* draws every day against the reach of the
+whole run (``hold_reach``), so playing the days moves only the lines.
 """
 
 from collections.abc import Callable, Sequence
@@ -50,12 +55,14 @@ from dplanner.theme.icons import (
     chevron_left_icon,
     chevron_right_icon,
     eraser_icon,
+    frame_icon,
     gauge_icon,
     play_icon,
 )
 from dplanner.theme.tokens import CAPTION_GAP, PANEL_MARGIN, SECONDARY_ALPHA
 
 SIMULATION_KIND = "time-simulation"
+SIMULATED = "The simulator writes this plan — re-budget it from the strip above"
 # How long each day is shown while the days play.
 PLAY_MS = 220
 # The day a new run opens on: two weeks in, so there is some history to read.
@@ -214,6 +221,16 @@ class TimeSimulationActivity(ActivityBase):
             "with it, as a Budget change in the window would",
         )
         self.clear = self.controls.add_verb("Clear Re-budgets", eraser_icon, self._on_clear)
+        self.controls.add_divider()
+        self.hold = self.controls.add_verb(
+            "Hold the Axes Still",
+            frame_icon,
+            self._hold_axes,
+            checkable=True,
+            tip="Draw every day against the whole run's reach, so playing the days moves only "
+            "the lines",
+        )
+        self.hold.setChecked(True)
         strip_row.addWidget(self.controls, 1)
         page.addWidget(strip)
 
@@ -261,6 +278,8 @@ class TimeSimulationActivity(ActivityBase):
             )
             self._inner = inner
             self._host.addWidget(inner.widget)
+            inner.set_read_only(SIMULATED)
+            self._hold_axes()
 
     def close(self) -> None:
         self._timer.stop()
@@ -391,6 +410,13 @@ class TimeSimulationActivity(ActivityBase):
             ],
         )
         self.show_day(shown if shown is not None else len(timeline.days) - 1)
+        self._hold_axes()
+
+    def _hold_axes(self) -> None:
+        """The whole run's records as the reach the embedded tab's axes hold — or none."""
+        found, inner = self._simulated, self._inner
+        if found is not None and inner is not None:
+            inner.hold_reach(found.recorded.rows if self.hold.isChecked() else ())
 
     def _sync_controls(self) -> None:
         """Every control says what is shown: the setup, the day, the budget standing on it."""

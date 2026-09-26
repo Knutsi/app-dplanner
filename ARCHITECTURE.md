@@ -4737,6 +4737,15 @@ file. `scripts/time_accuracy.py` prints the prototype's accuracy table and repro
   follows, without knowing what any entry means. The scratch debounce service is the
   tab's own because the slider flushes it after every restore: played at a few days a
   second, a tab waiting out its 500 ms settle would never draw one.
+- **The embedded tab's writers are the simulator's.** A Budget change in the embedded tab
+  would write the scratch library and be undone by the next day restored, so the tab is
+  told why nothing there may write (`set_read_only`) and greys its writers saying so —
+  the mechanism History uses, with the host's reason — and the re-budget on the
+  debugger's own strip is the one that changes the world.
+- **The axes can hold the whole run.** Played a day at a time, a plan that slips widens
+  its axis every day, and a line that moves is lost in a scale that does. *Hold the Axes
+  Still* hands the embedded tab every row the run recorded as more plans its reach must
+  hold (`hold_reach`), so the days move only the lines; let go, the axes follow the day.
 - **Nothing is simulated until the tab is first shown**, so a restored Debug tab costs
   nothing at startup.
 
@@ -4854,6 +4863,18 @@ decisions that carry it:
   heading and `progress show`. A snapshot saved earlier today *is* something to compare
   with: `Presented.compared` asks whether the then side is the plan now, not whether it
   carries today's date. A saved snapshot's day is a dashed hairline through every plot.
+- **History reads a record, and nothing writes while it does.** The now side is a slider
+  over the days the recorder wrote a row, and today (`history.py`). On an earlier day the
+  page reads that day's record in the live plan's place — `present` over it, with only the
+  records up to it (`progress.until`) — so it shows what the tab showed that day, from what
+  is stored and nothing else; the unsized count leaves the page, since no record holds it.
+  The live plan joins the reach (`reach_of_rows`), so the axes hold still while the slider
+  moves. The page follows the slider as it moves, through a 0 ms `Debounced` — once per
+  event-loop turn, however many values a drag passes — rather than waiting for it to be let
+  go. **Every writer is greyed while it looks back, saying why** (`writers_refusal`: the
+  Budget, ⋯, *Save Snapshot…*, a click in the calendar), and a ✕ on the strip goes back
+  to today: a writer that stayed live would write today's plan while the page showed an
+  older one, and *hidden means absent* — the controls are there, only not now.
 - **Saved snapshots are a second list, kept whole; automatic days stay last-wins.** A
   snapshot a person saves — *"What we thought on 1 November"*, with a note on the
   occasion — is a record of a decision, and it must mean the plan *at that moment*:

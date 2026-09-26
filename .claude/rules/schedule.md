@@ -91,7 +91,9 @@ paths:
   first, like one to the model. `debugger.py` embeds `TimeEstimatesActivity` built from
   the root's own `time_deps` recipe over a scratch library, undo stack, context, clock and
   debounce service — never `dataclasses.replace` over the window's deps — and scrubs by
-  `replay.restore`, never by rebuilding the tab. `scripts/time_accuracy.py` is the number
+  `replay.restore`, never by rebuilding the tab; the embedded tab's writers are greyed
+  (`set_read_only`, the simulator writes that plan) and *Hold the Axes Still* hands it the
+  whole run's rows to hold (`hold_reach`). `scripts/time_accuracy.py` is the number
   to quote for a model change. `ARCHITECTURE.md`'s *The Time tab has a simulator* has the
   reasoning.
 - **Progress is derived; the past is a list of snapshots, and a comparison is two of
@@ -139,6 +141,11 @@ paths:
   Weekends are pale bands through both. **Both surfaces draw the same page**: the report's
   `Chart` of `Plot`s (`shift`, `scope`, `done`) and `Stretch`es is `present.py`'s output
   said as plain data (`time_estimates/report.py`), drawn by `cli/report/drawings.py`.
+  **History** (`history.py`) is the now side: a slider over the recorded days and today,
+  followed as it moves (a 0 ms `Debounced`), reading an earlier day's record in the live
+  plan's place with the axes held for the live plan too; **while it looks back every writer
+  is greyed, saying why** (`writers_refusal` — the Budget, ⋯, *Save Snapshot…*, a calendar
+  click), and a host greys them for a reason of its own through `set_read_only`.
   **A change re-runs the page after a quiet spell, and the strip's indicator turns until
   it has** — the debounce is the coalescing, and a worker thread is not the answer (*A
   view refresh is coalesced*). The delta in words (`delta`, `delta_words`) and
