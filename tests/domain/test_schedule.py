@@ -447,15 +447,16 @@ def test_without_milestones_the_plan_is_one_stretch_from_the_start(project):
     assert only.calendar_days == 10
 
 
-def test_milestones_run_in_sequence_each_from_the_day_after_the_last(project):
-    """B closes A+B; D closes C+D. The second stretch begins the working day after the
-    first lands, so the whole is the serial schedule cut in two."""
+def test_milestones_run_in_sequence_each_from_where_the_last_ended(project):
+    """B closes A+B; D closes C+D. The first ends as the 9th ends, and the second picks up
+    right there — its start is that day, used up — so the whole is the serial schedule cut
+    in two, landing where one stretch would."""
     library, plan = project
     first, second = _stretches(library, plan, milestones=("B", "D"))
     assert [s.title for s in first.steps] == ["A", "B"]
     assert (first.start, first.finish) == (MONDAY, date(2026, 9, 9))
     assert [s.title for s in second.steps] == ["C", "D"]
-    assert (second.start, second.finish) == (date(2026, 9, 10), date(2026, 9, 18))
+    assert (second.start, second.lead, second.finish) == (date(2026, 9, 9), 1.0, date(2026, 9, 18))
     assert not first.pushed and not second.pushed
 
 
@@ -473,7 +474,7 @@ def test_a_date_before_the_previous_landing_is_pushed_and_reported(project):
     library, plan = project
     _first, second = _stretches(library, plan, milestones=("B", "D"), dated={"D": date(2026, 9, 8)})
     assert second.asked == date(2026, 9, 8)
-    assert second.start == date(2026, 9, 10)  # the sequence holds
+    assert second.start == date(2026, 9, 9)  # the sequence holds: where the first ended
     assert second.pushed
 
 
@@ -491,7 +492,7 @@ def test_work_no_milestone_gathers_runs_last_without_one(project):
     _first, rest = _stretches(library, plan, milestones=("B",))
     assert rest.milestone is None
     assert [s.title for s in rest.steps] == ["C", "D"]
-    assert rest.start == date(2026, 9, 10)
+    assert rest.start == date(2026, 9, 9)  # picked up as the 9th ended
 
 
 def test_a_stretch_with_nothing_estimated_has_no_landing_and_costs_no_days(project):
@@ -530,6 +531,183 @@ def test_a_loop_in_a_hand_edited_file_is_named():
     a.edges["requires"] = [b.id]
     c.edges["requires"] = [b.id]
     assert [step.title for step in cyclic(library, plan)] == ["A", "B", "C", "D"]
+
+
+# -- re-dated from what has happened ------------------------------------------------------------
+#
+# Ported from the prototype's `tests/resume_test.ts`; `test_time_parity.py` holds the whole
+# model to the prototype's forecasts on every day of its scenarios.
+
+TUESDAY, WEDNESDAY, THURSDAY, FRIDAY = (MONDAY + timedelta(days=n) for n in range(1, 5))
+NEXT_MONDAY, NEXT_WEDNESDAY = MONDAY + timedelta(days=7), MONDAY + timedelta(days=9)
+
+
+def _made(titles, requires=None):
+    """A project of ``titles``, made the week before, each requiring what ``requires`` names."""
+    library = Library()
+    plan = Project(title="Resume")
+    library.add_child(library.id, plan)
+    for title in titles:
+        library.add_child(plan.id, Step(title=title, created="2026-09-01T12:00:00"))
+    named = {step.title: step for step in plan.steps}
+    for title, needs in (requires or {}).items():
+        library.set_edges(named[title].id, "requires", [named[need].id for need in needs])
+    return library, plan
+
+
+def _facts(today, statuses=None, since=None, markers=()):
+    """What has happened by ``today``, by step title — work in flight credited from its day."""
+    from dplanner.domain.schedule import ScheduleFacts, spent_since
+
+    def since_of(step):
+        return (since or {}).get(step.title)
+
+    return ScheduleFacts(
+        today=today,
+        status_of=lambda step: (statuses or {}).get(step.title, "pending"),
+        since_of=since_of,
+        is_marker=lambda step: step.title in markers,
+        worked=lambda step: spent_since(since_of(step), today),
+    )
+
+
+def _resumed(library, plan, days, facts, *, milestones=(), humans=1):
+    from dplanner.domain.schedule import phases
+
+    return phases(
+        library,
+        plan,
+        days_of(days),
+        lambda _s: False,
+        humans=humans,
+        agents=1,
+        start=MONDAY,
+        is_milestone=lambda step: step.title in milestones,
+        start_for=lambda _s: None,
+        facts=facts,
+    )
+
+
+def _under_way(since, today):
+    """A's four days are under way, B's two wait on it; one person, dated from Monday."""
+    from dplanner.domain.progression import IN_PROGRESS
+
+    library, plan = _made(("A", "B"), {"B": ["A"]})
+    facts = _facts(today, {"A": IN_PROGRESS}, {"A": since})
+    (only,) = _resumed(library, plan, {"A": 4.0, "B": 2.0}, facts)
+    return [only.landing_of(step.id) for step in plan.steps]
+
+
+def test_while_work_in_flight_is_on_plan_the_plans_own_dates_stand():
+    # Wednesday: A started Monday as planned, and lands Thursday; B lands Monday.
+    assert _under_way(MONDAY, WEDNESDAY) == [THURSDAY, NEXT_MONDAY]
+
+
+def test_work_that_started_late_resumes_from_tomorrow_credited_with_its_days():
+    # A started Tuesday, a day late. From Thursday it has 4 - 1.5 days left: Monday.
+    assert _under_way(TUESDAY, WEDNESDAY) == [NEXT_MONDAY, NEXT_WEDNESDAY]
+
+
+def test_work_still_open_after_its_estimate_has_half_a_day_left_from_tomorrow():
+    # Friday: A should have landed Thursday. It lands Monday; B two days later.
+    assert _under_way(MONDAY, FRIDAY) == [NEXT_MONDAY, NEXT_WEDNESDAY]
+
+
+def test_a_weekend_moves_nothing():
+    friday = _under_way(TUESDAY, FRIDAY)
+    assert _under_way(TUESDAY, SATURDAY) == friday
+    assert _under_way(TUESDAY, SATURDAY + timedelta(days=1)) == friday
+
+
+def test_a_step_due_today_has_until_tonight_and_is_late_once_the_day_is_over():
+    """A window reads a day still going: a plan made this morning holds its dates while its
+    first day's work is open. A simulation reads each day at its end, when that work is
+    late — and the rest resumes tomorrow."""
+    from dataclasses import replace
+
+    library, plan = _made(("A",))
+    going = _facts(MONDAY)
+    (holds,) = _resumed(library, plan, {"A": 1.0}, going)
+    (over,) = _resumed(library, plan, {"A": 1.0}, replace(going, day_over=True))
+    assert (holds.start, holds.finish) == (MONDAY, MONDAY)
+    assert (over.start, over.finish) == (TUESDAY, TUESDAY)
+
+
+def test_work_in_flight_keeps_its_worker_and_goes_first():
+    from dplanner.domain.schedule import parallel_finish
+
+    library, plan, days = loose(("A", 1.0), ("B", 5.0))
+    a, b = plan.steps
+    fresh = parallel_finish(library, plan, days, NOBODY, humans=1, agents=1)
+    resumed = parallel_finish(
+        library, plan, days, NOBODY, humans=1, agents=1, running=frozenset({a.id})
+    )
+    assert fresh is not None and (fresh.starts[b.id], fresh.starts[a.id]) == (0.0, 5.0)
+    assert resumed is not None and (resumed.starts[a.id], resumed.starts[b.id]) == (0.0, 1.0)
+
+
+def test_a_step_added_since_the_plan_began_starts_tomorrow_not_in_the_past():
+    """B was made on Wednesday, but a plan from Monday had two people start it that day."""
+    from dplanner.domain.progression import IN_PROGRESS
+
+    library, plan = _made(("A", "B"))
+    _a, b = plan.steps
+    b.created = "2026-09-09T12:00:00"
+    facts = _facts(WEDNESDAY, {"A": IN_PROGRESS}, {"A": MONDAY})
+    (only,) = _resumed(library, plan, {"A": 4.0, "B": 1.0}, facts, humans=2)
+    assert only.start == THURSDAY and only.landing_of(b.id) == THURSDAY
+    assert only.began == MONDAY  # A's work began then, and the stretch with it
+
+
+def test_a_done_step_nobody_dated_was_done_no_later_than_it_could_have_been():
+    """A status older than its days says done and not when: by its planned landing, or
+    today if that is earlier."""
+    from dplanner.domain.progression import DONE, IN_PROGRESS
+
+    library, plan = _made(("A", "B"), {"B": ["A"]})
+    a, b = plan.steps
+    days = {"A": 2.0, "B": 2.0}
+    # Thursday: A was planned to land Tuesday; B, a day late, started today.
+    late = _facts(THURSDAY, {"A": DONE, "B": IN_PROGRESS}, {"B": THURSDAY})
+    (only,) = _resumed(library, plan, days, late)
+    assert only.landing_of(a.id) == TUESDAY and only.began == TUESDAY
+    assert only.landing_of(b.id) == NEXT_MONDAY  # 1.5 days left, from Friday
+    # Monday, the day the plan starts: A cannot have been done later than today.
+    (early,) = _resumed(library, plan, days, _facts(MONDAY, {"A": DONE}))
+    assert early.landing_of(a.id) == MONDAY
+
+
+def test_a_milestone_nobody_marked_done_lands_with_its_work_and_holds_nothing_back():
+    """A closes M1, whose own step is never marked; B, after M1, closes M2 and is running."""
+    from dplanner.domain.progression import DONE, IN_PROGRESS
+
+    library, plan = _made(("A", "M1", "B", "M2"), {"M1": ["A"], "B": ["M1"], "M2": ["B"]})
+    facts = _facts(
+        FRIDAY,
+        {"A": DONE, "B": IN_PROGRESS},
+        {"A": WEDNESDAY, "B": THURSDAY},
+        markers=("M1", "M2"),
+    )
+    first, second = _resumed(library, plan, {"A": 2.0, "B": 2.0}, facts, milestones=("M1", "M2"))
+    m1 = plan.steps[1]
+    assert (first.finish, first.landing_of(m1.id)) == (WEDNESDAY, WEDNESDAY)
+    assert second.start == NEXT_MONDAY  # resumed from the Monday after Friday
+
+
+def test_a_later_milestone_whose_work_is_done_lands_before_an_earlier_one():
+    """M2's own work (B) was done first while M1's (A) is still under way: the plan lands
+    with its latest milestone, which is no longer its last in sequence."""
+    from dplanner.domain.progression import DONE, IN_PROGRESS
+
+    library, plan = _made(("A", "M1", "B", "M2"), {"M1": ["A"], "M2": ["B"]})
+    facts = _facts(
+        WEDNESDAY,
+        {"A": IN_PROGRESS, "B": DONE},
+        {"A": MONDAY, "B": TUESDAY},
+        markers=("M1", "M2"),
+    )
+    first, second = _resumed(library, plan, {"A": 5.0, "B": 1.0}, facts, milestones=("M1", "M2"))
+    assert (first.finish, second.finish) == (NEXT_MONDAY, TUESDAY)
 
 
 # -- reading two plotted lines ---------------------------------------------------------------

@@ -4549,8 +4549,8 @@ decisions worth writing down:
   milestones before it — what is new since the last one — plus itself, and a step two
   milestones both reach belongs to the earlier. Each stretch is `parallel_finish` over its
   own steps (the `among` parameter; an edge out of the subset counts as met, because the
-  sequence already put that work before), beginning the working day after the previous
-  lands. Work no milestone gathers runs last, with no milestone; a project with none is
+  sequence already put that work before), beginning where the previous lands — with what
+  is left of that day (*Stretches pass part-days on*, below). Work no milestone gathers runs last, with no milestone; a project with none is
   that one stretch, which is the plain simulation it always was. The alternative — one
   simulation over the whole graph with per-milestone release dates — was rejected because
   it lets a later milestone's independent work run *during* an earlier one whenever a slot
@@ -4643,6 +4643,66 @@ decisions worth writing down:
   (no agent steps), a stored team the grid cannot show selects the nearest seat it can,
   and a sync is never a click.
 
+### The plan re-dates itself from what has happened
+
+A forecast dated from the plan alone says the same thing whatever the team does, and one
+re-simulated from today every morning draws a saw-tooth: each day the unfinished work slides
+to "from now", so a plan followed to the letter reads as slipping half a day a day. The v5
+prototype (`docs/exploration/time-estimation-2` on its own branch, never merged) measured
+both over twelve simulated teams and adopted a third: **the plan's own dates stand while
+reality matches them; otherwise the rest resumes from tomorrow, with work in flight
+credited.** `phases(…, facts=ScheduleFacts)` is that model, and
+`tests/modules/test_time_parity.py` holds it to the prototype's forecast on every day of
+every scenario, three seeds each — the prototype's fixture replayed through the real aspect
+writers (`time_estimates/simulation/frames.py`), so the stored `since` the model reads is the
+one the status aspect stamped. The rule is `.claude/rules/schedule.md`'s *The plan re-dates
+itself*.
+
+- **Holding is a check, not a tolerance.** `_holds` asks whether every step is done exactly
+  when the plan lands it — none early, on the very day where its status says when, none
+  still open once its day is over — whether nothing in flight started after the day the plan
+  started it, and whether nothing was planned to start before it existed. One mismatch and
+  the plan resumes; a match holds the dates to the day, which is what makes a plan followed
+  exactly read its true landing from the first day to the last (the parity file pins it).
+- **Resuming keeps what is known.** A done step is a fact dated by its `since`; one with no
+  `since` — a status older than its days — is taken as done by its planned landing or today,
+  whichever is earlier, never later than it could have been. Work in flight **keeps its
+  worker**: it goes first in `parallel_finish` (`running`), because the person on it does
+  not drop it for a longer chain. It is credited with the working days since it started,
+  from the middle of that day, and at least half a day is always left. The credit is
+  `ScheduleFacts.worked`, built in `time_estimates/schedule.py`, because a day worked under
+  an earlier focus is worth what that focus made it (`efficiency_was`) and the domain never
+  learns a focus exists.
+- **Facts beat the sequence.** A stretch whose work is all done is dated by when it was
+  done and holds nothing back, even when its milestone's own step was never marked. **Marker
+  steps** — estimate off: a milestone's own step, a feature, a check — carry no schedule
+  facts at all, because people rarely mark one done the day its work lands, and one left
+  unmarked would otherwise hold every later stretch at "tomorrow" for good. Stretches are
+  still planned in sequence, but work done out of it counts where it happened: a later
+  milestone whose own work is done lands before an earlier one still under way, so **the
+  whole lands with its latest stretch, not its last** — `max` over the stretches in the
+  matrix, the snapshot and the tab.
+- **A day is read at its end, or while it is still going.** The prototype's world is a
+  frame at the end of each day, where a step due today and not done is late. A window is
+  read in the morning: under that rule a plan made this morning starts tomorrow (its first
+  short step "should" already be done) and every landing slips until somebody marks the
+  step done that afternoon. `ScheduleFacts.day_over` says which reading is meant, so the
+  two stay one model: the window, the CLI and the report read a day still going, where a
+  step due today has until tonight; the parity harness and the simulator read days that
+  are over. A step stamped later than today — a clock running ahead on another machine —
+  was made today.
+- **Stretches pass part-days on.** A stretch ending part-way through a day hands the rest of
+  it to the next (`Phase.lead`), and one ending exactly as a day ends is picked up the
+  moment it lands — its start is that day, used up — because a team starts the next step
+  when it finishes one. `working_days_after` rounds up past a `GUARD` of 1e-9, so float
+  noise in a sum of fractions never adds a working day to a date. A stretch's `start` is
+  where its remaining work begins, `began` when its work first began; the calendar, the
+  Begins column, a snapshot and `schedule matrix --json` show `began`.
+- **Ahead and behind went with it.** The progress plot printed *ahead 5 %* beside today's
+  dot. Re-dated from what is done, the plan now always agrees with what has landed by
+  today, so the word could only ever say *on plan*; a slip shows as the plan now moving
+  against the plan then, which the scope and milestone plots draw.
+
 ### Progress against the plan: the promise is derived, the past is recorded
 
 The calendar says when each milestone lands; a person working the plan wants the other
@@ -4689,8 +4749,8 @@ decisions that carry it:
   there is one **baseline** — the plan as recorded on the **basis** day, the project's
   start unless another plan is picked in the strip (`progress show --basis`) — chosen as
   the last row on or before the basis, or the earliest row for a project older than its
-  history. That fallback stops at **today's own record**: a project whose history begins
-  today has no earlier plan, and standing today's record in for one drew the plan now
+  history. Neither answer is ever **today's own record** — the basis of a plan not yet
+  begun is later than today, and a project whose history begins today has no earlier plan, and standing today's record in for one drew the plan now
   over itself and called the pair a comparison — two lines in one place under a heading
   saying *scope change*, which is a claim nobody recorded. `baseline()` takes `today` and
   all three surfaces pass it, so the window, the report and `progress show` agree on when
@@ -4730,8 +4790,8 @@ decisions that carry it:
   plan now and what actually landed shared a plot for a while, and a reader had to
   untangle three curves and a legend to answer any one question. Each question now
   has a plot of its own, stacked (`chart.py`): *Progress* — the plan now against what
-  landed, with *ahead 5 %* or *behind 12 %* in words beside today's dot, because the
-  gap between two curves is the thing a reader was estimating by eye; *Scope change* —
+  landed, re-dated from what is done (the words *ahead* and *behind* that sat beside
+  today's dot went with that — *The plan re-dates itself from what has happened*); *Scope change* —
   the baseline against the plan now, with the band between them; *Milestones* — a row
   per milestone, its landing then hollow, its landing now filled, an arrow between
   them saying which way it went, because a landing that moved was the hardest thing to
@@ -4753,7 +4813,7 @@ decisions that carry it:
   from the same data: `cli/report/parts.py`'s `Chart` carries `Plot`s and the `Stretch`es
   all three read, `drawings.py` stacks them in one SVG, and what the two surfaces must
   agree on lives below both — `share_at` and `change_runs` in `domain/schedule.py`,
-  `standing_words` and `shift_words` in `progress.py`. The renderer *slices* the plan
+  `shift_words` in `progress.py`. The renderer *slices* the plan
   polyline per stretch instead of clipping it: `clipPath` is not something QtSvg honours,
   and the PDF is rendered through it. The same pass moved the milestone list
   under the staffing grid with a **Start dates** table above it — the project's own

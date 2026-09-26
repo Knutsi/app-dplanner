@@ -137,15 +137,13 @@ class Plot:
     """One of a chart's stacked plots: what it draws and what it is called.
 
     A ``shift`` plot draws the chart's stretches and carries no series of its own.
-    ``standing`` is the word beside the status plot's last reading — "ahead 5%",
-    "behind 12%", "on plan". A share plot runs 0..1; an amount plot (``volume``,
-    ``remaining``) runs 0..``ceiling``, in days, and its series are step curves.
+    A share plot runs 0..1; an amount plot (``volume``, ``remaining``) runs
+    0..``ceiling``, in days, and its series are step curves.
     """
 
     kind: PlotKind
     title: str
     series: tuple[Series, ...] = ()
-    standing: str = ""
     note: str = ""
     ceiling: float = 1.0
 

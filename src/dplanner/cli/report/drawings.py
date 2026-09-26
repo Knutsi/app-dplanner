@@ -623,7 +623,7 @@ def _status_plot(
     colors: Colors,
 ) -> str:
     """The plan now — in each stretch's shade, dotted where the plan leaves a gap — and
-    what actually landed, in ink, with the ahead-or-behind word beside its last reading."""
+    what actually landed, in ink, to a dot at its last reading."""
     roles = {series.role: series for series in plot.series}
     plan, actual = roles.get("plan"), roles.get("actual")
     out = []
@@ -639,15 +639,6 @@ def _status_plot(
         out.append(_polyline(actual, panel, x, y, colors.ink, "1", ""))
         when, share = actual.points[-1]
         out.append(_marker(x(when), y(panel, share), colors.ink, colors.surface))
-        if plot.standing:
-            width = _text_width(plot.standing, 11.0)
-            flipped = x(when) + 8 + width > CHART_W - CHART_RIGHT
-            out.append(
-                f'<text class="standing" x="{_n(x(when) + (-8 if flipped else 8))}" '
-                f'y="{_n(y(panel, share))}" dominant-baseline="central" '
-                f'{'text-anchor="end" ' if flipped else ""}fill="{colors.ink}">'
-                f"{_t(plot.standing)}</text>"
-            )
     return "".join(out)
 
 

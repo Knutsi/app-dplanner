@@ -102,7 +102,9 @@ you work. So:
   steps end to end) *and* the critical path (dependency-aware, unlimited workers). Real
   staffing lands between them — read the labels, and quote the one you mean.
   `dplanner schedule matrix` prices the staffings in between and dates every milestone
-  for the project's team (`schedule team` sets it), and **`dplanner progress show`** says
+  for the project's team (`schedule team` sets it) — dates that hold while the work
+  follows the plan and otherwise resume from tomorrow, so report a status as it happens
+  and a landing moves only when the work does — and **`dplanner progress show`** says
   how far each milestone has come — by estimated days — against the plan as it stood at
   the start (or at `--basis`, a date or a saved snapshot's title; `--as-of` reads the
   now side from one too): what was added since, how the landing moved, which steps were

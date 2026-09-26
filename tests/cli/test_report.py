@@ -130,7 +130,6 @@ def test_the_progress_chart_is_the_windows_plots_on_one_axis(cli_library, plan):
     assert volume.ceiling == remaining.ceiling >= 1.0
     assert [series.role for series in remaining.series] == ["baseline", "plan"]
     assert [series.role for series in status.series] == ["plan", "actual"]
-    assert status.standing in ("on plan", "") or status.standing.startswith(("ahead", "behind"))
     # One stretch per milestone plus the work after the last one; only the milestone gets
     # a row, and its sentence is the one the window's tooltip says.
     assert [stretch.label for stretch in chart.stretches] == ["v1"]

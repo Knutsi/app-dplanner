@@ -42,6 +42,7 @@ from dplanner.modules.time_estimates.schedule import (
     read_efficiency,
     read_start,
     read_team,
+    schedule_facts,
 )
 
 # The recorder's origin: no view claims it, so every surface repaints — a chart reading
@@ -61,6 +62,7 @@ class ProgressRecorder(QObject):
         is_agent: Callable[[Step], bool],
         status_for: Callable[[Step], str],
         since_for: Callable[[Step], date | None],
+        is_marker: Callable[[Step], bool],
         is_milestone: Callable[[Step], bool],
         start_of: Callable[[ProjectId], date],
         clock: Clock,
@@ -73,6 +75,7 @@ class ProgressRecorder(QObject):
         self._is_agent = is_agent
         self._status_for = status_for
         self._since_for = since_for
+        self._is_marker = is_marker
         self._is_milestone = is_milestone
         self._start_of = start_of
         self._settle = Debounced(self.record_all, SETTLE_MS, parent=self, service=debounce)
@@ -101,6 +104,15 @@ class ProgressRecorder(QObject):
 
     def snapshot(self, project: Project, today: date | None = None) -> Snapshot | None:
         humans, agents = read_team(project)
+        day = today or self._clock.today()
+        facts = schedule_facts(
+            project,
+            day,
+            is_agent=self._is_agent,
+            status_for=self._status_for,
+            since_for=self._since_for,
+            is_marker=self._is_marker,
+        )
         return take(
             self._product,
             project,
@@ -114,7 +126,8 @@ class ProgressRecorder(QObject):
             efficiency=read_efficiency(project),
             is_milestone=self._is_milestone,
             start_for=read_start,
-            today=today or self._clock.today(),
+            today=day,
+            facts=facts,
         )
 
     def record_all(self) -> None:

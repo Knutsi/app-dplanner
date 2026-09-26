@@ -39,9 +39,10 @@ paths:
   remaining chain first, ties by project order) handed `days_for`, `is_agent` and
   `is_milestone` as functions. **Milestones run in sequence**: each stretch is a
   milestone's `scope.cone` truncated at the milestones before it, simulated on its own
-  (`parallel_finish`'s `among`) from the working day after the previous one lands — or
-  from a date of its own, when it has one and that is later; an earlier date is *pushed*
-  and reported, never silently overlapped. Calendar time is the same walk over a wrapped
+  (`parallel_finish`'s `among`) from where the previous one lands — with what is left of
+  that day — or from a date of its own, when it has one and that is later; an earlier
+  date is *pushed* and reported, never silently overlapped. Calendar time is the same
+  walk over a wrapped
   `days_for` (`time_estimates/schedule.py`'s `stretched`), so the domain never learns what
   an efficiency is. Five assumptions reach disk, all under `time_estimates`: the focus
   factor, the colour map and the **team** the calendar is dated for on the project node
@@ -64,6 +65,22 @@ paths:
   hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says so instead
   of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
   worker pools, one greedy simulation* has the reasoning.
+- **The plan re-dates itself from what has happened, and facts beat the sequence.**
+  `phases` handed `ScheduleFacts` — `time_estimates/schedule.py`'s `schedule_facts`: the
+  stored statuses and their `since`, which steps are markers (estimate off), and work in
+  flight credited at the focus it ran at — keeps the plan's own dates while every step is
+  done exactly when they land it, and otherwise resumes the rest from tomorrow: done steps
+  dated by their `since`, work in flight first and credited, a stretch whose work is done
+  dated by it whatever its markers say, the whole landing with its **latest** stretch.
+  **Every surface that dates the plan hands the facts in** — the tab, the recorder,
+  `schedule matrix`, `progress show|record` and the report — reading a day still going
+  (`day_over` False: a step due today has until tonight); only the parity harness and the
+  simulator read days that are over. **The model is the prototype's to the day**:
+  `tests/modules/test_time_parity.py` replays its scenarios through the real aspect writers
+  (`simulation/frames.py`) and compares every forecast, so a model change is made in the
+  prototype first, its fixture regenerated, then here. A stretch's `start` is where its
+  remaining work begins and `began` when its work first began — a view shows `began`.
+  `ARCHITECTURE.md`'s *The plan re-dates itself from what has happened* has the reasoning.
 - **Progress is derived; the past is a list of snapshots, and a comparison is two of
   them.** How far a milestone has come — by estimated days, everything through its
   stretch; the count of steps is tallied and worded, never the share — is
@@ -90,8 +107,8 @@ paths:
   strip** (`Pick`, `resolve`, `pick_words`): the then side is the plan at the project's
   start unless a saved snapshot or a day is chosen, resolved as the last record on or
   before the day (the earliest row for a project older than its history, but **never
-  today's own record**, which is the plan now and no comparison at all); the now side is
-  the live plan unless a saved snapshot or a day is chosen, and read as of one the
+  today's own record** — not even for a plan whose start is still to come — which is the
+  plan now and no comparison at all); the now side is the live plan unless a saved snapshot or a day is chosen, and read as of one the
   curves stop at its day. **Every heading names the plan it is compared with, record
   included** — *Scope change — versus the plan at start, recorded 9 Sep*, *versus
   Kickoff review (1 Nov)*, *Progress — as of Review 2 (1 Dec)* — worded once
@@ -100,9 +117,9 @@ paths:
   is a hairline through every plot with its title. **The plots are read a page at a
   time** (`chart.py`'s `PAGES`, toggles over them): *Milestone shifts* (a row each: the
   landing then hollow, the landing now filled, an arrow between), *Progress* (the plan
-  now in each stretch's shade against what landed in ink, with *ahead 5 %* / *behind
-  12 %* beside today's dot; and *Scope change* — the plan then dashed **over** the plan
-  now, opaque and paler — so a plan unchanged since reads as two lines in one place —
+  now in each stretch's shade against what landed in ink — no *ahead* or *behind*:
+  re-dated from what is done, the two agree by today; and *Scope change* — the plan then
+  dashed **over** the plan now, opaque and paler — so a plan unchanged since reads as two lines in one place —
   and **the area between them filled by direction**: the attention amber where the plan
   now promises more by a date than it did, the bad red where it promises less, the good
   green as a line where the two agree) and *Volume* (`progress.volume` and `remaining`:
@@ -117,8 +134,8 @@ paths:
   surfaces draw the same plots** — `time_estimates/chart.py` in the window, `cli/report/`'s
   `Chart` of `Plot`s and `Stretch`es on the page and the PDF — so what they share is
   `domain/schedule.py`: `share_at` reads a line at a date and `change_runs` cuts two
-  plans into the runs the fill is coloured by, and `progress.py` words `standing_words`
-  and `shift_words` once. **Every milestone's landing is marked and named on the
+  plans into the runs the fill is coloured by, and `progress.py` words `shift_words`
+  once. **Every milestone's landing is marked and named on the
   progress line** — a name elided, and dropped rather than squeezed when its neighbour's
   reaches that far — **a milestone row dates both its marks and drops a hairline to the
   axis** (`row_dates`, the same fit rule, both surfaces), a page's plots grow with the
