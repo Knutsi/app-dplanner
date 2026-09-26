@@ -14,15 +14,16 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen, QPolygonF
 
 from dplanner.domain.schedule import Tick, axis_ticks
 from dplanner.theme.tokens import SECONDARY_ALPHA
 
 # How far apart the date labels under an axis sit at the least.
 TICK_ROOM = 70
-# Where a label under the axis gives way to the day shown's own.
-TODAY_ROOM = 34
+# The least air between a label under the axis and the day shown's own word, which it
+# gives way to — "today", or a date while History looks back.
+TODAY_GAP = 8
 GRID_ALPHA = 20
 SAVED_ALPHA = 100
 TODAY_ALPHA = 140
@@ -147,16 +148,19 @@ def paint_dates(
     painter: QPainter, axis: Axis, baseline: float, inks: Inks, *, day: date, day_word: str
 ) -> None:
     """The dates under the axis, and the day shown's own word under its line — a date that
-    would touch it gives way."""
+    would touch the word gives way to it."""
+    bold = QFont(painter.font())
+    bold.setBold(True)
+    plain = QFontMetricsF(painter.font())
+    half_word = QFontMetricsF(bold).horizontalAdvance(day_word) / 2
     painter.setPen(inks.secondary)
     for when, label in axis.ticks():
         at = axis.x(when)
-        if abs(at - axis.x(day)) < TODAY_ROOM:
+        reach = half_word + plain.horizontalAdvance(label) / 2 + TODAY_GAP
+        if axis.holds(day) and abs(at - axis.x(day)) < reach:
             continue
         painter.drawText(QRectF(at - 40, baseline, 80, 16), Qt.AlignmentFlag.AlignHCenter, label)
     if axis.holds(day):
-        bold = painter.font()
-        bold.setBold(True)
         painter.save()
         painter.setFont(bold)
         painter.setPen(inks.ink)
