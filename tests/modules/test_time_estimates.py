@@ -857,6 +857,45 @@ def test_adjusting_waits_for_enough_to_go_on_and_stands_down_while_looking_back(
     assert tab.adjust.toolTip().startswith("Adjusting for efficiency needs 5 working days")
 
 
+# -- waits on the page -----------------------------------------------------------------------
+
+
+def test_a_wait_is_hatched_on_the_work_page_and_the_calendar_and_named_in_its_milestone(
+    services, staged
+):
+    """Hardware arrives on the 21st, in v2's stretch: the plan dates the wait's days, the
+    Work page and the calendar say it where the pointer is, and v2's words name it."""
+    from dplanner.cli.report.drawings import LIGHT, chart_svg
+    from dplanner.cli.report.parts import Chart
+    from dplanner.domain.schedule import Wait
+    from dplanner.modules import _time_readers
+    from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
+    from dplanner.modules.step_wait.aspect import write as write_wait
+    from dplanner.modules.time_estimates.report import report_source
+
+    library = services.document
+    _read, draft, _docs, ship = staged.steps
+    wait = Step(title="Hardware arrives")
+    AddNodeCommand(staged.id, wait).redo(library)
+    SetModuleDataCommand(wait.id, WAIT_ID, write_wait(Wait(until=date(2026, 9, 21)))).redo(library)
+    SetEdgesCommand(wait.id, "requires", [draft.id]).redo(library)
+    SetEdgesCommand(ship.id, "requires", [*ship.edges["requires"], wait.id]).redo(library)
+    tab = services.tabs.open("time", staged.id)
+    (held,) = tab.shown.now.waits
+    assert (held.key, held.title, held.end) == (ship.id, "Hardware arrives", date(2026, 9, 18))
+    work = tab.work
+    work.resize(900, work.height())
+    axis = work.axis()
+    assert "waits: Hardware arrives" in work.reading(axis.x(held.end), work.work_top + 10)
+    assert "waits: Hardware arrives" in tab.months.day_tooltip(held.end)
+    assert "waits: Hardware arrives" in tab.shifts.words(tab.shifts.rows[1])
+    assert "waits:" not in tab.shifts.words(tab.shifts.rows[0])
+    contribution = report_source(_time_readers())(library, staged, services.repo.files, TODAY)
+    (chart,) = [placed.part for placed in contribution.placed if isinstance(placed.part, Chart)]
+    assert chart.waits == ((held.start, held.end, "Hardware arrives"),)
+    assert chart_svg(chart, LIGHT).count('class="wait"') == 2  # a band in each work plot
+
+
 # -- the recorder ----------------------------------------------------------------------------
 
 

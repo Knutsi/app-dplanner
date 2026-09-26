@@ -169,7 +169,8 @@ class Chart:
     them, the date marks fall as hairlines through each, the labels are printed once
     under the last, and the edges are the earliest and latest date anything here has to
     show. ``marks`` are the saved snapshots — a day and its title — drawn as a hairline
-    through every plot.
+    through every plot; ``waits`` the plan's waits — the first day each holds, the last and
+    its name — drawn as a pale named band through the work plots.
     """
 
     id: str
@@ -178,6 +179,7 @@ class Chart:
     plots: tuple[Plot, ...] = ()
     stretches: tuple[Stretch, ...] = ()
     marks: tuple[tuple[date, str], ...] = ()
+    waits: tuple[tuple[date, date, str], ...] = ()
     note: str = ""
 
     @property

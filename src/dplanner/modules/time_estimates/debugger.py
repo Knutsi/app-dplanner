@@ -283,10 +283,12 @@ class TimeSimulationActivity(ActivityBase):
             self._on_add_wait,
             tip="A wait before the step chosen, made on the day shown",
         )
-        self.waits_made = note("", self.edits)
-        self.edits.add_widget(self.waits_made)
         edits_row.addWidget(self.edits, 1)
         page.addWidget(edits)
+        # The waits made so far, on a line of their own: a list grows past what a strip holds.
+        self.waits_made = note("", self.widget)
+        self.waits_made.setContentsMargins(PANEL_MARGIN, 0, PANEL_MARGIN, 0)
+        page.addWidget(self.waits_made)
 
         days = QWidget(self.widget)
         days_column = QVBoxLayout(days)

@@ -58,6 +58,8 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     (Qt.Key.Key_N, _NONE): ("steps.new",),
     (Qt.Key.Key_R, _NONE): ("steps.rename",),
     (Qt.Key.Key_S, _NONE): ("steps.lasso",),
+    # A wait in front of the step: the wait module's verb, named here like any other.
+    (Qt.Key.Key_W, _NONE): ("wait.insert_before",),
     (Qt.Key.Key_Delete, _NONE): ("steps.unlink", "steps.delete", "regions.delete"),
     (Qt.Key.Key_Backspace, _NONE): ("steps.unlink", "steps.delete", "regions.delete"),
 }

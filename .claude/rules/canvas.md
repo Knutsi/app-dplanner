@@ -140,9 +140,9 @@ paths:
   (`write_position(x, y, size)`), a paste keeps it, and every sort and layout spaces by
   `positions.node_size` and never changes one. Every painter takes the body rect it is
   handed — nothing measures from `NODE_W` — the title wraps onto as many lines as the card
-  has room for, and the bottom line holds the estimate at the right in full ink and nothing
-  in words: every aspect a card wears is a medallion, a badge, a bar or a pill, never a
-  phrase. `ARCHITECTURE.md`'s *A card's size is the step's* has the reasoning.
+  has room for, and the bottom line holds the estimate at the right in full ink — a
+  wait's how long it holds, `until 21 Oct` or `3 wd` — and nothing in words: every aspect a
+  card wears is a medallion, a badge, a bar or a pill, never a phrase. `ARCHITECTURE.md`'s *A card's size is the step's* has the reasoning.
 - **The look is one per-user value, and snapping is the gesture's, never the write's.**
   `project_editor/look.py`: the marks, the background under the graph (plain, dots, lines,
   crosses — painted by `ground.py`) and *Snap to Grid* are one `Look`, kept under one key,

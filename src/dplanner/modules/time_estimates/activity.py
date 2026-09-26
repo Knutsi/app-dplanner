@@ -630,7 +630,8 @@ class TimeEstimatesActivity(EntityActivity):
             for stretch in now.stretches
             if stretch.finish is not None
         )
-        self.months.show_bands(start, bands, shown.day)
+        waits = tuple((wait.start, wait.end, wait.title) for wait in now.waits)
+        self.months.show_bands(start, bands, shown.day, waits)
         self.months.emphasise(self._picked)
 
     def _show_budget(self, project: Project, today: date) -> None:

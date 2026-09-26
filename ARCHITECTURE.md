@@ -4758,6 +4758,16 @@ the day:
   waits on is done and its day has come, or its days have been waited (the model's own
   `waited`), and `WAITING` until then. Derived on every read, like the rest of progression,
   so a wait releases its steps the morning it may with nobody marking anything.
+- **A wait looks like one, and only as the plan dates it now.** Its key's letter is `W`,
+  its medallion the clock, its stat how long it holds. On the Time tab the days it holds are
+  hatched through both work plots and named, hatched on the calendar and named in its
+  milestone's words; the report draws them as pale named bands, since QtSvg honours no
+  pattern. What the page draws them from is `Snapshot.waits`, a field the snapshot carries
+  but never records and never compares: a wait is no work, and the day it lets go is in the
+  landings already, so a recorded day read by History shows none, as the prototype's does.
+  *Insert Wait Before* puts a wait of a day in front of a step — taking what the step
+  waited on, the step then waiting on it — as one undo, born through the graph editor's
+  `create_step` like a feature step from the Specs tab, a column to the step's left.
 - **One predicate says what is work.** A wait is on no lane of the board, in no volume and
   never unestimated — `_counts_as_work`, one function in the root, handed to progression,
   the Estimates tab, the Order tab, `estimate rollup`, `schedule show`, `order show` and

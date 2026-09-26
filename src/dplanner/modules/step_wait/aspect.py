@@ -60,6 +60,14 @@ def words(wait: Wait, today: date | None = None) -> str:
     return f"{wait.days:g} working day{'' if wait.days == 1 else 's'}"
 
 
+def stat(wait: Wait, today: date | None = None) -> str:
+    """What a wait's card says at its bottom right, where a step's estimate would be:
+    ``until 21 Oct``, ``3 wd``."""
+    if wait.until is not None:
+        return f"until {short_date(wait.until, today)}"
+    return f"{wait.days:g} wd"
+
+
 def summary(step: Step) -> str:
     """One short phrase for a step's row, or "" when it is no wait."""
     wait = read(step)

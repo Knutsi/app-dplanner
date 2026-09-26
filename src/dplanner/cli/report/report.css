@@ -59,7 +59,9 @@
   svg .idle-mask, svg .ring { stroke: var(--surface); }
   svg .idle, svg .key-ink { stroke: var(--ink); }
   svg .series-baseline, svg .schedule, svg .key-secondary { stroke: var(--secondary); }
-  svg .weekend, svg .done-area { fill: var(--ink); }
+  svg .weekend, svg .done-area, svg .wait-band { fill: var(--ink); }
+  svg .wait-band { stroke: var(--ink); }
+  svg .wait-name { fill: var(--secondary); }
   svg .landing-name, svg .today-word { fill: var(--ink); }
   svg .asked { fill: var(--ink); }
 }
