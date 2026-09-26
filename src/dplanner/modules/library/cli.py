@@ -10,6 +10,11 @@ several of them for several people — is joined in two commands: clone it, then
 first, with who worked on each and when, as the Open Project wizard's browse page does.
 A project somebody sent a link to is ``project open`` — the same document the window's
 *Share Project…* writes, read by the same domain reader.
+
+``library archive`` is ``library remove`` that remembers: the directory moves to the
+library file's archive, is no longer loaded, and ``library restore`` — which is
+``library add`` of that directory, since attaching takes it off the list — brings it back.
+``library remove`` forgets an archived entry too, when no project in the library matches.
 """
 
 from argparse import ArgumentParser, Namespace
@@ -20,8 +25,8 @@ from dplanner.cli.command import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, project_arg
 from dplanner.core.storage.locations import activity, find_repo_root
 from dplanner.core.storage.provider import StorageError
-from dplanner.domain.plan_repo import ago, list_projects
-from dplanner.domain.store import PROJECT_META
+from dplanner.domain.plan_repo import ago, list_projects, summary
+from dplanner.domain.store import PROJECT_META, LibraryStore
 from dplanner.modules.library.membership import LIBRARY_ORIGIN
 
 
@@ -54,9 +59,25 @@ def commands() -> list[CliCommand]:
         ),
         CliCommand(
             path=("library", "remove"),
-            summary="Remove a project from the library. Its files stay on disk.",
+            summary="Remove a project from the library, or from its archive. Its files stay "
+            "on disk.",
             configure=project_arg,
             run=_remove,
+        ),
+        CliCommand(
+            path=("library", "archive"),
+            summary="Take a project out of the library and keep it in the archive — not "
+            "loaded, until `library restore` brings it back.",
+            configure=project_arg,
+            run=_archive,
+            examples=("dplanner library archive search",),
+        ),
+        CliCommand(
+            path=("library", "restore"),
+            summary="Bring an archived project back into the library.",
+            configure=_configure_restore,
+            run=_restore,
+            examples=("dplanner library restore search",),
         ),
         CliCommand(
             path=("library", "path"),
@@ -74,6 +95,12 @@ def _configure_add(parser: ArgumentParser) -> None:
 
 def _configure_browse(parser: ArgumentParser) -> None:
     parser.add_argument("directory", help="a plan repository: its root, or any folder inside it")
+
+
+def _configure_restore(parser: ArgumentParser) -> None:
+    parser.add_argument(
+        "archived", help="an archived project's path, folder name, or part of its title"
+    )
 
 
 def _list(context: CliContext, _args: Namespace) -> int:
@@ -96,7 +123,28 @@ def _list(context: CliContext, _args: Namespace) -> int:
         else f"{row['path']}  — unavailable: {row['reason']}"
         for row in rows
     ]
-    context.report({"projects": rows}, "\n".join(lines) if lines else "The library is empty.")
+    archived = []
+    for directory in store.archived():
+        found = summary(directory)
+        archived.append(
+            {
+                "path": str(directory),
+                "title": found.title,
+                "steps": found.steps,
+                "present": found.present,
+            }
+        )
+    if archived:
+        lines += ["", "Archived:"] + [
+            f"  {row['title']}  ({row['path']})"
+            if row["present"]
+            else f"  {row['path']}  — the folder is gone"
+            for row in archived
+        ]
+    context.report(
+        {"projects": rows, "archived": archived},
+        "\n".join(lines) if lines else "The library is empty.",
+    )
     return 0
 
 
@@ -109,7 +157,7 @@ def _add(context: CliContext, args: Namespace) -> int:
     return _add_all(context, directory)
 
 
-def _add_one(context: CliContext, directory: Path) -> int:
+def _add_one(context: CliContext, directory: Path, done: str = "added to the library") -> int:
     if find_repo_root(directory) is None:
         raise CliError(
             f"{directory} is not inside a git repository — DPlanner projects live in "
@@ -126,7 +174,7 @@ def _add_one(context: CliContext, directory: Path) -> int:
     context.library.add_child(context.library.id, project, origin=LIBRARY_ORIGIN)
     context.report(
         {"id": project.id, "title": project.title, "path": str(directory)},
-        f"“{project.title or project.folder_name}” added to the library",
+        f"“{project.title or project.folder_name}” {done}",
     )
     return 0
 
@@ -148,12 +196,18 @@ def _add_all(context: CliContext, root: Path) -> int:
     store, library = context.store, context.library
     known_dirs = {store.project_dir(project.id).resolve() for project in library.projects}
     known_ids = {project.id for project in library.projects}
+    # Every project a repository lists is not a request to undo somebody's archiving:
+    # `library restore` is, and a named `library add` of the one directory.
+    archived = {entry.expanduser().resolve() for entry in store.archived()}
     added: list[dict[str, str]] = []
     skipped: list[dict[str, str]] = []
     for found in listing.projects:
         row = {"path": str(found.directory), "title": found.title}
         if found.directory.resolve() in known_dirs or found.project_id in known_ids:
             skipped.append(row | {"reason": "already in the library"})
+            continue
+        if found.directory.resolve() in archived:
+            skipped.append(row | {"reason": "archived — library restore brings it back"})
             continue
         try:
             project = store.attach(found.directory)
@@ -226,15 +280,72 @@ def _browse(context: CliContext, args: Namespace) -> int:
 
 
 def _remove(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.library, args.project)
-    context.library.remove_child(project.id, origin=LIBRARY_ORIGIN)
+    """A library project by preference; failing that, an archived one — the archive is
+    the library's too, so forgetting an entry there is the same verb."""
+    try:
+        project = find_project(context.library, args.project)
+    except CliError as missing:
+        try:
+            directory = _find_archived(context.store, args.project)
+        except CliError:
+            raise missing from None
+        context.store.forget_archived(directory)
+        title = summary(directory).title
+        context.report(
+            {"path": str(directory), "title": title, "archived": True},
+            f"“{title}” removed from the library's archive; its files stay on disk",
+        )
+        return 0
+    # The store lets go first, then the model — the order the window's Remove keeps.
     context.store.detach(project.id)
+    context.library.remove_child(project.id, origin=LIBRARY_ORIGIN)
     context.report(
         {"id": project.id, "title": project.title},
         f"“{project.title or project.folder_name}” removed from the library; "
         "its files stay on disk",
     )
     return 0
+
+
+def _archive(context: CliContext, args: Namespace) -> int:
+    project = find_project(context.library, args.project)
+    directory = context.store.archive(project.id)
+    context.library.remove_child(project.id, origin=LIBRARY_ORIGIN)
+    context.report(
+        {"id": project.id, "title": project.title, "path": str(directory)},
+        f"“{project.title or project.folder_name}” archived — "
+        f"dplanner library restore {directory} brings it back",
+    )
+    return 0
+
+
+def _restore(context: CliContext, args: Namespace) -> int:
+    """Restoring is adding: the store's attach takes the directory off the archive."""
+    directory = _find_archived(context.store, args.archived)
+    if not summary(directory).present:
+        raise CliError(
+            f"{directory} no longer holds a project — "
+            f"dplanner library remove {directory} takes it off the archive"
+        )
+    return _add_one(context, directory.expanduser().resolve(), done="restored to the library")
+
+
+def _find_archived(store: LibraryStore, needle: str) -> Path:
+    """An archived directory by its path, its folder name, or a unique part of its title —
+    the words ``library list`` printed for it."""
+    archived = store.archived()
+    given = Path(needle).expanduser().resolve()
+    exact = [entry for entry in archived if needle == entry.name or entry.resolve() == given]
+    if exact:
+        return exact[0]
+    lowered = needle.lower()
+    partial = [entry for entry in archived if lowered in summary(entry).title.lower()]
+    if len(partial) == 1:
+        return partial[0]
+    if not partial:
+        raise CliError(f"no archived project matching {needle!r}")
+    paths = ", ".join(sorted(str(entry) for entry in partial))
+    raise CliError(f"{needle!r} matches several archived projects — use a path: {paths}")
 
 
 def _path(context: CliContext, _args: Namespace) -> int:

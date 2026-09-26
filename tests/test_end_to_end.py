@@ -56,7 +56,12 @@ def test_every_registered_activity_opens(session, make_project):
 def test_the_index_lists_what_the_library_holds(session, make_project):
     services = session.services
     seed_steps(services, make_project("Discovery"))
-    assert [s.id for s in services.index_segments.segments()] == ["projects", "tests", "docs"]
+    assert [s.id for s in services.index_segments.segments()] == [
+        "projects",
+        "tests",
+        "docs",
+        "archive",
+    ]
 
 
 def test_a_mixed_edit_chain_undoes_back_to_an_identical_workspace(

@@ -354,6 +354,20 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         library.add_child(library.id, project, origin=LIBRARY_ORIGIN)
         return project
 
+    # The store lets go first, then the model: sync rewires its repository groups on the
+    # structure signal, and reads them from the store's records.
+    def disconnect_project(project_id: str) -> None:
+        from dplanner.modules.library.membership import LIBRARY_ORIGIN
+
+        store.detach(project_id)
+        library.remove_child(project_id, origin=LIBRARY_ORIGIN)
+
+    def archive_project(project_id: str) -> None:
+        from dplanner.modules.library.membership import LIBRARY_ORIGIN
+
+        store.archive(project_id)
+        library.remove_child(project_id, origin=LIBRARY_ORIGIN)
+
     repos = RepositoryServices(
         facts_of=facts_of,
         roles=roles,
@@ -1481,6 +1495,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 context=services.context,
                 undo=services.undo,
                 segments=services.index_segments,
+                tabs=services.tabs,
                 theme=services.theme,
                 parent=services.window,
                 status=services.window,
@@ -1501,8 +1516,15 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 # The store's membership face: attach/detach track directories, the
                 # model change itself is applied here, off the undo stack, with the
                 # membership origin the `library add` verb uses too.
-                detach=store.detach,
                 connect_project=connect_project,
+                disconnect_project=disconnect_project,
+                # The archive is the store's too — per user, in the library file.
+                # Restoring is connecting: an attach takes its directory off the list.
+                archive_project=archive_project,
+                archived=store.archived,
+                archive_changed=store.archive_changed,
+                forget_archived=store.forget_archived,
+                has_unflushed=store.has_unflushed,
                 project_dirs=lambda: (
                     [store.project_dir(project.id).resolve() for project in library.projects]
                     + [problem.path.resolve() for problem in store.problems()]
@@ -1513,25 +1535,10 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 # project, and the project's verbs all live there.
                 # A single click opens the same surface as a preview tab — the VS Code
                 # gesture: the next click's preview replaces it, activation keeps it.
+                # In the order a plan is made: what it answers to and carries (Specs,
+                # Assets), the graph and its readings, then how the whole covers the spec.
+                # Project ▸ Show … lists them the same way.
                 entries=(
-                    ProjectEntry(
-                        id="steps",
-                        label="Steps",
-                        open=project_editor.open,
-                        open_preview=lambda pid: project_editor.open(pid, preview=True),
-                        icon=graph_icon,
-                        menu="Project",
-                        order=10,
-                    ),
-                    ProjectEntry(
-                        id="order",
-                        label="Order",
-                        open=step_order.open,
-                        open_preview=lambda pid: step_order.open(pid, preview=True),
-                        icon=list_icon,
-                        menu="Project",
-                        order=15,
-                    ),
                     ProjectEntry(
                         id="spec",
                         label="Specs",
@@ -1539,7 +1546,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                         open_preview=lambda pid: spec.open(pid, preview=True),
                         icon=spec_icon,
                         menu="Project",
-                        order=20,
+                        order=10,
                         # A mark while a source of that project has updates waiting, so it
                         # is visible without opening the tab. What the window has found,
                         # not a claim about the source now: checking runs while a Specs tab
@@ -1548,22 +1555,31 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                         changed=spec.updates_changed,
                     ),
                     ProjectEntry(
-                        id="coverage",
-                        label="Coverage",
-                        open=coverage.open,
-                        open_preview=lambda pid: coverage.open(pid, preview=True),
-                        icon=coverage_icon,
-                        menu="Project",
-                        order=22,
-                    ),
-                    ProjectEntry(
                         id="assets",
                         label="Assets",
                         open=project_assets.open,
                         open_preview=lambda pid: project_assets.open(pid, preview=True),
                         icon=image_icon,
                         menu="Project",
-                        order=25,
+                        order=20,
+                    ),
+                    ProjectEntry(
+                        id="steps",
+                        label="Steps",
+                        open=project_editor.open,
+                        open_preview=lambda pid: project_editor.open(pid, preview=True),
+                        icon=graph_icon,
+                        menu="Project",
+                        order=30,
+                    ),
+                    ProjectEntry(
+                        id="order",
+                        label="Order",
+                        open=step_order.open,
+                        open_preview=lambda pid: step_order.open(pid, preview=True),
+                        icon=list_icon,
+                        menu="Project",
+                        order=35,
                     ),
                     ProjectEntry(
                         id="progression",
@@ -1572,7 +1588,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                         open_preview=lambda pid: progression.open(pid, preview=True),
                         icon=gauge_icon,
                         menu="Project",
-                        order=30,
+                        order=40,
                     ),
                     ProjectEntry(
                         id="time",
@@ -1581,7 +1597,16 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                         open_preview=lambda pid: time_estimates.open(pid, preview=True),
                         icon=clock_icon,
                         menu="Project",
-                        order=40,
+                        order=50,
+                    ),
+                    ProjectEntry(
+                        id="coverage",
+                        label="Coverage",
+                        open=coverage.open,
+                        open_preview=lambda pid: coverage.open(pid, preview=True),
+                        icon=coverage_icon,
+                        menu="Project",
+                        order=60,
                     ),
                 ),
             )

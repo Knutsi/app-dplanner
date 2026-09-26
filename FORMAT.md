@@ -61,14 +61,17 @@ and where this machine has the repositories those projects name.
 
 ```json
 {
-  "format": 3,
+  "format": 4,
   "projects": [
     {"path": "/home/anna/plans/widget"},
     {"path": "/home/anna/code/gadget/planning"}
   ],
   "checkouts": {
     "github.com/acme/widget": "/home/anna/code/widget"
-  }
+  },
+  "archived": [
+    {"path": "/home/anna/plans/launch"}
+  ]
 }
 ```
 
@@ -89,6 +92,15 @@ and where this machine has the repositories those projects name.
   mark, because a read verb's transaction must never be refused over a per-machine fact. A
   format-2 row carried its project's code checkout instead; reading one files it under the
   checkout's own origin. A format-1 file reads as format 3 with no checkouts.
+- `archived` is optional: the project directories this user took out of the library and
+  kept listed, in the order they left. An archived project is never opened, watched or
+  saved, and attaching its directory again — *Restore Project*, *Open Project…* on it,
+  `dplanner library add` or `library restore` — takes it off the list. Per user like the
+  rest of this file: archiving is one person's tidying, and nothing about it reaches the
+  plan. **Format 4 is this key**, bumped because a format-3 writer rebuilds the file from
+  what it knows and would drop the list; no reader checks the stamp, so a format-3 build
+  that writes membership still drops it, which leaves the directories on disk and costs
+  what *Remove from Library* costs. A format-3 file reads as format 4 with nothing archived.
 - Reading is tolerant: a malformed row is skipped, and an entry that cannot be opened — the
   folder is gone, holds no `project.dproj`, or is not inside a git repository — becomes an
   *unavailable* row in the panel rather than a refusal, and keeps its place in the file

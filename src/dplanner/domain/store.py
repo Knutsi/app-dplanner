@@ -293,6 +293,12 @@ class LibraryStore:
         # file this store adopted — carrying the canonical repository. Run Agent
         # re-evaluates on it.
         self.checkout_changed: Signal[str] = Signal()
+        # The projects this user took out of the library and kept listed, in the order they
+        # left — never opened, so nothing here is watched or saved. Per user, like the rest
+        # of the library file: archiving is one person's tidying, not a fact about the plan.
+        self._archived: list[Path] = []
+        # The archive changed — here, or in another writer's library file adopted here.
+        self.archive_changed: Signal[()] = Signal()
         # Every (node, entry) changed here and not yet written — the finer twin of the
         # dirty marks, kept so an outside change to the *same* entry is a conflict and one
         # to any other entry of the same node is not. See adopt_outside_changes().
@@ -319,6 +325,7 @@ class LibraryStore:
         migrated: list[tuple[_ProjectRecord, Project]] = []
         file = read_library_file(self.library_path)
         self._checkouts = dict(file.checkouts)
+        self._archived = list(file.archived)
         for entry in file.projects:
             try:
                 project, record, pending = self._open_project(entry)
@@ -499,7 +506,10 @@ class LibraryStore:
     def attach(self, directory: Path) -> Project:
         """Open a project directory and start tracking it. No model mutation here —
         the caller adds the returned project to the library, which marks the root
-        structure dirty and gets the library file rewritten on the next flush."""
+        structure dirty and gets the library file rewritten on the next flush.
+
+        A directory the archive lists leaves it: restoring a project *is* attaching it,
+        so Restore, Open Project… and ``library add`` on an archived folder agree."""
         project, record, pending = self._open_project(Path(directory))
         self._records[project.id] = record
         self._groups = None
@@ -507,12 +517,45 @@ class LibraryStore:
             self._save_project(record, project)
         else:
             self._remember_disk(record)
+        self._drop_archived(Path(directory))
         return project
 
     def detach(self, project_id: ProjectId) -> None:
         """Forget a project. Its files stay on disk — removal is from the library only."""
         self._records.pop(project_id, None)
         self._groups = None
+
+    def archived(self) -> list[Path]:
+        """The directories archived out of this library, in the order they left."""
+        return list(self._archived)
+
+    def archive(self, project_id: ProjectId) -> Path:
+        """Detach a project and keep its directory in the archive; returns the directory.
+
+        The store's half, as :meth:`detach` is Remove's: the caller removes the project
+        from the model, whose structure mark gets the file rewritten on the next flush.
+        Flush the project's edits first — a detached project's unwritten marks are dropped.
+        """
+        directory = self._records[project_id].directory
+        self.detach(project_id)
+        self._archived.append(directory)
+        self.archive_changed.emit()
+        return directory
+
+    def forget_archived(self, directory: Path) -> None:
+        """Take a directory out of the archive. Nothing in the model changes, so the store
+        marks the library file itself, as :meth:`relocate` does."""
+        if self._drop_archived(directory) and self.library is not None:
+            self.dirty.emit(self.library.id, "structure")
+
+    def _drop_archived(self, directory: Path) -> bool:
+        target = directory.expanduser().resolve()
+        kept = [entry for entry in self._archived if entry.expanduser().resolve() != target]
+        if len(kept) == len(self._archived):
+            return False
+        self._archived = kept
+        self.archive_changed.emit()
+        return True
 
     def checkouts(self) -> Mapping[str, Path]:
         """Where this machine has each repository, by canonical repository."""
@@ -546,7 +589,7 @@ class LibraryStore:
             file = read_library_file(self.library_path, strict=True)
         except (OSError, ValueError):
             return
-        write_library_file(self.library_path, file.projects, self._checkouts)
+        write_library_file(self.library_path, file.projects, self._checkouts, file.archived)
         self._remember_library_stamp()
         self.checkout_changed.emit(key)
 
@@ -745,6 +788,12 @@ class LibraryStore:
                     del self._checkouts[key]
                 self.checkout_changed.emit(key)
                 applied += 1
+        # Before attaching: an attach drops its directory from the archive, and a project
+        # the other writer restored is already off the list this adopts.
+        if file.archived != self._archived:
+            self._archived = list(file.archived)
+            self.archive_changed.emit()
+            applied += 1
         for entry, directory in zip(file.projects, listed, strict=True):
             if directory in by_directory or directory in problems:
                 continue
@@ -1052,7 +1101,12 @@ class LibraryStore:
             for project in self.library.projects
             if project.id in self._records
         ]
-        write_library_file(self.library_path, [*entries, *self._problem_entries], self._checkouts)
+        write_library_file(
+            self.library_path,
+            [*entries, *self._problem_entries],
+            self._checkouts,
+            self._archived,
+        )
         self._remember_library_stamp()
 
     def _flush_project(self, record: _ProjectRecord, marks: set[DirtyMark]) -> None:

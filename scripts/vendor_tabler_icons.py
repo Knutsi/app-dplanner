@@ -110,7 +110,8 @@ GLYPHS: dict[str, str] = {
     "eraser": "eraser",  # Take a recorded result back.
     "play": "player-play",  # Open a test run over what is in scope.
     "stop": "player-stop",  # Close the open run.
-    "archive": "archive",  # Show the tests taken off the roster beside it.
+    "archive": "archive",  # Show the tests taken off the roster beside it; archive a project.
+    "restore": "restore",  # Bring an archived project back into the library.
     "eye": "eye",  # Light what wants a look: the passages that no longer simply anchor.
     "attach": "paperclip",  # Attach a file to the project's own pool.
     "clipboard": "clipboard",  # Copy a path.
