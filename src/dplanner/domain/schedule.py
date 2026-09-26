@@ -33,7 +33,7 @@ the rest resumes from tomorrow, with work in flight credited — so a forecast h
 while things go to plan and moves only when they do not.
 """
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Container, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from itertools import pairwise
@@ -273,30 +273,9 @@ def parallel_finish(
         return None
     order = {step.id: index for index, step in enumerate(steps)}
     days = {step.id: days_for(step) for step in steps}
-    waiting: dict[StepId, set[StepId]] = {}
-    dependents: dict[StepId, list[StepId]] = {step.id: [] for step in steps}
-    for step in steps:
-        requires = {target for target in step.edges.get("requires", []) if target in order}
-        waiting[step.id] = requires
-        for target in requires:
-            dependents[target].append(step.id)
-
-    tails: dict[StepId, float] = {}
-
-    def tail_of(step_id: StepId, seen: frozenset[StepId]) -> float:
-        if step_id in tails:
-            return tails[step_id]
-        if step_id in seen:  # Defensive: a hand-edited file could still contain a cycle.
-            return 0.0
-        ahead = max(
-            (tail_of(after, seen | {step_id}) for after in dependents[step_id]),
-            default=0.0,
-        )
-        tails[step_id] = (days[step_id] or 0.0) + ahead
-        return tails[step_id]
-
-    for step in steps:
-        tail_of(step.id, frozenset())
+    waiting = {step.id: _requires_among(step, order) for step in steps}
+    dependents = _dependents(steps, waiting)
+    tails = _tails(steps, days, dependents)
 
     free = {True: agents, False: humans}  # Keyed by is_agent's answer.
     pool = {step.id: is_agent(step) for step in steps}
@@ -339,6 +318,55 @@ def parallel_finish(
         landings=landings,
         starts=starts,
     )
+
+
+def chain_tails(
+    steps: Sequence[Step], days_for: Callable[[Step], float | None]
+) -> dict[StepId, float]:
+    """Each step's own days plus the longest chain among ``steps`` waiting on it — the
+    priority a free worker picks by in :func:`parallel_finish`, where an edge out of
+    ``steps`` counts as met. Whoever simulates a team working the plan picks the same way."""
+    members = {step.id for step in steps}
+    waiting = {step.id: _requires_among(step, members) for step in steps}
+    return _tails(steps, {step.id: days_for(step) for step in steps}, _dependents(steps, waiting))
+
+
+def _requires_among(step: Step, members: Container[StepId]) -> set[StepId]:
+    return {target for target in step.edges.get("requires", []) if target in members}
+
+
+def _dependents(
+    steps: Sequence[Step], waiting: Mapping[StepId, set[StepId]]
+) -> dict[StepId, list[StepId]]:
+    dependents: dict[StepId, list[StepId]] = {step.id: [] for step in steps}
+    for step in steps:
+        for target in waiting[step.id]:
+            dependents[target].append(step.id)
+    return dependents
+
+
+def _tails(
+    steps: Sequence[Step],
+    days: Mapping[StepId, float | None],
+    dependents: Mapping[StepId, list[StepId]],
+) -> dict[StepId, float]:
+    tails: dict[StepId, float] = {}
+
+    def tail_of(step_id: StepId, seen: frozenset[StepId]) -> float:
+        if step_id in tails:
+            return tails[step_id]
+        if step_id in seen:  # Defensive: a hand-edited file could still contain a cycle.
+            return 0.0
+        ahead = max(
+            (tail_of(after, seen | {step_id}) for after in dependents[step_id]),
+            default=0.0,
+        )
+        tails[step_id] = (days[step_id] or 0.0) + ahead
+        return tails[step_id]
+
+    for step in steps:
+        tail_of(step.id, frozenset())
+    return tails
 
 
 @dataclass(frozen=True)
@@ -483,7 +511,7 @@ def phases(
     tomorrow (:func:`_resumed`). A plan followed exactly therefore reads the same date every
     day, and a forecast moves only when the work does.
     """
-    groups = _groups(library, project, is_milestone)
+    groups = stretches(library, project, is_milestone)
 
     def dated(
         milestone: Step | None,
@@ -547,11 +575,12 @@ def phases(
     return _resumed(groups, planned, facts, facts.resume_days or days_for, dated, start_for)
 
 
-def _groups(
+def stretches(
     library: Library, project: Project, is_milestone: Callable[[Step], bool]
 ) -> list[tuple[Step | None, tuple[Step, ...]]]:
-    """The stretches' membership, before any dating: each milestone's cone truncated at the
-    ones before it, then whatever no milestone gathers."""
+    """The stretches' membership, before any dating — each milestone's cone truncated at
+    the ones before it, then whatever no milestone gathers: what :func:`phases` dates, and
+    what a simulated team works through in turn."""
     milestones = [place.step for place in placed(library, project) if is_milestone(place.step)]
     taken: set[StepId] = set()
     groups: list[tuple[Step | None, tuple[Step, ...]]] = []

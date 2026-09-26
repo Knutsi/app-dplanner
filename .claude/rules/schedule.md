@@ -81,6 +81,17 @@ paths:
   prototype first, its fixture regenerated, then here. A stretch's `start` is where its
   remaining work begins and `began` when its work first began — a view shows `began`.
   `ARCHITECTURE.md`'s *The plan re-dates itself from what has happened* has the reasoning.
+- **The simulator is the prototype's, to the frame, and Debug ▸ Time Simulation shows it in
+  the real tab.** `time_estimates/simulation/` is Qt-free: `world.py` plays a scenario,
+  `replay.py` writes each day through the owners' writers the root hands in
+  (`_time_writers`) and records it as the recorder would, and `test_time_simulation.py`
+  holds the world to the prototype's exported frames — port a change to the world there
+  first, like one to the model. `debugger.py` embeds `TimeEstimatesActivity` built from
+  the root's own `time_deps` recipe over a scratch library, undo stack, context, clock and
+  debounce service — never `dataclasses.replace` over the window's deps — and scrubs by
+  `replay.restore`, never by rebuilding the tab. `scripts/time_accuracy.py` is the number
+  to quote for a model change. `ARCHITECTURE.md`'s *The Time tab has a simulator* has the
+  reasoning.
 - **Progress is derived; the past is a list of snapshots, and a comparison is two of
   them.** How far a milestone has come — by estimated days, everything through its
   stretch; the count of steps is tallied and worded, never the share — is

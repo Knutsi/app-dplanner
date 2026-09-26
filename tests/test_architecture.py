@@ -94,7 +94,18 @@ HEADLESS_FILES = (
     "report.py",
     "themes.py",
     "dictation.py",
+    # The Time tab's simulator (`time_estimates/simulation/`): a script and the tests play
+    # it with no graphics stack.
     "frames.py",
+    "rng.py",
+    "sample.py",
+    "world.py",
+    "timeline.py",
+    "scenarios.py",
+    "replay.py",
+    "edits.py",
+    "accuracy.py",
+    "simulate.py",
 )
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",

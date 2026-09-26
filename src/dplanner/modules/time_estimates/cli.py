@@ -45,7 +45,7 @@ from typing import Any
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.schedule import Phase, ScheduleFacts, format_date, format_days
 from dplanner.modules.time_estimates.progress import (
     AT_START,
@@ -117,8 +117,9 @@ class Readers:
     def is_milestone(self, step: Step) -> bool:
         return bool(self.milestone_label(step))
 
-    def facts(self, project: Project, today: date) -> ScheduleFacts:
-        """What has happened in ``project`` by ``today``, for the calendar to re-date it."""
+    def facts(self, project: Project, today: date, *, day_over: bool = False) -> ScheduleFacts:
+        """What has happened in ``project`` by ``today``, for the calendar to re-date it —
+        read at the day's end when ``day_over``, as a simulation reads its days."""
         return schedule_facts(
             project,
             today,
@@ -126,6 +127,30 @@ class Readers:
             status_for=self.status_for,
             since_for=self.since_for,
             is_marker=self.is_marker,
+            day_over=day_over,
+        )
+
+    def snapshot(
+        self, library: Library, project: Project, today: date, *, day_over: bool = False
+    ) -> Snapshot | None:
+        """The plan on ``today`` as the recorder takes it: for the stored team, focus and
+        start, re-dated from what has happened."""
+        humans, agents = read_team(project)
+        return take(
+            library,
+            project,
+            self.days_for,
+            self.is_agent,
+            self.status_for,
+            self.since_for,
+            humans=humans,
+            agents=agents,
+            start=self.start_of(project, today),
+            efficiency=read_efficiency(project),
+            is_milestone=self.is_milestone,
+            start_for=read_start,
+            today=today,
+            facts=self.facts(project, today, day_over=day_over),
         )
 
 
@@ -654,31 +679,9 @@ def _report(
 # -- progress -----------------------------------------------------------------------------------
 
 
-def _snapshot(
-    context: CliContext, project: Project, readers: Readers, today: date
-) -> Snapshot | None:
-    humans, agents = read_team(project)
-    return take(
-        context.library,
-        project,
-        readers.days_for,
-        readers.is_agent,
-        readers.status_for,
-        readers.since_for,
-        humans=humans,
-        agents=agents,
-        start=readers.start_of(project, today),
-        efficiency=read_efficiency(project),
-        is_milestone=readers.is_milestone,
-        start_for=read_start,
-        today=today,
-        facts=readers.facts(project, today),
-    )
-
-
 def _progress_record(context: CliContext, args: Namespace, readers: Readers) -> int:
     project = find_project(context.library, args.project)
-    now = _snapshot(context, project, readers, context.clock.today())
+    now = readers.snapshot(context.library, project, context.clock.today())
     if now is None:
         raise CliError("nothing to record — the project has no steps, or cannot be dated")
     if not _write_day(context, project, now):
@@ -699,7 +702,7 @@ def record_day(context: CliContext, project: Project, readers: Readers) -> bool:
     the window's recorder does after a settled change, for a verb that changed something
     with no window open. True when a row was written; a project that cannot be dated has
     nothing to record."""
-    now = _snapshot(context, project, readers, context.clock.today())
+    now = readers.snapshot(context.library, project, context.clock.today())
     return now is not None and _write_day(context, project, now)
 
 
@@ -715,7 +718,7 @@ def _write_day(context: CliContext, project: Project, now: Snapshot) -> bool:
 
 def _progress_save(context: CliContext, args: Namespace, readers: Readers) -> int:
     project = find_project(context.library, args.project)
-    now = _snapshot(context, project, readers, context.clock.today())
+    now = readers.snapshot(context.library, project, context.clock.today())
     if now is None:
         raise CliError("nothing to save — the project has no steps, or cannot be dated")
     try:
@@ -804,7 +807,7 @@ def _pick_arg(value: str | None, saved: list[Snapshot], default: Pick, flag: str
 def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> int:
     project = find_project(context.library, args.project)
     today = context.clock.today()
-    live = _snapshot(context, project, readers, today)
+    live = readers.snapshot(context.library, project, today)
     if live is None:
         if not project.steps:
             context.report({"project": project.id, "steps": 0}, "No steps yet.")

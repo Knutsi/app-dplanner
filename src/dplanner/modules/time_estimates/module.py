@@ -211,6 +211,9 @@ class TimeEstimatesDeps:
     # Today: what every date on the page is read from, and what tells the tab and the
     # recorder that the day has turned.
     clock: Clock
+    # Whether today is read at its end — a simulated day, which is over when it is shown —
+    # or while it is still going, as the window reads it (``ScheduleFacts.day_over``).
+    day_over: bool
     # Estimates, agent-ness and milestones through the aspects' Qt-free readers — the
     # matrix never learns what any of them is stored as.
     days_for: Callable[[Step], float | None]
@@ -810,6 +813,7 @@ class TimeEstimatesActivity(EntityActivity):
                 status_for=deps.status_for,
                 since_for=deps.since_for,
                 is_marker=deps.is_marker,
+                day_over=deps.day_over,
             ),
         )
         self._render()

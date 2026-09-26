@@ -61,6 +61,15 @@ class PlanState:
 
 
 @dataclass(frozen=True)
+class Plan:
+    """A whole plan in a frame's terms: what a simulation starts from."""
+
+    title: str
+    state: PlanState
+    steps: tuple[StepState, ...]
+
+
+@dataclass(frozen=True)
 class Frame:
     """One day: the steps that changed on it, the project's settings where they changed,
     and the project's order of steps where a step was added — each None or empty when
@@ -80,13 +89,15 @@ PlanWriter = Callable[[Project, PlanState, date], tuple[str, dict[str, Any]]]
 """The same for the project node."""
 
 
-def apply(
-    library: Library,
-    project: Project,
-    frame: Frame,
-    step_writers: Sequence[StepWriter],
-    plan_writers: Sequence[PlanWriter],
-) -> None:
+@dataclass(frozen=True)
+class Writers:
+    """Every owner's writer a frame goes through — the composition root's to hand in."""
+
+    steps: Sequence[StepWriter]
+    plan: Sequence[PlanWriter]
+
+
+def apply(library: Library, project: Project, frame: Frame, writers: Writers) -> None:
     """Write ``frame`` into ``project``: new steps where the order puts them, then every
     changed step's links and aspects, then the project's settings. Straight onto the
     library, off any undo stack — a replay is nobody's edit to take back."""
@@ -109,13 +120,13 @@ def apply(
         if tuple(step.edges.get("requires", [])) != state.requires:
             SetEdgesCommand(step.id, "requires", list(state.requires)).redo(library)
         for passing in _through(state, frame.day):
-            for step_writer in step_writers:
+            for step_writer in writers.steps:
                 module_id, entry = step_writer(step, passing, frame.day)
                 SetModuleDataCommand(step.id, module_id, entry).redo(library)
         own = write_milestone(state.start, read_color(step))
         SetModuleDataCommand(step.id, MODULE_ID, own).redo(library)
     if frame.plan is not None:
-        for plan_writer in plan_writers:
+        for plan_writer in writers.plan:
             module_id, entry = plan_writer(project, frame.plan, frame.day)
             SetModuleDataCommand(project.id, module_id, entry).redo(library)
         stored = read_assumptions(project)
