@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Comparisons over time</title>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body data-page="explainer">
+<article class="explainer">
+  <p><a href="index.html">← the prototype</a></p>
+  <h1>How comparisons over time work</h1>
+  <p class="note">What the Time tab compares when it says a plan has moved, where those numbers come from, and where they can mislead. Every figure here is drawn by the prototype's own code, from one small example week.</p>
+
+  <h2>The short version</h2>
+  <div class="short-version">
+    <p>DPlanner does not keep old versions of your plan. What it keeps is a <b>daily summary</b> of what the plan promised. Each summary says, for each milestone, how much work there was, how much of it was done, and when the milestone was due to start and land.</p>
+    <p>A summary is written <b>automatically</b> on a day the plan changed, and you can <b>save</b> one by hand under a name.</p>
+    <p>Every comparison on the Time tab is between two of these summaries: a <b>then</b> and a <b>now</b>. You pick both in the strip, and <i>now</i> is normally the live plan. The plots then show three things: how the promise moved, how much work there is, and how far the work has come against what the plan promises today.</p>
+  </div>
+
+  <h2>The example week</h2>
+  <p>One person works at full focus, starting Monday 7 September. The plan has two milestones:</p>
+  <ul>
+    <li><b>v1</b> is Design (1 day) and then Build (2 days).</li>
+    <li><b>v2</b> is Polish (3 days) and Docs (2 days).</li>
+  </ul>
+  <p>The week goes like this:</p>
+  <ul>
+    <li><b>Monday:</b> the plan is reviewed and saved as <i>Kickoff review</i>.</li>
+    <li><b>Tuesday:</b> Design gets done, but nobody opens DPlanner, so no summary is written that day.</li>
+    <li><b>Wednesday:</b> Build gets done, and v1 lands.</li>
+    <li><b>Thursday:</b> a two-day step, <i>Fix the import</i>, is added to v2.</li>
+    <li><b>Friday (today):</b> Polish is under way.</li>
+  </ul>
+  <p>The summaries written that week are for <span data-figure="recorded-days"></span>.</p>
+
+  <h2>1. What gets written down, and when</h2>
+  <p>There are two kinds of summary:</p>
+  <ul>
+    <li><b>An automatic record</b> is written on a day something in the plan changed: a step or an estimate is added or removed, a link, a status, or a milestone's date. It is written only when DPlanner is there to see the change, which means the window is open or someone runs <code>dplanner progress record</code>.
+      <ul>
+        <li>There is at most one record a day, and the last change of the day wins.</li>
+        <li>A day on which nothing changed gets no record.</li>
+      </ul>
+    </li>
+    <li><b>A saved snapshot</b> is taken on purpose with <i>Save snapshot…</i>, under a title and a note, for example <i>Kickoff review</i>. Nothing later ever replaces it.</li>
+  </ul>
+  <p>Here is exactly what Thursday's record holds:</p>
+  <figure>
+    <div data-figure="record"></div>
+    <figcaption>One row per stretch of the plan, in order. A stretch is a milestone and the work leading up to it. The last column, “what lands when”, is the plan's own promise, day by day, and it is what the Progress line is drawn through.</figcaption>
+  </figure>
+  <p>What a record does <b>not</b> hold matters just as much:</p>
+  <ul>
+    <li><b>The steps themselves.</b> It keeps counts, not a list. Nobody can tell later which step was done that day, or when a step finished.</li>
+    <li><b>The graph.</b></li>
+    <li><b>Who was working.</b> The team and the focus of that day are baked into its dates. A record cannot be recomputed for a different team.</li>
+  </ul>
+
+  <h2>2. Picking <i>then</i> and <i>now</i></h2>
+  <p>The strip reads <i>Compare [then] with [now]</i>. Each side is one of the following:</p>
+  <ul>
+    <li><b>Plan at start</b> (the <i>then</i> side's default). This is the last record on or before the project's start date. If the project is older than its history, it is the first record there is. It is <b>never today's own record</b>, because that is the plan now, and comparing it with itself would compare nothing.</li>
+    <li><b>Day…</b> is the last record on or before the day you pick. If no record was written that day, an earlier one stands in, and the heading says so.</li>
+    <li><b>A saved snapshot</b>, found by its title.</li>
+    <li><b>Now</b> (the <i>now</i> side's default) is the live plan, worked out fresh. It is not a record at all. If you pick a record as <i>now</i> instead, every curve stops on that record's day.</li>
+  </ul>
+  <figure>
+    <div data-figure="picks"></div>
+    <figcaption>Which record each pick lands on in the example week. The words on the right are exactly what the plot headings and tooltips say.</figcaption>
+  </figure>
+  <p>Every heading names the two plans it compares, including the day of the record that stood in, for example “versus the plan at 8 September, recorded 7 September”. A comparison should never leave you guessing what it was measured against.</p>
+
+  <h2>3. Reading the plots</h2>
+  <p>All the plots share one date axis, so a day sits at the same place in every one of them. The solid vertical line is today, and a dashed vertical line marks a saved snapshot.</p>
+  <h3>Progress, and Scope change</h3>
+  <figure>
+    <div data-figure="progress"></div>
+    <figcaption>The example on Friday, compared with the plan at start.</figcaption>
+  </figure>
+  <p><b>Progress</b> puts two lines side by side:</p>
+  <ul>
+    <li><b>The plan now</b>, drawn in each milestone's colour, is the share of all estimated days the plan says should have landed by each date.</li>
+    <li><b>What actually landed</b>, drawn in ink, is one point per recorded day.</li>
+  </ul>
+  <p>The words beside today's dot (<i>ahead 5%</i>, <i>behind 12%</i>) are the gap between the two lines today.</p>
+  <p><b>Scope change</b> puts the plan <i>then</i> (dashed) over the plan <i>now</i>. The area between them is coloured by which way the plan moved:</p>
+  <ul>
+    <li><b>Red</b> where the plan now promises less work done by a date than it did then: the plan has slipped.</li>
+    <li><b>Amber</b> where it promises more: work has been pulled in.</li>
+    <li><b>A green line</b> where the two agree.</li>
+  </ul>
+  <p>In the example, adding <i>Fix the import</i> on Thursday turns the end of the plan red.</p>
+  <p>The small example already shows three things to read with care:</p>
+  <ul>
+    <li><b>The actual line drops on Thursday, though nothing was undone.</b> Adding a step made the total bigger, so the same done work became a smaller share (section 4).</li>
+    <li><b>Friday reads <i>behind 12%</i>, though Polish is exactly on schedule.</b> The plan line rises straight through the three days Polish takes, but Polish only counts once it is done (section 5, P1).</li>
+    <li><b>The actual line starts above zero.</b> Monday's record is Monday's <i>last</i> state, with Design already done. So “the plan at start” is the plan as it stood at the end of its first day.</li>
+  </ul>
+  <h3>Milestone shifts</h3>
+  <figure>
+    <div data-figure="shift"></div>
+    <figcaption>One row per milestone. The hollow ring is where <i>then</i> landed it, the filled dot is where <i>now</i> does, and the arrow shows which way it moved.</figcaption>
+  </figure>
+  <p>The same comparison, as the Time tab words it:</p>
+  <div data-figure="words"></div>
+  <h3>Volume</h3>
+  <figure>
+    <div data-figure="volume"></div>
+    <figcaption>Two plots on one scale:</figcaption>
+  </figure>
+  <ul>
+    <li><b>Scope volume</b> is the total of estimated days the plan came to on each recorded day.</li>
+    <li><b>Remaining work</b> is that total less what had landed.</li>
+  </ul>
+  <p>Both are steps rather than slopes, because a record says what the plan was until the next one.</p>
+
+  <h2>4. Why the shares can mislead, and why Volume exists</h2>
+  <p>Progress and Scope change both draw <b>shares</b>, and each share is of that day's own total. So a plan that doubled overnight, with half of it done, reads 50% on both days:</p>
+  <figure>
+    <div data-figure="doubled"></div>
+  </figure>
+  <p>The share never moved, but the work left doubled. The Volume page is the only place that shows it.</p>
+  <p>A share measured against a growing total also means the <i>actual</i> line of earlier days was measured against a smaller plan than today's. When scope creeps in, the actual line can sit above the plan now for weeks.</p>
+
+  <h2>5. Where a comparison can lie</h2>
+  <p>The prototype found these by playing scenarios and replaying real plans. <a href="ISSUES.md">ISSUES.md</a> has the evidence for each; the ids here point into it.</p>
+  <ul>
+    <li><b>The landing dates never learn from what has landed (F1).</b> The forecast re-plays the whole plan from its start date every day, as if every step took exactly its estimate.
+      <ul>
+        <li>Work that runs late shows up only as a gap on the Progress plot, never in the dates.</li>
+        <li>A milestone can go on promising a date that has already passed.</li>
+      </ul>
+    </li>
+    <li><b>“Behind” while exactly on time (P1).</b> The plan line is drawn straight between the days steps land, but a step only counts as done when it lands.
+      <ul>
+        <li>While a multi-day step is under way, the plan line pulls ahead of the actual line.</li>
+        <li>In the example, Polish is on schedule on Friday, yet the plot reads <i>behind</i>.</li>
+      </ul>
+    </li>
+    <li><b>A plan with no start date is compared with itself (F2).</b> Its start is “today”, every day. So every landing slides by a day each day, and <i>Plan at start</i> resolves to today's own record.</li>
+    <li><b>Scope change also counts other changes as scope (R2).</b> A person joining, a new focus factor or a moved start date all move the plan now against a record that froze its day's team. The colours read “pulled in” or “slipped” with no scope changed at all.</li>
+    <li><b>Days with no record are drawn as straight lines (R1).</b> The actual line runs straight between the recorded days. A week the window stayed closed is a guess drawn as a line.</li>
+  </ul>
+</article>
+<script src="app.js"></script>
+</body>
+</html>

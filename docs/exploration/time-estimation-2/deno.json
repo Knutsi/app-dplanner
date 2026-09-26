@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "lib": ["dom", "dom.iterable", "esnext", "deno.ns"],
+    "noUnusedLocals": true,
+    "noImplicitReturns": true
+  },
+  "tasks": {
+    "check": "deno check src/main.ts tools/ tests/",
+    "test": "deno test --allow-read=. tests/",
+    "build": "deno bundle --platform browser --format iife -o app.js src/main.ts",
+    "dev": "deno bundle --platform browser --format iife --watch -o app.js src/main.ts",
+    "export": "deno run --allow-read --allow-write=local --allow-run=git tools/export_plan.ts",
+    "parity": "deno run --allow-read tools/parity.ts",
+    "compare-matrix": "deno run --allow-read tools/compare_matrix.ts"
+  },
+  "fmt": { "lineWidth": 100 }
+}
