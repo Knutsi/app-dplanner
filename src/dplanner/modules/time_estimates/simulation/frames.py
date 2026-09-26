@@ -2,9 +2,9 @@
 
 A :class:`Frame` is one day's changes in the terms DPlanner stores — a step's title, number,
 ``requires``, estimate, milestone label, agent flag, the day it was made, a milestone's own
-start and its status; the project's start and its staffing assumptions. :func:`apply`
-writes it with today being the frame's day, **through each owner's own aspect writer**,
-handed in as a :data:`StepWriter` because modules never import each other. So the library
+start, its status and what it waits for; the project's start and its staffing assumptions.
+:func:`apply` writes it with today being the frame's day, **through each owner's own aspect
+writer**, handed in as a :data:`StepWriter` because modules never import each other. So the library
 afterwards holds what the edits of that day would have: the status aspect stamps its own
 ``since`` and ``started``, and a forecast read from it is read the way the window reads one.
 
@@ -20,6 +20,7 @@ from typing import Any
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.progression import IN_PROGRESS
+from dplanner.domain.schedule import Wait
 from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     Assumptions,
@@ -48,6 +49,7 @@ class StepState:
     status: str
     since: date | None
     started: date | None
+    wait: Wait | None = None  # What it waits for, when it is a wait.
 
 
 @dataclass(frozen=True)

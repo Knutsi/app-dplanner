@@ -19,13 +19,19 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
+from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.progression import BLOCKED, DONE, IN_PROGRESS
 from dplanner.domain.schedule import (
     SATURDAY,
+    WEEKDAYS,
+    Wait,
     chain_tails,
+    next_working_day,
+    short_date,
     stretches,
     working_days_after,
+    working_days_between,
 )
 from dplanner.modules.time_estimates.schedule import FocusChange
 from dplanner.modules.time_estimates.simulation.frames import Plan, StepState
@@ -57,6 +63,16 @@ class Block:
 
 
 @dataclass(frozen=True)
+class WaitChange:
+    """A wait made ``after`` days since work began, before the step ``before``: that step
+    now waits on it."""
+
+    after: int
+    before: str
+    wait: Wait
+
+
+@dataclass(frozen=True)
 class WorldParams:
     seed: int = 7
     human_bias: float = 1.0  # True effort ÷ estimate for human steps, on average.
@@ -69,6 +85,7 @@ class WorldParams:
     reestimate_every: int = 0  # Working days between re-estimates; 0 is never.
     reestimate_factor: float = 1.5
     budgets: tuple[BudgetChange, ...] = ()
+    waits: tuple[WaitChange, ...] = ()  # Waits added to the plan, which the team then waits for.
     block: Block | None = None
     work_ahead: bool = False  # Idle people start the next milestone's ready work.
     dated: bool = True  # The plan has a start date stored.
@@ -101,6 +118,46 @@ def _key(step: StepState) -> str:
     return f"S{step.number}"
 
 
+def wait_title(wait: Wait) -> str:
+    """``Wait 3 working days``, ``Wait until Wed 4 Nov`` — the prototype's words."""
+    if wait.until is None:
+        return f"Wait {wait.days:g} working day{'' if wait.days == 1 else 's'}"
+    return f"Wait until {WEEKDAYS[wait.until.weekday()][:3]} {short_date(wait.until, wait.until)}"
+
+
+def wait_id(day: date, before: str) -> str:
+    """The id a wait made on ``day`` before ``before`` takes: one per step held, per day."""
+    return f"wait-{day.isoformat()}-{before}"
+
+
+def insert_wait(steps: Sequence[StepState], day: date, before: str, wait: Wait) -> list[StepState]:
+    """The plan with a wait inserted before the step ``before``: the wait takes over what that
+    step required, and the step now requires only the wait. A wait has no estimate and no
+    status. A step already gone, or a wait already made, leaves the plan as it was."""
+    at = next((index for index, step in enumerate(steps) if step.id == before), None)
+    made = wait_id(day, before)
+    if at is None or any(step.id == made for step in steps):
+        return list(steps)
+    held = steps[at]
+    added = StepState(
+        id=made,
+        number=max(step.number for step in steps) + 1,
+        title=wait_title(wait),
+        requires=held.requires,
+        estimate=None,
+        off=True,
+        milestone="",
+        agent=False,
+        created=day,
+        start=None,
+        status=PENDING,
+        since=None,
+        started=None,
+        wait=wait,
+    )
+    return [*steps[:at], added, replace(held, requires=(made,)), *steps[at + 1 :]]
+
+
 class _World:
     def __init__(self, start: Plan, params: WorldParams, begin: date) -> None:
         self._params = params
@@ -113,6 +170,9 @@ class _World:
         self._progress: dict[str, float] = {}
         self._blocked_until: dict[str, date] = {}
         self._finished: dict[str, date] = {}
+        # A wait is a timer, never a worker: when it ends, in working days since work began.
+        self._waits: dict[str, float] = {}
+        self._over: set[str] = set()
         humans, agents = start.state.team
         self._humans: list[str | None] = [None] * humans
         self._agents: list[str | None] = [None] * agents
@@ -147,7 +207,9 @@ class _World:
                         self._change_plan(day, workday)
                     self._work(day)
             days.append(Played(day, self._state, tuple(self._steps), tuple(self._events)))
-            if done_on is None and all(step.status == DONE for step in self._steps):
+            if done_on is None and all(
+                step.wait is not None or step.status == DONE for step in self._steps
+            ):
                 done_on = day
             if done_on is not None and day >= done_on + timedelta(days=self._params.tail):
                 break
@@ -201,6 +263,8 @@ class _World:
                 else ""
             )
             self._events.append(f"the team becomes {people} + {agents}{focus}")
+        for made in (one for one in self._params.waits if one.after == offset):
+            self._add_wait(day, made)
         block = self._params.block
         if block is not None and offset == block.after:
             tails = self._tails()
@@ -220,6 +284,21 @@ class _World:
                 status = IN_PROGRESS if self._progress.get(step_id) else PENDING
                 step = self._set_status(step_id, status)
                 self._events.append(f"{_key(step)} is unblocked")
+
+    def _add_wait(self, day: date, change: WaitChange) -> None:
+        steps = insert_wait(self._steps, day, change.before, change.wait)
+        made = wait_id(day, change.before)
+        added = next((step for step in steps if step.id == made), None)
+        if added is None or any(step.id == made for step in self._steps):
+            return
+        self._steps = steps
+        at = next(index for index, step in enumerate(steps) if step.id == made)
+        AddNodeCommand(self._project.id, Step(node_id=made, title=added.title), at).redo(
+            self._shape
+        )
+        self._shape.set_edges(made, "requires", list(added.requires))
+        self._shape.set_edges(change.before, "requires", [made])
+        self._events.append(f"{_key(added)} {added.title} added")
 
     def _change_plan(self, day: date, workday: int) -> None:
         current = self._current_stretch()
@@ -309,9 +388,12 @@ class _World:
             days = _days(state)
             return days if days is None or state.agent else days / efficiency
 
+        def wait_of(step: Step) -> Wait | None:
+            return self._find(step.id).wait
+
         found: dict[str, float] = {}
         for _milestone, members in stretches(self._shape, self._project, self._is_milestone):
-            found.update(chain_tails(members, calendar))
+            found.update(chain_tails(members, calendar, wait_of))
         return found
 
     def _current_stretch(self) -> tuple[StepState | None, list[StepState]] | None:
@@ -319,7 +401,7 @@ class _World:
             (
                 (milestone, members)
                 for milestone, members in self._stretches()
-                if any(step.status != DONE for step in members)
+                if any(step.wait is None and step.status != DONE for step in members)
             ),
             None,
         )
@@ -346,7 +428,7 @@ class _World:
         focus = self._params.focus if self._params.focus is not None else self._state.efficiency
 
         def done(step_id: str) -> bool:
-            return self._find(step_id).status == DONE
+            return self._find(step_id).status == DONE or step_id in self._over
 
         def current() -> int:
             # Asked afresh at every moment: a milestone that lands at eleven opens the next
@@ -355,10 +437,13 @@ class _World:
                 (
                     index
                     for index, (_milestone, members) in enumerate(groups)
-                    if any(not done(step.id) for step in members)
+                    if any(step.wait is None and not done(step.id) for step in members)
                 ),
                 -1,
             )
+
+        # Today's first moment, in working days since work began; a wait's clock runs on these.
+        base = working_days_between(self._begin, day) - 1
 
         def opened(step: StepState) -> bool:
             asked = opens[stretch_of[step.id]]
@@ -372,7 +457,8 @@ class _World:
             ready = [
                 step
                 for step in self._steps
-                if step.agent == agent
+                if step.wait is None
+                and step.agent == agent
                 and step.status not in (DONE, BLOCKED)
                 and step.id not in busy
                 and (self._params.work_ahead or stretch_of[step.id] == now)
@@ -382,9 +468,36 @@ class _World:
             ready.sort(key=lambda step: (stretch_of[step.id], -tails[step.id], order[step.id]))
             return ready[0] if ready else None
 
+        def wait_for(now: float) -> bool:
+            """A wait starts the moment all it requires is done and its stretch is being
+            worked, and ends after its days, or as its day begins. True when one ended,
+            freeing what waits on it."""
+            ended = False
+            stretch = current()
+            for step in self._steps:
+                wait = step.wait
+                if wait is None or step.id in self._over:
+                    continue
+                if step.id not in self._waits:
+                    mine = stretch_of.get(step.id)
+                    if mine is None or (not self._params.work_ahead and mine != stretch):
+                        continue
+                    if not all(target not in known or done(target) for target in step.requires):
+                        continue
+                    self._waits[step.id] = (
+                        now + wait.days
+                        if wait.until is None
+                        else working_days_between(self._begin, next_working_day(wait.until)) - 1
+                    )
+                if self._waits[step.id] <= now + EPSILON:
+                    self._over.add(step.id)
+                    self._finished[step.id] = day
+                    ended = True
+            return ended
+
         def assign() -> None:
             while True:
-                moved = False
+                moved = wait_for(base + time)
                 for agent in (True, False):
                     for slot in range(len(self._agents if agent else self._humans)):
                         lane = self._agents if agent else self._humans
@@ -414,10 +527,18 @@ class _World:
                 *((held, 1.0) for held in self._agents if held is not None),
                 *((held, human) for held in self._humans if held is not None),
             ]
-            if not busy or time >= 1 - EPSILON:
+            # A wait ending today moves the clock on even when nobody is working.
+            ending = [
+                left
+                for step_id, end in self._waits.items()
+                if step_id not in self._over
+                and EPSILON < (left := end - base - time) <= 1 - time + EPSILON
+            ]
+            if (not busy and not ending) or time >= 1 - EPSILON:
                 return
             step = min(
                 1 - time,
+                *ending,
                 *(
                     (self._effort_of(self._find(held)) - self._progress.get(held, 0.0)) / rate
                     for held, rate in busy

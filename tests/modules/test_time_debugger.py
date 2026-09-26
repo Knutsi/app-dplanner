@@ -130,6 +130,30 @@ def test_a_rebudget_from_the_day_shown_changes_the_team_from_that_day(services):
     assert tab.simulated is not None and tab.simulated.setup.budgets == ()
 
 
+def test_a_wait_added_on_the_day_shown_holds_the_step_it_is_put_before(services):
+    """Plan edits, as a person would make one on the canvas: a wait before a step not yet
+    started, from the day shown — written into the scratch world through the wait's own
+    writer."""
+    from dplanner.domain.schedule import Wait
+    from dplanner.modules.step_wait.aspect import read as wait_read
+
+    tab = _opened(services)
+    held = tab.wait_before.currentData()
+    assert held and tab.add_wait.isEnabled()
+    tab.wait_kind.setCurrentIndex(tab.wait_kind.findData("days"))
+    tab.wait_days.setValue(5)
+    tab.add_wait.trigger()
+    found = tab.simulated
+    assert found is not None
+    (made,) = found.setup.waits
+    assert (made.day, made.before, made.wait) == (tab.day, held, Wait(days=5.0))
+    assert "Wait 5 working days before S" in tab.waits_made.text()
+    waits = [step for step in tab.library.projects[0].steps if wait_read(step) is not None]
+    assert [wait_read(step) for step in waits] == [Wait(days=5.0)]
+    tab.clear.trigger()
+    assert tab.simulated is not None and tab.simulated.setup.waits == ()
+
+
 def test_nothing_is_simulated_until_the_tab_is_shown(services):
     from dplanner.modules import _time_readers, _time_writers
     from dplanner.modules.time_estimates.debugger import TimeSimulationDeps

@@ -2278,6 +2278,8 @@ def _time_writers() -> "TimeWriters":
     from dplanner.modules.step_milestone.aspect import write as write_label
     from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
     from dplanner.modules.step_status.aspect import write as write_status
+    from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
+    from dplanner.modules.step_wait.aspect import write as write_wait
     from dplanner.modules.time_estimates.simulation.frames import PlanState, StepState, Writers
 
     def estimate(step: Step, state: StepState, today: date) -> tuple[str, dict[str, Any]]:
@@ -2296,10 +2298,13 @@ def _time_writers() -> "TimeWriters":
     def agent(_step: Step, state: StepState, _today: date) -> tuple[str, dict[str, Any]]:
         return AGENT_ID, write_state(state.agent)
 
+    def wait(_step: Step, state: StepState, _today: date) -> tuple[str, dict[str, Any]]:
+        return WAIT_ID, write_wait(state.wait)
+
     def start(_project: Project, plan: PlanState, _today: date) -> tuple[str, dict[str, Any]]:
         return ESTIMATION_ID, write_start(plan.start)
 
-    return Writers(steps=(estimate, status, milestone, agent), plan=(start,))
+    return Writers(steps=(estimate, status, milestone, agent, wait), plan=(start,))
 
 
 # The status verbs that write one, each followed by the day's progress row.

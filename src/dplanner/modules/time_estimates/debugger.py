@@ -19,41 +19,59 @@ tab is first shown: a restored Debug tab costs nothing at startup.
 
 The embedded tab's writers are greyed (``set_read_only``): the simulator writes that plan, and
 a Budget change there would be undone by the next day restored — the re-budget above is the
-one that changes the world. *Hold the Axes Still* draws every day against the reach of the
-whole run (``hold_reach``), so playing the days moves only the lines.
+one that changes the world, and *Plan edits* the one that adds a wait before a step not yet
+started, from the day shown, as a person would on the canvas. *Hold the Axes Still* draws
+every day against the reach of the whole run (``hold_reach``), so playing the days moves only
+the lines.
 """
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
-from PySide6.QtCore import QRectF, Qt, QTimer
+from PySide6.QtCore import QDate, QRectF, Qt, QTimer
 from PySide6.QtGui import QColor, QPainter, QPaintEvent
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QSlider, QSpinBox, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QDateEdit,
+    QHBoxLayout,
+    QLabel,
+    QSlider,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dplanner.core.clock import Clock
 from dplanner.domain.model import Library
-from dplanner.domain.schedule import format_date
+from dplanner.domain.schedule import WEEKDAYS, Wait, format_date, short_date
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.activity import ActivityBase
 from dplanner.framework.context import Context, ContextService, activity_uri
 from dplanner.framework.debounce import DebounceService
+from dplanner.framework.table import DATE_FORMAT
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import note
 from dplanner.modules.time_estimates.activity import TimeEstimatesActivity
 from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.module import TimeEstimatesDeps
-from dplanner.modules.time_estimates.months import WEEKDAYS
-from dplanner.modules.time_estimates.simulation.edits import Budget, budget_of, rebudget
-from dplanner.modules.time_estimates.simulation.frames import Writers
+from dplanner.modules.time_estimates.simulation.edits import (
+    Budget,
+    WaitEdit,
+    budget_of,
+    rebudget,
+)
+from dplanner.modules.time_estimates.simulation.frames import StepState, Writers
 from dplanner.modules.time_estimates.simulation.replay import Replay, restore
 from dplanner.modules.time_estimates.simulation.scenarios import SCENARIOS, scenario_by_id
 from dplanner.modules.time_estimates.simulation.simulate import Setup, Simulated, simulate
 from dplanner.modules.time_estimates.simulation.timeline import CADENCES
+from dplanner.modules.time_estimates.simulation.world import wait_title
 from dplanner.theme.icons import (
     chevron_left_icon,
     chevron_right_icon,
+    clock_icon,
     eraser_icon,
     frame_icon,
     gauge_icon,
@@ -220,7 +238,7 @@ class TimeSimulationActivity(ActivityBase):
             tip="The team and focus beside it from the day shown on — the world changes "
             "with it, as a Budget change in the window would",
         )
-        self.clear = self.controls.add_verb("Clear Re-budgets", eraser_icon, self._on_clear)
+        self.clear = self.controls.add_verb("Clear Plan Edits", eraser_icon, self._on_clear)
         self.controls.add_divider()
         self.hold = self.controls.add_verb(
             "Hold the Axes Still",
@@ -233,6 +251,42 @@ class TimeSimulationActivity(ActivityBase):
         self.hold.setChecked(True)
         strip_row.addWidget(self.controls, 1)
         page.addWidget(strip)
+
+        # Plan edits: a wait before a step not yet started, made on the day shown.
+        edits = QWidget(self.widget)
+        edits_row = QHBoxLayout(edits)
+        edits_row.setContentsMargins(PANEL_MARGIN, CAPTION_GAP, PANEL_MARGIN, 0)
+        self.edits = Toolbar(edits)
+        before = QLabel("Wait before", self.edits)
+        before.setObjectName("ToolbarLabel")
+        self.edits.add_widget(before)
+        self.wait_before = QComboBox(self.edits)
+        self.wait_before.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self.wait_before.setToolTip("The step that waits: it starts once the wait is over")
+        self.edits.add_widget(self.wait_before)
+        self.wait_kind = QComboBox(self.edits)
+        self.wait_kind.addItem("until", "until")
+        self.wait_kind.addItem("for working days", "days")
+        self.wait_kind.currentIndexChanged.connect(lambda _index: self._show_wait_kind())
+        self.edits.add_widget(self.wait_kind)
+        self.wait_until = QDateEdit(self.edits)
+        self.wait_until.setCalendarPopup(True)
+        self.wait_until.setDisplayFormat(DATE_FORMAT)
+        self.edits.add_widget(self.wait_until)
+        self.wait_days = QSpinBox(self.edits)
+        self.wait_days.setRange(1, 60)
+        self.wait_days.setValue(3)
+        self.edits.add_widget(self.wait_days)
+        self.add_wait = self.edits.add_verb(
+            "Add the Wait",
+            clock_icon,
+            self._on_add_wait,
+            tip="A wait before the step chosen, made on the day shown",
+        )
+        self.waits_made = note("", self.edits)
+        self.edits.add_widget(self.waits_made)
+        edits_row.addWidget(self.edits, 1)
+        page.addWidget(edits)
 
         days = QWidget(self.widget)
         days_column = QVBoxLayout(days)
@@ -356,7 +410,7 @@ class TimeSimulationActivity(ActivityBase):
         if self._syncing:
             return
         scenario = scenario_by_id(self.scenario.itemData(index))
-        self._setup = replace(self._setup, scenario=scenario.id, cadence=None, budgets=())
+        self._setup = replace(self._setup, scenario=scenario.id, cadence=None, budgets=(), waits=())
         self._resimulate(keep_day=True)
 
     def _on_seed(self, seed: int) -> None:
@@ -381,8 +435,26 @@ class TimeSimulationActivity(ActivityBase):
         self._resimulate(keep_day=True)
 
     def _on_clear(self) -> None:
-        self._setup = replace(self._setup, budgets=())
+        self._setup = replace(self._setup, budgets=(), waits=())
         self._resimulate(keep_day=True)
+
+    def _on_add_wait(self) -> None:
+        found, before = self._simulated, self.wait_before.currentData()
+        if found is None or not before:
+            return
+        if self.wait_kind.currentData() == "days":
+            wait = Wait(days=float(self.wait_days.value()))
+        else:
+            picked = self.wait_until.date()
+            wait = Wait(until=date(picked.year(), picked.month(), picked.day()))
+        made = WaitEdit(found.timeline.days[self._index].day, str(before), wait)
+        self._setup = replace(self._setup, waits=(*self._setup.waits, made))
+        self._resimulate(keep_day=True)
+
+    def _show_wait_kind(self) -> None:
+        by_date = self.wait_kind.currentData() == "until"
+        self.edits.set_shown(self.wait_until, by_date)
+        self.edits.set_shown(self.wait_days, not by_date)
 
     def _resimulate(self, *, keep_day: bool) -> None:
         """Play the setup again, on the same day where it still has one — a re-budget shows
@@ -440,18 +512,44 @@ class TimeSimulationActivity(ActivityBase):
                 _day_words(played.day, timeline.begin, self._index, len(timeline.days))
             )
             self.happened.setText("; ".join(played.events) or "Nothing happened.")
+            self._show_wait_choices(played.day, played.steps)
         first = found is None or self._index == 0
         last = found is None or self._index >= len(found.timeline.days) - 1
         self.earlier.setEnabled(not first)
         self.controls.set_tip(self.earlier, "This is the first day" if first else "")
         self.later.setEnabled(not last)
         self.controls.set_tip(self.later, "This is the last day" if last else "")
-        self.clear.setEnabled(bool(setup.budgets))
+        edited = bool(setup.budgets or setup.waits)
+        self.clear.setEnabled(edited)
         self.controls.set_tip(
-            self.clear,
-            "Back to the scenario's own" if setup.budgets else "Nothing is re-budgeted",
+            self.clear, "Back to the scenario's own" if edited else "Nothing is edited"
         )
         self._syncing = False
+
+    def _show_wait_choices(self, day: date, steps: tuple[StepState, ...]) -> None:
+        """The steps a wait can go before on ``day`` — those not yet started — and the waits
+        made so far."""
+        chosen = self.wait_before.currentData()
+        self.wait_before.clear()
+        for step in steps:
+            if step.status == "pending" and step.wait is None:
+                self.wait_before.addItem(f"S{step.number} {step.title}", step.id)
+        at = self.wait_before.findData(chosen)
+        self.wait_before.setCurrentIndex(max(0, at))
+        waiting = self.wait_before.count() > 0
+        self.add_wait.setEnabled(waiting)
+        self.edits.set_tip(self.add_wait, "" if waiting else "Nothing left that has not started")
+        week = day + timedelta(days=7)
+        self.wait_until.setDate(QDate(week.year, week.month, week.day))
+        self._show_wait_kind()
+        numbers = {step.id: f"S{step.number}" for step in steps}
+        self.waits_made.setText(
+            "; ".join(
+                f"{wait_title(made.wait)} before {numbers.get(made.before, made.before)} · made "
+                f"{short_date(made.day, day)}"
+                for made in self._setup.waits
+            )
+        )
 
 
 def _day_words(day: date, begin: date, index: int, count: int) -> str:
