@@ -13,21 +13,27 @@ Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
+from datetime import date
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext
 from dplanner.cli.lookup import find_project
-from dplanner.domain.model import Step
+from dplanner.domain.model import Library, Step
 from dplanner.domain.progression import Progression, estimated_progress, progression
 
 
 def commands(
     *,
-    status_for: Callable[[Step], str],
+    status_in: Callable[[Library, date], Callable[[Step], str]],
+    counts_as_work: Callable[[Step], bool],
     days_for: Callable[[Step], float | None],
 ) -> list[CliCommand]:
+    """``status_in`` reads a step's status in a library on a day — a wait is done once it is
+    over, which only the day can say."""
+
     def show(context: CliContext, args: Namespace) -> int:
-        return _show(context, args, status_for, days_for)
+        status_for = status_in(context.library, context.clock.today())
+        return _show(context, args, status_for, counts_as_work, days_for)
 
     return [
         CliCommand(
@@ -51,11 +57,12 @@ def _show(
     context: CliContext,
     args: Namespace,
     status_for: Callable[[Step], str],
+    counts_as_work: Callable[[Step], bool],
     days_for: Callable[[Step], float | None],
 ) -> int:
     library = context.library
     project = find_project(library, args.project)
-    found = progression(library, project, status_for)
+    found = progression(library, project, status_for, counts_as_work)
     weighted = estimated_progress(found, days_for)
 
     def named(steps: tuple[Step, ...]) -> list[dict[str, Any]]:

@@ -33,7 +33,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QMenu, QVBoxLayout, QWidge
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.ordering import placed
-from dplanner.domain.schedule import volume_words
+from dplanner.domain.schedule import volume, volume_words
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.activity import EntityActivity, follow_project
 from dplanner.framework.context import (
@@ -304,9 +304,12 @@ class BulkEstimateActivity(EntityActivity):
             step_id = self._step_at(row)
             if step_id is None or not self._product.has(step_id):
                 continue
-            estimated = read(self._product.step(step_id)) is not None
-            hidden = (wanted == FILTER_UNESTIMATED and estimated) or (
-                wanted == FILTER_ESTIMATED and not estimated
+            step = self._product.step(step_id)
+            # A wait is neither: it is no work, so it has nothing to size.
+            estimated = read(step) is not None or not self._deps.counts_as_work(step)
+            unsized = read(step) is None and self._deps.counts_as_work(step)
+            hidden = (wanted == FILTER_UNESTIMATED and not unsized) or (
+                wanted == FILTER_ESTIMATED and not (estimated and self._deps.counts_as_work(step))
             )
             self.table.setRowHidden(row, hidden)
             shown += not hidden
@@ -323,11 +326,9 @@ class BulkEstimateActivity(EntityActivity):
         """The volume sentence the order table and ``estimate rollup`` print, over this scope:
         one wording, so the tab a person sizes steps in and the total they quote afterwards
         cannot disagree."""
-        days = [read(step) for step in self._steps()]
-        sized = [d for d in days if d is not None]
-        self.volume.setText(
-            volume_words(sum(sized), len(days), len(days) - len(sized)) if days else ""
-        )
+        steps = self._steps()
+        said = volume(steps, read, self._deps.counts_as_work)
+        self.volume.setText(volume_words(*said) if steps else "")
 
     def _aim_first_row(self) -> None:
         """Land on the first shown row's estimate: sizing is what comes next, by a click on its

@@ -253,6 +253,9 @@ def _our_version(node: Node, entry: str) -> str:
     return node.module_text.get(module_id, "")
 
 
+NO_AGENT_ON_A_WAIT = "a wait has no work for an agent"
+
+
 @dataclass(frozen=True)
 class StepAgentInstructionDeps:
     library: Library
@@ -305,6 +308,9 @@ class StepAgentInstructionDeps:
     # status aspect owns the word and the fact that the write skips the undo stack — this
     # module only knows a run has started.
     mark_started: Callable[[StepId], bool] = field(default=_no_start)
+    # A wait is no work, so there is nothing on one for an agent to do: the Agent toggle
+    # greys on a wait and Run Agent refuses one. The composition root knows what marks it.
+    is_wait: Callable[[Step], bool] = field(default=lambda _step: False)
     # The step's readable key ("F7") and its ticket key ("PROJ-12"), both composed by the
     # root from aspects this module never reads. They name the run — the worktree, the
     # branch, the terminal's title — through ``launcher.run_name``, which the briefing's
@@ -406,6 +412,7 @@ class StepAgentInstructionModule:
                 fresh=lambda _step, _project: write_state(True),
                 icon=spark_icon,
                 tip="Mark this step for agent execution; its description is the briefing",
+                refusal=lambda step: NO_AGENT_ON_A_WAIT if deps.is_wait(step) else "",
             )
         )
         # The verb every button and the palette run — through the default profile. Its
@@ -508,6 +515,8 @@ class StepAgentInstructionModule:
     def _step_refusal(self, step: Step) -> str:
         """Why this step has no agent run in it; "" when it has. The step's own facts."""
         deps = self._deps
+        if deps.is_wait(step):
+            return NO_AGENT_ON_A_WAIT
         if not enabled(step):
             return "mark the step as an agent step first (Step ▸ Type ▸ Agent)"
         briefed = deps.briefing.instruction(deps.library, step, deps.files)

@@ -15,7 +15,7 @@ answers; they arrive as callbacks on the ``Deps``, wired by the composition root
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from dplanner.domain.model import Library, ProjectId, StepId
+from dplanner.domain.model import Library, ProjectId, Step, StepId
 from dplanner.framework.action_registry import (
     DISABLED,
     ENABLED,
@@ -58,6 +58,9 @@ class EstimationDeps:
     # A step's description: one line for a row, the full prose for its tooltip. Wired by the
     # composition root; this module never learns where a description lives.
     describe_step: Callable[[StepId], str] = field(default=_no_text)
+    # Whether a step is work at all: a wait is not, so it is no part of any volume and
+    # never unestimated. Wired by the composition root, which knows what marks a wait.
+    counts_as_work: Callable[[Step], bool] = field(default=lambda _step: True)
 
 
 class EstimationModule:

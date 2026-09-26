@@ -97,7 +97,15 @@ paths:
   it has already waited; `_holds` asks a wait only when it was made. **No tally counts
   one** — `snapshot_of`, `time_report`'s effort and the unsized count leave it out. A step,
   never a kind of node, so it works unchanged in cones, ordering, cycles and copy and paste.
-  Its model is the prototype's Delay, to the day (`test_schedule.py`'s waits).
+  Its model is the prototype's Delay, to the day (`test_schedule.py`'s waits), and so is
+  the simulator's world (`test_time_waits.py`). **Elsewhere a wait is done when it is over
+  and no work at all**: the board, its verb and report and the Run Agent gate read
+  `schedule.wait_status` — done once what it waits on is done and its day has come or its
+  days are waited, `WAITING` until then — so what follows it is ready that day; the root's
+  one `_counts_as_work` keeps it off every lane and out of every volume (`schedule.volume`:
+  the board, the Estimates tab, `estimate rollup`, `schedule show`, `order show`, the Order
+  tab) and lint; the Status verbs, the Agent and Test toggles and Run Agent refuse one,
+  saying why (`aspect_toggle`'s `refusal`).
   `ARCHITECTURE.md`'s *A wait is a step that holds* has the reasoning.
 - **The simulator is the prototype's, to the frame, and Debug ▸ Time Simulation shows it in
   the real tab.** `time_estimates/simulation/` is Qt-free: `world.py` plays a scenario,

@@ -151,6 +151,8 @@ class TestsDeps:
     reporting_dir: Callable[[str], Path | None] = lambda _project_id: None
     # Dictation into the editors; None is a build without a microphone.
     dictation: DictationService | None = None
+    # A wait is no work, so it has nothing to test: the Test toggle greys on one.
+    is_wait: Callable[[Step], bool] = lambda _step: False
 
 
 class TestsModule:
@@ -288,6 +290,9 @@ class TestsModule:
                 fresh=lambda _step, project: write([Test(id=next_test_id(project), title="")]),
                 icon=beaker_icon,
                 tip="Give this step tests: what must keep passing once the work is done",
+                refusal=lambda step: (
+                    "a wait has no work to test" if self._deps.is_wait(step) else ""
+                ),
             ),
             ActionSpec(
                 id="test.add",

@@ -14,6 +14,10 @@ status somebody wires in later. The words this walk understands are ``done``,
 returns — reads as pending, because a derivation must not crash on a claim it does not
 recognise.
 
+**A wait is no work, and it is done when it is over.** ``counts_as_work`` leaves a wait out
+of every partition and count, and ``status_for`` — ``schedule.wait_status`` in the window
+and the terminal — reads it done once its day has come, so what waits on it is ready then.
+
 **A stored claim beats the graph.** A step marked done whose prerequisites are not is
 honoured as done — the graph gates *launching*, not *recording* — so out-of-order
 completion is never an error, and finishing a step frees its dependents no matter what
@@ -33,6 +37,12 @@ from dplanner.domain.model import Library, Project, Step, StepId
 DONE = "done"
 IN_PROGRESS = "in-progress"
 BLOCKED = "blocked"
+# A wait that is not over yet — a derived reading (``schedule.wait_status``), never stored.
+WAITING = "waiting"
+
+
+def _all_work(_step: Step) -> bool:
+    return True
 
 
 @dataclass(frozen=True)
@@ -103,6 +113,7 @@ def progression(
     library: Library,
     project: Project,
     status_for: Callable[[Step], str],
+    counts_as_work: Callable[[Step], bool] = _all_work,
 ) -> Progression:
     """One walk in project order, so the answer is deterministic — ``ordering.py``'s rule.
 
@@ -110,16 +121,16 @@ def progression(
     (done, blocked, in-progress), then the graph (ready, upcoming, waiting). A blocked
     prerequisite still counts towards ``upcoming`` — it sits visibly on the board with a
     warning, and a step must not churn out of the queue when its prerequisite flips
-    between in-progress and blocked.
+    between in-progress and blocked. A step that is no work (``counts_as_work``) lands in
+    none of them, but what it reads still gates what waits on it.
     """
     status = {step.id: status_for(step) for step in project.steps}
+    work = [step for step in project.steps if counts_as_work(step)]
 
-    done = tuple(step for step in project.steps if status[step.id] == DONE)
-    attention = tuple(step for step in project.steps if status[step.id] == BLOCKED)
-    running = tuple(step for step in project.steps if status[step.id] == IN_PROGRESS)
-    pending = [
-        step for step in project.steps if status[step.id] not in (DONE, BLOCKED, IN_PROGRESS)
-    ]
+    done = tuple(step for step in work if status[step.id] == DONE)
+    attention = tuple(step for step in work if status[step.id] == BLOCKED)
+    running = tuple(step for step in work if status[step.id] == IN_PROGRESS)
+    pending = [step for step in work if status[step.id] not in (DONE, BLOCKED, IN_PROGRESS)]
 
     def outstanding(step: Step) -> list[Step]:
         """The resolved prerequisites not yet done — dead ids skipped, as everywhere."""
@@ -134,9 +145,10 @@ def progression(
         for target in step.edges.get("requires", []):
             if target in dependents:
                 dependents[target].append(step.id)
+    counted = {step.id for step in work}
     ready = tuple(
         sorted(
-            (Launchable(step, _unlocks(dependents, step, status)) for step in frontier),
+            (Launchable(step, _unlocks(dependents, step, status, counted)) for step in frontier),
             key=lambda launchable: -launchable.unlocks,  # Stable: ties keep project order.
         )
     )
@@ -167,8 +179,9 @@ def _unlocks(
     dependents: dict[StepId, list[StepId]],
     step: Step,
     status: dict[StepId, str],
+    counted: set[StepId],
 ) -> int:
-    """How many not-done steps transitively wait on ``step``.
+    """How many not-done steps of work transitively wait on ``step``.
 
     A depth-first walk over the reverse edges; the visited set is also the cycle guard,
     the same defensive stance ``ordering.depths()`` takes against a hand-edited file. A
@@ -185,7 +198,7 @@ def _unlocks(
             visit(dependent)
 
     visit(step.id)
-    return sum(1 for found in seen if status.get(found) != DONE)
+    return sum(1 for found in seen if found in counted and status.get(found) != DONE)
 
 
 def estimated_progress(

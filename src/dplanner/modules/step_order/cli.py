@@ -19,7 +19,7 @@ from dplanner.cli import CliCommand, CliContext
 from dplanner.cli.lookup import find_project
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import Placed, placed
-from dplanner.domain.schedule import volume_words
+from dplanner.domain.schedule import volume, volume_words
 
 
 def wave_label(index: int) -> str:
@@ -32,13 +32,22 @@ def wave_label(index: int) -> str:
     return f"Wave {index + 1}"
 
 
-def commands(*, days_for: Callable[[Step], float | None]) -> list[CliCommand]:
+def commands(
+    *,
+    days_for: Callable[[Step], float | None],
+    counts_as_work: Callable[[Step], bool],
+) -> list[CliCommand]:
+    """``counts_as_work`` says a wait is no work — no part of the volume."""
+
+    def show(context: CliContext, args: Namespace) -> int:
+        return _show(context, args, days_for, counts_as_work)
+
     return [
         CliCommand(
             path=("order", "show"),
             summary="The order a project's steps can be done in, with each step's index.",
             configure=_configure,
-            run=lambda context, args: _show(context, args, days_for),
+            run=show,
             examples=(
                 "dplanner order show search",
                 "dplanner order show search --json",
@@ -57,7 +66,12 @@ def _configure(parser: ArgumentParser) -> None:
     )
 
 
-def _show(context: CliContext, args: Namespace, days_for: Callable[[Step], float | None]) -> int:
+def _show(
+    context: CliContext,
+    args: Namespace,
+    days_for: Callable[[Step], float | None],
+    counts_as_work: Callable[[Step], bool],
+) -> int:
     library = context.library
     project = find_project(library, args.project)
     found = placed(library, project)
@@ -76,12 +90,12 @@ def _show(context: CliContext, args: Namespace, days_for: Callable[[Step], float
             for place in found
         ],
     }
-    estimates = [days_for(place.step) for place in found]
-    sized = [days for days in estimates if days is not None]
-    volume = volume_words(sum(sized), len(estimates), len(estimates) - len(sized))
-    data |= {"days": sum(sized), "unestimated": len(estimates) - len(sized)}
+    days, _steps, unestimated = said = volume(
+        [place.step for place in found], days_for, counts_as_work
+    )
+    data |= {"days": days, "unestimated": unestimated}
     table = _table(found)
-    context.report(data, f"{table}\n\n{volume}" if table else "No steps yet.")
+    context.report(data, f"{table}\n\n{volume_words(*said)}" if table else "No steps yet.")
     return 0
 
 

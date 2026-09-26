@@ -6,21 +6,40 @@ grouped by status, each group in the order the work can be done.
 """
 
 from argparse import ArgumentParser, Namespace
+from collections.abc import Callable
 
-from dplanner.cli import CliCommand, CliContext
+from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
-from dplanner.modules.step_status.aspect import MODULE_ID, STATUSES, read, write
+from dplanner.modules.step_status.aspect import (
+    MODULE_ID,
+    NO_STATUS_ON_A_WAIT,
+    STATUSES,
+    read,
+    write,
+)
+
+PENDING = STATUSES[0]
 
 
-def commands() -> list[CliCommand]:
+def commands(*, is_wait: Callable[[Step], bool]) -> list[CliCommand]:
+    """``is_wait`` says a step is a wait, which has no status to set."""
+
+    def set_status(context: CliContext, args: Namespace) -> int:
+        step = find_step(context.library, args.step, context.current)
+        if is_wait(step) and args.state != PENDING:
+            raise CliError(f"{step.title!r} is a wait: {NO_STATUS_ON_A_WAIT}")
+        _say(context, args.step, args.state)
+        return 0
+
     return [
         CliCommand(
             path=("status", "set"),
             summary="Say where a step stands; setting it pending removes the file.",
             configure=_configure_set,
-            run=_set,
+            run=set_status,
             examples=("dplanner status set 'Read the spec' done",),
         ),
         CliCommand(
@@ -50,11 +69,6 @@ def commands() -> list[CliCommand]:
 def _configure_set(parser: ArgumentParser) -> None:
     step_arg(parser)
     parser.add_argument("state", choices=STATUSES, help="where the step stands")
-
-
-def _set(context: CliContext, args: Namespace) -> int:
-    _say(context, args.step, args.state)
-    return 0
 
 
 def _say(context: CliContext, needle: str, status: str) -> None:

@@ -71,7 +71,9 @@ def report_source(readers: Readers) -> ReportSource:
         unsized = sum(
             1
             for step in project.steps
-            if readers.days_for(step) is None and not readers.is_marker(step)
+            if readers.days_for(step) is None
+            and not readers.is_marker(step)
+            and readers.wait_of(step) is None
         )
         if unsized:
             placed.append(

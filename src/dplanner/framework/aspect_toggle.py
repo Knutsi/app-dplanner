@@ -34,23 +34,32 @@ def aspect_toggle(
     leaving: Mapping[str, Any] | None = None,
     icon: Callable[[QColor], QIcon] | None = None,
     tip: str = "",
+    refusal: Callable[[Step], str] | None = None,
 ) -> ActionSpec:
     """A Step ▸ Type toggle for one aspect.
 
     ``fresh`` is what turning on writes when the shelf holds nothing — a marker, or a
     generated milestone label. ``leaving`` is what turning off leaves in the entry's place:
-    nothing for a marker aspect, the opt-out for one whose default is on.
+    nothing for a marker aspect, the opt-out for one whose default is on. ``refusal`` says why
+    a step cannot carry the aspect at all — "" when it can — and the toggle is then greyed
+    with the reason in its words, never hidden.
     """
+
+    def refused(step: Step) -> str:
+        return refusal(step) if refusal is not None else ""
 
     def state(context: Context) -> ActionState:
         step = focused_step(context, library)
         if step is None:
             return DISABLED
+        why = refused(step)
+        if why:
+            return ActionState(enabled=False, checked=enabled(step), label=f"{label} — {why}")
         return ActionState(checked=enabled(step))
 
     def run(context: Context) -> None:
         step = focused_step(context, library)
-        if step is None:
+        if step is None or refused(step):
             return
         if enabled(step):
             undo.push(

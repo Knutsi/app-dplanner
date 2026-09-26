@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from argparse import Namespace
     from collections.abc import Callable, Container, Mapping, Sequence
+    from datetime import date
     from pathlib import Path
 
     from PySide6.QtGui import QIcon
@@ -977,8 +978,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             context=services.context,
             tabs=services.tabs,
             # The statuses through the status aspect's Qt-free reader — the board never
-            # learns what one is stored as.
-            status_for=step_status,
+            # learns what one is stored as — with a wait done once it is over.
+            status_for=_wait_aware(library, services.clock.today),
+            counts_as_work=_counts_as_work,
             agent_state=lambda ctx: services.actions.spec("agent.run").state(ctx),
             # The Run Agents button drops the Step menu's own Run Agent child down — the
             # profiles, then Manage Agent Profiles… — filled as it opens, never a copy.
@@ -992,6 +994,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     estimation = EstimationModule(
         EstimationDeps(
             library=library,
+            counts_as_work=_counts_as_work,
             undo=services.undo,
             details=services.step_details,
             actions=services.actions,
@@ -1219,6 +1222,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     # Constructed before the list for the same reason — its index row opens the table.
     step_order = StepOrderModule(
         StepOrderDeps(
+            counts_as_work=_counts_as_work,
             library=library,
             debounce=services.debounce,
             actions=services.actions,
@@ -1308,6 +1312,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     # at once to this module's launcher, and it is listed before this module.
     agent_instruction = StepAgentInstructionModule(
         StepAgentInstructionDeps(
+            is_wait=_is_wait,
             dictation=services.dictation,
             library=library,
             debounce=services.debounce,
@@ -1350,7 +1355,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             pick_assets=pick_assets,
             # Run Agent asks before launching on a step whose prerequisites are not
             # done — the same status reader the progression board's frontier uses.
-            status_for=step_status,
+            status_for=_wait_aware(library, services.clock.today),
             # And says so on the step when the shell opens: the status aspect's own
             # writer, applied off the undo stack the way the launch stamp is. The
             # agent module holds the preference; the word is the status module's.
@@ -1761,6 +1766,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
         StepStatusModule(
             StepStatusDeps(
+                is_wait=_is_wait,
                 library=library,
                 undo=services.undo,
                 actions=services.actions,
@@ -1781,6 +1787,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         problems,
         TestsModule(
             TestsDeps(
+                is_wait=_is_wait,
                 dictation=services.dictation,
                 library=library,
                 debounce=services.debounce,
@@ -2262,6 +2269,36 @@ def _time_readers() -> "TimeReaders":
     )
 
 
+def _status_in(library: "Library", today: "date") -> "Callable[[Step], str]":
+    """A step's status as the board, its report and the Run Agent gate read it on ``today``:
+    a wait done once it is over and waiting until then (``schedule.wait_status``), so what
+    follows a wait is ready on the day it may start; every other step as its status aspect
+    says."""
+    from dplanner.domain.schedule import wait_status
+    from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.modules.step_status.aspect import read_since as status_since
+    from dplanner.modules.step_wait.aspect import read as wait_read
+
+    return wait_status(library, step_status, status_since, wait_read, today)
+
+
+def _wait_aware(library: "Library", today: "Callable[[], date]") -> "Callable[[Step], str]":
+    """:func:`_status_in` for a window, on whatever day it is when asked."""
+    return lambda step: _status_in(library, today())(step)
+
+
+def _is_wait(step: "Step") -> bool:
+    """Whether a step is a wait — the wait aspect's answer, for modules that may not ask it."""
+    from dplanner.modules.step_wait.aspect import is_wait
+
+    return is_wait(step)
+
+
+def _counts_as_work(step: "Step") -> bool:
+    """Whether a step is work: a wait is not — no worker takes it and no count holds it."""
+    return not _is_wait(step)
+
+
 def _time_writers() -> "TimeWriters":
     """How a simulated day reaches the aspects it touches: each owner's own writer, handed
     the entry it replaces and the day — so a replayed status is dated by the status aspect,
@@ -2363,7 +2400,12 @@ def _report_sources() -> tuple["ReportSource", ...]:
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
     return (
-        progression(status_for=step_status, days_for=estimated_days, key_of=_step_key),
+        progression(
+            status_in=_status_in,
+            counts_as_work=_counts_as_work,
+            days_for=estimated_days,
+            key_of=_step_key,
+        ),
         time_estimates(_time_readers()),
         graph(
             key_of=_step_key,
@@ -2927,7 +2969,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
         # An agent step is briefed by its description unless it carries a separate
         # instruction; the description's reader arrives here, not by import.
         *agent_cli.lint_checks(described=lambda step: bool(description_read(step))),
-        *estimation_cli.lint_checks(),
+        *estimation_cli.lint_checks(counts_as_work=_counts_as_work),
         *spec_cli.lint_checks(),
         *feature_cli.lint_checks(anchor=spec_cli.anchor_sources, key_of=_step_key),
         *testing_cli.lint_checks(),
@@ -3120,7 +3162,7 @@ def default_cli_commands(
         # `topology show` tells the gate what it printed; the gate is built here, so the
         # spec module never learns where the record lives.
         *spec_cli.commands(note_read=gate.record, rename_references=_rename_spec_references),
-        *estimation_cli.commands(),
+        *estimation_cli.commands(counts_as_work=_counts_as_work),
         *ticket_cli.commands(),
         *description_cli.commands(),
         *docs_cli.commands(kinds=scopes),
@@ -3131,7 +3173,7 @@ def default_cli_commands(
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
         *at_work_cli.commands(board=board, key_of=_step_key),
-        *status_cli.commands(),
+        *status_cli.commands(is_wait=_is_wait),
         *milestone_cli.commands(),
         *wait_cli.commands(),
         # A feature's passages are anchored in the spec documents by the spec module's
@@ -3158,10 +3200,12 @@ def default_cli_commands(
         # module's own writes (attach, name) stay in its cli.py — the `scope` split.
         *catalog_commands(sources=sources, titles=read_titles),
         *assets_cli.commands(sources=sources),
-        *order_cli.commands(days_for=estimated_days),
+        *order_cli.commands(days_for=estimated_days, counts_as_work=_counts_as_work),
         # Progression reads statuses and estimates through the aspects' Qt-free readers —
         # handed over here so no cli.py imports another module's.
-        *progression_cli.commands(status_for=step_status, days_for=estimated_days),
+        *progression_cli.commands(
+            status_in=_status_in, counts_as_work=_counts_as_work, days_for=estimated_days
+        ),
         # The timeline sort reads a step's length through estimation's Qt-free reader —
         # handed over here so neither cli.py imports the other.
         *layout_cli.commands(
