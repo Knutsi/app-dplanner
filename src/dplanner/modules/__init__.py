@@ -211,6 +211,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.step_status.aspect import record_started
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
+    from dplanner.modules.step_wait.module import StepWaitDeps, StepWaitModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.sync.service import ExtraPublication
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
@@ -729,6 +730,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 AspectTemplate(
                     "Check", frozenset({"check.toggle", "description.toggle"}), glyph="shield"
                 ),
+                # A wait carries no estimate and no description: how long it holds is its
+                # size, and there is nothing to do.
+                AspectTemplate("Wait", frozenset({"wait.toggle"}), glyph="clock"),
             ),
             library=library,
             undo=services.undo,
@@ -1745,6 +1749,15 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 shade=milestone_shade,
             )
         ),
+        StepWaitModule(
+            StepWaitDeps(
+                library=library,
+                undo=services.undo,
+                actions=services.actions,
+                details=services.step_details,
+                today=services.clock.today,
+            )
+        ),
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
         StepStatusModule(
             StepStatusDeps(
@@ -2231,6 +2244,7 @@ def _time_readers() -> "TimeReaders":
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_status.aspect import read_since as status_since
     from dplanner.modules.step_status.aspect import read_started as status_started
+    from dplanner.modules.step_wait.aspect import read as wait_read
     from dplanner.modules.time_estimates.cli import Readers
 
     return Readers(
@@ -2240,6 +2254,7 @@ def _time_readers() -> "TimeReaders":
         since_for=status_since,
         started_for=status_started,
         is_marker=lambda step: not estimate_enabled(step),
+        wait_of=wait_read,
         start_of=start_of,
         milestone_label=milestone_read,
         estimate_history=estimate_history,
@@ -3053,6 +3068,7 @@ def default_cli_commands(
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_ticket import cli as ticket_cli
+    from dplanner.modules.step_wait import cli as wait_cli
     from dplanner.modules.testing import cli as testing_cli
     from dplanner.modules.testing.format import FORMAT_SUBJECT, FORMAT_VERB
     from dplanner.modules.testing.format import guide as test_format
@@ -3112,6 +3128,7 @@ def default_cli_commands(
         *at_work_cli.commands(board=board, key_of=_step_key),
         *status_cli.commands(),
         *milestone_cli.commands(),
+        *wait_cli.commands(),
         # A feature's passages are anchored in the spec documents by the spec module's
         # one derivation, handed across here — `cite`, `reanchor`, `step add --feature`
         # and lint all judge a quote the same way.
@@ -3302,6 +3319,7 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.step_milestone import aspect as milestone
     from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
+    from dplanner.modules.step_wait import aspect as wait
     from dplanner.modules.testing import aspect as testing
 
     return [
@@ -3320,6 +3338,7 @@ def aspect_specs() -> list["AspectSpec"]:
         status.SPEC,
         testing.SPEC,
         ticket.SPEC,
+        wait.SPEC,
     ]
 
 
@@ -3330,6 +3349,7 @@ _PHRASE_ORDER = (
     "step_status",
     "step_agent_run",
     "step_milestone",
+    "step_wait",
     "feature",
     "estimation",
     "step_ticket",

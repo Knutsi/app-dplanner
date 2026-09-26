@@ -706,3 +706,93 @@ def test_a_later_milestone_whose_work_is_done_lands_before_an_earlier_one():
     )
     first, second = _resumed(library, plan, {"A": 5.0, "B": 1.0}, facts, milestones=("M1", "M2"))
     assert (first.finish, second.finish) == (NEXT_MONDAY, TUESDAY)
+
+
+# -- waits ------------------------------------------------------------------------------------
+
+WEDNESDAY = MONDAY + timedelta(days=2)
+
+
+def _waits_as(wait, title="W"):
+    return lambda step: wait if step.title == title else None
+
+
+def _wait_landings(wait, today, statuses=None, since=None, requires=None):
+    """A takes a day; B waits on the wait W; nobody works on W. Where A and B land."""
+    from dplanner.domain.schedule import phases
+
+    library, plan = _made(("A", "W", "B"), requires or {"B": ["W"]})
+    (only,) = phases(
+        library,
+        plan,
+        days_of({"A": 1.0, "B": 1.0}),
+        lambda _s: False,
+        humans=1,
+        agents=1,
+        start=MONDAY,
+        is_milestone=lambda _s: False,
+        start_for=lambda _s: None,
+        facts=_facts(today, statuses, since),
+        wait_of=_waits_as(wait),
+    )
+    named = {step.title: step for step in plan.steps}
+    return [only.landing_of(named[title].id) for title in ("A", "B")]
+
+
+def test_a_days_wait_holds_what_waits_on_it_and_the_worker_it_does_not_need_works_on():
+    from dplanner.domain.schedule import Wait, parallel_finish
+
+    library, plan = _made(("A", "W", "B", "C"), {"W": ["A"], "B": ["W"]})
+    run = parallel_finish(
+        library,
+        plan,
+        days_of({"A": 1.0, "B": 1.0, "C": 2.0}),
+        lambda _s: False,
+        humans=1,
+        agents=1,
+        wait_of=_waits_as(Wait(days=3.0)),
+    )
+    assert run is not None and run.unestimated == 0  # a wait is never unsized
+    named = {step.title: step.id for step in plan.steps}
+    assert [(run.starts[named[t]], run.landings[named[t]]) for t in ("A", "W", "C", "B")] == [
+        (0.0, 1.0),
+        (1.0, 4.0),
+        (1.0, 3.0),
+        (4.0, 5.0),
+    ]
+
+
+def test_an_until_wait_lets_what_waits_on_it_start_on_its_day_and_not_before():
+    """Without it B would follow A on Tuesday; waiting until Wednesday, it lands Wednesday."""
+    from dplanner.domain.schedule import Wait
+
+    friday = MONDAY - timedelta(days=3)
+    assert _wait_landings(Wait(until=WEDNESDAY), friday) == [MONDAY, WEDNESDAY]
+    # Until a Saturday: what waits on it starts on the Monday after.
+    assert _wait_landings(Wait(until=SATURDAY), friday) == [MONDAY, SATURDAY + timedelta(days=2)]
+
+
+def test_a_wait_whose_day_has_passed_costs_nothing():
+    """Thursday, with A done on Monday and B not started: the rest resumes on Friday, with
+    nothing left to wait for."""
+    from dplanner.domain.progression import DONE
+    from dplanner.domain.schedule import Wait
+
+    thursday = MONDAY + timedelta(days=3)
+    landed = _wait_landings(Wait(until=WEDNESDAY), thursday, {"A": DONE}, {"A": MONDAY})
+    assert landed[1] == thursday + timedelta(days=1)
+
+
+def test_a_days_wait_is_credited_with_the_days_it_has_already_waited():
+    """W waits three days after A, which was planned for Monday and done on Tuesday — so on
+    Wednesday the plan no longer holds. W has waited since Tuesday's middle, a day and a
+    half; re-dated from Thursday it waits a day and a half more, and B lands on Monday."""
+    from dplanner.domain.progression import DONE
+    from dplanner.domain.schedule import Wait
+
+    tuesday = MONDAY + timedelta(days=1)
+    chain = {"W": ["A"], "B": ["W"]}
+    planned = _wait_landings(Wait(days=3.0), MONDAY - timedelta(days=3), requires=chain)
+    assert planned == [MONDAY, MONDAY + timedelta(days=4)]  # W Tuesday to Thursday, B Friday
+    landed = _wait_landings(Wait(days=3.0), WEDNESDAY, {"A": DONE}, {"A": tuesday}, chain)
+    assert landed == [tuesday, MONDAY + timedelta(days=7)]

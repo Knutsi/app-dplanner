@@ -469,6 +469,8 @@ src/dplanner/
 │   │                        `agent_usage` aspect; `dplanner usage show|list|record`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
+│   ├── step_wait/           a step that holds what requires it, until a day or for working days: the
+│   │                        Type ▸ Wait toggle, the Wait template, its Details block, `dplanner wait`
 │   ├── feature/             a step that is a feature: the Type ▸ Feature toggle, the Feature
 │   │                        tab (the spec passages it was read from), the Specs tab's Cite…
 │   │                        menu, `dplanner feature` (list, show, cite, uncite, reanchor)

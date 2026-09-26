@@ -161,7 +161,14 @@ def test_the_bar_words_the_templates_left_and_glyphs_every_toggle_right(services
     """The right half renders the Step ▸ Type submenu and never keeps a list of its own;
     the left half is the composition root's templates, in its order."""
     assert panel.bar.toggle_ids() == type_toggle_ids(services)
-    assert panel.bar.template_labels() == ["Step", "Milestone", "Feature", "Agent", "Check"]
+    assert panel.bar.template_labels() == [
+        "Step",
+        "Milestone",
+        "Feature",
+        "Agent",
+        "Check",
+        "Wait",
+    ]
 
 
 def test_a_plain_step_is_the_step_template_and_a_template_is_one_undo(services, project, panel):

@@ -53,7 +53,9 @@ from dplanner.domain.schedule import (
     HALF,
     Phase,
     ScheduleFacts,
+    Wait,
     critical_path,
+    no_wait,
     phases,
     spent_since,
     working_days_between,
@@ -490,6 +492,7 @@ def cell_for(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
+    wait_of: Callable[[Step], Wait | None] = no_wait,
 ) -> tuple[Cell, Cell]:
     """One staffing, both lenses: the parallel-adjusted cell and the calendar one. Project
     days count work, not dates, so only the calendar is re-dated from ``facts``."""
@@ -503,6 +506,7 @@ def cell_for(
         start=start,
         is_milestone=is_milestone,
         start_for=start_for,
+        wait_of=wait_of,
     )
     slow = phases(
         library,
@@ -515,6 +519,7 @@ def cell_for(
         is_milestone=is_milestone,
         start_for=start_for,
         facts=facts,
+        wait_of=wait_of,
     )
     # The whole lands when its latest stretch does — which work done out of sequence makes
     # other than the last.
@@ -544,6 +549,7 @@ def time_report(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
+    wait_of: Callable[[Step], Wait | None] = no_wait,
 ) -> TimeReport | None:
     """The full matrix over ``HUMANS`` by ``AGENTS``. None only when the project has no
     steps. ``start`` and ``efficiency`` arrive resolved — the caller owns where a start
@@ -551,9 +557,10 @@ def time_report(
     ``facts``, where given, re-date every calendar cell from what has happened."""
     if not project.steps:
         return None
-    human_days = sum(days_for(step) or 0.0 for step in project.steps if not is_agent(step))
-    agent_days = sum(days_for(step) or 0.0 for step in project.steps if is_agent(step))
-    has_agent_steps = any(is_agent(step) for step in project.steps)
+    work = [step for step in project.steps if wait_of(step) is None]  # A wait is no work.
+    human_days = sum(days_for(step) or 0.0 for step in work if not is_agent(step))
+    agent_days = sum(days_for(step) or 0.0 for step in work if is_agent(step))
+    has_agent_steps = any(is_agent(step) for step in work)
     loop = tuple(cyclic(library, project))
     if loop:
         return TimeReport(
@@ -561,7 +568,7 @@ def time_report(
             efficiency=efficiency,
             human_days=human_days,
             agent_days=agent_days,
-            unestimated=sum(1 for step in project.steps if days_for(step) is None),
+            unestimated=sum(1 for step in work if days_for(step) is None),
             has_agent_steps=has_agent_steps,
             floor=0.0,
             calendar_floor=0.0,
@@ -588,6 +595,7 @@ def time_report(
                 is_milestone=is_milestone,
                 start_for=start_for,
                 facts=facts,
+                wait_of=wait_of,
             )
             parallel.append(raw)
             calendar.append(slow)

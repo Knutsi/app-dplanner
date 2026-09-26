@@ -46,7 +46,7 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.schedule import Phase, ScheduleFacts, format_date, format_days
+from dplanner.domain.schedule import Phase, ScheduleFacts, Wait, format_date, format_days
 from dplanner.modules.time_estimates.progress import (
     A_WEEK_AGO,
     AT_START,
@@ -112,6 +112,8 @@ class Readers:
     started_for: Callable[[Step], date | None]  # The day a step first went in progress.
     # A step that carries no work by design — estimate off: a milestone's, a feature, a check.
     is_marker: Callable[[Step], bool]
+    # What a wait step waits for; None for every other step. A wait is no work at all.
+    wait_of: Callable[[Step], Wait | None]
     # When a project's work begins; an undated one begins on the day handed in.
     start_of: Callable[[Project, date], date]
     milestone_label: Callable[[Step], str]
@@ -191,6 +193,7 @@ class Readers:
             start_for=read_start,
             today=today,
             facts=self.facts(project, today, day_over=day_over, pace=pace),
+            wait_of=self.wait_of,
         )
 
 
@@ -560,6 +563,7 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
         is_milestone=is_milestone,
         start_for=read_start,
         facts=readers.facts(project, today),
+        wait_of=readers.wait_of,
     )
     if report is None:
         context.report({"project": project.id, "steps": 0}, "No steps yet.")
@@ -582,6 +586,7 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
                 efficiency=efficiency,
                 is_milestone=is_milestone,
                 start_for=read_start,
+                wait_of=readers.wait_of,
             )
         )
     # The milestones are printed for one team: the one named, else the project's own.
