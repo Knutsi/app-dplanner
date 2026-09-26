@@ -116,6 +116,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.dictation.module import DictationDeps, DictationModule
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
+    from dplanner.modules.estimation.aspect import enabled as estimate_enabled
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.aspect import read_history as estimate_history
     from dplanner.modules.estimation.aspect import write as estimate_write
@@ -1022,6 +1023,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             # and the day it last changed.
             status_for=step_status,
             since_for=status_since,
+            # A step whose estimate is off carries no work by design — a milestone's own, a
+            # feature, a check — and its status is no fact about the schedule.
+            is_marker=lambda step: not estimate_enabled(step),
             # What each estimate was before, and the key a row prints: the change report
             # behind the chart's delta.
             estimate_history=estimate_history,
@@ -2180,6 +2184,7 @@ def _time_readers() -> "TimeReaders":
     estimates, agent-ness, status and the day it changed, the start date, milestones, the
     estimate history and the key a row prints — the owners' Qt-free readers, handed over
     here so no module imports another's."""
+    from dplanner.modules.estimation.aspect import enabled as estimate_enabled
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.aspect import read_history as estimate_history
     from dplanner.modules.estimation.schedule import start_of
@@ -2194,6 +2199,7 @@ def _time_readers() -> "TimeReaders":
         is_agent=agent_enabled,
         status_for=step_status,
         since_for=status_since,
+        is_marker=lambda step: not estimate_enabled(step),
         start_of=start_of,
         milestone_label=milestone_read,
         estimate_history=estimate_history,

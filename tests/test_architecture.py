@@ -94,6 +94,7 @@ HEADLESS_FILES = (
     "report.py",
     "themes.py",
     "dictation.py",
+    "frames.py",
 )
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",

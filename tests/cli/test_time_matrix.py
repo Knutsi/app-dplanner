@@ -10,12 +10,13 @@ from dplanner.domain.store import LibraryStore
 from dplanner.modules.time_estimates.schedule import MODULE_ID
 from dplanner.theme.palettes import PALETTES, shades
 
-# The day every run here is dated by — a Monday two weeks into the plan — so no date a
-# verb prints depends on the day the suite runs.
-TODAY = date(2026, 9, 21)
+# The day every run here is dated by, so no date a verb prints depends on the day the suite
+# runs: the Friday before the plan starts, when nothing is due yet and the plan's own dates
+# stand — a plan whose days have passed with nothing done resumes from tomorrow instead.
+TODAY = date(2026, 9, 4)
 # What a focus change today remembers: the 50% the day began with, the new focus counting
 # from tomorrow.
-WAS = {"until": "2026-09-22", "efficiency": 0.5}
+WAS = {"until": "2026-09-05", "efficiency": 0.5}
 
 
 @pytest.fixture
@@ -103,7 +104,7 @@ def test_a_focus_change_remembers_the_focus_the_day_began_with(cli, cli_library,
 
     cli("schedule", "focus", "Discovery", "--percent", "60")
     cli("schedule", "focus", "Discovery", "--percent", "80")
-    assert stored()["efficiency_was"] == {"until": "2026-09-22", "efficiency": 0.5}
+    assert stored()["efficiency_was"] == WAS
     clock.pin(date(2026, 9, 23))
     cli("schedule", "focus", "Discovery", "--percent", "40")
     assert stored()["efficiency_was"] == {"until": "2026-09-24", "efficiency": 0.8}
@@ -148,7 +149,8 @@ def test_the_milestones_land_in_sequence_for_the_smallest_team(staged):
     assert v1["label"] == "v1" and len(v1["steps"]) == 2 and v1["step"] == v1["steps"][-1]
     assert (v1["start"], v1["finish"]) == ("2026-09-07", "2026-09-16")  # 8 calendar days
     assert v2["label"] == "v2"
-    assert v2["start"] == "2026-09-17"
+    # v1's eight days end as the 16th does, and the team picks v2 up the moment it lands.
+    assert v2["start"] == "2026-09-16"
     assert v2["finish"] == "2026-09-23"  # the agent day, then 2/0.5 = 4 days of docs
     assert [v1["color"], v2["color"]] == shades(PALETTES[0], 2)
     assert data["palette"] == "viridis"
@@ -176,9 +178,27 @@ def test_a_date_the_sequence_cannot_keep_is_pushed_and_said(staged):
     staged("schedule", "milestone", "ship-the-docs", "--start", "2026-09-10")
     data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
     v2 = data["milestones"][1]
-    assert v2["pushed"] and v2["start"] == "2026-09-17"
+    assert v2["pushed"] and v2["start"] == "2026-09-16"
     said = staged("schedule", "matrix", "Discovery")
     assert "asked for 10 September, but the previous lands later" in said
+
+
+def test_a_stretch_under_way_says_when_its_work_began_and_where_the_rest_resumes(staged):
+    """The spec is read the Friday before the plan starts: v1's work began then, and what
+    is left of it resumes on the Monday — the plan re-dated from what has happened."""
+    staged("status", "set", "read-the-spec", "done")
+    data = json.loads(staged("schedule", "matrix", "Discovery", "--json"))
+    v1, v2 = data["milestones"]
+    assert (v1["began"], v1["start"], v1["finish"]) == (
+        TODAY.isoformat(),
+        "2026-09-07",
+        "2026-09-10",
+    )
+    assert v1["calendar_days"] == 5  # Friday, then Monday to Thursday
+    assert (v2["began"], v2["start"], v2["finish"]) == ("2026-09-10", "2026-09-10", "2026-09-17")
+    assert "v1: 4 September → 10 September (5d, 2 steps)" in staged(
+        "schedule", "matrix", "Discovery"
+    )
 
 
 def test_a_milestone_colour_is_stored_lower_case_and_cleared(staged, cli_library):
@@ -234,7 +254,7 @@ def test_the_prose_lists_the_milestones_in_sequence(staged):
     said = staged("schedule", "matrix", "Discovery")
     assert "Milestones in sequence (1 person + 1 agents)" in said
     assert "v1: 7 September → 16 September (1.6w, 2 steps)" in said
-    assert "v2: 17 September → 23 September (5d, 2 steps)" in said
+    assert "v2: 16 September → 23 September (6d, 2 steps)" in said
 
 
 def test_a_loop_in_the_file_is_refused_with_its_steps_named(cli, workspace):
@@ -292,17 +312,19 @@ def test_the_team_rides_beside_the_focus_and_the_palette(staged, cli_library):
 
 
 def test_progress_show_counts_what_landed_toward_each_milestone(staged):
+    """The spec is read on the Friday before the plan starts, so the rest resumes on the
+    Monday: v1 is the model's four days, landing the 10th rather than the 16th."""
     staged("status", "set", "read-the-spec", "done")
     data = json.loads(staged("progress", "show", "Discovery", "--json"))
     v1, v2, whole = data["scopes"]
     assert (v1["label"], v1["steps"], v1["done"]) == ("v1", 2, 1)
     assert (v1["days"], v1["done_days"], v1["by_days"]) == (4.0, 2.0, 0.5)
     assert "by_steps" not in v1  # by estimated days, the one measure
-    assert v1["finish"] == "2026-09-16"
-    assert (v2["label"], v2["steps"], v2["done"], v2["finish"]) == ("v2", 4, 1, "2026-09-23")
+    assert v1["finish"] == "2026-09-10"
+    assert (v2["label"], v2["steps"], v2["done"], v2["finish"]) == ("v2", 4, 1, "2026-09-17")
     assert whole["label"] == "All work" and whole["by_days"] == pytest.approx(2 / 7)
-    assert whole["expected"][0] == {"date": "2026-09-07", "share": 0.0}
-    assert whole["expected"][-1] == {"date": "2026-09-23", "share": 1.0}
+    assert whole["expected"][0] == {"date": TODAY.isoformat(), "share": 0.0}  # work began
+    assert whole["expected"][-1] == {"date": "2026-09-17", "share": 1.0}
     assert whole["actual"] == [{"date": TODAY.isoformat(), "share": pytest.approx(2 / 7)}]
     assert data["recorded_days"] == 1 and data["saved"] == []  # `status set` recorded it
     assert data["basis"] == {"pick": "start", "title": "", "day": "", "words": ""}
@@ -310,7 +332,7 @@ def test_progress_show_counts_what_landed_toward_each_milestone(staged):
     assert data["volume"] == [{"date": TODAY.isoformat(), "days": 7.0, "remaining": 5.0}]
     assert whole["baseline"] is None and whole["delta"] is None
     said = staged("progress", "show", "Discovery")
-    assert "v1: 50% (2d of 4d, 1 of 2 steps) — lands 16 September" in said
+    assert "v1: 50% (2d of 4d, 1 of 2 steps) — lands 10 September" in said
     assert "All work: 29% (2d of 7d, 1 of 4 steps)" in said
     assert "(nothing recorded to compare with; 1 person + 1 agent; 1 day recorded" in said
     # A milestone is named by its label or by its step, whichever comes to mind.
@@ -394,18 +416,22 @@ def test_progress_record_writes_a_day_once_and_the_delta_reads_against_it(
     assert first["day"] == "2026-09-01" and second["stretches"][1]["finish"] == "2026-09-30"
 
 
-def test_the_basis_can_be_any_day_and_a_bad_one_is_refused(staged):
+def test_the_basis_can_be_any_day_and_a_bad_one_is_refused(staged, clock):
     staged("progress", "record", "Discovery")
+    assert "YYYY-MM-DD" in staged("progress", "show", "Discovery", "--basis", "soon", expect=1)
+    # The only record is today's own, which is the plan now: whether the day asked for is
+    # before it or after, there is no earlier plan to compare with, and none is claimed.
+    for day in ("2020-01-01", "2030-01-01"):
+        fresh = json.loads(staged("progress", "show", "Discovery", "--basis", day, "--json"))
+        assert fresh["baseline_day"] == "" and fresh["scopes"][0]["baseline"] is None
+    # A day on, that record is an earlier plan, and any later day finds it.
+    later = date(2026, 9, 7)
+    clock.pin(later)
     data = json.loads(staged("progress", "show", "Discovery", "--basis", "2030-01-01", "--json"))
     assert data["basis"]["day"] == "2030-01-01" and data["baseline_day"] == TODAY.isoformat()
-    assert f"(versus the plan at 1 Jan '30, recorded {format_date(TODAY, TODAY)};" in staged(
+    assert f"(versus the plan at 1 Jan '30, recorded {format_date(TODAY, later)};" in staged(
         "progress", "show", "Discovery", "--basis", "2030-01-01"
     )
-    assert "YYYY-MM-DD" in staged("progress", "show", "Discovery", "--basis", "soon", expect=1)
-    # Nothing was recorded that early and the only record is today's own, which is the
-    # plan now: there is no earlier plan to compare with, and none is claimed.
-    fresh = json.loads(staged("progress", "show", "Discovery", "--basis", "2020-01-01", "--json"))
-    assert fresh["baseline_day"] == "" and fresh["scopes"][0]["baseline"] is None
 
 
 def test_progress_on_a_stepless_project_says_so(cli):

@@ -49,8 +49,10 @@ from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import cyclic, placed
 from dplanner.domain.schedule import (
     Phase,
+    ScheduleFacts,
     critical_path,
     phases,
+    spent_since,
     working_days_between,
 )
 from dplanner.theme.palettes import DEFAULT_PALETTE, Palette, palette, shades
@@ -378,6 +380,45 @@ def phase_colors(stretches: tuple[Phase, ...], colors: dict[StepId, str]) -> lis
     ]
 
 
+def schedule_facts(
+    project: Project,
+    today: date,
+    *,
+    is_agent: Callable[[Step], bool],
+    status_for: Callable[[Step], str],
+    since_for: Callable[[Step], date | None],
+    is_marker: Callable[[Step], bool],
+    day_over: bool = False,
+) -> ScheduleFacts:
+    """What has happened in ``project`` by ``today``, for the calendar to re-date it from:
+    the stored statuses with their days, and work in flight credited at the focus it ran at.
+
+    A person's step started before the focus last changed ran at the old focus until the new
+    one began (``efficiency_was``), so those days count at the old one's pace — crediting
+    them at the new one re-dates work already done. An agent's step has no focus.
+    ``day_over`` reads ``today`` at its end, as a simulation's day is (``ScheduleFacts``).
+    """
+    efficiency = read_efficiency(project)
+    was = read_efficiency_was(project)
+
+    def worked(step: Step) -> float:
+        since = since_for(step)
+        whole = spent_since(since, today)
+        if was is None or is_agent(step) or since is None or was.until <= since:
+            return whole
+        after = 0.0 if was.until > today else float(working_days_between(was.until, today))
+        return (whole - after) * (was.efficiency / efficiency) + after
+
+    return ScheduleFacts(
+        today=today,
+        status_of=status_for,
+        since_of=since_for,
+        is_marker=is_marker,
+        worked=worked,
+        day_over=day_over,
+    )
+
+
 def cell_for(
     library: Library,
     project: Project,
@@ -390,8 +431,10 @@ def cell_for(
     efficiency: float,
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
+    facts: ScheduleFacts | None = None,
 ) -> tuple[Cell, Cell]:
-    """One staffing, both lenses: the parallel-adjusted cell and the calendar one."""
+    """One staffing, both lenses: the parallel-adjusted cell and the calendar one. Project
+    days count work, not dates, so only the calendar is re-dated from ``facts``."""
     raw = phases(
         library,
         project,
@@ -413,8 +456,11 @@ def cell_for(
         start=start,
         is_milestone=is_milestone,
         start_for=start_for,
+        facts=facts,
     )
-    landing = next((phase.finish for phase in reversed(slow) if phase.finish), None)
+    # The whole lands when its latest stretch does — which work done out of sequence makes
+    # other than the last.
+    landing = max((phase.finish for phase in slow if phase.finish), default=None)
     return (
         Cell(humans=humans, agents=agents, days=sum(phase.days for phase in raw)),
         Cell(
@@ -439,10 +485,12 @@ def time_report(
     efficiency: float,
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
+    facts: ScheduleFacts | None = None,
 ) -> TimeReport | None:
     """The full matrix over ``HUMANS`` by ``AGENTS``. None only when the project has no
     steps. ``start`` and ``efficiency`` arrive resolved — the caller owns where a start
-    date and a stored factor live, the same seam ``days_for`` and ``is_agent`` use."""
+    date and a stored factor live, the same seam ``days_for`` and ``is_agent`` use — and
+    ``facts``, where given, re-date every calendar cell from what has happened."""
     if not project.steps:
         return None
     human_days = sum(days_for(step) or 0.0 for step in project.steps if not is_agent(step))
@@ -481,6 +529,7 @@ def time_report(
                 efficiency=efficiency,
                 is_milestone=is_milestone,
                 start_for=start_for,
+                facts=facts,
             )
             parallel.append(raw)
             calendar.append(slow)

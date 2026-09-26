@@ -160,6 +160,7 @@ from dplanner.modules.time_estimates.schedule import (
     read_palette,
     read_start,
     read_team,
+    schedule_facts,
     time_report,
     write_milestone,
     write_project,
@@ -219,6 +220,8 @@ class TimeEstimatesDeps:
     # and the day it last changed, which tells a day of work from a quiet one.
     status_for: Callable[[Step], str]
     since_for: Callable[[Step], date | None]
+    # A step that carries no work by design, whose status says nothing about the schedule.
+    is_marker: Callable[[Step], bool]
     # What each estimate was before, and the key a row prints: the change report the CSV
     # and the terminal print, read off the steps themselves.
     estimate_history: Callable[[Step], list[tuple[date, float]]]
@@ -800,6 +803,14 @@ class TimeEstimatesActivity(EntityActivity):
             efficiency=read_efficiency(project),
             is_milestone=self._is_milestone,
             start_for=read_start,
+            facts=schedule_facts(
+                project,
+                deps.clock.today(),
+                is_agent=deps.is_agent,
+                status_for=deps.status_for,
+                since_for=deps.since_for,
+                is_marker=deps.is_marker,
+            ),
         )
         self._render()
 
@@ -949,7 +960,7 @@ class TimeEstimatesActivity(EntityActivity):
             Band(
                 key=phase.milestone.id if phase.milestone else "",
                 label=self._label(phase, stretches),
-                start=phase.start,
+                start=phase.began,
                 finish=phase.finish,
                 color=color,
                 lands=phase.milestone is not None,
@@ -975,7 +986,7 @@ class TimeEstimatesActivity(EntityActivity):
                 color=color,
                 chosen=phase.milestone is not None and read_color(phase.milestone) is not None,
                 start=phase.asked,
-                default_start=phase.start,
+                default_start=phase.began,
                 finish=phase.finish,
                 days=float(phase.calendar_days),
                 steps=len(phase.steps),
@@ -1043,14 +1054,15 @@ class TimeEstimatesModule:
             return
         project = deps.library.project(project_id)
         readers = Readers(
-            deps.days_for,
-            deps.is_agent,
-            deps.status_for,
-            deps.since_for,
-            lambda dated, _today: deps.start_of(dated.id),
-            deps.milestone_label,
-            deps.estimate_history,
-            deps.step_key,
+            days_for=deps.days_for,
+            is_agent=deps.is_agent,
+            status_for=deps.status_for,
+            since_for=deps.since_for,
+            is_marker=deps.is_marker,
+            start_of=lambda dated, _today: deps.start_of(dated.id),
+            milestone_label=deps.milestone_label,
+            estimate_history=deps.estimate_history,
+            key_of=deps.step_key,
         )
         table = milestones_table(deps.library, project, readers, deps.clock.today())
         if table is None:
@@ -1092,6 +1104,7 @@ class TimeEstimatesModule:
             is_agent=deps.is_agent,
             status_for=deps.status_for,
             since_for=deps.since_for,
+            is_marker=deps.is_marker,
             is_milestone=lambda step: bool(deps.milestone_label(step)),
             start_of=deps.start_of,
             clock=deps.clock,

@@ -45,9 +45,10 @@ from dplanner.modules.time_estimates.schedule import (
 from dplanner.modules.time_estimates.view import TINT_MIN_ALPHA
 from dplanner.theme.palettes import PALETTES, shades
 
-# The day every test here is run on — a Monday two weeks into the plan — so no date the
-# tab prints depends on the day the suite runs.
-TODAY = date(2026, 9, 21)
+# The day every test here is run on, so no date the tab prints depends on the day the suite
+# runs: the Friday before the plan starts, when nothing is due yet and the plan's own dates
+# stand — a plan whose days have passed with nothing done resumes from tomorrow instead.
+TODAY = date(2026, 9, 4)
 
 
 @pytest.fixture
@@ -378,7 +379,7 @@ def test_the_milestones_land_in_sequence_and_the_whole_leads_the_list(services, 
     assert _landings(tab) == [
         ("All milestones", "23 September", "2.6w"),  # 13 working days, 7 → 23 September
         ("v1", "16 September", "1.6w"),
-        ("v2", "23 September", "5d"),
+        ("v2", "23 September", "6d"),  # from the 16th, the moment v1 lands
     ]
     assert tab.milestones.key_at(0) == ALL_KEY
     assert tab.milestones.picked_key() == ALL_KEY  # nothing picked: the whole is
@@ -439,7 +440,7 @@ def test_picking_a_palette_reshades_the_milestones_and_is_undoable(services, sta
 def test_the_palette_and_the_focus_factor_share_one_entry_without_clobbering(services, staged):
     """Each write keeps the rest, the focus it replaced included: 50% was the day's focus
     when it began, so both changes today remember 50%, the new one counting from tomorrow."""
-    was = {"until": "2026-09-22", "efficiency": 0.5}
+    was = {"until": "2026-09-05", "efficiency": 0.5}
     tab = services.tabs.open("time", staged.id)
     tab.focus_bar.percent.setValue(60)
     tab.palette_picker.setCurrentIndex(tab.palette_picker.findData("rocket"))
@@ -487,7 +488,7 @@ def test_the_calendar_paints_each_stretch_and_marks_the_landing(services, staged
     assert second is not None and second.key == ship.id
     assert [first.color.name(), second.color.name()] == shades(PALETTES[0], 2)
     assert "v1 lands" in tab.months.day_tooltip(date(2026, 9, 16))
-    assert "v2 starts, working day 1 of 5" in tab.months.day_tooltip(date(2026, 9, 17))
+    assert "v2, working day 2 of 6" in tab.months.day_tooltip(date(2026, 9, 17))
     assert "v2 lands" in tab.months.day_tooltip(date(2026, 9, 23))
 
 
@@ -498,7 +499,7 @@ def test_dating_a_milestone_starts_from_the_day_the_sequence_gave_it(services, s
     tab = services.tabs.open("time", staged.id)
     _read, _draft, _docs, ship = staged.steps
     begins = _cell(tab, _row(tab, ship.id), BEGINS_COLUMN)
-    assert begins.text() == "17 Sep" and begins.data(MUTED_ROLE) is True
+    assert begins.text() == "16 Sep" and begins.data(MUTED_ROLE) is True
     assert begins.flags() & Qt.ItemFlag.ItemIsEditable
     _begin(tab, ship.id, date(2026, 10, 5))
     assert ship.module_data[MODULE_ID] == {"start": "2026-10-05", "format": 2}
@@ -508,7 +509,7 @@ def test_dating_a_milestone_starts_from_the_day_the_sequence_gave_it(services, s
     assert tab.begin_action.isEnabled()
     tab.begin_action.trigger()
     assert MODULE_ID not in ship.module_data
-    assert _landings(tab)[2] == ("v2", "23 September", "5d")
+    assert _landings(tab)[2] == ("v2", "23 September", "6d")
     assert not tab.begin_action.isEnabled()  # Greyed, with the reason in its words.
     assert tab.begin_action.text().endswith("it already does")
     services.undo.undo()  # a burst of edits to one milestone is one step, like typing
@@ -760,25 +761,26 @@ def test_the_plots_show_the_whole_plan_a_page_at_a_time(services, staged):
 
     read, draft, _docs, ship = staged.steps
     tab = services.tabs.open("time", staged.id)
+    # The spec is read the Friday before the plan starts: the rest resumes on the Monday.
     services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done", today=TODAY)))
     data = tab.chart._data
-    assert data.finish == date(2026, 9, 23) and data.emphasis is None
-    assert data.expected[0] == (date(2026, 9, 7), 0.0)
-    assert data.expected[-1] == (date(2026, 9, 23), 1.0)
+    assert data.finish == date(2026, 9, 17) and data.emphasis is None
+    assert data.expected[0] == (TODAY, 0.0)
+    assert data.expected[-1] == (date(2026, 9, 17), 1.0)
     assert data.actual[-1] == (TODAY, pytest.approx(2 / 7))
     assert [(s.key, s.label, s.now) for s in data.segments] == [
-        (draft.id, "v1", (date(2026, 9, 7), date(2026, 9, 16))),
-        (ship.id, "v2", (date(2026, 9, 17), date(2026, 9, 23))),
+        (draft.id, "v1", (TODAY, date(2026, 9, 10))),
+        (ship.id, "v2", (date(2026, 9, 10), date(2026, 9, 17))),
     ]
     assert [s.color.name() for s in data.segments] == shades(PALETTES[0], 2)
     tab.milestones.selectRow(_row(tab, draft.id))
     data = tab.chart._data
     assert data.emphasis == draft.id and data.emphasised is data.segments[0]
-    assert data.finish == date(2026, 9, 23) and len(data.segments) == 2  # nothing hidden
+    assert data.finish == date(2026, 9, 17) and len(data.segments) == 2  # nothing hidden
     assert "plan now:" in tab.chart.tooltip_at(date(2026, 9, 10))
     assert "actual: 29% of days" in tab.chart.tooltip_at(TODAY)
     assert tab.chart.tooltip_at(date(2026, 9, 16)).startswith("16 September")
-    assert tab.chart.span[0] <= date(2026, 9, 7) and tab.chart.span[1] >= date(2026, 9, 23)
+    assert tab.chart.span[0] <= TODAY and tab.chart.span[1] >= date(2026, 9, 17)
     # The pages: Progress is what the tab opens on; the others are a click away.
     assert tab.page == "progress"
     assert [panel.kind for panel in tab.chart.panels()] == ["status", "scope"]
@@ -841,11 +843,12 @@ def test_a_turned_day_re_dates_the_tab_and_is_recorded(services, project, tab):
     SetModuleDataCommand(project.id, ESTIMATION_ID, write_start(None)).redo(services.document)
     landing = tab.landing
     assert tab.snapshot().day == TODAY and read_history(project)[-1].day == TODAY
-    services.clock.pin(date(2026, 9, 22))
-    # Eight working days from Monday the 21st land on the 30th; from the 22nd, a day later.
-    assert landing == date(2026, 9, 30) and tab.landing == date(2026, 10, 1)
-    assert tab.snapshot().day == date(2026, 9, 22)
-    assert [row.day for row in read_history(project)] == [TODAY, date(2026, 9, 22)]
+    monday = date(2026, 9, 7)
+    services.clock.pin(monday)
+    # Eight working days from Friday the 4th land on the 15th; from the Monday, a day later.
+    assert landing == date(2026, 9, 15) and tab.landing == date(2026, 9, 16)
+    assert tab.snapshot().day == monday
+    assert [row.day for row in read_history(project)] == [TODAY, monday]
 
 
 def test_the_plots_open_in_a_window_of_their_own_and_follow_the_plan(
@@ -928,7 +931,7 @@ def test_the_plots_compare_the_two_snapshots_the_strip_names(services, staged):
     )
     assert [(s.then, s.now) for s in data.segments] == [
         ((date(2026, 9, 7), date(2026, 9, 14)), (date(2026, 9, 7), date(2026, 9, 16))),
-        ((date(2026, 9, 15), date(2026, 9, 18)), (date(2026, 9, 17), date(2026, 9, 23))),
+        ((date(2026, 9, 15), date(2026, 9, 18)), (date(2026, 9, 16), date(2026, 9, 23))),
     ]
     assert segment_words(data.segments[1], data.basis, data.today) == (
         "v2 lands 23 September — 3 working days later than the plan at start, "
@@ -947,12 +950,13 @@ def test_the_plots_compare_the_two_snapshots_the_strip_names(services, staged):
     assert tab.then_pick == Pick("day", day=date(2026, 9, 3))
     assert tab.controls.is_shown(tab.then_day) and tab.then_picker.text() == "3 September"
     assert tab.then_picker.toolTip() == "the plan at 3 September, recorded 1 September"
-    tab.then_day.setDate(QDate(2030, 1, 1))  # after every record: today's own, and said
+    # After every record: never today's own, which is the plan now — the 1st's, and said.
+    tab.then_day.setDate(QDate(2030, 1, 1))
     data = tab.chart._data
     assert tab.then_pick.day == date(2030, 1, 1) and data.compared
     assert segment_words(data.segments[1], data.basis, data.today) == (
-        f"v2 lands 23 September — unchanged since the plan at 1 Jan '30, "
-        f"recorded {format_date(TODAY, TODAY)}"
+        "v2 lands 23 September — 3 working days later than the plan at 1 Jan '30, "
+        "recorded 1 September said (18 September)"
     )
     tab.then_picker.picked.emit(Pick("start"))
     assert tab.then_pick.kind == "start" and not tab.controls.is_shown(tab.then_day)
@@ -1006,7 +1010,8 @@ def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services
     data = tab.chart._data
     assert tab.then_picker.text() == "Kickoff review"
     assert data.basis == f"Kickoff review ({format_date(TODAY, TODAY)})"
-    assert data.baseline_finish == date(2026, 9, 23) and data.finish == date(2026, 9, 29)
+    # The spec, read before the plan began, saved the four days that two more of shipping cost.
+    assert data.baseline_finish == date(2026, 9, 23) and data.finish == date(2026, 9, 23)
     assert data.volume[-1] == (TODAY, 9.0) and data.remaining[-1] == (TODAY, 7.0)
     # As the now side, the plots read the plan as of it: nothing done, 7d of scope.
     tab.then_picker.picked.emit(Pick("start"))
@@ -1020,7 +1025,7 @@ def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services
     tab.now_picker.forget.emit("Kickoff review")
     assert services.undo.undo_text().endswith("Forget Snapshot")
     assert read_saved(staged) == [] and tab.now_pick.kind == "now"
-    assert tab.chart._data.finish == date(2026, 9, 29) and tab.chart._data.marks == ()
+    assert tab.chart._data.finish == date(2026, 9, 23) and tab.chart._data.marks == ()
     services.undo.undo()
     assert [row.title for row in read_saved(staged)] == ["Kickoff review"]
     assert staged.module_data[HISTORY_ID]["format"] == 3

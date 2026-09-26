@@ -10,8 +10,9 @@ to show — so a point placed in one plot is placed in all of them.
 
 - **Progress** — the plan now, the share landed by each date, in each stretch's shade
   (the calendar's colours, on the line), with every milestone's landing marked and
-  named; what actually landed, in ink, with a dot at today and beside it a short word on
-  where it stands: *ahead 5 %*, *behind 12 %*, *on plan*.
+  named; what actually landed, in ink, with a dot at today. No word says ahead or
+  behind: the plan now is re-dated from what is done, so by today the two always agree —
+  a slip shows as the plan now moving against the plan then.
 - **Scope change** — the plan then (the snapshot picked in the strip: the plan at the
   project's start unless another is chosen) dashed and paler, the plan now solid, and **the area
   between them filled by which way it went**: the plan now above the baseline is work
@@ -115,7 +116,6 @@ from dplanner.framework.dialog import DialogFrame
 from dplanner.modules.time_estimates.progress import (
     scope_words,
     shift_words,
-    standing_words,
     volume_scale,
 )
 from dplanner.modules.time_estimates.schedule import WHOLE_COLOR
@@ -179,8 +179,6 @@ GRID_SHARES = (0.0, 0.25, 0.5, 0.75, 1.0)
 LABELLED_SHARES = (0.0, 0.5, 1.0)
 # The picked milestone's landing, as a line through every plot.
 MARK_LINE_ALPHA = 150
-# What the ahead-or-behind word sits from today's dot.
-STANDING_GAP = 6
 # A gap the plan leaves empty: the plan's colour pulled this far toward the surface, in
 # dots. The pattern is in pen widths: a dash short enough for the round caps to make a
 # dot of it, then a gap that stays a gap after the caps take a width of it — Qt's own
@@ -287,15 +285,6 @@ class ChartData:
     def scale(self) -> float:
         """The top of the volume plots' scale, in days — one for both plots."""
         return volume_scale(self.volume, self.remaining)
-
-    def standing(self) -> float | None:
-        """Actual against plan today, in share: positive ahead, negative behind — None
-        when either line has nothing to say for today."""
-        planned = share_at(self.expected, self.today)
-        landed = share_at(self.actual, self.today)
-        if planned is None or landed is None:
-            return None
-        return landed - planned
 
 
 @dataclass(frozen=True)
@@ -409,7 +398,7 @@ class ProgressChart(QWidget):
 
     def tooltip_at(self, when: date, kind: str = "status") -> str:
         """The date and what the plot under the cursor says for it — the chart's only
-        words, with the standing word and the milestone rows."""
+        words, with the milestone rows."""
         data = self._data
         if data is None:
             return ""
@@ -592,8 +581,6 @@ class ProgressChart(QWidget):
                 painter.setClipRect(self._span_rect(panel, span).adjusted(0, -MARKER, 0, MARKER))
                 draw(painter, panel, data, ink, surface)
             painter.restore()
-            if panel.kind == "status":
-                self._draw_standing(painter, panel, data, ink)
         painter.end()
 
     @staticmethod
@@ -827,28 +814,6 @@ class ProgressChart(QWidget):
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 name,
             )
-
-    def _draw_standing(
-        self, painter: QPainter, panel: _Panel, data: ChartData, ink: QColor
-    ) -> None:
-        """Ahead or behind, beside today's dot — after the faded and the clipped pass,
-        so the word is whole and in full ink whatever is picked."""
-        words = standing_words(data.standing())
-        if not words or not data.actual:
-            return
-        when, share = data.actual[-1]
-        centre = QPointF(self._x(when), self._y(panel, share))
-        metrics = painter.fontMetrics()
-        width = metrics.horizontalAdvance(words) + 2
-        left = centre.x() + MARKER / 2 + STANDING_GAP
-        if left + width > panel.rect.right():
-            left = centre.x() - MARKER / 2 - STANDING_GAP - width
-        painter.setPen(ink)
-        painter.drawText(
-            QRectF(left, centre.y() - metrics.height() / 2, width, metrics.height()),
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-            words,
-        )
 
     def _draw_scope(
         self, painter: QPainter, panel: _Panel, data: ChartData, ink: QColor, surface: QColor

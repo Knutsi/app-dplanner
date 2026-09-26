@@ -26,16 +26,22 @@ one code path here rather than two.
 **Nothing here is written to disk**, for ``ordering.py``'s reason: a stored date disagrees
 with the estimate it came from the moment ``dplanner estimate set`` runs with no window open
 to notice.
+
+**A plan re-dates itself from what has happened** (:func:`phases` handed
+:class:`ScheduleFacts`): its own dates stand while what is done matches them, and otherwise
+the rest resumes from tomorrow, with work in flight credited — so a forecast holds still
+while things go to plan and moves only when they do not.
 """
 
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from itertools import pairwise
-from math import ceil
+from math import ceil, floor
 
-from dplanner.domain.model import Library, Project, Step, StepId
+from dplanner.domain.model import Library, Project, Step, StepId, local_day
 from dplanner.domain.ordering import Placed, placed
+from dplanner.domain.progression import BLOCKED, DONE, IN_PROGRESS
 from dplanner.domain.scope import cone
 
 WORKING_DAYS_PER_WEEK = 5
@@ -45,6 +51,10 @@ SATURDAY = 5  # date.weekday(): Monday is 0.
 WEEKS_ABOVE_DAYS = 7.0
 
 _ONE_DAY = timedelta(days=1)
+
+# What a fraction of a day is rounded up past: a step of 1 day at 60% focus is 1.6666…7 days,
+# and float noise in a sum must never add a working day to a date.
+GUARD = 1e-9
 
 
 @dataclass(frozen=True)
@@ -70,17 +80,18 @@ def next_working_day(when: date) -> date:
     return when
 
 
-def working_days_after(start: date, days: float) -> date:
+def working_days_after(start: date, days: float, guard: float = 0.0) -> date:
     """The date working day ``days`` falls on, counting ``start`` as working day one.
 
     A fraction is still a day on a calendar — half a day of work lands on a date — so the
-    count rounds up. A start on a weekend rolls forward to the Monday.
+    count rounds up, past ``guard`` (:data:`GUARD` where the days are a sum of fractions).
+    A start on a weekend rolls forward to the Monday.
 
     Arithmetic rather than a walk: the canvas dates every milestone on each sync, and
     stepping a day at a time made that quadratic in the plan's length.
     """
     when = next_working_day(start)
-    weeks, remainder = divmod(max(1, ceil(days)) - 1, WORKING_DAYS_PER_WEEK)
+    weeks, remainder = divmod(max(1, ceil(days - guard)) - 1, WORKING_DAYS_PER_WEEK)
     if when.weekday() + remainder >= SATURDAY:
         remainder += 2  # The remainder crosses a weekend.
     return when + timedelta(days=7 * weeks + remainder)
@@ -218,6 +229,7 @@ class ParallelFinish:
     days: float  # Simulated makespan in working days.
     unestimated: int  # Steps that ran as zero days — the number's honesty.
     landings: dict[StepId, float] = field(default_factory=dict)
+    starts: dict[StepId, float] = field(default_factory=dict)  # …and the day each began.
 
 
 def parallel_finish(
@@ -229,6 +241,7 @@ def parallel_finish(
     humans: int,
     agents: int,
     among: Sequence[Step] | None = None,
+    running: frozenset[StepId] = frozenset(),
 ) -> ParallelFinish | None:
     """The makespan with ``humans`` people and ``agents`` coding agents. None only when
     there are no steps to run.
@@ -249,6 +262,9 @@ def parallel_finish(
     order. That is a deterministic model of "the team picks the longest pole first", not
     an optimum — but with ample slots it meets ``critical_path`` exactly, and with one
     human on all-human work it meets ``schedule``'s serial total, so the brackets pin it.
+
+    ``running`` names work already in flight: it keeps the worker it has, so it goes first.
+    It still waits for what it requires, and past the pool's size it queues like the rest.
     """
     if humans < 1 or agents < 1:
         raise ValueError("a pool with work in it needs at least one worker")
@@ -288,24 +304,28 @@ def parallel_finish(
     for step in steps:
         if not waiting[step.id]:
             ready[pool[step.id]].append(step.id)
-    running: list[tuple[float, StepId]] = []
+    busy: list[tuple[float, StepId]] = []
     landings: dict[StepId, float] = {}
+    starts: dict[StepId, float] = {}
     now = 0.0
     remaining = len(steps)
     while remaining:
         for lane, queue in ready.items():
             while queue and free[lane]:
-                queue.sort(key=lambda step_id: (-tails[step_id], order[step_id]))
+                queue.sort(
+                    key=lambda step_id: (step_id not in running, -tails[step_id], order[step_id])
+                )
                 step_id = queue.pop(0)
                 free[lane] -= 1
-                running.append((now + (days[step_id] or 0.0), step_id))
-        if not running:  # Defensive: unreachable steps under a hand-edited cycle.
+                starts[step_id] = now
+                busy.append((now + (days[step_id] or 0.0), step_id))
+        if not busy:  # Defensive: unreachable steps under a hand-edited cycle.
             break
-        now = min(finish for finish, _ in running)
-        for finish, step_id in tuple(running):
+        now = min(finish for finish, _ in busy)
+        for finish, step_id in tuple(busy):
             if finish > now:
                 continue
-            running.remove((finish, step_id))
+            busy.remove((finish, step_id))
             landings[step_id] = finish
             free[pool[step_id]] += 1
             remaining -= 1
@@ -317,6 +337,7 @@ def parallel_finish(
         days=now,
         unestimated=sum(1 for value in days.values() if value is None),
         landings=landings,
+        starts=starts,
     )
 
 
@@ -329,6 +350,10 @@ class Phase:
     reason. ``asked`` is the milestone's own start date when it has one; ``start`` is
     where the stretch actually begins, which differs only when the date asked for fell
     before the previous milestone landed — the sequence holds and the ask is reported.
+
+    Re-dated from what has happened, ``start`` is tomorrow for a stretch with work left and
+    ``began`` is when its work really began — the first day any of it was done or started;
+    ``facts`` holds the day each of its done steps was done, which dates it.
     """
 
     milestone: Step | None
@@ -338,15 +363,29 @@ class Phase:
     finish: date | None
     asked: date | None
     unestimated: int
+    began: date
     # The working day each step lands on inside the stretch, from ``start``: the
     # simulation's own answer, which is what an expected-progress curve is made of.
     landings: dict[StepId, float] = field(default_factory=dict)
+    starts: dict[StepId, float] = field(default_factory=dict)
+    lead: float = 0.0  # Part of the start day the stretch before used up.
+    facts: dict[StepId, date] = field(default_factory=dict)
 
     def landing_of(self, step_id: StepId) -> date:
-        """The date a step of this stretch lands in the simulation — its own start for a
-        step that cost nothing, the same rule ``finish`` follows."""
-        offset = self.landings.get(step_id, 0.0)
-        return working_days_after(self.start, offset) if offset > 0 else self.start
+        """The date a step of this stretch lands — the day it was done, where it is, else
+        the simulation's; its own start for a step that cost nothing, as ``finish`` has."""
+        fact = self.facts.get(step_id)
+        return fact if fact is not None else self._day_at(self.landings.get(step_id, 0.0))
+
+    def start_day_of(self, step_id: StepId) -> date:
+        """The day a step starts on. Work that starts the moment a day ends starts on that
+        day, as a team picks up the next step when it finishes one — a landing's rule."""
+        fact = self.facts.get(step_id)
+        return fact if fact is not None else self._day_at(self.starts.get(step_id, 0.0))
+
+    def _day_at(self, offset: float) -> date:
+        at = self.lead + offset
+        return working_days_after(self.start, at, GUARD) if at > 0 else self.start
 
     @property
     def pushed(self) -> bool:
@@ -356,10 +395,59 @@ class Phase:
 
     @property
     def calendar_days(self) -> int:
-        """The stretch as a calendar reads it: whole working days from its start to its
-        landing, both counted — what a list prints, where ``days`` is the simulation's
-        fraction. Zero when nothing landed."""
-        return working_days_between(self.start, self.finish) if self.finish else 0
+        """The stretch as a calendar reads it: whole working days from the day its work
+        began to its landing, both counted — what a list prints, where ``days`` is the
+        simulation's fraction. Zero when nothing landed."""
+        return working_days_between(self.began, self.finish) if self.finish else 0
+
+
+# Half a working day: what is taken as spent on the day work started, and the least left of
+# work that has run past its estimate.
+HALF = 0.5
+
+
+@dataclass(frozen=True)
+class ScheduleFacts:
+    """What has happened by ``today``, for a plan re-dated from it — handed in like
+    ``days_for``, so the domain never learns what a status is stored as or what a focus is.
+
+    ``status_of`` is the stored status (``DONE``, ``IN_PROGRESS``, ``BLOCKED``, anything else
+    pending) and ``since_of`` the day it last changed. ``is_marker`` is a step that carries
+    no work by design — a milestone's own step, a feature, a check — whose status is no fact
+    about the schedule: people rarely mark one done on the day its work lands. ``worked`` is
+    how many working days of a running step's work are behind it (``spent_since`` from its
+    ``since``, weighed by whoever knows the focus it ran at), and ``resume_days``, where
+    given, what the rest costs from tomorrow in place of ``days_for``.
+
+    ``day_over`` is when in ``today`` the reading is taken. A window reads a day still
+    going, where a step due today has until tonight: were it late the moment the day
+    began, every plan made this morning would start tomorrow and every landing would slip
+    until somebody marked it. A simulation reads each day at its end, when it is late.
+    """
+
+    today: date
+    status_of: Callable[[Step], str]
+    since_of: Callable[[Step], date | None]
+    is_marker: Callable[[Step], bool]
+    worked: Callable[[Step], float]
+    resume_days: Callable[[Step], float | None] | None = None
+    day_over: bool = False
+
+
+def spent_since(day: date | None, today: date) -> float:
+    """Working days behind work started on ``day``, today's included, from the middle of the
+    day it started — what a running step is credited with."""
+    if day is None or day > today:
+        return 0.0
+    return working_days_between(day, today) - HALF
+
+
+@dataclass(frozen=True)
+class _Clock:
+    """When the next stretch may begin, and how much of that day is already used."""
+
+    when: date
+    lead: float
 
 
 def phases(
@@ -373,22 +461,97 @@ def phases(
     start: date,
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
+    facts: ScheduleFacts | None = None,
 ) -> list[Phase]:
     """The plan as milestones run one after another, each dated from the last.
 
     A milestone's stretch is its ``requires`` cone truncated at the milestones before it
     (``scope.cone``) — what is new since the last one — plus itself; a step two milestones
     both reach belongs to the earlier. Stretches run **in sequence**: the first begins at
-    ``start``, every later one the working day after the previous lands, and a milestone
-    with a date of its own (``start_for``) begins there instead when that is later. Each
-    stretch is :func:`parallel_finish` over its own steps, so the team is the same
-    throughout and the whole is that one simulation asked once per milestone.
+    ``start``, every later one where the previous lands — on the same day, when it ended
+    part-way through one — and a milestone with a date of its own (``start_for``) begins
+    there instead when that is later. Each stretch is :func:`parallel_finish` over its own
+    steps, so the team is the same throughout.
 
     What no milestone gathers runs last, as a stretch with no milestone. A project with no
     milestones is that one stretch, which is the plain simulation from ``start``. Both
     ``is_milestone`` and ``start_for`` are handed in like ``days_for``: the domain learns
     that some steps close a stretch, never what marks them.
+
+    **Handed ``facts``, the plan re-dates itself from what has happened.** Its own dates
+    stand while reality matches them (:func:`_holds`); otherwise the rest resumes from
+    tomorrow (:func:`_resumed`). A plan followed exactly therefore reads the same date every
+    day, and a forecast moves only when the work does.
     """
+    groups = _groups(library, project, is_milestone)
+
+    def dated(
+        milestone: Step | None,
+        steps: tuple[Step, ...],
+        members: Sequence[Step],
+        costs: Callable[[Step], float | None],
+        clock: _Clock,
+        first: bool,
+        running: frozenset[StepId] = frozenset(),
+        known: dict[StepId, date] | None = None,
+        began_by: date | None = None,
+    ) -> tuple[Phase, _Clock]:
+        """One stretch dated from ``clock``, and the clock it leaves for the next."""
+        asked = start_for(milestone) if milestone is not None else None
+        begins = asked if asked is not None and (first or asked >= clock.when) else clock.when
+        used = clock.lead if begins == clock.when else 0.0
+        if next_working_day(begins) != begins:
+            used = 0.0
+        begins = next_working_day(begins)
+        run = parallel_finish(
+            library,
+            project,
+            costs,
+            is_agent,
+            humans=humans,
+            agents=agents,
+            among=members,
+            running=running,
+        )
+        assert run is not None  # A stretch dated here always has something to run.
+        finish = working_days_after(begins, used + run.days, GUARD) if run.days > 0 else None
+        phase = Phase(
+            milestone=milestone,
+            steps=steps,
+            days=run.days,
+            start=begins,
+            finish=finish,
+            asked=asked,
+            unestimated=run.unestimated,
+            began=min(begins, began_by) if began_by is not None else begins,
+            landings=run.landings,
+            starts=run.starts,
+            lead=used,
+            facts=known or {},
+        )
+        if finish is None:
+            return phase, _Clock(begins, used)
+        # Ending exactly as a day ends still ends on that day: what follows starts then, as a
+        # team picks up the next step the moment it finishes one.
+        total = used + run.days
+        part = total - floor(total + GUARD)
+        return phase, _Clock(finish, part if part > GUARD else 1.0)
+
+    planned: list[Phase] = []
+    clock = _Clock(start, 0.0)
+    for index, (milestone, steps) in enumerate(groups):
+        phase, clock = dated(milestone, steps, steps, days_for, clock, index == 0)
+        planned.append(phase)
+    if facts is None or _holds(planned, facts):
+        return planned
+    return _resumed(groups, planned, facts, facts.resume_days or days_for, dated, start_for)
+
+
+def _groups(
+    library: Library, project: Project, is_milestone: Callable[[Step], bool]
+) -> list[tuple[Step | None, tuple[Step, ...]]]:
+    """The stretches' membership, before any dating: each milestone's cone truncated at the
+    ones before it, then whatever no milestone gathers."""
     milestones = [place.step for place in placed(library, project) if is_milestone(place.step)]
     taken: set[StepId] = set()
     groups: list[tuple[Step | None, tuple[Step, ...]]] = []
@@ -400,32 +563,131 @@ def phases(
     rest = tuple(step for step in project.steps if step.id not in taken)
     if rest:
         groups.append((None, rest))
+    return groups
+
+
+def _holds(planned: Sequence[Phase], facts: ScheduleFacts) -> bool:
+    """Does reality still match the plan? Each step is done exactly when the plan has it
+    landed — none early, on the very day where that is known (or a plan finished late would
+    hold again once everything is done), and none still open once its day is over — nothing
+    in flight started after the day the plan started it, and nothing was planned to start
+    before it existed. A step nobody marked in progress says nothing about when it started,
+    and a marker step says nothing at all. A step stamped later than today — a clock running
+    ahead elsewhere — was made today."""
+    today = facts.today
+    for phase in planned:
+        for step in phase.steps:
+            created = local_day(step.created)
+            if created is not None and phase.start_day_of(step.id) < min(created, today):
+                return False
+            if facts.is_marker(step):
+                continue
+            status, since = facts.status_of(step), facts.since_of(step)
+            lands = phase.landing_of(step.id)
+            if status == DONE:
+                if lands > today or (since is not None and since != lands):
+                    return False
+            elif lands < today or (lands == today and facts.day_over):
+                return False
+            begun = status in (IN_PROGRESS, BLOCKED)
+            if begun and since is not None and since > phase.start_day_of(step.id):
+                return False
+    return True
+
+
+def _resumed(
+    groups: Sequence[tuple[Step | None, tuple[Step, ...]]],
+    planned: Sequence[Phase],
+    facts: ScheduleFacts,
+    days_for: Callable[[Step], float | None],
+    dated: Callable[..., tuple[Phase, _Clock]],
+    start_for: Callable[[Step], date | None],
+) -> list[Phase]:
+    """The rest of the work from tomorrow. A stretch whose work is all done is dated by when
+    it was done and holds nothing back — its marker steps need not be marked. From the first
+    with work left, stretches follow one another from the next working day: done steps are
+    facts, work in flight keeps its worker and is credited with ``facts.worked`` (at least
+    half a day is left), and everything else costs its estimate. A done step nobody dated —
+    a status older than its days — is taken as done by its planned landing, or today if that
+    is earlier: never later than it could have been."""
+    today = facts.today
+    planned_day = {step.id: phase.landing_of(step.id) for phase in planned for step in phase.steps}
+
+    def done_on(step: Step) -> date:
+        since = facts.since_of(step)
+        return since if since is not None else min(planned_day.get(step.id, today), today)
 
     result: list[Phase] = []
-    when = start  # The earliest the next stretch may begin.
-    for index, (milestone, steps) in enumerate(groups):
-        asked = start_for(milestone) if milestone is not None else None
-        begins = asked if asked is not None and (index == 0 or asked >= when) else when
-        begins = next_working_day(begins)
-        run = parallel_finish(
-            library, project, days_for, is_agent, humans=humans, agents=agents, among=steps
-        )
-        assert run is not None  # A group is never empty: a milestone is at least itself.
-        finish = working_days_after(begins, run.days) if run.days > 0 else None
-        result.append(
-            Phase(
-                milestone=milestone,
-                steps=steps,
-                days=run.days,
-                start=begins,
-                finish=finish,
-                asked=asked,
-                unestimated=run.unestimated,
-                landings=run.landings,
-            )
-        )
-        when = next_working_day(finish + _ONE_DAY) if finish is not None else begins
+    clock: _Clock | None = None
+    for milestone, steps in groups:
+        known = {step.id: done_on(step) for step in steps if facts.status_of(step) == DONE}
+        left = [step for step in steps if facts.status_of(step) != DONE]
+        if all(facts.is_marker(step) for step in left):
+            result.append(_finished(milestone, steps, known, today, start_for))
+            continue
+        if clock is None:
+            clock = _Clock(next_working_day(today + _ONE_DAY), 0.0)
+        running = frozenset(step.id for step in left if facts.status_of(step) == IN_PROGRESS)
+
+        def costs(step: Step, running: frozenset[StepId] = running) -> float | None:
+            days = days_for(step)
+            if days is None or step.id not in running:
+                return days
+            return max(HALF, days - facts.worked(step))
+
+        started = [
+            since
+            for step in left
+            if step.id in running and (since := facts.since_of(step)) is not None
+        ]
+        began_by = min([*known.values(), *started], default=None)
+        phase, clock = dated(milestone, steps, left, costs, clock, False, running, known, began_by)
+        result.append(phase)
     return result
+
+
+def _finished(
+    milestone: Step | None,
+    steps: tuple[Step, ...],
+    known: dict[StepId, date],
+    today: date,
+    start_for: Callable[[Step], date | None],
+) -> Phase:
+    """A stretch whose work is all done: from the first day any of it was done to the last.
+    A marker step nobody marked is dated by what it requires — a milestone lands with its
+    work."""
+    dates = dict(known)
+    work = max(dates.values(), default=today)
+    pending = [step for step in steps if step.id not in dates]
+    while pending:
+        waiting_ids = {step.id for step in pending}
+        waiting = [
+            step
+            for step in pending
+            if any(target in waiting_ids for target in step.edges.get("requires", []))
+        ]
+        for step in pending:
+            if step in waiting:
+                continue
+            needs = [dates[target] for target in step.edges.get("requires", []) if target in dates]
+            dates[step.id] = max(needs, default=work)
+        if len(waiting) == len(pending):  # Defensive: a loop a hand-edited file carries.
+            for step in waiting:
+                dates[step.id] = work
+            break
+        pending = waiting
+    days = list(dates.values()) or [today]
+    return Phase(
+        milestone=milestone,
+        steps=steps,
+        days=0.0,
+        start=min(days),
+        finish=max(days),
+        asked=start_for(milestone) if milestone is not None else None,
+        unestimated=0,
+        began=min(days),
+        facts=dates,
+    )
 
 
 @dataclass(frozen=True)

@@ -46,7 +46,7 @@
   svg .shadow { fill: var(--ink); }
   svg .title, svg .key, svg .stat, svg .label { fill: var(--ink); }
   svg .axis, svg .date, svg .legend text, svg .shift .label, svg .region text { fill: var(--secondary); }
-  svg .plot-title, svg .standing { fill: var(--ink); }
+  svg .plot-title { fill: var(--ink); }
   svg .then[fill="#fcfbf9"] { fill: var(--surface); }
   svg .grid, svg .today, svg .region rect, svg .edge path, svg .edge polygon { stroke: var(--ink); }
   svg .edge polygon { fill: var(--ink); }

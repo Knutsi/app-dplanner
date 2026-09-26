@@ -115,7 +115,8 @@ def test_a_snapshot_tallies_each_stretch_in_sequence(plan):
     assert v1.key == key_of(plan, "B") and v1.tally == Tally(2, 2, 3.0, 3.0)
     assert (v1.start, v1.finish) == (MONDAY, date(2026, 9, 9))
     assert v2.key == key_of(plan, "D") and v2.tally == Tally(2, 0, 7.0, 0.0)
-    assert (v2.start, v2.finish) == (date(2026, 9, 10), date(2026, 9, 18))
+    # v1's three days end as the 9th does, and v2 is picked up the moment it lands.
+    assert (v2.start, v2.finish) == (date(2026, 9, 9), date(2026, 9, 18))
 
 
 def test_progress_toward_a_milestone_is_cumulative_through_it(plan):

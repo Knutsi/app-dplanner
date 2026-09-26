@@ -12,6 +12,12 @@ and ``--json``, so the three can never disagree. ``focus``, ``palette``, ``team`
 ``milestone`` store the assumptions behind the calendar half — the same writes the tab's
 controls push.
 
+**The dates are re-dated from what has happened**: they stand while the work follows the
+plan, and otherwise the rest resumes from tomorrow (``domain/schedule.py``'s ``phases``).
+So a stretch's ``start`` in ``--json`` is where its remaining work begins, ``began`` the
+day any of its work first began — the two differ once reality has left the plan — and
+``unestimated`` counts the steps still to do that nobody has sized.
+
 ``progress show`` prints what has landed toward each milestone, by estimated days,
 against the plan it is compared with — the plan at the project's start unless
 ``--basis`` names a day, a saved snapshot or ``now`` — and how the plan moved since:
@@ -40,7 +46,7 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Project, Step
-from dplanner.domain.schedule import Phase, format_date, format_days
+from dplanner.domain.schedule import Phase, ScheduleFacts, format_date, format_days
 from dplanner.modules.time_estimates.progress import (
     AT_START,
     HISTORY_ID,
@@ -83,6 +89,7 @@ from dplanner.modules.time_estimates.schedule import (
     read_palette,
     read_start,
     read_team,
+    schedule_facts,
     time_report,
     write_milestone,
     write_project,
@@ -98,6 +105,8 @@ class Readers:
     is_agent: Callable[[Step], bool]
     status_for: Callable[[Step], str]
     since_for: Callable[[Step], date | None]  # The day a step's status last changed.
+    # A step that carries no work by design — estimate off: a milestone's, a feature, a check.
+    is_marker: Callable[[Step], bool]
     # When a project's work begins; an undated one begins on the day handed in.
     start_of: Callable[[Project, date], date]
     milestone_label: Callable[[Step], str]
@@ -107,6 +116,17 @@ class Readers:
 
     def is_milestone(self, step: Step) -> bool:
         return bool(self.milestone_label(step))
+
+    def facts(self, project: Project, today: date) -> ScheduleFacts:
+        """What has happened in ``project`` by ``today``, for the calendar to re-date it."""
+        return schedule_facts(
+            project,
+            today,
+            is_agent=self.is_agent,
+            status_for=self.status_for,
+            since_for=self.since_for,
+            is_marker=self.is_marker,
+        )
 
 
 def commands(readers: Readers) -> list[CliCommand]:
@@ -473,6 +493,7 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
         efficiency=efficiency,
         is_milestone=is_milestone,
         start_for=read_start,
+        facts=readers.facts(project, today),
     )
     if report is None:
         context.report({"project": project.id, "steps": 0}, "No steps yet.")
@@ -535,6 +556,7 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
                 "days": phase.days,
                 "calendar_days": phase.calendar_days,
                 "start": phase.start.isoformat(),
+                "began": phase.began.isoformat(),
                 "finish": phase.finish.isoformat() if phase.finish else "",
                 "asked": phase.asked.isoformat() if phase.asked else "",
                 "pushed": phase.pushed,
@@ -581,7 +603,7 @@ def _grid(cells: tuple[Cell, ...], text: Callable[[Cell], str]) -> list[str]:
 def _phase_line(phase: Phase, milestone_label: Callable[[Step], str], today: date) -> str:
     name = milestone_label(phase.milestone) if phase.milestone else "remaining work"
     when = (
-        f"{format_date(phase.start, today)} → {format_date(phase.finish, today)}"
+        f"{format_date(phase.began, today)} → {format_date(phase.finish, today)}"
         if phase.finish
         else f"from {format_date(phase.start, today)}, nothing estimated"
     )
@@ -650,6 +672,7 @@ def _snapshot(
         is_milestone=readers.is_milestone,
         start_for=read_start,
         today=today,
+        facts=readers.facts(project, today),
     )
 
 

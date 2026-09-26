@@ -491,7 +491,9 @@ src/dplanner/
 │   │                        recorder.py writes the day's history, snapshots.py picks the two plans compared
 │   │                        and saves one on purpose, chart.py draws the plots on one time axis, a page at
 │   │                        a time: milestone shifts, progress and scope change, volume) —
-│   │                        `dplanner progress show|record|save|list|remove`
+│   │                        `dplanner progress show|record|save|list|remove`; simulation/frames.py
+│   │                        replays a simulated plan's days into a library, which the parity test
+│   │                        holds to the HTML prototype's forecasts
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
 │   │                        Project ▸ Preview Report, the publisher that writes `reports/` on every Save,
 │   │                        Settings ▸ Reports; the `reporting` location role (roles.py)

@@ -599,7 +599,9 @@ writes a **second id** beside the project, `modules/progress_history.json` (form
 "saved": [{"title": "Kickoff review", "note": "What we thought on day one", "day":
 "2026-09-05", "stretches": […]}]}` — under `days`, one row per day on which the plan's
 progress or its promise changed or a status was set, the stretches in the order the
-sequence ran them that day (no `milestone` key for the work after the last one, no
+sequence ran them that day, each `start` the day its work began — the plan's own day
+while the plan held, the first day any of it was done or started once it re-dated itself
+(no `milestone` key for the work after the last one, no
 `finish` for a stretch nothing dated, no `landings` for one with nothing to land, no
 `changed` for one none of whose steps' statuses changed that day — the count that tells a
 day of work from a quiet one when nothing landed); under `saved`, the

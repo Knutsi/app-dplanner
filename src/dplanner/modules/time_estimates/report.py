@@ -47,7 +47,6 @@ from dplanner.modules.time_estimates.progress import (
     scope_words,
     shift_words,
     span_of,
-    standing_words,
     take,
     tally,
     view_scope,
@@ -99,6 +98,7 @@ def report_source(readers: Readers) -> ReportSource:
             is_milestone=readers.is_milestone,
             start_for=read_start,
             today=today,
+            facts=readers.facts(project, today),
         )
         if now is None:
             return NOTHING
@@ -147,7 +147,7 @@ def report_source(readers: Readers) -> ReportSource:
                     tuple(
                         Span(
                             labels[id(phase)],
-                            phase.start,
+                            phase.began,
                             phase.finish,
                             color,
                             step_id=phase.milestone.id if phase.milestone else "",
@@ -207,6 +207,7 @@ def _dated(library: Library, project: Project, readers: Readers, day: date) -> _
         efficiency=efficiency,
         is_milestone=readers.is_milestone,
         start_for=read_start,
+        facts=readers.facts(project, day),
     )
     if report is None or (not report.cycle and not report.calendar):
         return None
@@ -266,7 +267,6 @@ def _plots(
             "status",
             "Progress",
             (plan, Series("Landed", view.actual, "actual")),
-            standing=standing_words(view.standing),
         )
     ]
     if then is not None and view.baseline:

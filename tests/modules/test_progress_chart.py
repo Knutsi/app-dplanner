@@ -23,7 +23,6 @@ from dplanner.modules.time_estimates.chart import (
     Segment,
     segment_words,
 )
-from dplanner.modules.time_estimates.progress import standing_words
 
 
 def test_the_axis_marks_the_finest_calendar_unit_that_fits():
@@ -347,13 +346,9 @@ def test_picking_a_milestone_fades_the_line_outside_its_stretch(app):
     chart.deleteLater()
 
 
-def test_the_words_beside_the_dot_and_on_a_milestone_row():
-    """Ahead or behind by the share between the two lines today; a milestone's row says
-    which way its landing went, in working days, against the plan on the basis day."""
-    assert standing_words(0.05) == "ahead 5%"
-    assert standing_words(-0.12) == "behind 12%"
-    assert standing_words(0.001) == "on plan"
-    assert standing_words(None) == ""
+def test_the_words_on_a_milestone_row():
+    """A milestone's row says which way its landing went, in working days, against the
+    plan on the basis day."""
     today = date(2026, 9, 10)
     basis = "the plan at start"
     later = Segment(
@@ -376,8 +371,3 @@ def test_the_words_beside_the_dot_and_on_a_milestone_row():
     assert segment_words(new, basis, today) == "v1 lands 18 September — not in the plan at start"
     undated = Segment("m", "v1", TEAL)
     assert segment_words(undated, basis, today) == "v1 — nothing estimated, so no date"
-    plan = ((FIRST, 0.0), (LAST, 1.0))
-    on_the_line = ChartData(
-        date(2026, 9, 16), expected=plan, actual=((FIRST, 0.0), (date(2026, 9, 16), 0.6))
-    )
-    assert on_the_line.standing() == 0.6 - 0.5

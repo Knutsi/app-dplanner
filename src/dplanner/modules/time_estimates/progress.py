@@ -67,11 +67,11 @@ from dplanner.domain.ordering import cyclic
 from dplanner.domain.progression import DONE
 from dplanner.domain.schedule import (
     Phase,
+    ScheduleFacts,
     format_date,
     format_days,
     next_working_day,
     phases,
-    share_at,
     working_days_between,
 )
 from dplanner.modules.time_estimates.schedule import stretched
@@ -97,9 +97,6 @@ def _to_format_3(data: dict[str, Any]) -> dict[str, Any]:
 
 
 DATA_FORMAT = ModuleDataFormat(HISTORY_ID, 3, (_to_format_2, _to_format_3))
-
-# Two shares within this of each other are "on plan" — a chart's line width, in share.
-ON_PLAN = 0.005
 
 
 @dataclass(frozen=True)
@@ -184,8 +181,8 @@ class Snapshot:
     def landing(self, key: str | None) -> date | None:
         """When the scope was expected to land: the stretch's own finish, or the last
         dated one for the whole."""
-        if key is None:
-            return next((s.finish for s in reversed(self.stretches) if s.finish), None)
+        if key is None:  # The latest: work done out of sequence can land a later stretch first.
+            return max((s.finish for s in self.stretches if s.finish), default=None)
         return next((s.finish for s in self.stretches if s.key == key), None)
 
     def opening(self, key: str | None) -> date | None:
@@ -250,19 +247,6 @@ def span_of(snapshot: "Snapshot | None", key: str) -> tuple[date, date] | None:
     return None
 
 
-def standing_words(standing: float | None) -> str:
-    """Ahead or behind, in one short phrase — actual against plan, as a share.
-
-    Beside today's reading in the window and in the report; here rather than in either
-    because a chart on paper and a chart on screen may not word one fact two ways.
-    """
-    if standing is None:
-        return ""
-    if abs(standing) < ON_PLAN:
-        return "on plan"
-    return f"{'ahead' if standing > 0 else 'behind'} {abs(standing):.0%}"
-
-
 def shift_words(label: str, then: date | None, now: date | None, basis: str, today: date) -> str:
     """A milestone's row in words: where it lands, and how that moved against the plan
     it is compared with — ``basis`` is that plan named (:func:`pick_words`), empty when
@@ -302,6 +286,7 @@ def take(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     today: date,
+    facts: ScheduleFacts | None = None,
 ) -> Snapshot | None:
     """The plan today: the calendar's own stretches, each with what has landed in it.
     None for a project with no steps, or one a hand-edited loop keeps from being dated —
@@ -319,6 +304,7 @@ def take(
         efficiency=efficiency,
         is_milestone=is_milestone,
         start_for=start_for,
+        facts=facts,
     )
     return snapshot_of(phases, today, days_for, status_for, since_for)
 
@@ -341,7 +327,8 @@ def snapshot_of(
                     tally(phase.steps, days_for, status_for),
                     changed=sum(1 for step in phase.steps if since_for(step) == day),
                 ),
-                start=phase.start,
+                # When its work began, which a re-dated stretch knows from its facts.
+                start=phase.began,
                 finish=phase.finish,
                 landings=landings(phase, days_for),
             )
@@ -362,9 +349,10 @@ def calendar_phases(
     efficiency: float,
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
+    facts: ScheduleFacts | None = None,
 ) -> list[Phase]:
     """The plan's stretches dated on the calendar — the simulation over stretched
-    estimates, the one the landing list prints."""
+    estimates, the one the landing list prints, re-dated from ``facts`` where given."""
     return phases(
         library,
         project,
@@ -375,6 +363,7 @@ def calendar_phases(
         start=start,
         is_milestone=is_milestone,
         start_for=start_for,
+        facts=facts,
     )
 
 
@@ -504,19 +493,18 @@ def baseline(
     earliest row there is — a project older than its history compares against the first
     day anybody recorded. None with no history at all.
 
-    That fallback stops at ``today``'s own record. A project whose history begins today
-    has no earlier plan, and standing today's record in for one draws the plan now over
-    itself and calls the pair a comparison — two lines in one place saying "nothing has
-    changed since the outset", which is a claim nobody recorded. Callers that show a
-    comparison pass ``today``; a caller that only reports the day it found need not.
+    Neither answer is ever ``today``'s own record — the basis a plan not yet begun names
+    is later than today, and a project whose history begins today has no earlier plan.
+    Standing today's record in for one draws the plan now over itself and calls the pair
+    a comparison — two lines in one place saying "nothing has changed since the outset",
+    which is a claim nobody recorded. Callers that show a comparison pass ``today``; a
+    caller that only reports the day it found need not.
     """
-    before = [row for row in history if row.day <= basis]
+    earlier = [row for row in history if today is None or row.day < today]
+    before = [row for row in earlier if row.day <= basis]
     if before:
         return before[-1]
-    first = history[0] if history else None
-    if first is None or (today is not None and first.day >= today):
-        return None
-    return first
+    return earlier[0] if earlier else None
 
 
 def scope_words(basis: str) -> str:
@@ -939,34 +927,21 @@ class ScopeView:
     moved: Delta | None
     marks: tuple[tuple[date, str], ...]  # (the day it lands, the milestone's step id)
     idle: tuple[tuple[date, date], ...]
-    # Actual against plan today, as a share: positive ahead, negative behind, None when
-    # either line has nothing to say for today.
-    standing: float | None = None
 
 
 def view_scope(
     now: Snapshot, history: Sequence[Snapshot], then: Snapshot | None, key: str | None
 ) -> ScopeView:
-    promised = tuple(expected(now, key))
-    landed = tuple(actual(history, now, key))
     return ScopeView(
         key=key,
         reached=now.toward(key),
         finish=now.landing(key),
-        expected=promised,
-        actual=landed,
+        expected=tuple(expected(now, key)),
+        actual=tuple(actual(history, now, key)),
         baseline=tuple(expected(then, key)) if then is not None else (),
         baseline_day=then.day if then is not None else None,
         baseline_finish=then.landing(key) if then is not None else None,
         moved=delta(then, now, key) if then is not None else None,
         marks=tuple(marks(now, key)),
         idle=tuple(idle(now, key)),
-        standing=_standing(promised, landed, now.day),
     )
-
-
-def _standing(
-    plan: tuple[tuple[date, float], ...], landed: tuple[tuple[date, float], ...], today: date
-) -> float | None:
-    promised, reached = share_at(plan, today), share_at(landed, today)
-    return None if promised is None or reached is None else reached - promised
