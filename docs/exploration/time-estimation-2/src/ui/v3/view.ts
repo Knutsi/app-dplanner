@@ -8,7 +8,7 @@ import { type Day, formatDate, g, percent } from "../../model/calendar.ts";
 import { stepKey } from "../../model/graph.ts";
 import { shareOf } from "../../model/progress.ts";
 import { type Brief, brief, burnup, type Scope } from "../../brief.ts";
-import type { TimeView } from "../../present.ts";
+import { lookingBack, type TimeView } from "../../present.ts";
 import { basisName } from "../compare.ts";
 import { h } from "../markup.ts";
 import { shiftsSvg } from "./shifts.ts";
@@ -17,19 +17,26 @@ import { toolbar } from "./toolbar.ts";
 import { stepAt, stepsFrom, type WorkMarks, workSvg } from "./work.ts";
 
 export function v3View(view: TimeView, state: V3State, on: V3Handlers): HTMLElement {
-  return tabbedView(view, state, on, (found) => toolbar(view, found, state, on));
+  return tabbedView(
+    view,
+    state,
+    (found) => toolbar(view, found, state, on),
+    (found) =>
+      state.page === "milestones"
+        ? milestonesPage(found, view, state, on)
+        : workPage(found, view, state),
+  );
 }
 
 /**
- * Key figures, a toolbar and the two tabs — v3's layout, which v4 keeps with its own toolbar
- * and more marks on the Work tab.
+ * Key figures, a toolbar and a tab's page — v3's layout, which v4 and v5 keep with their own
+ * toolbar and pages.
  */
 export function tabbedView(
   view: TimeView,
   state: V3State,
-  on: V3Handlers,
   bar: (found: Brief) => HTMLElement,
-  marks: WorkMarks = {},
+  page: (found: Brief) => HTMLElement,
 ): HTMLElement {
   if (view.report.cycle.length) {
     const names = view.report.cycle.map((step) => step.title || "an untitled step").join(", ");
@@ -50,16 +57,14 @@ export function tabbedView(
     { class: "v3" },
     keyFigures(found, view, basis),
     bar(found),
-    state.page === "milestones"
-      ? milestones(found, view, state, on)
-      : work(found, view, state, marks),
+    page(found),
   );
 }
 
 /** The answer in numbers — each figure's meaning in its tooltip, none in words on the page. */
 function keyFigures(found: Brief, view: TimeView, basis: string): HTMLElement {
   const whole = found.whole;
-  const today = view.today;
+  const today = view.now.day;
   const figures: (HTMLElement | null)[] = [];
   if (whole.landedBy !== null) {
     figures.push(
@@ -91,7 +96,7 @@ function keyFigures(found: Brief, view: TimeView, basis: string): HTMLElement {
       }, `${percent(share)} done`),
     );
   }
-  const unsized = view.unestimated.filter((step) => !step.estimateOff);
+  const unsized = lookingBack(view) ? [] : view.unestimated.filter((step) => !step.estimateOff);
   if (unsized.length) {
     figures.push(h("span", {
       class: "figure tone-later",
@@ -100,12 +105,23 @@ function keyFigures(found: Brief, view: TimeView, basis: string): HTMLElement {
       }`,
     }, `⚠ ${unsized.length} unsized`));
   }
+  if (lookingBack(view)) {
+    figures.push(h("span", {
+      class: "figure as-of",
+      title: "The tab as it was recorded on that day — History ▸ back to today",
+    }, `as recorded ${formatDate(today, view.today)}`));
+  }
   return h("div", { class: "v3-figures" }, ...figures);
 }
 
 // -- Milestones -----------------------------------------------------------------------------------
 
-function milestones(found: Brief, view: TimeView, state: V3State, on: V3Handlers): HTMLElement {
+export function milestonesPage(
+  found: Brief,
+  view: TimeView,
+  state: V3State,
+  on: V3Handlers,
+): HTMLElement {
   const holder = h("div", { class: "shifts-holder" });
   // After the caller has put this on the page — the width is read from where it landed.
   queueMicrotask(() => {
@@ -141,12 +157,17 @@ function milestones(found: Brief, view: TimeView, state: V3State, on: V3Handlers
 
 // -- Work -----------------------------------------------------------------------------------------
 
-function work(found: Brief, view: TimeView, state: V3State, marks: WorkMarks): HTMLElement {
+export function workPage(
+  found: Brief,
+  view: TimeView,
+  state: V3State,
+  marks: WorkMarks = {},
+): HTMLElement {
   const scopes: Scope[] = [found.whole, ...found.milestones];
   const scope = scopes.find((one) => one.key === state.scope) ?? found.whole;
   const series = burnup(view, scope.key, found.compared);
   // Re-planned from today, the schedule before today holds only finished work's old dates.
-  const data = { ...series, promised: stepsFrom(series.promised, view.today) };
+  const data = { ...series, promised: stepsFrom(series.promised, view.now.day) };
   const named = found.milestones.filter((one) => one.key);
   const marked = scope.key !== null ? [scope] : named.length ? named : [scope];
   const holder = h("div", { class: "work-holder" });
@@ -182,11 +203,11 @@ function work(found: Brief, view: TimeView, state: V3State, marks: WorkMarks): H
         value: number | null,
       ) => (value === null ? null : h("div", {}, `${label}: ${g(Math.round(value * 4) / 4)}d`));
       const lines = [
-        day <= view.today ? read("scope", stepAt(data.scope, day)) : null,
-        day <= view.today ? read("done", stepAt(data.done, day)) : null,
+        day <= view.now.day ? read("scope", stepAt(data.scope, day)) : null,
+        day <= view.now.day ? read("done", stepAt(data.done, day)) : null,
         read("the plan's schedule", stepAt(data.promised, day)),
       ].filter((one): one is HTMLDivElement => one !== null);
-      tip.replaceChildren(h("b", {}, formatDate(day, view.today)), ...lines);
+      tip.replaceChildren(h("b", {}, formatDate(day, view.now.day)), ...lines);
       tip.hidden = false;
       tip.style.left = `${Math.min((event.clientX - box.left) + 14, box.width - 200)}px`;
       tip.style.top = `${event.clientY - box.top + 14}px`;

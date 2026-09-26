@@ -28,6 +28,7 @@ So what follows is DPlanner's behaviour, not the port's.
 |---|---|---|---|
 | [F1](#f1) | The landing dates never learn from what has landed | high | Python, real plan, scenario |
 | [F5](#f5) | Re-planning restarted work in flight: the forecast saw-toothed | high (v3; fixed in v4) | scenario, accuracy |
+| [F6](#f6) | The rest of the work is priced at estimates the done work has disproved | medium (a v5 toggle) | scenario, accuracy |
 | [P1](#p1) | "Behind" while exactly on time | high | Python, scenario |
 | [U1](#u1) | A landing date in the past is shown like any other | high | scenario, real plan |
 | [F2](#f2) | An undated plan slides every day and is compared with itself | medium | Python, scenario |
@@ -217,12 +218,71 @@ days.
 | Someone joins | 3.2 · 52 · 6 | 4.1 · 334 · 181 | **2.2** · 54 · 15 |
 | Realistic | 14.8 · 94 · 38 | 10.2 · 644 · 338 | 11.3 · 206 · 123 |
 
-**What `resume` still cannot do.**
+**What `resume` still cannot do.** It trusts the estimates of the work not yet done. Where
+every estimate is low (Optimistic, Realistic), `restart`'s pessimism happens to lie closer
+to the truth. [F6](#f6) is the experiment that followed.
 
-- It trusts the estimates of the work not yet done. Where every estimate is low
-  (Optimistic, Realistic), `restart`'s pessimism happens to lie closer to the truth.
-- **The next experiment is a pace factor**, learned from the done work's actual against
-  estimated effort. The status `since` makes it measurable.
+---
+
+<a id="f6"></a>
+### F6. The rest of the work is priced at estimates the done work has disproved
+
+**What.** When every step takes half again its estimate, `resume` still prices each step
+not yet started at its estimate. The forecast slips one late step at a time and never
+learns the pattern.
+
+**Where.** `resumed` in `phases`: a step not yet started costs `daysFor(step)`.
+
+**Evidence.**
+
+- **Scenario** [Optimistic, 10 November](index.html#source=sample&seed=1&scenario=optimistic&day=2026-11-10&ui=v5):
+  the plan really lands on 1 January '27. `resume` reads 14 December, and 24 December as
+  late as 1 December.
+- **What was tried** (`deno task accuracy`, six seeds; the tool keeps the last):
+  - **The work done against the plan's schedule**: estimated days done by today over those
+    the plan had landed by today. It needs no new data, but the ratio jumps every time a
+    long step lands late. Movement grew tenfold (Optimistic 123 → 1381), and the error
+    barely fell (10.5 → 9.2). Rejected.
+  - **Each finished step's estimate against the working days it took.** This needs one new
+    fact, the day a step first went in progress (`started`). The first cut mixed people
+    and agents and floored a step's time at half a day. It looked best on the slow
+    scenarios (Optimistic 4.2), but only because the floor biases every reading slow: on
+    plans whose estimates are right it read 0.84–0.90 and moved their dates.
+  - **The same, for people's steps alone and with no floor.** This is what v5 runs. The
+    focus scales only people's steps, so this is the focus measured. On an unbiased run it
+    reads 1.00–1.03 by the end (early readings up to 1.14), and on Optimistic 0.63–0.79
+    against a true 0.67.
+- In the scenario above, with the pace on, 10 November reads 22 December and 1 December
+  reads 5 January.
+
+The same run, whole-plan landing: mean |error| · total movement · days moved.
+
+| Scenario | v4 `resume` | v5 pace so far |
+|---|---|---|
+| By the book | 0.0 · 0 · 0 | 0.0 · 0 · 0 |
+| Optimistic | 10.5 · 123 · 115 | **6.5** · 189 · 87 |
+| Learning | 13.0 · 551 · 124 | **11.8** · 679 · 139 |
+| Sparse | 6.4 · 102 · 91 | **5.3** · 174 · 89 |
+| Realistic | 11.3 · 206 · 123 | 10.8 · 316 · 135 |
+| Supervision | 3.1 · 41 · 34 | 3.0 · 59 · 37 |
+| Unsized | 1.8 · 16 · 16 | 2.1 · 32 · 23 |
+| Scope creep | 14.0 · 162 · 56 | 14.3 · 204 · 70 |
+| Someone joins | 2.2 · 54 · 15 | 2.6 · 84 · 28 |
+| Work ahead | 0.9 · 14 · 14 | 1.2 · 28 · 20 |
+| Blocked | 1.8 · 62 · 50 | 4.2 · 214 · 70 |
+
+**Why it matters.** It helps where estimates are systematically short, and costs where they
+are not. That is a judgement about the team, and only the reader can make it.
+
+**Direction — a v5 toggle, off by default (*Pace so far*):**
+
+- It applies only once the plan no longer holds, so a plan on track never moves.
+- It is offered after five working days of work and three finished steps, and greyed
+  before.
+- A pace within a tenth of the plan's is the plan's: step-sized noise, not a trend.
+- The label carries the pace, so the reader sees the number before believing the dates.
+- **A blocked step's stall reads as slowness** (Blocked 1.8 → 4.2). Counting only the days a
+  step was in progress would need its blocked days too. That is not stored, and not built.
 
 ## The progress measure
 
@@ -584,7 +644,7 @@ no projection at all:
 
 ---
 
-## What v4 needed that DPlanner does not store
+## What v4 and v5 needed that DPlanner does not store
 
 Each of these is in BACKPORT.md with its format.
 
@@ -605,3 +665,6 @@ Each of these is in BACKPORT.md with its format.
     against a real 16 December. With the old focus remembered it reads 18 December.
 - **A Delay step.** "Testing starts Wednesday" is a wait, not work. DPlanner can only say it
   as a milestone's own start date, which cannot hold one branch.
+- **The day a step first went in progress (`started`)**, for v5's *Pace so far*. `since`
+  cannot stand in: a done step's `since` is the day it was done, and the day it began is
+  gone ([F6](#f6)).

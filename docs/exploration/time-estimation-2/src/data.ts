@@ -43,6 +43,7 @@ export interface StepJson {
   start: string | null;
   color: string | null;
   since?: string | null; // Absent from exports DPlanner's files cannot fill (BACKPORT.md).
+  started?: string | null;
   delay?: DelayJson | null;
 }
 
@@ -82,6 +83,7 @@ export function planFromJson(json: PlanJson): Plan {
       created: dayOrNull(step.created),
       start: dayOrNull(step.start),
       since: dayOrNull(step.since ?? null),
+      started: dayOrNull(step.started ?? null),
       delay: delayFromJson(step.delay),
     })),
   };
@@ -97,6 +99,7 @@ export function planToJson(plan: Plan): PlanJson {
       created: isoOrNull(step.created),
       start: isoOrNull(step.start),
       since: isoOrNull(step.since),
+      started: isoOrNull(step.started),
       delay: delayToJson(step.delay),
     })),
   };

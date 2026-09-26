@@ -30,6 +30,7 @@ export interface Step {
   color: string | null; // time_estimates.color on a milestone.
   // The day its status last changed — a fact DPlanner does not store yet (BACKPORT.md).
   since: Day | null;
+  started: Day | null; // The day it first went in progress: what the pace so far is read from.
   delay: Delay | null; // A Delay step: a wait, with no work and no status of its own.
 }
 

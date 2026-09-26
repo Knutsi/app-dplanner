@@ -13,40 +13,45 @@ import { scenarioById } from "../src/sim/scenarios.ts";
 import { record, recordedBy, type Recording } from "../src/sim/timeline.ts";
 import { DEFAULT_WORLD, run } from "../src/sim/world.ts";
 
-/** The Time tab's data for a plan on a day, compared with the plan at start. */
+/**
+ * The Time tab's data for a plan on a day, compared with the plan at start — or, with
+ * `asOf`, looking back at that recorded day, as v5's History does.
+ */
 export function viewOf(
   plan: Plan,
   day: Day,
   recording: Recording,
   options: ModelOptions = ADOPTED,
+  asOf: Day | null = null,
 ): TimeView {
   const state = {
     picked: null,
     then: AT_START,
-    now: { kind: "now" as const },
+    now: asOf === null ? { kind: "now" as const } : { kind: "day" as const, day: asOf },
     lens: "calendar" as const,
     page: "progress" as const,
     whatIf: {},
   };
-  return present(plan, day, recordedBy(recording, day), state, options)!;
+  return present(plan, day, recordedBy(recording, asOf ?? day), state, options)!;
 }
 
-/** A scenario played on the sample plan (seed 1), read as the view reads it on a day. */
-export function played(id: string, options: ModelOptions = ADOPTED) {
+/** A scenario played on the sample plan, read as the view reads it on a day. */
+export function played(id: string, options: ModelOptions = ADOPTED, seed = 1) {
   const scenario = scenarioById(id);
   const timeline = run(
-    samplePlan(1),
-    { ...DEFAULT_WORLD, ...scenario.world, seed: 1 },
+    samplePlan(seed),
+    { ...DEFAULT_WORLD, ...scenario.world, seed },
     SAMPLE_START,
   );
   const recording = record(timeline, {
     options,
     cadence: scenario.cadence ?? "weekdays",
     saved: [],
-    seed: 1,
+    seed,
   });
   return {
     timeline,
+    recording,
     viewOn: (day: Day) =>
       viewOf(timeline.frames.find((one) => one.day === day)!.plan, day, recording, options),
   };

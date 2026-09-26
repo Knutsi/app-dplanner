@@ -13,6 +13,12 @@ words, is in [`explainer.html`](explainer.html). What each version taught is in
 [`LESSONS.md`](LESSONS.md), and what must reach the Qt app is in
 [`BACKPORT.md`](BACKPORT.md).
 
+![v5's Work tab, day by day through the Scope creep scenario: the scope climbs above the
+plan at start, work is done in steps with its quiet days dotted, and each milestone turns
+to a ✓ as it lands](work.gif)
+
+*v5's Work tab played through **Scope creep** (seed 1), axes locked to the whole run.*
+
 ## Open it
 
 The page needs no build and no server to *look at*: open `index.html` in a browser. It
@@ -55,7 +61,11 @@ remembered in the browser:
     stand while what is done matches them. Otherwise the rest resumes from tomorrow, with
     work in flight credited for the days already spent. The rounding is fixed (I1, Q3).
     That is decided for the backport, so it has no switch. The parity tools alone run
-    DPlanner exactly as it is today.
+    DPlanner exactly as it is today. v5's *Pace so far* is the reader's own switch, in the
+    view (F6).
+  - *Lock the Work plot's axes to the whole run* (v5): the date axis ends at the last
+    landing and the scale holds the most work the run ever has, so scrubbing moves only
+    the lines. It is how `work.gif` was recorded.
 - **Track record.** Each milestone's forecast against the day it was made, with the real
   landing on the diagonal, and the forecast error at points along the way. DPlanner as it
   is today is drawn dashed beside the page's model. DPlanner has no such view; see
@@ -66,9 +76,9 @@ remembered in the browser:
 What happened on the day sits between the sections. Track record and Records are computed
 only while unfolded.
 
-**The view comes in four designs.** Switch between them in the debugger's bar (*v1 ·
-today* / *v2* / *v3* / *v4 · latest*). All read the same plan on the same day, and the
-choice is remembered; v4 is the default.
+**The view comes in five designs.** Switch between them in the debugger's bar (*v1 ·
+today* / *v2* / *v3* / *v4* / *v5 · latest*). All read the same plan on the same day, and
+the choice is remembered; v5 is the default.
 
 - **v1** is a wireframe of today's tab: the strip, the staffing grid, the milestones, the
   calendar, and the plot pages.
@@ -83,11 +93,39 @@ choice is remembered; v4 is the default.
   moved into tooltips.
 - **v4** is v3 with the **Budget** in place of the what-ifs. Its Work tab marks weekends,
   the days nothing changed, and the waits of Delay steps.
+- **v5** is v4 with the **Calendar** back as a third tab, **History** to look back at any
+  recorded day, and **Pace so far** to re-estimate what is left at the pace work has
+  actually gone.
 
 In v1 to v3, focus, team, palette, start and a milestone's begin date are *what-ifs* on the
 day's live plan. In v4 the Budget is not a what-if: a choice is saved at once, and applies
 from the day shown on. Every design reads the page's model, so v1 is today's tab *layout*
 over a plan that resumes from tomorrow.
+
+### v5, part by part
+
+v5 is v4, with these additions:
+
+- **Calendar**, a third tab: six months in two rows of three, each stretch a band in its
+  milestone's colour, each milestone's name on the day it lands, and each Delay's wait
+  hatched. ◂ ▸ page a month at a time.
+- **History**, in the toolbar: a slider over every day the recorder wrote, with ◂ ▸ steps
+  and *back to today*. On a day before today, the key figures, both tabs' plots and the
+  calendar show the tab as it read that day, from the records alone. Unsized steps and
+  Delay steps are left out, since no record holds them. The Budget, *Pace so far* and
+  *Save snapshot…* are greyed, because the past cannot be changed.
+- **Pace so far**, in the toolbar: re-estimates what is left at the pace people's finished
+  steps actually went, each step's estimate against the working days it took. The label
+  carries the pace ("Pace so far · 77%"), and the tooltip says what it means ("taking
+  1.3× their estimates").
+  - It is greyed until there are five working days of work and three finished steps.
+  - A pace within a tenth of the plan's leaves the dates alone.
+  - It applies only once the plan no longer holds, so By the book never moves.
+  - It is off by default. On Optimistic estimates it cuts the forecast's error by a
+    third; on plans whose estimates are right, it costs up to half a day of error and
+    moves the date more. A blocked step's stall reads as slowness (ISSUES.md F6).
+- **The debugger's bar** keeps its size whatever the day's words: they cut off with an
+  ellipsis before they wrap, so the page never jumps while scrubbing.
 
 ### v4, part by part
 
@@ -188,8 +226,11 @@ page where you left it:
 
 - `day=end` goes to the last day;
 - `tab=track` or `tab=records` unfolds that section;
-- `ui=v1` to `ui=v4` picks the design, and `scope=<step id>` the milestone it shows;
-- `page=milestones` or `page=work` picks the tab in v3 and v4;
+- `ui=v1` to `ui=v5` picks the design, and `scope=<step id>` the milestone it shows;
+- `page=milestones` or `page=work` picks the tab in v3 to v5, and `page=calendar` in v5;
+- `asof=2026-11-02` is the recorded day v5's History shows;
+- `pace=on` runs v5's dates at the pace so far;
+- `axes=run` locks the Work plot's axes to the whole run;
 - `budget=2026-11-02:2+1@60` holds re-budgets: the day, people + agents, and focus;
 - `delay=2026-10-12:s14:until:2026-11-04` (or `…:days:3`) holds Delay steps: the day made,
   the step held, and the wait.
@@ -251,16 +292,17 @@ On 2026-09-26 both agreed exactly:
 
 ```
 index.html, app.css     the page, and its wireframe styling (DESIGN.md's tokens)
+work.gif                v5's Work tab played through Scope creep, for this README
 explainer.html          how comparisons over time work; its figures are drawn by app.js
 ISSUES.md               the issues, each with its evidence and a direction
-LESSONS.md              what each version taught, v1 to v4
+LESSONS.md              what each version taught, v1 to v5
 BACKPORT.md             the checklist for the Qt app
 src/model/              the faithful port — no DOM, and `today` is always passed in
   calendar.ts             days as integers, working days, how dates and days are worded
-  graph.ts                Plan and Step (with `since` and Delay steps), the predicates
-                          DPlanner wires, placed/cone/cyclic
-  simulate.ts             parallel_finish, phases (and `resume`: holds, resumed), stretched,
-                          the 3×4 matrix
+  graph.ts                Plan and Step (with `since`, `started` and Delay steps), the
+                          predicates DPlanner wires, placed/cone/cyclic
+  simulate.ts             parallel_finish, phases (and `resume`: holds, resumed; the pace
+                          so far), stretched, the 3×4 matrix
   progress.ts             snapshots, curves, baseline/resolve, recording, volume, words
   palettes.ts             the colour maps and the milestone deal
   options.ts              the model: FAITHFUL (DPlanner today), ADOPTED (the page's:
@@ -275,7 +317,7 @@ src/sim/                time travel
   accuracy.ts             a model's forecasts against the truth: error, movement, moves
   sample.ts, rng.ts       the synthetic plan, and seeded luck
 src/present.ts          what the Time tab shows, as data (every design starts here)
-src/brief.ts            what v2 to v4 derive: lag, projected landing, the move split,
+src/brief.ts            what v2 to v5 derive: lag, projected landing, the move split,
                         verdicts, the burn-up series and its active days
 src/ui/v1/              today's tab: timetab.ts, calendar.ts, charts.ts
 src/ui/v2/              the first redesign: view.ts, headline, milestones, burnup, changes,
@@ -283,16 +325,18 @@ src/ui/v2/              the first redesign: view.ts, headline, milestones, burnu
 src/ui/v3/              the second: view.ts (key figures and the tabs), toolbar, shifts
                         (Milestones), work (Work, and v4's marks), marks (the ✓), state
 src/ui/v4/              the third: view.ts (v3's layout, v4's toolbar), budget (the Budget)
-src/ui/compare.ts       the Compared with picker v2 to v4 share
-src/ui/glyphs.ts        the ▲▼◀▶ arrows v2 to v4 share
+src/ui/v5/              the fourth: view.ts (v4 and the Calendar tab), history (History),
+                        pace (Pace so far)
+src/ui/compare.ts       the Compared with picker v2 to v5 share
+src/ui/glyphs.ts        the ▲▼◀▶ arrows v2 to v5 share
 src/ui/debugger/        the debugger's readings: track.ts, records.ts
 src/ui/markup.ts        building HTML and SVG; figures.ts draws the explainer's figures
 src/data.ts             the export format
 tools/                  export_plan.ts, parity.ts, compare_matrix.ts, accuracy.ts
 tests/                  model_test (DPlanner's own cases), sim_test, issues_test,
                         brief_test and glyphs_test (v2), v3_test, resume_test (the model),
-                        edits_test (the Budget), delay_test, v4_test; played.ts plays a
-                        scenario for them
+                        edits_test (the Budget), delay_test, v4_test, v5_test (History,
+                        the locked axes), pace_test; played.ts plays a scenario for them
 ```
 
 **How an export maps to DPlanner's files.** `tools/export_plan.ts`'s header has the full
@@ -326,6 +370,8 @@ Each step contributes:
     not move more (LESSONS.md, *The model*).
   - Once decided, move it into `ADOPTED` and out of `VARIANTS`, as the rounding fixes and
     `resume` were.
+  - A change that helps some scenarios and costs others is not adopted. At most it is the
+    reader's choice, as *Pace so far* is (ISSUES.md F6).
   - If it fixes an issue, flip that issue's test in `tests/issues_test.ts`, say so in
     ISSUES.md, and add it to BACKPORT.md.
 - **A new scenario** is an entry in `src/sim/scenarios.ts`: the world parameters, the one

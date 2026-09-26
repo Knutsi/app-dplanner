@@ -55,7 +55,7 @@ export function timeTab(view: TimeView, state: ViewState, on: TimeTabHandlers): 
     { class: "right" },
     banner(view),
     pager(on),
-    monthsView(view, state.picked, on.offset, (day) => on.whatIf({ start: day })),
+    monthsView(view, state.picked, on.offset, { onDay: (day) => on.whatIf({ start: day }) }),
     plots(view, state, on),
   );
   return h(
@@ -151,9 +151,11 @@ function describeWhatIf(whatIf: WhatIf, view: TimeView): string {
 }
 
 /** *Save snapshot…*: keep the plan as it stands today under a title. */
+/** *Save snapshot…*; greyed, with the reason as its title, when `off` says why it cannot run. */
 export function saveButton(
   view: TimeView,
   save: (title: string, note: string) => string | null,
+  off?: string,
 ): HTMLElement {
   const title = h("input", {
     type: "text",
@@ -189,7 +191,8 @@ export function saveButton(
     "span",
     { class: "anchor" },
     h("button", {
-      title: "Save Snapshot… — keep the plan as it stands today under a title",
+      title: off ?? "Save Snapshot… — keep the plan as it stands today under a title",
+      disabled: Boolean(off),
       onclick: () => (panel.hidden = !panel.hidden),
     }, "📷 Save snapshot…"),
     panel,

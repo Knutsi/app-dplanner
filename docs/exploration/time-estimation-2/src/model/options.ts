@@ -20,12 +20,28 @@ export interface ModelOptions {
    *   rest resumes from tomorrow, with work in flight credited for the days already spent.
    */
   replan: "off" | "restart" | "resume";
+  /**
+   * Under `resume`, once the plan no longer holds: the rest re-estimated at the pace so far —
+   * the days finished steps were given against the working days they took (`paceSoFar`).
+   * A choice the reader makes (v5's toolbar), never the default: ISSUES.md F6 has why.
+   */
+  pace: boolean;
 }
 
-export const FAITHFUL: ModelOptions = { epsilon: false, carry: false, replan: "off" };
+export const FAITHFUL: ModelOptions = {
+  epsilon: false,
+  carry: false,
+  replan: "off",
+  pace: false,
+};
 
 /** What the page runs (ISSUES F1, F5, I1, Q3). */
-export const ADOPTED: ModelOptions = { epsilon: true, carry: true, replan: "resume" };
+export const ADOPTED: ModelOptions = {
+  epsilon: true,
+  carry: true,
+  replan: "resume",
+  pace: false,
+};
 
 export const GUARD = 1e-9;
 

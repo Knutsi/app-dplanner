@@ -15,8 +15,8 @@ import { axisTicks, type Day, formatDays, isWorkingDay, shortDate } from "../../
 import { isDelay } from "../../model/graph.ts";
 import { landingOf, startDayOf } from "../../model/simulate.ts";
 import { niceCeiling, type Point } from "../../model/progress.ts";
-import type { Burnup, Jump, Scope } from "../../brief.ts";
-import type { TimeView } from "../../present.ts";
+import { type Burnup, burnup, type Jump, type Scope } from "../../brief.ts";
+import { dayWord, type TimeView } from "../../present.ts";
 import { glyphPath } from "../glyphs.ts";
 import { esc, INK, n, PLAN, SECONDARY } from "../markup.ts";
 import { CHECK_R, landedCheck } from "./marks.ts";
@@ -28,6 +28,10 @@ const PLOT_H = 150;
 const GAP = 46;
 const BOTTOM = 26;
 const MARK = 8;
+// Finer than the burn-up's 1-2-5: two stacked plots cannot afford half of each left empty. The
+// headroom keeps a line off the top edge, where its label would meet the other's.
+const AXIS_STEPS = [1, 1.5, 2, 3, 4, 5, 7.5, 10];
+const HEADROOM = 1.05;
 
 export interface ScopeMark {
   day: Day;
@@ -73,12 +77,30 @@ export function stepsFrom(points: readonly Point[], day: Day): Point[] {
  * from the point before to its own — which is where each of these draws it.
  * - `weekends`: a pale band on each day off, through both plots;
  * - `idle`: the done line dotted across a day on which no step changed status;
- * - `delays`: a hatched band over each wait still in the plan, named.
+ * - `delays`: a hatched band over each wait still in the plan, named;
+ * - `reach`: the least the axes hold, so a recording of the days holds still (the debugger's lock).
  */
 export interface WorkMarks {
   weekends?: boolean;
   idle?: boolean;
   delays?: boolean;
+  reach?: Reach;
+}
+
+/** A plot's extent: the last day on its axis, and the most work it holds. */
+export interface Reach {
+  day: Day;
+  days: number;
+}
+
+/** How far a Work plot of `key` reaches in `view` — at a run's end, the whole run. */
+export function reachOf(view: TimeView, key: string | null): Reach {
+  const series = burnup(view, key, false);
+  const points = [...series.scope, ...series.promised];
+  return {
+    day: Math.max(view.now.day, ...points.map(([day]) => day)),
+    days: Math.max(0, ...points.map(([, value]) => value)),
+  };
 }
 
 /** Each Delay in the plan that still waits: its title and the days it covers. */
@@ -185,19 +207,22 @@ export function workSvg(
   compared: boolean,
   marks: WorkMarks = {},
 ): { svg: string; geometry: WorkGeometry } {
-  const today = view.today;
+  const today = view.now.day;
   const days = [today, ...data.scope.map(([day]) => day), ...data.promised.map(([day]) => day)];
+  if (marks.reach) days.push(marks.reach.day);
   for (const one of marked) {
     for (const day of [one.move.planned, one.landedBy]) if (day !== null) days.push(day);
   }
   const [first, last] = [Math.min(...days) - 1, Math.max(...days) + 2];
   const top = niceCeiling(
-    Math.max(
+    HEADROOM * Math.max(
       1,
       ...data.scope.map(([, v]) => v),
       ...data.promised.map(([, v]) => v),
       data.baseline ?? 0,
+      marks.reach?.days ?? 0,
     ),
+    AXIS_STEPS,
   );
   const right = width - RIGHT;
   const x = (day: Day) => LEFT + ((day - first) / (last - first)) * (right - LEFT);
@@ -477,7 +502,7 @@ export function workSvg(
   out.push(
     `<text x="${n(x(today))}" y="${
       n(height - 8)
-    }" text-anchor="middle" font-weight="600" style="fill:${INK}">today</text>`,
+    }" text-anchor="middle" font-weight="600" style="fill:${INK}">${esc(dayWord(view))}</text>`,
   );
   out.push(
     `<line class="hover" x1="0" x2="0" y1="${scopeTop}" y2="${

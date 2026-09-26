@@ -131,6 +131,7 @@ export function insertDelay(steps: readonly Step[], edit: DelayEdit): Step[] {
     start: null,
     color: null,
     since: null,
+    started: null,
     delay: edit.delay,
   };
   return [...steps.slice(0, at), delay, { ...held, requires: [id] }, ...steps.slice(at + 1)];

@@ -202,7 +202,7 @@ export function snapshotFrom(dated: Phase[], today: Day): Snapshot {
     stretches: dated.map((phase) => ({
       key: phase.milestone ? phase.milestone.id : "",
       tally: tally(phase.steps, daysFor, today),
-      start: phase.start,
+      start: phase.began,
       finish: phase.finish,
       landings: landings(phase),
     })),
@@ -533,11 +533,11 @@ export function remaining(history: readonly Snapshot[], now: Snapshot | null): P
   return stepCurve(until(history, now), remainingOf);
 }
 
-/** `nice_ceiling`: 1, 2 or 5 times a power of ten at or above `value`; at least 1. */
-export function niceCeiling(value: number): number {
+/** `nice_ceiling`: 1, 2 or 5 (or `steps`) times a power of ten at or above `value`; at least 1. */
+export function niceCeiling(value: number, steps: readonly number[] = [1, 2, 5, 10]): number {
   if (value <= 1.0) return 1.0;
   const magnitude = 10 ** Math.floor(Math.log10(value));
-  for (const step of [1, 2, 5, 10]) {
+  for (const step of steps) {
     if (step * magnitude >= value) return step * magnitude;
   }
   return 10 * magnitude;

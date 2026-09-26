@@ -187,6 +187,9 @@ export interface Phase {
   lead: number; // Part of the start day already used — always 0 unless `carry` is on.
   guard: number;
   facts: Map<string, Day>; // Re-planned: the day each done step was done, which dates it.
+  // When its work began: the first day any of it was done or started, or else its start. A
+  // re-planned stretch is dated from tomorrow, but its work may have begun weeks before.
+  began: Day;
 }
 
 /** `Phase.landing_of`: the date a step lands on; the stretch's start for a weightless one. */
@@ -256,7 +259,50 @@ export function phases(plan: Plan, daysFor: DaysFor, args: PhaseArgs): Phase[] {
   const options = args.options ?? FAITHFUL;
   if (options.replan !== "resume") return scheduled(plan, daysFor, args, options);
   const planned = scheduled(plan, daysFor, args, options);
-  return holds(planned, args.today) ? planned : resumed(plan, daysFor, args, options);
+  if (holds(planned, args.today)) return planned;
+  const pace = options.pace ? paceSoFar(plan, daysFor, args.start, args.today) : null;
+  const costs = pace === null || asPlanned(pace) ? daysFor : paced(daysFor, pace);
+  return resumed(plan, costs, args, options);
+}
+
+/** The evidence a pace needs: working days of work, and steps finished. */
+export const PACE_AFTER = 5;
+export const PACE_STEPS = 3;
+/** A pace this close to the plan's is the plan's: step-sized noise, not a trend. */
+const PACE_BAND = 0.1;
+
+export function asPlanned(pace: number): boolean {
+  return Math.abs(Math.log(pace)) < Math.log(1 + PACE_BAND);
+}
+
+/**
+ * The pace so far: the days people's finished steps were given against the working days they
+ * took, each from the middle of the day it started to the middle of the day it was done — 1
+ * as planned, 0.5 at half the speed. It is the focus measured, so like the focus it is
+ * people's alone: an agent's step runs at its estimate. Null before `PACE_AFTER` working days
+ * of work and `PACE_STEPS` finished steps. A step blocked on the way counts its stall as
+ * slowness.
+ */
+export function paceSoFar(plan: Plan, daysFor: DaysFor, start: Day, today: Day): number | null {
+  if (today < start || workingDaysBetween(start, today) <= PACE_AFTER) return null;
+  let [given, took, count] = [0.0, 0.0, 0];
+  for (const step of plan.steps) {
+    const days = daysFor(step);
+    if (days === null || isDelay(step) || isAgent(step) || step.status !== DONE) continue;
+    if (step.started === null || step.since === null) continue;
+    given += days;
+    took += workingDaysBetween(step.started, step.since) - 2 * HALF;
+    count += 1;
+  }
+  return count < PACE_STEPS || took <= 0 ? null : Math.min(4, Math.max(0.25, given / took));
+}
+
+/** People's steps at `pace` — slower below 1. An agent's step and a Delay take what they take. */
+function paced(daysFor: DaysFor, pace: number): DaysFor {
+  return (step) => {
+    const days = daysFor(step);
+    return days === null || isDelay(step) || isAgent(step) ? days : days / pace;
+  };
 }
 
 /** When the next stretch may begin, and how much of that day is already used. */
@@ -399,6 +445,7 @@ function finished(
     lead: 0.0,
     guard: guardOf(options),
     facts,
+    began: Math.min(...days),
   };
 }
 
@@ -437,6 +484,8 @@ function dated(
   };
   const run = parallelFinish(members, costs, args.humans, args.agents, extra.running, waits)!;
   const finish = run.days > 0 ? workingDaysAfter(begins, used + run.days, guard) : null;
+  const started = members.filter((step) => extra.running?.has(step.id)).map((step) => step.since);
+  const known = [...(extra.facts?.values() ?? []), ...started].filter((day) => day !== null);
   const phase: Phase = {
     milestone,
     steps,
@@ -450,6 +499,7 @@ function dated(
     lead: used,
     guard,
     facts: extra.facts ?? new Map(),
+    began: Math.min(begins, ...known),
   };
   if (finish === null) return [phase, { when: begins, lead: used }];
   if (!options.carry) return [phase, { when: nextWorkingDay(finish + 1), lead: 0.0 }];

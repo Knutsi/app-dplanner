@@ -1,7 +1,13 @@
 /**
  * The months — `time_estimates/months.py`: each stretch a band of days in its milestone's
  * colour, the landing day near solid, weekends pale, today outlined. Clicking a day moves
- * the project's start there (a what-if here, a stored write in DPlanner).
+ * the project's start there (a what-if here, a stored write in DPlanner) where the design
+ * offers it; v5 has no what-ifs, so its days are read, not clicked.
+ *
+ * The bands are the stretches of the plan shown (`view.now`): today's, or a day History looks
+ * back to. A wait (a Delay step's) hatches the days it holds.
+ *
+ * v5 shows six months in larger cells, each milestone's name on the day it lands.
  */
 
 import {
@@ -16,6 +22,7 @@ import {
   ymd,
 } from "../../model/calendar.ts";
 import { alpha } from "../../model/palettes.ts";
+import { landingIn } from "../../model/progress.ts";
 import type { TimeView } from "../../present.ts";
 import { h } from "../markup.ts";
 
@@ -46,9 +53,16 @@ function monthSpan(start: Day, finish: Day | null): [Day, number] {
   return [begin, Math.max(SHOWN_AT_LEAST, Math.min(SHOWN_AT_MOST, count))];
 }
 
-function tooltip(day: Day, band: Band | undefined, today: Day): string {
+/** A Delay step's wait: the days it holds. */
+export interface Wait {
+  title: string;
+  from: Day;
+  to: Day;
+}
+
+function tooltip(day: Day, band: Band | undefined, today: Day, clickable: boolean): string {
   let said = `${weekdayName(day)} ${formatDate(day, today)}`;
-  if (!band) said += " — click to start the work here";
+  if (!band) said += clickable ? " — click to start the work here" : "";
   else if (day === band.finish && band.lands) said += ` — ${band.label} lands`;
   else if (!isWorkingDay(day)) said += " — weekend, not counted";
   else {
@@ -61,28 +75,40 @@ function tooltip(day: Day, band: Band | undefined, today: Day): string {
   return day === today ? `${said} · today` : said;
 }
 
+export interface MonthsOptions {
+  onDay?: (day: Day) => void; // Clicking a day starts the work there.
+  waits?: readonly Wait[];
+  months?: number; // How many to show, where the span of the work would otherwise decide.
+  named?: boolean; // Each milestone's name on the day it lands.
+}
+
 export function monthsView(
   view: TimeView,
   emphasis: string | null,
   offset: number,
-  onDay: (day: Day) => void,
+  { onDay, waits = [], months, named = false }: MonthsOptions = {},
 ): HTMLElement {
-  const bands: Band[] = view.stretches
-    .filter(({ phase }) => phase.finish !== null)
-    .map(({ phase, key, label, color }) => ({
-      key,
-      label,
-      start: phase.start,
-      finish: phase.finish!,
-      color,
-      lands: phase.milestone !== null,
-    }));
-  const [first, count] = monthSpan(view.report.start, view.cell.finish);
+  const today = view.now.day;
+  const bands: Band[] = view.now.stretches
+    .filter((stretch) => stretch.finish !== null)
+    .map((stretch) => {
+      const named = view.stretches.find((one) => one.key === stretch.key);
+      return {
+        key: stretch.key,
+        label: named?.label ?? stretch.key,
+        start: stretch.start,
+        finish: stretch.finish!,
+        color: named?.color ?? "#888888",
+        lands: stretch.key !== "",
+      };
+    });
+  const [first, span] = monthSpan(view.report.start, landingIn(view.now, null));
+  const count = months ?? span;
   const grid = h("div", { class: "months" });
   for (let index = 0; index < count; index += 1) {
     const month = addMonths(first, index + offset);
     const [year, number] = ymd(month);
-    const name = year === ymd(view.today)[0]
+    const name = year === ymd(today)[0]
       ? MONTHS[number - 1]
       : `${MONTHS[number - 1].slice(0, 3)} '${String(year % 100).padStart(2, "0")}`;
     const days = h("div", { class: "days" });
@@ -92,11 +118,17 @@ export function monthsView(
     for (let day = month; ymd(day)[1] === number; day += 1) {
       const band = bands.find((one) => one.start <= day && day <= one.finish);
       const faded = emphasis !== null && band && band.key !== emphasis ? 0.4 : 1;
-      const cell = h("button", {
-        class: `day${isWorkingDay(day) ? "" : " weekend"}${day === view.today ? " today" : ""}`,
-        title: tooltip(day, band, view.today),
-        onclick: () => onDay(day),
+      const wait = waits.find((one) => one.from < day && day <= one.to);
+      const cell = h(onDay ? "button" : "span", {
+        class: `day${isWorkingDay(day) ? "" : " weekend"}${day === today ? " today" : ""}${
+          wait ? " waiting" : ""
+        }`,
+        title: tooltip(day, band, today, Boolean(onDay)) + (wait ? ` — ${wait.title}` : ""),
+        ...(onDay ? { onclick: () => onDay(day) } : {}),
       }, String(ymd(day)[2]));
+      if (named && band?.lands && day === band.finish) {
+        cell.append(h("span", { class: "day-name" }, band.label));
+      }
       if (band) {
         const strength = day === band.finish && band.lands
           ? 220
@@ -105,7 +137,7 @@ export function monthsView(
           : isWorkingDay(day)
           ? 64
           : 24;
-        cell.style.background = alpha(band.color, (strength / 255) * faded);
+        cell.style.backgroundColor = alpha(band.color, (strength / 255) * faded);
         if (strength === 220) cell.classList.add("lands");
       }
       days.append(cell);

@@ -10,7 +10,7 @@
 import { axisTicks, type Day, shortDate } from "../../model/calendar.ts";
 import { isDelay } from "../../model/graph.ts";
 import type { Brief, Scope } from "../../brief.ts";
-import type { TimeView } from "../../present.ts";
+import { dayWord, lookingBack, type TimeView } from "../../present.ts";
 import { clip, esc, INK, n, SECONDARY, textWidth } from "../markup.ts";
 import { CHECK_R, landedCheck } from "./marks.ts";
 
@@ -45,14 +45,17 @@ function arrow(from: number, to: number, y: number, color: string): string {
 }
 
 function words(scope: Scope, view: TimeView): string {
-  const today = view.today;
+  const today = view.now.day;
   const parts = [`${scope.badge} ${scope.label}${scope.title ? ` — ${scope.title}` : ""}`];
   if (scope.move.then !== null) parts.push(`then: ${shortDate(scope.move.then, today)}`);
   if (scope.landedBy !== null) parts.push(`done by ${shortDate(scope.landedBy, today)}`);
   else if (scope.move.planned !== null) {
     parts.push(`plan now: ${shortDate(scope.move.planned, today)}`);
   }
-  const stretch = view.stretches.find((one) => one.key === scope.key);
+  // Delay steps are the live plan's; a day looked back to has no record of them.
+  const stretch = lookingBack(view)
+    ? undefined
+    : view.stretches.find((one) => one.key === scope.key);
   for (const step of stretch?.phase.steps.filter(isDelay) ?? []) parts.push(`waits: ${step.title}`);
   return parts.join("\n");
 }
@@ -63,7 +66,7 @@ export function shiftsSvg(
   selected: string | null,
   width: number,
 ): Shifts {
-  const today = view.today;
+  const today = view.now.day;
   const scopes = found.milestones.filter((scope) => scope.key);
   const days = [today];
   for (const scope of scopes) {
@@ -243,7 +246,9 @@ export function shiftsSvg(
   out.push(
     `<text x="${n(x(today))}" y="${
       n(height - 8)
-    }" text-anchor="middle" font-size="11" font-weight="600" style="fill:${INK}" class="today-label">today</text>`,
+    }" text-anchor="middle" font-size="11" font-weight="600" style="fill:${INK}" class="today-label">${
+      esc(dayWord(view))
+    }</text>`,
   );
   out.push("</svg>");
   return { svg: out.join(""), rows };

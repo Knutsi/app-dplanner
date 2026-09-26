@@ -90,6 +90,7 @@ export function samplePlan(seed: number, shape: SampleShape = SAMPLE_SHAPE): Pla
       start: null,
       color: null,
       since: null,
+      started: null,
       delay: null,
       ...fields,
     };

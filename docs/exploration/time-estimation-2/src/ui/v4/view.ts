@@ -12,7 +12,7 @@ import { h } from "../markup.ts";
 import { saveButton } from "../v1/timetab.ts";
 import type { V3Handlers, V3State } from "../v3/state.ts";
 import { more, showing, tabs } from "../v3/toolbar.ts";
-import { tabbedView } from "../v3/view.ts";
+import { milestonesPage, tabbedView, workPage } from "../v3/view.ts";
 import { budgetMenu } from "./budget.ts";
 
 export interface V4Handlers extends V3Handlers {
@@ -34,10 +34,17 @@ function toolbar(view: TimeView, found: Brief, state: V3State, on: V4Handlers): 
   );
 }
 
+/** What v4's Work tab marks: weekends, the days nothing changed, and the waits. */
+export const V4_MARKS = { weekends: true, idle: true, delays: true };
+
 export function v4View(view: TimeView, state: V3State, on: V4Handlers): HTMLElement {
-  return tabbedView(view, state, on, (found) => toolbar(view, found, state, on), {
-    weekends: true,
-    idle: true,
-    delays: true,
-  });
+  return tabbedView(
+    view,
+    state,
+    (found) => toolbar(view, found, state, on),
+    (found) =>
+      state.page === "milestones"
+        ? milestonesPage(found, view, state, on)
+        : workPage(found, view, state, V4_MARKS),
+  );
 }

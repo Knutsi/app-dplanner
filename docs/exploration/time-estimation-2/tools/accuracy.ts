@@ -20,6 +20,7 @@ const MODES: [string, ModelOptions][] = [
   ["rounding fixed", { ...ADOPTED, replan: "off" }],
   ["v3: restart", { ...ADOPTED, replan: "restart" }],
   ["v4: resume", ADOPTED],
+  ["v5: pace so far", { ...ADOPTED, pace: true }],
 ];
 
 const picked = Deno.args.length ? Deno.args.map(scenarioById) : SCENARIOS;

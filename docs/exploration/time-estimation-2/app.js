@@ -306,12 +306,14 @@
   var FAITHFUL = {
     epsilon: false,
     carry: false,
-    replan: "off"
+    replan: "off",
+    pace: false
   };
   var ADOPTED = {
     epsilon: true,
     carry: true,
-    replan: "resume"
+    replan: "resume",
+    pace: false
   };
   var GUARD = 1e-9;
   function guardOf(options) {
@@ -661,10 +663,10 @@
     return phase.finish !== null ? workingDaysBetween(phase.start, phase.finish) : 0;
   }
   function groups(plan) {
-    const milestones3 = placed(plan).map((place) => place.step).filter(isMilestone);
+    const milestones2 = placed(plan).map((place) => place.step).filter(isMilestone);
     const taken = /* @__PURE__ */ new Set();
     const found = [];
-    for (const closing of milestones3) {
+    for (const closing of milestones2) {
       const reached = cone(plan, closing.id, isMilestone).steps;
       const own = new Set(reached.map((step2) => step2.id).filter((id) => !taken.has(id)));
       own.add(closing.id);
@@ -685,7 +687,39 @@
     const options = args.options ?? FAITHFUL;
     if (options.replan !== "resume") return scheduled(plan, daysFor2, args, options);
     const planned = scheduled(plan, daysFor2, args, options);
-    return holds(planned, args.today) ? planned : resumed(plan, daysFor2, args, options);
+    if (holds(planned, args.today)) return planned;
+    const pace = options.pace ? paceSoFar(plan, daysFor2, args.start, args.today) : null;
+    const costs = pace === null || asPlanned(pace) ? daysFor2 : paced(daysFor2, pace);
+    return resumed(plan, costs, args, options);
+  }
+  var PACE_AFTER = 5;
+  var PACE_STEPS = 3;
+  var PACE_BAND = 0.1;
+  function asPlanned(pace) {
+    return Math.abs(Math.log(pace)) < Math.log(1 + PACE_BAND);
+  }
+  function paceSoFar(plan, daysFor2, start2, today) {
+    if (today < start2 || workingDaysBetween(start2, today) <= PACE_AFTER) return null;
+    let [given, took, count2] = [
+      0,
+      0,
+      0
+    ];
+    for (const step2 of plan.steps) {
+      const days = daysFor2(step2);
+      if (days === null || isDelay(step2) || isAgent(step2) || step2.status !== DONE) continue;
+      if (step2.started === null || step2.since === null) continue;
+      given += days;
+      took += workingDaysBetween(step2.started, step2.since) - 2 * HALF;
+      count2 += 1;
+    }
+    return count2 < PACE_STEPS || took <= 0 ? null : Math.min(4, Math.max(0.25, given / took));
+  }
+  function paced(daysFor2, pace) {
+    return (step2) => {
+      const days = daysFor2(step2);
+      return days === null || isDelay(step2) || isAgent(step2) ? days : days / pace;
+    };
   }
   function scheduled(plan, daysFor2, args, options) {
     const result = [];
@@ -800,7 +834,8 @@
       starts: /* @__PURE__ */ new Map(),
       lead: 0,
       guard: guardOf(options),
-      facts
+      facts,
+      began: Math.min(...days)
     };
   }
   function dated(milestone, steps, members, costs, clock, first, args, options, extra = {}) {
@@ -819,6 +854,11 @@
     };
     const run2 = parallelFinish(members, costs, args.humans, args.agents, extra.running, waits);
     const finish = run2.days > 0 ? workingDaysAfter(begins, used + run2.days, guard) : null;
+    const started = members.filter((step2) => extra.running?.has(step2.id)).map((step2) => step2.since);
+    const known = [
+      ...extra.facts?.values() ?? [],
+      ...started
+    ].filter((day) => day !== null);
     const phase = {
       milestone,
       steps,
@@ -831,7 +871,8 @@
       starts: run2.starts,
       lead: used,
       guard,
-      facts: extra.facts ?? /* @__PURE__ */ new Map()
+      facts: extra.facts ?? /* @__PURE__ */ new Map(),
+      began: Math.min(begins, ...known)
     };
     if (finish === null) return [
       phase,
@@ -1104,7 +1145,7 @@
       stretches: dated3.map((phase) => ({
         key: phase.milestone ? phase.milestone.id : "",
         tally: tally(phase.steps, daysFor, today),
-        start: phase.start,
+        start: phase.began,
         finish: phase.finish,
         landings: landings(phase)
       })),
@@ -1368,15 +1409,15 @@
   function remaining(history2, now) {
     return stepCurve(until(history2, now), remainingOf);
   }
-  function niceCeiling(value) {
+  function niceCeiling(value, steps = [
+    1,
+    2,
+    5,
+    10
+  ]) {
     if (value <= 1) return 1;
     const magnitude = 10 ** Math.floor(Math.log10(value));
-    for (const step2 of [
-      1,
-      2,
-      5,
-      10
-    ]) {
+    for (const step2 of steps) {
       if (step2 * magnitude >= value) return step2 * magnitude;
     }
     return 10 * magnitude;
@@ -1594,6 +1635,7 @@
         created: dayOrNull(step2.created),
         start: dayOrNull(step2.start),
         since: dayOrNull(step2.since ?? null),
+        started: dayOrNull(step2.started ?? null),
         delay: delayFromJson(step2.delay)
       }))
     };
@@ -1607,6 +1649,12 @@
   var ALL_LABEL = "All milestones";
   var WHOLE_LABEL = "All work";
   var REMAINDER_LABEL = "Remaining work";
+  function lookingBack(view) {
+    return view.now !== view.live;
+  }
+  function dayWord(view) {
+    return lookingBack(view) ? shortDate(view.now.day, view.today) : "today";
+  }
   function applyWhatIf(plan, whatIf3, today) {
     const begins = whatIf3.begins ?? {};
     const stored = plan.assumptions.efficiency;
@@ -1714,7 +1762,8 @@
       then,
       chart: chart2,
       recording: recording2,
-      start: start2
+      start: start2,
+      pace: paceSoFar(plan, stretched(daysFor, efficiencyOf(plan)), start2, today)
     };
   }
   function entries(stretches, live, cell, start2) {
@@ -1927,11 +1976,12 @@
     return {
       ...plan,
       steps: plan.steps.map((step2) => {
-        if (step2.since !== null) return step2;
         const was = old.get(step2.id);
+        const going = step2.status === "in-progress" || step2.status === "blocked";
         return {
           ...step2,
-          since: was && was.status === step2.status ? was.since : day
+          since: step2.since ?? (was && was.status === step2.status ? was.since : day),
+          started: step2.started ?? was?.started ?? (going && was?.status === "pending" ? day : null)
         };
       })
     };
@@ -2089,6 +2139,7 @@
         start: null,
         color: null,
         since: null,
+        started: null,
         delay: null,
         ...fields
       };
@@ -2412,6 +2463,7 @@
       start: null,
       color: null,
       since: null,
+      started: null,
       delay: edit.delay
     };
     return [
@@ -2590,11 +2642,15 @@
       const index = this.steps.findIndex((step2) => step2.id === id);
       const was = this.steps[index];
       const moved = patch.status !== void 0 && patch.status !== was.status;
+      const begins = patch.status === "in-progress" && was.started === null;
       this.steps[index] = {
         ...was,
         ...patch,
         ...moved ? {
           since: this.today
+        } : {},
+        ...begins ? {
+          started: this.today
         } : {}
       };
       return this.steps[index];
@@ -2670,8 +2726,8 @@
       if (this.params.scopePerWeek && this.random() < this.params.scopePerWeek / 5) {
         const agent = this.random() < 0.7;
         const id = `added-${this.steps.length + 1}`;
-        const work2 = members.filter((step3) => step3 !== milestone);
-        const after = work2.length ? choose(this.random, work2) : null;
+        const work = members.filter((step3) => step3 !== milestone);
+        const after = work.length ? choose(this.random, work) : null;
         const step2 = {
           id,
           number: Math.max(...this.steps.map((one) => one.number)) + 1,
@@ -2708,6 +2764,7 @@
           start: null,
           color: null,
           since: null,
+          started: null,
           delay: null
         };
         this.steps.push(step2);
@@ -3508,6 +3565,7 @@
       start: null,
       color: null,
       since: null,
+      started: null,
       delay: null
     };
   }
@@ -3850,9 +3908,9 @@
       Math.max(SHOWN_AT_LEAST, Math.min(SHOWN_AT_MOST, count2))
     ];
   }
-  function tooltip(day, band, today) {
+  function tooltip(day, band, today, clickable) {
     let said = `${weekdayName(day)} ${formatDate(day, today)}`;
-    if (!band) said += " \u2014 click to start the work here";
+    if (!band) said += clickable ? " \u2014 click to start the work here" : "";
     else if (day === band.finish && band.lands) said += ` \u2014 ${band.label} lands`;
     else if (!isWorkingDay(day)) said += " \u2014 weekend, not counted";
     else {
@@ -3862,23 +3920,28 @@
     }
     return day === today ? `${said} \xB7 today` : said;
   }
-  function monthsView(view, emphasis, offset, onDay) {
-    const bands = view.stretches.filter(({ phase }) => phase.finish !== null).map(({ phase, key, label: label2, color }) => ({
-      key,
-      label: label2,
-      start: phase.start,
-      finish: phase.finish,
-      color,
-      lands: phase.milestone !== null
-    }));
-    const [first, count2] = monthSpan(view.report.start, view.cell.finish);
+  function monthsView(view, emphasis, offset, { onDay, waits = [], months, named = false } = {}) {
+    const today = view.now.day;
+    const bands = view.now.stretches.filter((stretch) => stretch.finish !== null).map((stretch) => {
+      const named2 = view.stretches.find((one) => one.key === stretch.key);
+      return {
+        key: stretch.key,
+        label: named2?.label ?? stretch.key,
+        start: stretch.start,
+        finish: stretch.finish,
+        color: named2?.color ?? "#888888",
+        lands: stretch.key !== ""
+      };
+    });
+    const [first, span] = monthSpan(view.report.start, landingIn(view.now, null));
+    const count2 = months ?? span;
     const grid2 = h("div", {
       class: "months"
     });
     for (let index = 0; index < count2; index += 1) {
       const month = addMonths(first, index + offset);
       const [year, number] = ymd(month);
-      const name = year === ymd(view.today)[0] ? MONTHS[number - 1] : `${MONTHS[number - 1].slice(0, 3)} '${String(year % 100).padStart(2, "0")}`;
+      const name = year === ymd(today)[0] ? MONTHS[number - 1] : `${MONTHS[number - 1].slice(0, 3)} '${String(year % 100).padStart(2, "0")}`;
       const days = h("div", {
         class: "days"
       });
@@ -3890,14 +3953,22 @@
       for (let day = month; ymd(day)[1] === number; day += 1) {
         const band = bands.find((one) => one.start <= day && day <= one.finish);
         const faded = emphasis !== null && band && band.key !== emphasis ? 0.4 : 1;
-        const cell = h("button", {
-          class: `day${isWorkingDay(day) ? "" : " weekend"}${day === view.today ? " today" : ""}`,
-          title: tooltip(day, band, view.today),
-          onclick: () => onDay(day)
+        const wait = waits.find((one) => one.from < day && day <= one.to);
+        const cell = h(onDay ? "button" : "span", {
+          class: `day${isWorkingDay(day) ? "" : " weekend"}${day === today ? " today" : ""}${wait ? " waiting" : ""}`,
+          title: tooltip(day, band, today, Boolean(onDay)) + (wait ? ` \u2014 ${wait.title}` : ""),
+          ...onDay ? {
+            onclick: () => onDay(day)
+          } : {}
         }, String(ymd(day)[2]));
+        if (named && band?.lands && day === band.finish) {
+          cell.append(h("span", {
+            class: "day-name"
+          }, band.label));
+        }
         if (band) {
           const strength = day === band.finish && band.lands ? 220 : day === view.report.start ? 130 : isWorkingDay(day) ? 64 : 24;
-          cell.style.background = alpha(band.color, strength / 255 * faded);
+          cell.style.backgroundColor = alpha(band.color, strength / 255 * faded);
           if (strength === 220) cell.classList.add("lands");
         }
         days.append(cell);
@@ -3928,9 +3999,11 @@
     })), milestoneTable(view, state, on));
     const right = h("div", {
       class: "right"
-    }, banner(view), pager(on), monthsView(view, state.picked, on.offset, (day) => on.whatIf({
-      start: day
-    })), plots(view, state, on));
+    }, banner(view), pager(on), monthsView(view, state.picked, on.offset, {
+      onDay: (day) => on.whatIf({
+        start: day
+      })
+    }), plots(view, state, on));
     return h("div", {
       class: "time"
     }, toolbar(view, state, on), h("div", {
@@ -4014,7 +4087,7 @@
     if (begins) parts.push(`${begins} milestone date${begins === 1 ? "" : "s"}`);
     return parts.join(", ");
   }
-  function saveButton(view, save) {
+  function saveButton(view, save, off) {
     const title3 = h("input", {
       type: "text",
       placeholder: `What we thought on ${formatDate(view.today, view.today)}`
@@ -4047,7 +4120,8 @@
     return h("span", {
       class: "anchor"
     }, h("button", {
-      title: "Save Snapshot\u2026 \u2014 keep the plan as it stands today under a title",
+      title: off ?? "Save Snapshot\u2026 \u2014 keep the plan as it stands today under a title",
+      disabled: Boolean(off),
       onclick: () => panel.hidden = !panel.hidden
     }, "\u{1F4F7} Save snapshot\u2026"), panel);
   }
@@ -4312,11 +4386,11 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     if (pick.kind === "week") return "the plan a week ago";
     if (pick.kind === "saved") return pick.title;
     if (pick.kind === "now") return "the plan now";
-    return `the plan at ${shortDate(pick.day, view.today)}`;
+    return `the plan at ${shortDate(pick.day, view.now.day)}`;
   }
   function comparePicker(view, pick, picked) {
     const select = h("select", {
-      title: pickWords(resolvePick(pick, view.today), view.then, view.today) || "Nothing recorded to compare with yet",
+      title: pickWords(resolvePick(pick, view.now.day), view.then, view.now.day) || "Nothing recorded to compare with yet",
       onchange: (event) => {
         const value = event.target.value;
         if (value === "start") picked({
@@ -4327,7 +4401,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         });
         else if (value === "day") picked({
           kind: "day",
-          day: view.today - 14
+          day: view.now.day - 14
         });
         else picked({
           kind: "saved",
@@ -4348,7 +4422,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         value: `saved:${row.title}`,
         selected: pick.kind === "saved" && pick.title.toLowerCase() === row.title.toLowerCase(),
         title: row.note
-      }, `${row.title} \xB7 ${shortDate(row.day, view.today)}`));
+      }, `${row.title} \xB7 ${shortDate(row.day, view.now.day)}`));
     }
     select.append(h("option", {
       value: "day",
@@ -4365,9 +4439,9 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
         });
       }
     }) : null;
-    const found = view.then && view.then.day !== view.today ? h("span", {
+    const found = view.then && view.then.day !== view.now.day ? h("span", {
       class: "recorded"
-    }, `recorded ${shortDate(view.then.day, view.today)}`) : h("span", {
+    }, `recorded ${shortDate(view.then.day, view.now.day)}`) : h("span", {
       class: "recorded missing"
     }, "nothing recorded before today");
     return h("label", {
@@ -4463,10 +4537,11 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     return "on-track";
   }
   function scopeOf(view, key, labels, compared2) {
-    const { live, then, today } = view;
-    const pace = paceOf(live, key, today);
-    const planned = landingIn(live, key);
-    const landed = landedBy(view.recording.rows, live, key);
+    const { now, then } = view;
+    const today = now.day;
+    const pace = paceOf(now, key, today);
+    const planned = landingIn(now, key);
+    const landed = landedBy(view.recording.rows, now, key);
     const projected = landed !== null || planned === null ? null : addWorkingDays(planned, pace.lag);
     const was = compared2 && then ? landingIn(then, key) : null;
     const move = {
@@ -4480,9 +4555,9 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     const partial = {
       key,
       ...labels,
-      own: ownTally(live, key) ?? EMPTY_TALLY,
+      own: ownTally(now, key) ?? EMPTY_TALLY,
       thenOwn: compared2 && then ? ownTally(then, key) : null,
-      span: ownSpan(live, key),
+      span: ownSpan(now, key),
       thenSpan: compared2 && then ? ownSpan(then, key) : null,
       pace,
       move,
@@ -4493,8 +4568,8 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       verdict: verdictOf(partial, compared2, then, today)
     };
   }
-  function attentionOf(milestones3) {
-    const overdue = milestones3.filter((scope) => scope.verdict === "overdue").sort((a, b) => a.move.planned - b.move.planned);
+  function attentionOf(milestones2) {
+    const overdue = milestones2.filter((scope) => scope.verdict === "overdue").sort((a, b) => a.move.planned - b.move.planned);
     if (overdue.length) return {
       scope: overdue[0],
       kind: "overdue",
@@ -4511,7 +4586,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       pace: 0,
       total: 0
     };
-    for (const scope of milestones3) {
+    for (const scope of milestones2) {
       const move = scope.move;
       if (move.total === null) continue;
       const days = move.total - (before.total ?? 0);
@@ -4529,25 +4604,25 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     return best;
   }
   function brief(view) {
-    const compared2 = view.then !== null && view.then.day !== view.live.day;
+    const compared2 = view.then !== null && view.then.day !== view.now.day;
     const whole = scopeOf(view, null, {
       label: "All work",
       title: "",
       badge: "",
       color: WHOLE_COLOR
     }, compared2);
-    const milestones3 = view.stretches.map(({ phase, key, label: label2, color }) => scopeOf(view, key, {
+    const milestones2 = view.stretches.map(({ phase, key, label: label2, color }) => scopeOf(view, key, {
       label: label2,
       title: phase.milestone && phase.milestone.title !== label2 ? phase.milestone.title : "",
       badge: phase.milestone ? `S${phase.milestone.number}` : "",
       color
     }, compared2));
     return {
-      today: view.today,
+      today: view.now.day,
       compared: compared2,
       whole,
-      milestones: milestones3,
-      attention: attentionOf(milestones3)
+      milestones: milestones2,
+      attention: attentionOf(milestones2)
     };
   }
   function burnup(view, key, compared2) {
@@ -4556,7 +4631,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     const jumps = [];
     const active = /* @__PURE__ */ new Set();
     let before = null;
-    for (const row of until(view.recording.rows, view.live)) {
+    for (const row of until(view.recording.rows, view.now)) {
       const own = ownTally(row, key);
       if (!own) continue;
       if (scope.length && scope[scope.length - 1][0] === row.day) {
@@ -4581,7 +4656,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       ]);
       before = own;
     }
-    const stretches = key === null ? view.live.stretches : view.live.stretches.filter((one) => one.key === key);
+    const stretches = key === null ? view.now.stretches : view.now.stretches.filter((one) => one.key === key);
     const promised = promisedCurve(stretches);
     const start2 = stretches[0]?.start;
     const baseline2 = compared2 && view.then ? ownTally(view.then, key)?.days ?? null : null;
@@ -4612,8 +4687,8 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     const now = scope.own;
     const listed = changesSince(stepsOf(view, view.plan, scope.key), then.day);
     const unnamed = now.steps - scope.thenOwn.steps - listed.added.length;
-    const whole = toward(view.live, null).steps - toward(then, null).steps - changesSince(view.plan.steps, then.day).added.length;
-    const throughNow = toward(view.live, scope.key);
+    const whole = toward(view.now, null).steps - toward(then, null).steps - changesSince(view.plan.steps, then.day).added.length;
+    const throughNow = toward(view.now, scope.key);
     const throughThen = toward(then, scope.key);
     return {
       since: then.day,
@@ -5472,12 +5547,14 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       onclick: () => on.state({
         offset: state.offset + 1
       })
-    }, "\u25B8")), monthsView(view, state.scope, state.offset, (day) => on.state({
-      whatIf: {
-        ...state.whatIf,
-        start: day
-      }
-    }))) : null);
+    }, "\u25B8")), monthsView(view, state.scope, state.offset, {
+      onDay: (day) => on.state({
+        whatIf: {
+          ...state.whatIf,
+          start: day
+        }
+      })
+    })) : null);
   }
 
   // src/ui/v3/state.ts
@@ -5487,7 +5564,10 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       kind: "start"
     },
     scope: null,
-    whatIf: {}
+    whatIf: {},
+    offset: 0,
+    asOf: null,
+    pace: false
   };
 
   // src/ui/v3/marks.ts
@@ -5510,7 +5590,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     return `<line x1="${n(from + way * (DOT + 1))}" x2="${n(tip)}" y1="${n(y)}" y2="${n(y)}" stroke="${color}" stroke-width="1.5" stroke-opacity="0.85"/><path d="M${n(tip)},${n(y)} L${n(tip - way * 6)},${n(y - 3.5)} L${n(tip - way * 6)},${n(y + 3.5)} Z" fill="${color}" fill-opacity="0.85"/>`;
   }
   function words(scope, view) {
-    const today = view.today;
+    const today = view.now.day;
     const parts = [
       `${scope.badge} ${scope.label}${scope.title ? ` \u2014 ${scope.title}` : ""}`
     ];
@@ -5519,12 +5599,12 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     else if (scope.move.planned !== null) {
       parts.push(`plan now: ${shortDate(scope.move.planned, today)}`);
     }
-    const stretch = view.stretches.find((one) => one.key === scope.key);
+    const stretch = lookingBack(view) ? void 0 : view.stretches.find((one) => one.key === scope.key);
     for (const step2 of stretch?.phase.steps.filter(isDelay) ?? []) parts.push(`waits: ${step2.title}`);
     return parts.join("\n");
   }
   function shiftsSvg(found, view, selected, width) {
-    const today = view.today;
+    const today = view.now.day;
     const scopes = found.milestones.filter((scope) => scope.key);
     const days = [
       today
@@ -5640,7 +5720,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       out.push(`<text x="${n(at + 4)}" y="${TOP2 - 8}" style="fill:${SECONDARY}" font-size="11">${esc(clip(row.title, 20))}</text>`);
     }
     out.push(`<line x1="${n(x(today))}" x2="${n(x(today))}" y1="${TOP2 - 4}" y2="${n(bottom2)}" class="today-line"/>`);
-    out.push(`<text x="${n(x(today))}" y="${n(height - 8)}" text-anchor="middle" font-size="11" font-weight="600" style="fill:${INK}" class="today-label">today</text>`);
+    out.push(`<text x="${n(x(today))}" y="${n(height - 8)}" text-anchor="middle" font-size="11" font-weight="600" style="fill:${INK}" class="today-label">${esc(dayWord(view))}</text>`);
     out.push("</svg>");
     return {
       svg: out.join(""),
@@ -5659,11 +5739,11 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       "Work"
     ]
   ];
-  function tabs(state, on) {
+  function tabs(state, on, pages = TABS) {
     return h("span", {
       class: "v3-tabs",
       role: "tablist"
-    }, ...TABS.map(([page, name]) => h("button", {
+    }, ...pages.map(([page, name]) => h("button", {
       role: "tab",
       "aria-selected": String(state.page === page),
       class: state.page === page ? "on" : "",
@@ -5834,6 +5914,17 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
   var GAP = 46;
   var BOTTOM3 = 26;
   var MARK = 8;
+  var AXIS_STEPS = [
+    1,
+    1.5,
+    2,
+    3,
+    4,
+    5,
+    7.5,
+    10
+  ];
+  var HEADROOM = 1.05;
   function scopeMarks(jumps) {
     const byDay = /* @__PURE__ */ new Map();
     for (const jump of jumps) {
@@ -5875,6 +5966,17 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       ],
       ...points.filter(([when]) => when > day)
     ];
+  }
+  function reachOf(view, key) {
+    const series = burnup(view, key, false);
+    const points = [
+      ...series.scope,
+      ...series.promised
+    ];
+    return {
+      day: Math.max(view.now.day, ...points.map(([day]) => day)),
+      days: Math.max(0, ...points.map(([, value]) => value))
+    };
   }
   function delaySpans(view) {
     return view.stretches.flatMap(({ phase }) => phase.steps.filter(isDelay).flatMap((step2) => {
@@ -5935,12 +6037,13 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
     return out.join("");
   }
   function workSvg(data, marked, view, width, compared2, marks = {}) {
-    const today = view.today;
+    const today = view.now.day;
     const days = [
       today,
       ...data.scope.map(([day]) => day),
       ...data.promised.map(([day]) => day)
     ];
+    if (marks.reach) days.push(marks.reach.day);
     for (const one of marked) {
       for (const day of [
         one.move.planned,
@@ -5951,7 +6054,7 @@ asked to begin ${formatDate(entry.pushed, view.today)}, but the previous milesto
       Math.min(...days) - 1,
       Math.max(...days) + 2
     ];
-    const top = niceCeiling(Math.max(1, ...data.scope.map(([, v]) => v), ...data.promised.map(([, v]) => v), data.baseline ?? 0));
+    const top = niceCeiling(HEADROOM * Math.max(1, ...data.scope.map(([, v]) => v), ...data.promised.map(([, v]) => v), data.baseline ?? 0, marks.reach?.days ?? 0), AXIS_STEPS);
     const right = width - RIGHT3;
     const x = (day) => LEFT3 + (day - first) / (last - first) * (right - LEFT3);
     const scopeTop = TOP3;
@@ -6144,7 +6247,7 @@ ${done !== null ? "done by" : "the plan lands it"} ${shortDate(day, today)}`;
       out.push(`<line x1="${n(x(row.day))}" x2="${n(x(row.day))}" y1="${scopeTop}" y2="${n(workTop + PLOT_H2)}" style="stroke:${INK}" stroke-opacity="0.35" stroke-dasharray="4 3"><title>${esc(`saved: ${row.title}`)}</title></line>`);
     }
     out.push(`<line x1="${n(x(today))}" x2="${n(x(today))}" y1="${scopeTop}" y2="${n(workTop + PLOT_H2)}" class="today-line"/>`);
-    out.push(`<text x="${n(x(today))}" y="${n(height - 8)}" text-anchor="middle" font-weight="600" style="fill:${INK}">today</text>`);
+    out.push(`<text x="${n(x(today))}" y="${n(height - 8)}" text-anchor="middle" font-weight="600" style="fill:${INK}">${esc(dayWord(view))}</text>`);
     out.push(`<line class="hover" x1="0" x2="0" y1="${scopeTop}" y2="${n(workTop + PLOT_H2)}" style="stroke:${INK}" stroke-opacity="0.5" visibility="hidden"/>`);
     out.push("</svg>");
     return {
@@ -6166,9 +6269,9 @@ ${done !== null ? "done by" : "the plan lands it"} ${shortDate(day, today)}`;
 
   // src/ui/v3/view.ts
   function v3View(view, state, on) {
-    return tabbedView(view, state, on, (found) => toolbar2(view, found, state, on));
+    return tabbedView(view, state, (found) => toolbar2(view, found, state, on), (found) => state.page === "milestones" ? milestonesPage(found, view, state, on) : workPage(found, view, state));
   }
-  function tabbedView(view, state, on, bar, marks = {}) {
+  function tabbedView(view, state, bar, page) {
     if (view.report.cycle.length) {
       const names = view.report.cycle.map((step2) => step2.title || "an untitled step").join(", ");
       return h("div", {
@@ -6181,11 +6284,11 @@ ${done !== null ? "done by" : "the plan lands it"} ${shortDate(day, today)}`;
     const basis = basisName(state.then, view);
     return h("div", {
       class: "v3"
-    }, keyFigures(found, view, basis), bar(found), state.page === "milestones" ? milestones2(found, view, state, on) : work(found, view, state, marks));
+    }, keyFigures(found, view, basis), bar(found), page(found));
   }
   function keyFigures(found, view, basis) {
     const whole = found.whole;
-    const today = view.today;
+    const today = view.now.day;
     const figures = [];
     if (whole.landedBy !== null) {
       figures.push(h("span", {
@@ -6212,7 +6315,7 @@ ${done !== null ? "done by" : "the plan lands it"} ${shortDate(day, today)}`;
         title: `${g(whole.own.doneDays)} of ${g(whole.own.days)} days of work done`
       }, `${percent(share)} done`));
     }
-    const unsized2 = view.unestimated.filter((step2) => !step2.estimateOff);
+    const unsized2 = lookingBack(view) ? [] : view.unestimated.filter((step2) => !step2.estimateOff);
     if (unsized2.length) {
       figures.push(h("span", {
         class: "figure tone-later",
@@ -6220,11 +6323,17 @@ ${done !== null ? "done by" : "the plan lands it"} ${shortDate(day, today)}`;
 ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       }, `\u26A0 ${unsized2.length} unsized`));
     }
+    if (lookingBack(view)) {
+      figures.push(h("span", {
+        class: "figure as-of",
+        title: "The tab as it was recorded on that day \u2014 History \u25B8 back to today"
+      }, `as recorded ${formatDate(today, view.today)}`));
+    }
     return h("div", {
       class: "v3-figures"
     }, ...figures);
   }
-  function milestones2(found, view, state, on) {
+  function milestonesPage(found, view, state, on) {
     const holder = h("div", {
       class: "shifts-holder"
     });
@@ -6266,7 +6375,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       class: "v3-page"
     }, holder, key);
   }
-  function work(found, view, state, marks) {
+  function workPage(found, view, state, marks = {}) {
     const scopes = [
       found.whole,
       ...found.milestones
@@ -6275,7 +6384,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     const series = burnup(view, scope.key, found.compared);
     const data = {
       ...series,
-      promised: stepsFrom(series.promised, view.today)
+      promised: stepsFrom(series.promised, view.now.day)
     };
     const named = found.milestones.filter((one) => one.key);
     const marked = scope.key !== null ? [
@@ -6311,11 +6420,11 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
         line.setAttribute("visibility", "visible");
         const read = (label2, value) => value === null ? null : h("div", {}, `${label2}: ${g(Math.round(value * 4) / 4)}d`);
         const lines = [
-          day <= view.today ? read("scope", stepAt(data.scope, day)) : null,
-          day <= view.today ? read("done", stepAt(data.done, day)) : null,
+          day <= view.now.day ? read("scope", stepAt(data.scope, day)) : null,
+          day <= view.now.day ? read("done", stepAt(data.done, day)) : null,
           read("the plan's schedule", stepAt(data.promised, day))
         ].filter((one) => one !== null);
-        tip.replaceChildren(h("b", {}, formatDate(day, view.today)), ...lines);
+        tip.replaceChildren(h("b", {}, formatDate(day, view.now.day)), ...lines);
         tip.hidden = false;
         tip.style.left = `${Math.min(event.clientX - box.left + 14, box.width - 200)}px`;
         tip.style.top = `${event.clientY - box.top + 14}px`;
@@ -6345,7 +6454,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       onclick: () => pick(value)
     }, String(value)))));
   }
-  function budgetMenu(view, apply) {
+  function budgetMenu(view, apply, off) {
     const now = budgetOf(view.plan);
     const percent2 = Math.round(now.efficiency * 100);
     const agents = view.report.hasAgentSteps;
@@ -6382,6 +6491,13 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     }, "Focus"), focus2), h("div", {
       class: "budget-note"
     }, `From ${formatDate(view.today, view.today)} on; the days before keep theirs.`));
+    if (off) {
+      return h("button", {
+        class: "budget-off",
+        disabled: true,
+        title: off
+      }, ...summary.childNodes);
+    }
     return popover("budget", summary, panel);
   }
 
@@ -6397,12 +6513,170 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       class: "spacer"
     }), budgetMenu(view, on.budget), saveButton(view, on.save), more(view, state, on));
   }
+  var V4_MARKS = {
+    weekends: true,
+    idle: true,
+    delays: true
+  };
   function v4View(view, state, on) {
-    return tabbedView(view, state, on, (found) => toolbar3(view, found, state, on), {
-      weekends: true,
-      idle: true,
-      delays: true
+    return tabbedView(view, state, (found) => toolbar3(view, found, state, on), (found) => state.page === "milestones" ? milestonesPage(found, view, state, on) : workPage(found, view, state, V4_MARKS));
+  }
+
+  // src/ui/v5/history.ts
+  var stepping = false;
+  function historyMenu(view, on, recorded2) {
+    const today = view.today;
+    const days = [
+      ...new Set(recorded2.filter((day) => day < today)),
+      today
+    ].sort((a, b) => a - b);
+    const shown = view.now.day;
+    const at = Math.max(0, days.findLastIndex((day) => day <= shown));
+    const show = (index) => {
+      const day = days[Math.max(0, Math.min(days.length - 1, index))];
+      on.state({
+        asOf: day === today ? null : day
+      });
+    };
+    const said = (day) => day === today ? "today" : `as recorded ${formatDate(day, today)}`;
+    const label2 = h("span", {
+      class: "history-day"
+    }, said(days[at]));
+    const slider2 = h("input", {
+      type: "range",
+      min: "0",
+      max: String(days.length - 1),
+      step: "1",
+      value: String(at),
+      "aria-label": "The day shown",
+      oninput: () => label2.textContent = said(days[Number(slider2.value)]),
+      onchange: () => {
+        stepping = true;
+        show(Number(slider2.value));
+      }
     });
+    if (stepping) {
+      stepping = false;
+      queueMicrotask(() => slider2.focus());
+    }
+    const back = lookingBack(view);
+    const step2 = (by, words2, glyph) => h("button", {
+      title: words2,
+      disabled: at + by < 0 || at + by >= days.length,
+      onclick: () => show(at + by)
+    }, glyph);
+    const panel = h("div", {
+      class: "menu-panel history-panel"
+    }, h("div", {
+      class: "history-row"
+    }, step2(-1, "The record before", "\u25C2"), slider2, step2(1, "The record after", "\u25B8")), h("div", {
+      class: "history-row"
+    }, label2, back ? h("button", {
+      class: "link",
+      onclick: () => show(days.length - 1)
+    }, "back to today") : null), h("div", {
+      class: "budget-note"
+    }, days.length > 1 ? `${days.length - 1} recorded day${days.length === 2 ? "" : "s"}, from ${shortDate(days[0], today)}. Looking back, the page reads each day's record; nothing is written.` : "Nothing recorded before today yet."));
+    const menu = popover("history", h("summary", {
+      title: back ? `Showing the tab as recorded ${formatDate(shown, today)}; nothing can be changed` : "Look back at the tab as it was recorded on an earlier day"
+    }, back ? `History \xB7 ${shortDate(shown, today)}` : "History"), panel, back ? " active" : "");
+    return back ? [
+      menu,
+      h("button", {
+        class: "clear-active",
+        title: "Back to today",
+        onclick: () => show(days.length - 1)
+      }, "\u2715")
+    ] : [
+      menu
+    ];
+  }
+
+  // src/ui/v5/pace.ts
+  var pct = (share) => `${Math.round(share * 100)}%`;
+  function paceToggle(view, on, toggle2, off) {
+    const { pace } = view;
+    const title3 = off ?? (pace === null ? `The pace so far needs ${PACE_AFTER} working days of work and ${PACE_STEPS} finished steps` : asPlanned(pace) ? `Finished steps took about their estimates (${pct(pace)} of the planned pace): the dates stay as planned` : `Re-estimate what is left at the pace so far: finished steps went at ${pct(pace)} of the planned pace, taking ${(1 / pace).toFixed(1)}\xD7 their estimates`);
+    const applied = on && !off && pace !== null;
+    return h("button", {
+      class: `pace-toggle${applied ? " on" : ""}`,
+      disabled: Boolean(off) || pace === null,
+      title: title3,
+      "aria-pressed": String(applied),
+      onclick: () => toggle2(!on)
+    }, pace === null || off ? "Pace so far" : `Pace so far \xB7 ${pct(pace)}`);
+  }
+
+  // src/ui/v5/view.ts
+  var PAGES2 = [
+    ...TABS,
+    [
+      "calendar",
+      "Calendar"
+    ]
+  ];
+  var PAST = "History shows a recorded day: back to today to change the plan";
+  var ASKED = "History shows the dates as they were recorded";
+  function toolbar4(view, found, state, on, recorded2) {
+    const off = lookingBack(view) ? PAST : void 0;
+    return h("div", {
+      class: "v3-toolbar"
+    }, tabs(state, on, PAGES2), h("span", {
+      class: "divider"
+    }), comparePicker(view, state.then, (then) => on.state({
+      then
+    })), state.page === "work" ? showing(found, state, on) : null, h("span", {
+      class: "spacer"
+    }), ...historyMenu(view, on, recorded2), budgetMenu(view, on.budget, off), paceToggle(view, state.pace, (pace) => on.state({
+      pace
+    }), off && ASKED), saveButton(view, on.save, off), more(view, state, on));
+  }
+  function calendarPage(view, state, on) {
+    const waits = lookingBack(view) ? [] : delaySpans(view);
+    const pager2 = h("div", {
+      class: "pager"
+    }, h("button", {
+      title: "A month earlier",
+      onclick: () => on.state({
+        offset: state.offset - 1
+      })
+    }, "\u25C2"), h("button", {
+      title: "A month later",
+      onclick: () => on.state({
+        offset: state.offset + 1
+      })
+    }, "\u25B8"), state.offset ? h("button", {
+      class: "link",
+      onclick: () => on.state({
+        offset: 0
+      })
+    }, "from the start") : null);
+    const key = h("div", {
+      class: "v3-key"
+    }, h("span", {}, h("span", {
+      class: "k-lands"
+    }), "lands"), h("span", {}, h("span", {
+      class: "k-today"
+    }), lookingBack(view) ? "the day shown" : "today"), waits.length ? h("span", {}, h("span", {
+      class: "k-wait"
+    }), "a wait") : null, h("span", {
+      class: "hint"
+    }, "weekends are pale: they are not counted"));
+    return h("section", {
+      class: "v3-page calendar-page"
+    }, pager2, monthsView(view, state.scope, state.offset, {
+      waits,
+      months: 6,
+      named: true
+    }), key);
+  }
+  function v5View(view, state, on, recorded2, reach) {
+    const marks = {
+      ...V4_MARKS,
+      delays: !lookingBack(view),
+      reach
+    };
+    return tabbedView(view, state, (found) => toolbar4(view, found, state, on, recorded2), (found) => state.page === "milestones" ? milestonesPage(found, view, state, on) : state.page === "calendar" ? calendarPage(view, state, on) : workPage(found, view, state, marks));
   }
 
   // src/ui/debugger/track.ts
@@ -6678,16 +6952,20 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     ],
     [
       "v4",
-      "v4 \xB7 latest"
+      "v4"
+    ],
+    [
+      "v5",
+      "v5 \xB7 latest"
     ]
   ];
   var VERSION_KEY = "te2.version";
   function readVersion() {
     try {
       const stored = localStorage.getItem(VERSION_KEY);
-      return VERSIONS.find(([version]) => version === stored)?.[0] ?? "v4";
+      return VERSIONS.find(([version]) => version === stored)?.[0] ?? "v5";
     } catch {
-      return "v4";
+      return "v5";
     }
   }
   var FOLDS_KEY = "te2.debugger";
@@ -6717,9 +6995,11 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     v2: V2_START,
     v3: V3_START,
     v4: V3_START,
+    v5: V3_START,
     saved: [],
     edits: NO_EDITS,
-    offset: 0
+    offset: 0,
+    locked: false
   };
   var folds = readFolds();
   function readFolds() {
@@ -6851,7 +7131,7 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
   function renderContent() {
     const frame = timeline2.frames[app.frame];
     const upToDay = recordedBy(recording, frame.day);
-    content.replaceChildren(app.version === "v3" || app.version === "v4" ? tabbedContent(app.version, frame.plan, frame.day, upToDay) : app.version === "v2" ? v2Content(frame.plan, frame.day, upToDay) : v1Content(frame.plan, frame.day, upToDay));
+    content.replaceChildren(app.version === "v3" || app.version === "v4" || app.version === "v5" ? tabbedContent(app.version, frame.plan, frame.day, upToDay) : app.version === "v2" ? v2Content(frame.plan, frame.day, upToDay) : v1Content(frame.plan, frame.day, upToDay));
     viewTitle.textContent = `${frame.plan.title} \u2014 Time Estimates`;
     viewTitle.dataset.version = app.version;
     happened.replaceChildren(events(frame.events));
@@ -6949,14 +7229,21 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
   }
   function tabbedContent(version, plan, day, upToDay) {
     const state = app[version];
-    const view = present(plan, day, upToDay, {
+    const asOf = state.asOf !== null && state.asOf < day ? state.asOf : null;
+    const view = present(plan, day, asOf === null ? upToDay : recordedBy(upToDay, asOf), {
       picked: state.scope,
-      then: resolvePick(state.then, day),
-      now: LIVE,
+      then: resolvePick(state.then, asOf ?? day),
+      now: asOf === null ? LIVE : {
+        kind: "day",
+        day: asOf
+      },
       lens: "calendar",
       page: "progress",
       whatIf: state.whatIf
-    }, app.options);
+    }, {
+      ...app.options,
+      pace: version === "v5" && state.pace
+    });
     if (!view) return h("div", {
       class: "empty"
     }, NO_STEPS);
@@ -6972,14 +7259,32 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       save: saver(day, upToDay)
     };
     if (version === "v3") return v3View(view, state, handlers);
-    return v4View(view, state, {
+    const budgeted = {
       ...handlers,
       budget: (budget) => {
         const before = timeline2.frames[app.frame - 1]?.plan ?? plan;
         app.edits = rebudget(app.edits, day, budget, budgetOf(before));
         render();
       }
-    });
+    };
+    if (version === "v4") return v4View(view, state, budgeted);
+    const reach = app.locked ? runReach(state) : void 0;
+    return v5View(view, state, budgeted, upToDay.rows.map((row) => row.day), reach);
+  }
+  function runReach(state) {
+    const last = timeline2.frames[timeline2.frames.length - 1];
+    const landed = last.plan.steps.every((step2) => isDelay(step2) || step2.status === "done");
+    const end = landed && timeline2.finished.size ? Math.max(...timeline2.finished.values()) : last.day;
+    const frame = timeline2.frames.find((one) => one.day === end) ?? last;
+    const view = present(frame.plan, frame.day, recordedBy(recording, frame.day), {
+      picked: state.scope,
+      then: resolvePick(state.then, frame.day),
+      now: LIVE,
+      lens: "calendar",
+      page: "progress",
+      whatIf: {}
+    }, app.options);
+    return view ? reachOf(view, state.scope) : void 0;
   }
   function section(key, name, ...inner) {
     const details = h("details", {
@@ -7035,6 +7340,12 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
           whatIf: {},
           scope: null
         };
+        app.v5 = {
+          ...app.v5,
+          whatIf: {},
+          scope: null,
+          asOf: null
+        };
         render();
       }
     }, h("option", {
@@ -7075,6 +7386,18 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     if (!file) rows.push(scenarioRow());
     rows.push(editsRow());
     rows.push(modelRow(Boolean(file)));
+    rows.push(h("div", {
+      class: "row"
+    }, h("label", {
+      title: "Scrubbing then moves only the lines \u2014 for reading the days in turn, or a recording"
+    }, h("input", {
+      type: "checkbox",
+      checked: app.locked,
+      onchange: (event) => {
+        app.locked = event.target.checked;
+        render();
+      }
+    }), " Lock the Work plot's axes to the whole run (v5)")));
     return rows;
   }
   function editsRow() {
@@ -7368,7 +7691,8 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     const day = timeline2.frames[app.frame].day;
     slider.value = String(app.frame);
     const worked = day - timeline2.begin;
-    label.textContent = `${weekdayName(day)} ${formatDate(day, day)} \u2014 ` + (worked >= 0 ? `day ${worked + 1} since work began (${shortDate(timeline2.begin, day)})` : `${-worked} day${worked === -1 ? "" : "s"} before work begins`) + ` \xB7 ${app.frame + 1} of ${timeline2.frames.length}`;
+    label.textContent = `${weekdayName(day)} ${formatDate(day, day)} \u2014 ` + (worked >= 0 ? `day ${worked + 1} since work began` : `${-worked} day${worked === -1 ? "" : "s"} before work begins`) + ` \xB7 ${app.frame + 1} of ${timeline2.frames.length}`;
+    label.title = label.textContent;
   }
   function switchVersion(version) {
     app.version = version;
@@ -7417,10 +7741,13 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
       if (budgets) state.set("budget", budgets);
       const delays = delaysToHash(app.edits.delays);
       if (delays) state.set("delay", delays);
-      const tabbed = app.version === "v3" || app.version === "v4" ? app[app.version] : null;
+      const tabbed = app.version === "v3" || app.version === "v4" || app.version === "v5" ? app[app.version] : null;
       const picked = tabbed ? tabbed.scope : app.version === "v2" ? app.v2.scope : null;
       if (picked !== null) state.set("scope", picked || "rest");
       if (tabbed) state.set("page", tabbed.page);
+      if (tabbed?.asOf != null) state.set("asof", isoDay(tabbed.asOf));
+      if (app.locked) state.set("axes", "run");
+      if (app.version === "v5" && app.v5.pace) state.set("pace", "on");
       history.replaceState(null, "", `#${state}`);
     } catch {
     }
@@ -7470,16 +7797,23 @@ ${unsized2.map((step2) => `${stepKey(step2)} ${step2.title}`).join("\n")}`
     const page = state.get("page");
     for (const version of [
       "v3",
-      "v4"
+      "v4",
+      "v5"
     ]) {
       app[version] = {
         ...app[version],
         scope,
-        ...page === "milestones" || page === "work" ? {
+        ...page === "milestones" || page === "work" || page === "calendar" && version === "v5" ? {
           page
         } : {}
       };
     }
+    app.v5 = {
+      ...app.v5,
+      asOf: parseDay(state.get("asof") ?? ""),
+      pace: state.get("pace") === "on"
+    };
+    app.locked = state.get("axes") === "run";
     currentTimeline();
     const asked = state.get("day");
     const day = parseDay(asked ?? "");

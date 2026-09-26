@@ -49,8 +49,10 @@ export function replay(file: ExportFile): Timeline {
 }
 
 /**
- * Each step's `since` where the files do not say it: the first day of the history on which it
- * read its current status. Before the first frame nothing is known.
+ * Each step's `since` and `started` where the files do not say them: the first day of the
+ * history on which it read its current status, and on which it was seen going from pending
+ * to in progress. Before the first frame nothing is known, so what was already under way
+ * then never has a start.
  */
 function dated(plan: Plan, before: Frame | null, day: Day): Plan {
   if (!before) return plan;
@@ -58,9 +60,14 @@ function dated(plan: Plan, before: Frame | null, day: Day): Plan {
   return {
     ...plan,
     steps: plan.steps.map((step) => {
-      if (step.since !== null) return step;
       const was = old.get(step.id);
-      return { ...step, since: was && was.status === step.status ? was.since : day };
+      const going = step.status === "in-progress" || step.status === "blocked";
+      return {
+        ...step,
+        since: step.since ?? (was && was.status === step.status ? was.since : day),
+        started: step.started ?? was?.started ??
+          (going && was?.status === "pending" ? day : null),
+      };
     }),
   };
 }

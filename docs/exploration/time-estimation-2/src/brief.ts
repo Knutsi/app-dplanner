@@ -184,10 +184,12 @@ function scopeOf(
   labels: { label: string; title: string; badge: string; color: string },
   compared: boolean,
 ): Scope {
-  const { live, then, today } = view;
-  const pace = paceOf(live, key, today);
-  const planned = landingIn(live, key);
-  const landed = landedBy(view.recording.rows, live, key);
+  // The day shown: today, or a day in the history — everything reads the plan as it stood.
+  const { now, then } = view;
+  const today = now.day;
+  const pace = paceOf(now, key, today);
+  const planned = landingIn(now, key);
+  const landed = landedBy(view.recording.rows, now, key);
   const projected = landed !== null || planned === null ? null : addWorkingDays(planned, pace.lag);
   const was = compared && then ? landingIn(then, key) : null;
   const move: Move = {
@@ -201,9 +203,9 @@ function scopeOf(
   const partial = {
     key,
     ...labels,
-    own: ownTally(live, key) ?? EMPTY_TALLY,
+    own: ownTally(now, key) ?? EMPTY_TALLY,
     thenOwn: compared && then ? ownTally(then, key) : null,
-    span: ownSpan(live, key),
+    span: ownSpan(now, key),
     thenSpan: compared && then ? ownSpan(then, key) : null,
     pace,
     move,
@@ -243,7 +245,7 @@ function attentionOf(milestones: Scope[]): Attention | null {
 }
 
 export function brief(view: TimeView): Brief {
-  const compared = view.then !== null && view.then.day !== view.live.day;
+  const compared = view.then !== null && view.then.day !== view.now.day;
   const whole = scopeOf(
     view,
     null,
@@ -259,7 +261,7 @@ export function brief(view: TimeView): Brief {
     }, compared)
   );
   return {
-    today: view.today,
+    today: view.now.day,
     compared,
     whole,
     milestones,
@@ -292,7 +294,7 @@ export function burnup(view: TimeView, key: string | null, compared: boolean): B
   const jumps: Jump[] = [];
   const active = new Set<Day>();
   let before: Tally | null = null;
-  for (const row of until(view.recording.rows, view.live)) {
+  for (const row of until(view.recording.rows, view.now)) {
     const own = ownTally(row, key);
     if (!own) continue;
     if (scope.length && scope[scope.length - 1][0] === row.day) {
@@ -308,8 +310,8 @@ export function burnup(view: TimeView, key: string | null, compared: boolean): B
     before = own;
   }
   const stretches = key === null
-    ? view.live.stretches
-    : view.live.stretches.filter((one) => one.key === key);
+    ? view.now.stretches
+    : view.now.stretches.filter((one) => one.key === key);
   const promised = promisedCurve(stretches);
   const start = stretches[0]?.start;
   const baseline = compared && view.then ? ownTally(view.then, key)?.days ?? null : null;
@@ -349,9 +351,9 @@ export function changes(view: TimeView, scope: Scope): ChangeList | null {
   const now = scope.own;
   const listed = changesSince(stepsOf(view, view.plan, scope.key), then.day);
   const unnamed = now.steps - scope.thenOwn.steps - listed.added.length;
-  const whole = toward(view.live, null).steps - toward(then, null).steps -
+  const whole = toward(view.now, null).steps - toward(then, null).steps -
     changesSince(view.plan.steps, then.day).added.length;
-  const throughNow = toward(view.live, scope.key);
+  const throughNow = toward(view.now, scope.key);
   const throughThen = toward(then, scope.key);
   return {
     since: then.day,

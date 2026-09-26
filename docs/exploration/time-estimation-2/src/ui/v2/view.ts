@@ -194,8 +194,9 @@ function calendar(view: TimeView, state: V2State, on: V2Handlers): HTMLElement {
             onclick: () => on.state({ offset: state.offset + 1 }),
           }, "▸"),
         ),
-        monthsView(view, state.scope, state.offset, (day) =>
-          on.state({ whatIf: { ...state.whatIf, start: day } })),
+        monthsView(view, state.scope, state.offset, {
+          onDay: (day) => on.state({ whatIf: { ...state.whatIf, start: day } }),
+        }),
       )
       : null,
   );

@@ -35,7 +35,12 @@ function counts(
   );
 }
 
-export function budgetMenu(view: TimeView, apply: (budget: Budget) => void): HTMLElement {
+/** The Budget popover; greyed, with the reason as its title, when `off` says why it cannot run. */
+export function budgetMenu(
+  view: TimeView,
+  apply: (budget: Budget) => void,
+  off?: string,
+): HTMLElement {
   const now = budgetOf(view.plan);
   const percent = Math.round(now.efficiency * 100);
   const agents = view.report.hasAgentSteps;
@@ -75,5 +80,8 @@ export function budgetMenu(view: TimeView, apply: (budget: Budget) => void): HTM
       `From ${formatDate(view.today, view.today)} on; the days before keep theirs.`,
     ),
   );
+  if (off) {
+    return h("button", { class: "budget-off", disabled: true, title: off }, ...summary.childNodes);
+  }
   return popover("budget", summary, panel);
 }

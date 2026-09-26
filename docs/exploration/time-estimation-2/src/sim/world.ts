@@ -168,7 +168,13 @@ class World {
     const index = this.steps.findIndex((step) => step.id === id);
     const was = this.steps[index];
     const moved = patch.status !== undefined && patch.status !== was.status;
-    this.steps[index] = { ...was, ...patch, ...(moved ? { since: this.today } : {}) };
+    const begins = patch.status === "in-progress" && was.started === null;
+    this.steps[index] = {
+      ...was,
+      ...patch,
+      ...(moved ? { since: this.today } : {}),
+      ...(begins ? { started: this.today } : {}),
+    };
     return this.steps[index];
   }
 
@@ -258,6 +264,7 @@ class World {
         start: null,
         color: null,
         since: null,
+        started: null,
         delay: null,
       };
       this.steps.push(step);

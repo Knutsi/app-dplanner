@@ -1,6 +1,6 @@
-# Lessons learned, v1 to v4
+# Lessons learned, v1 to v5
 
-Four passes at the Time tab, each reviewed and reworked. What each one taught, for the
+Five passes at the Time tab, each reviewed and reworked. What each one taught, for the
 backport (BACKPORT.md) and for the next exploration.
 
 ## The view
@@ -26,6 +26,17 @@ backport (BACKPORT.md) and for the next exploration.
   - Days on which nothing changed are dotted.
   - A wait is a named, hatched band.
   - The budget sits beside the dates it moves, not in a grid.
+- **v5: the past is a place to go, and the calendar a page to read.**
+  - History needed nothing new. Every derivation already read "the plan shown", so a
+    recorded day is just another pick, and the writers grey out.
+  - Six months in two rows beat a single row of six: tall cells can carry a milestone's
+    name on the day it lands.
+- **A scale must fit what it holds.** 1-2-5 steps drew 10.2 weeks in a 20-week plot, half
+  of it empty. Finer steps with a little headroom fixed that. For a recording, the axes are
+  locked to the whole run, so only the lines move.
+- **Text whose length changes must not decide a layout.** The debugger's day line wrapped
+  on long dates, and the whole page jumped while scrubbing. It now has a fixed basis and
+  an ellipsis.
 - **Order the toolbar by use.** The frequent controls go on the left. The rare ones fold to
   the right: the budget, save, and colours.
 - **Give each line style one meaning.** Once idle days were dotted, the dotted schedule
@@ -36,7 +47,10 @@ backport (BACKPORT.md) and for the next exploration.
 - **A redraw on the first click swallows `dblclick`.** Read the click event's `detail`
   count instead.
 - **A popover must survive the re-render its own controls cause,** and close on any click
-  outside it.
+  outside it. A slider inside one must too: History's applies on `change`, updates its
+  label on `input`, and takes its focus back after the render it causes.
+- **A greyed toggle is never shown pressed.** *Pace so far* stays on across days, but it
+  looks pressed only while the dates actually run at it.
 - **A `+` typed into the address bar arrives as a space.** Links the page writes encode it;
   links people type do not.
 - **Hidden windows starve `requestAnimationFrame`, and background tabs throttle timers to
@@ -68,8 +82,18 @@ backport (BACKPORT.md) and for the next exploration.
   focus ran at the old one. Credited at the new one, a cut to 10% read February for a
   December landing.
 - **`resume` trusts the estimates of unfinished work.** Where every estimate is low it lags,
-  and v3's pessimism happened to be closer. A pace factor learned from done work is the
-  next experiment (ISSUES F5).
+  and v3's pessimism happened to be closer. v5's *Pace so far* learns from done work
+  (ISSUES F6).
+- **A ratio against the plan's schedule is too jumpy to steer by.** The first pace
+  estimator compared work done with work planned done. It needed no new data, and every
+  long step landing late flipped it: ten times the movement, for almost no gain.
+- **A bias that helps is still a bias.** A half-day floor on each step's time read every
+  plan as slow. That flattered the slow scenarios and moved the dates of plans that were
+  fine. Measure the estimator on an unbiased run first: it must read 1.
+- **A fix that helps some plans and costs others is the reader's choice.** The pace cuts
+  Optimistic's error by a third and costs up to half a day elsewhere, so it is a toggle,
+  off by default. The label carries the number, so the reader judges the pace before the
+  dates.
 
 ## Data
 
@@ -82,6 +106,8 @@ backport (BACKPORT.md) and for the next exploration.
   - A day of agent work driven from the CLI can leave no row at all.
 - **A wait is not work.** "Testing starts Wednesday" needed its own step type. A milestone's
   start date could not hold one branch, and an estimate would have counted it as work.
+- **`since` is not enough for a pace.** A done step's `since` is the day it was done, and
+  the day it began is gone. `started` is the second stamp, written once.
 
 ## Process
 

@@ -40,6 +40,7 @@ import {
 } from "./sim/timeline.ts";
 import { DEFAULT_WORLD, run, type WorldParams } from "./sim/world.ts";
 import {
+  type Budget,
   budgetOf,
   budgetsFromHash,
   budgetsToHash,
@@ -63,6 +64,8 @@ import { v2View } from "./ui/v2/view.ts";
 import { V3_START, type V3Page, type V3State } from "./ui/v3/state.ts";
 import { v3View } from "./ui/v3/view.ts";
 import { v4View } from "./ui/v4/view.ts";
+import { type Reach, reachOf } from "./ui/v3/work.ts";
+import { v5View } from "./ui/v5/view.ts";
 import { trackRecord } from "./ui/debugger/track.ts";
 
 interface App {
@@ -77,28 +80,31 @@ interface App {
   view: ViewState; // v1's.
   v2: V2State;
   v3: V3State;
-  v4: V3State; // v3's layout, and its state.
+  v4: V3State; // v3's layout, and its state…
+  v5: V3State; // …and v5's.
   saved: SavedSpec[]; // Saved by hand on this page.
   edits: Edits; // The plan changed on this page, each from its day.
   offset: number;
+  locked: boolean; // The Work plot's axes span the whole run.
 }
 
-/** Which design of the view is shown: v1 is today's tab, v2 to v4 the redesigns. */
-type Version = "v1" | "v2" | "v3" | "v4";
+/** Which design of the view is shown: v1 is today's tab, v2 to v5 the redesigns. */
+type Version = "v1" | "v2" | "v3" | "v4" | "v5";
 const VERSIONS: [Version, string][] = [
   ["v1", "v1 · today"],
   ["v2", "v2"],
   ["v3", "v3"],
-  ["v4", "v4 · latest"],
+  ["v4", "v4"],
+  ["v5", "v5 · latest"],
 ];
 const VERSION_KEY = "te2.version";
 
 function readVersion(): Version {
   try {
     const stored = localStorage.getItem(VERSION_KEY);
-    return VERSIONS.find(([version]) => version === stored)?.[0] ?? "v4";
+    return VERSIONS.find(([version]) => version === stored)?.[0] ?? "v5";
   } catch {
-    return "v4";
+    return "v5";
   }
 }
 
@@ -126,9 +132,11 @@ const app: App = {
   v2: V2_START,
   v3: V3_START,
   v4: V3_START,
+  v5: V3_START,
   saved: [],
   edits: NO_EDITS,
   offset: 0,
+  locked: false,
 };
 let folds: Folds = readFolds();
 
@@ -246,7 +254,7 @@ function renderContent(): void {
   const frame = timeline.frames[app.frame];
   const upToDay = recordedBy(recording, frame.day);
   content.replaceChildren(
-    app.version === "v3" || app.version === "v4"
+    app.version === "v3" || app.version === "v4" || app.version === "v5"
       ? tabbedContent(app.version, frame.plan, frame.day, upToDay)
       : app.version === "v2"
       ? v2Content(frame.plan, frame.day, upToDay)
@@ -338,22 +346,27 @@ function v2Content(plan: Plan, day: Day, upToDay: Recording): HTMLElement {
   });
 }
 
-/** v3 and v4: one layout and one kind of state; v4 re-budgets where v3 had what-ifs. */
+/**
+ * v3 to v5: one layout and one kind of state. v4 re-budgets where v3 had what-ifs, and v5
+ * can look back: on a recorded day before today, the view reads that day's record and only
+ * what had been recorded by then.
+ */
 function tabbedContent(
-  version: "v3" | "v4",
+  version: "v3" | "v4" | "v5",
   plan: Plan,
   day: Day,
   upToDay: Recording,
 ): HTMLElement {
   const state = app[version];
-  const view = present(plan, day, upToDay, {
+  const asOf = state.asOf !== null && state.asOf < day ? state.asOf : null;
+  const view = present(plan, day, asOf === null ? upToDay : recordedBy(upToDay, asOf), {
     picked: state.scope,
-    then: resolvePick(state.then, day),
-    now: LIVE,
+    then: resolvePick(state.then, asOf ?? day),
+    now: asOf === null ? LIVE : { kind: "day", day: asOf },
     lens: "calendar",
     page: "progress",
     whatIf: state.whatIf,
-  }, app.options);
+  }, { ...app.options, pace: version === "v5" && state.pace });
   if (!view) return h("div", { class: "empty" }, NO_STEPS);
   const handlers = {
     state: (patch: Partial<V3State>) => {
@@ -364,15 +377,35 @@ function tabbedContent(
     save: saver(day, upToDay),
   };
   if (version === "v3") return v3View(view, state, handlers);
-  return v4View(view, state, {
+  const budgeted = {
     ...handlers,
-    budget: (budget) => {
+    budget: (budget: Budget) => {
       // Against the budget the day before, a choice that changes nothing is no change.
       const before = timeline.frames[app.frame - 1]?.plan ?? plan;
       app.edits = rebudget(app.edits, day, budget, budgetOf(before));
       render();
     },
-  });
+  };
+  if (version === "v4") return v4View(view, state, budgeted);
+  const reach = app.locked ? runReach(state) : undefined;
+  return v5View(view, state, budgeted, upToDay.rows.map((row) => row.day), reach);
+}
+
+/** How far the Work plot reaches over the whole run: to its last landing, if it landed. */
+function runReach(state: V3State): Reach | undefined {
+  const last = timeline.frames[timeline.frames.length - 1];
+  const landed = last.plan.steps.every((step) => isDelay(step) || step.status === "done");
+  const end = landed && timeline.finished.size ? Math.max(...timeline.finished.values()) : last.day;
+  const frame = timeline.frames.find((one) => one.day === end) ?? last;
+  const view = present(frame.plan, frame.day, recordedBy(recording, frame.day), {
+    picked: state.scope,
+    then: resolvePick(state.then, frame.day),
+    now: LIVE,
+    lens: "calendar",
+    page: "progress",
+    whatIf: {},
+  }, app.options);
+  return view ? reachOf(view, state.scope) : undefined;
 }
 
 // -- the debugger's body -----------------------------------------------------------------------------
@@ -422,6 +455,7 @@ function setupRows(): HTMLElement[] {
         app.v2 = { ...app.v2, whatIf: {}, scope: null };
         app.v3 = { ...app.v3, whatIf: {}, scope: null };
         app.v4 = { ...app.v4, whatIf: {}, scope: null };
+        app.v5 = { ...app.v5, whatIf: {}, scope: null, asOf: null };
         render();
       },
     },
@@ -477,6 +511,28 @@ function setupRows(): HTMLElement[] {
   if (!file) rows.push(scenarioRow());
   rows.push(editsRow());
   rows.push(modelRow(Boolean(file)));
+  rows.push(
+    h(
+      "div",
+      { class: "row" },
+      h(
+        "label",
+        {
+          title:
+            "Scrubbing then moves only the lines — for reading the days in turn, or a recording",
+        },
+        h("input", {
+          type: "checkbox",
+          checked: app.locked,
+          onchange: (event: Event) => {
+            app.locked = (event.target as HTMLInputElement).checked;
+            render();
+          },
+        }),
+        " Lock the Work plot's axes to the whole run (v5)",
+      ),
+    ),
+  );
   return rows;
 }
 
@@ -857,9 +913,10 @@ function updateBar(): void {
   const worked = day - timeline.begin;
   label.textContent = `${weekdayName(day)} ${formatDate(day, day)} — ` +
     (worked >= 0
-      ? `day ${worked + 1} since work began (${shortDate(timeline.begin, day)})`
+      ? `day ${worked + 1} since work began`
       : `${-worked} day${worked === -1 ? "" : "s"} before work begins`) +
     ` · ${app.frame + 1} of ${timeline.frames.length}`;
+  label.title = label.textContent;
 }
 
 function switchVersion(version: Version): void {
@@ -915,10 +972,15 @@ function writeHash(): void {
     const delays = delaysToHash(app.edits.delays);
     if (delays) state.set("delay", delays);
     // The pick of a milestone: its step id, "rest" for the work after the last one.
-    const tabbed = app.version === "v3" || app.version === "v4" ? app[app.version] : null;
+    const tabbed = app.version === "v3" || app.version === "v4" || app.version === "v5"
+      ? app[app.version]
+      : null;
     const picked = tabbed ? tabbed.scope : app.version === "v2" ? app.v2.scope : null;
     if (picked !== null) state.set("scope", picked || "rest");
     if (tabbed) state.set("page", tabbed.page);
+    if (tabbed?.asOf != null) state.set("asof", isoDay(tabbed.asOf));
+    if (app.locked) state.set("axes", "run");
+    if (app.version === "v5" && app.v5.pace) state.set("pace", "on");
     history.replaceState(null, "", `#${state}`);
   } catch {
     // A page opened from disk in some browsers refuses replaceState; the page works without it.
@@ -958,13 +1020,17 @@ function readHash(): void {
   const scope = scoped === null ? null : scoped === "rest" ? "" : scoped;
   app.v2 = { ...app.v2, scope };
   const page = state.get("page");
-  for (const version of ["v3", "v4"] as const) {
+  for (const version of ["v3", "v4", "v5"] as const) {
     app[version] = {
       ...app[version],
       scope,
-      ...(page === "milestones" || page === "work" ? { page: page as V3Page } : {}),
+      ...(page === "milestones" || page === "work" || (page === "calendar" && version === "v5")
+        ? { page: page as V3Page }
+        : {}),
     };
   }
+  app.v5 = { ...app.v5, asOf: parseDay(state.get("asof") ?? ""), pace: state.get("pace") === "on" };
+  app.locked = state.get("axes") === "run";
   currentTimeline();
   // A day, or "end" for the last one — a scenario's length depends on how it plays out.
   const asked = state.get("day");

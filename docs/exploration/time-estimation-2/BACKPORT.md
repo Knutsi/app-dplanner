@@ -1,6 +1,6 @@
-# Backporting v4 to the Qt app
+# Backporting v4 and v5 to the Qt app
 
-This is what has to reach DPlanner once v4 is settled. Each item names:
+This is what has to reach DPlanner once v4 and v5 are settled. Each item names:
 
 - the prototype file that shows it working;
 - the DPlanner file it lands in;
@@ -39,6 +39,9 @@ in `src/model/options.ts`.
     - everything else costs its estimate.
   - Work that ran before the focus last changed counts at the old focus (§2,
     `efficiencyWas`).
+  - A resumed stretch *began* at its first fact: the earliest `since` of its done steps
+    and of its steps in progress, not tomorrow (`Phase.began`). The calendar's band starts
+    there.
   - `parallel_finish` also returns each step's start offset, which the *holds* check reads
     with the same "a day's end" rule as a landing.
 - [ ] **The rounding fixes.**
@@ -53,6 +56,24 @@ in `src/model/options.ts`.
 Accuracy to hold the port to: `deno task accuracy` (ISSUES F5 has the table). By the book
 must read exactly the real landing on every day.
 
+### The pace so far (v5, a toggle)
+
+- [ ] **Measure it.** Over people's done steps with a known `started` and `since`: the
+  days each was given (its estimate over the focus) against the working days it took, from
+  the middle of the day it started to the middle of the day it was done. Divide the sums.
+  - People only: the focus scales only people's steps, and agent steps are short enough
+    that a day's rounding swamps them.
+  - No floor on a step's time. A half-day floor read unbiased plans as 0.84–0.90 slow
+    (ISSUES F6).
+  - Null before five working days of work and three finished steps.
+  - Prototype: `paceSoFar` in `src/model/simulate.ts`.
+- [ ] **Apply it only under `resume`, once the plan no longer holds.** People's steps not
+  yet done cost their days over the pace; a running step, its days over the pace less the
+  days it has run. Agents' steps and delays are unchanged. A pace within a tenth of 1
+  (`asPlanned`) changes nothing.
+- [ ] **Off by default.** It helps where estimates are systematically short and costs a
+  little where they are not, so the reader chooses (ISSUES F6 has the table).
+
 ## 2. Data (FORMAT.md)
 
 - [ ] **`step_status.json` gains `since`**, the day the status last changed.
@@ -62,6 +83,11 @@ must read exactly the real landing on every day.
   - It needs a format bump.
   - Prototype: `Step.since`; the world stamps it in `src/sim/world.ts` `update`, and replays
     derive it in `src/sim/replay.ts` `dated`.
+- [ ] **…and `started`**, the day it first went in progress, for the pace so far (v5).
+  - Stamp it in the same write, only when the status becomes in progress and `started` is
+    unset. A step reopened keeps its first start.
+  - A replay derives it only from a pending → in-progress change it saw. A step already
+    under way at the first commit has no start, and counts toward no pace.
 - [ ] **Progress rows gain `changed`**: per stretch, how many steps' `since` is the row's day.
   - `tally()` counts only done steps today (`modules/time_estimates/progress.py`).
   - With `changed`, a row is written on every day a status changed.
@@ -150,10 +176,36 @@ The layout is `src/ui/v4/view.ts` over v3's parts (`src/ui/v3/`).
   - Prototype: `src/ui/v3/work.ts` with `WorkMarks`.
 - [ ] **Where a day sits:** a day's point on the axis is its *end*, so day *d* spans from the
   point before to its own. Weekends, idle segments and delay bands all follow this.
+- [ ] **The Work plot's scale** steps 1, 1.5, 2, 3, 4, 5, 7.5, 10 times a power of ten, with
+  5% headroom. With 1-2-5 alone, 10.2 weeks drew in a 20-week plot, half of each plot
+  empty (`niceCeiling`'s `steps`).
+
+## 5b. The view (v5)
+
+The layout is `src/ui/v5/view.ts` over v4's.
+
+- [ ] **Calendar**, a third tab (`src/ui/v1/calendar.ts` with `MonthsOptions`).
+  - Six months in two rows of three, cells tall enough to name what lands.
+  - A milestone's name on the day it lands, white on its colour in either theme, as the
+    ✓ is.
+  - A Delay's wait hatched.
+- [ ] **History**, a toolbar popover (`src/ui/v5/history.ts`).
+  - A slider over the recorded days and today, ◂ ▸ steps, and *back to today*.
+  - On a day before today the view reads that day's record, and only what had been
+    recorded by then: `present()`'s `now` pick is `{kind: "day"}`, and every derivation
+    reads `view.now`. `tests/v5_test.ts` proves it equals what the tab showed that day.
+  - Unsized steps and Delay steps are left out: no record holds them.
+  - The Budget, *Pace so far* and *Save snapshot…* are greyed while looking back, each
+    saying why.
+- [ ] **Pace so far**, a toolbar toggle (`src/ui/v5/pace.ts`).
+  - The label carries the pace ("Pace so far · 77%"), and the tooltip says it in estimates
+    ("taking 1.3× their estimates").
+  - Greyed, and never shown pressed, before there is a pace and while History looks back.
+  - Kept on across days; it waits out a day too early rather than switching itself off.
 
 ## 6. Not ported
 
 - The lag, the projection "at today's pace", verdict chips and the v2 change list.
 - The staffing matrix as a grid; the Budget replaces it.
-- The debugger (Track record, Records, scenarios, *Plan edits*). These are the prototype's
-  tools. Track record is worth proposing separately (ISSUES U2).
+- The debugger (Track record, Records, scenarios, *Plan edits*, the axis lock). These are
+  the prototype's tools. Track record is worth proposing separately (ISSUES U2).

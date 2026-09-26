@@ -39,6 +39,7 @@ Deno.test("by the book, with the rounding fixed, the first day's forecast is wha
         epsilon: true,
         carry: true,
         replan: "off",
+        pace: false,
       })
     ) {
       assertEquals(said, happened, `seed ${seed}`);

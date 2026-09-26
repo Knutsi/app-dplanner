@@ -42,6 +42,7 @@ function step(
     start: null,
     color: null,
     since: null,
+    started: null,
     delay: null,
   };
 }

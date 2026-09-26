@@ -47,6 +47,7 @@ export interface Shape {
   created?: Record<string, Day>;
   running?: string[]; // In progress.
   since?: Record<string, Day>;
+  started?: Record<string, Day>;
   delays?: Record<string, Delay>; // Delay steps: no estimate, no status of their own.
 }
 
@@ -72,6 +73,7 @@ export function planOf(titles: string[], shape: Shape = {}): Plan {
     start: shape.starts?.[title] ?? null,
     color: null,
     since: shape.since?.[title] ?? null,
+    started: shape.started?.[title] ?? null,
     delay: shape.delays?.[title] ?? null,
   }));
   return {

@@ -16,13 +16,17 @@ import { h } from "../markup.ts";
 import { saveButton } from "../v1/timetab.ts";
 import type { V3Handlers, V3Page, V3State } from "./state.ts";
 
-const TABS: [V3Page, string][] = [["milestones", "Milestones"], ["work", "Work"]];
+export const TABS: [V3Page, string][] = [["milestones", "Milestones"], ["work", "Work"]];
 
-export function tabs(state: V3State, on: V3Handlers): HTMLElement {
+export function tabs(
+  state: V3State,
+  on: V3Handlers,
+  pages: [V3Page, string][] = TABS,
+): HTMLElement {
   return h(
     "span",
     { class: "v3-tabs", role: "tablist" },
-    ...TABS.map(([page, name]) =>
+    ...pages.map(([page, name]) =>
       h("button", {
         role: "tab",
         "aria-selected": String(state.page === page),

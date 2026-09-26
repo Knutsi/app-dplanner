@@ -437,7 +437,10 @@ Deno.test("the volume is a step curve of each recorded day's total", () => {
     9,
   ], [sep(10), 12]]);
   assertEquals(volume([], null), []);
-  assertEquals([0, 1, 3, 12, 20, 41, 130].map(niceCeiling), [1, 1, 5, 20, 20, 50, 200]);
+  const ceilings = (steps?: number[]) =>
+    [0, 1, 3, 12, 20, 41, 51, 130].map((value) => niceCeiling(value, steps));
+  assertEquals(ceilings(), [1, 1, 5, 20, 20, 50, 100, 200]);
+  assertEquals(ceilings([1, 1.5, 2, 3, 4, 5, 7.5, 10]), [1, 1, 3, 15, 20, 50, 75, 150]);
 });
 
 // -- reading two lines together --------------------------------------------------------------

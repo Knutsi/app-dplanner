@@ -7,7 +7,7 @@
  * scrubbed day's live plan only, so the recorded past stays what the timeline recorded.
  */
 
-import { type Day } from "./model/calendar.ts";
+import { type Day, shortDate } from "./model/calendar.ts";
 import {
   daysFor,
   DEFAULT_EFFICIENCY,
@@ -44,8 +44,10 @@ import {
   calendarDays,
   type Cell,
   cellAt,
+  paceSoFar,
   type Phase,
   pushed,
+  stretched,
   type TimeReport,
   timeReport,
 } from "./model/simulate.ts";
@@ -140,6 +142,20 @@ export interface TimeView {
   chart: ChartData;
   recording: Recording;
   start: Day;
+  pace: number | null; // The pace so far, whether or not the dates run at it; null too early.
+}
+
+/**
+ * Looking back: the view shows a recorded day (`now`), not today's live plan. What only the
+ * live plan knows — unsized steps, Delay steps — has no record, so a view leaves it out.
+ */
+export function lookingBack(view: TimeView): boolean {
+  return view.now !== view.live;
+}
+
+/** What to call the day shown on a plot's axis: "today", or its date when looking back. */
+export function dayWord(view: TimeView): string {
+  return lookingBack(view) ? shortDate(view.now.day, view.today) : "today";
 }
 
 export function applyWhatIf(plan: Plan, whatIf: WhatIf, today: Day): Plan {
@@ -250,6 +266,7 @@ export function present(
     chart,
     recording,
     start,
+    pace: paceSoFar(plan, stretched(daysFor, efficiencyOf(plan)), start, today),
   };
 }
 
