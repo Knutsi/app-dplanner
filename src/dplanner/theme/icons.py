@@ -532,8 +532,8 @@ def close_icon(color: str | QColor) -> QIcon:
 
 # The medallion vocabulary the canvas paints, as row and menu icons: one glyph per kind name
 # a step can wear ("tag" a milestone, "layers" a feature, "spark" an agent step, "beaker" one
-# carrying tests, "shield" a check). It lives here, beside the glyphs, so a surface that shows
-# what kind a step is looks it up rather than keeping its own table.
+# carrying tests, "shield" a check, "clock" a wait). It lives here, beside the glyphs, so a
+# surface that shows what kind a step is looks it up rather than keeping its own table.
 GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
     "step": step_icon,
     "tag": tag_icon,
@@ -542,6 +542,7 @@ GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
     "beaker": beaker_icon,
     "shield": shield_icon,
     "ticket": ticket_icon,
+    "clock": clock_icon,
 }
 
 

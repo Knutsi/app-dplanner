@@ -4727,6 +4727,31 @@ itself*.
   with the plan: the recorder, a saved snapshot and the report keep the plan as its stored
   focus dates it, and History, reading a record, greys it.
 
+### A wait is a step that holds
+
+A plan has days nothing can be done about: hardware arriving on the 4th, a review that takes
+three days whoever is free. Before waits, a planner priced them as work — an estimate on a
+step nobody works — which put a worker on it, counted it in every tally and made its days
+depend on the focus. The prototype's Delay step (`delay_test.ts`) is the answer, ported to
+the day:
+
+- **A step, not a node kind.** *Status is an aspect, and step types are emergent* rules out
+  a type field, and a wait needs none: as a step it works unchanged in cones, ordering,
+  cycles, copy and paste and numbering, and it is `step_wait`'s aspect — `{"until": …}` or
+  `{"days": n}` — that the root hands the time module as `wait_of`, the domain's `Wait`,
+  so the domain never learns what marks one.
+- **It takes no worker and is no work.** `parallel_finish` releases a ready wait straight
+  into the running set with the moment it is over (`waits`), and frees no worker when it
+  lands; the walk's cost of an `until` wait is nothing, since only the calendar knows when
+  its day is. `phases` knows: an `until` wait ends at the first moment of its day, counted
+  from where the stretch began, so what requires it starts that morning and not before.
+  No tally counts a wait — a snapshot's, the effort, the unsized count — because a plan
+  with a three-day review in it is not three days more work.
+- **Re-dated, a wait keeps what it has waited.** A `days` wait whose steps before it are
+  done has waited since the last of them was done, from the middle of that day — or since
+  the day it was made, when it was made after them — and only the rest is left; `_holds`
+  asks a wait nothing but when it was made, since it has no status to be late by.
+
 ### The Time tab has a simulator, and it is the prototype's
 
 A forecast model is judged over days, not in a screenshot: whether it holds still while a

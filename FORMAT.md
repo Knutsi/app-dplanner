@@ -553,6 +553,12 @@ finer split rides under `details` in its own words. Totals are summed on read
 `step_agent_run` and is cleared at exit — the two are different claims, and only this one
 outlives the shell.
 
+**`step_wait` makes a step a wait**: `{"until": "2026-11-04"}`, the first day what requires
+it may start, or `{"days": 3.0}`, that many working days from when it is reached — one key or
+the other, format 1, a count written as a float. A wait is no work: no worker takes it, it
+has no status, and every tally leaves it out, while the graph treats it as any other step.
+The schedule reads it through the root's `wait_of` as the domain's `Wait`.
+
 **Absence encodes the default, and the default is not always "off".** Every aspect above is
 one most steps do not have, so the marker records the *claim*. Two go the other way:
 `estimation` and `step_description` are things most steps do have, so absence means **on**

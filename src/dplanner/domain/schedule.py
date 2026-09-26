@@ -214,6 +214,26 @@ def schedule(
 
 
 @dataclass(frozen=True)
+class Wait:
+    """What a wait step waits for: a day the steps after it may start on (``until``), or
+    ``days`` working days from the moment it is reached. It takes no worker, carries no
+    work and has no status of its own — handed in by ``wait_of``, like ``days_for``, so the
+    domain never learns what marks one."""
+
+    until: date | None = None
+    days: float = 0.0
+
+
+def no_wait(_step: Step) -> Wait | None:
+    """``wait_of`` for a plan none of whose steps waits."""
+    return None
+
+
+# When a wait made ready at a moment of the walk is over, in the walk's working days.
+Waits = Callable[[Step, float], float]
+
+
+@dataclass(frozen=True)
 class ParallelFinish:
     """Makespan under a fixed worker cap — the bracket between ``schedule`` and
     ``critical_path``.
@@ -241,6 +261,8 @@ def parallel_finish(
     agents: int,
     among: Sequence[Step] | None = None,
     running: frozenset[StepId] = frozenset(),
+    wait_of: Callable[[Step], Wait | None] = no_wait,
+    waits: Waits | None = None,
 ) -> ParallelFinish | None:
     """The makespan with ``humans`` people and ``agents`` coding agents. None only when
     there are no steps to run.
@@ -264,28 +286,43 @@ def parallel_finish(
 
     ``running`` names work already in flight: it keeps the worker it has, so it goes first.
     It still waits for what it requires, and past the pool's size it queues like the rest.
+
+    A wait (``wait_of``) takes no worker: the moment it is ready it waits, and ``waits`` says
+    until when — by default its ``days`` from then, an ``until`` wait being over at once,
+    since the walk knows no dates (:func:`phases` does, and does better).
     """
     if humans < 1 or agents < 1:
         raise ValueError("a pool with work in it needs at least one worker")
     steps = tuple(project.steps if among is None else among)
     if not steps:
         return None
+    by_id = {step.id: step for step in steps}
     order = {step.id: index for index, step in enumerate(steps)}
-    days = {step.id: days_for(step) for step in steps}
+    days = {step.id: _cost(step, days_for, wait_of) for step in steps}
     waiting = {step.id: _requires_among(step, order) for step in steps}
     dependents = _dependents(steps, waiting)
     tails = _tails(steps, days, dependents)
+    over = waits or (lambda step, at: at + _waited_days(step, wait_of))
 
     free = {True: agents, False: humans}  # Keyed by is_agent's answer.
     pool = {step.id: is_agent(step) for step in steps}
     ready: dict[bool, list[StepId]] = {True: [], False: []}
-    for step in steps:
-        if not waiting[step.id]:
-            ready[pool[step.id]].append(step.id)
     busy: list[tuple[float, StepId]] = []
     landings: dict[StepId, float] = {}
     starts: dict[StepId, float] = {}
     now = 0.0
+
+    def release(step_id: StepId) -> None:
+        step = by_id[step_id]
+        if wait_of(step) is not None:
+            starts[step_id] = now
+            busy.append((over(step, now), step_id))
+        else:
+            ready[pool[step_id]].append(step_id)
+
+    for step in steps:
+        if not waiting[step.id]:
+            release(step.id)
     remaining = len(steps)
     while remaining:
         for lane, queue in ready.items():
@@ -305,12 +342,13 @@ def parallel_finish(
                 continue
             busy.remove((finish, step_id))
             landings[step_id] = finish
-            free[pool[step_id]] += 1
+            if wait_of(by_id[step_id]) is None:
+                free[pool[step_id]] += 1
             remaining -= 1
             for after in dependents[step_id]:
                 waiting[after].discard(step_id)
                 if not waiting[after]:
-                    ready[pool[after]].append(after)
+                    release(after)
     return ParallelFinish(
         days=now,
         unestimated=sum(1 for value in days.values() if value is None),
@@ -320,14 +358,31 @@ def parallel_finish(
 
 
 def chain_tails(
-    steps: Sequence[Step], days_for: Callable[[Step], float | None]
+    steps: Sequence[Step],
+    days_for: Callable[[Step], float | None],
+    wait_of: Callable[[Step], Wait | None] = no_wait,
 ) -> dict[StepId, float]:
     """Each step's own days plus the longest chain among ``steps`` waiting on it — the
     priority a free worker picks by in :func:`parallel_finish`, where an edge out of
     ``steps`` counts as met. Whoever simulates a team working the plan picks the same way."""
     members = {step.id for step in steps}
     waiting = {step.id: _requires_among(step, members) for step in steps}
-    return _tails(steps, {step.id: days_for(step) for step in steps}, _dependents(steps, waiting))
+    costs = {step.id: _cost(step, days_for, wait_of) for step in steps}
+    return _tails(steps, costs, _dependents(steps, waiting))
+
+
+def _cost(
+    step: Step, days_for: Callable[[Step], float | None], wait_of: Callable[[Step], Wait | None]
+) -> float | None:
+    """What a step weighs in the walk: its days, or a wait's own — never work."""
+    return _waited_days(step, wait_of) if wait_of(step) is not None else days_for(step)
+
+
+def _waited_days(step: Step, wait_of: Callable[[Step], Wait | None]) -> float:
+    """A wait's own working days: a ``days`` wait's count; an ``until`` wait ends by the
+    calendar, which only :func:`phases` knows."""
+    wait = wait_of(step)
+    return wait.days if wait is not None and wait.until is None else 0.0
 
 
 def _requires_among(step: Step, members: Container[StepId]) -> set[StepId]:
@@ -489,6 +544,7 @@ def phases(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
+    wait_of: Callable[[Step], Wait | None] = no_wait,
 ) -> list[Phase]:
     """The plan as milestones run one after another, each dated from the last.
 
@@ -509,6 +565,10 @@ def phases(
     stand while reality matches them (:func:`_holds`); otherwise the rest resumes from
     tomorrow (:func:`_resumed`). A plan followed exactly therefore reads the same date every
     day, and a forecast moves only when the work does.
+
+    A wait (``wait_of``) holds what requires it: an ``until`` wait lets it start on its day's
+    first moment and not before, a ``days`` wait for that many working days from when it is
+    reached — re-dated, less the days it has already waited.
     """
     groups = stretches(library, project, is_milestone)
 
@@ -522,6 +582,7 @@ def phases(
         running: frozenset[StepId] = frozenset(),
         known: dict[StepId, date] | None = None,
         began_by: date | None = None,
+        waited: Callable[[Step], float] | None = None,
     ) -> tuple[Phase, _Clock]:
         """One stretch dated from ``clock``, and the clock it leaves for the next."""
         asked = start_for(milestone) if milestone is not None else None
@@ -530,6 +591,18 @@ def phases(
         if next_working_day(begins) != begins:
             used = 0.0
         begins = next_working_day(begins)
+
+        def waits(step: Step, at: float) -> float:
+            wait = wait_of(step)
+            assert wait is not None  # The walk asks only of a wait.
+            if wait.until is None:
+                return at + max(0.0, wait.days - (waited(step) if waited is not None else 0.0))
+            # What waits on it may start on its day: that day's first moment, from where
+            # this stretch began.
+            opens = next_working_day(wait.until)
+            offset = 0.0 if opens <= begins else working_days_between(begins, opens) - 1 - used
+            return max(at, offset)
+
         run = parallel_finish(
             library,
             project,
@@ -539,6 +612,8 @@ def phases(
             agents=agents,
             among=members,
             running=running,
+            wait_of=wait_of,
+            waits=waits,
         )
         assert run is not None  # A stretch dated here always has something to run.
         finish = working_days_after(begins, used + run.days, GUARD) if run.days > 0 else None
@@ -569,9 +644,11 @@ def phases(
     for index, (milestone, steps) in enumerate(groups):
         phase, clock = dated(milestone, steps, steps, days_for, clock, index == 0)
         planned.append(phase)
-    if facts is None or _holds(planned, facts):
+    if facts is None or _holds(planned, facts, wait_of):
         return planned
-    return _resumed(groups, planned, facts, facts.resume_days or days_for, dated, start_for)
+    return _resumed(
+        groups, planned, facts, facts.resume_days or days_for, dated, start_for, wait_of
+    )
 
 
 def stretches(
@@ -594,21 +671,23 @@ def stretches(
     return groups
 
 
-def _holds(planned: Sequence[Phase], facts: ScheduleFacts) -> bool:
+def _holds(
+    planned: Sequence[Phase], facts: ScheduleFacts, wait_of: Callable[[Step], Wait | None]
+) -> bool:
     """Does reality still match the plan? Each step is done exactly when the plan has it
     landed — none early, on the very day where that is known (or a plan finished late would
     hold again once everything is done), and none still open once its day is over — nothing
     in flight started after the day the plan started it, and nothing was planned to start
     before it existed. A step nobody marked in progress says nothing about when it started,
-    and a marker step says nothing at all. A step stamped later than today — a clock running
-    ahead elsewhere — was made today."""
+    and a marker step or a wait says nothing at all but when it was made. A step stamped
+    later than today — a clock running ahead elsewhere — was made today."""
     today = facts.today
     for phase in planned:
         for step in phase.steps:
             created = local_day(step.created)
             if created is not None and phase.start_day_of(step.id) < min(created, today):
                 return False
-            if facts.is_marker(step):
+            if facts.is_marker(step) or wait_of(step) is not None:
                 continue
             status, since = facts.status_of(step), facts.since_of(step)
             lands = phase.landing_of(step.id)
@@ -630,27 +709,44 @@ def _resumed(
     days_for: Callable[[Step], float | None],
     dated: Callable[..., tuple[Phase, _Clock]],
     start_for: Callable[[Step], date | None],
+    wait_of: Callable[[Step], Wait | None],
 ) -> list[Phase]:
     """The rest of the work from tomorrow. A stretch whose work is all done is dated by when
     it was done and holds nothing back — its marker steps need not be marked. From the first
     with work left, stretches follow one another from the next working day: done steps are
     facts, work in flight keeps its worker and is credited with ``facts.worked`` (at least
-    half a day is left), and everything else costs its estimate. A done step nobody dated —
-    a status older than its days — is taken as done by its planned landing, or today if that
-    is earlier: never later than it could have been."""
+    half a day is left), a ``days`` wait with the days it has already waited, and everything
+    else costs its estimate. A done step nobody dated — a status older than its days — is
+    taken as done by its planned landing, or today if that is earlier: never later than it
+    could have been."""
     today = facts.today
     planned_day = {step.id: phase.landing_of(step.id) for phase in planned for step in phase.steps}
+    by_id = {step.id: step for _milestone, steps in groups for step in steps}
 
     def done_on(step: Step) -> date:
         since = facts.since_of(step)
         return since if since is not None else min(planned_day.get(step.id, today), today)
+
+    def waited(step: Step) -> float:
+        """A wait made after what it waits on was done has waited since the start of the
+        day it was made; otherwise since the day the last of that was done, part-way
+        through it."""
+        before = [by_id[target] for target in step.edges.get("requires", []) if target in by_id]
+        if any(facts.status_of(one) != DONE for one in before):
+            return 0.0
+        done = [day for one in before if (day := facts.since_of(one)) is not None]
+        last = max(done, default=None)
+        made = local_day(step.created)
+        if made is not None and (last is None or made > last):
+            return 0.0 if made > today else float(working_days_between(made, today))
+        return spent_since(last, today)
 
     result: list[Phase] = []
     clock: _Clock | None = None
     for milestone, steps in groups:
         known = {step.id: done_on(step) for step in steps if facts.status_of(step) == DONE}
         left = [step for step in steps if facts.status_of(step) != DONE]
-        if all(facts.is_marker(step) for step in left):
+        if all(facts.is_marker(step) or wait_of(step) is not None for step in left):
             result.append(_finished(milestone, steps, known, today, start_for))
             continue
         if clock is None:
@@ -669,7 +765,9 @@ def _resumed(
             if step.id in running and (since := facts.since_of(step)) is not None
         ]
         began_by = min([*known.values(), *started], default=None)
-        phase, clock = dated(milestone, steps, left, costs, clock, False, running, known, began_by)
+        phase, clock = dated(
+            milestone, steps, left, costs, clock, False, running, known, began_by, waited
+        )
         result.append(phase)
     return result
 

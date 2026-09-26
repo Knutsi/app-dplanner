@@ -69,9 +69,11 @@ from dplanner.domain.progression import DONE
 from dplanner.domain.schedule import (
     Phase,
     ScheduleFacts,
+    Wait,
     format_date,
     format_days,
     next_working_day,
+    no_wait,
     phases,
     working_days_between,
 )
@@ -256,6 +258,7 @@ def take(
     start_for: Callable[[Step], date | None],
     today: date,
     facts: ScheduleFacts | None = None,
+    wait_of: Callable[[Step], Wait | None] = no_wait,
 ) -> Snapshot | None:
     """The plan today: the calendar's own stretches, each with what has landed in it.
     None for a project with no steps, or one a hand-edited loop keeps from being dated —
@@ -274,8 +277,9 @@ def take(
         is_milestone=is_milestone,
         start_for=start_for,
         facts=facts,
+        wait_of=wait_of,
     )
-    return snapshot_of(phases, today, days_for, status_for, since_for)
+    return snapshot_of(phases, today, days_for, status_for, since_for, wait_of)
 
 
 def snapshot_of(
@@ -284,22 +288,28 @@ def snapshot_of(
     days_for: Callable[[Step], float | None],
     status_for: Callable[[Step], str],
     since_for: Callable[[Step], date | None],
+    wait_of: Callable[[Step], Wait | None] = no_wait,
 ) -> Snapshot:
     """The plan on ``day`` from its dated stretches: each with what has landed in it and
-    how many of its steps' statuses changed that day."""
+    how many of its steps' statuses changed that day. A wait is no work, so it is no part
+    of any of it."""
+
+    def work(phase: Phase) -> tuple[Step, ...]:
+        return tuple(step for step in phase.steps if wait_of(step) is None)
+
     return Snapshot(
         day=day,
         stretches=tuple(
             Stretch(
                 key=phase.milestone.id if phase.milestone else "",
                 tally=replace(
-                    tally(phase.steps, days_for, status_for),
-                    changed=sum(1 for step in phase.steps if since_for(step) == day),
+                    tally(work(phase), days_for, status_for),
+                    changed=sum(1 for step in work(phase) if since_for(step) == day),
                 ),
                 # When its work began, which a re-dated stretch knows from its facts.
                 start=phase.began,
                 finish=phase.finish,
-                landings=landings(phase, days_for),
+                landings=landings(phase, days_for, work(phase)),
             )
             for phase in phases
         ),
@@ -319,6 +329,7 @@ def calendar_phases(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
+    wait_of: Callable[[Step], Wait | None] = no_wait,
 ) -> list[Phase]:
     """The plan's stretches dated on the calendar — the simulation over stretched
     estimates, the one the tab and the recorder read, re-dated from ``facts`` where given."""
@@ -333,14 +344,17 @@ def calendar_phases(
         is_milestone=is_milestone,
         start_for=start_for,
         facts=facts,
+        wait_of=wait_of,
     )
 
 
-def landings(phase: Phase, days_for: Callable[[Step], float | None]) -> tuple[Landing, ...]:
-    """What the stretch lands on each date, in date order — the simulation's per-step
-    landings gathered per day."""
+def landings(
+    phase: Phase, days_for: Callable[[Step], float | None], steps: Sequence[Step]
+) -> tuple[Landing, ...]:
+    """What ``steps`` of the stretch land on each date, in date order — the simulation's
+    per-step landings gathered per day."""
     by_day: dict[date, Landing] = {}
-    for step in phase.steps:
+    for step in steps:
         when = phase.landing_of(step.id)
         found = by_day.get(when, Landing(when, 0, 0.0))
         by_day[when] = Landing(when, found.steps + 1, found.days + (days_for(step) or 0.0))

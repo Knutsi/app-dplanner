@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/dplanner/modules/{time_estimates,progression,step_order,estimation}/**"
+  - "src/dplanner/modules/{time_estimates,progression,step_order,estimation,step_wait}/**"
   - "src/dplanner/domain/{schedule,progression,ordering}.py"
   - "src/dplanner/theme/palettes.py"
   - "tests/modules/test_{time_estimates,time_progress,time_present,time_pace,progression_board,step_order,milestone_colors,estimation_bulk}.py"
@@ -89,6 +89,16 @@ paths:
   prototype first, its fixture regenerated, then here. A stretch's `start` is where its
   remaining work begins and `began` when its work first began — a view shows `began`.
   `ARCHITECTURE.md`'s *The plan re-dates itself from what has happened* has the reasoning.
+- **A wait is a step that holds, and no work.** `modules/step_wait/` marks a step
+  `{"until": …}` — what requires it may start on that day — or `{"days": n}` working days
+  from when it is reached; the root hands the time module `wait_of`, the domain's `Wait`,
+  beside `days_for`. `parallel_finish` releases a wait without a worker; `phases` ends an
+  `until` wait at its day's first moment and, re-dated, credits a `days` wait with the days
+  it has already waited; `_holds` asks a wait only when it was made. **No tally counts
+  one** — `snapshot_of`, `time_report`'s effort and the unsized count leave it out. A step,
+  never a kind of node, so it works unchanged in cones, ordering, cycles and copy and paste.
+  Its model is the prototype's Delay, to the day (`test_schedule.py`'s waits).
+  `ARCHITECTURE.md`'s *A wait is a step that holds* has the reasoning.
 - **The simulator is the prototype's, to the frame, and Debug ▸ Time Simulation shows it in
   the real tab.** `time_estimates/simulation/` is Qt-free: `world.py` plays a scenario,
   `replay.py` writes each day through the owners' writers the root hands in
