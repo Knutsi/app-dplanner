@@ -235,7 +235,8 @@ export function tally(steps: readonly Step[], days: DaysFor = daysFor): Tally {
 
 // -- the curves ------------------------------------------------------------------------------
 
-function through(snapshot: Snapshot, key: string | null): Stretch[] {
+/** `_through`: the stretches up to and including the one `key` closes — all of them for null. */
+export function through(snapshot: Snapshot, key: string | null): Stretch[] {
   const chosen: Stretch[] = [];
   for (const stretch of snapshot.stretches) {
     chosen.push(stretch);
@@ -386,6 +387,30 @@ export function deltaWords(moved: Delta, since: Day, today: Day): string {
     parts.push("no longer dated");
   }
   return `since ${when}: ${parts.join(", ")}`;
+}
+
+export interface Changes {
+  added: [Step, number | null][];
+  estimates: [Step, Day, number, number | null][]; // step, day, from, to
+  since: Day;
+}
+
+/**
+ * `changes_since`: steps born after `since`, and estimates changed after it — one row per
+ * step, from the day it first changed. A step with no `created` stamp is never "added".
+ */
+export function changesSince(steps: readonly Step[], since: Day): Changes {
+  const added: Changes["added"] = [];
+  const estimates: Changes["estimates"] = [];
+  for (const step of steps) {
+    if (step.created !== null && step.created > since) {
+      added.push([step, daysFor(step)]);
+      continue;
+    }
+    const later = step.estimateHistory.filter(([when]) => when > since);
+    if (later.length) estimates.push([step, later[0][0], later[0][1], daysFor(step)]);
+  }
+  return { added, estimates, since };
 }
 
 // -- recording -------------------------------------------------------------------------------

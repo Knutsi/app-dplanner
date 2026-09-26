@@ -12,15 +12,15 @@ import {
   parseDay,
   percent,
   shortDate,
-} from "../model/calendar.ts";
-import { AGENTS, DEFAULT_EFFICIENCY, HUMANS, stepKey } from "../model/graph.ts";
-import { paletteById, PALETTES } from "../model/palettes.ts";
-import { type Pick, pickWords, shareOf, shortPickWords } from "../model/progress.ts";
-import { cellAt } from "../model/simulate.ts";
-import { ALL_KEY, type Page, type TimeView, type ViewState, type WhatIf } from "../present.ts";
+} from "../../model/calendar.ts";
+import { AGENTS, DEFAULT_EFFICIENCY, HUMANS, stepKey } from "../../model/graph.ts";
+import { paletteById, PALETTES } from "../../model/palettes.ts";
+import { type Pick, pickWords, shareOf, shortPickWords } from "../../model/progress.ts";
+import { cellAt } from "../../model/simulate.ts";
+import { ALL_KEY, type Page, type TimeView, type ViewState, type WhatIf } from "../../present.ts";
 import { monthsView } from "./calendar.ts";
 import { chartSvg, PAGES, readout } from "./charts.ts";
-import { h } from "./markup.ts";
+import { h } from "../markup.ts";
 
 export interface TimeTabHandlers {
   view(patch: Partial<ViewState>): void;
@@ -47,7 +47,7 @@ export function timeTab(view: TimeView, state: ViewState, on: TimeTabHandlers): 
   const left = h(
     "div",
     { class: "left" },
-    staffing(view, state, on),
+    staffing(view, state.lens, (team) => on.whatIf({ team })),
     milestoneTable(view, state, on),
   );
   const right = h(
@@ -113,7 +113,7 @@ function toolbar(view: TimeView, state: ViewState, on: TimeTabHandlers): HTMLEle
   return h(
     "div",
     { class: "strip" },
-    saveButton(view, on),
+    saveButton(view, on.save),
     h("span", { class: "divider" }),
     focus,
     lens,
@@ -150,7 +150,11 @@ function describeWhatIf(whatIf: WhatIf, view: TimeView): string {
   return parts.join(", ");
 }
 
-function saveButton(view: TimeView, on: TimeTabHandlers): HTMLElement {
+/** *Save snapshot…*: keep the plan as it stands today under a title. */
+export function saveButton(
+  view: TimeView,
+  save: (title: string, note: string) => string | null,
+): HTMLElement {
   const title = h("input", {
     type: "text",
     placeholder: `What we thought on ${formatDate(view.today, view.today)}`,
@@ -175,7 +179,7 @@ function saveButton(view: TimeView, on: TimeTabHandlers): HTMLElement {
       h("button", {
         class: "primary",
         onclick: () => {
-          const refused = on.save(title.value, note.value);
+          const refused = save(title.value, note.value);
           refusal.textContent = refused ?? "";
         },
       }, "Save"),
@@ -249,8 +253,13 @@ function picker(
 
 // -- the left: what you set ------------------------------------------------------------------------
 
-function staffing(view: TimeView, state: ViewState, on: TimeTabHandlers): HTMLElement {
-  const cells = state.lens === "calendar" ? view.report.calendar : view.report.parallel;
+/** The staffing matrix: humans by agents, each tile how long the plan takes with that team. */
+export function staffing(
+  view: TimeView,
+  lens: ViewState["lens"],
+  onTeam: (team: [number, number]) => void,
+): HTMLElement {
+  const cells = lens === "calendar" ? view.report.calendar : view.report.parallel;
   const agents = view.report.hasAgentSteps ? AGENTS : [1];
   const values = HUMANS.flatMap((humans) => agents.map((a) => cellAt(cells, humans, a)!.days));
   const [least, most] = [Math.min(...values), Math.max(...values)];
@@ -289,7 +298,7 @@ function staffing(view: TimeView, state: ViewState, on: TimeTabHandlers): HTMLEl
             ? `lands ${formatDate(calendar.finish, view.today)}`
             : "nothing estimated to land",
         ].join("\n"),
-        onclick: () => on.whatIf({ team: [humans, view.report.hasAgentSteps ? a : view.team[1]] }),
+        onclick: () => onTeam([humans, view.report.hasAgentSteps ? a : view.team[1]]),
       }, formatDays(cell.days)));
     }
   }
@@ -460,7 +469,8 @@ function plots(view: TimeView, state: ViewState, on: TimeTabHandlers): HTMLEleme
       line.setAttribute("visibility", "hidden");
     });
   };
-  requestAnimationFrame(draw);
+  // After the caller has put this on the page — the width is read from where it landed.
+  queueMicrotask(draw);
   const pages = h(
     "div",
     { class: "segmented pages" },

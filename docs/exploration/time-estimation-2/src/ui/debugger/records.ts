@@ -4,12 +4,12 @@
  * else, so a day with no row is a day the plots interpolate across.
  */
 
-import { type Day, formatDays, isoDay, shortDate, weekdayName } from "../model/calendar.ts";
-import { isMilestone, milestoneLabel, placed } from "../model/graph.ts";
-import { rowJson, type Snapshot } from "../model/progress.ts";
-import { type Parity, parityWords } from "../sim/replay.ts";
-import type { Recording, Timeline } from "../sim/timeline.ts";
-import { h } from "./markup.ts";
+import { type Day, formatDays, isoDay, shortDate, weekdayName } from "../../model/calendar.ts";
+import { isMilestone, milestoneLabel, placed } from "../../model/graph.ts";
+import { rowJson, type Snapshot } from "../../model/progress.ts";
+import { type Parity, parityWords } from "../../sim/replay.ts";
+import type { Recording, Timeline } from "../../sim/timeline.ts";
+import { h } from "../markup.ts";
 
 function stretchText(row: Snapshot, key: string, today: Day): string {
   const stretch = row.stretches.find((one) => one.key === key);

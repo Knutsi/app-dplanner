@@ -8,9 +8,9 @@
  * the chart, so the gap between each forecast and the truth is read straight off the page.
  */
 
-import { axisTicks, type Day, formatDate, shortDate } from "../model/calendar.ts";
-import { isMilestone, milestoneLabel, placed, type Plan } from "../model/graph.ts";
-import { milestoneColors, WHOLE_COLOR } from "../model/palettes.ts";
+import { axisTicks, type Day, formatDate, shortDate } from "../../model/calendar.ts";
+import { isMilestone, milestoneLabel, placed, type Plan } from "../../model/graph.ts";
+import { milestoneColors, WHOLE_COLOR } from "../../model/palettes.ts";
 import {
   actual,
   baseline,
@@ -20,11 +20,11 @@ import {
   type Snapshot,
   standing,
   standingWords,
-} from "../model/progress.ts";
-import type { Recording, Timeline } from "../sim/timeline.ts";
-import { snapshotOf } from "../sim/timeline.ts";
-import type { ModelOptions } from "../model/options.ts";
-import { esc, h, INK, n, SECONDARY } from "./markup.ts";
+} from "../../model/progress.ts";
+import type { Recording, Timeline } from "../../sim/timeline.ts";
+import { snapshotOf } from "../../sim/timeline.ts";
+import type { ModelOptions } from "../../model/options.ts";
+import { esc, h, INK, n, SECONDARY } from "../markup.ts";
 
 interface Series {
   key: string | null;

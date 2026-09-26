@@ -14,10 +14,10 @@ import {
   weekdayName,
   workingDaysBetween,
   ymd,
-} from "../model/calendar.ts";
-import { alpha } from "../model/palettes.ts";
-import type { TimeView } from "../present.ts";
-import { h } from "./markup.ts";
+} from "../../model/calendar.ts";
+import { alpha } from "../../model/palettes.ts";
+import type { TimeView } from "../../present.ts";
+import { h } from "../markup.ts";
 
 const SHOWN_AT_LEAST = 6;
 const SHOWN_AT_MOST = 12;

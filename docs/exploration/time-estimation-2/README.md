@@ -56,18 +56,71 @@ remembered in the browser:
 What happened on the day sits between the sections. Track record and Records are computed
 only while unfolded.
 
-**The view** is a wireframe of today's tab: the strip, the staffing grid, the milestones,
-the calendar, and the plot pages.
+**The view comes in two designs.** Switch between them in the debugger's bar (*v1 · today*
+/ *v2 · redesign*). Both read the same plan on the same day, and the choice is remembered.
 
-- Focus, team, palette, start and a milestone's begin date are *what-ifs* on the day's
-  live plan.
-- The recorded past stays as it was recorded.
+- **v1** is a wireframe of today's tab: the strip, the staffing grid, the milestones, the
+  calendar, and the plot pages.
+- **v2** is the redesign, built around what a professional reader comes to the tab to
+  learn. Top to bottom, it answers:
+  1. When does it land, really?
+  2. Did that move, and why — did the plan change, or are we slower?
+  3. Which milestone needs a look?
+  4. How is the scope moving?
+  5. What if the team were different?
 
-The address bar keeps the plan, scenario, day and variants, so a link opens the page where
-you left it:
+In both designs, focus, team, palette, start and a milestone's begin date are *what-ifs* on
+the day's live plan. The recorded past stays as it was recorded.
+
+### v2, part by part
+
+- **The headline.** The landing date *at today's pace*, and what the plan itself says.
+  - A verdict (✓ Landed, ⚠ Overdue, ▶ Later, ◀ Earlier, ● On track) with one sentence
+    that splits a move into *changes to the plan* and *today's pace*.
+  - Where work stands against the plan's own schedule.
+  - The one milestone that needs a look: an overdue one, or the one whose own work added
+    most of the move.
+  - *Compared with* offers the plan at start, **the plan a week ago**, a saved snapshot or
+    any day. There is no "now" picker: now is the debugger's day.
+- **Milestones** is the navigation: click a row, or use ↑/↓ while the list has focus, and
+  the detail below follows. Each row has a small Gantt on one shared axis:
+  - the plan compared with is a ghost outline, the plan now a bar;
+  - the work done fills the bar up to the day that work was due, so the gap to the
+    today line *is* the lag;
+  - the lag extends the bar with ▶ arrows.
+- **The detail** of the picked scope:
+  - A burn-up in days of work: scope, done, the plan's own schedule, and the projection to
+    the landing at today's pace. The area between the scope and the scope compared with
+    carries ▲ where work was added and ▼ where it was taken away.
+  - Beside it, what changed: steps added and re-estimated, by name; steps removed or
+    moved, by count; and a note when dates moved without any change in scope.
+- **What if…** and **Calendar** are folded at the bottom.
+
+**The arrow grammar.** Vertical arrows (▲▼) only ever mean scope; horizontal ones (◀▶) only
+ever mean time. Colour is never the only channel: every verdict has a glyph and a word, and
+every scope area has arrows.
+
+**Two numbers v2 derives** (`src/brief.ts`, pure and tested) come from nothing DPlanner does
+not already store.
+
+- **Lag** is how many working days the earliest undone work is overdue. It uses the plan's
+  landing knots as steps, never a line drawn between them, so a step in flight on schedule
+  is never "behind".
+- **The projected landing** is the plan's landing moved on by the lag.
+
+Dates, lag and verdicts count everything up to a milestone, since milestones run in
+sequence. The burn-up and the change list show the milestone's own work.
+
+**v1's Scope change plot is not about scope.** It compares two *schedules*: the share of
+work each plan promised landed by each date. More scope makes its line go down, and a new
+team paints it amber. v2's ▲▼ areas are scope, in days.
+
+The address bar keeps the plan, scenario, day, variants and design, so a link opens the
+page where you left it:
 
 - `day=end` goes to the last day;
-- `tab=track` or `tab=records` unfolds that section.
+- `tab=track` or `tab=records` unfolds that section;
+- `ui=v1` or `ui=v2` picks the design, and `scope=<step id>` the milestone v2 shows.
 
 ## Build, check, test
 
@@ -140,11 +193,17 @@ src/sim/                time travel
   timeline.ts             frames, and the recorder that writes rows over them
   replay.ts               an exported git history as frames; parity with stored rows
   sample.ts, rng.ts       the synthetic plan, and seeded luck
-src/present.ts          what the Time tab shows, as data
-src/ui/                 the page's parts: the tab, calendar, plots, track record, records
+src/present.ts          what the Time tab shows, as data (both designs start here)
+src/brief.ts            what v2 derives: lag, projected landing, the move split, verdicts
+src/ui/v1/              today's tab: timetab.ts, calendar.ts, charts.ts
+src/ui/v2/              the redesign: view.ts, headline, milestones, burnup, changes,
+                        glyphs (the arrows), words (how it says things), state
+src/ui/debugger/        the debugger's readings: track.ts, records.ts
+src/ui/markup.ts        building HTML and SVG; figures.ts draws the explainer's figures
 src/data.ts             the export format
 tools/                  export_plan.ts, parity.ts, compare_matrix.ts
-tests/                  model_test (DPlanner's own cases), sim_test, issues_test
+tests/                  model_test (DPlanner's own cases), sim_test, issues_test,
+                        brief_test and glyphs_test (v2)
 ```
 
 **How an export maps to DPlanner's files.** `tools/export_plan.ts`'s header has the full

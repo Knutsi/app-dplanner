@@ -13,7 +13,7 @@ import { FAITHFUL } from "../model/options.ts";
 import { AT_START, LIVE, type Pick, pickWords, resolve, type Snapshot } from "../model/progress.ts";
 import { type Page, present, type TimeView } from "../present.ts";
 import { record, recordedBy, type Timeline } from "../sim/timeline.ts";
-import { chartSvg } from "./charts.ts";
+import { chartSvg } from "./v1/charts.ts";
 import { esc, h, INK, n, SECONDARY } from "./markup.ts";
 
 const MONDAY = fromYMD(2026, 9, 7);

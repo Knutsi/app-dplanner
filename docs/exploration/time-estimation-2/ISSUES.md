@@ -463,6 +463,32 @@ The trend chart does survive, because it compares *forecasts*, not shares.
 
 ---
 
+## What the v2 view answers, and what it still cannot
+
+v2 (the page's *v2 · redesign*; README) changes how the stored data is *read*, not the model
+or the data. That is enough to answer several of the issues above at the view level:
+
+| Issue | How v2 answers it |
+|---|---|
+| **F1** dates never learn | The headline leads with the landing *at today's pace*: the plan's own landing moved on by the lag. The plan's own date stays beside it. |
+| **U1** past dates shown plainly | A milestone whose planned landing has passed and is not done reads ⚠ Overdue, and heads the page. |
+| **P1** "behind" while on time | Lag counts working days since the earliest undone work was due, reading the knots as steps. By the book it is zero on every day (`tests/brief_test.ts`). |
+| **P2** shares of a moving total | Nothing in v2 is a share of a total: the burn-up is in days, and scope change is its own area, marked ▲ where work was added and ▼ where it was taken away. |
+| **R2** staffing read as scope | A move is split into *changes to the plan* and *today's pace*. When dates moved with no change in scope, the change list says so and names the likely causes. |
+| **I2** milestones counted as unestimated | Only steps somebody could size are counted in v2's "no estimate" line. |
+
+**What it still cannot do**, because the data is not there:
+
+- **Split a plan change into its causes.** Records keep neither the team, the focus nor the
+  start date they were made with, so v2 can only say "no scope change, so something else".
+  **Proposal: add `team`, `focus` and `start` to every `progress_history` row.** They are
+  three small fields, and they would let the change list say which one moved the dates.
+- **Name removed or moved steps.** Records keep counts, not steps.
+- **Say when a milestone really landed.** It can only say "recorded done by <day>". The
+  same missing fact limits re-planning ([F1](#f1)).
+
+---
+
 ## What the model variants taught
 
 - **`epsilon` and `carry` are pure wins.**

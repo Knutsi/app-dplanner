@@ -7,7 +7,7 @@
  * the picked stretch again at full strength through a clip.
  */
 
-import { axisTicks, type Day, formatDays, percent, shortDate } from "../model/calendar.ts";
+import { axisTicks, type Day, formatDays, percent, shortDate } from "../../model/calendar.ts";
 import {
   changeRuns,
   type Point,
@@ -15,8 +15,8 @@ import {
   shareAt,
   standingWords,
   volumeScale,
-} from "../model/progress.ts";
-import type { ChartData, Page, Segment } from "../present.ts";
+} from "../../model/progress.ts";
+import type { ChartData, Page, Segment } from "../../present.ts";
 import {
   ATTENTION,
   BAD,
@@ -29,7 +29,7 @@ import {
   SECONDARY,
   SURFACE,
   textWidth,
-} from "./markup.ts";
+} from "../markup.ts";
 
 export type Kind = "status" | "scope" | "shift" | "volume" | "remaining";
 

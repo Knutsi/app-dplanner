@@ -66,6 +66,16 @@ export function workingDaysAfter(start: Day, days: number, guard = 0): Day {
   return when + 7 * weeks + remainder;
 }
 
+/** The day `count` working days after `day` — `day` itself for zero. */
+export function addWorkingDays(day: Day, count: number): Day {
+  let when = day;
+  for (let left = count; left > 0;) {
+    when += 1;
+    if (isWorkingDay(when)) left -= 1;
+  }
+  return when;
+}
+
 /** `working_days_between`: working days from `start` through `finish`, both counted. */
 export function workingDaysBetween(start: Day, finish: Day): number {
   let count = 0;

@@ -20,7 +20,7 @@ import {
   shortDate,
   weekdayName,
 } from "./model/calendar.ts";
-import { isMilestone, placed } from "./model/graph.ts";
+import { isMilestone, placed, type Plan } from "./model/graph.ts";
 import { FAITHFUL, type ModelOptions, VARIANTS } from "./model/options.ts";
 import { milestoneColors } from "./model/palettes.ts";
 import { AT_START, LIVE } from "./model/progress.ts";
@@ -40,10 +40,12 @@ import {
 } from "./sim/timeline.ts";
 import { DEFAULT_WORLD, run, type WorldParams } from "./sim/world.ts";
 import { renderFigures } from "./ui/figures.ts";
-import { recordsView } from "./ui/records.ts";
+import { recordsView } from "./ui/debugger/records.ts";
 import { h } from "./ui/markup.ts";
-import { timeTab } from "./ui/timetab.ts";
-import { trackRecord } from "./ui/track.ts";
+import { timeTab } from "./ui/v1/timetab.ts";
+import { resolvePick, V2_START, type V2State } from "./ui/v2/state.ts";
+import { v2View } from "./ui/v2/view.ts";
+import { trackRecord } from "./ui/debugger/track.ts";
 
 interface App {
   source: string; // "sample", or an export's slug
@@ -53,9 +55,23 @@ interface App {
   cadence: Cadence;
   options: ModelOptions;
   frame: number;
-  view: ViewState;
+  version: Version;
+  view: ViewState; // v1's.
+  v2: V2State;
   saved: SavedSpec[]; // Saved by hand on this page.
   offset: number;
+}
+
+/** Which design of the view is shown: v1 is today's tab, v2 the redesign. */
+type Version = "v1" | "v2";
+const VERSION_KEY = "te2.version";
+
+function readVersion(): Version {
+  try {
+    return localStorage.getItem(VERSION_KEY) === "v1" ? "v1" : "v2";
+  } catch {
+    return "v2";
+  }
 }
 
 /** Which parts of the debugger are unfolded — a per-viewer convenience, kept in the browser. */
@@ -77,7 +93,9 @@ const app: App = {
   cadence: "weekdays",
   options: { ...FAITHFUL },
   frame: -1,
+  version: readVersion(),
   view: { picked: null, then: AT_START, now: LIVE, lens: "calendar", page: "progress", whatIf: {} },
+  v2: V2_START,
   saved: [],
   offset: 0,
 };
@@ -185,8 +203,13 @@ function render(): void {
 function renderContent(): void {
   const frame = timeline.frames[app.frame];
   const upToDay = recordedBy(recording, frame.day);
-  content.replaceChildren(timeContent(frame.plan, frame.day, upToDay));
+  content.replaceChildren(
+    app.version === "v2"
+      ? v2Content(frame.plan, frame.day, upToDay)
+      : v1Content(frame.plan, frame.day, upToDay),
+  );
   viewTitle.textContent = `${frame.plan.title} — Time Estimates`;
+  viewTitle.dataset.version = app.version;
   happened.replaceChildren(events(frame.events));
   // The two heavy readings run only while someone is looking at them.
   trackHost.replaceChildren(
@@ -206,19 +229,29 @@ function viewFrame(): HTMLElement {
   return h("section", { class: "view" }, h("div", { class: "view-tabs" }, viewTitle), content);
 }
 
-function timeContent(
-  plan: Timeline["frames"][number]["plan"],
-  day: Day,
-  upToDay: Recording,
-): HTMLElement {
+const NO_STEPS = "No steps yet — the staffing grid and the calendar date a plan once it has some.";
+
+/** *Save snapshot…* in either view: kept on this page, recorded from its day on. */
+function saver(day: Day, upToDay: Recording): (title: string, note: string) => string | null {
+  return (title, note) => {
+    const named = title.trim();
+    if (!named) return "A snapshot needs a title.";
+    if (
+      upToDay.saved.some((row) => row.title.toLowerCase() === named.toLowerCase()) ||
+      app.saved.some((one) => one.title.toLowerCase() === named.toLowerCase())
+    ) {
+      return `A snapshot called “${named}” is already saved.`;
+    }
+    app.saved = [...app.saved, { day, title: named, note: note.trim() }];
+    currentRecording();
+    renderContent();
+    return null;
+  };
+}
+
+function v1Content(plan: Plan, day: Day, upToDay: Recording): HTMLElement {
   const view = present(plan, day, upToDay, app.view, app.options);
-  if (!view) {
-    return h(
-      "div",
-      { class: "empty" },
-      "No steps yet — the staffing grid and the calendar date a plan once it has some.",
-    );
-  }
+  if (!view) return h("div", { class: "empty" }, NO_STEPS);
   return timeTab(view, app.view, {
     view: (patch) => {
       app.view = { ...app.view, ...patch };
@@ -231,25 +264,33 @@ function timeContent(
       };
       renderContent();
     },
-    save: (title, note) => {
-      const named = title.trim();
-      if (!named) return "A snapshot needs a title.";
-      if (
-        upToDay.saved.some((row) => row.title.toLowerCase() === named.toLowerCase()) ||
-        app.saved.some((one) => one.title.toLowerCase() === named.toLowerCase())
-      ) {
-        return `A snapshot called “${named}” is already saved.`;
-      }
-      app.saved = [...app.saved, { day, title: named, note: note.trim() }];
-      currentRecording();
-      renderContent();
-      return null;
-    },
+    save: saver(day, upToDay),
     offset: app.offset,
     page: (offset) => {
       app.offset = offset;
       renderContent();
     },
+  });
+}
+
+function v2Content(plan: Plan, day: Day, upToDay: Recording): HTMLElement {
+  const state = app.v2;
+  const view = present(plan, day, upToDay, {
+    picked: state.scope,
+    then: resolvePick(state.then, day),
+    now: LIVE,
+    lens: "calendar",
+    page: "progress",
+    whatIf: state.whatIf,
+  }, app.options);
+  if (!view) return h("div", { class: "empty" }, NO_STEPS);
+  return v2View(view, state, {
+    state: (patch) => {
+      app.v2 = { ...app.v2, ...patch };
+      renderContent();
+      writeHash();
+    },
+    save: saver(day, upToDay),
   });
 }
 
@@ -296,6 +337,7 @@ function setupRows(): HTMLElement[] {
           : scenarioById(app.scenario).cadence ?? "weekdays";
         app.saved = [];
         app.view = { ...app.view, whatIf: {}, picked: null, then: AT_START, now: LIVE };
+        app.v2 = { ...app.v2, whatIf: {}, scope: null };
         render();
       },
     },
@@ -568,6 +610,19 @@ function debuggerBar(): HTMLElement {
       play,
       h("button", { title: "A day later (→)", onclick: () => go(app.frame + 1) }, "▸"),
       h("button", { title: "Last day", onclick: () => go(last) }, "⏭"),
+      h(
+        "span",
+        {
+          class: "segmented versions",
+          title: "Which design of the view: today's tab, or the redesign",
+        },
+        ...(["v1", "v2"] as Version[]).map((version) =>
+          h("button", {
+            class: app.version === version ? "on" : "",
+            onclick: () => switchVersion(version),
+          }, version === "v1" ? "v1 · today" : "v2 · redesign")
+        ),
+      ),
       label,
       h("span", { class: "scenario-name" }, scenario),
       h(
@@ -630,6 +685,16 @@ function updateBar(): void {
     ` · ${app.frame + 1} of ${timeline.frames.length}`;
 }
 
+function switchVersion(version: Version): void {
+  app.version = version;
+  try {
+    localStorage.setItem(VERSION_KEY, version);
+  } catch {
+    // Storage refused: the choice lasts as long as the page, and the address bar keeps it.
+  }
+  render();
+}
+
 function go(index: number): void {
   app.frame = Math.max(0, Math.min(timeline.frames.length - 1, index));
   renderContent();
@@ -664,7 +729,10 @@ function writeHash(): void {
       day: isoDay(day),
       cadence: app.cadence,
       variants: VARIANTS.filter(({ key }) => app.options[key]).map(({ key }) => key).join(","),
+      ui: app.version,
     });
+    // v2's pick of a milestone: its step id, "rest" for the work after the last one.
+    if (app.version === "v2" && app.v2.scope !== null) state.set("scope", app.v2.scope || "rest");
     history.replaceState(null, "", `#${state}`);
   } catch {
     // A page opened from disk in some browsers refuses replaceState; the page works without it.
@@ -692,6 +760,11 @@ function readHash(): void {
   // A link naming one of the debugger's readings opens it, as the tabs of the first cut did.
   const tab = state.get("tab");
   if (tab === "track" || tab === "records") folds = { ...folds, open: true, [tab]: true };
+  // The address bar wins over what this browser last chose.
+  const ui = state.get("ui");
+  if (ui === "v1" || ui === "v2") app.version = ui;
+  const scope = state.get("scope");
+  app.v2 = { ...app.v2, scope: scope === null ? null : scope === "rest" ? "" : scope };
   currentTimeline();
   // A day, or "end" for the last one — a scenario's length depends on how it plays out.
   const asked = state.get("day");
