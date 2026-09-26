@@ -37,7 +37,7 @@ from dplanner.theme.themes import DARK, LIGHT, Theme
 
 DIALOG_SIZE = (760, 800)
 TABLE_SIZE = (900, 520)
-TOOLBARS_SIZE = (900, 560)
+TOOLBARS_SIZE = (900, 700)
 ROWS_SIZE = (860, 800)
 
 
@@ -115,6 +115,12 @@ def render(app: QApplication, theme: Theme, out: Path) -> None:
     settle(app)
     save(more.menu(), out, "toolbars-folded", theme, app)
     more.menu().hide()
+    # And a popover a setting drops, open under its face.
+    for name, button in (("budget", toolbars.budget), ("history", toolbars.history)):
+        button.click()
+        settle(app)
+        save(button.popover, out, f"toolbars-{name}", theme, app)
+        button.popover.close()
     toolbars.close()
     discard(strips)
 

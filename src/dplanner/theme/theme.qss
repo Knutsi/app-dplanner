@@ -679,6 +679,32 @@ QProgressBar::chunk {
     color: $TEXT_DISABLED;
 }
 
+/* A segmented group (framework/segmented.py): quiet buttons joined into one shape — the
+   corners between neighbours square and one hairline shared, as the filter's face and its x
+   share one — so a row of choices reads as one question with its answer lit. */
+#ToolbarButton[segment="first"] {
+    border-top-right-radius: 0px;
+    border-bottom-right-radius: 0px;
+}
+
+#ToolbarButton[segment="middle"] {
+    border-radius: 0px;
+    border-left: none;
+}
+
+#ToolbarButton[segment="last"] {
+    border-top-left-radius: 0px;
+    border-bottom-left-radius: 0px;
+    border-left: none;
+}
+
+/* A popover (framework/popover.py): a menu's frame around controls a menu cannot hold. */
+#Popover {
+    background-color: $BG_OVERLAY;
+    border: 1px solid $BORDER_STRONG;
+    border-radius: ${RADIUS_MD}px;
+}
+
 /* A strip of controls on a tab page (framework/toolbar.py's Toolbar), not application
    chrome: no frame, no ground of its own. */
 #ControlBar {

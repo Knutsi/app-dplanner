@@ -23,6 +23,8 @@ which primitive.
 | `filters-*` | the filter's popup: checkable entries that stay open while toggled |
 | `dropdown-*` | the combo's list in the menu's look |
 | `table-empty-*` | the empty state trading places with the table, its verb under the line |
-| `toolbars-*` | the toolbars tab: a flat strip of verbs, a tool palette in named bands of squares, the same palette cut short so a band folds, and the dense strip that answers a question rather than offering verbs |
+| `toolbars-*` | the toolbars tab: a flat strip of verbs, a tool palette in named bands of squares, the same palette cut short so a band folds, the dense strip that answers a question rather than offering verbs, and a strip that holds settings — a `Segmented` page switch and two `PopoverButton` faces |
 | `toolbars-folded-*` | what a folded band looks like in the `…` menu: glyph *and* words, a rule where each band begins |
+| `toolbars-budget-*` | a `Popover` a setting's face drops: captions over `Segmented` rows that stay lit, a combo, a remark |
+| `toolbars-history-*` | a popover holding a `SliderRow`: the slider between a step either way, the step at its end greyed |
 | `rows-*` | the rows tab: a picked row in a list and in a tree — one ground across the whole row, the glyph inside it — and, last, the block that is not one, Qt's focus frame starting part-way across the glyph |

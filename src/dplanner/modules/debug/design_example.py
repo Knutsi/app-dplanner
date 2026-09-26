@@ -41,7 +41,10 @@ from dplanner.framework.context import SCOPE_ACTIVITY, ContextNode, ContextServi
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
 from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.notices import Notice, NoticeBar
+from dplanner.framework.popover import PopoverButton
+from dplanner.framework.segmented import Segmented
 from dplanner.framework.signalling import Spinner, StatusLine, UpdatingIndicator
+from dplanner.framework.slider_row import SliderRow
 from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import FilterButton, Toolbar
@@ -557,13 +560,24 @@ class DesignExampleToolbars(ActivityBase):
             "set rather than aimed at one at a time, so it keeps the height and takes the "
             "width back from the sides: a strip that folds stops answering its question.",
         )
+
+        self.settings = self._settings_strip()
+        self._block(
+            column,
+            "A strip that holds settings",
+            self.settings,
+            "The pages of the surface are a segmented group: every choice at once, the one "
+            "shown lit. A setting carries its value on its face and drops a popover for what a "
+            "menu cannot hold — buttons that stay lit, a slider that keeps its keys — closed "
+            "by a click outside it, as a menu is.",
+        )
         column.addStretch(1)
 
     def on_activated(self) -> None:
         self._context.set_scope(SCOPE_ACTIVITY, (ContextNode(self.uri),))
 
     def close(self) -> None:
-        for bar in (self.verbs, self.palette, self.folded, self.dense):
+        for bar in (self.verbs, self.palette, self.folded, self.dense, self.settings):
             bar.dispose()
 
     def _block(self, column: QVBoxLayout, title: str, bar: Toolbar, remark: str) -> None:
@@ -601,6 +615,43 @@ class DesignExampleToolbars(ActivityBase):
                 bar.add_verb(label, glyph, lambda: None)
         bar.add_group("Options")
         bar.add_verb("How the graph is drawn", options_icon, lambda: None)
+        return bar
+
+    def _settings_strip(self) -> Toolbar:
+        bar = Toolbar(self.widget)
+        self.pages = Segmented(
+            [
+                (page, page.title(), f"The {page} page")
+                for page in ("milestones", "work", "calendar")
+            ],
+            bar,
+        )
+        self.pages.set_value("work")
+        bar.add_widget(self.pages)
+        bar.add_divider()
+        self.budget = PopoverButton("Budget · 1p/2a · 50%", bar, tip="Who works on the plan")
+        body = self.budget.popover.body
+        for label, counts, picked in (("People", (1, 2, 3), 1), ("Agents", (1, 2, 3, 4), 2)):
+            body.addWidget(caption(label, self.budget.popover))
+            choices = Segmented([(n, str(n), "") for n in counts], self.budget.popover)
+            choices.set_value(picked)
+            body.addWidget(choices)
+        body.addWidget(caption("Focus", self.budget.popover))
+        focus = QComboBox(self.budget.popover)
+        focus.addItems([f"{percent}%" for percent in range(10, 101, 5)])
+        focus.setCurrentText("50%")
+        body.addWidget(focus)
+        body.addWidget(note("From today on; the days before keep theirs.", self.budget.popover))
+        bar.add_widget(self.budget)
+        self.history = PopoverButton("History", bar, tip="The tab as it was recorded earlier")
+        days = SliderRow(
+            self.history.popover, earlier="The record before", later="The record after"
+        )
+        days.set_count(12)
+        days.set_value(11)
+        self.history.popover.body.addWidget(days)
+        self.history.popover.body.addWidget(note("today", self.history.popover))
+        bar.add_widget(self.history)
         return bar
 
     def _dense_strip(self) -> Toolbar:
