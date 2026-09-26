@@ -55,6 +55,9 @@ styling one surface by name.
 | a tree of them (a row that nests) | a `QTreeWidget` on `TwoLineDelegate` | `framework/list_rows.py` | the rows tab: `rows-*` |
 | what a picked row wears, and what it must not | — | `framework/list_rows.py`, `framework/table.py` | the rows tab: `rows-*` |
 | a control a strip offers only sometimes | `Toolbar.set_shown` — never `hide()` | `framework/toolbar.py` | the Time tab's day fields |
+| a setting on a strip that needs more than a menu — a slider, choices that stay lit | `PopoverButton`, `Popover` | `framework/popover.py` | the toolbars tab: `toolbars-budget-*`, `toolbars-history-*` |
+| exclusive choices shown at once — a surface's pages, a count | `Segmented` | `framework/segmented.py` | the toolbars tab's last strip, `toolbars-budget-*` |
+| a slider over steps, with a step either way | `SliderRow` | `framework/slider_row.py` | `toolbars-history-*` |
 | when a rebuild is owed | `Debounced.pending_changed` | `framework/debounce.py` | — |
 | a margin, a gap, a height | a token | `theme/tokens.py` (*Tokens*) | — |
 
@@ -587,6 +590,11 @@ Example Table wears one.
   answering it when it folds. Ten toggles at the verb strip's metrics seat five in the 360 px
   a side panel can be; dense seats all ten, which is also what the Test panel's result verbs
   need in that width. It is a mode the primitive offers, never a surface styled by name.
+- **A setting a menu cannot hold drops a popover** (`PopoverButton`): its face says what
+  is set, as a filter's does, and the popover holds what a `QMenu` cannot — a slider keeps
+  its arrow keys, a `Segmented` row stays lit — closing on a click outside or Escape, as a
+  menu does. **A surface's pages are a `Segmented` group**, every page named at once and the
+  one shown lit, never checkable buttons laid out by hand.
 - **A divider is the hairline at half strength** (`$BORDER_FAINT`, the border blended
   halfway into the elevated ground), 6 px short of the controls' top and bottom: it parts
   groups without being read as a control.

@@ -4313,3 +4313,30 @@ turn of the day an event like a model change.
 **Upstream?** Yes. Any application that dates anything has the same three problems, and the
 split — the notion of today in the core, the timer in the framework — is the layering the
 template already has for signals.
+
+## 54. From the time-backport pass: controls a menu cannot hold
+
+### `framework/popover.py`, `framework/segmented.py`, `framework/slider_row.py`
+
+**What we added.** Three primitives the redesigned Time tab needed and nothing in the
+framework offered. `Popover` is a `Qt.Popup` frame with a `body` layout, opened under the
+control that drops it (`open_below`, kept on the anchor's screen, above it where there is no
+room below), closed by a click outside or Escape; `WA_NoMouseReplay` makes a click on its
+own button close it instead of opening it again. `PopoverButton` is that button — the quiet
+strip button, checked while its popover is open, its face carrying what is set.
+`Segmented` is exclusive choices as one control: quiet buttons in a `QButtonGroup` whose
+`segment` property (`first`, `middle`, `last`) lets the stylesheet square the corners
+between neighbours and share one hairline, speaking in values rather than indices.
+`SliderRow` is a `QSlider` between two `GlyphButton` steps that grey at their ends, saying
+every move through one `moved` signal as it happens, and nothing when the host places it.
+Each has a block on Debug ▸ Design Examples ▸ Toolbars and a row in DESIGN.md's
+*Primitives*.
+
+**Why.** A `QMenu` owns the keyboard while it is open and closes at the first click, so a
+slider in one never sees an arrow key and a row of choices cannot stay lit — which is
+exactly what the Time tab's History (a slider over the recorded days) and Budget (people
+and agents as counts, the focus as a list) are. Pages of a surface had been checkable
+`QToolButton`s arranged by hand per tab.
+
+**Upstream?** Yes, all three: none of them knows anything about DPlanner, and a popover is
+the missing sibling of the template's menus.

@@ -60,6 +60,12 @@ paths:
   (the task and Agents browsers). A strip control that comes and goes is
   `Toolbar.set_shown`, never `hide()`, which the next reflow undoes.
   `ARCHITECTURE.md`'s *A roster has three shapes* has the reasoning.
+- **A setting a menu cannot hold is a `PopoverButton`, and a surface's pages are a
+  `Segmented` group.** A `QMenu` owns the keys and closes at the first click, so a slider
+  (`SliderRow`) or choices that stay lit go in a `Popover` the setting's face drops — the
+  face carrying what is set — and pages are named at once with the shown one lit, never
+  checkable buttons laid out per tab. DESIGN.md's *Toolbars* has the look; the renders are
+  `toolbars-budget-*` and `toolbars-history-*`.
 - **A picked row is one ground across the whole row, and nothing else marks it.** The indent,
   the disclosure chevron, the glyph and the words, with the accent inside the left edge where
   the primitive draws one — the same mark in a `Table`, a `RichList` and any tree on
