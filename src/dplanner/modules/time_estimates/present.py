@@ -39,6 +39,7 @@ from dplanner.modules.time_estimates.progress import (
     Snapshot,
     Stretch,
     Tally,
+    WaitSpan,
     landing_shift,
     pick_words,
     resolve,
@@ -421,9 +422,9 @@ def change_words(mark: ScopeMark, today: date) -> str:
     return f"{steps}, {days} on {short_date(mark.day, today)}"
 
 
-def milestone_words(scope: Scope, today: date) -> str:
+def milestone_words(scope: Scope, today: date, waits: Sequence[WaitSpan] = ()) -> str:
     """A milestone as its row and its mark say it: its key and name, where the plan
-    compared with landed it, and where it ends now."""
+    compared with landed it, where it ends now, and each wait in its stretch."""
     named = scope.named
     lines = [f"{named.badge} {named.label}".strip() + (f" — {named.title}" if named.title else "")]
     if scope.then is not None:
@@ -432,4 +433,14 @@ def milestone_words(scope: Scope, today: date) -> str:
         lines.append(f"done by {short_date(scope.landed_by, today)}")
     elif scope.planned is not None:
         lines.append(f"plan now: {short_date(scope.planned, today)}")
+    lines += [
+        f"waits: {wait.title} ({wait_days(wait, today)})" for wait in waits if wait.key == scope.key
+    ]
     return "\n".join(lines)
+
+
+def wait_days(wait: WaitSpan, today: date) -> str:
+    """The days a wait holds, as words: ``9 Oct``, ``9 Oct to 14 Oct``."""
+    if wait.start == wait.end:
+        return short_date(wait.end, today)
+    return f"{short_date(wait.start, today)} to {short_date(wait.end, today)}"

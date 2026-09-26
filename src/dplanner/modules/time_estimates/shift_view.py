@@ -106,7 +106,7 @@ class ShiftView(QWidget):
     def words(self, scope: Scope) -> str:
         """A row's tooltip: the milestone, then where it landed, where it lands."""
         assert self._shown is not None
-        return milestone_words(scope, self._shown.day)
+        return milestone_words(scope, self._shown.day, self._shown.now.waits)
 
     # -- painting ------------------------------------------------------------------------------
 

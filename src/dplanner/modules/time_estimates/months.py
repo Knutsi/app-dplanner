@@ -3,9 +3,10 @@
 From the month before the work starts, two rows of three: every stretch of work filled with
 its milestone's hue, fainter over the weekends the schedule skips, and the day a milestone
 lands drawn as a filled mark carrying the milestone's name, white on its colour in either
-theme, where the cell has room for it. One stretch can be *emphasised* (the host says
-which, from the milestone picked on another page), and the others fade so the work leading
-up to that milestone stands alone. The arrows beside it page through time.
+theme, where the cell has room for it, and a day a wait holds hatched over. One stretch can
+be *emphasised* (the host says which, from the milestone picked on another page), and the
+others fade so the work leading up to that milestone stands alone. The arrows beside it page
+through time.
 
 **The calendar fills the width it is given.** The day cells grow with the width, so a wide
 window shows a wide calendar rather than a small one in a corner, and a narrow one drops
@@ -24,6 +25,7 @@ from math import ceil
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import (
+    QBrush,
     QColor,
     QFont,
     QFontMetricsF,
@@ -67,6 +69,7 @@ FADE = 0.4
 DAY_ALPHA = 190
 WEEKEND_ALPHA = 90
 LANDING_INK = "#ffffff"
+WAIT_ALPHA = 90  # The hatching over a day a wait holds.
 
 _ONE_DAY = timedelta(days=1)
 
@@ -116,6 +119,7 @@ class MonthsView(QWidget):
         super().__init__(parent)
         self._start: date | None = None
         self._bands: tuple[Band, ...] = ()
+        self._waits: tuple[tuple[date, date, str], ...] = ()
         self._emphasised: str | None = None
         self._today = today
         self._begin = today.replace(day=1)
@@ -139,9 +143,18 @@ class MonthsView(QWidget):
 
     # -- the host's side of the contract -------------------------------------------------------
 
-    def show_bands(self, start: date, bands: tuple[Band, ...], today: date) -> None:
+    def show_bands(
+        self,
+        start: date,
+        bands: tuple[Band, ...],
+        today: date,
+        waits: tuple[tuple[date, date, str], ...] = (),
+    ) -> None:
+        """The stretches, and each wait's days — its first, its last and its name — which
+        are hatched over."""
         self._start = start
         self._bands = bands
+        self._waits = waits
         self._today = today
         self._begin = _add_months(_first_shown(start), self._offset)
         self._wanted = MONTHS_SHOWN
@@ -214,6 +227,9 @@ class MonthsView(QWidget):
             total = working_days_between(band.start, band.finish)
             starts = " starts," if when == band.start else ","
             said += f" — {band.label}{starts} working day {worked} of {total}"
+        said += "".join(
+            f" · waits: {name}" for first, last, name in self._waits if first <= when <= last
+        )
         if when == self._today:
             said += " · today"
         return said
@@ -352,6 +368,14 @@ class MonthsView(QWidget):
                 alpha = SPAN_WEEKEND_ALPHA if weekend else SPAN_ALPHA
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(self._ink(band, alpha))
+            painter.drawRoundedRect(rect, DAY_RADIUS, DAY_RADIUS)
+        if any(first <= when <= last for first, last, _name in self._waits):
+            # A day a wait holds: hatched over its stretch's colour, so it still reads as
+            # part of the stretch and plainly as no work.
+            hatch = QColor(ink)
+            hatch.setAlpha(WAIT_ALPHA)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QBrush(hatch, Qt.BrushStyle.BDiagPattern))
             painter.drawRoundedRect(rect, DAY_RADIUS, DAY_RADIUS)
         if when == self._today:
             painter.setPen(QPen(secondary, 1.0))

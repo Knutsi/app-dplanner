@@ -96,13 +96,14 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         Command,
         CompositeCommand,
         EditTextCommand,
+        SetEdgesCommand,
         SetModuleDataCommand,
     )
     from dplanner.domain.locations import Placement, roles_by_id
     from dplanner.domain.model import Library, Project, TextEdit
     from dplanner.domain.relocate import move_project
     from dplanner.domain.repositories import RepositoryFacts, repository_facts
-    from dplanner.domain.schedule import format_days, schedule
+    from dplanner.domain.schedule import Wait, format_days, schedule
     from dplanner.domain.scope import gatherers
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
@@ -212,6 +213,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.step_status.aspect import record_started
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
+    from dplanner.modules.step_wait.aspect import read as wait_read
+    from dplanner.modules.step_wait.aspect import stat as wait_stat
     from dplanner.modules.step_wait.module import StepWaitDeps, StepWaitModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.sync.service import ExtraPublication
@@ -628,8 +631,11 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         }.get(agent_run_state(step), ("", ""))
         status = step_status(step)
         milestone = milestone_read(step)
+        wait = wait_read(step)
         if milestone:
             stat = milestone_stat
+        elif wait is not None:
+            stat = wait_stat(wait, services.clock.today())  # How long it holds.
         else:
             days = estimated_days(step)
             stat = format_days(days) if days is not None else ""
@@ -766,6 +772,35 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             ],
             label="New Feature",
         ).id
+
+    def insert_wait_before(step_id: str) -> None:
+        """Step ▸ Insert Wait Before: a wait of a working day in front of the step — it takes
+        over what the step waited on, and the step waits on it — as the *Wait* template makes
+        one (no estimate, no description), placed a column to the step's left where the step
+        was placed, and one undo entry like every other placed step."""
+        from dplanner.modules.project_editor.positions import read_position
+        from dplanner.modules.project_editor.sorts import H_PITCH
+        from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
+        from dplanner.modules.step_description.aspect import write_state as description_state
+        from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
+        from dplanner.modules.step_wait.aspect import write as write_wait
+
+        step = library.step(step_id)
+        waited_on = list(step.edges.get("requires", []))
+        where = read_position(step)
+        project_editor.create_step(
+            library.project_of(step_id).id,
+            "Wait",
+            at=(where[0] - H_PITCH, where[1]) if where is not None else None,
+            carrying=lambda wait: [
+                SetModuleDataCommand(wait.id, WAIT_ID, write_wait(Wait(days=1.0))),
+                SetModuleDataCommand(wait.id, ESTIMATION_ID, estimate_write(None, on=False)),
+                SetModuleDataCommand(wait.id, DESCRIPTION_ID, description_state(False)),
+                SetEdgesCommand(wait.id, "requires", waited_on),
+                SetEdgesCommand(step_id, "requires", [wait.id]),
+            ],
+            label="Insert Wait",
+        )
 
     # Constructed before the list because the Specs tab cites a selection into it — the
     # feature side of one seam.
@@ -1761,6 +1796,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 actions=services.actions,
                 details=services.step_details,
                 today=services.clock.today,
+                insert_before=insert_wait_before,
             )
         ),
         # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
@@ -2107,9 +2143,9 @@ def _default_briefing() -> "Briefing":
 def _step_key(step: "Step") -> str:
     """The step's readable key: a letter for what it is, the number the project dealt.
 
-    ``M`` a milestone, ``F`` a feature, ``C`` a check, ``S`` any other step — the coarser
-    claim wins, in the order the body tone ranks them, so a milestone that is also a
-    feature reads ``M``. The letter is presentation over the stored number, which is why
+    ``M`` a milestone, ``F`` a feature, ``C`` a check, ``W`` a wait, ``S`` any other step —
+    the coarser claim wins, in the order the body tone ranks them, so a milestone that is
+    also a feature reads ``M``. The letter is presentation over the stored number, which is why
     a step keeps its number when its kind changes and the letter follows. Read by the
     canvas spine, every CLI row and lookup, the branch a run is named after, and the
     briefing that tells the agent which step it holds.
@@ -2117,6 +2153,7 @@ def _step_key(step: "Step") -> str:
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_wait.aspect import is_wait
 
     if not step.number:
         return ""
@@ -2127,6 +2164,8 @@ def _step_key(step: "Step") -> str:
         if is_feature(step)
         else "C"
         if check_read(step)
+        else "W"
+        if is_wait(step)
         else "S"
     )
     return f"{letter}{step.number}"
@@ -2134,11 +2173,12 @@ def _step_key(step: "Step") -> str:
 
 def _step_kind(step: "Step") -> str:
     """What a step *is*, in one word, the coarser claim first — the same ranking as the key's
-    letter and the body tone: milestone, feature, check, agent step, or nothing."""
+    letter and the body tone: milestone, feature, check, wait, agent step, or nothing."""
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_wait.aspect import is_wait
 
     if milestone_read(step):
         return "milestone"
@@ -2146,6 +2186,8 @@ def _step_kind(step: "Step") -> str:
         return "feature"
     if check_read(step):
         return "check"
+    if is_wait(step):
+        return "wait"
     if agent_enabled(step):
         return "agent"
     return ""
@@ -2202,14 +2244,21 @@ def _milestone_colors(library: "Library", project: "Project") -> dict[str, str]:
 
 
 def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
-    """The figure at each card's bottom right: a milestone's total and landing, any other
-    step's estimate — what the canvas paints, read once for the report's graph."""
+    """The figure at each card's bottom right: a milestone's total and landing, how long a
+    wait holds, any other step's estimate — what the canvas paints, read once for the
+    report's graph."""
     from dplanner.domain.schedule import format_days
     from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.modules.step_wait.aspect import read as wait_read
+    from dplanner.modules.step_wait.aspect import stat as wait_stat
 
     stats = _milestone_stats(library, project)
     for step in project.steps:
         if step.id in stats:
+            continue
+        wait = wait_read(step)
+        if wait is not None:
+            stats[step.id] = wait_stat(wait, wait.until)  # A card prints no year.
             continue
         days = estimated_days(step)
         if days is not None:
@@ -2220,15 +2269,17 @@ def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
 def _step_type_icons(step: "Step") -> tuple[str, ...]:
     """What kind of thing a step is, in the medallion vocabulary the canvas painted
     first: "tag" a milestone, "layers" a feature, "spark" an agent step, "beaker" one
-    carrying tests, "shield" a check. The order table's title column reads the same
-    answer, so a step is the same kind everywhere."""
+    carrying tests, "shield" a check, "clock" a wait. The order table's title column reads
+    the same answer, so a step is the same kind everywhere."""
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_wait.aspect import is_wait
     from dplanner.modules.testing.aspect import enabled as test_enabled
 
     return (
+        *(("clock",) if is_wait(step) else ()),
         *(("tag",) if milestone_read(step) else ()),
         *(("layers",) if is_feature(step) else ()),
         *(("spark",) if agent_enabled(step) else ()),

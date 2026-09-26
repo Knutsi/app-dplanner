@@ -57,7 +57,7 @@ reads it for the tab and the report.
 """
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, timedelta
 from itertools import pairwise
 from typing import Any, Literal
@@ -157,17 +157,32 @@ class Stretch:
 
 
 @dataclass(frozen=True)
+class WaitSpan:
+    """A wait as the plan dates it: the stretch it is in (by key), what it is called, and
+    the days it holds — from the day it is reached to the last before what waits on it may
+    start."""
+
+    key: str
+    title: str
+    start: date
+    end: date
+
+
+@dataclass(frozen=True)
 class Snapshot:
     """The plan on one day, stretch by stretch, in the order the sequence ran them.
 
     ``title`` and ``note`` are a saved snapshot's — what the occasion was called and what
-    it was about; an automatic day carries neither.
+    it was about; an automatic day carries neither. ``waits`` are the plan's waits as it
+    dates them, for a page to draw — never recorded, and no part of what makes two days'
+    plans the same: a wait is no work, and the day it lets go is in the landings already.
     """
 
     day: date
     stretches: tuple[Stretch, ...]
     title: str = ""
     note: str = ""
+    waits: tuple[WaitSpan, ...] = field(default=(), compare=False)
 
     def toward(self, key: str | None) -> Tally:
         """The tally through the stretch ``key`` closes — every stretch for None."""
@@ -312,6 +327,17 @@ def snapshot_of(
                 landings=landings(phase, days_for, work(phase)),
             )
             for phase in phases
+        ),
+        waits=tuple(
+            WaitSpan(
+                phase.milestone.id if phase.milestone else "",
+                step.title,
+                phase.start_day_of(step.id),
+                phase.landing_of(step.id),
+            )
+            for phase in phases
+            for step in phase.steps
+            if wait_of(step) is not None
         ),
     )
 

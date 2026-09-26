@@ -9,10 +9,10 @@ is the same amount of work as the same height in the other.
   check on the done line the day it was done, or a dot on the schedule the day the plan
   lands it.
 
-Weekends are pale bands through both plots. Hovering reads the day under the pointer — the
-scope, what was done and what the schedule promised by then — and a mark's own words where
-the pointer is on one. The axes hold the reach the page was handed, so moving between days
-moves only the lines.
+Weekends are pale bands through both plots, and each wait a hatched band, named. Hovering
+reads the day under the pointer — the scope, what was done and what the schedule promised by
+then — and a mark's own words where the pointer is on one. The axes hold the reach the page
+was handed, so moving between days moves only the lines.
 """
 
 from dataclasses import dataclass
@@ -20,6 +20,7 @@ from datetime import date, timedelta
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
+    QBrush,
     QColor,
     QFont,
     QFontMetricsF,
@@ -64,6 +65,7 @@ BOTTOM = 26
 MARK = 8.0
 MILESTONE_DOT = 5.0
 DONE_ALPHA = 26
+WAIT_ALPHA = 70  # A wait's hatching: seen through, over the weekend bands.
 SCOPE_WIDTH = 2.5
 HIT = 8.0  # How near a mark the pointer must be to read the mark's words.
 KEY_SAMPLE = 18
@@ -140,6 +142,7 @@ class WorkView(QWidget):
         for top in (self.scope_top, self.work_top):
             self._paint_scale(painter, axis, inks, top)
         self._paint_weekends(painter, axis, inks)
+        self._paint_waits(painter, axis, inks)
         paint_grid_dates(painter, axis, self.scope_top, bottom, inks)
         self._paint_scope(painter, axis, inks)
         self._paint_work(painter, axis, inks)
@@ -177,6 +180,31 @@ class WorkView(QWidget):
                 for top in (self.scope_top, self.work_top):
                     painter.fillRect(QRectF(left, top, right - left, PLOT_HEIGHT), band)
             day += _ONE_DAY
+
+    def _paint_waits(self, painter: QPainter, axis: Axis, inks: Inks) -> None:
+        """A hatched band over each wait's days, through both plots, named at the top — the
+        plan's waits as it dates them now; a record looked back at has none."""
+        assert self._shown is not None
+        hatch = QBrush(faded(inks.ink, WAIT_ALPHA), Qt.BrushStyle.BDiagPattern)
+        small = QFont(self.font())
+        small.setPointSizeF(max(6.0, small.pointSizeF() - 1))
+        for wait in self._shown.now.waits:
+            left = max(LEFT, axis.x(wait.start - _ONE_DAY))
+            right = min(axis.right, axis.x(wait.end))
+            if right <= left:
+                continue
+            for top in (self.scope_top, self.work_top):
+                painter.fillRect(QRectF(left, top, right - left, PLOT_HEIGHT), hatch)
+            painter.setFont(small)
+            painter.setPen(inks.secondary)
+            painter.drawText(
+                QRectF(left + 2, self.scope_top + 2, max(0.0, right - left - 4), 14),
+                Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop,
+                QFontMetricsF(small).elidedText(
+                    wait.title, Qt.TextElideMode.ElideRight, max(0.0, right - left - 4)
+                ),
+            )
+            painter.setFont(self.font())
 
     def _title(
         self, painter: QPainter, inks: Inks, top: float, name: str, keys: list[tuple[str, str]]
@@ -457,6 +485,9 @@ class WorkView(QWidget):
         day = axis.day_at(x)
         data = shown.burnup
         lines = [format_date(day, today=shown.day)]
+        lines += [
+            f"waits: {wait.title}" for wait in shown.now.waits if wait.start <= day <= wait.end
+        ]
         readings = []
         if day <= shown.day:
             readings += [("scope", step_at(data.scope, day)), ("done", step_at(data.done, day))]

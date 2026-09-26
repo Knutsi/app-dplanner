@@ -105,7 +105,14 @@ paths:
   one `_counts_as_work` keeps it off every lane and out of every volume (`schedule.volume`:
   the board, the Estimates tab, `estimate rollup`, `schedule show`, `order show`, the Order
   tab) and lint; the Status verbs, the Agent and Test toggles and Run Agent refuse one,
-  saying why (`aspect_toggle`'s `refusal`).
+  saying why (`aspect_toggle`'s `refusal`). **A wait looks like one**: `W` for its key's
+  letter, the clock for its medallion, how long it holds for its stat; the Work page hatches
+  its days through both plots and names it, the calendar hatches them, a milestone's words
+  name the waits in its stretch, and the report draws them as pale bands — all from
+  `Snapshot.waits`, the plan's waits as it dates them now, never recorded, so History shows
+  none. *Insert Wait Before* (`W` on the canvas) puts a wait of a day in front of a step —
+  it takes what the step waited on — as one undo, born through the graph editor's
+  `create_step`.
   `ARCHITECTURE.md`'s *A wait is a step that holds* has the reasoning.
 - **The simulator is the prototype's, to the frame, and Debug ▸ Time Simulation shows it in
   the real tab.** `time_estimates/simulation/` is Qt-free: `world.py` plays a scenario,

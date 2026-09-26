@@ -80,3 +80,40 @@ def test_a_wait_takes_no_status_no_agent_and_no_tests_and_says_why(services, pro
         assert not state.enabled and words in state.label
     run = services.actions.spec("agent.run").state(context)
     assert not run.enabled
+
+
+def test_a_wait_wears_its_letter_its_clock_and_how_long_it_holds(services, project):
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules import _step_key, _step_kind, _step_stats, _step_type_icons
+    from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
+    from dplanner.modules.step_wait.aspect import write
+
+    step = project.steps[0]
+    until = Wait(until=date(2026, 11, 4))
+    SetModuleDataCommand(step.id, WAIT_ID, write(until)).redo(services.document)
+    assert _step_key(step).startswith("W") and _step_kind(step) == "wait"
+    assert "clock" in _step_type_icons(step)
+    assert _step_stats(services.document, project)[step.id] == "until 4 Nov"
+    SetModuleDataCommand(step.id, WAIT_ID, write(Wait(days=3.0))).redo(services.document)
+    assert _step_stats(services.document, project)[step.id] == "3 wd"
+
+
+def test_insert_wait_before_puts_a_wait_in_front_of_a_step_as_one_undo(services, make_project):
+    """The wait takes over what the step waited on, and the step waits on the wait."""
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+
+    library = services.document
+    plan = make_project("Delivery")
+    for title in ("Order the hardware", "Install it"):
+        AddNodeCommand(plan.id, Step(title=title)).redo(library)
+    order, install = plan.steps
+    library.set_edges(install.id, "requires", [order.id])
+    context = Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", install.id)),)})
+    services.actions.run("wait.insert_before", context)
+    (wait,) = [step for step in plan.steps if read(step) is not None]
+    assert read(wait) == Wait(days=1.0) and wait.edges["requires"] == [order.id]
+    assert install.edges["requires"] == [wait.id]
+    assert not estimate_on(wait) and not description_on(wait)
+    assert services.undo.undo_text() == "Insert Wait"
+    services.undo.undo()
+    assert len(plan.steps) == 2 and install.edges["requires"] == [order.id]

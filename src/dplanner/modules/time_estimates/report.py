@@ -191,11 +191,12 @@ def _chart(shown: Presented) -> Chart:
                 was_finish=scope.then,
                 done=scope.landed_by is not None,
                 step_id=scope.key or "",
-                note=milestone_words(scope, today),
+                note=milestone_words(scope, today, shown.now.waits),
             )
             for scope in shown.stretches
         ),
         marks=shown.saved,
+        waits=tuple((wait.start, wait.end, wait.title) for wait in shown.now.waits),
         note="On one time axis, in estimated days: where each milestone lands against the "
         "plan compared with — a check where its work is done — the work the plan held on "
         "each recorded day, ▲ where some was added and ▼ where some was taken away, and "

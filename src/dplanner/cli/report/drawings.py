@@ -434,6 +434,7 @@ def chart_svg(chart: Chart, colors: Colors) -> str:
         out.append(_plot_title(plot, panel, left, plot_w, colors))
         if amount:
             out.append(_weekends(panel, first, last, x, left, right, colors))
+            out.append(_waits(chart, panel, x, left, right, colors))
         out.append(_plot_grid(chart, panel, ticks, x, y, left, plot_w, colors))
         if panel.kind == "scope":
             out.append(_scope_plot(chart, plot, panel, x, y, last, colors))
@@ -593,6 +594,37 @@ def _weekends(
             f'height="{_n(panel.height)}" fill="{colors.ink}" fill-opacity="{WEEKEND_OPACITY}"/>'
         )
         day = end + _ONE_DAY
+    return "".join(out)
+
+
+def _waits(
+    chart: Chart,
+    panel: _Panel,
+    x: Callable[[date], float],
+    left: float,
+    right: float,
+    colors: Colors,
+) -> str:
+    """A pale band over each wait's days, dashed at its edges, named at the top of the scope
+    plot — the window's hatching, which a renderer honouring no pattern cannot draw."""
+    out = []
+    for start, end, name in chart.waits:
+        x0, x1 = max(left, x(start - _ONE_DAY)), min(right, x(end))
+        if x1 <= x0:
+            continue
+        out.append(
+            f'<g class="wait"><title>{_t(name)}</title>'
+            f'<rect class="wait-band" x="{_n(x0)}" y="{_n(panel.top)}" width="{_n(x1 - x0)}" '
+            f'height="{_n(panel.height)}" fill="{colors.ink}" fill-opacity="0.07" '
+            f'stroke="{colors.ink}" stroke-opacity="0.3" stroke-dasharray="2 2"/>'
+        )
+        if panel.kind == "scope":
+            out.append(
+                f'<text class="wait-name" x="{_n(x0 + 3)}" y="{_n(panel.top + 10)}" '
+                f'font-size="10" fill="{colors.secondary}">'
+                f"{_t(_clip(name, max(1, int((x1 - x0) / (10 * GLYPH)))))}</text>"
+            )
+        out.append("</g>")
     return "".join(out)
 
 
