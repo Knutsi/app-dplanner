@@ -136,6 +136,7 @@ class Readers:
             since_for=self.since_for,
             start=self.start_of(project, today),
             today=today,
+            people=read_team(project)[0],
         )
 
     def facts(

@@ -7,7 +7,7 @@ is the same amount of work as the same height in the other.
 - **Work done** — what is done, dotted across a day on which no step changed status; the
   plan's own schedule from the day shown on, dashed; and each milestone where it sits: a
   check on the done line the day it was done, or a dot on the schedule the day the plan
-  lands it.
+  lands it. Milestones landing on one day share the mark, a wedge each, and the name.
 
 Weekends are pale bands through both plots, and each wait a hatched band, named. Hovering
 reads the day under the pointer — the scope, what was done and what the schedule promised by
@@ -45,6 +45,7 @@ from dplanner.modules.time_estimates.plotting import (
     faded,
     paint_check,
     paint_dates,
+    paint_disc,
     paint_grid_dates,
     paint_triangle,
     paint_verticals,
@@ -210,18 +211,22 @@ class WorkView(QWidget):
         self, painter: QPainter, inks: Inks, top: float, name: str, keys: list[tuple[str, str]]
     ) -> None:
         """A plot's name at the left of the band over it, and a key per thing it draws at
-        the right — a small sample, then its words."""
+        the right — a small sample, then its words. Where the band is too narrow for them
+        all, the keys that would run into the name are left off, the leftmost first."""
         y = top - 14
         bold = QFont(self.font())
         bold.setBold(True)
         painter.setFont(bold)
         painter.setPen(inks.ink)
         painter.drawText(QRectF(LEFT, y - 8, 200, 16), Qt.AlignmentFlag.AlignVCenter, name)
+        named_to = LEFT + QFontMetricsF(bold).horizontalAdvance(name) + KEY_GAP
         painter.setFont(self.font())
         metrics = QFontMetricsF(self.font())
         cursor = float(self.width() - RIGHT)
         for sample, words in reversed(keys):
             width = metrics.horizontalAdvance(words)
+            if cursor - width - KEY_SAMPLE - 6 < named_to:
+                break
             cursor -= width
             painter.setPen(inks.secondary)
             painter.drawText(
@@ -400,26 +405,28 @@ class WorkView(QWidget):
         bold = QFont(self.font())
         bold.setBold(True)
         metrics = QFontMetricsF(bold)
-        for scope in shown.marked:
-            done = scope.landed_by
-            day = scope.end
-            if day is None:
-                continue
-            value = step_at(data.done, day) if done is not None else step_at(data.promised, day)
+        for landing in shown.landings:
+            first = landing[0]
+            done = first.landed_by is not None
+            day = first.end
+            assert day is not None  # A landing is where some milestone ends.
+            value = step_at(data.done, day) if done else step_at(data.promised, day)
             centre = QPointF(axis.x(day), self._y(top, value or 0.0))
-            color = QColor(scope.named.color)
-            if done is not None:
-                paint_check(painter, centre, color)
+            colors = [QColor(scope.named.color) for scope in landing]
+            if done:
+                paint_check(painter, centre, *colors)
             else:
+                paint_disc(painter, centre, MILESTONE_DOT, *colors)
                 painter.setPen(QPen(inks.surface, 1.5))
-                painter.setBrush(color)
+                painter.setBrush(Qt.BrushStyle.NoBrush)
                 painter.drawEllipse(centre, MILESTONE_DOT, MILESTONE_DOT)
-            named = scope.named
-            self._hits.append(_Hit(centre, milestone_words(scope, shown.day)))
+            words = (milestone_words(scope, shown.day, shown.now.waits) for scope in landing)
+            self._hits.append(_Hit(centre, "\n\n".join(words)))
             # A name goes over its mark, or beside it where that would leave the plot for the
             # key above; one that would sit on another's is left to the tooltip.
-            radius = CHECK_RADIUS if done is not None else MILESTONE_DOT
-            width = metrics.horizontalAdvance(named.label)
+            radius = CHECK_RADIUS if done else MILESTONE_DOT
+            label = " · ".join(scope.named.label for scope in landing)
+            width = metrics.horizontalAdvance(label)
             spot = QPointF(centre.x(), centre.y() - radius - 8)
             if spot.y() - 8 < top:
                 spot = QPointF(centre.x() - radius - 4 - width / 2, centre.y())
@@ -431,7 +438,7 @@ class WorkView(QWidget):
             painter.drawText(
                 QRectF(spot.x() - width / 2 - 2, spot.y() - 8, width + 4, 16),
                 Qt.AlignmentFlag.AlignCenter,
-                named.label,
+                label,
             )
             painter.setFont(self.font())
 

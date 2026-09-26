@@ -243,6 +243,11 @@ def no_wait(_step: Step) -> Wait | None:
     return None
 
 
+def no_marker(_step: Step) -> bool:
+    """``is_marker`` for a walk that knows no step carrying no work by design."""
+    return False
+
+
 # When a wait made ready at a moment of the walk is over, in the walk's working days.
 Waits = Callable[[Step, float], float]
 
@@ -277,6 +282,7 @@ def parallel_finish(
     running: frozenset[StepId] = frozenset(),
     wait_of: Callable[[Step], Wait | None] = no_wait,
     waits: Waits | None = None,
+    is_marker: Callable[[Step], bool] = no_marker,
 ) -> ParallelFinish | None:
     """The makespan with ``humans`` people and ``agents`` coding agents. None only when
     there are no steps to run.
@@ -303,7 +309,9 @@ def parallel_finish(
 
     A wait (``wait_of``) takes no worker: the moment it is ready it waits, and ``waits`` says
     until when — by default its ``days`` from then, an ``until`` wait being over at once,
-    since the walk knows no dates (:func:`phases` does, and does better).
+    since the walk knows no dates (:func:`phases` does, and does better). Nor does a marker
+    (``is_marker``) — a milestone's own step, a feature: it lands the moment what it requires
+    has, however busy the team is with other work.
     """
     if humans < 1 or agents < 1:
         raise ValueError("a pool with work in it needs at least one worker")
@@ -326,11 +334,14 @@ def parallel_finish(
     starts: dict[StepId, float] = {}
     now = 0.0
 
+    def idle(step: Step) -> bool:
+        return wait_of(step) is not None or is_marker(step)
+
     def release(step_id: StepId) -> None:
         step = by_id[step_id]
-        if wait_of(step) is not None:
+        if idle(step):
             starts[step_id] = now
-            busy.append((over(step, now), step_id))
+            busy.append((over(step, now) if wait_of(step) is not None else now, step_id))
         else:
             ready[pool[step_id]].append(step_id)
 
@@ -356,7 +367,7 @@ def parallel_finish(
                 continue
             busy.remove((finish, step_id))
             landings[step_id] = finish
-            if wait_of(by_id[step_id]) is None:
+            if not idle(by_id[step_id]):
                 free[pool[step_id]] += 1
             remaining -= 1
             for after in dependents[step_id]:
@@ -648,8 +659,11 @@ def phases(
         known: dict[StepId, date] | None = None,
         began_by: date | None = None,
         waited: Callable[[Step], float] | None = None,
+        borrowed: frozenset[StepId] = frozenset(),
     ) -> tuple[Phase, _Clock]:
-        """One stretch dated from ``clock``, and the clock it leaves for the next."""
+        """One stretch dated from ``clock``, and the clock it leaves for the next. ``borrowed``
+        are ``members`` of later stretches, run beside this one's own: they hold workers, and
+        the stretch lands when its own work does."""
         asked = start_for(milestone) if milestone is not None else None
         begins = asked if asked is not None and (first or asked >= clock.when) else clock.when
         used = clock.lead if begins == clock.when else 0.0
@@ -679,13 +693,18 @@ def phases(
             running=running,
             wait_of=wait_of,
             waits=waits,
+            is_marker=facts.is_marker if facts is not None else no_marker,
         )
         assert run is not None  # A stretch dated here always has something to run.
-        finish = working_days_after(begins, used + run.days, GUARD) if run.days > 0 else None
+        days = max(
+            (offset for step_id, offset in run.landings.items() if step_id not in borrowed),
+            default=0.0,
+        )
+        finish = working_days_after(begins, used + days, GUARD) if days > 0 else None
         phase = Phase(
             milestone=milestone,
             steps=steps,
-            days=run.days,
+            days=days,
             start=begins,
             finish=finish,
             asked=asked,
@@ -700,7 +719,7 @@ def phases(
             return phase, _Clock(begins, used)
         # Ending exactly as a day ends still ends on that day: what follows starts then, as a
         # team picks up the next step the moment it finishes one.
-        total = used + run.days
+        total = used + days
         part = total - floor(total + GUARD)
         return phase, _Clock(finish, part if part > GUARD else 1.0)
 
@@ -780,7 +799,8 @@ def _resumed(
     it was done and holds nothing back — its marker steps need not be marked. From the first
     with work left, stretches follow one another from the next working day: done steps are
     facts, work in flight keeps its worker and is credited with ``facts.worked`` (at least
-    half a day is left), a ``days`` wait with the days it has already waited, and everything
+    half a day is left) — work in flight in a later stretch too, which runs now rather than
+    in its turn — a ``days`` wait with the days it has already waited, and everything
     else costs its estimate. A done step nobody dated — a status older than its days — is
     taken as done by its planned landing, or today if that is earlier: never later than it
     could have been."""
@@ -796,33 +816,76 @@ def _resumed(
         before = [by_id[target] for target in step.edges.get("requires", []) if target in by_id]
         return waited(step, before, facts.status_of, facts.since_of, today)
 
+    def credited(step: Step) -> float | None:
+        days = days_for(step)
+        return days if days is None else max(HALF, days - facts.worked(step))
+
     result: list[Phase] = []
     clock: _Clock | None = None
-    for milestone, steps in groups:
+    # Work in flight in a stretch not reached yet — somebody started it early — keeps its
+    # worker from tomorrow, beside the stretch being worked, and what is left of it when
+    # that one lands carries on into the next. A step that lands on the way is done, where
+    # it belongs, on the day it landed. None until the first stretch with work left.
+    carried: dict[StepId, float] | None = None
+    settled: dict[StepId, date] = {}
+    for index, (milestone, steps) in enumerate(groups):
         known = {step.id: done_on(step) for step in steps if facts.status_of(step) == DONE}
-        left = [step for step in steps if facts.status_of(step) != DONE]
+        known |= {step.id: settled[step.id] for step in steps if step.id in settled}
+        left = [step for step in steps if step.id not in known]
         if all(facts.is_marker(step) or wait_of(step) is not None for step in left):
             result.append(_finished(milestone, steps, known, today, start_for))
             continue
         if clock is None:
             clock = _Clock(next_working_day(today + _ONE_DAY), 0.0)
-        running = frozenset(step.id for step in left if facts.status_of(step) == IN_PROGRESS)
+        if carried is None:
+            carried = {
+                step.id: days
+                for _later, ahead in groups[index + 1 :]
+                for step in ahead
+                if facts.status_of(step) == IN_PROGRESS and (days := credited(step)) is not None
+            }
+        own = {step.id for step in left}
+        extra = [by_id[step_id] for step_id in carried if step_id not in own]
+        running = frozenset(
+            {step.id for step in left if facts.status_of(step) == IN_PROGRESS} | set(carried)
+        )
 
-        def costs(step: Step, running: frozenset[StepId] = running) -> float | None:
-            days = days_for(step)
-            if days is None or step.id not in running:
-                return days
-            return max(HALF, days - facts.worked(step))
+        def costs(
+            step: Step,
+            running: frozenset[StepId] = running,
+            carried: Mapping[StepId, float] = dict(carried),
+        ) -> float | None:
+            if step.id in carried:
+                return carried[step.id]
+            return credited(step) if step.id in running else days_for(step)
 
         started = [
             since
-            for step in left
-            if step.id in running and (since := facts.since_of(step)) is not None
+            for step in steps
+            if facts.status_of(step) == IN_PROGRESS and (since := facts.since_of(step)) is not None
         ]
         began_by = min([*known.values(), *started], default=None)
         phase, clock = dated(
-            milestone, steps, left, costs, clock, False, running, known, began_by, held
+            milestone,
+            steps,
+            [*left, *extra],
+            costs,
+            clock,
+            False,
+            running,
+            known,
+            began_by,
+            held,
+            frozenset(step.id for step in extra),
         )
+        for step in extra:
+            if phase.landings[step.id] <= phase.days + GUARD:
+                settled[step.id] = phase.landing_of(step.id)
+                del carried[step.id]
+            else:
+                carried[step.id] -= max(0.0, phase.days - phase.starts[step.id])
+        for step_id in own:
+            carried.pop(step_id, None)
         result.append(phase)
     return result
 

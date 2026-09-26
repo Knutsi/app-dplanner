@@ -16,8 +16,8 @@ THURSDAY = MONDAY + timedelta(days=3)
 LATER = MONDAY + timedelta(days=9)  # Wednesday of the next week: seven working days on.
 
 
-def pace(steps, *, today=LATER, agents=(), undone=(), unstamped=()):
-    """Each step is ``(title, days given, started, done)``."""
+def pace(steps, *, today=LATER, agents=(), undone=(), unstamped=(), people=3):
+    """Each step is ``(title, days given, started, done)``; three people unless said."""
     given = {title: days for title, days, _started, _done in steps}
     started = {title: day for title, _days, day, _done in steps}
     done = {title: day for title, _days, _started, day in steps}
@@ -30,11 +30,13 @@ def pace(steps, *, today=LATER, agents=(), undone=(), unstamped=()):
         since_for=lambda step: done[step.title],
         start=MONDAY,
         today=today,
+        people=people,
     )
 
 
 def three(days=2.0, finished=THURSDAY):
-    """Three steps given ``days`` each, all started on the Monday and done by ``finished``."""
+    """Three steps given ``days`` each, all started on the Monday and done by ``finished`` —
+    one each for the three people."""
     return [(name, days, MONDAY, finished) for name in "ABC"]
 
 
@@ -49,6 +51,20 @@ def test_there_is_no_pace_before_enough_days_and_enough_finished_steps():
     assert pace(three()[: PACE_STEPS - 1]) is None
     assert pace(three(), undone=("A",)) is None  # two finished
     assert pace(three(), unstamped=("B",)) is None  # a step with no start says nothing
+
+
+def test_steps_one_person_keeps_going_at_once_share_the_days():
+    """One person with all three open from Monday to Thursday gave each a third of those
+    days: six days of work in three is twice the pace, not a third of it. A step handed on
+    the day the last was done shares nothing — each had half of that day."""
+    assert pace(three(), people=1) == pytest.approx(2.0)
+    wednesday, friday, tuesday = (MONDAY + timedelta(days=n) for n in (2, 4, 8))
+    handed_on = [
+        ("A", 2.0, MONDAY, wednesday),
+        ("B", 2.0, wednesday, friday),
+        ("C", 2.0, friday, tuesday),
+    ]
+    assert pace(handed_on, people=1) == pytest.approx(1.0)
 
 
 def test_it_is_peoples_pace_alone():

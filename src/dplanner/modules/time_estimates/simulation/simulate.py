@@ -19,14 +19,13 @@ from dplanner.modules.time_estimates.simulation.edits import (
 )
 from dplanner.modules.time_estimates.simulation.frames import Writers
 from dplanner.modules.time_estimates.simulation.replay import Recorded, Replay, record
-from dplanner.modules.time_estimates.simulation.sample import SAMPLE_START, sample_plan
+from dplanner.modules.time_estimates.simulation.sample import SAMPLE_START
 from dplanner.modules.time_estimates.simulation.scenarios import (
     SAVED_BY_DEFAULT,
     SCENARIOS,
     scenario_by_id,
 )
 from dplanner.modules.time_estimates.simulation.timeline import Cadence, Timeline
-from dplanner.modules.time_estimates.simulation.world import run
 
 
 @dataclass(frozen=True)
@@ -56,7 +55,7 @@ def simulate(setup: Setup, writers: Writers, readers: Readers) -> Simulated:
         budgets=(*scenario.world.budgets, *world_budgets(setup.budgets, SAMPLE_START)),
         waits=(*scenario.world.waits, *world_waits(setup.waits, SAMPLE_START)),
     )
-    timeline = run(sample_plan(setup.seed), world, SAMPLE_START)
+    timeline = scenario.play(setup.seed, world)
     replay = Replay(scenario.name, writers, readers)
     recorded = record(
         timeline,

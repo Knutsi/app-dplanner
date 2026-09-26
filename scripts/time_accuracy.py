@@ -8,22 +8,22 @@ Each scenario is played by the simulator (``time_estimates/simulation/``) over a
 seeds, every day written into a library through the real aspect writers and dated by the
 real model, and each day's forecast held to when the work really landed: the mean distance
 from the truth, how far the forecast travelled in total, and on how many days it moved — all
-in working days (``simulation/accuracy.py``). *By the book* must read 0.0 0 0 throughout.
+in working days (``simulation/accuracy.py``). Twice: as the recorder and the report date the
+plan, and as the tab shows it with *Adjust for Efficiency* on — the prototype's *resume* and
+*pace so far*. *By the book* must read 0.0 0 0 throughout.
 """
 
 import sys
-from dataclasses import replace
 
 from dplanner.modules import _time_readers, _time_writers
 from dplanner.modules.time_estimates.simulation.accuracy import (
     Accuracy,
+    TimelineAccuracy,
     combined,
     timeline_accuracy,
 )
 from dplanner.modules.time_estimates.simulation.replay import Replay
-from dplanner.modules.time_estimates.simulation.sample import SAMPLE_START, sample_plan
 from dplanner.modules.time_estimates.simulation.scenarios import SCENARIOS, scenario_by_id
-from dplanner.modules.time_estimates.simulation.world import run
 
 SEEDS = (1, 2, 3, 7, 11, 42)
 
@@ -32,23 +32,33 @@ def cell(found: Accuracy) -> str:
     return f"{found.error:5.1f} {found.movement:4d} {found.moves:4d}"
 
 
+def cells(measured: list[TimelineAccuracy]) -> str:
+    whole = combined([one.whole for one in measured])
+    milestones = combined([one.milestones for one in measured])
+    return f"{cell(whole)} | {cell(milestones)}"
+
+
 def main(picked: list[str]) -> int:
     scenarios = [scenario_by_id(one) for one in picked] if picked else list(SCENARIOS)
     readers, writers = _time_readers(), _time_writers()
     print("the landing forecast: mean |error|, total movement, days moved (working days)")
     print(f"seeds {', '.join(map(str, SEEDS))}\n")
-    print(f"{'scenario':16}| whole plan       | milestones")
+    print(f"{'':16}| as recorded                        | adjusted for efficiency")
+    print(f"{'scenario':16}" + "| whole plan       | milestones       " * 2)
     for scenario in scenarios:
-        measured = [
-            timeline_accuracy(
-                run(sample_plan(seed), replace(scenario.world, seed=seed), SAMPLE_START),
-                Replay(scenario.name, writers, readers),
+        played = [scenario.play(seed) for seed in SEEDS]
+        said = [
+            cells(
+                [
+                    timeline_accuracy(
+                        timeline, Replay(scenario.name, writers, readers), adjusted=adjusted
+                    )
+                    for timeline in played
+                ]
             )
-            for seed in SEEDS
+            for adjusted in (False, True)
         ]
-        whole = combined([one.whole for one in measured])
-        milestones = combined([one.milestones for one in measured])
-        print(f"{scenario.id:16}| {cell(whole)} | {cell(milestones)}")
+        print(f"{scenario.id:16}| {said[0]} | {said[1]}")
     return 0
 
 

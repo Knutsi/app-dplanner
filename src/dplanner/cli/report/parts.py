@@ -192,6 +192,16 @@ class Chart:
         """What the done plot marks: the milestones — the whole plan where there are none."""
         return self.milestones or self.stretches[:1]
 
+    @property
+    def landings(self) -> tuple[tuple[Stretch, ...], ...]:
+        """The marked, by where each ends: milestones landing on one day share one mark — a
+        done one with the done, one still to come with the plan's."""
+        groups: dict[tuple[date, bool], list[Stretch]] = {}
+        for stretch in self.marked:
+            if stretch.finish is not None:
+                groups.setdefault((stretch.finish, stretch.done), []).append(stretch)
+        return tuple(tuple(group) for group in groups.values())
+
 
 @dataclass(frozen=True)
 class Span:

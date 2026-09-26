@@ -178,6 +178,16 @@ class Presented:
         return self.milestones or (self.whole,)
 
     @property
+    def landings(self) -> tuple[tuple[Scope, ...], ...]:
+        """The marked, by where each ends: milestones landing on one day share one mark — a
+        done one with the done, one still to come with the plan's."""
+        groups: dict[tuple[date, bool], list[Scope]] = {}
+        for scope in self.marked:
+            if scope.end is not None:
+                groups.setdefault((scope.end, scope.landed_by is not None), []).append(scope)
+        return tuple(tuple(group) for group in groups.values())
+
+    @property
     def schedule(self) -> tuple[tuple[date, float], ...]:
         """The plan's schedule from the day shown on: re-dated from what has happened, the
         schedule before it holds only finished work's old dates."""

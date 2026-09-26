@@ -4557,7 +4557,9 @@ Time tab runs the one the project is staffed for. The decisions worth writing do
   simulation over the whole graph with per-milestone release dates — was rejected because
   it lets a later milestone's independent work run *during* an earlier one whenever a slot
   is free, which is what a team can do but not what "milestones in sequence" says, and it
-  makes the calendar impossible to read as bands.
+  makes the calendar impossible to read as bands. One exception was measured in since and
+  adopted: work a team has already *started* in a later stretch runs now (*Milestones
+  worked in parallel*, below) — the sequence plans the work, but it does not stop anybody.
 - **A milestone's own date is an assumption, so it is stored — and it is a floor, not a
   fact.** `schedule milestone --start` says when a stretch *begins*, not when it lands
   (the aspect that names a milestone is explicit that a landing date is the schedule's to
@@ -4783,8 +4785,9 @@ for that — a team working a synthetic plan while something happens to it, one 
 broken assumption — and `time_estimates/simulation/` is that simulator in Python, Qt-free
 and held to it: the seeded luck and the sample plan to the bit, the world frame for frame
 (`test_time_simulation.py` replays every exported run), and the model on top by the parity
-file. `scripts/time_accuracy.py` prints the prototype's accuracy table and reproduces its
-`resume` column exactly, which is what makes a model change there a measured one here.
+file. `scripts/time_accuracy.py` prints the prototype's accuracy table — its `resume`
+column exactly, and its *pace so far* as the column with *Adjust for Efficiency* on — which
+is what makes a model change there a measured one here.
 
 - **A simulated day reaches the library through the owners' own writers.** A frame is a
   day's changes in the terms DPlanner stores (`frames.py`); the root hands the simulator
@@ -4816,6 +4819,65 @@ file. `scripts/time_accuracy.py` prints the prototype's accuracy table and repro
   hold (`hold_reach`), so the days move only the lines; let go, the axes follow the day.
 - **Nothing is simulated until the tab is first shown**, so a restored Debug tab costs
   nothing at startup.
+
+### Milestones worked in parallel
+
+Milestones run in sequence (*Time estimates: two worker pools*), and the prototype never
+tested what happens when a team does not: its sample plan chains every milestone's work onto
+the one before, so no later work can start early. Three scenarios were added to the
+simulator to measure it — **Two tracks** (two chains of milestones that never wait on each
+other, idle hands working ahead), **Multitasking** (each person keeps two steps going, their
+focus split) and **Late marking** (a step is marked done the working morning after it lands)
+— each sizing every step, as *By the book* does, so what it shows is its own. Every
+candidate was run over all fifteen scenarios, six seeds each, and adopted only if *By the
+book* stayed at 0.0 · 0 · 0 and nothing got worse (`scripts/time_accuracy.py`; error ·
+movement · days moved, in working days).
+
+- **A marker takes no worker.** Two tracks first read its milestones nine days early for
+  weeks on end, and not because of the model: the world landed a milestone's own step only
+  when a worker was free to take it, and the one person was ten days into a five-day step on
+  the other track. Marking a milestone done is no work, so a marker lands the moment what it
+  requires has, in the world and in `parallel_finish` (`is_marker`, from the facts, beside
+  `wait_of`) alike. Neither moves a forecast of the prototype's twelve — there, a
+  milestone's whole stretch is done when its marker is ready, so every worker is free — and
+  Two tracks' milestones went from 3.3 days of error to 1.4.
+- **Work already started runs now.** Re-dated, a later stretch's work in flight used to wait
+  for the stretches before it, crediting a worker the team did not have: the person on it
+  was counted free for the stretch being worked. Now it keeps its worker from tomorrow
+  beside that stretch (`_resumed`'s `carried`, dated with `borrowed`), what is left of it
+  when that stretch lands carries on into the next, and one that lands on the way is done,
+  where it belongs, on the day it landed. The stretch being worked lands when its *own*
+  work does. Two tracks' milestones 1.4 · 73 · 63 → 1.2 · 73 · 43, the whole plan 1.3 · 25
+  · 22 → 1.2 · 27 · 17; the prototype's twelve cannot reach it, so the parity file is
+  untouched. What error is left is later work nobody has started yet, which idle hands take
+  ahead of the sequence — only stretches planned to overlap would see it coming, and that
+  reverses the decision above, so it stays out.
+- **The pace shares a day among the steps open in it.** *Adjust for Efficiency* measured a
+  person keeping two steps going as working at half the speed, and re-dated everything left
+  at it: Multitasking read 5.4 days of error with it on, against 1.7 off. `pace_so_far` now
+  gives each of people's steps its share of every half day more of them were open than
+  there are people — half days, because the pace is already counted middle to middle, so a
+  step handed on at noon shares nothing with the one that follows it. With the toggle on,
+  Multitasking 5.4 → 2.0, Late marking 3.5 → 0.4 (a step landed but not marked reads as a
+  second one open, and now costs the first only its share), Blocked 4.2 → 3.5 (the stall
+  counts as slowness only while nothing else was worked); nothing else moved.
+- **Rejected: a day's grace before a step is late.** Taking a step as on plan until the day
+  after its landing is over, and a done step's `since` a day late as on time, takes Late
+  marking to 0.0 · 0 · 0 and moves most forecasts less — but it adds error to Supervision
+  and Learning, it would change what *late* means for every plan, and it moves forecasts
+  the parity file pins. One that helps some and costs others is at most the reader's
+  toggle, never the model's, and a change to the prototype's scenarios goes there first.
+- **Rejected: crediting work in flight by its share.** Crediting each of two steps one
+  person keeps going with half their days took Multitasking 1.7 → 0.7, and Late marking
+  0.3 · 50 · 46 → 0.5 · 163 · 67: the step landed but not yet marked halves the credit of
+  the one after it, every night. The pace can afford the share because it reads finished
+  steps; the credit reads a morning's statuses.
+- **The views say it without a word.** Milestones landing on one day share one mark on the
+  Work page and in the report — a wedge of each colour, each wedge picking its own step in
+  the report — and one name, *M1 · M2* (`Presented.landings`, `Chart.landings`). On the
+  calendar a day two stretches are both being worked is a stripe of each, side by side in
+  sequence; a landing fills its day with every milestone landing on it and names them all,
+  since the next stretch beginning that afternoon is the sequence, not news.
 
 ### Progress against the plan: the promise is derived, the past is recorded
 

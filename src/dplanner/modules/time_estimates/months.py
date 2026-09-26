@@ -3,10 +3,11 @@
 From the month before the work starts, two rows of three: every stretch of work filled with
 its milestone's hue, fainter over the weekends the schedule skips, and the day a milestone
 lands drawn as a filled mark carrying the milestone's name, white on its colour in either
-theme, where the cell has room for it, and a day a wait holds hatched over. One stretch can
-be *emphasised* (the host says which, from the milestone picked on another page), and the
-others fade so the work leading up to that milestone stands alone. The arrows beside it page
-through time.
+theme, where the cell has room for it, and a day a wait holds hatched over. A day two
+stretches are both worked is a stripe of each; milestones landing on one day share its fill
+and its name. One stretch can be *emphasised* (the host says which, from the milestone picked
+on another page), and the others fade so the work leading up to that milestone stands alone.
+The arrows beside it page through time.
 
 **The calendar fills the width it is given.** The day cells grow with the width, so a wide
 window shows a wide calendar rather than a small one in a corner, and a narrow one drops
@@ -32,6 +33,7 @@ from PySide6.QtGui import (
     QHelpEvent,
     QMouseEvent,
     QPainter,
+    QPainterPath,
     QPaintEvent,
     QPen,
     QResizeEvent,
@@ -89,6 +91,10 @@ class Band:
     finish: date
     color: QColor
     lands: bool
+
+
+def _lands_on(band: Band, when: date) -> bool:
+    return band.lands and when == band.finish
 
 
 def _first_of(when: date) -> date:
@@ -209,24 +215,32 @@ class MonthsView(QWidget):
     def first_month(self) -> date:
         return self._begin
 
-    def band_at(self, when: date) -> Band | None:
-        return next((band for band in self._bands if band.start <= when <= band.finish), None)
+    def bands_at(self, when: date) -> tuple[Band, ...]:
+        """Every stretch the day is in — more than one where the work of the next began
+        before the last landed, as it does on the day one lands."""
+        return tuple(band for band in self._bands if band.start <= when <= band.finish)
 
     def day_tooltip(self, when: date) -> str:
         """One precise sentence per day — the calendar's only words."""
         said = f"{WEEKDAYS[when.weekday()]} {format_date(when, today=self._today)}"
-        band = self.band_at(when)
-        if band is None:
+        bands = self.bands_at(when)
+        landing = [band for band in bands if _lands_on(band, when)]
+        if not bands:
             said += " — click to start the work here" if self._pickable else ""
-        elif when == band.finish and band.lands:
-            said += f" — {band.label} lands"
         elif when.weekday() >= SATURDAY:
-            said += " — weekend, not counted"
+            words = [f"{band.label} lands" for band in landing] or ["weekend, not counted"]
+            said += " — " + "; ".join(words)
         else:
-            worked = working_days_between(band.start, when)
-            total = working_days_between(band.start, band.finish)
-            starts = " starts," if when == band.start else ","
-            said += f" — {band.label}{starts} working day {worked} of {total}"
+            words = []
+            for band in bands:
+                if band in landing:
+                    words.append(f"{band.label} lands")
+                    continue
+                worked = working_days_between(band.start, when)
+                total = working_days_between(band.start, band.finish)
+                starts = " starts," if when == band.start else ","
+                words.append(f"{band.label}{starts} working day {worked} of {total}")
+            said += " — " + "; ".join(words)
         said += "".join(
             f" · waits: {name}" for first, last, name in self._waits if first <= when <= last
         )
@@ -357,18 +371,24 @@ class MonthsView(QWidget):
         self, painter: QPainter, rect: QRectF, when: date, ink: QColor, secondary: QColor
     ) -> None:
         weekend = when.weekday() >= SATURDAY
-        band = self.band_at(when)
-        landing = band is not None and band.lands and when == band.finish
-        if band is not None:
-            if landing:
+        bands = self.bands_at(when)
+        landing = [band for band in bands if _lands_on(band, when)]
+        cell = QPainterPath()
+        cell.addRoundedRect(rect, DAY_RADIUS, DAY_RADIUS)
+        # A day stretches share is a stripe of each, side by side in their sequence — but a
+        # landing fills its day, as the next stretch beginning that afternoon does not.
+        filled = landing or bands
+        width = rect.width() / max(1, len(filled))
+        for index, band in enumerate(filled):
+            if band in landing:
                 alpha = LANDING_ALPHA
             elif when == self._start:
                 alpha = START_ALPHA
             else:
                 alpha = SPAN_WEEKEND_ALPHA if weekend else SPAN_ALPHA
-            painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(self._ink(band, alpha))
-            painter.drawRoundedRect(rect, DAY_RADIUS, DAY_RADIUS)
+            stripe = QPainterPath()
+            stripe.addRect(QRectF(rect.left() + index * width, rect.top(), width, rect.height()))
+            painter.fillPath(cell.intersected(stripe), self._ink(band, alpha))
         if any(first <= when <= last for first, last, _name in self._waits):
             # A day a wait holds: hatched over its stretch's colour, so it still reads as
             # part of the stretch and plainly as no work.
@@ -382,24 +402,21 @@ class MonthsView(QWidget):
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRoundedRect(rect.adjusted(0.5, 0.5, -0.5, -0.5), DAY_RADIUS, DAY_RADIUS)
         number = QColor(ink)
-        faded = self._emphasised is not None and band is not None and band.key != self._emphasised
-        if landing and not faded:
+        if any(self._emphasised in (None, band.key) for band in landing):
             number = QColor(LANDING_INK)  # White on the hue, in either theme, as the ✓ is.
-        elif band is None:
+        elif not bands:
             number.setAlpha(WEEKEND_ALPHA if weekend else DAY_ALPHA)
         painter.setPen(number)
-        named = landing and band is not None and rect.height() >= NAMED_AT
-        if not named:
+        if not landing or rect.height() < NAMED_AT:
             painter.drawText(rect, Qt.AlignmentFlag.AlignCenter, str(when.day))
             return
-        assert band is not None
         upper, lower = (
             rect.adjusted(0, 2, 0, -rect.height() / 2),
             rect.adjusted(2, rect.height() / 2 - 2, -2, -2),
         )
         painter.drawText(upper, Qt.AlignmentFlag.AlignCenter, str(when.day))
         name = QFontMetricsF(painter.font()).elidedText(
-            band.label, Qt.TextElideMode.ElideRight, lower.width()
+            " · ".join(band.label for band in landing), Qt.TextElideMode.ElideRight, lower.width()
         )
         painter.drawText(lower, Qt.AlignmentFlag.AlignCenter, name)
 

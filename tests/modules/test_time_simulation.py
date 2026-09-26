@@ -13,6 +13,8 @@ from typing import Any
 import pytest
 from tests.modules.time_helpers import frame_of, run_id, runs
 
+from dplanner.domain.progression import IN_PROGRESS
+from dplanner.domain.schedule import next_working_day
 from dplanner.modules import _time_readers, _time_writers
 from dplanner.modules.time_estimates.progress import read_history, read_saved
 from dplanner.modules.time_estimates.simulation.accuracy import timeline_accuracy
@@ -42,8 +44,7 @@ MONDAY = SAMPLE_START
 
 
 def _played(scenario_id: str, seed: int) -> Timeline:
-    scenario = scenario_by_id(scenario_id)
-    return run(sample_plan(seed), replace(scenario.world, seed=seed), SAMPLE_START)
+    return scenario_by_id(scenario_id).play(seed)
 
 
 def _replay() -> Replay:
@@ -53,8 +54,8 @@ def _replay() -> Replay:
 # -- the prototype's own days --------------------------------------------------------------------
 
 
-def test_every_scenario_is_one_the_prototype_plays():
-    assert {scenario.id for scenario in SCENARIOS} == {one["scenario"] for one in runs()}
+def test_every_scenario_the_prototype_plays_is_played_here():
+    assert {one["scenario"] for one in runs()} <= {scenario.id for scenario in SCENARIOS}
 
 
 @pytest.mark.parametrize("seed", (1, 2, 3))
@@ -71,14 +72,70 @@ def test_the_world_plays_each_day_as_the_prototype_did(exported: dict[str, Any])
     assert played.frames() == [frame_of(raw) for raw in exported["days"]]
 
 
+# -- milestones worked in parallel ---------------------------------------------------------------
+#
+# Three scenarios the prototype never played. What each breaks is the world's, so it is
+# tested here; how the model reads them is ``scripts/time_accuracy.py``'s to say.
+
+
+def _reaches(steps, start: str, target: str) -> bool:
+    by_id = {step.id: step for step in steps}
+    ahead, seen = [start], set()
+    while ahead:
+        step_id = ahead.pop()
+        if step_id == target:
+            return True
+        if step_id not in seen:
+            seen.add(step_id)
+            ahead += by_id[step_id].requires
+    return False
+
+
+def test_two_tracks_deal_the_milestones_to_chains_that_never_wait_on_each_other():
+    plan = sample_plan(1, scenario_by_id("two-tracks").shape)
+    release = {step.milestone: step.id for step in plan.steps if step.milestone}
+    assert _reaches(plan.steps, release["M3"], release["M1"])
+    assert _reaches(plan.steps, release["M4"], release["M2"])
+    assert not _reaches(plan.steps, release["M2"], release["M1"])
+    assert not _reaches(plan.steps, release["M4"], release["M3"])
+
+
+def test_a_milestone_lands_the_moment_its_work_does_however_busy_the_team_is():
+    """Two tracks keep the one person on the other track's long steps; marking a milestone
+    done waits for nobody."""
+    played = _played("two-tracks", 1)
+    for step in played.days[-1].steps:
+        if step.milestone:
+            work = [played.finished[target] for target in step.requires]
+            assert played.finished[step.id] == max(work)
+
+
+def test_a_person_multitasking_keeps_two_steps_going_and_never_three():
+    played = _played("multitasking", 1)
+    going = [
+        sum(1 for step in day.steps if not step.agent and step.status == IN_PROGRESS)
+        for day in played.days
+    ]
+    assert max(going) == 2
+
+
+def test_a_step_is_marked_done_the_working_morning_after_it_lands():
+    played = _played("late-marking", 1)
+    for step in played.days[-1].steps:
+        if step.wait is None:
+            landed = played.finished[step.id]
+            assert step.since == next_working_day(landed + timedelta(days=1))
+
+
 # -- the model over it ---------------------------------------------------------------------------
 
 
+@pytest.mark.parametrize("adjusted", (False, True), ids=("recorded", "adjusted"))
 @pytest.mark.parametrize("seed", (1, 2, 3))
-def test_by_the_book_forecasts_the_real_landing_every_day(seed: int):
+def test_by_the_book_forecasts_the_real_landing_every_day(seed: int, adjusted: bool):
     """The control: every step takes exactly its estimate, so a forecast that moved or
-    missed would be the model's own doing."""
-    measured = timeline_accuracy(_played("by-the-book", seed), _replay())
+    missed would be the model's own doing — with *Adjust for Efficiency* on as well."""
+    measured = timeline_accuracy(_played("by-the-book", seed), _replay(), adjusted=adjusted)
     for series in (measured.whole, measured.milestones):
         assert (series.error, series.movement, series.moves) == (0.0, 0, 0)
         assert series.samples > 0

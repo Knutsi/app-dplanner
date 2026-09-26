@@ -48,9 +48,10 @@ from typing import Any, TypeGuard
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import cyclic, placed
-from dplanner.domain.progression import DONE
+from dplanner.domain.progression import DONE, IN_PROGRESS
 from dplanner.domain.schedule import (
     HALF,
+    SATURDAY,
     Phase,
     ScheduleFacts,
     Wait,
@@ -325,31 +326,60 @@ def pace_so_far(
     since_for: Callable[[Step], date | None],
     start: date,
     today: date,
+    people: int,
 ) -> float | None:
     """How fast people's finished steps ran against the plan: the days they were given —
     ``days_for``, stretched at the planned focus — over the working days they took, each from
     the middle of the day it started to the middle of the day it was done. 1 is as planned,
     0.5 half the speed. It is the focus measured, so like the focus it is people's alone: an
     agent's step runs at its estimate. None before :data:`PACE_AFTER` working days of work
-    and :data:`PACE_STEPS` finished steps. A step blocked on the way counts its stall as
-    slowness."""
+    and :data:`PACE_STEPS` finished steps.
+
+    **A day is shared by the steps open on it.** Where more of people's steps were in
+    progress than there are ``people``, each is taken to have had its share of the day — two
+    steps kept going by one person half each — so juggling reads as juggling, not as working
+    at half the speed; and a step blocked on the way counts its stall as slowness only while
+    nothing else was being worked."""
     if today < start or working_days_between(start, today) <= PACE_AFTER:
         return None
+    theirs = [step for step in steps if not is_agent(step)]
+    spans: dict[StepId, list[_HalfDay]] = {}
+    for step in theirs:
+        status, started = status_for(step), started_for(step)
+        until = since_for(step) if status == DONE else today if status == IN_PROGRESS else None
+        if started is not None and until is not None:
+            spans[step.id] = _half_days(started, until)
+    open_in: dict[_HalfDay, int] = {}
+    for span in spans.values():
+        for half in span:
+            open_in[half] = open_in.get(half, 0) + 1
     given = took = 0.0
     count = 0
-    for step in steps:
+    for step in theirs:
         days = days_for(step)
-        if days is None or is_agent(step) or status_for(step) != DONE:
-            continue
-        started, since = started_for(step), since_for(step)
-        if started is None or since is None:
+        if days is None or status_for(step) != DONE or step.id not in spans:
             continue
         given += days
-        took += working_days_between(started, since) - 2 * HALF
+        took += sum(HALF * min(1.0, people / open_in[half]) for half in spans[step.id])
         count += 1
     if count < PACE_STEPS or took <= 0:
         return None
     return min(PACE_MOST, max(PACE_LEAST, given / took))
+
+
+# A working day's morning (0) or afternoon (1).
+_HalfDay = tuple[date, int]
+
+
+def _half_days(first: date, last: date) -> list[_HalfDay]:
+    """The half days from the middle of ``first`` to the middle of ``last``: its afternoon,
+    both halves of every working day between, and the morning of ``last``."""
+    days = (first + timedelta(days=offset) for offset in range((last - first).days + 1))
+    working = [day for day in days if day.weekday() < SATURDAY]
+    if len(working) < 2:
+        return []
+    between = [(day, half) for day in working[1:-1] for half in (0, 1)]
+    return [(working[0], 1), *between, (working[-1], 0)]
 
 
 def as_planned(pace: float) -> bool:

@@ -121,9 +121,12 @@ class Replay:
     def apply(self, frame: Frame) -> None:
         apply(self.library, self.project, frame, self._writers)
 
-    def forecast(self, day: date) -> Snapshot | None:
-        """The plan as the recorder takes it at the end of ``day``."""
-        return self._readers.snapshot(self.library, self.project, day, day_over=True)
+    def forecast(self, day: date, *, adjusted: bool = False) -> Snapshot | None:
+        """The plan as the recorder takes it at the end of ``day`` — or, ``adjusted``, as the
+        tab shows it with *Adjust for Efficiency* on."""
+        readers = self._readers
+        pace = readers.pace(self.project, day) if adjusted else None
+        return readers.snapshot(self.library, self.project, day, day_over=True, pace=pace)
 
     def write_history(self, rows: Sequence[Snapshot], saved: Sequence[Snapshot]) -> None:
         """The project's history as the recorder leaves it — directly, as it writes one."""

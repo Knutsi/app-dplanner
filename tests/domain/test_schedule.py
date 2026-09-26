@@ -708,6 +708,64 @@ def test_a_later_milestone_whose_work_is_done_lands_before_an_earlier_one():
     assert (first.finish, second.finish) == (NEXT_MONDAY, TUESDAY)
 
 
+# -- milestones worked in parallel ---------------------------------------------------------------
+#
+# The prototype never played these: its milestones wait on each other, so no later one's work
+# can be under way while an earlier one's is not done. `test_time_parity.py` shows neither
+# changes a forecast it made.
+
+
+def test_a_marker_takes_no_worker():
+    """M marks the agent's A done: it lands the moment A does, though the one person is
+    five days into B — marking a milestone is no work."""
+    from dplanner.domain.schedule import parallel_finish
+
+    library, plan, days = loose(("A", 1.0), ("B", 5.0), ("M", None))
+    a, _b, m = plan.steps
+    library.set_edges(m.id, "requires", [a.id])
+
+    def is_agent(step):
+        return step is a
+
+    waited = parallel_finish(library, plan, days, is_agent, humans=1, agents=1)
+    marked = parallel_finish(
+        library, plan, days, is_agent, humans=1, agents=1, is_marker=lambda step: step is m
+    )
+    assert waited is not None and waited.landings[m.id] == 5.0
+    assert marked is not None and marked.landings[m.id] == 1.0
+
+
+def test_work_in_flight_in_a_later_milestone_keeps_its_worker_now():
+    """Two tracks, one person. M1 is A's work and M2 is B's, which the person took up first:
+    by Wednesday B has half a day left and A, due Tuesday, is not begun. B keeps the person
+    through Thursday morning, so M1 lands a day later than a free person would land it — and
+    M2, dated by B's landing, lands first."""
+    from dplanner.domain.progression import IN_PROGRESS
+
+    library, plan = _made(("A", "M1", "B", "M2"), {"M1": ["A"], "M2": ["B"]})
+    b = plan.steps[2]
+    facts = _facts(WEDNESDAY, {"B": IN_PROGRESS}, {"B": MONDAY}, markers=("M1", "M2"))
+    first, second = _resumed(library, plan, {"A": 2.0, "B": 3.0}, facts, milestones=("M1", "M2"))
+    assert first.finish == NEXT_MONDAY  # A from Thursday noon: Thursday, Friday, Monday
+    assert (second.landing_of(b.id), second.finish) == (THURSDAY, THURSDAY)
+
+
+def test_what_is_left_of_it_when_the_earlier_milestone_lands_carries_on():
+    """Two people. B, under way since Monday, has three days left on Wednesday; A is M1's
+    one day. M1 lands Thursday with B two days from done — which it is by Monday, and C
+    after it Tuesday, not a day later for having started B's three days over."""
+    from dplanner.domain.progression import IN_PROGRESS
+
+    library, plan = _made(("A", "M1", "B", "C", "M2"), {"M1": ["A"], "C": ["B"], "M2": ["C"]})
+    b, c = plan.steps[2:4]
+    facts = _facts(WEDNESDAY, {"B": IN_PROGRESS}, {"B": MONDAY}, markers=("M1", "M2"))
+    days = {"A": 1.0, "B": 5.5, "C": 1.0}
+    first, second = _resumed(library, plan, days, facts, milestones=("M1", "M2"), humans=2)
+    assert first.finish == THURSDAY
+    assert second.landing_of(b.id) == NEXT_MONDAY
+    assert second.landing_of(c.id) == second.finish == NEXT_MONDAY + timedelta(days=1)
+
+
 # -- waits ------------------------------------------------------------------------------------
 
 WEDNESDAY = MONDAY + timedelta(days=2)

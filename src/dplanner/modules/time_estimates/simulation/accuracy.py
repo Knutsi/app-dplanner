@@ -60,8 +60,11 @@ class TimelineAccuracy:
     milestones: Accuracy  # Every milestone's, combined.
 
 
-def timeline_accuracy(timeline: Timeline, replay: Replay) -> TimelineAccuracy:
-    """``timeline`` written into ``replay`` and every day's forecast held to the truth."""
+def timeline_accuracy(
+    timeline: Timeline, replay: Replay, *, adjusted: bool = False
+) -> TimelineAccuracy:
+    """``timeline`` written into ``replay`` and every day's forecast held to the truth — as
+    the tab shows it with *Adjust for Efficiency* on, where ``adjusted``."""
     last = timeline.days[-1].steps
     truths = {step.id: timeline.finished[step.id] for step in last if step.id in timeline.finished}
     milestones = [step.id for step in last if step.milestone and step.id in truths]
@@ -74,7 +77,7 @@ def timeline_accuracy(timeline: Timeline, replay: Replay) -> TimelineAccuracy:
         day = played.day
         if until is None or day < timeline.begin or day > until or day.weekday() >= SATURDAY:
             continue
-        said = replay.forecast(day)
+        said = replay.forecast(day, adjusted=adjusted)
         if said is None:
             continue
         for key, line in lines.items():
