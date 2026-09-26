@@ -126,6 +126,6 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "design" is the design system's living reference — the Design Examples child menu,
     # one entry per page of it — what a developer bringing a surface up opens beside their
     # own (DESIGN.md). A new example is a line in modules/debug/module.py and nothing here.
-    "Debug": ("llm", "telemetry", "design", "windows"),
+    "Debug": ("llm", "telemetry", "design", "simulation", "windows"),
     "Help": ("about",),
 }

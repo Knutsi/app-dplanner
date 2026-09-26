@@ -4703,6 +4703,39 @@ itself*.
   today, so the word could only ever say *on plan*; a slip shows as the plan now moving
   against the plan then, which the scope and milestone plots draw.
 
+### The Time tab has a simulator, and it is the prototype's
+
+A forecast model is judged over days, not in a screenshot: whether it holds still while a
+plan is followed and moves the day it is not. The prototype was built around a simulator
+for that — a team working a synthetic plan while something happens to it, one scenario per
+broken assumption — and `time_estimates/simulation/` is that simulator in Python, Qt-free
+and held to it: the seeded luck and the sample plan to the bit, the world frame for frame
+(`test_time_simulation.py` replays every exported run), and the model on top by the parity
+file. `scripts/time_accuracy.py` prints the prototype's accuracy table and reproduces its
+`resume` column exactly, which is what makes a model change there a measured one here.
+
+- **A simulated day reaches the library through the owners' own writers.** A frame is a
+  day's changes in the terms DPlanner stores (`frames.py`); the root hands the simulator
+  each aspect's writer (`_time_writers`) beside its readers (`_time_readers`), so a status
+  is dated by the status aspect exactly as a person's edit that day would have been, and
+  the time module still imports no other module.
+- **Debug ▸ Time Simulation embeds the real Time tab, over a world of its own.** The tab's
+  deps come from the root's one recipe (`time_deps` in `default_modules`), called once for
+  the window and once per simulation with a scratch library, undo stack, context, clock and
+  debounce service — never a copy of the window's deps with fields swapped, which is how a
+  shared service slips through unnoticed (a test holds the two apart). The verbs are shared:
+  every one runs against the scratch context, and the steps it names are not the window's.
+  The embedded tab reads each day at its end (`day_over`), as the simulator's days are.
+- **Scrubbing restores a day in place.** Rebuilding the tab per day would lose what the
+  reader had picked and cost a tab's construction per step of the slider, so the simulation
+  keeps what the project held at each day's end (`replay.keep`) and `replay.restore`
+  writes back only what differs — in either direction, into the one library the tab
+  follows, without knowing what any entry means. The scratch debounce service is the
+  tab's own because the slider flushes it after every restore: played at a few days a
+  second, a tab waiting out its 500 ms settle would never draw one.
+- **Nothing is simulated until the tab is first shown**, so a restored Debug tab costs
+  nothing at startup.
+
 ### Progress against the plan: the promise is derived, the past is recorded
 
 The calendar says when each milestone lands; a person working the plan wants the other

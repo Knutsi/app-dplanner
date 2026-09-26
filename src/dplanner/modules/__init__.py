@@ -48,7 +48,7 @@ if TYPE_CHECKING:
     from dplanner.domain.commands import Command
     from dplanner.domain.dictation import DictationProvider
     from dplanner.domain.locations import Location, LocationRole, ManagedFor
-    from dplanner.domain.model import Library, Project, Step, StepId
+    from dplanner.domain.model import Library, Project, ProjectId, Step, StepId
     from dplanner.domain.ordering import Placed
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.schedule import Scheduled
@@ -65,6 +65,7 @@ if TYPE_CHECKING:
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
     from dplanner.modules.sync.service import Publication
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
+    from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
     from dplanner.theme.providers import ThemeProvider
 
 __all__ = [
@@ -83,6 +84,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from pathlib import Path
 
     from dplanner.cli.report.website import SiteTarget
+    from dplanner.core.clock import Clock
     from dplanner.core.config_dir import config_dir
     from dplanner.core.storage.git import GitStorage
     from dplanner.core.storage.github import GitHubStorage
@@ -103,8 +105,16 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.domain.scope import gatherers
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
-    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+    from dplanner.framework.context import (
+        SCOPE_SELECTION,
+        Context,
+        ContextNode,
+        ContextService,
+        selection_uri,
+    )
+    from dplanner.framework.debounce import DebounceService
     from dplanner.framework.side_panel import SidePanel
+    from dplanner.framework.undo import UndoService
     from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
     from dplanner.modules.anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.appearance.module import AppearanceDeps, AppearanceModule
@@ -116,9 +126,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.dictation.module import DictationDeps, DictationModule
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
-    from dplanner.modules.estimation.aspect import enabled as estimate_enabled
     from dplanner.modules.estimation.aspect import read as estimated_days
-    from dplanner.modules.estimation.aspect import read_history as estimate_history
     from dplanner.modules.estimation.aspect import write as estimate_write
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.estimation.schedule import start_of, write_start
@@ -200,7 +208,6 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         StepPropertiesModule,
     )
     from dplanner.modules.step_status.aspect import read as step_status
-    from dplanner.modules.step_status.aspect import read_since as status_since
     from dplanner.modules.step_status.aspect import record_started
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
@@ -209,6 +216,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
     from dplanner.modules.testing.aspect import read as tests_read
     from dplanner.modules.testing.module import TestsDeps, TestsModule
+    from dplanner.modules.time_estimates.debugger import TimeSimulationDeps, TimeSimulationModule
     from dplanner.modules.time_estimates.module import (
         ProgressHistoryModule,
         TimeEstimatesDeps,
@@ -1004,48 +1012,67 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             step_key=_step_key,
         )
     )
-    # Constructed before the list because the projects index opens the matrix through it.
-    time_estimates = TimeEstimatesModule(
-        TimeEstimatesDeps(
+
+    def time_deps(
+        library: Library,
+        *,
+        undo: UndoService[Library],
+        context: ContextService,
+        clock: Clock,
+        debounce: DebounceService,
+        estimate_missing: "Callable[[ProjectId], None]",
+        day_over: bool,
+    ) -> TimeEstimatesDeps:
+        """The Time tab's deps over ``library``: the window's, or the simulator's scratch
+        world, which differs only in what is handed in here — one recipe, never two."""
+        # Estimates, agent-ness, statuses and milestones through the owners' Qt-free
+        # readers — the tab never learns what any of them is stored as.
+        readers = _time_readers()
+        return TimeEstimatesDeps(
             library=library,
-            debounce=services.debounce,
-            undo=services.undo,
+            debounce=debounce,
+            undo=undo,
             actions=services.actions,
-            context=services.context,
+            context=context,
             tabs=services.tabs,
-            clock=services.clock,
-            # Estimates, agent-ness and the start date through the owners' Qt-free
-            # readers — the matrix never learns what any of them is stored as.
-            days_for=estimated_days,
-            is_agent=agent_enabled,
-            milestone_label=milestone_read,
-            # What "landed" means: the status aspect's word, the progression board's seam —
-            # and the day it last changed.
-            status_for=step_status,
-            since_for=status_since,
-            # A step whose estimate is off carries no work by design — a milestone's own, a
-            # feature, a check — and its status is no fact about the schedule.
-            is_marker=lambda step: not estimate_enabled(step),
-            # What each estimate was before, and the key a row prints: the change report
-            # behind the chart's delta.
-            estimate_history=estimate_history,
-            step_key=_step_key,
-            start_of=lambda project_id: start_of(
-                library.project(project_id), services.clock.today()
+            clock=clock,
+            day_over=day_over,
+            days_for=readers.days_for,
+            is_agent=readers.is_agent,
+            milestone_label=readers.milestone_label,
+            status_for=readers.status_for,
+            since_for=readers.since_for,
+            is_marker=readers.is_marker,
+            estimate_history=readers.estimate_history,
+            step_key=readers.key_of,
+            start_of=lambda project_id: readers.start_of(
+                library.project(project_id), clock.today()
             ),
             # Clicking the calendar re-dates the plan: one undoable write of the
             # estimation module's own entry, composed here so neither module imports
             # the other.
-            set_start=lambda project_id, when: services.undo.push(
+            set_start=lambda project_id, when: undo.push(
                 SetModuleDataCommand(
                     project_id, ESTIMATION_ID, write_start(when), label="Set Start Date"
                 )
             ),
+            estimate_missing=estimate_missing,
+            parent=services.window,
+        )
+
+    # Constructed before the list because the projects index opens the matrix through it.
+    time_estimates = TimeEstimatesModule(
+        time_deps(
+            library,
+            undo=services.undo,
+            context=services.context,
+            clock=services.clock,
+            debounce=services.debounce,
             # The banner's *Estimate missing*: the Estimates tab, on the unsized rows.
             estimate_missing=lambda project_id: estimation.open_for_steps(
                 project_id, unestimated=True
             ),
-            parent=services.window,
+            day_over=False,
         )
     )
     # Constructed before the list for the same reason — its index row opens the tab. The
@@ -1801,6 +1828,27 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         reporting,
         # Declares the progress history's format only; the recorder above writes it.
         ProgressHistoryModule(),
+        # Debug ▸ Time Simulation: the real Time tab over a scratch world of its own — its
+        # own library, undo stack, context, clock and debounce service, so nothing it does
+        # reaches the window's. It shares only the verbs, which run against its own context.
+        TimeSimulationModule(
+            TimeSimulationDeps(
+                actions=services.actions,
+                context=services.context,
+                tabs=services.tabs,
+                readers=_time_readers(),
+                writers=_time_writers(),
+                time_deps=lambda scratch, clock, debounce: time_deps(
+                    scratch,
+                    undo=UndoService(scratch),
+                    context=ContextService(),
+                    clock=clock,
+                    debounce=debounce,
+                    estimate_missing=lambda _project_id: None,
+                    day_over=True,
+                ),
+            )
+        ),
         InstallModule(
             InstallDeps(
                 actions=services.actions,
@@ -2205,6 +2253,46 @@ def _time_readers() -> "TimeReaders":
         estimate_history=estimate_history,
         key_of=_step_key,
     )
+
+
+def _time_writers() -> "TimeWriters":
+    """How a simulated day reaches the aspects it touches: each owner's own writer, handed
+    the entry it replaces and the day — so a replayed status is dated by the status aspect,
+    exactly as a person's edit on that day would have been."""
+    from datetime import date
+
+    from dplanner.domain.model import Project, Step
+    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
+    from dplanner.modules.estimation.aspect import write as write_estimate
+    from dplanner.modules.estimation.schedule import write_start
+    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
+    from dplanner.modules.step_agent_instruction.aspect import write_state
+    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
+    from dplanner.modules.step_milestone.aspect import write as write_label
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as write_status
+    from dplanner.modules.time_estimates.simulation.frames import PlanState, StepState, Writers
+
+    def estimate(step: Step, state: StepState, today: date) -> tuple[str, dict[str, Any]]:
+        previous = step.module_data.get(ESTIMATION_ID)
+        return ESTIMATION_ID, write_estimate(
+            state.estimate, on=not state.off, previous=previous, today=today
+        )
+
+    def status(step: Step, state: StepState, today: date) -> tuple[str, dict[str, Any]]:
+        previous = step.module_data.get(STATUS_ID)
+        return STATUS_ID, write_status(state.status, today=today, previous=previous)
+
+    def milestone(_step: Step, state: StepState, _today: date) -> tuple[str, dict[str, Any]]:
+        return MILESTONE_ID, write_label(state.milestone)
+
+    def agent(_step: Step, state: StepState, _today: date) -> tuple[str, dict[str, Any]]:
+        return AGENT_ID, write_state(state.agent)
+
+    def start(_project: Project, plan: PlanState, _today: date) -> tuple[str, dict[str, Any]]:
+        return ESTIMATION_ID, write_start(plan.start)
+
+    return Writers(steps=(estimate, status, milestone, agent), plan=(start,))
 
 
 # The status verbs that write one, each followed by the day's progress row.
