@@ -786,6 +786,77 @@ def test_a_host_may_grey_the_writers_for_a_reason_of_its_own(tab):
     assert tab.budget.isEnabled()
 
 
+# -- Adjust for Efficiency -------------------------------------------------------------------
+
+
+@pytest.fixture
+def slow(services, make_project):
+    """Three 1d steps that each took four working days at 50% focus — two planned — then a
+    4d step to go, read on the Wednesday after: people run at two-thirds of the plan."""
+    from dplanner.framework.user_config import set_global
+    from dplanner.modules.time_estimates.activity import ADJUST_KEY
+
+    services.clock.pin(date(2026, 9, 16))
+    library = services.document
+    project = make_project("Slow")
+    for title, days in (("A", 1.0), ("B", 1.0), ("C", 1.0), ("D", 4.0)):
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(library)
+        SetModuleDataCommand(step.id, ESTIMATION_ID, write_days(days)).redo(library)
+    *finished, last = project.steps
+    SetEdgesCommand(last.id, "requires", [step.id for step in finished]).redo(library)
+    for step in finished:
+        began = write_status("in-progress", today=date(2026, 9, 7))
+        entry = write_status("done", today=date(2026, 9, 10), previous=began)
+        SetModuleDataCommand(step.id, STATUS_ID, entry).redo(library)
+    SetModuleDataCommand(project.id, ESTIMATION_ID, write_start(date(2026, 9, 7))).redo(library)
+    yield project
+    set_global(MODULE_ID, ADJUST_KEY, False)  # a preference: the next test starts off
+
+
+def test_adjusting_for_efficiency_re_dates_the_rest_at_the_pace_so_far(services, slow):
+    """The toggle says the focus measured beside the planned one, and pressed it re-dates
+    people's remaining work at it — on the page alone: the recorder keeps the plan as its
+    stored focus dates it, and so does a snapshot saved while it is on."""
+    tab = services.tabs.open("time", slow.id)
+    assert tab.pace == pytest.approx(2 / 3)
+    assert tab.adjust.isEnabled() and not tab.adjust.isChecked()
+    assert tab.adjust.text() == "Adjust for Efficiency · 33%"
+    assert "1.5\N{MULTIPLICATION SIGN} their estimates" in tab.adjust.toolTip()
+    planned = tab.landing
+    assert planned is not None
+    tab.adjust.click()
+    assert tab.adjusting and tab.adjust.isChecked()
+    assert tab.landing is not None and tab.landing > planned
+    assert "at the pace so far" in tab.landing_figure.toolTip()
+    assert read_history(slow)[-1].landing(None) == planned  # the record is the plan's
+    tab.save_snapshot_as("Mid-sprint")
+    assert read_saved(slow)[0].landing(None) == planned
+    tab.adjust.click()
+    assert not tab.adjusting and tab.landing == planned
+
+
+def test_adjusting_waits_for_enough_to_go_on_and_stands_down_while_looking_back(services, slow):
+    from dataclasses import replace
+
+    library = services.document
+    live = services.tabs.open("time", slow.id).snapshot()
+    assert live is not None
+    earlier = replace(live, day=date(2026, 9, 8))
+    SetModuleDataCommand(slow.id, HISTORY_ID, write_history([earlier])).redo(library)
+    tab = services.tabs.open("time", slow.id)
+    tab.adjust.click()
+    assert tab.adjusting
+    tab.history.days.set_value(0, say=True)
+    assert not tab.adjust.isEnabled() and not tab.adjust.isChecked() and not tab.adjusting
+    assert "back to today to adjust" in tab.adjust.toolTip()
+    tab.back_to_today.click()
+    assert tab.adjusting and tab.adjust.isChecked()  # the preference was kept all along
+    services.clock.pin(date(2026, 9, 11))  # too early: four working days of work
+    assert tab.pace is None and not tab.adjust.isEnabled() and not tab.adjusting
+    assert tab.adjust.toolTip().startswith("Adjusting for efficiency needs 5 working days")
+
+
 # -- the recorder ----------------------------------------------------------------------------
 
 

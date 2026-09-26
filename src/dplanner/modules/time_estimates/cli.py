@@ -81,9 +81,11 @@ from dplanner.modules.time_estimates.schedule import (
     MODULE_ID,
     Cell,
     TimeReport,
+    as_planned,
     cell_for,
     is_color,
     milestone_colors,
+    pace_so_far,
     phase_colors,
     read_color,
     read_efficiency,
@@ -91,6 +93,7 @@ from dplanner.modules.time_estimates.schedule import (
     read_start,
     read_team,
     schedule_facts,
+    stretched,
     time_report,
     write_milestone,
     write_project,
@@ -106,6 +109,7 @@ class Readers:
     is_agent: Callable[[Step], bool]
     status_for: Callable[[Step], str]
     since_for: Callable[[Step], date | None]  # The day a step's status last changed.
+    started_for: Callable[[Step], date | None]  # The day a step first went in progress.
     # A step that carries no work by design — estimate off: a milestone's, a feature, a check.
     is_marker: Callable[[Step], bool]
     # When a project's work begins; an undated one begins on the day handed in.
@@ -118,9 +122,35 @@ class Readers:
     def is_milestone(self, step: Step) -> bool:
         return bool(self.milestone_label(step))
 
-    def facts(self, project: Project, today: date, *, day_over: bool = False) -> ScheduleFacts:
+    def pace(self, project: Project, today: date) -> float | None:
+        """How fast people's finished steps ran against the stored focus — 1 as planned —
+        or None while there is too little to go on (``schedule.pace_so_far``)."""
+        return pace_so_far(
+            project.steps,
+            stretched(self.days_for, self.is_agent, read_efficiency(project)),
+            is_agent=self.is_agent,
+            status_for=self.status_for,
+            started_for=self.started_for,
+            since_for=self.since_for,
+            start=self.start_of(project, today),
+            today=today,
+        )
+
+    def facts(
+        self,
+        project: Project,
+        today: date,
+        *,
+        day_over: bool = False,
+        pace: float | None = None,
+    ) -> ScheduleFacts:
         """What has happened in ``project`` by ``today``, for the calendar to re-date it —
-        read at the day's end when ``day_over``, as a simulation reads its days."""
+        read at the day's end when ``day_over``, as a simulation reads its days. A ``pace``
+        re-estimates people's remaining work at the focus measured — the stored one times
+        the pace — once the plan no longer holds; one the plan's own is no change."""
+        resume = None
+        if pace is not None and not as_planned(pace):
+            resume = stretched(self.days_for, self.is_agent, read_efficiency(project) * pace)
         return schedule_facts(
             project,
             today,
@@ -129,13 +159,22 @@ class Readers:
             since_for=self.since_for,
             is_marker=self.is_marker,
             day_over=day_over,
+            resume_days=resume,
         )
 
     def snapshot(
-        self, library: Library, project: Project, today: date, *, day_over: bool = False
+        self,
+        library: Library,
+        project: Project,
+        today: date,
+        *,
+        day_over: bool = False,
+        pace: float | None = None,
     ) -> Snapshot | None:
         """The plan on ``today`` as the recorder takes it: for the stored team, focus and
-        start, re-dated from what has happened."""
+        start, re-dated from what has happened — adjusted to ``pace`` only where a view asks
+        (the Time tab's *Adjust for Efficiency*; never the recorder, a saved snapshot or the
+        report)."""
         humans, agents = read_team(project)
         return take(
             library,
@@ -151,7 +190,7 @@ class Readers:
             is_milestone=self.is_milestone,
             start_for=read_start,
             today=today,
-            facts=self.facts(project, today, day_over=day_over),
+            facts=self.facts(project, today, day_over=day_over, pace=pace),
         )
 
 
