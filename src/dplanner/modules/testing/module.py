@@ -44,6 +44,7 @@ from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.project_list_segment import LeadingRow, ProjectListSegment
+from dplanner.framework.step_selection import focused_project
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
@@ -417,11 +418,7 @@ class TestsModule:
         return self._step(context.focus_entity("step"))
 
     def _focused_project(self, context: Context) -> Project | None:
-        project_id = context.focus_entity("project")
-        if project_id is not None and self._deps.library.has(project_id):
-            return self._deps.library.project(project_id)
-        step = self._focused_step(context)
-        return None if step is None else self._deps.library.project_of(step.id)
+        return focused_project(context, self._deps.library)
 
     def _selected_tests(self, context: Context) -> list[tuple[Step, Test]]:
         wanted = set(context.selected_entities("test"))

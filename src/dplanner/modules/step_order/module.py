@@ -62,6 +62,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.signalling import UpdatingIndicator
+from dplanner.framework.step_selection import focused_project
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import ActionToolbar
 from dplanner.framework.widgets import EmptyState, captioned, note
@@ -372,22 +373,19 @@ class StepOrderModule:
         follow_project_tabs(deps.tabs, OrderActivity, deps.library)
 
     def _on_a_project(self, context: Context) -> ActionState:
-        project_id = context.focus_entity("project")
-        if project_id is None or not self._deps.library.has(project_id):
-            return DISABLED
-        return ENABLED
+        return DISABLED if focused_project(context, self._deps.library) is None else ENABLED
 
     def _open(self, context: Context) -> None:
-        project_id = context.focus_entity("project")
-        if project_id is not None:
-            self.open(project_id)
+        project = focused_project(context, self._deps.library)
+        if project is not None:
+            self.open(project.id)
 
     def _export(self, context: Context) -> None:
-        project_id = context.focus_entity("project")
-        if project_id is None:
-            return
         deps = self._deps
-        project = deps.library.project(project_id)
+        project = focused_project(context, deps.library)
+        if project is None:
+            return
+        project_id = project.id
         order = placed(deps.library, project)
         rows = order_rows(
             deps.step_schedule(project_id, order), deps.step_aspects, deps.milestone_label

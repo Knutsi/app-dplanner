@@ -4709,3 +4709,15 @@ left the face wearing the old name, and the only way to refresh it was `set_acti
 announces a change that did not happen and rebuilds whatever listens.
 
 **Upstream?** Yes — a filter over anything nameable needs it.
+
+### `framework/step_selection.py` — `focused_project(context, library)`
+
+**What.** The project the context names, else the focused step's own. Testing's private
+`_focused_project` became it, and Order's and Step statuses' *open* verbs now read it.
+
+**Why.** The Control Centre spans every project and names none, so *Show in ▸ Order* and
+*Show in ▸ Step Statuses* were greyed — with no reason — on every one of its rows. Testing
+had already written the fallback for its own verbs; one rule in the framework is what keeps
+the next module from writing a fourth.
+
+**Upstream?** Yes, beside `focused_step` and `chosen_steps`, whose file it is.

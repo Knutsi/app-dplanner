@@ -63,6 +63,7 @@ from dplanner.framework.context import (
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.segmented import Segmented
 from dplanner.framework.signalling import UpdatingIndicator
+from dplanner.framework.step_selection import focused_project
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import EmptyState
@@ -357,12 +358,9 @@ class ProgressionModule:
         follow_project_tabs(deps.tabs, ProgressionActivity, deps.library)
 
     def _on_a_project(self, context: Context) -> ActionState:
-        project_id = context.focus_entity("project")
-        if project_id is None or not self._deps.library.has(project_id):
-            return DISABLED
-        return ENABLED
+        return DISABLED if focused_project(context, self._deps.library) is None else ENABLED
 
     def _open(self, context: Context) -> None:
-        project_id = context.focus_entity("project")
-        if project_id is not None:
-            self.open(project_id)
+        project = focused_project(context, self._deps.library)
+        if project is not None:
+            self.open(project.id)
