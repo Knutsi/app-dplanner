@@ -2,10 +2,11 @@
 
     uv run python scripts/render_home.py --out docs/screenshots/f9-home
 
-Three shots of a whole application over a throwaway library: the program's start, before
-anything was ever opened — the Home tab ``start_window`` opens, with the guide and Recent's
-empty state; Home opened again from *Go ▸ Home* once a few views were kept and closed, listing
-them; and the Projects folder's right-click, which renders the File menu's project group.
+Three pictures of a whole application over a throwaway library: the program's start, the
+Home tab ``start_window`` opens, with the guide centred over the garden part-way through a
+season; the garden alone at five moments of one season, top to bottom, since a page cannot
+show motion; and the Projects folder's right-click, which renders the File menu's project
+group. The garden's clock is set by hand, so every run draws the same moments.
 """
 
 import argparse
@@ -21,6 +22,7 @@ os.environ["QT_QPA_PLATFORMTHEME"] = ""
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PySide6.QtCore import QPoint, QSettings
+from PySide6.QtGui import QImage, QPainter
 from PySide6.QtWidgets import QApplication
 from scripts.render_graph_editor import save, settle
 
@@ -34,16 +36,25 @@ from dplanner.framework.index_panel import SEGMENT_ROLE, IndexPanel
 from dplanner.framework.services import AppServices
 from dplanner.framework.session import AppSession
 from dplanner.modules import start_window
-from dplanner.modules.progression.module import PROGRESSION_KIND
-from dplanner.modules.project_editor.module import PROJECT_KIND
-from dplanner.modules.spec.activity import SPECS_KIND
-from dplanner.modules.step_order.module import ORDER_KIND
+from dplanner.modules.home.garden import Garden
+from dplanner.modules.home.page import HomePage
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
-WINDOW_SIZE = (1180, 660)
+WINDOW_SIZE = (1180, 800)
 # Kept in this order, so Recent lists them newest first: the graph at the top.
-KEPT = (SPECS_KIND, ORDER_KIND, PROGRESSION_KIND, PROJECT_KIND)
+# The moments of one season the garden strip shows, in seconds: seeds, the rain at work,
+# half in bloom, all in bloom, and gone back to seed for the next.
+MOMENTS = (0.0, 9.0, 20.0, 40.0, 58.0)
+STEP_S = 0.1
+
+
+def season_at(seconds: float, reach: float) -> Garden:
+    """The garden after ``seconds`` of the ordinary clock, in the steps a tick takes."""
+    garden = Garden()
+    while garden.t < seconds:
+        garden.advance(STEP_S, reach)
+    return garden
 
 
 def open_library(
@@ -80,18 +91,27 @@ def index_panel(services: AppServices) -> IndexPanel:
 def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     session, services = open_library(app, theme, workspace, "first")
     start_window(services)  # What app.open_at_startup does once the build is up.
-    save(services.window, out, "home-first", theme, app)
-    services.window.hide()
-    session.close()
-
-    session, services = open_library(app, theme, workspace, "kept")
-    importer = services.document.projects[0]
-    for kind in KEPT:
-        services.tabs.open(kind, importer.id)
-    for activity in services.tabs.activities():
-        services.tabs.close_activity(activity)
-    services.actions.run("home.open", services.context.current())
+    home = services.tabs.current_activity()
+    assert home is not None and isinstance(home.widget, HomePage)
+    garden = home.widget.garden
+    garden.state = season_at(20.0, garden.reach())
     save(services.window, out, "home", theme, app)
+
+    frames = []
+    for moment in MOMENTS:
+        garden.state = season_at(moment, garden.reach())
+        settle(app)
+        frames.append(garden.grab().toImage())
+    strip = QImage(frames[0].width(), sum(f.height() for f in frames), frames[0].format())
+    painter = QPainter(strip)
+    top = 0
+    for frame in frames:
+        painter.drawImage(0, top, frame)
+        top += frame.height()
+    painter.end()
+    path = out / f"garden-{theme.name}.png"
+    strip.save(str(path), "PNG")
+    print(path)
 
     panel = index_panel(services)
     tree = panel.tree

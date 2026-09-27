@@ -1,28 +1,24 @@
 """Home: where a window starts — a tab the program opens when nothing else is, the index's
-first row, the guide whose buttons are the verbs, and the tabs kept lately.
+first row, the guide whose buttons are the verbs, and the garden that says what DPlanner does.
 
 Driven through a whole session, because what Home promises is about the window around it:
-the program starts on it, a closed last tab leaves the window blank, and a restart keeps what
-it lists. A reload is what a restart looks like from inside the process.
+the program starts on it, a closed last tab leaves the window blank, and the garden moves
+only while it is on screen. The garden's rules are plain state, tested without a window.
 """
 
 import pytest
-from PySide6.QtCore import QEvent, QObject, QPointF, Qt
-from PySide6.QtGui import QMouseEvent
-from PySide6.QtWidgets import QApplication, QTreeWidget, QTreeWidgetItem
+from PySide6.QtWidgets import QCheckBox, QTreeWidget, QTreeWidgetItem
 from tests.index_helpers import click, folder
 
 from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, activity_uri, selection_uri
-from dplanner.framework.list_rows import DETAIL_ROLE
 from dplanner.framework.project_list_segment import LeadingRow
 from dplanner.modules import start_window
+from dplanner.modules.home.garden import CLOUD_LEFT, CLOUD_RIGHT, PLACES, SEEDS, Garden
 from dplanner.modules.home.guide import GUIDE
 from dplanner.modules.home.module import HomeSegment
-from dplanner.modules.home.page import HOME_KIND, NOTHING_RECENT, GuideRow, HomePage
+from dplanner.modules.home.page import HOME_KIND, GuideRow, HomePage
 from dplanner.modules.project_editor.module import PROJECT_KIND
-from dplanner.modules.spec.activity import SPECS_KIND
-from dplanner.modules.step_order.module import ORDER_KIND
 from dplanner.theme.icons import list_icon
 
 
@@ -39,10 +35,6 @@ def home(services) -> HomePage:
     page = services.tabs.open(HOME_KIND).widget
     assert isinstance(page, HomePage)
     return page
-
-
-def listed(page: HomePage) -> list[str]:
-    return [page.recent.item(row).text() for row in range(page.recent.count())]
 
 
 def picked(services, project):
@@ -155,105 +147,61 @@ def test_a_guide_verb_greys_with_its_reason_until_a_project_is_picked(services, 
     assert "no project is open" not in row.button.text()
 
 
-# -- the tabs kept lately ----------------------------------------------------------------------
+# -- the garden --------------------------------------------------------------------------------
 
 
-def test_a_kept_tab_is_listed_newest_first_and_a_glance_is_not(services, project):
-    page = home(services)
-    assert page.empty.text() == NOTHING_RECENT  # Home itself is never listed on Home.
-    services.tabs.open(PROJECT_KIND, project.id)
-    services.tabs.open(ORDER_KIND, project.id)
-    services.tabs.open(SPECS_KIND, project.id, preview=True)
-    assert listed(page) == ["Discovery — Order", "Discovery"]
-
-    services.tabs.open(SPECS_KIND, project.id)  # Kept: the preview is pinned where it stands.
-    assert listed(page)[0].startswith("Discovery — Specs")
-    assert page.empty.text() == ""
-    # Under each, when it was last the tab in front: the domain's words for a stamp.
-    assert page.recent.item(0).data(DETAIL_ROLE) == "just now"
+def test_what_the_rain_falls_on_grows_and_nothing_else():
+    garden = Garden()
+    wet = [index for index in range(len(PLACES)) if garden.rained_on(index)]
+    before = list(garden.growth)
+    garden.advance(0.5)
+    grew = [index for index, grown in enumerate(garden.growth) if grown > before[index]]
+    assert wet and grew == wet
 
 
-def test_the_home_tab_is_not_listed_on_itself(services, project):
-    services.tabs.open(PROJECT_KIND, project.id)
-    home = services.tabs.open(HOME_KIND)
-    assert listed(home.widget) == ["Discovery"]
+def test_a_season_blooms_rests_and_goes_back_to_seed():
+    garden = Garden()
+    seasons: list[str] = []
+    while len(seasons) < 4 and garden.t < 600:
+        garden.advance(0.1)
+        if not seasons or seasons[-1] != garden.season:
+            seasons.append(garden.season)
+        if garden.season == "resting":
+            assert all(grown == 1.0 for grown in garden.growth)
+        assert CLOUD_LEFT - 1e-9 <= garden.cloud_x() <= CLOUD_RIGHT + 1e-9
+    assert seasons == ["growing", "resting", "wilting", "growing"]
+    assert garden.growth == list(SEEDS)  # Back to seed, never below it.
 
 
-def test_what_was_kept_survives_a_restart(session, services, project):
-    services.tabs.open(ORDER_KIND, project.id)
-    services.tabs.open(PROJECT_KIND, project.id)
-    for activity in services.tabs.activities():
-        services.tabs.close_activity(activity)
-    assert session.reload()
-    assert listed(home(session.services)) == ["Discovery", "Discovery — Order"]
-
-
-def test_a_project_that_leaves_the_library_leaves_the_list(services, project, monkeypatch):
-    from dplanner.modules.projects import verbs
-
-    monkeypatch.setattr(verbs, "confirm", lambda *_args, **_kwargs: True)
-    page = home(services)
-    services.tabs.open(PROJECT_KIND, project.id)
-    services.actions.run("projects.remove", picked(services, project))
-    assert listed(page) == []
-    assert page.empty.text() == NOTHING_RECENT
-
-
-def test_a_recent_tab_reopens_with_one_click(services, project):
-    services.tabs.close_activity(services.tabs.open(PROJECT_KIND, project.id))
-    page = home(services)
-    page.recent.itemClicked.emit(page.recent.item(0))
-    current = services.tabs.current_activity()
-    assert current is not None and current.uri == activity_uri(PROJECT_KIND, project.id)
-
-
-def test_the_second_click_of_a_double_click_does_not_land_on_what_opened(services, project):
-    """The row swaps Home away under the pointer, and Qt hands the habitual second click to
-    whatever replaced it as a double-click — on empty canvas, a new step. That one
-    double-click is dropped; the next one is the person's own."""
+def test_the_garden_moves_only_while_it_is_on_screen(services, project):
     window = services.window
     window.resize(1000, 700)
     window.show()
-    services.tabs.close_activity(services.tabs.open(PROJECT_KIND, project.id))
-    page = home(services)
-    page.recent.itemClicked.emit(page.recent.item(0))
-    QApplication.processEvents()
-    graph = services.tabs.current_activity()
-    canvas = graph._view.viewport()
-    heard = _DoubleClicks()
-    canvas.installEventFilter(heard)
-    pos = QPointF(canvas.mapTo(window, canvas.rect().center()))
-
-    def double_click() -> None:
-        QApplication.sendEvent(
-            window.windowHandle(),
-            QMouseEvent(
-                QEvent.Type.MouseButtonDblClick,
-                pos,
-                QPointF(window.mapToGlobal(pos.toPoint())),
-                Qt.MouseButton.LeftButton,
-                Qt.MouseButton.LeftButton,
-                Qt.KeyboardModifier.NoModifier,
-            ),
-        )
-
-    double_click()
-    assert heard.count == 0
-    double_click()
-    assert heard.count == 1
-    canvas.removeEventFilter(heard)
+    garden = home(services).garden
+    assert garden.running()
+    services.tabs.open(PROJECT_KIND, project.id)
+    assert not garden.running()
     window.hide()
 
 
-class _DoubleClicks(QObject):
-    """Counts the double-clicks that reach a widget, and keeps them from it."""
+def test_the_garden_paints_every_season(services):
+    garden = home(services).garden
+    garden.resize(900, garden.height())
+    for _ in range(40):
+        garden.state.advance(5.0, garden.reach())
+        assert not garden.grab().isNull()
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.count = 0
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt override
-        if event.type() == QEvent.Type.MouseButtonDblClick:
-            self.count += 1
-            return True
-        return super().eventFilter(watched, event)
+def test_the_garden_can_be_put_away_and_brought_back(services):
+    page = home(services)
+    assert page.garden.isVisibleTo(page)
+    page.garden.close_button.click()
+    assert not page.garden.isVisibleTo(page)
+
+    (section,) = [s for s in services.settings_sections.sections() if s.id == "home.page"]
+    settings = section.factory(None)
+    box = settings.findChild(QCheckBox, "GardenBox")
+    assert box is not None and not box.isChecked()  # It heard the close.
+    box.setChecked(True)
+    assert page.garden.isVisibleTo(page)
+    settings.deleteLater()

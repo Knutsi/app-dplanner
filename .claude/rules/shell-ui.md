@@ -146,12 +146,7 @@ paths:
   underneath comes back with *fewer* folders and tabs rather than wrong ones — no version
   stamp, no migration, the check is the lookup. The tree's folders are the index panel's own
   bookkeeping; tabs are `modules/reopen_tabs/`, which must be listed after every module that
-  registers an activity factory and carries the *Settings ▸ Startup* switch. **It keeps the
-  recent tabs too** — the ones the person *kept* (current, and not as a preview), newest
-  first, ten — because it does the reopening and so can tell a tab it brought back from one
-  somebody chose; Home only lists them. **A remembered address comes back through
-  `TabHost.reopen(uri, exists)`**, which asks the three stale questions (kind, target, a
-  factory that refuses) in one place — never a second parse of an address beside it.
+  registers an activity factory and carries the *Settings ▸ Startup* switch.
   `ARCHITECTURE.md`'s *Where the user left off is remembered by key* has the reasoning,
   including why the write happens on every change rather than at close.
 - **A single click in the index opens a preview tab** (`tabs.open(..., preview=True)`): at
@@ -171,10 +166,13 @@ paths:
   surface that spans the library hangs a row under Home through `HomeDeps.rows` (a
   `LeadingRow`, wired in the root), never by editing `modules/home/`. Its
   guide is data naming action ids (`guide.py`), each a verb's own button restated from its
-  `ActionState` — greyed in the verb's words, never a second button that calls it. A page
-  that swaps itself away on a click owes the stray double-click (`_SecondClickGuard`):
-  Qt hands the habitual second click to whatever replaced it. `ARCHITECTURE.md`'s *Home is
-  where a window starts* has the reasoning.
+  `ActionState` — greyed in the verb's words, never a second button that calls it — in a
+  `RowWell` asked to `AdjustToContents`, which the primitive honours with its rows' height
+  for its width. **Home's garden is the one ornament that moves**: a cloud wearing the
+  robot glyph rains on seedlings until they bloom, painted from `garden.py`'s Qt-free state
+  in the plan's own tones, ticking only between a show and a hide, and put away by its ✕ or
+  *Settings ▸ Home* (a global preference). Nothing else earns motion by being pleasant.
+  `ARCHITECTURE.md`'s *Home is where a window starts* has the reasoning.
 - **A panel inside a tab is a `SidePanel`, hosted through `HostedSidePanel`**
   (`framework/side_panel.py`). A dock panel follows the *window* — one instance, retargeted
   by the context; a panel inside a tab follows *that tab* — one per tab, handed a

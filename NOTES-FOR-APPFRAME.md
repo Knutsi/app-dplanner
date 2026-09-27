@@ -4655,22 +4655,24 @@ row's name, visible on every window that opened with the tree focused.
 **Upstream?** Yes, all three. The template's index has the same dead folder rows, and the
 same focus frame.
 
-### `framework/tabs.py` — `live_address`/`reopen`, `KeptTab`, and pinning is a change
+### `framework/row_well.py` — a well asked to adjust to its contents does
 
-**What.** `live_address(uri, exists)` and `reopen(uri, exists, *, preview=False)` are the
-stale-address checks that lived in `reopen_tabs` (parse, `can_open`, `exists`, and the
-deliberately broad `except` round the factory). `KeptTab` is the record a recent-tabs list is
-made of. `_pin` now emits `tabs_changed` when it pins.
+**What.** `RowWell` honours `QAbstractScrollArea.AdjustToContents`: its `sizeHint` is its
+rows', it reports `hasHeightForWidth` and answers `heightForWidth` with the rows' height at
+that width, and `reconcile` calls `updateGeometry` so a layout asks again. Its minimum stays
+the scroll area's own. Without the policy nothing changes.
 
-**Why.** Home's recent list asks the same questions of the same addresses the session
-reopen does, and two copies would be two answers to "does this still open?". Pinning the
-preview you are on changed nothing `activity_changed` reports, so a listener keeping a list
-of *kept* tabs never heard it.
+**Why.** Home's guide is five rows in a well, centred on the page. `QScrollArea.sizeHint`
+stops at twenty-four lines of text whatever its adjust policy, so the guide sat behind a
+scroll bar with half the page empty around it. The rows' notes wrap, which is why it is
+height-for-width and not a fixed hint.
 
-A backdrop — a page the host shows while it holds no tab — was built and taken out again in
-review: the developer wants Home to be an ordinary tab and a blank window to be allowed, so
-the only automatic open is the program's start, in the application's entry point.
+**Upstream?** Yes — the template's well has the same cap, and a short well that should be
+exactly as tall as its rows is common (a dialog's list of three things).
 
-**Upstream?** Yes for `reopen` — any tab host that remembers tabs wants one safe way back to
-a remembered address — and for the pin signal. `KeptTab` only if the template grows a recent
-list.
+A lesson, not a code change: the first version of Home put a page behind the tabs while none
+was open (a backdrop in `TabHost`), and a recent-tabs list with the stale-address checks
+pulled into `TabHost.reopen`. Both were taken out in review — Home is an ordinary tab the
+program opens at its start, and a blank window is allowed — so `tabs.py` is unchanged. A
+page for "nothing open" is still a reasonable template feature; it was not what this
+application wanted.

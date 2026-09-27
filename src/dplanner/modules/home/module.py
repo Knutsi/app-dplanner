@@ -1,4 +1,5 @@
-"""Home: where a window starts — the guide, the tabs kept lately, and the index row to both.
+"""Home: where a window starts — the getting-started guide, and a garden that says what
+DPlanner does.
 
 Home is the ``home`` tab, a singleton like any library-wide tab, and there are three ways
 to it:
@@ -11,9 +12,8 @@ to it:
   there through ``HomeDeps.rows``;
 - *Go ▸ Home*, because Go seats the index's rows.
 
-What Home lists as recent is ``reopen_tabs``', handed over by the composition root: that
-module does the reopening at startup, so it is the one that can tell a tab it brought back
-from one the person chose.
+Its one preference — whether the garden shows — is *Settings ▸ Home*, and the garden's own
+close button writes the same key; ``garden_changed`` is how an open Home tab hears either.
 """
 
 from collections.abc import Callable, Sequence
@@ -22,17 +22,18 @@ from dataclasses import dataclass
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QMenu, QTreeWidgetItem
 
-from dplanner.domain.model import Library
+from dplanner.core.signals import Signal
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.context import ContextNode, ContextService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.project_list_segment import LeadingRow
-from dplanner.framework.tabs import KeptTab, TabHost
+from dplanner.framework.settings_registry import SettingsSection, SettingsSectionRegistry
+from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.modules.home.page import HOME_KIND, HomeActivity
+from dplanner.modules.home.settings_page import MODULE_ID, build_page
 from dplanner.theme.icons import home_icon
 
-MODULE_ID = "home"
 ROW_ROLE = int(Qt.ItemDataRole.UserRole) + 1  # Which of ``HomeDeps.rows`` a child item is.
 
 
@@ -42,12 +43,8 @@ class HomeDeps:
     actions: ActionRegistry
     context: ContextService
     segments: IndexSegmentRegistry
-    # Membership: a project that leaves the library takes its recent rows with it.
-    library: Library
-    # The tabs kept lately, newest first — and how to hear them change.
-    recent: Callable[[], Sequence[KeptTab]]
-    watch_recent: Callable[[Callable[[], None]], Callable[[], None]]
     theme: ThemeService  # The rows' glyphs are painted in its ink.
+    settings_sections: SettingsSectionRegistry
     # Rows other modules hang under Home in the index, each a surface that spans the library
     # — the Tests folder's All Projects row, one folder up. The flag ``open`` takes is preview.
     rows: tuple[LeadingRow, ...] = ()
@@ -113,10 +110,20 @@ class HomeModule:
 
     def __init__(self, deps: HomeDeps) -> None:
         self._deps = deps
+        # Whether the garden shows changed — from Settings ▸ Home or the garden's close.
+        self.garden_changed: Signal[()] = Signal()
 
     def register(self) -> None:
         deps = self._deps
-        deps.tabs.register_factory(HOME_KIND, lambda _target: HomeActivity(deps))
+        changed = self.garden_changed
+        deps.tabs.register_factory(HOME_KIND, lambda _target: HomeActivity(deps, changed))
+        deps.settings_sections.register(
+            SettingsSection(
+                id=f"{MODULE_ID}.page",
+                category=("Home",),
+                factory=lambda parent: build_page(parent, changed),
+            )
+        )
         deps.segments.register(
             IndexSegment(
                 id=MODULE_ID,
@@ -133,7 +140,7 @@ class HomeModule:
                 menu="Go",
                 group="home",
                 order=10,
-                tip="The getting-started guide, and the tabs you kept open lately",
+                tip="The getting-started guide",
                 icon=home_icon,
                 run=lambda _context: self.open(),
             )

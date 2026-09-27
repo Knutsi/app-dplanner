@@ -470,16 +470,6 @@ def test_a_non_preview_open_pins_the_preview(host):
     assert host.is_preview(second)
 
 
-def test_pinning_the_preview_you_are_on_says_the_tab_list_changed(host):
-    """Nothing else changes when the current preview is kept — it stays current, so no
-    announcement — yet a listener keeping a list of the tabs a person kept must hear it."""
-    host.open("thing", "a", preview=True)
-    heard: list[None] = []
-    host.tabs_changed.connect(lambda: heard.append(None))
-    host.open("thing", "a")
-    assert heard == [None]
-
-
 def test_closing_the_preview_clears_the_slot(host):
     preview = host.open("thing", "a", preview=True)
     host.close_activity(preview)
@@ -554,37 +544,3 @@ def test_the_mark_goes_when_the_split_does(host):
     host.close_activity(host.activities()[1])
     assert host.group_count() == 1
     assert [marked for _, marked in panes(host)] == [False]
-
-
-# -- a remembered address --------------------------------------------------------------------
-
-
-def test_a_remembered_address_opens_through_the_ordinary_path(host):
-    reopened = host.reopen(activity_uri("thing", "a"), lambda _target: True)
-    assert reopened is not None
-    assert host.activities() == [reopened]
-    assert not host.is_preview(reopened)
-
-
-def test_a_stale_address_opens_nothing(host):
-    """A kind this build does not have, a target that has gone, or not an address at all."""
-
-    def everything(_target: str) -> bool:
-        return True
-
-    assert host.live_address(activity_uri("gone"), everything) is None
-    assert host.live_address(activity_uri("thing", "a"), lambda _target: False) is None
-    assert host.live_address("not an address", everything) is None
-    assert host.live_address(None, everything) is None
-    assert host.reopen(activity_uri("thing", "a"), lambda _target: False) is None
-    assert host.activities() == []
-
-
-def test_a_surface_that_refuses_to_rebuild_costs_one_tab(host, caplog):
-    def refuse(_target):
-        raise RuntimeError("cannot rebuild")
-
-    host.register_factory("broken", refuse)
-    assert host.reopen(activity_uri("broken"), lambda _target: True) is None
-    assert host.activities() == []
-    assert "could not reopen" in caplog.text

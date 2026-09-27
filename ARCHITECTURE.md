@@ -515,27 +515,10 @@ rather than short.
 Reopening a tab has two more ways to be stale, and each is a question asked of somebody who
 knows the answer. The activity *kind* may be gone from this build, which the tab host
 answers (`can_open`); the *target* may be gone from the model, which the composition root
-answers by handing over `Library.has` — so neither `modules/reopen_tabs/` nor Home learns
-what a project is. A third guard catches whatever is left: a factory that raises costs the
-user one tab and never the launch, which is the one place in this codebase where a
-deliberately broad `except` is the honest answer. All three live in `TabHost.reopen(uri,
-exists)` since Home arrived: a list of recent tabs asks the same questions of the same
-addresses, and two copies of them would be two answers to "does this still open?".
-
-### The recent tabs are kept beside the open ones
-
-Home lists the tabs a person *kept* lately — made current, and not as a preview, since a
-glance is not a choice — newest first, ten of them, each with what its tab last said and
-when it was last in front (a `KeptTab`). They are written per library beside the open-tab
-list, by `modules/reopen_tabs/` rather than by Home, and the reason is registration order.
-Home registers an activity factory, so it must come before reopen_tabs, which reopens a Home
-tab like any other; a recorder in Home would therefore hear every tab the startup reopen
-brings back as a person's choice, and reshuffle the list on every launch. reopen_tabs does
-that reopening behind its own `_restoring` guard, so it is the one module that can tell the
-two apart, and the composition root hands Home its `recent` and the signal that says the
-list moved. The title is the tab's own at the time, so a list read after a tab closed says
-what the tab last said — which includes a live mark such as the Step statuses count.
-
+answers by handing the module `Library.has` — so `modules/reopen_tabs/` never learns what a
+project is. A third guard catches whatever is left: a factory that raises costs the user one
+tab and never the launch, which is the one place in this codebase where a deliberately broad
+`except` is the honest answer.
 
 ### Written on every change, not at close
 
@@ -576,10 +559,10 @@ back on returns the session they last had rather than one from whenever they tur
 ## Home is where a window starts
 
 Since the Dashboard retired, a program that started with no tabs to reopen showed an empty
-tab bar over nothing. It starts on Home now: a short getting-started guide and this
-library's recent tabs, in the `home` tab — kept as the top row of the index and *Go ▸ Home*
-for whenever it is wanted. The rules are `.claude/rules/shell-ui.md`'s *Home is where a
-window starts*.
+tab bar over nothing. It starts on Home now: a short getting-started guide, centred, over a
+garden that says what DPlanner does, in the `home` tab — kept as the top row of the index
+and *Go ▸ Home* for whenever it is wanted. The rules are `.claude/rules/shell-ui.md`'s
+*Home is a tab like any other*.
 
 **A tab like any other, opened at the program's start and at no other time.** The first
 build stood Home behind the tabs as a backdrop whenever none was open. The developer's call
@@ -605,14 +588,28 @@ the verb the guide means. A guide that described verbs in its own words would dr
 them; one that called them directly would skip their gates. A test holds every id to the
 registry.
 
-**A page that swaps itself away owes the second click.** A recent row reopens its tab on one
-click, which takes the Home tab off screen under the pointer — and Qt decides a double-click by time
-and distance alone, delivering it to whatever widget is there now. A habitual double-click on
-a row therefore landed on the graph that had just opened, where a double-click on empty
-canvas creates a step. `_SecondClickGuard` filters the window's `QWindow`, which sees an
-event before any widget does, for one double-click interval and drops the one double-click
-that arrives; the index needs no such thing, because it stays under the pointer while the
-tab it opens appears beside it.
+**The garden is the one ornament that moves, and it earns it by saying what DPlanner is.**
+A first version listed the tabs a person kept lately; the developer's call was that a
+newcomer's first page should say what the application is for instead, and without a word:
+a row of seedlings is the plan, a cloud wearing the robot glyph is an agent, it rains on
+what it passes over, and what it rains on blooms. Everywhere else a still surface is the
+rule (DESIGN.md's *Focus and motion*) because every change on it is a change of fact; this
+strip is the stated exception, and it keeps the exception cheap. Its state is plain
+arithmetic in `garden.py` — positions as fractions, time in seconds — so the rules are
+tested without a window and a render sets the clock by hand; `GardenView` paints it in the
+plan's own tones (a milestone's violet, a feature's teal, a review's amber, an agent's blue
+as the rain) and ticks only between a show and a hide, so a Home tab in the background costs
+nothing and a test that never shows a window never starts a timer. A tick takes the time
+since the last one, and a long gap is one short step rather than a leap across a season.
+Somebody who would rather not have it closes it, and *Settings ▸ Home* — a global
+preference, since it is about the person and not the library — brings it back.
+
+**A well can be as tall as its rows.** The guide is a `RowWell`, which is a scroll area, and
+`QScrollArea` stops its size hint at twenty-four lines of text whatever its adjust policy —
+so five steps sat behind a scroll bar with half the page empty around them. The primitive
+now honours `AdjustToContents` as Qt documents it: its hint is its rows', its
+`heightForWidth` their height at that width (their notes wrap), and its minimum stays the
+scroll area's, so a short window still scrolls it rather than growing.
 
 ## How a gesture becomes a change on screen
 

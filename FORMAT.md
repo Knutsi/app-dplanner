@@ -31,7 +31,7 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | a working clone DPlanner keeps for a verb that needed the repository here and nobody had checked out — Run Agent's code, a report's destination — under the default clone policy | `core/storage/kept.py` under `config_dir()/checkouts/<name>-<digest of remote>`, one per repository; recorded in the library file's `checkouts` map like any checkout | it is a checkout: commits an agent made there and never pushed are in it and nowhere else, so it is not wiped by the application |
 
 | Per user, per machine (GUI only) | preferences: panel layout, model choices, the agent launch profiles | `framework/user_config.py`'s `get_global` (QSettings) | no |
-| Per user, per machine, per library | where the user left off: open index folders, open tabs, the tabs kept lately (what Home lists) | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
+| Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
 | The OS keychain | credentials, API keys — the LLM keys, a Confluence token per site (`spec_confluence.token:<host>`) | `core/secrets.py` | no, and never on disk |
 
 If you are unsure, ask who the value belongs to. A colleague opening the project should
