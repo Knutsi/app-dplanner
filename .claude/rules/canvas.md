@@ -83,8 +83,8 @@ paths:
   in Step Details, compiling is the Docs tab's, and a view the index lists as a row under
   the project is left to that row — on the card, on the background and in the Project menu
   alike (their seat in the bar is Go ▸ `views`, which no right-click renders); what a table
-  adds is filed in groups of its own (`classify`, `compile`, `surfaces`) so the card can
-  leave them out. A new target — a stack's frame — is a row
+  adds is filed in groups of its own (`compile`, `surfaces`) so the card can leave them
+  out, and what a step *is* (`classify`) is in no menu at all. A new target — a stack's frame — is a row
   and a branch in `target_of`; a new verb for arrows registers into Graph ▸ `links` and
   appears wherever that band is rendered. **`IdleMode` claims every right press**: handed
   to Qt, a right press on an arrow (selectable, not movable) clears the whole selection

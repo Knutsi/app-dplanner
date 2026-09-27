@@ -52,10 +52,11 @@ paths:
   `test add|set --sort-key`, `test list --sort-key|--flat`, and **`dplanner test file`** —
   many tests, both filing fields, one call, which is what reorganising a roster is made of
   and which replaced `test-category assign` (`test set` is one test with many fields).
-  In the window: the step panel's editable combo (offering the keys in use, so one view is
-  not spelled three ways) and `Step ▸ Test Sort Key ▸ …`, whose last entry mints a new key
-  because there is no editor to send anybody to. `ARCHITECTURE.md`'s *The sort key is an
-  ergonomic* has the reasoning.
+  In the window: the step panel's editable combo on the Tests tab, offering the keys in use
+  so one view is not spelled three ways, and typed to mint a new one because there is no
+  editor to send anybody to — a test is filed where it is written, one at a time, and `test
+  file` is the batch. `ARCHITECTURE.md`'s *The sort key is an ergonomic* has the
+  reasoning.
 - **A test is run from the Test panel beside the roster, and a double-click in a Tests tab
   opens it.** `modules/testing/panel.py`, hosted inside each Tests tab and the roll call
   through `framework/side_panel.py`: the test rendered (not edited — authoring is the step
@@ -112,13 +113,12 @@ paths:
   `test-category list|add|set|remove`, `test add|set --category`, `test file` for a batch,
   `step add --test-category`.
   In the window: `Project ▸ Test Categories…` (the modal editor, also on the Tests strip and
-  in the index's right-click, which renders the Project menu), `Step ▸ Test Category ▸ …` (a
-  `DataMenuSpec`, so the categories are data rebuilt on open — and what a right-click on a
-  category heading acts on, because the heading selects its whole group first; a right-click
-  in a Tests tab renders the result band and the Step menu as a `Step` child, so that path
-  is the same one the menu bar prints), and the step panel's picker beside the audience
-  boxes. `ARCHITECTURE.md`'s *A test is filed under a
-  category* has the reasoning, including why two writers share one project entry.
+  in the index's right-click, which renders the Project menu) and the step panel's picker
+  beside the audience boxes — no menu files a test, since what a step's tests are is set on
+  its Tests tab (`shell-ui.md`'s *The menu bar is sorted by subject*), and a right-click in
+  a Tests tab renders its step's Step menu, as every table's does. `ARCHITECTURE.md`'s *A
+  test is filed under a category* has the reasoning, including why two writers share one
+  project entry.
 - **The category editor is a modal that writes on Save.** `categories_dialog.py` edits a
   copy — each row remembering the name it started with — and lands the whole refactor as one
   undo step when it closes, because renaming per keystroke would rebuild the Tests tab under

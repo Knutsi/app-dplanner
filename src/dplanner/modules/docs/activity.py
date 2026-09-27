@@ -97,7 +97,7 @@ MARKS = {"stale": "out of date", "never": "not compiled yet"}
 UNGROUPED = "Every documented step"
 # Under the headline, which already says "Nothing documented yet".
 NOTHING_YET = (
-    "Turn on Step ▸ Type ▸ Documentation fragment and write what a step adds to the"
+    "Turn on Documentation fragment in a step's Step Details and write what it adds to the"
     " product's documentation — or `dplanner docs set '<step>' --file notes.md`."
 )
 NOT_A_COLLECTOR = (

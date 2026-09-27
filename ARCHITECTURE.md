@@ -670,9 +670,10 @@ Status and Test with no rules between them, because a rule between two adjacent 
 separates nothing that their names do not already separate. That is what took the canvas's
 right-click menu from eight rules to five. The cost is small and worth naming: a child menu
 sits at its first entry's `order`, so sibling child menus in one group have to claim bands of
-it (Type the 10s, Status the 200s, Test the 300s — written down in `dplanner/menus.py`).
+it (Status the 200s, Estimate the 400s in `track` — written down in `dplanner/menus.py`).
 `order` still only ranks inside one group; it is now also how two child menus in that group
-know which comes first.
+know which comes first. (Type and Test have since left the menus for Step Details — *The menu
+bar is sorted by subject* — and Step ▸ Show in is the child two groups feed today.)
 
 ### An action may carry a glyph, and only the pop-ups paint it
 
@@ -683,7 +684,7 @@ button's dropdown. The menu bar deliberately does not, and the reason is the sam
 the application, so a colour baked into one at startup would still be there three themes
 later. A pop-up has no such problem — it is thrown away when it closes.
 
-It earns its place on the Type submenu, where each toggle wears the very glyph its node
+It earns its place on the Type verbs, where each toggle wears the very glyph its node
 will wear, and it is what lets the aspect bar paint the same glyphs (through the specs, so
 they are the registry's and not a copy) instead of the panel hand-building a list of
 aspects it is not allowed to know.
@@ -706,6 +707,15 @@ had learned stopped working — and settled on four principles, which `shell-ui.
 - **No menu is greyed whole where people spend their time** — a project's graph open,
   nothing picked. A menu that opens onto a column of grey says nothing about why, and the
   bar is where somebody new goes to learn what the application does.
+- **What a step *is* is set where its aspects are.** Type (the kind toggles) is the aspect
+  bar across Step Details and Test (add, archive, file, record) is the step's Tests tab
+  there, the Tests strip and the Test panel — so Step's `classify` band is `in_menus=False`
+  and the palette finds it. The band had grown to Type, Test, Test Category and Test Sort
+  Key, four child menus that repeated an editor already open beside the step, and the
+  developer's call was that they are better off there. What went with them is the one
+  thing only a menu did: filing many picked tests at once, which `dplanner test file` does
+  and the window no longer offers; the Tests tab's right-click, which led with the results,
+  is its step's Step menu now, like every table's.
 - **A family about one kind of thing is a child menu**, labelled for itself: Project ▸
   Specs (adding a spec, then the picked document, then its source), Step ▸ Show in (*Graph*,
   *Order*, *Coverage* — where a label that repeats "Show in" is noise). Eleven greyed spec
@@ -810,14 +820,14 @@ subject*, above), and no right-click lists them beside the rows. `fill_menu` tak
 groups for this, in the menu's order and ruled as the menu rules them, so the card is one
 band and the mixed pick's `Step` child is the same band.
 
-**It is `fill_bands`, not an entry in `MENU_STRUCTURE`** — for the reason *A right-click on a
-test leads with the result* gives: an entry there is a place verbs are registered into, and
-nothing registers here. `fill_bands` (`framework/action_menu.py`) is the one policy both
-compositions use: a rule only between two bands that each drew something, none between two
-child menus (their names part them, as in Step's `classify`), and an empty child taken away.
-The cost of composing from groups is that a band naming a group nothing registers into
-renders nothing, silently — so a test holds every composition to what is registered
-(`tests/modules/test_menu_bar.py`), which is the check a refiling of the menu bar leans on. A new target (a stack's frame) is one more row and one
+**It is `fill_bands`, not an entry in `MENU_STRUCTURE`**: an entry there is a place verbs are
+registered into, and nothing registers here. `fill_bands` (`framework/action_menu.py`) is
+the one policy for a composed pop-up: a rule only between two bands that each drew
+something, none between two child menus (their names part them, as in Step's `track`), and
+an empty child taken away. The cost of composing from groups is that a band naming a group
+nothing registers into renders nothing, silently — so a test holds every composition to
+what is registered (`tests/modules/test_menu_bar.py`), which is the check a refiling of the
+menu bar leans on. A new target (a stack's frame) is one more row and one
 more branch in `target_of`; a new arrow verb registers into Graph ▸ `links` and appears in
 the arrow's menu and the mixed pick's *Links* without an edit here.
 
@@ -5655,10 +5665,11 @@ one an agent reorganising a roster actually runs — **`dplanner test file`**, w
 many tests and both filing fields in one call. That verb replaced `test-category assign`:
 `test set` is one test with many fields, `test file` is many tests with the two fields that
 say where a test goes, and having one verb per axis would have been two verbs for one
-gesture. In the window it is the step panel's field (an editable combo, offering the keys
-already in use so one view is not spelled three ways) and `Step ▸ Test Sort Key ▸ …`, whose
-last entry mints a new key — because with no catalogue there is no editor to send anybody
-to.
+gesture. In the window it is the step panel's field — an editable combo, offering the keys
+already in use so one view is not spelled three ways, and typed into to mint a new one,
+because with no catalogue there is no editor to send anybody to. (A `Step ▸ Test Sort Key`
+child menu filed many picked tests at once until the menu bar was sorted by subject; `test
+file` is that batch now.)
 
 ### Grouping is one selector, and the tests' own vocabulary leads it
 
@@ -5791,35 +5802,22 @@ their ergonomic order are what put the next test where they are looking. With no
 open there is nothing to walk, and both verbs are greyed saying so — which is honest rather
 than defensive, because "next" has no meaning without a list.
 
-## A right-click on a test leads with the result
+## A right-click on a test is its step's
 
-A row in a Tests tab **is** a test, and for a while its right-click rendered the whole Step
-menu: four verbs about the thing under the cursor among twenty about something else. What
-somebody reaches for over a test is the result, so the popup leads with it — the *Test*
-child menu's `test_result` band, rendered flat — and everything about the step the test
-hangs off is one level down, as a `Step` child.
+A row in a Tests tab **is** a test, and for a while its right-click led with the result: the
+*Test* child menu's `test_result` band flat, then the whole Step menu one level down as a
+`Step` child — two renders of the registry through `fill_bands`, never a copy, since *a
+right-click renders a menu, never a copy of one* is a rule about entries and says nothing
+against rendering two. It was the reason `fill_menu` learned to take a `group` **with** a
+`submenu`: two groups fed the Test child, and the row wanted one of them.
 
-**The child is the Step menu, not a copy of it.** `fill_menu` fills a menu it is given, so
-the composition is two renders of the registry through the same context every other
-presenter reads: the Step menu's order, its own child menus, its data menus, its greyed
-entries and their reasons, all of them, and a verb somebody adds to it tomorrow appears
-here without anybody editing the Tests tab. *A right-click renders a menu, never a copy of
-one* is a rule about entries, and it says nothing against a right-click rendering two.
-
-**It is not a menu of its own in `MENU_STRUCTURE`.** An entry in that table is a place
-verbs are *registered into*, and nothing registers here — this surface offers verbs that
-already have homes, in an order of its own. Giving it a table entry would mean either
-moving the result verbs out of `Step ▸ Test`, which is where the menu bar wants them, or
-registering four second seats, which is four specs to keep in step with four others. The
-composition is six lines and names no verb.
-
-**Naming a `group` with a `submenu` is what makes the first half one render.** Two groups
-feed the `Test` child menu — what a test *is* (Add, Archive, Put Back) and what a run
-*recorded* — with the rule between them drawn inside it. A surface whose subject is one of
-those bands asks for that band: `fill_menu(…, "Step", submenu="Test", group="test_result")`.
-The alternative was to render the whole child flat and accept *Add Test* above the results,
-or to reorder the groups in `MENU_STRUCTURE` and change the menu bar for every reader of
-it — both worse than teaching one filter to compose with another it already ran beside.
+It went when the menu bar was sorted by subject. Type and Test left the menus for Step
+Details (*The menu bar is sorted by subject*), and the result verbs with them: a result is
+recorded from the Tests strip and the Test panel beside the roster, both of which stand
+right next to the row. With nothing about the test left to lead with, the popup is its
+step's Step menu, the render every table gives its rows, and the Tests tab composes
+nothing of its own. The double-click is still the exception — it runs `test.details`, not
+`steps.details` (*A test is run from a panel*).
 
 ## A reference is a link, and a link is a preview
 

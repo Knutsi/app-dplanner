@@ -19,19 +19,17 @@ from dataclasses import dataclass, field
 from dataclasses import replace as replace_fields
 from pathlib import Path
 
-from PySide6.QtWidgets import QFileDialog, QMenu, QTreeWidgetItem, QWidget
+from PySide6.QtWidgets import QFileDialog, QTreeWidgetItem, QWidget
 
 from dplanner.domain.commands import Command, CompositeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.scope import ScopeKind, kind_of
 from dplanner.domain.store import FilesFor
-from dplanner.framework.action_menu import append_action, menu_ink
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
     ActionSpec,
     ActionState,
-    DataMenuSpec,
 )
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
@@ -74,13 +72,6 @@ from dplanner.modules.testing.aspect import (
     write,
 )
 from dplanner.modules.testing.categories_dialog import CategoriesDialog
-from dplanner.modules.testing.filing import (
-    UNCATEGORISED,
-    catalog,
-    category_of,
-    refiled,
-    sort_keys,
-)
 from dplanner.modules.testing.section import CoversSection, TestsSection
 from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.theme.icons import (
@@ -90,7 +81,6 @@ from dplanner.theme.icons import (
     eraser_icon,
     external_icon,
     folder_icon,
-    glyph_icon,
     list_icon,
     play_icon,
     project_icon,
@@ -106,9 +96,6 @@ RESULT_GLYPHS = {
     "pending": eraser_icon,
 }
 NO_RUN = "start a test run first (Project ▸ New Test Run)"
-# What the sort-key menu calls "no key at all". Not a category's `Uncategorised`: a test
-# with no sort key is not filed anywhere odd, it simply sorts last in its group.
-NO_SORT_KEY = "No sort key"
 SIDE_PANEL_KEY = "side_panel"
 
 
@@ -227,27 +214,6 @@ class TestsModule:
         )
         for spec in self._action_specs():
             deps.actions.register(spec)
-        deps.actions.register_data_menu(
-            DataMenuSpec(
-                id="test.category",
-                menu="Step",
-                group="classify",
-                title="Test Category",
-                # The 500s: the fifth child menu of the classify band. See dplanner/menus.py.
-                order=500,
-                fill=self._fill_categories,
-            )
-        )
-        deps.actions.register_data_menu(
-            DataMenuSpec(
-                id="test.sort_key",
-                menu="Step",
-                group="classify",
-                title="Test Sort Key",
-                order=600,  # The 600s: the sixth child menu of the classify band.
-                fill=self._fill_sort_keys,
-            )
-        )
 
     def _tests_factory(self, target: str | None) -> TestsActivity:
         assert target is not None
@@ -300,8 +266,10 @@ class TestsModule:
                 menu="Step",
                 group="classify",
                 submenu="Test",
-                # The 300s: Test is the third child menu of the classify band, and a child
-                # menu sits at its first entry's order. See dplanner/menus.py.
+                # In no menu, as Type is: a step's tests are added, filed and archived on its
+                # Tests tab in Step Details, and recorded from the Tests strip and the Test
+                # panel. The palette still finds each under *Step ▸ Test*.
+                in_menus=False,
                 order=310,
                 tip="Another test on this step, with its own result in every run",
                 state=self._on_a_step,
@@ -313,6 +281,7 @@ class TestsModule:
                 menu="Step",
                 group="classify",
                 submenu="Test",
+                in_menus=False,
                 order=320,
                 tip="Take the selected tests off the roster; their history is kept",
                 state=lambda context: self._archive_state(context, archived=True),
@@ -324,6 +293,7 @@ class TestsModule:
                 menu="Step",
                 group="classify",
                 submenu="Test",
+                in_menus=False,
                 order=330,
                 tip="Put the selected tests back on the roster",
                 state=lambda context: self._archive_state(context, archived=False),
@@ -334,9 +304,10 @@ class TestsModule:
                     id=f"test.result_{status}",
                     label=f"Mark {word(status)}" if status != "pending" else "Clear Result",
                     menu="Step",
-                    group="test_result",
+                    group="classify",
                     submenu="Test",
-                    order=(index + 1) * 10,
+                    in_menus=False,
+                    order=340 + index * 10,
                     tip=f"Record the selected tests as {word(status).lower()} in the open run",
                     icon=RESULT_GLYPHS[status],
                     state=self._result_state_for(status),
@@ -713,97 +684,6 @@ class TestsModule:
         self._deps.context.refresh()
 
     # -- categories ------------------------------------------------------------------------
-
-    def _fill_categories(self, menu: QMenu) -> None:
-        """What the picked tests are filed under, as a child menu of data.
-
-        Rebuilt on every open, so a category added in the editor is offered without anybody
-        having registered anything. It renders the whole story including the empty one: a
-        disabled line when nothing is picked or the project has no categories yet, and the
-        editor's own verb at the end — through ``append_action``, never a copy of it.
-        """
-        context = self._deps.context.current()
-        project = self._focused_project(context)
-        picked = self._selected_tests(context)
-        if project is None or not picked:
-            menu.addAction("Pick a test first").setEnabled(False)
-        else:
-            held = {category_of(test) for _step, test in picked}
-            ink = menu_ink(menu)
-            for entry in catalog(project):
-                action = menu.addAction(entry.name)
-                action.setCheckable(True)
-                action.setChecked(held == {entry.name})
-                if entry.icon:
-                    action.setIcon(glyph_icon(entry.icon, ink))
-                action.triggered.connect(
-                    lambda _checked=False, name=entry.name: self._file(category=name)
-                )
-            none = menu.addAction(UNCATEGORISED)
-            none.setCheckable(True)
-            none.setChecked(held == {UNCATEGORISED})
-            none.triggered.connect(lambda _checked=False: self._file(category=""))
-        menu.addSeparator()
-        append_action(menu, self._deps.actions, self._deps.context, "tests.categories")
-
-    def _fill_sort_keys(self, menu: QMenu) -> None:
-        """The sort keys already in use, and a way to type a new one.
-
-        The same shape as the categories menu, with one difference that is the whole design:
-        a sort key has no catalogue, so the offered list is simply *what is already in use*
-        and the last entry mints a new one. There is nothing to maintain, because a sort key
-        is an ergonomic rather than a vocabulary.
-        """
-        context = self._deps.context.current()
-        project = self._focused_project(context)
-        picked = self._selected_tests(context)
-        if project is None or not picked:
-            menu.addAction("Pick a test first").setEnabled(False)
-            return
-        held = {test.sort_key for _step, test in picked}
-        for key in sort_keys(project):
-            action = menu.addAction(key)
-            action.setCheckable(True)
-            action.setChecked(held == {key})
-            action.triggered.connect(lambda _checked=False, named=key: self._file(sort_key=named))
-        none = menu.addAction(NO_SORT_KEY)
-        none.setCheckable(True)
-        none.setChecked(held == {""})
-        none.triggered.connect(lambda _checked=False: self._file(sort_key=""))
-        menu.addSeparator()
-        menu.addAction("New Sort Key…").triggered.connect(
-            lambda _checked=False: self._new_sort_key()
-        )
-
-    def _new_sort_key(self) -> None:
-        """Ask for a key and put the picked tests under it — the menu's creation path."""
-        typed = LinePrompt.ask(
-            self._deps.parent,
-            "New Sort Key",
-            "What orders these tests inside their category — the view they exercise, say",
-            "File",
-            validate=lambda text: None if text.strip() else "A sort key needs some words",
-        )
-        if typed is not None:
-            self._file(sort_key=typed.strip())
-
-    def _file(self, *, category: str | None = None, sort_key: str | None = None) -> None:
-        """Refile every picked test. ``None`` leaves an axis alone; "" clears it."""
-        context = self._deps.context.current()
-        pairs = [
-            pair
-            for pair in self._selected_tests(context)
-            if (category is not None and pair[1].category != category)
-            or (sort_key is not None and pair[1].sort_key != sort_key)
-        ]
-        if not pairs:
-            return
-        wanted = {test.id for _step, test in pairs}
-        by_step: dict[StepId, list[Test]] = {
-            step.id: refiled(read(step), wanted, category=category, sort_key=sort_key)
-            for step, _test in pairs
-        }
-        self._push_many(by_step, "Set Test Category" if sort_key is None else "Set Test Sort Key")
 
     def _edit_categories(self, context: Context) -> None:
         project = self._focused_project(context)

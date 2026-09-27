@@ -4579,3 +4579,18 @@ to write `&` into a name that is also an identifier. The application's own test
 
 **Upstream?** Yes. The template's `&{name}` has the same trap as soon as two menus start
 with one letter, and the fix knows nothing about DPlanner.
+
+### `framework/aspect_toggle.py` — a Type toggle is in no menu
+
+**What.** `aspect_toggle` now builds its spec with `in_menus=False`. The aspect bar in Step
+Details reads the toggles by their `Step ▸ Type` path, not through a menu, so it is unchanged.
+The palette still lists them. `framework/action_menu.py`'s docstrings now point at examples
+that still exist (Step ▸ Show in, Step's `track`); that part is comments only.
+
+**Why.** The developer's call on F8: a step's kind is set where its aspects are edited, and
+the Type child menu repeated the bar across an editor that was already open. The Test child
+menu and the filing menus went the same way in the testing module.
+
+**Upstream?** No — the template has no aspect bar. What carries back is the pattern: a verb
+whose seat is a panel reads its specs by path and is `in_menus=False`, so it is never shown
+twice.

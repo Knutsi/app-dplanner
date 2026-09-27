@@ -117,11 +117,10 @@ def fill_menu(
     *Options* is *Graph*'s ``look``); naming several renders those bands in the menu's own
     order, ruled as the menu rules them (a card on the graph is *Step*'s bands about the
     step, and not the ones a table adds). Named **with** a ``submenu`` it means that child
-    menu's band instead, still flat: two groups may feed one child menu — what a test *is*
-    and what it *did* — and a surface whose subject is one of them offers that one
-    (the Tests tab's right-click leads with *Step ▸ Test*'s ``test_result``). A band is
-    otherwise a run of top-level entries, and a child menu of one of them is already
-    inside it, so there is nothing further to filter.
+    menu's band instead, still flat: two groups may feed one child menu — Step ▸ Show in
+    is fed by ``open`` and ``surfaces`` — and a surface whose subject is one of them can
+    offer that one alone. A band is otherwise a run of top-level entries, and a child menu
+    of one of them is already inside it, so there is nothing further to filter.
 
     A **data child menu** (`DataMenuSpec`) is placed by the same key and filled when it
     opens, as the bar's is — so a menu's right-click offers *Run Agent* because the
@@ -249,9 +248,9 @@ def fill_bands(
     A rule goes above a band only when something was drawn above it **and** the band drew
     something — a rule under nothing is a line the reader has to account for, and what a
     state hides is the registry's business, not the surface's to assume. Two child menus in
-    a row get none, for the reason Step's ``classify`` band has none: their names already
-    part them. A child menu that came out empty is taken away rather than left to open on
-    nothing.
+    a row get none, for the reason Step's ``track`` band has none between Status and
+    Estimate: their names already part them. A child menu that came out empty is taken away
+    rather than left to open on nothing.
     """
     after_child = False
     for band in bands:

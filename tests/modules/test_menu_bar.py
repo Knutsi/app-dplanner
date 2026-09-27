@@ -36,6 +36,15 @@ def test_every_menu_offers_something_with_a_project_open(services, make_project)
     assert dead == []
 
 
+def test_what_a_step_is_is_set_where_its_aspects_are(services):
+    """Type is the aspect bar across Step Details and Test the step's Tests tab there, so
+    neither is in a menu — the palette still finds each under its path."""
+    kinds = [spec for spec in services.actions.all_specs() if spec.group == "classify"]
+    assert {spec.submenu for spec in kinds} == {"Type", "Test"}
+    assert [spec.id for spec in kinds if spec.in_menus or not spec.palette] == []
+    assert [spec.id for spec in services.actions.data_menus() if spec.group == "classify"] == []
+
+
 def mnemonic(text: str) -> str | None:
     marked = re.search(r"&([^&])", text.replace("&&", ""))
     return marked.group(1).lower() if marked else None
@@ -83,11 +92,9 @@ def compositions() -> list[tuple[str, Band]]:
     from dplanner.modules.project_editor.canvas_menus import BANDS
     from dplanner.modules.project_editor.canvas_toolbar import LOOK_MENU, MENUS
     from dplanner.modules.spec.activity import ADD_SUBMENU
-    from dplanner.modules.testing.activity import TEST_MENU
 
     return [
         *((f"canvas {target}", band) for target, bands in BANDS.items() for band in bands),
-        *(("Tests tab", band) for band in TEST_MENU),
         *((f"strip {verb}", Band(menu, submenu=child)) for verb, (menu, child) in MENUS.items()),
         ("strip Options", Band(LOOK_MENU[0], LOOK_MENU[1])),
         ("Specs tab +", Band("Project", submenu=ADD_SUBMENU)),

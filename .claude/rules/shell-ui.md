@@ -108,11 +108,10 @@ paths:
 - **A right-click may render more than one menu, and still copies none.** `fill_bands`
   (`framework/action_menu.py`) lays `Band`s — a menu, a group of one, a child menu's band,
   optionally as a child of its own — into one pop-up, a rule only between two bands that
-  each drew something and none between two child menus. The Tests tab's right-click is
-  `Step ▸ Test`'s `test_result` band, then the Step menu as a `Step` child
-  (`TestsActivity._test_menu`); the canvas's is a row of bands per thing under the cursor
-  (`project_editor/canvas_menus.py`, *A right-click is composed by what is under it* in
-  `canvas.md`). Naming a `group` **with** a `submenu` means that child menu's band — two
+  each drew something and none between two child menus. The canvas's right-click is a row
+  of bands per thing under the cursor (`project_editor/canvas_menus.py`, *A right-click is
+  composed by what is under it* in `canvas.md`); a Tests tab's is its step's Step menu, as
+  every table's is. Naming a `group` **with** a `submenu` means that child menu's band — two
   groups may feed one child menu, and a surface about one of them offers that one. What the
   rule forbids is an entry written by hand, not a shape; a composition is not a
   `MENU_STRUCTURE` entry of its own, because an entry there is a place verbs are
@@ -173,7 +172,9 @@ paths:
   project's surfaces — `views`, the index's rows; `survey`, Estimate Steps and Preview Report;
   `archive`), Project the verbs on a project, Graph the canvas, Step the picked steps, Tools
   this machine. Four rules keep it that way. **No menu is greyed whole with a project's graph
-  open** — a menu that offers nothing where people spend their time teaches nothing. **A
+  open** — a menu that offers nothing where people spend their time teaches nothing. **What
+  a step *is* is set where its aspects are**: Type is the aspect bar in Step Details and Test
+  the step's Tests tab, so both are `in_menus=False` (`classify`), found by the palette. **A
   family about one kind of thing is a child menu** (Project ▸ Specs, Step ▸ Show in), and its
   labels are written for it (*Show in ▸ Graph*, not *Reveal in Graph*). **An id never moves
   with its verb** — keys, toolbars and the palette name ids, so a refiling is a `menu`,
@@ -249,11 +250,12 @@ paths:
   is the verb that changes how much of the graph is in view.
 - **A submenu is one child menu per title, and a group change draws the rule *inside* it.**
   Both presenters agree (`framework/menubar.py`, `framework/action_menu.py`), so two groups
-  can feed one submenu — what a test *is* and what it *did* — and a group that only feeds an
-  existing child menu costs the menu itself no line. Several submenus therefore sit in one
-  group as a band (Step's `classify` holds Type, Status and Test), and since a child menu
-  sits at its first entry's `order`, siblings in one group claim bands of it — the one place
-  `order` says more than "rank inside this group", written down in `menus.py`.
+  can feed one submenu — Step ▸ Show in is fed by `open` and `surfaces` — and a group that
+  only feeds an existing child menu costs the menu itself no line. Several submenus
+  therefore sit in one group as a band (Step's `track` holds Status and Estimate), and since
+  a child menu sits at its first entry's `order`, siblings in one group claim bands of it —
+  the one place `order` says more than "rank inside this group", written down in
+  `menus.py`.
   `ARCHITECTURE.md`'s *A submenu is one child menu per title* has the reasoning. **A child
   menu whose entries are data carries a `fill` instead of specs** — `DataMenuSpec`, placed
   by the same table, cleared and refilled every time it opens (Tools ▸ Agent List is the
@@ -279,7 +281,7 @@ paths:
   dropdown — all built fresh on every open. The menu bar's QActions outlive every theme
   change, so a colour baked into one goes stale; that is the same trap as `option.palette`.
   Every Type toggle carries the glyph its node wears (`theme/icons.py`'s
-  `GLYPH_ICONS` vocabulary), so the Type submenu, the aspect bar and the node agree.
+  `GLYPH_ICONS` vocabulary), so the palette's row, the aspect bar and the node agree.
 - **A theme is provided, never listed.** `theme/providers.py` is the contract — a
   `ThemeProvider` is an id, a label, `refusal()` (why not on this machine, None when it
   applies, asked once per build), `groups()` (its themes, in the lists the Theme menu

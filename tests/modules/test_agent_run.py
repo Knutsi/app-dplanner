@@ -1500,7 +1500,7 @@ def test_one_step_that_cannot_run_greys_the_verb_for_all_of_them(services, step)
     assert state.visible and not state.enabled
     assert state.label == (
         "Run 2 Agents — “Write the release note”: mark the step as an agent step first"
-        " (Step ▸ Type ▸ Agent)"
+        " (Agent, in Step Details)"
     )
 
 

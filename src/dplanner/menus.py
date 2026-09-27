@@ -125,27 +125,19 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "Graph": ("new", "select", "narrow", "links", "arrange", "contract", "look", "panels"),
     # Every table that lists steps renders this menu whole; a card on the canvas renders
     # only the bands about the step itself — edit, link, track, agent, open — and leaves
-    # the rest to the step's details and the index beside it (canvas_menus.py's CARD).
+    # the rest to the index beside it (canvas_menus.py's CARD).
     # That split is why some neighbours below are separate groups.
     # "edit" is Rename, Delete and Insert Wait Before — New is the Graph menu's, since what
     # it needs is a place.
     # "track" is where a step stands and how long it takes: the Status and Estimate child
-    # menus, acting on every picked step.
-    # "classify" is the band of child menus that say what a step *is*: Type (one independent
-    # checkable toggle per type-ish aspect — never a radio group, a step can be several
-    # things at once, and each aspect's tab follows its toggle), then Test, Test Category and
-    # Test Sort Key. A card leaves them out: the aspect bar in Step Details is where a step's
-    # kind is set, and a test is picked only in a Tests tab. They are one group because a
-    # rule between two adjacent child menus separates nothing: the names already do. A child
-    # menu sits at its first entry's order, so the child menus claim bands of it — in
-    # "track" Status the 200s and Estimate the 400s; here Type the 10s, Test the 300s, Test
-    # Category the 500s, Test Sort Key the 600s — and ``order`` still only ranks inside one
-    # group. Test Category is a *data* child menu (the project's own categories, rebuilt on
-    # open) and so sits beside Test rather than inside it: a `DataMenuSpec` is placed at its
-    # menu's top level, never nested in a submenu.
-    # "test_result" feeds that same Test submenu with what a run *recorded*, so the rule
-    # between what a test is and what it did is drawn inside the child menu — and, holding
-    # no top-level entry of its own, the group adds no rule to the menu itself.
+    # menus, acting on every picked step. A child menu sits at its first entry's order, so
+    # the two claim bands of it — Status the 200s, Estimate the 400s — and ``order`` still
+    # only ranks inside one group.
+    # "classify" is what a step *is*, and it is in no menu: Type (one independent checkable
+    # toggle per type-ish aspect — never a radio group, a step can be several things at
+    # once) is the aspect bar across Step Details, and Test (add, archive, record a result)
+    # is the step's Tests tab there, the Tests strip and the Test panel. Its verbs are
+    # `in_menus=False`, so the palette finds them under *Step ▸ Type* and *Step ▸ Test*.
     # "agent" carries a step's work out: Run Agent and what follows one. "compile" is
     # Compile with Agent, which writes a collector's documentation from the fragments behind
     # it — a band of its own because a card does not offer it; the Docs tab does.
@@ -159,7 +151,6 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
         "link",
         "track",
         "classify",
-        "test_result",
         "agent",
         "compile",
         "open",

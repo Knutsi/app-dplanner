@@ -1904,7 +1904,7 @@ def test_a_cards_menu_holds_only_what_is_about_the_step(services, project, tab):
 
 def test_a_table_still_renders_the_whole_step_menu(services, project, tab):
     """What a card leaves out is filed, not dropped: the menu bar and every table that
-    lists steps still offer it."""
+    lists steps still offer it — all but what a step *is*, which is set in Step Details."""
     from PySide6.QtWidgets import QMenu
 
     from dplanner.framework.action_menu import fill_menu
@@ -1912,8 +1912,10 @@ def test_a_table_still_renders_the_whole_step_menu(services, project, tab):
     step_menu = fill_menu(QMenu(), services.actions, services.context, "Step")
     found = labels(entries(step_menu))
     step_menu.deleteLater()
-    for verb in ("Type", "Test", "Compile with Agent", "Show in", "Order", "Graph"):
+    for verb in ("Status", "Estimate", "Compile with Agent", "Show in", "Order", "Graph"):
         assert verb in found
+    for kind in ("Type", "Test", "Test Category", "Test Sort Key"):
+        assert kind not in found
 
 
 def test_empty_canvas_offers_making_selecting_and_the_plan(services, project, tab, monkeypatch):

@@ -50,7 +50,9 @@ paths:
   pass reaches into the shelf (`migrate_shelved`) and the asset catalog counts a shelved
   prose's links as uses. `FORMAT.md` has the shape; `ARCHITECTURE.md`'s *Turning an
   aspect off shelves it* has the reasoning.
-- **The aspect bar across the panel's top renders the Type submenu, never a copy of it.**
+- **The aspect bar across the panel's top renders the Type verbs, never a copy of them** —
+  and it is their only seat: they are `in_menus=False`, the palette finding them under
+  *Step ▸ Type* (`shell-ui.md`'s *The menu bar is sorted by subject*).
   `framework/aspect_bar.py` puts every Type toggle **on the left, in a `Toolbar`**
   (`framework/toolbar.py`) as a glyph with its words in the tooltip, and runs each through
   `ActionRegistry.run`, so a toggle keeps its own undo command. **What no longer fits folds
@@ -156,7 +158,7 @@ paths:
   what else the node is). An estimate or a description is a facet. The **aspect bar's
   right** is one dropdown naming the *template* the step amounts to — a kind with the
   facets it usually carries — which is why that list is named in the composition root
-  (`StepPropertiesDeps.templates`) rather than derived from the Type submenu; the bar's
+  (`StepPropertiesDeps.templates`) rather than derived from the Type verbs; the bar's
   left is every toggle, as a glyph. **Graph ▸ New Step is one verb**: a step is born plain, titled "New
   step", and the details dialog opens on it with the name selected, where the bar says
   what it is.

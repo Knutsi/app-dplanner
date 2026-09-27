@@ -6,6 +6,10 @@ once. A module hands over its ``enabled`` predicate and a ``fresh`` entry, and g
 checkable Step ▸ Type verb whose off is :func:`~dplanner.domain.shelf.turn_off` and whose
 on is :func:`~dplanner.domain.shelf.turn_on` — so nothing is lost on the way out, no
 confirmation is needed, and the CLI's ``clear`` builds the very same command.
+
+The verb is in no menu: its seat is the aspect bar across the top of Step Details, which
+reads these specs by their ``Type`` path, so a step's kind is set where its aspects are
+edited. The palette still finds each under *Step ▸ Type*.
 """
 
 from collections.abc import Callable, Mapping
@@ -77,6 +81,7 @@ def aspect_toggle(
         menu="Step",
         group="classify",
         submenu="Type",
+        in_menus=False,
         order=order,
         icon=icon,
         tip=tip,
