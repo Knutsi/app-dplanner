@@ -302,9 +302,10 @@ paths:
   and the same kind's glyph in a menu cannot differ. **The files are read in one place**,
   `theme/glyph_source.py`, which loads no Qt: the report draws a card's glyph from its
   `glyph_markup`, handed to `cli/` as data by a module's `report.py`, since `cli/` may not
-  read `theme/` itself. Four glyphs are still painted by hand because each
+  read `theme/` itself. Five glyphs are still painted by hand because each
   is a picture of *state*: the key badge (it draws text), the colour strip (a gradient),
-  the spinner (a frame per angle) and the filter funnel (two states in one width).
+  the spinner (a frame per angle), the filter funnel (two states in one width) and the
+  done mark (a tick heavier than the set's, on a green chip).
 - **An `ActionSpec` may carry a glyph, and only the pop-ups paint it.** `icon` is a
   `(QColor) -> QIcon` painter, rendered by `build_menu`, `append_action` and a toolbar
   dropdown — all built fresh on every open. The menu bar's QActions outlive every theme

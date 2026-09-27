@@ -10,9 +10,10 @@ before rendering — the same trick ``theme/__init__.py`` plays for the combo ar
 colour's alpha becomes the painter's opacity, which is how a strip's glyphs come out in the
 secondary tone.
 
-Four glyphs are still painted by hand, because each is a picture of *state* rather than a
+Five glyphs are still painted by hand, because each is a picture of *state* rather than a
 picture of a thing: the key badge (it draws text), the colour strip (a gradient), the
-spinner (a frame per angle) and the filter funnel (two states in one width).
+spinner (a frame per angle), the filter funnel (two states in one width) and the done mark
+(a tick heavier than the set's, which holds on a chip at 16 pixels).
 """
 
 from collections.abc import Callable
@@ -32,6 +33,7 @@ from PySide6.QtSvg import QSvgRenderer
 
 from dplanner.theme.glyph_source import glyph_source
 from dplanner.theme.palettes import Palette
+from dplanner.theme.tones import DONE_MARK
 
 ICON_SIZE = 16
 # A glyph nobody is pointing at is present without asking to be read.
@@ -423,6 +425,22 @@ def problem_icon(color: str | QColor) -> QIcon:
 def check_icon(color: str | QColor) -> QIcon:
     """A tick: record the picked tests as passing."""
     return glyph_icon("check", color)
+
+
+def done_icon() -> QIcon:
+    """A white tick on a green chip: a finished step, in a row that wears its kind's glyph.
+
+    Filled rather than inked, because a tick in a row's own faded ink is one more glyph in a
+    column of glyphs — the chip is found down the column without reading it.
+    """
+    pixmap, painter = _canvas()
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(DONE_MARK)
+    painter.drawRoundedRect(QRectF(0.0, 0.0, ICON_SIZE, ICON_SIZE), 4.0, 4.0)
+    painter.setPen(_pen("#ffffff", 2.0))
+    painter.drawPolyline([QPointF(4.5, 8.5), QPointF(7.0, 11.0), QPointF(11.5, 5.5)])
+    painter.end()
+    return QIcon(pixmap)
 
 
 def skip_icon(color: str | QColor) -> QIcon:

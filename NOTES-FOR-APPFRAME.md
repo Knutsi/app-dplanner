@@ -4723,3 +4723,32 @@ had already written the fallback for its own verbs; one rule in the framework is
 the next module from writing a fourth.
 
 **Upstream?** Yes, beside `focused_step` and `chosen_steps`, whose file it is.
+
+## 67. Out of plan: a finished step's mark on green, its title in italic
+
+### `framework/table.py`, `framework/list_rows.py` — `Cell.struck` is `Cell.finished`, drawn in italic
+
+**What.** `Cell.struck` and `STRUCK_ROLE` (section 64) are renamed `Cell.finished` and
+`FINISHED_ROLE`, and `TableDelegate.font_for` sets the first line in italic rather than
+striking it. The flag now names what the row is rather than how it is drawn, so the next
+change of look is the delegate's alone.
+
+**Why.** A stroke through a title is hard to read, and a finished step's title is still
+worth reading. Italic recedes it and keeps it whole (DESIGN.md's *Tables*).
+
+**Upstream?** Yes, with section 64: name the flag for the meaning and let the primitive
+choose the look.
+
+### `theme/tones.py`, `theme/icons.py` — `DONE_MARK`, `done_icon()`
+
+**What.** A finished step's glyph is a white tick, hand-drawn at 2 px, on a rounded 16 px
+chip filled with `DONE_MARK` (the good green's hue, a shade deeper, opaque). It replaces
+`check_icon` in the row's faded ink in the Order tab and Debug ▸ Design Examples.
+
+**Why.** The faded tick was one more glyph in a column of glyphs and did not stand out. An
+opaque chip with its own ink carries its own contrast, so one constant reads the same on
+every theme — the only opaque tone, because it is a mark rather than a region. The vendored
+tick scaled into the chip is a 1 px stroke whose diagonal washes out at 1×, so it is painted.
+
+**Upstream?** Only if the template grows a table of work; the lesson that a small mark on a
+filled chip wants a heavier stroke than the icon set's is general.

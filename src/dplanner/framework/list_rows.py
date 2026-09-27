@@ -72,8 +72,8 @@ COLLAPSED_ROLE = int(Qt.ItemDataRole.UserRole) + 12
 # Set on a row that landed under a group heading, whether or not that heading folds: its
 # first column hangs under the heading's words, so a group reads as holding its rows.
 GROUPED_ROLE = int(Qt.ItemDataRole.UserRole) + 13
-# The first line struck through — a finished step's title, in a table of work.
-STRUCK_ROLE = int(Qt.ItemDataRole.UserRole) + 14
+# The first line in italic — a finished step's title, in a table of work.
+FINISHED_ROLE = int(Qt.ItemDataRole.UserRole) + 14
 # Where a *host's* own roles start — the step id on a row, which milestone it is. Everything
 # below this belongs to the delegates here, and a view that numbered its own roles from
 # ``UserRole + 1`` had the order table draw its milestone label as a second line and grey

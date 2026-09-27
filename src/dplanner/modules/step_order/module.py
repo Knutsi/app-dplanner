@@ -139,7 +139,7 @@ class StepOrderDeps:
     step_key: Callable[[StepId], str] = field(default=_no_color)
     # Whether a step is work at all: a wait is not, and is no part of the volume.
     counts_as_work: Callable[[Step], bool] = field(default=lambda _step: True)
-    # Whether a step is finished — its row wears a check and its title is struck through.
+    # Whether a step is finished — its row wears the done mark and its title is in italic.
     # Wired by the composition root; this module never learns where a status is stored.
     step_done: Callable[[StepId], bool] = field(default=lambda _step_id: False)
 
