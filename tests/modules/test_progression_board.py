@@ -193,7 +193,7 @@ def test_ticking_ready_cards_counts_them_on_the_run_button_and_publishes_them(
 def ready_agents(services, make_project):
     """A finished step and five agent steps waiting on it: five cards in the Ready lane,
     each briefed enough to launch. What a board looks like the morning a milestone lands."""
-    project = make_project("Discovery")
+    project = make_project("Discovery", legacy=True)
     done = Step(title="Groundwork")
     AddNodeCommand(project.id, done).redo(services.document)
     set_status(services, done, "done")

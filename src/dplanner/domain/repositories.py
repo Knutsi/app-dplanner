@@ -12,13 +12,19 @@ derivation over all three, and every reader — ``project show``, lint, the Run 
 the Repositories card, the Project dialog, the agent briefing — asks it rather than
 comparing paths of its own.
 
-Three states, read off the code rows. **Separated** is the shape the application wants.
+Four states, read off the code rows. **Separated** is the shape the application wants.
 **Colocated** is a plan kept inside the code it plans: the same remote, or either checkout
-inside the other. And **legacy** is a project with no code location at all — the shape
-every project had before the fact existed — read as colocated by every derivation (Run
-Agent opens in the plan's own repository, GitHub refs read its origin), so nothing breaks
-on the day the build updates, and warned about until it is moved or the colocation is
-accepted.
+inside the other. A project with no code location at all is one of two things, and the
+plan repository's ``.dplanner`` index tells them apart. **Unset** is a project the index
+lists: it was made in a plan repository, and its code is simply not recorded yet — no
+derivation reads it as anything, so Run Agent has nowhere to work and GitHub refs read
+nothing until somebody names the code. **Legacy** is one the index does not list — a
+project that *is* its repository's root, or one from before the index — the shape every
+project had before the fact existed, read as colocated by every derivation (Run Agent opens
+in the plan's own repository, GitHub refs read its origin), so nothing breaks on the day
+the build updates, and warned about until it is moved or the colocation is accepted.
+:attr:`RepositoryFacts.code_root` and :attr:`~RepositoryFacts.code_remote` are that reading
+in one place.
 """
 
 from collections.abc import Mapping
@@ -31,10 +37,12 @@ from dplanner.core.storage.locations import (
     origin_url,
     remote_label,
 )
+from dplanner.core.storage.pointer import indexed
 from dplanner.domain.locations import CODE, ManagedFor, Placement, place
 from dplanner.domain.model import Project
 
 LEGACY = "legacy"
+UNSET = "unset"
 COLOCATED = "colocated"
 SEPARATED = "separated"
 
@@ -51,6 +59,7 @@ class RepositoryFacts:
     plan_remote: str  # Its origin as git prints it; "" for a local-only plan repository.
     placements: tuple[Placement, ...]  # One per location, in the table's order.
     colocation: str  # "" or ACCEPTED.
+    indexed: bool = False  # The plan repository's `.dplanner` index lists the project.
 
     @property
     def code(self) -> Placement | None:
@@ -72,7 +81,7 @@ class RepositoryFacts:
     @property
     def state(self) -> str:
         if not self.repository:
-            return LEGACY
+            return UNSET if self.indexed else LEGACY
         if any(
             colocated(self.plan_root, self.plan_remote, found.location.repository, found.root)
             for found in self.placements
@@ -82,9 +91,31 @@ class RepositoryFacts:
         return SEPARATED
 
     @property
+    def plan_in_code(self) -> bool:
+        """Whether the plan's repository is read as its code's — so it has no history of
+        its own to show, and the way out is a plan repository."""
+        return self.state in (LEGACY, COLOCATED)
+
+    @property
     def warns(self) -> bool:
         """Whether a person, lint and the briefing should say the plan lives in its code."""
-        return self.state != SEPARATED and self.colocation != ACCEPTED
+        return self.plan_in_code and self.colocation != ACCEPTED
+
+    @property
+    def code_root(self) -> Path | None:
+        """Where the primary code is on this machine as an agent works in it: its checkout,
+        the plan's own repository for the legacy shape, and nowhere while it is unset."""
+        if self.state == LEGACY:
+            return self.plan_root
+        return self.checkout
+
+    @property
+    def code_remote(self) -> str:
+        """The primary code repository as its refs are read: the row's, the plan's own
+        origin for the legacy shape, and "" while it is unset."""
+        if self.state == LEGACY:
+            return self.plan_remote
+        return self.repository
 
     @property
     def plan_label(self) -> str:
@@ -161,4 +192,5 @@ def repository_facts(
             for location in project.locations
         ),
         colocation=project.colocation,
+        indexed=plan_root is not None and indexed(project_dir),
     )

@@ -22,7 +22,7 @@ from dplanner.core.signals import Signal
 from dplanner.core.storage.sparse import Probe
 from dplanner.domain.locations import LocationRole, Placement
 from dplanner.domain.relocate import Moved
-from dplanner.domain.repositories import RepositoryFacts
+from dplanner.domain.repositories import UNSET, RepositoryFacts
 
 MODULE_ID = "projects"
 
@@ -106,11 +106,18 @@ class RepoLines:
 def code_lines(facts: RepositoryFacts) -> RepoLines:
     """The code repository: its remote, and the checkout this machine has.
 
-    With no code repository recorded the plan's own repository is where the code is — the
-    older shape — so the location says that rather than nothing.
+    With no code repository recorded, a legacy plan's own repository is where the code is
+    — the older shape — so the location says that rather than nothing; an unset plan's
+    code is nowhere yet, and the lines say so.
     """
+    if facts.state == UNSET:
+        # Nothing to say about where code nobody named is: the line stays empty, as the
+        # plan's does when it is in no repository.
+        return RepoLines(
+            identity="no code repository recorded yet", location="", identity_missing=True
+        )
     if not facts.repository:
-        root = facts.plan_root
+        root = facts.code_root
         return RepoLines(
             identity="no code repository recorded",
             location=shown_path(root) if root is not None else "not in a git repository",

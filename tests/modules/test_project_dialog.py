@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QComboBox, QFileDialog, QLineEdit
 from tests.facts import code_row
 
 from dplanner.core.storage.locations import init_repo
+from dplanner.core.storage.pointer import remove_from_index
 from dplanner.core.storage.sparse import Probe
 from dplanner.domain.commands import AddNodeCommand, SetFieldCommand
 from dplanner.domain.locations import CODE, Location, roles_by_id
@@ -63,7 +64,10 @@ def select(services, project_id):
 
 @pytest.fixture
 def project(services, make_project):
+    """Where most of these tests begin: a plan that reads as living beside its code — no
+    code row and no index line, the legacy shape — until a test separates it."""
     project = make_project("Discovery")
+    remove_from_index(services.repo.project_dir(project.id))
     AddNodeCommand(project.id, Step(title="Read the spec")).redo(services.document)
     return project
 
@@ -359,6 +363,30 @@ def test_a_plan_beside_its_code_shows_one_log_and_offers_setup(dialog, fakes, li
     assert not dialog.plan_column.well.isVisibleTo(dialog)
 
 
+def test_a_plan_whose_code_is_not_set_shows_its_own_history_and_asks_for_the_code(
+    services, dialog, fakes, project, library_repo
+):
+    """Listed in a plan repository's index with no code row, a project is unset: the plan
+    repository is never read as its code — no code log, no set-up offer, no warning about
+    a drift that is not there — and the code column says what is missing, once."""
+    from dplanner.core.storage.pointer import add_to_index
+
+    _repos, calls, _state = fakes
+    add_to_index(services.repo.project_dir(project.id))
+    calls["history"].clear()
+    dialog.show_project(project.id)
+
+    assert calls["history"] == [(library_repo, "discovery")]  # The plan's, and only it.
+    assert dialog.code_column.rows() == []
+    assert dialog.code_column.empty.label.text().startswith("No code repository yet")
+    assert dialog.code_column.identity.text() == "no code repository recorded yet"
+    assert dialog.plan_column.rows() == [("Add the login form", "anna · just now")]
+    assert not dialog.plan_column.setup_button.isVisibleTo(dialog)
+    assert entry(dialog.plan_column, MOVE_PLAN).reason == ""
+    assert not dialog.warning_row.isVisibleTo(dialog)
+    assert entry(dialog.code_column, "Pick from GitHub…").reason == ""
+
+
 def test_a_separated_plan_fills_both_columns_and_prs_lead_the_code_column(
     services, dialog, fakes, project, tmp_path, library_repo
 ):
@@ -383,6 +411,7 @@ def test_an_answer_for_a_project_the_dialog_left_is_dropped(
 ):
     repos, _calls, _state = fakes
     other = make_project("Satellite")
+    remove_from_index(services.repo.project_dir(other.id))  # Beside its code, too.
     dialog = ProjectDialog(
         services.document,
         services.undo,
@@ -531,6 +560,15 @@ def test_the_card_states_the_plan_and_every_location_and_follows_the_facts(
     assert card.note.isVisibleTo(card) and "inside the code" in card.note.text()
     assert card.move_button.text() == SET_UP_PLAN
 
+    # In a plan repository's index it is unset: not a plan inside its code, so nothing
+    # to warn about and nothing to set up — the row says the code is missing.
+    from dplanner.core.storage.pointer import add_to_index
+
+    add_to_index(services.repo.project_dir(project.id))
+    services.undo.push(SetFieldCommand(project.id, "summary", "re-read"))
+    assert card.texts() == ["no code repository recorded"]
+    assert not card.note.isVisibleTo(card) and card.move_button.text() == MOVE_PLAN
+
     code = separate(services, project, tmp_path)
     assert card.texts() == [f"Code: acme/widget — {shown_path(code)}"]
     assert not card.note.isVisibleTo(card)
@@ -602,8 +640,12 @@ def test_opening_says_which_plan_lives_inside_its_code(app, library_file, librar
 
     store = LibraryStore(library_file)
     library = store.load()
-    project = store.attach(seed_project(library_repo / "discovery", "Discovery"))
-    library.add_child(library.id, project)
+    # Discovery is the legacy shape — listed by no index; Search sits in a plan
+    # repository with its code not named yet, which is not a plan inside its code.
+    discovery = seed_project(library_repo / "discovery", "Discovery")
+    remove_from_index(discovery)
+    for directory in (discovery, seed_project(library_repo / "search", "Search")):
+        library.add_child(library.id, store.attach(directory))
     store.flush({(library.id, "structure")})
     store.close()
 
@@ -716,7 +758,9 @@ def test_create_mode_answers_a_spec_once_a_name_and_a_home_are_given(
     assert dialog.status.words() == "Pick a plan repository"  # The next thing missing.
     plans = init_repo(tmp_path / "plans")
     dialog.plan_picker.set_current(plans)
-    assert dialog.create_button.isEnabled() and dialog.status.words() == ""
+    # A home is not enough: where the code is gets an answer too, if only "not yet".
+    assert not dialog.create_button.isEnabled()
+    assert dialog.status.words() == "Choose the code repository — or No code repository yet"
 
     opened = answering(monkeypatch, repository=CODE_URL)
     dialog.locations.add_requested.emit("code")
@@ -724,6 +768,8 @@ def test_create_mode_answers_a_spec_once_a_name_and_a_home_are_given(
     assert dialog.locations.rows() == [
         ("Code", "acme/widget", "", "not checked out on this machine")
     ]
+    assert dialog.create_button.isEnabled() and dialog.status.words() == ""
+    assert dialog.code_choice is not None and dialog.code_choice.currentText() == "acme/widget"
     spec = dialog.spec()
     assert spec is not None
     assert spec.target == plans / "alpha-search" and spec.plan.root == plans
@@ -740,6 +786,106 @@ def test_create_mode_answers_a_spec_once_a_name_and_a_home_are_given(
     dialog.name_edit.setText("Alpha Search v2")
     assert dialog.folder_edit.text() == "alpha"  # Typed once, the folder is the person's.
     dialog.deleteLater()
+
+
+def homed(dialog, tmp_path):
+    """A create-mode dialog with a name and a plan repository: what is left is the code."""
+    dialog.name_edit.setText("Alpha Search")
+    dialog.plan_picker.set_current(init_repo(tmp_path / "plans"))
+    return dialog
+
+
+def test_the_code_question_lists_the_librarys_code_first_and_cannot_be_skipped(
+    services, fakes, project, tmp_path, monkeypatch
+):
+    """The code this library already plans leads, then the ways to name another, then
+    an explicit *No code repository yet* — and Create waits for one of them."""
+    from dplanner.modules.projects.code_choice import (
+        FROM_FOLDER,
+        FROM_GITHUB,
+        NO_CODE,
+        PLACEHOLDER,
+    )
+
+    separate(services, project, tmp_path)
+    new = homed(creating(services, fakes), tmp_path)
+    try:
+        choice = new.code_choice
+        assert choice is not None
+        assert choice.texts() == ["acme/widget", FROM_GITHUB, FROM_FOLDER, NO_CODE]
+        assert choice.currentIndex() == -1 and choice.placeholderText() == PLACEHOLDER
+        assert not new.create_button.isEnabled()
+
+        choice.pick(NO_CODE)
+        assert new.create_button.isEnabled() and choice.currentText() == NO_CODE
+        spec = new.spec()
+        assert spec is not None and spec.locations == ()
+
+        # A repository the library plans brings the checkout this machine has for it.
+        choice.pick("acme/widget")
+        assert new._draft == list(code_row(CODE_URL))
+        assert new.locations.rows()[0][3].endswith("widget")
+        assert choice.currentText() == "acme/widget" and new.create_button.isEnabled()
+
+        # Taking the row out of the table takes the answer with it.
+        new._remove_location("l1")
+        assert choice.currentIndex() == -1 and not new.create_button.isEnabled()
+    finally:
+        new.deleteLater()
+
+
+def test_no_code_repository_yet_drops_the_drafts_code_rows(services, fakes, tmp_path, monkeypatch):
+    from dplanner.modules.projects.code_choice import NO_CODE
+
+    new = homed(creating(services, fakes), tmp_path)
+    try:
+        answering(monkeypatch, repository=CODE_URL)
+        new.locations.add_requested.emit("code")
+        new.code_choice.pick(NO_CODE)
+        assert new._draft == [] and new.code_choice.currentText() == NO_CODE
+        assert new.create_button.isEnabled()
+        # A code row added afterwards is the answer from then on.
+        new.locations.add_requested.emit("code")
+        assert new.code_choice.currentText() == "acme/widget"
+    finally:
+        new.deleteLater()
+
+
+def test_the_code_is_named_from_github_or_from_a_folder_here(
+    services, fakes, tmp_path, monkeypatch
+):
+    """The two ways to name code nobody here plans yet: the listing gh knows, and a
+    checkout on this computer — which brings its position and the checkout itself."""
+    import subprocess
+
+    from dplanner.modules.projects.code_choice import FROM_FOLDER, FROM_GITHUB
+
+    new = homed(creating(services, fakes), tmp_path)
+    try:
+        asked: dict[str, str] = {}
+        monkeypatch.setattr(project_dialog, "GhRepoListDialog", listing("acme/ui", asked))
+        new.code_choice.pick(FROM_GITHUB)
+        assert asked == {"title": "Code Repository", "verb": "Choose"}
+        assert new._draft == list(code_row("https://github.com/acme/ui"))
+        assert new.code_choice.currentText() == "acme/ui"
+
+        code = init_repo(tmp_path / "widget")
+        subprocess.run(["git", "-C", str(code), "remote", "add", "origin", CODE_URL], check=True)
+        (code / "apps").mkdir()
+        monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(code / "apps"))
+        new.code_choice.pick(FROM_FOLDER)
+        [row] = new._draft
+        assert (row.repository, row.path) == (CODE_URL, "apps")
+        assert new._draft_checkouts == {CODE_URL: code}
+        assert new.code_choice.currentText() == "acme/widget"
+
+        # A folder in no repository is refused in words, and the answer stands.
+        monkeypatch.setattr(QFileDialog, "getExistingDirectory", lambda *a, **k: str(tmp_path))
+        new.code_choice.pick(FROM_FOLDER)
+        assert "is not inside a git repository" in new.status.words()
+        assert new.code_choice.currentText() == "acme/widget"
+    finally:
+        new.deleteLater()
 
 
 def test_the_settings_dialog_carries_close_alone_and_create_mode_a_primary(services, fakes, dialog):

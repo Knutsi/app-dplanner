@@ -7,7 +7,7 @@ import subprocess
 import pytest
 
 from dplanner.core.storage.locations import canonical_remote, init_repo
-from dplanner.core.storage.pointer import POINTER_FILE, read_index
+from dplanner.core.storage.pointer import POINTER_FILE, read_index, remove_from_index
 from dplanner.domain.library_file import read_library_file, write_library_file
 from dplanner.domain.model import Step
 from dplanner.domain.relocate import RelocateError, move_project
@@ -37,11 +37,13 @@ def _commit_all(repo):
 
 @pytest.fixture
 def colocated(tmp_path):
-    """A plan kept inside its code repository, committed there, open in a library."""
+    """A plan kept inside its code repository, committed there, open in a library — the
+    legacy shape: no code row, and no index line, as a plan made before either existed."""
     code = _repo(tmp_path / "widget", "git@github.com:acme/widget.git")
     (code / "src").mkdir()
     (code / "src" / "main.py").write_text("print()\n")
     directory = seed_project(code / "planning", "Search rewrite")
+    remove_from_index(directory)
     (directory / "modules").mkdir()
     (directory / "modules" / "spec.md").write_text("# Topology\n")
     path = tmp_path / "library.json"
@@ -148,3 +150,23 @@ def test_unsaved_edits_refuse_the_move(colocated):
     library.set_field(project.id, "summary", "typing…")
     with pytest.raises(RelocateError, match="unsaved"):
         move_project(store, project.id, plans / "search")
+
+
+def test_an_unset_plan_moves_on_still_unset_and_inherits_nothing(tmp_path):
+    """A plan a plan repository holds, whose code nobody named, leaves a repository that
+    was never its code: it gains no code row and no checkout by moving."""
+    plans = _repo(tmp_path / "plans", "git@github.com:acme/plans.git")
+    directory = seed_project(plans / "search", "Search rewrite")
+    path = tmp_path / "library.json"
+    write_library_file(path, [directory])
+    store = LibraryStore(path)
+    library = store.load()
+    project = library.projects[0]
+    _commit_all(plans)
+    elsewhere = _repo(tmp_path / "elsewhere")
+
+    moved = move_project(store, project.id, elsewhere / "search")
+
+    assert "locations" not in json.loads((moved.target / PROJECT_META).read_text())
+    assert project.locations == ()
+    assert read_library_file(store.library_path).checkouts == {}

@@ -233,7 +233,7 @@ def module(services):
 
 @pytest.fixture
 def step(services, make_project):
-    project = make_project("Discovery")
+    project = make_project("Discovery", legacy=True)
     step = Step(title="Deploy")
     AddNodeCommand(project.id, step).redo(services.document)
     services.autosave.flush_now()
