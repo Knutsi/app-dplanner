@@ -26,6 +26,8 @@ from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION
 from dplanner.modules.project_editor.modes import (
     CONNECT,
+    CONTRACT_HORIZONTAL,
+    CONTRACT_VERTICAL,
     DIVIDE_HORIZONTAL,
     DIVIDE_VERTICAL,
     IDLE,
@@ -1507,7 +1509,16 @@ def test_a_family_of_verbs_is_one_button_and_its_arrow(services, project, tab):
     sort added to the menus appears here having touched nothing."""
     services.actions.run("steps.select_all", services.context.current())
     assert dropdown(tab, "canvas.sort_flow") >= {"Layered Flow", "Spine", "Radial"}
-    assert dropdown(tab, "canvas.divide_vertical") == {"Vertical", "Horizontal"}
+    assert dropdown(tab, "canvas.divide_vertical") == {
+        "Vertical",
+        "Horizontal",
+        "Contract Vertically",
+        "Contract Horizontally",
+    }
+    # Taking room back is Divide's family, under a rule of its own.
+    assert any(
+        action.isSeparator() for action in tab._toolbar.menu_for("canvas.divide_vertical").actions()
+    )
 
 
 def test_the_redirect_button_drops_both_ends(services, project, tab):
@@ -1573,6 +1584,7 @@ def test_a_verb_is_filed_by_where_its_subject_is_picked(services):
     where = {spec.id: (spec.menu, spec.group, spec.submenu) for spec in specs}
     assert where["canvas.sort_flow"] == ("Graph", "arrange", "Sort")
     assert where["canvas.divide_vertical"] == ("Graph", "arrange", "Divide")
+    assert where["canvas.contract_vertical"] == ("Graph", "contract", "Divide")
     assert where["canvas.snap"] == ("Graph", "look", None)
     assert where["steps.new"] == ("Graph", "new", None)
     assert where["steps.paste_graph"] == ("Graph", "new", None)
@@ -2368,6 +2380,98 @@ def test_a_divide_entry_is_checked_only_while_its_own_mode_is_on(services, proje
     services.actions.run("canvas.divide_horizontal", context)  # Again: leaves, as Lasso does.
     assert modes(tab).current().name == IDLE
     assert not state(services, "canvas.divide_horizontal", services.context.current()).checked
+
+
+# -- contracting -----------------------------------------------------------------------------------
+#
+# Divide's other half: the side behind the drag is pulled after it, and stops the sorts' gap
+# short of the first card ahead of it in its row, however far the pointer goes.
+
+
+def spread_out(services, project, tab):
+    """The chain with the last step three pitches right of the one before it."""
+    from dplanner.modules.project_editor.positions import write_position
+    from dplanner.modules.project_editor.sorts import H_PITCH
+
+    first, second, third = chain(services, project)
+    near = body_of(tab, second.id)
+    services.undo.push(
+        SetModuleDataCommand(
+            third.id, "project_editor", write_position(near.left() + 3 * H_PITCH, near.top())
+        )
+    )
+    return (first, second, third), near
+
+
+def status_line(services):
+    return services.window.statusBar().currentMessage()
+
+
+def test_a_vertical_contract_closes_the_hole_to_one_gap_as_one_undo(app, services, project, tab):
+    from dplanner.modules.project_editor.sorts import H_GAP
+
+    (first, second, third), near = spread_out(services, project, tab)
+    seats = seats_of(tab, first, second, third)
+    press_key(app, tab, Qt.Key.Key_X)
+    assert modes(tab).current().name == CONTRACT_VERTICAL
+
+    cut = QPointF(near.right() + 200.0, near.bottom() + 200.0)  # In the hole, off every card.
+    send(app, tab, QEvent.Type.MouseButtonPress, cut)
+    send(app, tab, QEvent.Type.MouseMove, cut + QPointF(-1000.0, 0.0))
+    # Clamped live: however far the pointer went, the far side stops one gap short — the
+    # travel rounded onto the grid, so a card on the grid stays on it.
+    landed = body_of(tab, third.id).left()
+    assert H_GAP <= landed - near.right() < H_GAP + GRID and landed % GRID == 0
+    names = scene(tab)._nodes[third.id].name(), scene(tab)._nodes[second.id].name()
+    assert f"{names[0]} stops one gap from {names[1]}" in status_line(services)
+    send(app, tab, QEvent.Type.MouseButtonRelease, cut, Qt.MouseButton.NoButton)
+
+    assert stored_x(services, third.id) == landed
+    assert "project_editor" not in services.document.step(first.id).module_data  # Untouched.
+    assert services.undo.undo_text() == "Contract Graph"
+    assert modes(tab).current().name == IDLE  # One contract ends the mode, like one divide.
+
+    services.undo.undo()  # One step back takes the whole side with it.
+    assert seats_of(tab, first, second, third) == seats
+
+
+def test_escape_puts_a_half_contracted_graph_back(app, services, project, tab):
+    (first, second, third), near = spread_out(services, project, tab)
+    seats = seats_of(tab, first, second, third)
+    services.actions.run("canvas.contract_vertical", services.context.current())
+    cut = QPointF(near.right() + 200.0, near.bottom() + 200.0)
+    send(app, tab, QEvent.Type.MouseButtonPress, cut)
+    send(app, tab, QEvent.Type.MouseMove, cut + QPointF(-160.0, 0.0))
+    assert body_of(tab, third.id).topLeft() == seats[third.id] + QPointF(-160.0, 0.0)
+    assert scene(tab)._outline.isVisible()  # The band closed so far.
+
+    press_key(app, tab, Qt.Key.Key_Escape)
+
+    assert seats_of(tab, first, second, third) == seats
+    assert modes(tab).current().name == IDLE
+    assert services.undo.undo_text() != "Contract Graph"
+    assert not scene(tab)._outline.isVisible()
+
+
+def test_a_horizontal_contract_closes_up_or_down(app, services, project, tab):
+    from dplanner.modules.project_editor.positions import write_position
+    from dplanner.modules.project_editor.sorts import V_PITCH
+
+    first, second = project.steps
+    top = body_of(tab, first.id)
+    services.undo.push(
+        SetModuleDataCommand(
+            second.id, "project_editor", write_position(top.left(), top.top() + 3 * V_PITCH)
+        )
+    )
+    press_key(app, tab, Qt.Key.Key_X, Qt.KeyboardModifier.ShiftModifier)
+    assert modes(tab).current().name == CONTRACT_HORIZONTAL
+
+    cut = QPointF(top.right() + 400.0, top.bottom() + 100.0)  # Between the rows.
+    drag(app, tab, cut, cut + QPointF(0.0, -1000.0))
+
+    assert placement_of(services, second.id)["y"] == top.top() + V_PITCH
+    assert services.undo.undo_text() == "Contract Graph"
 
 
 # -- isolating ------------------------------------------------------------------------------------

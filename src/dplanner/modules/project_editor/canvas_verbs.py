@@ -46,6 +46,8 @@ from dplanner.modules.project_editor.look import BACKGROUNDS, Look
 from dplanner.modules.project_editor.marks import MARK_NAMES
 from dplanner.modules.project_editor.modes import (
     CONNECT,
+    CONTRACT_HORIZONTAL,
+    CONTRACT_VERTICAL,
     DIVIDE_HORIZONTAL,
     DIVIDE_VERTICAL,
     LASSO,
@@ -57,6 +59,8 @@ from dplanner.modules.project_editor.selection import EdgeRef
 from dplanner.modules.project_editor.verbs import picked_edges
 from dplanner.theme.icons import (
     connect_icon,
+    contract_horizontal_icon,
+    contract_vertical_icon,
     divide_horizontal_icon,
     divide_vertical_icon,
     find_icon,
@@ -92,7 +96,8 @@ class CanvasVerbs:
     select_step: Callable[[StepId], None]
     select_steps: Callable[[list[StepId]], None]
     select_edges: Callable[[list[EdgeRef]], None]
-    # Enter or leave a named canvas mode (modes.CONNECT, modes.LASSO, the divide pair).
+    # Enter or leave a named canvas mode (modes.CONNECT, modes.LASSO, the divide and contract
+    # pairs).
     set_mode: Callable[[str, bool], None]
     frame: Callable[[], None]
     # Raise the Find picker over the window; a no-op when no canvas is current.
@@ -280,6 +285,34 @@ class CanvasVerbs:
                 "to make room. Esc leaves",
                 state=self._mode_state(DIVIDE_HORIZONTAL),
                 run=self._mode_toggle(DIVIDE_HORIZONTAL),
+            ),
+            # Divide's other half, in the same child menu under a rule of its own: the
+            # Divide button's arrow offers taking room back beside making it.
+            ActionSpec(
+                id="canvas.contract_vertical",
+                label="&Contract Vertically",
+                menu="Graph",
+                group="contract",
+                submenu="Divide",
+                order=10,
+                icon=contract_vertical_icon,
+                tip="Cut the graph with an upright line and pull one side left or right "
+                "to close the gap, stopping a gap short of the first step in its row. Esc leaves",
+                state=self._mode_state(CONTRACT_VERTICAL),
+                run=self._mode_toggle(CONTRACT_VERTICAL),
+            ),
+            ActionSpec(
+                id="canvas.contract_horizontal",
+                label="Contract Hori&zontally",
+                menu="Graph",
+                group="contract",
+                submenu="Divide",
+                order=11,
+                icon=contract_horizontal_icon,
+                tip="Cut the graph with a level line and pull one side up or down to close "
+                "the gap, stopping a gap short of the first step in its column. Esc leaves",
+                state=self._mode_state(CONTRACT_HORIZONTAL),
+                run=self._mode_toggle(CONTRACT_HORIZONTAL),
             ),
             *[
                 ActionSpec(

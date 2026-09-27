@@ -229,7 +229,11 @@ and the loop is: look, sort, make room or tidy, look again, keep.
   pushes every step whose centre lies right of x=640 one column to the right — the
   canvas's Divide, as a verb. A negative distance brings the near side back, `--y` cuts
   across rows, and `--steps S7 S8` moves only those. The distance snaps to the grid, and
-  the report says what moved and what the gaps are now.
+  the report says what moved and what the gaps are now. `dplanner layout contract
+  <project> --x 640` is the canvas's Contract: everything right of x=640 slides left until
+  the first step in its row stands one gap from what it meets, and the report names that
+  pair. `--by` caps the distance, its sign the direction (positive pulls the near side
+  right instead); it never makes an overlap, and *Nothing to close* means the hole is gone.
 - **Tidy for the air.** `dplanner layout tidy <project>` keeps every cluster and its
   left-to-right, top-to-bottom order, resolves overlaps, evens the spacing to the sort
   pitches and closes any hole wider than `--gap` (two pitches by default) to one — it

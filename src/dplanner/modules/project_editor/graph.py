@@ -146,6 +146,8 @@ class GraphScene(QGraphicsScene):
         self.node_resized: Signal[StepId, float, float, float, float] = Signal()
         # The cards a divide pushed aside, at their new seats — one gesture, one command.
         self.graph_divided: Signal[list[tuple[StepId, float, float]]] = Signal()
+        # The cards a contract pulled up to the other side, the same way.
+        self.graph_contracted: Signal[list[tuple[StepId, float, float]]] = Signal()
         # The step the picked links are to hang off, and which of their ends moves.
         self.redirect_requested: Signal[StepId, EdgeEnd] = Signal()
 

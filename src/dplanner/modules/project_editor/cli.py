@@ -4,13 +4,14 @@ The same command objects the window pushes, so an apply here is undoable in a ta
 the same library. ``layout save`` upserts rather than refusing a collision: an agent
 re-running a script should converge, and the window's Save-As prompt covers the human case.
 
-``layout show``, ``layout shift`` and ``layout tidy`` are the agent's eyes and hands on the
-canvas: the geometry measured on every read and never stored (``geometry.py``), the Divide
-gesture as a verb building the very command the canvas pushes, and the sixth sort
-(``sorts.tidy``) applied like the other five. None reshapes the graph, so none reads the
-topology first.
+``layout show``, ``layout shift``, ``layout contract`` and ``layout tidy`` are the agent's
+eyes and hands on the canvas: the geometry measured on every read and never stored
+(``geometry.py``), the Divide and Contract gestures as verbs building the very command the
+canvas pushes, and the sixth sort (``sorts.tidy``) applied like the other five. None
+reshapes the graph, so none reads the topology first.
 """
 
+import math
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -21,8 +22,11 @@ from dplanner.domain.commands import Command, CompositeCommand
 from dplanner.domain.model import Project, Step, StepId
 from dplanner.modules.project_editor.clipboard import PastePolicy, clip, paste, write_files
 from dplanner.modules.project_editor.geometry import (
+    CONTRACT_LABEL,
     Axis,
     as_json,
+    contract,
+    direction,
     divide_command,
     lane_lines,
     map_text,
@@ -124,9 +128,7 @@ def commands(
         return 0
 
     def _sort(context: CliContext, args: Namespace) -> int:
-        project = find_project(context.library, args.project)
-        if not project.steps:
-            raise CliError("the project has no steps to arrange")
+        project = _arrangeable(context, args)
         center = None
         if args.center is not None:
             if args.algorithm != "radial":
@@ -162,15 +164,9 @@ def commands(
 
     def _shift(context: CliContext, args: Namespace) -> int:
         """The Divide gesture from the terminal: the same side rule, the same command."""
-        project = find_project(context.library, args.project)
-        if not project.steps:
-            raise CliError("the project has no steps to arrange")
-        axis: Axis = "x" if args.x is not None else "y"
-        cut = args.x if axis == "x" else args.y
-        by = snapped(args.by, GRID)
-        if by == 0:
-            why = "" if args.by == 0 else f" — it snaps to the grid ({GRID:g}) as 0"
-            raise CliError(f"--by {args.by:g} moves nothing{why}")
+        project = _arrangeable(context, args)
+        axis, cut = _cut(args)
+        by = _distance(args.by)
         placed = positions(context.library, project)
         sizes = {step.id: node_size(step) for step in project.steps}
         only: set[StepId] | None = None
@@ -186,15 +182,73 @@ def commands(
             side = "past" if by > 0 else "before"
             raise CliError(f"no step's centre lies {side} {axis}={cut:g}")
         context.apply(divide_command(project, moved))
+        keys = _keys(project)
+        count = len(moved)
+        headline = (
+            f"Shifted {count} step{'s' if count != 1 else ''} {direction(axis, by)} by "
+            f"{abs(by):g}: {' '.join(keys[step_id] for step_id in moved)}"
+        )
+        _report_moved(context, project, axis, cut, moved, headline, {"by": by})
+        return 0
+
+    def _contract(context: CliContext, args: Namespace) -> int:
+        """The Contract gesture from the terminal: the same rule, the same command. With no
+        distance the far side closes up as far as the first step ahead of it allows."""
+        project = _arrangeable(context, args)
+        axis, cut = _cut(args)
+        by = -math.inf if args.by is None else _distance(args.by)
+        placed = positions(context.library, project)
+        sizes = {step.id: node_size(step) for step in project.steps}
+        done = contract(placed, sizes, axis, cut, by)
+        keys = _keys(project)
+        pair = None if done.stopped is None else [keys[step_id] for step_id in done.stopped]
+        if done.moved:
+            context.apply(divide_command(project, done.moved, label=CONTRACT_LABEL))
+            count = len(done.moved)
+            headline = (
+                f"Contracted {count} step{'s' if count != 1 else ''} "
+                f"{direction(axis, done.by)} by {abs(done.by):g}: "
+                f"{' '.join(keys[step_id] for step_id in done.moved)}"
+                + (f"; {pair[0]} stops one gap from {pair[1]}" if pair else "")
+            )
+        elif pair:
+            headline = f"Nothing to close: {pair[0]} already sits within one gap of {pair[1]}"
+        elif math.isinf(by):
+            band = "row" if axis == "x" else "column"
+            raise CliError(
+                f"nothing past {axis}={cut:g} has a step ahead of it in its {band} to close "
+                "up to — name a distance with --by"
+            )
+        else:
+            side = "past" if by < 0 else "before"
+            raise CliError(f"no step's centre lies {side} {axis}={cut:g}")
+        said = {
+            "by": None if args.by is None else by,
+            "moved_by": done.by,
+            "stopped": None if done.stopped is None else list(done.stopped),
+        }
+        _report_moved(context, project, axis, cut, done.moved, headline, said)
+        return 0
+
+    def _report_moved(
+        context: CliContext,
+        project: Project,
+        axis: Axis,
+        cut: float,
+        moved: dict[StepId, tuple[float, float]],
+        headline: str,
+        said: dict[str, Any],
+    ) -> None:
+        """What both hands report once a side has moved: what moved, and the lanes across
+        the axis as they stand now."""
         after = measure(context.library, project, key_of=key_of)
-        keys = {card.id: card.key or card.title for card in after.cards}
-        direction = ("right" if by > 0 else "left") if axis == "x" else ("down" if by > 0 else "up")
+        keys = _keys(project)
         report = as_json(after)
         data = {
             "project": project.id,
             "axis": axis,
             "cut": cut,
-            "by": by,
+            **said,
             "moved": [
                 {"id": step_id, "key": keys[step_id], "x": x, "y": y}
                 for step_id, (x, y) in moved.items()
@@ -203,19 +257,13 @@ def commands(
             "rows": report["rows"],
             "overlaps": report["overlaps"],
         }
-        count = len(moved)
-        named = " ".join(keys[step_id] for step_id in moved)
-        lines = [
-            f"Shifted {count} step{'s' if count != 1 else ''} {direction} by {abs(by):g}: {named}",
-            *lane_lines(after, axis),
-        ]
-        context.report(data, "\n".join(lines))
-        return 0
+        context.report(data, "\n".join([headline, *lane_lines(after, axis)]))
+
+    def _keys(project: Project) -> dict[StepId, str]:
+        return {step.id: key_of(step) or step.title for step in project.steps}
 
     def _tidy(context: CliContext, args: Namespace) -> int:
-        project = find_project(context.library, args.project)
-        if not project.steps:
-            raise CliError("the project has no steps to arrange")
+        project = _arrangeable(context, args)
         if args.gap < 1:
             raise CliError("--gap needs at least 1 pitch")
         before = positions(context.library, project)
@@ -287,6 +335,19 @@ def commands(
                 "dplanner layout shift discovery --x 640 --by 300",
                 "dplanner layout shift discovery --y 400 --by -120",
                 "dplanner layout shift discovery --x 0 --by 300 --steps S7 S8",
+            ),
+        ),
+        CliCommand(
+            path=("layout", "contract"),
+            summary="Close up the graph along an axis — the canvas's Contract: the side "
+            "behind the travel moves up to the first step ahead of it in its row or column "
+            "and stops one gap short; no --by closes the far side fully.",
+            configure=_contract_args,
+            run=_contract,
+            examples=(
+                "dplanner layout contract discovery --x 640",
+                "dplanner layout contract discovery --y 400 --by -120",
+                "dplanner layout contract discovery --x 640 --by 300",
             ),
         ),
         CliCommand(
@@ -364,20 +425,40 @@ def _show_args(parser: ArgumentParser) -> None:
     )
 
 
-def _shift_args(parser: ArgumentParser) -> None:
+def _arrangeable(context: CliContext, args: Namespace) -> Project:
+    project = find_project(context.library, args.project)
+    if not project.steps:
+        raise CliError("the project has no steps to arrange")
+    return project
+
+
+def _cut(args: Namespace) -> tuple[Axis, float]:
+    return ("x", args.x) if args.x is not None else ("y", args.y)
+
+
+def _distance(by: float) -> float:
+    """A distance asked for, snapped to the grid as the drag snaps it; nought refused."""
+    snapped_by = snapped(by, GRID)
+    if snapped_by == 0:
+        why = "" if by == 0 else f" — it snaps to the grid ({GRID:g}) as 0"
+        raise CliError(f"--by {by:g} moves nothing{why}")
+    return snapped_by
+
+
+def _cut_args(parser: ArgumentParser, upright: str, level: str) -> None:
     project_arg(parser)
     where = parser.add_mutually_exclusive_group(required=True)
     where.add_argument(
-        "--x",
-        type=float,
-        metavar="CUT",
-        help="an upright cut at this x: steps whose centre lies right of it move",
+        "--x", type=float, metavar="CUT", help=f"an upright cut at this x: {upright}"
     )
-    where.add_argument(
-        "--y",
-        type=float,
-        metavar="CUT",
-        help="a level cut at this y: steps whose centre lies below it move",
+    where.add_argument("--y", type=float, metavar="CUT", help=f"a level cut at this y: {level}")
+
+
+def _shift_args(parser: ArgumentParser) -> None:
+    _cut_args(
+        parser,
+        "steps whose centre lies right of it move",
+        "steps whose centre lies below it move",
     )
     parser.add_argument(
         "--by",
@@ -391,6 +472,22 @@ def _shift_args(parser: ArgumentParser) -> None:
         nargs="+",
         metavar="STEP",
         help="move only these steps (the cut then only names the axis)",
+    )
+
+
+def _contract_args(parser: ArgumentParser) -> None:
+    _cut_args(
+        parser,
+        "a step is on the side its centre lies, left or right",
+        "a step is on the side its centre lies, above or below",
+    )
+    parser.add_argument(
+        "--by",
+        type=float,
+        metavar="DISTANCE",
+        help="how far at most, in canvas units, snapped to the grid; its sign is the "
+        "direction — negative pulls the far side left or up, positive the near side right "
+        "or down (default: close the far side up fully)",
     )
 
 

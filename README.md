@@ -442,7 +442,7 @@ src/dplanner/
 │   │                        repository on this machine from (checkouts.py), and the archive:
 │   │                        Archive/Restore Project, the index's Archive folder
 │   │                        (archive_index.py) and the Archive tab (archive_tab.py)
-│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, resize) and renderers,
+│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, contract, resize) and renderers,
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid,
 │   │                        the side panel; ground.py paints the background)
 │   │                        (canvas_toolbar.py is the strip in named bands; canvas_menus.py what a
@@ -452,7 +452,8 @@ src/dplanner/
 │   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone)
 │   │                        (its panel also hosts the modules' project-level cards)
 │   │                        (geometry.py measures the graph for `dplanner layout show`, `--map`
-│   │                        draws it, `layout shift` is Divide as a verb, `layout tidy` the sixth sort)
+│   │                        draws it, `layout shift` is Divide as a verb, `layout contract` Contract,
+│   │                        `layout tidy` the sixth sort)
 │   ├── step_properties/     THE step editor — `steps.details`, a modal and nothing anchored
 │   │                        (its first tab, details.py, stacks whatever registered a Details
 │   │                        block, name.py leading it; every view's double-click on a step

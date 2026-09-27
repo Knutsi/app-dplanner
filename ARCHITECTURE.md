@@ -1861,9 +1861,9 @@ model — `layout.positions()` answers it — so "the nearest node to the right"
 and only the last step, telling the canvas what to select, needs a window.
 
 **A gesture that drags something the canvas draws is a `GestureMode`.** The card resize and
-the divide's drag each hold what they move (so a sync from the model leaves that geometry
-alone until the release), put it back on Escape, and report on the release before popping —
-two modes, one skeleton. The base owns the hold, the cursor, the Escape and the pop; a
+the drag of one side of a cut (a divide's, a contract's) each hold what they move (so a sync
+from the model leaves that geometry alone until the release), put it back on Escape, and
+report on the release before popping — one skeleton. The base owns the hold, the cursor, the Escape and the pop; a
 subclass says what it holds, how to restore it, and what the release means. It was written
 at the third copy of the skeleton, when a region's drag and resize were two of them; the
 regions went (*Regions were retired*) and the base stayed, because the divide had become a
@@ -1892,6 +1892,47 @@ one `Divide Graph` command, so a whole side comes back with one Ctrl+Z. Nothing 
 about the cut itself — a divide is a move of many cards, and what makes it a tool rather than
 a drag of a selection is that it names the side by geometry, not by what was picked — and the
 band it draws while it lasts, the room being made, is the outline item the lasso already had.
+
+### Contract closes a gap and stops one short
+
+Divide opens room; somebody who opened too much, or whose plan lost the steps that stood in
+a hole, wants the other half. **Contract pulls the side *behind* the drag after it**, where
+Divide pushes the side ahead of it, and so closes the gap at the cut. It is the divide's
+shape again: `ContractMode` lays the cut and a press hands over to `ContractDragMode`, and
+the two drags are one `_CutDragMode` apart from their rule. That base is also what retired
+the divide's own copy of its side rule. Each drag's `follow` is the Qt-free function the
+`layout` verb runs — `geometry.shift` for Divide, `geometry.contract` for Contract — handed
+the seats at the press, the cut and the snapped distance. The window and the terminal
+therefore cannot disagree about which cards move or how far, and `shift` takes its distance
+as given (the verb snaps `--by`, the scene snaps the drag) so the drag with Snap to Grid off
+is not snapped behind its back.
+
+**It stops the sorts' gap short of the first card it would meet** — `H_GAP` across an
+upright cut, `V_GAP` across a level one. Three rules decide that stop:
+
+- **Stopping at nothing** would let a pull run cards into each other, and making room again
+  would be the next person's job.
+- **Stopping at contact** would leave two cards touching. The measurement calls that a gap
+  of none, and `layout tidy` would then pull the pair apart again.
+- **Stopping at the gap** leaves neighbours where every sort and tidy puts them, so a
+  closed hole reads as the spacing the rest of the graph already has, and a tidy after it
+  changes nothing there.
+
+**What can stop it is a card whose extent across the travel overlaps a mover's**, not a card
+in the same sort lane. The promise is *never an overlap*, and a tall card spans two row
+lanes: a lane test would let a card in the second lane slide into the part of the tall card
+hanging down into it. By the same logic a card in another band is not in the way at all,
+and a pair already overlapping before the pull is ignored. Counting it would clamp the
+travel to nothing, and the pull did not cause that overlap.
+
+**The room is rounded towards the cut onto the grid.** `V_GAP` is 44 and the default width
+220, neither a multiple of `GRID`, so an exact stop would leave a side that sat on the grid
+4 units off it. Rounding the travel down keeps the side on the grid, at the cost of a gap up
+to one grid step wider than the sorts' own; rounding up would break the no-overlap promise.
+The side moves as one rigid block, which is what makes the rule a single minimum over the
+pairs that could meet rather than a per-card packing — and why its answer names **one pair**.
+The status line says it while the drag is held, and `layout contract` reports it, because a
+drag that will not go further should say what it met.
 
 ### Redirecting a link moves one end, and which end is the tool's, not a guess
 
@@ -1971,13 +2012,18 @@ layout filling the gaps, the card sizes, the waves, the box round everything, ev
 overlapping pair and the gap between neighbouring columns and rows in pitches — and
 `--map` draws it as text, one cell per column and row pitch. Nothing it prints is stored:
 it is `geometry.measure` over the same `placement.positions` the canvas syncs from, so a
-second copy of where things are cannot disagree with the first. Its two hands are of the
+second copy of where things are cannot disagree with the first. Its three hands are of the
 same kind as a sort. `layout shift` is the Divide gesture as a function
 (`geometry.shift`): the side rule is the body's centre against the cut, a positive
-distance pushes the far side and a negative one brings the near side back, the distance
-snaps to the grid as the drag does with Snap to Grid on, and the result is
-`geometry.divide_command` — the very `Divide Graph` composite `_on_graph_divided` pushes,
-so the window and the terminal cannot build two commands for one gesture. `layout tidy`
+distance pushes the far side and a negative one brings the near side back, the verb snaps
+the distance to the grid as the drag does with Snap to Grid on, and the result is
+`geometry.divide_command` — the very `Divide Graph` composite `_on_side_moved` pushes,
+so the window and the terminal cannot build two commands for one gesture. `layout
+contract` is the Contract gesture the same way (`geometry.contract`, the same builder
+labelled `Contract Graph`; *Contract closes a gap and stops one short*): the sign of
+`--by` is the direction of travel, no `--by` closes the far side fully, and a stop with no
+room left reports *Nothing to close* and exits 0, so an agent that closes a hole it has
+already closed is told so rather than failed. `layout tidy`
 is the sixth sort (`sorts.tidy`; `canvas.sort_tidy` under Graph ▸ Sort): somebody asked
 for that arrangement, so it persists through the undo stack like the five before it.
 

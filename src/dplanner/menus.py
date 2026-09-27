@@ -110,12 +110,15 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # a picked arrow is for: Remove Link and the Redirect pair. The canvas's right-click
     # renders these bands by what it lands on, which is why each is a group of its own.
     # "arrange" is the Sort, Layout and Divide child menus: three ways of moving cards
-    # about, from the wholesale to the one cut at a time. "look" is what is drawn without
+    # about, from the wholesale to the one cut at a time. "contract" feeds that same Divide
+    # child menu with the verbs that take room back, so the rule between opening a gap and
+    # closing one is drawn inside it — and, holding no top-level entry of its own, the group
+    # adds no rule to the menu itself. "look" is what is drawn without
     # moving anything: framing, the marks, the grid and the ground — the band the canvas
     # strip's Options face renders whole. "panels" is what stands *beside* the canvas
     # inside the tab: the graph's own chrome, where View ▸ Panels is about the areas around
     # the tabs.
-    "Graph": ("new", "select", "narrow", "links", "arrange", "look", "panels"),
+    "Graph": ("new", "select", "narrow", "links", "arrange", "contract", "look", "panels"),
     # Every table that lists steps renders this menu whole; a card on the canvas renders
     # only the bands about the step itself — edit, link, track, agent, open — and leaves
     # the rest to the step's details and the index beside it (canvas_menus.py's CARD).

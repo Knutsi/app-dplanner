@@ -235,6 +235,16 @@ def divide_horizontal_icon(color: str | QColor) -> QIcon:
     return glyph_icon("divide-horizontal", color)
 
 
+def contract_vertical_icon(color: str | QColor) -> QIcon:
+    """Two sides drawn in to meet across an upright cut."""
+    return glyph_icon("contract-vertical", color)
+
+
+def contract_horizontal_icon(color: str | QColor) -> QIcon:
+    """The same, across a level one."""
+    return glyph_icon("contract-horizontal", color)
+
+
 def sort_icon(color: str | QColor) -> QIcon:
     """A little tree: laying the graph out by what feeds what."""
     return glyph_icon("sort", color)

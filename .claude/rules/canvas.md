@@ -46,6 +46,18 @@ paths:
   cards that moved; one divide ends the mode, and Escape puts the cards back and leaves. The
   band drawn beside the cut — the room being made — is the same `OutlinePreviewItem`.
   `ARCHITECTURE.md`'s *Who owns the canvas's input* has the reasoning.
+- **Contract is Divide's other half, and it stops a gap short.** `ContractMode` (Graph ▸
+  Divide ▸ Contract Vertically or Horizontally; `X` and `Shift+X`) lays the same cut, and
+  `ContractDragMode` pulls the side *behind* the drag after it as one block, clamped live
+  by `geometry.contract`: it stops the sorts' gap (`H_GAP`, `V_GAP`) short of the first card
+  ahead of it whose extent across the travel overlaps a mover's, the room rounded towards
+  the cut onto `GRID`. A card in another band never stops it and a pair already overlapping
+  is ignored, so it never makes an overlap; the status line names the pair that stopped it.
+  The release is `graph_contracted` and one `Contract Graph` command — `divide_command`
+  under that label. **Both drags are one `_CutDragMode`** whose `follow` is the Qt-free rule
+  the `layout` verb runs (`shift` for Divide, `contract` here), so the canvas never carries a
+  second copy of either. `ARCHITECTURE.md`'s *Contract closes a gap and stops one short* has
+  the reasoning.
 - **Redirect is a mode, and it moves one end of a bundle.** Pick arrows, run *Graph ▸
   Redirect ▸ To Step* (`E`) or *From Step* (`Shift+E`), click a step: every picked link
   moves that end onto it, in one undo entry. **Which end travels is the verb's, never
@@ -217,13 +229,16 @@ paths:
   pitches, read through the same **lanes** (`sorts.lanes`, `measured`) that `layout tidy`
   acts on and the map is drawn on. `layout shift` is Divide as a verb: `geometry.shift` is
   the side rule (the body's centre against the cut; a negative distance brings the near side
-  back; the distance snaps to `GRID` as the drag does) and `geometry.divide_command` is the
-  one `Divide Graph` composite both `_on_graph_divided` and the verb push. `layout tidy` /
+  back; the distance is taken as given — the verb snaps it to `GRID` as the drag does) and
+  `geometry.divide_command` is the one composite both `_on_side_moved` and the verb push.
+  `layout contract` is Contract as a verb over `geometry.contract`: the sign of `--by` is
+  the direction, no `--by` closes the far side fully, and the report names the pair that
+  stopped it — a stop with no room left is *Nothing to close*, exit 0. `layout tidy` /
   `canvas.sort_tidy` (Graph ▸ Sort) is `sorts.tidy`, a sort in kind — pure, deterministic,
   size-aware, idempotent — so it persists like one: it keeps every cluster and its order,
   reads the cards into lanes on *edges* with an inclusive half-pitch join, gives an overlap
   a sub-row, measures a hole against the reach and rounds it, and closes one past `--gap`
-  (`DEFAULT_AIR`, 2) to one gap. None of the three reshapes the graph, so none declares
+  (`DEFAULT_AIR`, 2) to one gap. None of the four reshapes the graph, so none declares
   `edits_graph`. `ARCHITECTURE.md`'s *An explicit sort persists; the ambient layout never
   does* has the reasoning.
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the

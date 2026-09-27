@@ -45,6 +45,8 @@ GLYPHS: dict[str, str] = {
     "redirect-from": "arrow-ramp-left",  # …and the mirror of it, for the other end.
     "divide-vertical": "separator-vertical",  # A cut, with room being made either side.
     "divide-horizontal": "separator-horizontal",
+    "contract-vertical": "viewport-narrow",  # Both sides drawn in to meet: a gap closing.
+    "contract-horizontal": "viewport-short",
     "sort": "hierarchy-2",  # Laying the graph out by what feeds what.
     "region": "rectangle",  # No canvas verb since regions went; a test category wears it.
     "grid": "grid-dots",

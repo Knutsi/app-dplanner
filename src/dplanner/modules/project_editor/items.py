@@ -130,6 +130,10 @@ class StepNodeItem(QGraphicsItem):
     def size(self) -> tuple[float, float]:
         return self._size
 
+    def name(self) -> str:
+        """What a status line calls this card: its key, else its title."""
+        return self._accent.key_text or self._title or "Untitled step"
+
     def set_accent(self, accent: NodeAccent) -> None:
         if accent != self._accent:
             self._accent = accent
