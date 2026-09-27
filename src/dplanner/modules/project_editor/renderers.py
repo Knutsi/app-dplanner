@@ -35,6 +35,7 @@ from dplanner.theme.cards import (
     LIFT,
     LIFTED_SHADOW,
     LINE_GAP,
+    MILESTONE_BORDER_W,
     PAD_Y,
     PADDING,
     RADIUS,
@@ -333,6 +334,8 @@ def paint_body(
         else:
             border = QColor(palette.text().color())
             border.setAlpha(MUTED_BORDER_ALPHA if muted else 90)
+    if accent.badge:  # A milestone, done or not: the badge is its label.
+        width = max(width, MILESTONE_BORDER_W)
     if state.selected:
         tint.setAlpha(min(255, round(tint.alpha() * SELECTED_FILL_GAIN)))
     painter.setPen(Qt.PenStyle.NoPen)

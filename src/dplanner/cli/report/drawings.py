@@ -121,7 +121,7 @@ NODE_FONT = 13.0
 # The key block: ``theme/cards.py``'s geometry, copied for the layer rule above and held to
 # it by a test, so the page's card and the window's are one shape.
 KEY_BLOCK_W = 56.0
-KEY_GLYPH = 16.0
+KEY_GLYPH = 28.0
 KEY_GAP = 2.0
 KEY_FONT = 11.0
 KEY_LINE = 13.0
@@ -225,7 +225,8 @@ def _card(node: Node, colors: Colors) -> str:
         f'<rect class="shadow" x="{_n(x)}" y="{_n(y + 2)}" width="{_n(w)}" height="{_n(h)}" '
         f'rx="{_n(RADIUS)}" fill="{colors.ink}" fill-opacity="0.06"/>'
         f'<rect class="body" x="{_n(x)}" y="{_n(y)}" width="{_n(w)}" height="{_n(h)}" '
-        f'rx="{_n(RADIUS)}" fill="{colors.surface}" stroke="{colors.border}" stroke-width="1"/>'
+        f'rx="{_n(RADIUS)}" fill="{colors.surface}" stroke="{colors.border}" '
+        f'stroke-width="{2 if node.kind == "milestone" else 1}"/>'
     ]
     if tone is not None:
         out.append(

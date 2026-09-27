@@ -60,6 +60,9 @@ DIM_OPACITY = 0.35
 # A *gain* rather than a colour of its own is what lets a picked milestone stay purple and a
 # picked done step stay green — the accent is already saying "this one" at the border.
 SELECTED_BORDER_W = 2.5
+# A milestone's outline: twice a kind's 1.5, and wider than a selection's, so a milestone reads
+# as a landmark at any zoom and never thins when it is picked — the accent recolours it.
+MILESTONE_BORDER_W = 3.0
 SELECTED_FILL_GAIN = 1.6
 
 
@@ -176,7 +179,10 @@ def title_lines(
 # enough for the widest key a plan realistically deals: `M1234` set bold is 37 px at the
 # chrome font's nine points, which leaves some ten pixels of air either side at 56.
 KEY_BLOCK_W = 56.0
-KEY_GLYPH = 16.0  # The icon, at the size a glyph is drawn in a row or on a strip.
+# The icon's box, sized so a broad glyph spans the three-character key under it: the sparkles
+# and the clock fill about 20 of their 24 units, so at 28 they are 22 to 23 px, where `S12` is
+# 21 and `M12` 23 in the key's face. The person is a narrower shape and stays one.
+KEY_GLYPH = 28.0
 KEY_GAP = 2.0  # Between the icon and the key under it: one pair, not two things.
 KEY_FILL_ALPHA = 80  # A status tone's fill on the block — a wash, not a swatch.
 KEY_QUIET_ALPHA = 14  # No status to show: the block is a shade darker than the body.

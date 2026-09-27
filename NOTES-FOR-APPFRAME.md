@@ -4375,6 +4375,11 @@ the same place as its key, and an icon cannot be read sideways the way a word ca
 and says what state it is in is not DPlanner's idea. The three glyphs and the rule choosing
 between them are DPlanner's and stay in its composition root.
 
+Later, on review: `KEY_GLYPH` went from 16 to 28, so a broad glyph spans the three-character
+key under it (a vendored glyph fills about 20 of its 24 units), and `MILESTONE_BORDER_W` (3.0)
+doubles a milestone's outline and stays at least that when the card is picked. Both are
+numbers a template card would want as parameters rather than constants.
+
 ### `theme/glyph_source.py` — the vendored glyphs as text, with no Qt (new)
 
 **What we changed.** `GLYPH_DIR` moved here from `theme/icons.py`, with `glyph_source(name)`

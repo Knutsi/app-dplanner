@@ -432,7 +432,10 @@ reasoning, including why the count of fields was the symptom rather than the dis
   the calendar's band and the report — so a colour means *this milestone* wherever it is
   seen. A shade never invents an alpha: `tones.toned(name, hex)` recolours the tone the
   purple had, so a milestone's card is exactly as loud as it always was. Nothing else in the
-  application deals colour by position, and nothing else should.
+  application deals colour by position, and nothing else should. **Its outline is doubled**
+  (`MILESTONE_BORDER_W`, 3 px on the canvas and the coverage lanes, 2 px in the report): a
+  milestone is a landmark at any zoom, and its outline is heavier than a selection's, so
+  picking one recolours it and never thins it.
 - **A selected item is lifted, not recoloured.** The accent goes on the border; the item's
   own fill *gains* rather than being replaced, so whatever the colour was saying — this is
   the second milestone, finished work is green — it still says while the item is picked. Where

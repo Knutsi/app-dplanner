@@ -133,7 +133,11 @@ paths:
   clock among them — because a card says a thing once. The title and the left-edge
   decorations start past the block (`LEFT_INSET`), and `MIN_NODE_W` grew with it.
   `ARCHITECTURE.md`'s *The key block names the card and says who works it* has the
-  reasoning.
+  reasoning. The icon's box (`KEY_GLYPH`, 28) is sized so a broad glyph spans a
+  three-character key; the report's copy of it is pinned by the same test.
+- **A milestone's outline is doubled** — `theme/cards.py`'s `MILESTONE_BORDER_W` on the canvas
+  and the coverage lanes, twice the report's own border there — and it is at least that when
+  the card is picked or aimed at: selection recolours a milestone's outline, never thins it.
 - **A picked node is lifted, not recoloured — and every card rests on a shadow.** Selection
   thickens the border to the accent, *gains* whatever fill the node already had (so a picked
   milestone is still purple), lifts the card two pixels over a deeper shadow than the faint

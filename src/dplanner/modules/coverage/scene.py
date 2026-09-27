@@ -56,6 +56,7 @@ from dplanner.modules.coverage.trace import (
     COLUMN_TITLES,
     FEATURES,
     MILESTONES,
+    NO_MILESTONE,
     SPEC,
     Item,
     Trace,
@@ -66,6 +67,7 @@ from dplanner.theme.cards import (
     LIFT,
     LIFTED_SHADOW,
     LINE_GAP,
+    MILESTONE_BORDER_W,
     PAD_Y,
     PADDING,
     RADIUS,
@@ -265,6 +267,8 @@ class CardItem(QGraphicsObject):
             border = QColor(palette.text().color())
             border.setAlpha(MUTED_BORDER_ALPHA if self.item.muted else 90)
             width = 1.0
+        if self.item.column == MILESTONES and self.item.id != NO_MILESTONE:
+            width = max(width, MILESTONE_BORDER_W)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(over(palette.window().color(), tint))
         painter.drawRoundedRect(body, RADIUS, RADIUS)
