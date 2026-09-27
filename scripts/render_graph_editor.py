@@ -69,8 +69,9 @@ STEPS = (
 EDGES = ((1, 0), (2, 0), (3, 1), (3, 2), (4, 3))
 
 # The cards, one row per question: who works it (a person, an agent, nobody — a wait), what
-# it is (a feature, a check, a milestone), where it stands (in progress, blocked, done), and
-# the narrowest card there may be. Each row is a chain, so no socket is marked as empty.
+# it is (a feature, a check, a milestone), where it stands (in progress, ready for review,
+# ready to merge, blocked, done), and the narrowest card there may be. Each row is a chain,
+# so no socket is marked as empty.
 DAY = date(2026, 9, 21)
 CARDS = (
     (
@@ -88,11 +89,19 @@ CARDS = (
             "Map the columns",
             ((AGENT_ID, agent_write(True)), (STATUS_ID, status_write("in-progress", today=DAY))),
         ),
+        (
+            "Parse the dates",
+            (
+                (AGENT_ID, agent_write(True)),
+                (STATUS_ID, status_write("ready-for-review", today=DAY)),
+            ),
+        ),
+        ("Stage the loader", ((STATUS_ID, status_write("ready-to-merge", today=DAY)),)),
         ("Load the fixtures", ((STATUS_ID, status_write("blocked", today=DAY)),)),
         ("Read the spec", ((STATUS_ID, status_write("done", today=DAY)),)),
     ),
 )
-CARDS_SIZE = (900, 520)
+CARDS_SIZE = (1400, 520)
 
 
 def settle(app: QApplication) -> None:
