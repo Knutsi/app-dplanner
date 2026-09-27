@@ -4,6 +4,8 @@
     uv run python scripts/render_step_details.py --start --out docs/screenshots/f2-start-marker
     uv run python scripts/render_step_details.py --review \
         --out docs/screenshots/f12-automatic-review
+    uv run python scripts/render_step_details.py --conversation \
+        --out docs/screenshots/s35-review-conversation
 
 The surfaces S6 reworked: the aspect bar's toggles on the left and the template it amounts
 to on the right, the Details tab stacking from the top whatever is turned off, and the
@@ -12,7 +14,9 @@ dialog on ``DialogFrame`` with one Close in its footer. The panel has one host �
 than hand-wired, over a whole application built on a throwaway library and torn down per
 theme. ``--start`` renders F2's instead: the same dialog on a plan's start, and the
 Step ▸ Type menu that marks it. ``--review`` renders F12's: the Review tab of a review two
-rounds into its conversation, and the templates with Review ticked.
+rounds into its conversation, and the templates with Review ticked. ``--conversation``
+renders S35's: that same conversation read in full, in the dialog *Review Conversation…*
+opens.
 """
 
 import argparse
@@ -39,12 +43,15 @@ from dplanner.framework.context import (
     ContextNode,
     selection_uri,
 )
+from dplanner.framework.services import AppServices
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
 from dplanner.modules.step_review.aspect import MODULE_ID as REVIEW_ID
 from dplanner.modules.step_review.aspect import ReviewSettings
 from dplanner.modules.step_review.aspect import write as review_write
+from dplanner.modules.step_review.conversation import DIALOG_SIZE as CONVERSATION_SIZE
+from dplanner.modules.step_review.conversation import ConversationDialog
 from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
 from dplanner.modules.step_review.rounds import opened, said
 from dplanner.modules.step_start.aspect import MODULE_ID as START_ID
@@ -65,7 +72,12 @@ CONVERSATION = (
     ),
     (
         "2026-09-27T11:05:00+00:00",
-        "The error for an unclosed quote names no line number.",
+        "The error for an unclosed quote names no line number.\n\n"
+        "Somebody importing a four-thousand-line file cannot find the quote it means. "
+        "Two changes would fix it:\n\n"
+        "- say the line and the column where the quote opened;\n"
+        "- keep the message to one line, so a terminal does not wrap it.\n\n"
+        "`test_errors.py` checks only that an error is raised, not what it says.",
         "",
         "",
     ),
@@ -101,8 +113,35 @@ def discard(widget: QWidget) -> None:
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
+def render_conversation(services: AppServices, out: Path, theme: Theme, app: QApplication) -> None:
+    """The dialog *Review Conversation…* opens, through the verb — rendered where it would
+    block, and disposed by the verb on its way out as it always is."""
+
+    def shown(dialog: ConversationDialog) -> int:
+        dialog.show()
+        dialog.resize(*CONVERSATION_SIZE)  # After show: the offscreen screen clamps a framed size.
+        save(dialog, out, "conversation", theme, app)
+        dialog.hide()
+        return 0
+
+    real_exec = ConversationDialog.exec
+    ConversationDialog.exec = shown  # type: ignore[method-assign, assignment]
+    try:
+        services.actions.run("review.conversation", services.context.current())
+    finally:
+        ConversationDialog.exec = real_exec  # type: ignore[method-assign]
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+
+
 def render(
-    app: QApplication, theme: Theme, out: Path, workspace: Path, *, start: bool, review: bool
+    app: QApplication,
+    theme: Theme,
+    out: Path,
+    workspace: Path,
+    *,
+    start: bool,
+    review: bool,
+    conversation: bool,
 ) -> None:
     apply_theme(app, theme)
     library_file = workspace / f"library-{theme.name}.json"
@@ -122,7 +161,7 @@ def render(
     if start:
         step.module_data[START_ID] = start_write(True)
     AddNodeCommand(project.id, step).redo(services.document)
-    if review:
+    if review or conversation:
         # The step above is the subject; the dialog opens on its review.
         subject, step = step, Step(title="Review the quick-reg modal")
         AddNodeCommand(project.id, step).redo(services.document)
@@ -135,6 +174,10 @@ def render(
         converse(services.document, step, subject)
     services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
     settle(app)
+    if conversation:
+        render_conversation(services, out, theme, app)
+        session.close()
+        return
 
     # Through the verb that opens it, so nothing here re-wires what the window builds.
     # exec() would block and the verb disposes on the way out, so both stand aside.
@@ -209,6 +252,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--review", action="store_true", help="render a review step's Review tab instead (F12)"
     )
+    parser.add_argument(
+        "--conversation",
+        action="store_true",
+        help="render a review's conversation dialog instead (S35)",
+    )
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
@@ -220,7 +268,15 @@ def main(argv: list[str]) -> int:
         QSettings.setDefaultFormat(QSettings.Format.IniFormat)
         QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, tmp)
         for theme in (DARK, LIGHT):
-            render(app, theme, args.out, Path(tmp), start=args.start, review=args.review)
+            render(
+                app,
+                theme,
+                args.out,
+                Path(tmp),
+                start=args.start,
+                review=args.review,
+                conversation=args.conversation,
+            )
     return 0
 
 

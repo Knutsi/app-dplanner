@@ -1881,6 +1881,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 key_of=_step_key,
                 harnesses=agent_harnesses(),
                 default_profile=lambda: default_profile().name,
+                parent=services.window,
             )
         ),
         # Declares the conversation's format only; the `review` verbs write it.

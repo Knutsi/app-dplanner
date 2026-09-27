@@ -515,7 +515,8 @@ src/dplanner/
 │   ├── step_review/         a step whose agent reviews the step it waits on: the Type ▸ Review
 │   │                        toggle, the Review template and tab, `dplanner review` (the
 │   │                        conversation both sides drive, `review wait` included) and its
-│   │                        lint — the settings in `aspect.py`, the rounds in `rounds.py`
+│   │                        lint — the settings in `aspect.py`, the rounds in `rounds.py`,
+│   │                        the conversation read in full in `conversation.py`
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll
