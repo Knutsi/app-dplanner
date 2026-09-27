@@ -321,6 +321,7 @@ class ProgressionModule:
                 label="Show Step Stat&uses",
                 menu="Project",
                 group="open",
+                in_menus=False,  # Its seat is the project's row in the index — menus.py.
                 order=30,
                 tip="What needs a person right now: blocked, to merge, to review, to start",
                 state=self._on_a_project,

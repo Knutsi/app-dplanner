@@ -630,7 +630,7 @@ is not in front of you at all"** — a storage provider without history has no *
 a feature behind a flag leaves no trace. The rule's short form is in `CLAUDE.md`.
 
 The reason it is a rule and not taste: a menu that reshapes itself with the selection cannot
-be learned. The user who saw *Open Specs* yesterday and cannot find it today has no way to
+be learned. The user who saw *Show in Coverage* yesterday and cannot find it today has no way to
 know whether the feature is gone or their context is wrong — a greyed entry answers that
 question before it is asked. It also keeps every surface stable: a toolbar row that reflows
 as the selection changes cannot be read, and the menubar's separators stop jumping.
@@ -762,7 +762,10 @@ and `surfaces` out of `open`, and the card renders `edit`, `link`, `track`, `age
 `open` while every table and the menu bar render the whole menu. Empty canvas follows the
 same rule for the project: Project ▸ `open` is the views the index already lists, so the
 background renders `survey` — Estimate Steps and Preview Report, the two looks over the
-whole plan with no row there — instead. `fill_menu` takes several groups for this, in the
+whole plan with no row there — instead. The Project menu followed the same way: those seven
+views (Specs, Assets, Steps, Step Statuses, Time Estimates, Coverage, Tests) repeated rows
+standing beside it, so they are `in_menus=False` — the index row is their seat, the palette
+and anything running them by id still reach them, and no menu lists them twice. `fill_menu` takes several groups for this, in the
 menu's order and ruled as the menu rules them, so the card is one band and the mixed pick's
 `Step` child is the same band.
 

@@ -66,6 +66,7 @@ class CoverageModule:
                 label="Show &Coverage",
                 menu="Project",
                 group="open",
+                in_menus=False,  # Its seat is the project's row in the index — menus.py.
                 order=45,
                 icon=coverage_icon,
                 tip="The milestones, the features under them, the spec passages they "

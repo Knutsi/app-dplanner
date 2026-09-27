@@ -83,10 +83,12 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "membership" is whether a project is in this library at all — Archive, Restore,
     # Remove from Library and Show Archive — and it is the whole of what an archived
     # project's right-click renders, through `fill_menu`'s `group` filter.
-    # "open" is the project's surfaces that also stand as rows under it in the index;
-    # "survey" is the two looks over the whole plan that have no row there — Estimate Steps
-    # (every step in one list to size) and Preview Report — which is why empty canvas, whose
-    # right-click leaves the rest to the index beside it, offers this band and not that one.
+    # "open" is the project's surfaces that stand as rows under it in the index — Specs,
+    # Assets, Steps, Step statuses, Time Estimates, Coverage, Tests. The row is their seat,
+    # so they are ``in_menus=False``: in the palette and runnable by id, in no menu, where
+    # they only repeated the index beside it. "survey" is the two looks over the whole plan
+    # that have no row there — Estimate Steps (every step in one list to size) and Preview
+    # Report — which is what empty canvas's right-click offers.
     "Project": (
         "edit",
         "membership",

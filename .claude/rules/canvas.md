@@ -69,7 +69,8 @@ paths:
   (Graph ▸ `new` and `select`, Edit ▸ `selection`, Project ▸ `survey`), rendered by
   `fill_bands`. **A card is the step, not a table's Step menu**: its type and tests are set
   in Step Details, compiling is the Docs tab's, and a view the index lists as a row under
-  the project is left to that row — on the card and on the background alike; what a table
+  the project is left to that row — on the card, on the background and in the Project menu
+  alike (those verbs are `in_menus=False`: the palette still finds them); what a table
   adds is filed in groups of its own (`classify`, `compile`, `surfaces`) so the card can
   leave them out. A new target — a stack's frame — is a row
   and a branch in `target_of`; a new verb for arrows registers into Graph ▸ `links` and

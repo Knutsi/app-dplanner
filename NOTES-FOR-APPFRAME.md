@@ -4506,3 +4506,23 @@ now one call over a two-band tuple.
 **Upstream?** Yes. Nothing in it knows DPlanner. The template already says a right-click
 renders a menu and never a copy of one, and this lets a surface honour that while offering
 more than one menu.
+
+### `framework/action_menu.py` — `fill_menu(group=...)` takes several groups
+
+**What we changed.** `group` may be a tuple, which renders those bands in the menu's order,
+ruled as the menu rules them. A `Band` passes it through.
+
+**Why.** A card on the graph renders the Step menu's bands about the step itself, and a
+table renders the whole menu. The card's row is one band rather than five with rules
+re-derived between them.
+
+**Upstream?** Yes, alongside `fill_bands`.
+
+### `framework/action_registry.py` — `in_menus` documented for a second use
+
+**What we changed.** Only the comment. `in_menus=False` now also serves a verb whose seat is
+a row the window already shows. A project's surfaces are rows in the index, and their Project
+menu entries only repeated them.
+
+**Upstream?** The wording, yes: the flag was always "seated elsewhere", not "seated in a data
+menu".

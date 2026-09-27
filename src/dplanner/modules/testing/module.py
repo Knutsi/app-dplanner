@@ -372,6 +372,7 @@ class TestsModule:
                 label="Show &Tests",
                 menu="Project",
                 group="open",
+                in_menus=False,  # Its seat is the project's row in the index — menus.py.
                 order=50,
                 tip="Every test this project keeps, and how each one last did",
                 state=self._on_a_project,

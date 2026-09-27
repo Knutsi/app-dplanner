@@ -344,6 +344,34 @@ def test_project_verbs_enable_on_a_selected_project(services, project):
         assert state(services, action_id, context).enabled
 
 
+def test_the_project_menu_leaves_the_indexs_views_to_its_rows(services, project):
+    """Each of a project's surfaces is a row under it in the index, so no menu repeats it —
+    the Project menu, and the index's own right-click, which renders that menu. The verbs
+    stay registered: the palette and anything running them by id still reach them."""
+    from PySide6.QtWidgets import QMenu
+
+    from dplanner.framework.action_menu import fill_menu
+
+    listed = (
+        "spec.open",
+        "assets.open",
+        "projects.open",
+        "progression.open",
+        "time.open",
+        "coverage.open",
+        "tests.open",
+    )
+    context = select(services, "project", project.id)
+    menu = fill_menu(QMenu(), services.actions, services.context, "Project")
+    offered = {action.text() for action in menu.actions()}
+    menu.deleteLater()
+    for action_id in listed:
+        spec = services.actions.spec(action_id)
+        assert spec.label not in offered
+        assert spec.palette and state(services, action_id, context).enabled
+    assert {"&Estimate Steps", "Preview &Report"} <= offered
+
+
 def test_remove_takes_the_project_out_of_model_and_store_but_leaves_its_files(
     services, project, monkeypatch
 ):

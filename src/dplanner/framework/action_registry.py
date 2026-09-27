@@ -135,12 +135,13 @@ class ActionSpec:
     # False keeps a spec out of the command palette: for a verb's second menu placement,
     # whose original already appears there under the same label.
     palette: bool = True
-    # False keeps a spec out of the menu bar and every pop-up, for a verb whose seat in
-    # the menus is a data child menu's own entries — Run Agent, whose child lists the
-    # profiles it runs through. The spec still names its menu (and a submenu, the data
-    # menu's title) so the palette can say where the verb lives, and it still runs from
-    # the palette, a button or a data menu's `append_action`. It carries no shortcut:
-    # only a QAction seated in the bar can fire one, and there is none.
+    # False keeps a spec out of the menu bar and every pop-up, for a verb whose seat is
+    # somewhere else: a data child menu's own entries — Run Agent, whose child lists the
+    # profiles it runs through — or a row the window already shows for it, as the index
+    # does for each of a project's surfaces. The spec still names its menu (and a submenu,
+    # the data menu's title) so the palette can say where the verb lives, and it still
+    # runs from the palette, a button or a data menu's `append_action`. It carries no
+    # shortcut: only a QAction seated in the bar can fire one, and there is none.
     in_menus: bool = True
     # A tuple binds several equivalent keys (e.g. Ctrl++ and Ctrl+=, whichever the
     # keyboard layout can reach); the first one is what the palette displays.
