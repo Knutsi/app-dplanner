@@ -359,8 +359,9 @@ class StepAgentInstructionModule:
                 ),
                 preview=lambda: deps.actions.run("agent.preview", deps.context.current()),
                 pick_assets=deps.pick_assets,
-                worktree=lambda step_id: uses_worktree(deps.library.step(step_id)),
+                worktree=lambda step_id: deps.briefing.worktree(deps.library.step(step_id)),
                 set_worktree=self._set_worktree,
+                no_worktree=lambda step_id: deps.briefing.no_worktree(deps.library.step(step_id)),
                 usage=deps.usage_words,
                 dictation=deps.dictation,
             )
@@ -606,7 +607,8 @@ class StepAgentInstructionModule:
 
     def _assembled(self, step: Step, staged: Mapping[str, str] | None = None) -> AssembledPrompt:
         """The briefing, with every referenced file path mapped through ``staged``, opening
-        with the preflight for the run the step asks for — a worktree unless it opted out."""
+        with the preflight for the run the step gets — a worktree unless it opted out or is
+        a step that takes none."""
         deps = self._deps
         project = deps.library.project_of(step.id)
         remap: Mapping[str, str] = staged or {}
@@ -636,7 +638,9 @@ class StepAgentInstructionModule:
             sections=sections,
             project_sections=deps.briefing.project_sections(deps.library, step, deps.files),
             epilogue=deps.briefing.epilogue(deps.library, step),
-            preamble=deps.briefing.preamble(step, uses_worktree(step), deps.facts_for(step.id)),
+            preamble=deps.briefing.preamble(
+                step, deps.briefing.worktree(step), deps.facts_for(step.id)
+            ),
             project_instruction=read_project(project),
             project_files=project_files,
             instruction_files=place(instruction.files),
@@ -713,7 +717,7 @@ class StepAgentInstructionModule:
         run_dir = launcher.new_run_dir()
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
-        worktree = self._run_name(step) if uses_worktree(step) else ""
+        worktree = self._run_name(step) if deps.briefing.worktree(step) else ""
         workdir = launcher.workdir(deps.facts_for(step.id), step)
         spawned, prepared = self._launch(
             assembled.text,
@@ -790,7 +794,7 @@ class StepAgentInstructionModule:
         workdir = launcher.workdir(facts, step)
         if workdir is None:
             return None, "the project's code is not on this machine — Project ▸ Settings…"
-        if not uses_worktree(step):
+        if not deps.briefing.worktree(step):
             return workdir.expanduser(), ""
         tree = launcher.worktree_path(workdir.expanduser(), self._run_name(step))
         return (tree, "") if tree.is_dir() else (None, NO_WORKTREE)
@@ -799,7 +803,7 @@ class StepAgentInstructionModule:
         step = focused_step(context, self._deps.library)
         if step is None:
             return DISABLED
-        label = SHELL_IN_WORKTREE if uses_worktree(step) else SHELL_IN_CHECKOUT
+        label = SHELL_IN_WORKTREE if self._deps.briefing.worktree(step) else SHELL_IN_CHECKOUT
         _directory, refusal = self._shell_place(step)
         plain = label.replace("&", "")
         if refusal:

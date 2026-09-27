@@ -20,6 +20,7 @@ from dplanner.domain.store import LibraryStore
 from dplanner.modules.github import cli as github_cli
 from dplanner.modules.github.aspect import GithubRefs, read, summary, write
 from dplanner.modules.github.gh import PrInfo
+from dplanner.modules.step_status.aspect import read as status_read
 
 MERGED = PrInfo(number=12, title="Add login flow", state="merged", url="u12", head_ref="feat/login")
 OPEN = PrInfo(number=7, title="Fix crash", state="open", url="u7", head_ref="fix/crash")
@@ -65,6 +66,11 @@ def reload(cli_library):
 
 def first_step(library):
     return library.projects[0].steps[0]
+
+
+def status_of(library, title: str) -> str:
+    steps = (step for project in library.projects for step in project.steps)
+    return status_read(next(step for step in steps if step.title == title))
 
 
 def stored_refs(reload) -> GithubRefs:
@@ -190,11 +196,38 @@ def test_refresh_rechecks_only_open_and_unknown_prs(cli, origin, reload, gh_pres
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: MERGED)
 
     report = json.loads(cli("github", "refresh", "--json"))
-    assert report == {"checked": 1, "updated": 1}
+    assert report == {"checked": 1, "updated": 1, "finished": 0}
     assert stored_refs(reload).pr_state == "merged"
 
     # Now merged: a second refresh has nothing left to check.
-    assert json.loads(cli("github", "refresh", "--json")) == {"checked": 0, "updated": 0}
+    assert json.loads(cli("github", "refresh", "--json")) == {
+        "checked": 0,
+        "updated": 0,
+        "finished": 0,
+    }
+
+
+def test_refresh_finishes_a_step_waiting_on_its_merge(cli, origin, reload, gh_present, monkeypatch):
+    cli("step", "add", "Discovery", "Write the docs")
+    monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: None)
+    for title in ("Read the spec", "Write the docs"):
+        cli("github", "set", title, "--pr", "12")
+    cli("status", "set", "Read the spec", "ready-to-merge")
+    cli("status", "set", "Write the docs", "in-progress")
+    monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: MERGED)
+
+    report = json.loads(cli("github", "refresh", "--json"))
+    assert report == {"checked": 2, "updated": 2, "finished": 1}
+    assert status_of(reload(), "Read the spec") == "done"
+    # A merged PR says nothing about work nobody has accepted.
+    assert status_of(reload(), "Write the docs") == "in-progress"
+
+    # Accepted after its PR merged: the stored state is enough, and nothing is fetched.
+    cli("status", "set", "Write the docs", "ready-to-merge")
+    monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: pytest.fail("fetched"))
+    report = json.loads(cli("github", "refresh", "--json"))
+    assert report == {"checked": 0, "updated": 0, "finished": 1}
+    assert status_of(reload(), "Write the docs") == "done"
 
 
 def test_each_projects_own_repository_answers_for_its_steps(
@@ -278,7 +311,11 @@ def test_prs_can_ask_a_named_projects_repository(cli, tmp_path, gh_present, monk
 def test_refresh_without_changes_reports_zero_updates(cli, origin, gh_present, monkeypatch):
     monkeypatch.setattr(github_cli, "view_pr", lambda repo, number: OPEN)
     cli("github", "set", "Read the spec", "--pr", "7")
-    assert json.loads(cli("github", "refresh", "--json")) == {"checked": 1, "updated": 0}
+    assert json.loads(cli("github", "refresh", "--json")) == {
+        "checked": 1,
+        "updated": 0,
+        "finished": 0,
+    }
 
 
 # -- where the refs stand ----------------------------------------------------------------------

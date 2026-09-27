@@ -76,7 +76,9 @@ class ReviewSection(ModuleDataSection):
 
         self.agent = QComboBox(self)
         self.agent.activated.connect(lambda _index: self.commit())
-        self.lenses = {lens: QCheckBox(label, self) for lens, label in LENSES}
+        self.lenses = {lens.id: QCheckBox(lens.label, self) for lens in LENSES}
+        for lens in LENSES:
+            self.lenses[lens.id].setToolTip(lens.asks)
         for box in self.lenses.values():
             box.toggled.connect(lambda _on: self.commit())
         self.skills = QLineEdit(self)

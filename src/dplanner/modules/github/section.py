@@ -33,7 +33,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Step, StepId
 from dplanner.framework.module_data_section import (
     FIELD_GAP,
@@ -63,7 +62,7 @@ from dplanner.modules.github.gh import (
     parse_repo,
     pr_number_from,
 )
-from dplanner.modules.github.refresh import REFRESH_ORIGIN
+from dplanner.modules.github.refresh import adopt
 from dplanner.theme.icons import external_icon
 
 # Green for a merged check, red for a closed cross: the same low-alpha-tint family as the
@@ -92,9 +91,11 @@ class GithubSection(ModuleDataSection):
         undo: UndoService[Library],
         repository_for: Callable[[StepId], str],
         tasks: TaskService,
+        finish_merged: Callable[[StepId], bool] = lambda _step_id: False,
     ) -> None:
         super().__init__(library, undo, module_id=MODULE_ID, undo_label="Set GitHub Refs")
         self._repository_for = repository_for
+        self._finish_merged = finish_merged
         self._runner = TaskRunner(tasks, parent=self)
         self._prs: dict[int, PrInfo] = {}
         self._branches: set[str] | None = None  # None until a fetch has answered.
@@ -254,19 +255,14 @@ class GithubSection(ModuleDataSection):
 
     def _adopt_fresh_state(self) -> None:
         """What GitHub just said about the shown step's PR, written into the step the
-        refresher's way — directly, with its origin, never onto the undo stack."""
+        refresher's way (``refresh.adopt``) — finishing it if it was waiting on this merge."""
         step = self.step()
         refs = read(step) if step is not None else None
         if step is None or refs is None or refs.pr_number is None:
             return
         info = self._prs.get(refs.pr_number)
-        if info is None:
-            return
-        fresh = refreshed(refs, info)
-        if fresh != refs:
-            SetModuleDataCommand(
-                step.id, MODULE_ID, write(fresh), view_origin=REFRESH_ORIGIN, label=""
-            ).redo(self._library)
+        if info is not None:
+            adopt(self._library, step.id, info, self._finish_merged)
 
     def _refs(self) -> GithubRefs | None:
         step = self.step()

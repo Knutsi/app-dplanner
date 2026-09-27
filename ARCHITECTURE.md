@@ -3135,6 +3135,28 @@ is the same shape one level down — a change nobody in this window decided, app
 origin no view claims, off the stack — with one difference: it is *read off disk*, so it
 does not dirty anything.
 
+**A merged PR finishes a step waiting on its merge.** *Ready to merge* means exactly that
+the PR is all that is left — a review's `approve` leaves itself there, carrying its
+subject's PR — so the moment GitHub says *merged* is the moment the step is done, and
+nobody should have to remember to say so. It is the same external fact, so it is written
+the same way: `record_merged` in the status aspect applies `status set`'s own command
+directly, with an origin of its own (`MERGED_ORIGIN`, beside `STARTED_ORIGIN`, whose
+launch claim is the precedent), because Ctrl+Z restoring *ready to merge* would file a
+merged step as still waiting on it. Three choices shape it:
+
+- **It crosses a module boundary through the root.** The GitHub module knows PRs and not
+  statuses, so `GithubDeps.finish_merged` and `github_cli.commands(finish_merged=…)` are
+  callbacks the composition root answers — `record_merged` in the window, `status set`'s
+  writer in the CLI, so a merge ends a claim exactly as the verb would.
+- **Every surface that learns the state applies the rule.** The refresher, the GitHub tab
+  and `github refresh|show` all learn a PR merged; the first two share one writer
+  (`refresh.adopt`) so the tab cannot write fresh state and forget the rest.
+- **What is stored counts, not only what is fetched.** A merged PR is terminal and never
+  fetched again, but a step can reach *ready to merge* after its PR did — a review approved
+  once the developer had merged by hand inherits a state nobody will refresh. So each tick,
+  and each `github refresh`, also offers the steps whose stored state already reads merged.
+  A merged PR on a step nobody accepted says nothing: only *ready to merge* moves.
+
 ## The rulebook is loaded by where you work
 
 `CLAUDE.md` is loaded into every session whole, and on 13 September it was 152 KB — about
@@ -3987,6 +4009,19 @@ brief a step differently. One consequence worth naming for existing plans: a des
 uninstructed step that used to render `## Description` now renders that text as
 `## Instructions` — the same words, under the heading the executing agent actually obeys.
 
+**A review is the one step whose instructions are generated.** What a review must do is
+the same for every review — read its subject through its lenses, post findings, wait,
+approve or escalate within its cap — and what differs is data its aspect already holds
+(the lenses, the cap) and its subject, which the graph holds. Asking somebody to write that
+protocol into every review's description would be asking for it to drift from the verbs,
+so `_briefing_instruction` hands a review to `_review_instruction`, which writes it from
+the aspect and the subject. The step's own prose is not dropped: it rides inside the block
+as *what to look for*, the one thing a person adds to a review, and is still said once. A
+lens this build names carries its question (`Lens.asks`, beside the checkbox that picks
+it); one it does not name is a skill of the person's own, so the agent is told to use that
+skill rather than guess what the word means. `A review is a conversation kept on the step
+that asks` has the rest of how both sides are briefed.
+
 ## What reaches a step is derived at read time
 
 A note (`modules/notes/`) stores only what was said: a label, a title, a body, the step it
@@ -4204,6 +4239,38 @@ drives it with a sleep that writes the other side's turn between polls, and no t
 The window has no verb that posts a finding, because only an agent writes one. The Review
 tab shows the conversation read-only, following the ledger as the verbs write it. The rule
 is in `.claude/rules/agents.md`, and the edge rule in `.claude/rules/graph-model.md`.
+
+**Both agents are briefed with the protocol, because the verbs alone do not say when to
+use them.** A review and its subject are two peers in two terminals that never talk except
+through the plan, so each briefing has to carry its half of the conversation in full:
+- **The review** is told whom it reviews and where that work is (*Work you review*, the
+  same line *Work you collect* prints, so a collector and a review are never told where
+  work is two ways), through which lenses, the round protocol and the cap (its generated
+  `## Instructions`, *The description is the instructions*), and that its verdict is its
+  status — its epilogue asks for no PR and no `status set`, because `approve` and
+  `escalate` move both steps and carry the subject's PR.
+- **The reviewed step** is told not to stop at *ready for review*: set `pending-approval`,
+  `review wait`, take each round, fix, push and reply. And it is told when to stop — the
+  review approves (it is done), escalates (a person decides), or an hour passes with
+  nothing new. That last one is what makes waiting safe to abandon: a relaunched step is
+  briefed with any round that arrived meanwhile.
+- **A conversation still going is a section of the briefing on both sides** (*Review
+  rounds with …*: where it stands, then what each side said). Nothing stores that a step
+  is mid-review; the ledger is read when the briefing is assembled, so relaunching either
+  agent resumes the conversation instead of starting a second one. An ended conversation
+  is left to the Review tab — it asks nothing of the next worker.
+
+**A review runs in no worktree of its own.** An agent step gets a fresh worktree by
+default, and a review in one would be reading a new branch off `main` — not the work it
+reviews. What it reads is the subject's worktree when that is on this machine, and its
+PR or branch otherwise, without checking anything out; it commits nothing, so it needs no
+branch. That is a fact about what a review *is*, not a choice somebody should have to
+untick, so `Briefing.no_worktree` lets the root rule a worktree out whatever the agent
+aspect says, and every surface asks `Briefing.worktree(step)`: the launch, the preflight
+(which tells a review to leave the checkout as it found it — no commits, branch switches or
+stashes), the Agent tab's box, greyed with the reason, and `agent worktree … on`, refused.
+It lives on `Briefing` because that object is the one wiring both surfaces read — a Deps
+field and a CLI parameter would be the two declarations `Briefing` was made to end.
 
 ## Running an agent launches a peer, not a task
 

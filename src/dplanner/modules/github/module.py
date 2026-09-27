@@ -2,7 +2,7 @@
 *Open Pull Request* — a step's PR on the web, from any surface a step is picked on."""
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from PySide6.QtWidgets import QWidget
 
@@ -48,6 +48,10 @@ class GithubDeps:
     # step id -> the repository URL that step's refs belong to: the project's code
     # repository (`RepositoryFacts.code_remote`), arriving through the composition root.
     repository_for: Callable[[StepId], str]
+    # A step waiting on its merge is done once its PR reads merged: the status aspect's
+    # writer, applied off the undo stack, handed over by the root — this module never
+    # learns what a status is. True when it wrote.
+    finish_merged: Callable[[StepId], bool] = field(default=lambda _step_id: False)
 
 
 class GithubModule:
@@ -65,7 +69,7 @@ class GithubModule:
                 label=SPEC.label,
                 order=70,  # After Milestone (50) and Handoff (60).
                 factory=lambda: GithubSection(
-                    deps.library, deps.undo, deps.repository_for, deps.tasks
+                    deps.library, deps.undo, deps.repository_for, deps.tasks, deps.finish_merged
                 ),
                 shown_for=lambda step_id: (
                     step_id is not None
@@ -103,7 +107,13 @@ class GithubModule:
                 run=self._open_pr,
             )
         )
-        PrRefresher(deps.library, deps.tasks, deps.repository_for, parent=deps.parent).start()
+        PrRefresher(
+            deps.library,
+            deps.tasks,
+            deps.repository_for,
+            parent=deps.parent,
+            finish_merged=deps.finish_merged,
+        ).start()
         # Nothing is raised at launch. A machine without gh still records typed refs, and the
         # tab says so where it bites; *this machine* is the Setup Checklist's subject, which
         # is where `checks.py` puts both gh rows. DESIGN.md's *A machine without gh*.

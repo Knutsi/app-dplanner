@@ -305,7 +305,9 @@ cutting a release from the current branch, settling a conflict the window handed
 step that only reads and reports. "It would be convenient" is not a reason: a step in the
 checkout shares the developer's working tree with every other agent and with the person.
 When you *execute* a step, its briefing tells you which worktree to expect; if you are
-not in it, stop and say so rather than working in the main checkout.
+not in it, stop and say so rather than working in the main checkout. A review step is the
+exception: it reads the work it reviews where that work is, commits nothing, and runs in the
+checkout with no worktree of its own — leave that checkout as you found it.
 
 **An agent finishes at Ready for review, never at done.** When your work on a step is
 finished, `dplanner status set S7 ready-for-review`: a person or a reviewing agent looks
@@ -316,6 +318,8 @@ set <agent step> done` on a step nobody has reviewed is refused; when there is g
 nothing to review, say why — `dplanner status set S7 done --because '<reason>'` — and the
 reason is kept as a decision note on the step. Ready for review is the *step's* work
 finished; the agent-run state `plan-for-review` is your *plan* waiting for a look, mid-run.
+A step a review waits on does not stop there: its briefing says to wait for the review's
+rounds and answer them (below).
 
 **A step that collects other steps' work lands it, and finishes them.** Its briefing has
 *Work you collect*: each source's status, branch, PR and worktree on this machine. Merge each
@@ -346,10 +350,16 @@ through `dplanner review`, one verb per turn:
   the review ready to merge, carrying its branch and PR. Past the cap `start` is refused:
   approve, or `review escalate R8 --file why.md` hands it to a person. A review comments; the
   subject's own agent changes its branch.
-- **Being reviewed (S7):** after `status set S7 ready-for-review`, run `review wait S7`. When
-  findings arrive, `review take S7`, do the work, push, and `review reply S7 --file
-  reply.md` — S7 is ready for review again — then wait again, until the review approves (S7
-  is done) or escalates.
+- **Being reviewed (S7):** after `status set S7 ready-for-review` and `agent-state set S7
+  pending-approval`, run `review wait S7`. When findings arrive, `review take S7`, do the
+  work, push, and `review reply S7 --file reply.md` — S7 is ready for review again — then
+  wait again, until the review approves (S7 is done) or escalates. After an hour with
+  nothing new, stop: relaunching S7 briefs you with any round that arrived.
+
+Both briefings carry this protocol — the review's `## Instructions` are generated from its
+lenses, its cap and its subject, with its description as what to look for — and a
+conversation still going is a *Review rounds with …* section on either side, so a relaunched
+agent picks it up where it stands.
 
 `review wait` reads the plan afresh until it is your turn, then exits 0 with what arrived;
 after nine minutes it exits 3, and you run it again. Give the tool call running it a longer
@@ -366,8 +376,10 @@ says where the code is:
   `dplanner github set <step> --branch $(git branch --show-current)`.
 - **The moment a PR exists**, add it: `dplanner github set <step> --pr <number>`. With the
   GitHub CLI (`gh`) installed, DPlanner fills in the PR's title and state for you.
-- `dplanner github refresh` updates the stored state of open PRs; `dplanner github prs`
-  and `dplanner github branches` list what the repository has, for finding the right ref.
+- `dplanner github refresh` updates the stored state of open PRs, and a step ready to
+  merge whose PR has merged is done — the window's refresher does the same. `dplanner
+  github prs` and `dplanner github branches` list what the repository has, for finding the
+  right ref.
 - `dplanner github show <step>` says where a step's refs stand now — the PR's state and
   title, and whether its branch is still on the remote (gone after a merge is normal).
 - Without `gh`, recording still works — the refs are stored as written, and the state

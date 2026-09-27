@@ -9,6 +9,9 @@ the branch is still on the remote — the GitHub tab's standing line, for the te
 Which repository a step belongs to is **the code repository its project records** — the
 one fact a plan stores about the code it plans — and, for a project that records none
 (the older shape, a plan kept beside its code), its own directory's ``origin`` remote.
+
+A verb that learns a PR is merged — ``refresh``, ``show`` — finishes a step waiting on
+that merge, through the status writer the composition root hands ``commands()``.
 """
 
 from argparse import ArgumentParser, Namespace
@@ -44,8 +47,19 @@ from dplanner.modules.github.gh import (
     which_gh,
 )
 
+FinishMerged = Callable[[CliContext, Step], bool]
 
-def commands() -> list[CliCommand]:
+
+def commands(*, finish_merged: FinishMerged) -> list[CliCommand]:
+    """``finish_merged`` sets a step waiting on its merge done and answers whether it did —
+    the status verb's writer, handed over by the composition root."""
+
+    def run_show(context: CliContext, args: Namespace) -> int:
+        return _show(context, args, finish_merged)
+
+    def run_refresh(context: CliContext, args: Namespace) -> int:
+        return _refresh(context, args, finish_merged)
+
     return [
         CliCommand(
             path=("github", "set"),
@@ -69,14 +83,15 @@ def commands() -> list[CliCommand]:
             summary="A step's branch and PR as recorded and, with gh, where they stand now: "
             "the PR's state and whether the branch is still on the remote.",
             configure=step_arg,
-            run=_show,
+            run=run_show,
             examples=("dplanner github show S7",),
         ),
         CliCommand(
             path=("github", "refresh"),
-            summary="Update the stored state of open PRs from GitHub (needs gh).",
+            summary="Update the stored state of open PRs from GitHub (needs gh); a step ready "
+            "to merge whose PR merged is done.",
             configure=_configure_refresh,
-            run=_refresh,
+            run=run_refresh,
             examples=("dplanner github refresh",),
         ),
         CliCommand(
@@ -167,7 +182,7 @@ def _clear(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _show(context: CliContext, args: Namespace) -> int:
+def _show(context: CliContext, args: Namespace, finish_merged: FinishMerged) -> int:
     step = find_step(context.library, args.step, context.current)
     refs = read(step)
     if refs is None:
@@ -209,6 +224,9 @@ def _show(context: CliContext, args: Namespace) -> int:
     else:
         data["branch_on_remote"] = None
         lines.append("(stored state only — gh or a GitHub remote is missing)")
+    data["finished"] = refs.pr_state == "merged" and finish_merged(context, step)
+    if data["finished"]:
+        lines.append(f"{step.title} was waiting on this merge: it is done")
     for link in (data["pr_link"], data["branch_link"]):
         if link:
             lines.append(str(link))
@@ -216,17 +234,22 @@ def _show(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _refresh(context: CliContext, args: Namespace) -> int:
+def _refresh(context: CliContext, args: Namespace, finish_merged: FinishMerged) -> int:
     _need_gh()
     steps = (
         [find_step(context.library, args.step, context.current)]
         if args.step
         else _all_steps(context)
     )
-    checked = updated = 0
+    checked = updated = finished = 0
     for step in steps:
         refs = read(step)
-        if refs is None or refs.pr_number is None or refs.pr_state in ("merged", "closed"):
+        if refs is not None and refs.pr_state == "merged":
+            # Terminal, so never fetched again — but a step can reach ready-to-merge after
+            # its PR did, and it is finished here.
+            finished += finish_merged(context, step)
+            continue
+        if refs is None or refs.pr_number is None or refs.pr_state == "closed":
             continue
         repo = _step_repo(context, step)
         if repo is None:
@@ -241,8 +264,12 @@ def _refresh(context: CliContext, args: Namespace) -> int:
         if fresh != refs:
             context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(fresh)))
             updated += 1
+        if fresh.pr_state == "merged":
+            finished += finish_merged(context, context.library.step(step.id))
     context.report(
-        {"checked": checked, "updated": updated}, f"{checked} PR(s) checked, {updated} updated"
+        {"checked": checked, "updated": updated, "finished": finished},
+        f"{checked} PR(s) checked, {updated} updated"
+        + (f", {finished} step(s) merged and done" if finished else ""),
     )
     return 0
 

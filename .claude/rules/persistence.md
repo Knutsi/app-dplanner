@@ -161,6 +161,11 @@ paths:
   the agent's terminal, so a card, a table's right-click and a status row's ⋮ reach it —
   greyed with *no pull request recorded* or *no GitHub repository to find PR #N in*, and
   asking the repository only when the refs carry a number and no address.
+  **A merged PR finishes a step waiting on its merge**, wherever the state is learned — the
+  refresher (each tick also offers the steps whose stored state already reads merged), the
+  tab (both through `refresh.adopt`) and `github refresh|show` — through a root callback:
+  `record_merged` off the undo stack with `MERGED_ORIGIN` in the window, `status set`'s
+  writer in the CLI. `ARCHITECTURE.md`'s *Syncing an external fact* has the reasoning.
 - **A project names its locations; the plan repository stays derived.** *Where does the
   plan live?* — the **plan repository** — is `find_repo_root(project dir)`, never stored.
   *Which places is it about?* — its **locations** (`domain/locations.py`: a role, a
