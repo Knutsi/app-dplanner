@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from dplanner.cli.discovery import PROJECT_ENV
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.module import NO_WORKTREE
 
@@ -45,10 +46,12 @@ def spawned(monkeypatch):
         scripts.append(files.script)
         return ["fake-term"]
 
+    def spawn(_command, cwd, **_kw):
+        calls.append((cwd, scripts[-1]))
+        return ""
+
     monkeypatch.setattr(launcher, "resolve_command", resolve)
-    monkeypatch.setattr(
-        launcher, "spawn", lambda _cmd, cwd, **_kw: calls.append((cwd, scripts[-1])) or ""
-    )
+    monkeypatch.setattr(launcher, "spawn", spawn)
     return calls
 
 
@@ -60,7 +63,7 @@ def test_the_posix_script_moves_into_the_directory_and_becomes_the_person_s_shel
     files = launcher.shell_script(directory, "S1 Deploy (shell)", project_id="p1", run_dir=tmp_path)
     text = files.script.read_text()
     assert f"cd {shlex.quote(str(directory))} ||" in text
-    assert f"export {launcher.PROJECT_ENV}=p1" in text
+    assert f"export {PROJECT_ENV}=p1" in text
     assert text.rstrip().endswith('exec "${SHELL:-/bin/sh}"')
     assert not files.shell_file.exists() and not files.exit_file.exists()  # Nothing reports.
 
@@ -72,7 +75,7 @@ def test_the_windows_script_opens_a_shell_of_its_own_in_the_directory(tmp_path):
     )
     raw = files.script.read_bytes().decode()
     assert f'cd /d "{directory}"\r\n' in raw
-    assert f"set {launcher.PROJECT_ENV}=p1\r\n" in raw
+    assert f"set {PROJECT_ENV}=p1\r\n" in raw
     assert raw.endswith('"%ComSpec%" /k\r\n')
 
 

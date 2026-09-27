@@ -1,4 +1,5 @@
-"""The Step statuses table: what needs a person right now, grouped, a box on every row.
+"""The Step statuses table: what needs a person right now, grouped, a box on every row —
+one project's, or every project's in the Control Centre.
 
 Pure rendering — the domain's :class:`~dplanner.domain.progression.Progression` arrives
 computed and the table is rebuilt wholesale, so nothing here can disagree with the model.
@@ -15,6 +16,10 @@ picks survive a rebuild by step id — an accepted review is still ticked in its
 A row's glyph is Find's: a milestone's key as a badge in its own shade, otherwise who works
 the step — the glyph its key block wears — painted in the palette's ink, so a palette change
 paints the rows again (``changeEvent``): a colour taken out of the palette goes stale.
+
+**A row names its project only where the rows span several** — the Project column stands
+down on one project's tab, where every row would say the same. **And a row ends in its ⋮**
+(``Column(menu=True)``): the host builds that row's verbs when it is pressed.
 """
 
 from collections.abc import Callable
@@ -32,12 +37,15 @@ from dplanner.theme.icons import glyph_painter, step_icon
 from dplanner.theme.tokens import SECONDARY_ALPHA
 
 STEP_ROLE = HOST_ROLE
-CHECK_COLUMN, STEP_COLUMN, UNBLOCKS_COLUMN = range(3)
+CHECK_COLUMN, STEP_COLUMN, PROJECT_COLUMN, UNBLOCKS_COLUMN, MENU_COLUMN = range(5)
 COLUMNS = (
     Column("", check=True),
     Column("Step", glyph=True, detail=True, resize="stretch"),
+    Column("Project"),
     Column("Unblocks", numeric=True),
+    Column("", menu=True),
 )
+ROW_MENU_TIP = "What you can do with this step"
 
 ALL = "all"
 
@@ -100,13 +108,16 @@ class StatusTable(Table):
         key_of: Callable[[Step], str],
         glyph_of: Callable[[Step], str],
         milestone_badge: Callable[[StepId], QIcon | None],
+        project_of: Callable[[Step], str],
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(COLUMNS, selection="extended", parent=parent)
         self._key_of = key_of
         self._glyph_of = glyph_of
         self._milestone_badge = milestone_badge
-        self._shown: tuple[Progression, str] | None = None
+        self._project_of = project_of
+        self._shown: tuple[Progression, str, bool] | None = None
+        self.setColumnHidden(PROJECT_COLUMN, True)
 
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
         """The glyphs again, in the new theme's ink.
@@ -116,16 +127,19 @@ class StatusTable(Table):
         """
         shown = getattr(self, "_shown", None)
         if event.type() == QEvent.Type.PaletteChange and shown is not None:
-            self.show_rows(*shown)
+            progress, group, spans = shown
+            self.show_rows(progress, group, spans=spans)
         super().changeEvent(event)
 
-    def show_rows(self, progress: Progression, shown: str) -> None:
-        """Every group ``shown`` names — one, or all of them — keeping the picks.
+    def show_rows(self, progress: Progression, shown: str, *, spans: bool = False) -> None:
+        """Every group ``shown`` names — one, or all of them — keeping the picks; ``spans``
+        when the rows come from several projects, which is when each names its own.
 
         Quiet while the rows are replaced: clearing and reselecting would announce the
         selection twice, so the host hears one change or none (``picked`` tells it which).
         """
-        self._shown = (progress, shown)
+        self._shown = (progress, shown, spans)
+        self.setColumnHidden(PROJECT_COLUMN, not spans)
         picked = self.picked()
         self.blockSignals(True)
         try:
@@ -151,7 +165,9 @@ class StatusTable(Table):
                     detail=self._key_of(step),
                     glyph=self._glyph(step),
                 ),
+                Cell(self._project_of(step)),
                 Cell(str(unlocks) if unlocks else ""),
+                Cell(tooltip=ROW_MENU_TIP),
             ),
             data={STEP_ROLE: step.id},
         )

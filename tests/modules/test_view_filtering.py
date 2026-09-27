@@ -18,7 +18,11 @@ from dplanner.modules.coverage.activity import COVERAGE_KIND
 from dplanner.modules.docs.activity import DOCS_KIND, DocsActivity
 from dplanner.modules.estimation.bulk import ESTIMATE_KIND, BulkEstimateActivity
 from dplanner.modules.notes.activity import NOTES_KIND
-from dplanner.modules.progression.module import PROGRESSION_KIND, ProgressionActivity
+from dplanner.modules.progression.module import (
+    CONTROL_CENTRE_KIND,
+    PROGRESSION_KIND,
+    ProgressionActivity,
+)
 from dplanner.modules.project_assets.activity import ASSETS_KIND, AssetsActivity
 from dplanner.modules.project_editor.module import PROJECT_KIND, ProjectActivity
 from dplanner.modules.step_order.module import ORDER_KIND, OrderActivity
@@ -45,6 +49,8 @@ INDICATORS = [
     pytest.param(ORDER_KIND, "updating", id="order"),
     pytest.param(TIME_KIND, "updating", id="time"),
     pytest.param(PROGRESSION_KIND, "updating", id="progression"),
+    # Every project's board: it hears every project, so it is here and not among VIEWS.
+    pytest.param(CONTROL_CENTRE_KIND, "updating", id="control_centre"),
     pytest.param(testing.TESTS_KIND, "updating", id="tests"),
     pytest.param(testing.ALL_TESTS_KIND, "updating", id="all_tests"),
     pytest.param(DOCS_KIND, "page.updating", id="docs"),
