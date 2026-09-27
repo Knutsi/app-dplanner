@@ -157,7 +157,7 @@ paths:
   right** is one dropdown naming the *template* the step amounts to — a kind with the
   facets it usually carries — which is why that list is named in the composition root
   (`StepPropertiesDeps.templates`) rather than derived from the Type submenu; the bar's
-  left is every toggle, as a glyph. **Step ▸ New is one verb**: a step is born plain, titled "New
+  left is every toggle, as a glyph. **Graph ▸ New Step is one verb**: a step is born plain, titled "New
   step", and the details dialog opens on it with the name selected, where the bar says
   what it is.
 - **A module's project-level editor is a tab of *Project ▸ Settings…*, registered into

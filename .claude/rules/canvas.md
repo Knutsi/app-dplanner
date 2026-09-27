@@ -46,7 +46,7 @@ paths:
   cards that moved; one divide ends the mode, and Escape puts the cards back and leaves. The
   band drawn beside the cut — the room being made — is the same `OutlinePreviewItem`.
   `ARCHITECTURE.md`'s *Who owns the canvas's input* has the reasoning.
-- **Redirect is a mode, and it moves one end of a bundle.** Pick arrows, run *Step ▸
+- **Redirect is a mode, and it moves one end of a bundle.** Pick arrows, run *Graph ▸
   Redirect ▸ To Step* (`E`) or *From Step* (`Shift+E`), click a step: every picked link
   moves that end onto it, in one undo entry. **Which end travels is the verb's, never
   inferred** — the case the tool exists for is a bundle that agrees on neither end — so
@@ -60,6 +60,29 @@ paths:
   the status line says what did not. The verb is enabled exactly while links are picked,
   greyed with the reason otherwise. `ARCHITECTURE.md`'s *Redirecting a link moves one end*
   has the reasoning.
+- **A right-click is composed by what is under it.** The click makes its subject current —
+  a card or an arrow outside the pick *becomes* the pick, one inside keeps it, empty canvas
+  clears it and notes the point — and the menu is then a function of the selection alone:
+  `canvas_menus.py`'s `BANDS` row for a **card** (the Step menu's bands about the step
+  itself, `STEP_ITSELF`), an **arrow** (Graph ▸ `links`), a **mixed** pick (Graph ▸
+  `narrow`, Edit ▸ `clipboard`, then `Step` and `Links` children) or the **background**
+  (Graph ▸ `new` and `select`, Edit ▸ `selection`, Project ▸ `survey`), rendered by
+  `fill_bands`. **A card is the step, not a table's Step menu**: its type and tests are set
+  in Step Details, compiling is the Docs tab's, and a view the index lists as a row under
+  the project is left to that row — on the card, on the background and in the Project menu
+  alike (those verbs are `in_menus=False`: the palette still finds them); what a table
+  adds is filed in groups of its own (`classify`, `compile`, `surfaces`) so the card can
+  leave them out. A new target — a stack's frame — is a row
+  and a branch in `target_of`; a new verb for arrows registers into Graph ▸ `links` and
+  appears wherever that band is rendered. **`IdleMode` claims every right press**: handed
+  to Qt, a right press on an arrow (selectable, not movable) clears the whole selection
+  before the menu is asked for, so three picked arrows became one. `context_menu()` builds
+  and `_on_context_menu` only shows, so a test reads the menu without a modal loop. **Delete
+  removes everything picked**: the key names `("steps.delete", "links.remove")`, and
+  `steps.delete` takes any arrow picked beside the steps into the same `remove_steps_command`
+  — one undo; `links.remove` is the arrows alone, and `steps.unlink` the link between two
+  picked steps. `ARCHITECTURE.md`'s *A right-click is composed by what is under it* has the
+  reasoning.
 - **Marks are a way of looking, remembered per user — and both are on.** Starts and Ends
   (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one
   `Look` (`look.py`, with the spotlight, the background and Snap to Grid beside them),

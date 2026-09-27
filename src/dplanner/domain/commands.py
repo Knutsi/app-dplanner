@@ -337,21 +337,28 @@ def remove_edges_command(library: Library, edges: Iterable[Edge], label: str) ->
 
 
 def remove_steps_command(
-    library: Library, step_ids: Sequence[StepId], verb: str
+    library: Library, step_ids: Sequence[StepId], verb: str, *, links: Sequence[Edge] = ()
 ) -> CompositeCommand:
     """Remove these steps and every link into them as one undo step, named for the verb
-    that asked — "Delete Step", "Cut 3 Steps".
+    that asked — "Delete Step", "Cut 3 Steps" — and ``links`` besides: the arrows a Delete
+    found picked beside the steps, "Delete 3 Items".
 
     :meth:`Library.remove_child` leaves the survivors' lists alone so that undo can put the
     graph back exactly. The tidying belongs here instead: a composite undoes in reverse, so
     the steps come back before the lists that named them and the undo is just as exact —
     and no ghost id reaches disk to freeze a survivor's list later. Links *among* the
-    doomed live on the doomed nodes and travel with them; only the ones crossing in go.
+    doomed live on the doomed nodes and travel with them; only the ones crossing in go,
+    and a picked link joins them in the **one** removal, so a list that loses both is
+    rewritten once (:func:`remove_edges_command` says why that matters).
     """
     doomed = list(step_ids)
     chosen = set(doomed)
     incoming = [edge for edge in library.boundary_edges(doomed) if edge[0] not in chosen]
-    label = f"{verb} Step" if len(doomed) == 1 else f"{verb} {len(doomed)} Steps"
+    incoming += [edge for edge in links if edge[0] not in chosen]
+    if links:
+        label = f"{verb} {len(doomed) + len(links)} Items"
+    else:
+        label = f"{verb} Step" if len(doomed) == 1 else f"{verb} {len(doomed)} Steps"
     commands: list[Command] = [
         *remove_edges_command(library, incoming, label).commands,
         *(RemoveNodeCommand(step_id) for step_id in doomed),

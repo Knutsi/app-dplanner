@@ -155,6 +155,7 @@ class ProjectVerbs:
                 label="Show &Steps",
                 menu="Project",
                 group="open",
+                in_menus=False,  # Its seat is the project's row in the index — menus.py.
                 order=20,  # The index's order: Specs (10), Assets (15), then Steps.
                 tip="Show this project's graph",
                 state=self._on_a_project,

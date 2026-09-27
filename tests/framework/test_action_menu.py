@@ -4,9 +4,10 @@ import pytest
 from PySide6.QtGui import QColor, QIcon, QPixmap
 from PySide6.QtWidgets import QMenu, QWidget
 
-from dplanner.framework.action_menu import build_menu, fill_menu
+from dplanner.framework.action_menu import Band, build_menu, fill_bands
 from dplanner.framework.action_registry import (
     DISABLED,
+    ENABLED,
     ActionRegistry,
     ActionSpec,
     ActionState,
@@ -225,19 +226,79 @@ def test_a_submenu_popup_may_be_narrowed_to_one_of_the_groups_feeding_it(app):
     assert entries(popup) == ["mark ok"]
 
 
+# -- a pop-up composed of several renders --------------------------------------------------------
+
+BANDED = MenuStructure({"Step": ("edit", "open"), "Graph": ("links", "absent")})
+
+
+def banded_registry():
+    """Two menus, and a group whose only verb is hidden — a band that draws nothing."""
+    registry = ActionRegistry(BANDED)
+    for action_id, menu, group, shown in (
+        ("rename", "Step", "edit", ENABLED),
+        ("details", "Step", "open", ENABLED),
+        ("remove link", "Graph", "links", ENABLED),
+        ("unbuilt", "Graph", "absent", HIDDEN),
+    ):
+        registry.register(spec(action_id, menu=menu, group=group, state=lambda _c, s=shown: s))
+    return registry
+
+
+def composed(*bands):
+    popup = fill_bands(QMenu(), bands, banded_registry(), ContextService())
+    rendered = entries(popup)
+    popup.deleteLater()
+    return rendered
+
+
 def test_a_popup_may_hold_a_whole_menu_as_a_child_of_another_render(app):
     """Composition, not a copy: what the child holds is whatever the menu holds now."""
     registry = nested_registry()
-    parent = QWidget()
-    popup = build_menu(registry, ContextService(), "Step", parent, submenu="Test", group="result")
-    fill_menu(popup.addMenu("Step"), registry, ContextService(), "Step")
+    bands = (Band("Step", group="result", submenu="Test"), Band("Step", child="Step"))
+    popup = fill_bands(QMenu(), bands, registry, ContextService())
     assert entries(popup) == [
         "mark ok",
+        "|",
         (
             "Step",
             ["rename", "|", ("Test", ["add test", "archive test", "|", "mark ok"]), "|", "details"],
         ),
     ]
+    popup.deleteLater()
+
+
+def test_a_rule_parts_two_bands_only_when_both_drew_something(app):
+    """A rule under nothing is a line the reader has to account for — so none leads, none
+    trails, and a band that drew nothing costs its neighbours none."""
+    assert composed(
+        Band("Graph", "absent"),
+        Band("Step", "edit"),
+        Band("Graph", "absent"),
+        Band("Step", "open"),
+        Band("Graph", "absent"),
+    ) == ["rename", "|", "details"]
+
+
+def test_two_child_menus_in_a_row_get_no_rule_between_them(app):
+    """Their names already part them — the reason Step's classify band has none."""
+    assert composed(
+        Band("Step", "edit"),
+        Band("Step", child="Step"),
+        Band("Graph", "links", child="Links"),
+    ) == ["rename", "|", ("Step", ["rename", "|", "details"]), ("Links", ["remove link"])]
+
+
+def test_a_band_may_name_several_groups_and_keeps_the_menus_rules(app):
+    """Some of a menu's bands, in the menu's order and ruled as the menu rules them — a card
+    on the graph is the Step menu's bands about the step, not the ones a table adds."""
+    registry = nested_registry()
+    popup = fill_bands(QMenu(), (Band("Step", ("open", "edit")),), registry, ContextService())
+    assert entries(popup) == ["rename", "|", "details"]
+    popup.deleteLater()
+
+
+def test_a_child_menu_that_came_out_empty_is_taken_away(app):
+    assert composed(Band("Step", "edit"), Band("Graph", "absent", child="Nothing")) == ["rename"]
 
 
 def test_an_entry_wears_the_glyph_its_spec_carries(app, registry):

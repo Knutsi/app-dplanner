@@ -445,7 +445,8 @@ src/dplanner/
 │   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, resize) and renderers,
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid,
 │   │                        the side panel; ground.py paints the background)
-│   │                        (canvas_toolbar.py is the strip in named bands; find.py the rows Find offers;
+│   │                        (canvas_toolbar.py is the strip in named bands; canvas_menus.py what a
+│   │                        right-click offers by what is under it; find.py the rows Find offers;
 │   │                        the Problems list stands beside the canvas through framework/side_panel.py)
 │   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's
 │   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone)

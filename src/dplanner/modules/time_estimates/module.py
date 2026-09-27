@@ -150,6 +150,7 @@ class TimeEstimatesModule:
                 label="Show &Time Estimates",
                 menu="Project",
                 group="open",
+                in_menus=False,  # Its seat is the project's row in the index — menus.py.
                 order=40,
                 tip="When the plan lands with its team, how that moved, and the work behind it",
                 state=self._on_a_project,

@@ -339,6 +339,35 @@ def test_removing_steps_takes_the_links_into_them_along_and_undoes_exactly(libra
     assert first.edges["relates"] == [third.id] and third.edges["requires"] == [second.id]
 
 
+def test_removing_steps_takes_picked_links_along_in_the_same_list_rewrite(library):
+    """Delete on a mixed pick: an arrow picked between two survivors joins the links into the
+    doomed step, and a list that loses both is rewritten **once** — two commands on one list
+    would each be built from the state before either ran, and the second would put back what
+    the first removed. A picked link hanging off a doomed step goes with it."""
+    from dplanner.domain.commands import remove_steps_command
+
+    first, second, third = (
+        find(library, "Read the spec"),
+        find(library, "Draft the model"),
+        find(library, "Review"),
+    )
+    library.set_edges(third.id, "requires", [first.id, second.id])
+    library.set_edges(second.id, "requires", [first.id])
+
+    picked = [(third.id, "requires", first.id), (second.id, "requires", first.id)]
+    command = remove_steps_command(library, [second.id], "Delete", links=picked)
+    assert command.text() == "Delete 3 Items"
+    assert [type(c).__name__ for c in command.commands] == [
+        "SetEdgesCommand",
+        "RemoveNodeCommand",
+    ]
+    command.redo(library)
+    assert "requires" not in third.edges
+    command.undo(library)
+    assert third.edges["requires"] == [first.id, second.id]
+    assert second.edges["requires"] == [first.id]
+
+
 # -- redirecting -------------------------------------------------------------------------------
 
 

@@ -27,9 +27,9 @@ one project, so a tab opened later wears the same look and a second window would
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QPointF, Qt
+from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QVBoxLayout, QWidget
+from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
 
 from dplanner.core.signals import Signal as CoreSignal
 from dplanner.domain.commands import (
@@ -51,7 +51,7 @@ from dplanner.domain.model import (
 )
 from dplanner.domain.ordering import ports
 from dplanner.domain.store import FilesFor
-from dplanner.framework.action_menu import build_menu
+from dplanner.framework.action_menu import fill_bands
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
 from dplanner.framework.context import (
@@ -73,6 +73,7 @@ from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.window import StatusHost
+from dplanner.modules.project_editor.canvas_menus import BANDS, target_of
 from dplanner.modules.project_editor.canvas_toolbar import PANEL_ACTION, CanvasToolbar
 from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.clipboard import PastePolicy
@@ -80,7 +81,6 @@ from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, Clip
 from dplanner.modules.project_editor.find import find_rows
 from dplanner.modules.project_editor.geometry import divide_command
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
-from dplanner.modules.project_editor.items import StepNodeItem
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.look import Look
@@ -293,6 +293,11 @@ class ProjectActivity(EntityActivity):
         """Replace the selection with these steps — Select All's way in."""
         self._sync_soon.flush()
         self._scene.select_steps(step_ids)
+
+    def select_edges(self, refs: list[EdgeRef]) -> None:
+        """Replace the selection with these arrows — *Select Only Links*' way in."""
+        self._sync_soon.flush()
+        self._scene.select_edges(refs)
 
     def set_mode(self, name: str, on: bool) -> None:
         """Enter or leave one of the switchable modes. Escape leaves from the keyboard."""
@@ -611,24 +616,42 @@ class ProjectActivity(EntityActivity):
         point = self._view.last_click
         return None if point is None else self._snapped(*centred_on(point.x(), point.y()))
 
-    def _select_for_menu(self, node: StepNodeItem | None) -> None:
-        """Make the thing under the cursor current — without collapsing a multi-selection
-        the click landed inside, or the menu's verbs would lose the other N-1 steps."""
-        if node is not None and node.step_id not in self._scene.selection().steps:
-            self._scene.select_step(node.step_id)
+    def context_menu(self, position: QPoint) -> QMenu:
+        """What a right-click at this viewport point offers, built and not shown.
 
-    def _on_context_menu(self, position: object) -> None:
-        from PySide6.QtCore import QPoint
-
-        assert isinstance(position, QPoint)
+        The thing under the cursor is made current first, and the menu is then composed
+        from the pick (``canvas_menus.py``), so every verb in it reads the context every
+        other presenter does. Separate from :meth:`_on_context_menu` so a test can read
+        the menu without a modal loop.
+        """
         scene_pos = self._view.mapToScene(position)
         # New places a node where the menu was raised, so the right-click counts as a
         # click — the keyboard menu key sends no press, and would otherwise reuse a
         # stale point.
         self._view.note_click(scene_pos)
-        self._select_for_menu(self._scene.node_at(scene_pos))
-        menu = build_menu(self._deps.actions, self._deps.context, "Step", self._view)
-        menu.exec(self._view.viewport().mapToGlobal(position))
+        self._select_for_menu(scene_pos)
+        bands = BANDS[target_of(self._scene.selection())]
+        return fill_bands(QMenu(self._view), bands, self._deps.actions, self._deps.context)
+
+    def _select_for_menu(self, scene_pos: QPointF) -> None:
+        """Make the thing under the cursor current. A card or an arrow outside the pick
+        becomes the pick; one inside it keeps it, or the menu's verbs would lose the rest.
+        Empty canvas clears it: what is offered there is about the canvas, not a pick."""
+        picked = self._scene.selection()
+        node = self._scene.node_at(scene_pos)
+        edge = None if node is not None else self._scene.edge_at(scene_pos)
+        if node is not None:
+            if node.step_id not in picked.steps:
+                self._scene.select_step(node.step_id)
+        elif edge is not None:
+            if edge.ref not in picked.edges:
+                self._scene.select_edges([edge.ref])
+        elif picked.steps or picked.edges:
+            self._scene.select_steps([])
+
+    def _on_context_menu(self, position: object) -> None:
+        assert isinstance(position, QPoint)
+        self.context_menu(position).exec(self._view.viewport().mapToGlobal(position))
 
 
 def _redirect_label(count: int) -> str:
@@ -679,6 +702,7 @@ class ProjectEditorModule:
             current_project=self._current_project,
             select_step=self.reveal,
             select_steps=self._select_steps,
+            select_edges=self._select_edges,
             set_mode=self._set_mode,
             frame=self._frame,
             find=self._find,
@@ -784,6 +808,11 @@ class ProjectEditorModule:
         current = self._current_activity()
         if current is not None:
             current.select_steps(step_ids)
+
+    def _select_edges(self, refs: list[EdgeRef]) -> None:
+        current = self._current_activity()
+        if current is not None:
+            current.select_edges(refs)
 
     def _frame(self) -> None:
         current = self._current_activity()

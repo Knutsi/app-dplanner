@@ -238,7 +238,7 @@ class DocsModule:
             DataMenuSpec(
                 id=COMPILE_MENU_ID,
                 menu="Step",
-                group="agent",
+                group="compile",
                 title=COMPILE_MENU_TITLE,
                 order=20,  # After Run Agent's child menu (10), in the same band.
                 fill=self._fill_profiles,
@@ -329,7 +329,7 @@ class DocsModule:
                 id=COMPILE_ACTION,
                 label="Compile with &Agent…",
                 menu="Step",
-                group="agent",
+                group="compile",
                 order=20,
                 submenu=COMPILE_MENU_TITLE,
                 in_menus=False,  # Its seat is the child menu of profiles, as Run Agent's is.

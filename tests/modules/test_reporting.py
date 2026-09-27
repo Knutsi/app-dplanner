@@ -129,7 +129,7 @@ def test_the_preview_opens_the_page_it_wrote(qapp, services, project, monkeypatc
     wait_for(qapp, lambda: bool(opened))
     assert Path(opened[0]).read_text(encoding="utf-8").startswith("<!doctype html>")
     spec = services.actions.spec("report.preview")
-    assert (spec.menu, spec.group) == ("Project", "open")
+    assert (spec.menu, spec.group) == ("Project", "survey")
 
 
 def test_the_exports_need_a_project(services):

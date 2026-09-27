@@ -4,7 +4,7 @@ paths:
   - "src/dplanner/framework/{action_registry,action_menu,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,main_window,window,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service,user_config,zoom}.py"
   - "src/dplanner/theme/**"
   - "src/dplanner/modules/{appshell,appearance,theme_omarchy,theme_system,reopen_tabs,settings,debug}/**"
-  - "src/dplanner/modules/project_editor/canvas_toolbar.py"
+  - "src/dplanner/modules/project_editor/canvas_{toolbar,menus}.py"
   - "tests/test_theme.py"
   - "tests/framework/test_{action_menu,actions,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service}.py"
   - "tests/modules/test_{appshell,appearance,theme_providers,reopen_tabs,debug}.py"
@@ -103,15 +103,20 @@ paths:
   past the disclosure triangle rather than under it. The indent is the name's
   and not the row's: the accent edge and the hover wash still run the full width, and no
   other column moves. `ARCHITECTURE.md`'s *The category headings fold* has the reasoning.
-- **A right-click may render more than one menu, and still copies none.** `fill_menu`
-  fills a menu it is *given*, so a surface whose subject is narrower than any one menu leads
-  with the band that is about it and offers a whole menu beneath it as a child: the Tests
-  tab's right-click is `Step ▸ Test`'s `test_result` band, a rule, then the Step menu as a
-  `Step` child (`TestsActivity._test_menu`). Naming a `group` **with** a `submenu` means
-  that child menu's band — two groups may feed one child menu, and a surface about one of
-  them offers that one. What the rule forbids is an entry written by hand, not a shape;
-  the composition is not a `MENU_STRUCTURE` entry of its own, because an entry there is a
-  place verbs are *registered into* and nothing registers here.
+- **A right-click may render more than one menu, and still copies none.** `fill_bands`
+  (`framework/action_menu.py`) lays `Band`s — a menu, a group of one, a child menu's band,
+  optionally as a child of its own — into one pop-up, a rule only between two bands that
+  each drew something and none between two child menus. The Tests tab's right-click is
+  `Step ▸ Test`'s `test_result` band, then the Step menu as a `Step` child
+  (`TestsActivity._test_menu`); the canvas's is a row of bands per thing under the cursor
+  (`project_editor/canvas_menus.py`, *A right-click is composed by what is under it* in
+  `canvas.md`). Naming a `group` **with** a `submenu` means that child menu's band — two
+  groups may feed one child menu, and a surface about one of them offers that one. What the
+  rule forbids is an entry written by hand, not a shape; a composition is not a
+  `MENU_STRUCTURE` entry of its own, because an entry there is a place verbs are
+  *registered into* and nothing registers here. **Every band a composition names is a live
+  group** — a band naming a group nothing registers into renders nothing, silently, so the
+  canvas's table is held to `MENU_STRUCTURE` by a test.
 - **A host's own verb on a strip says why it is greyed through `Toolbar.set_tip`**, never
   `action.setToolTip`: `_retip` composes that string from the verb's words, its key and its
   standing explanation, and runs again on the next `changed` — so anything written straight
@@ -161,15 +166,19 @@ paths:
   Tests tab), and `dispose()` with the tab. Feed the panel while it is hidden too: off
   screen keeps its content. `ARCHITECTURE.md`'s *A panel inside a tab follows the tab* has
   the reasoning.
-- **View is the window; Graph is the canvas.** The graph editor's own verbs are a
-  top-level **Graph** menu — `arrange` (Sort, Layout, Divide), `look` (Frame,
-  Mark, Snap to Grid, Background — the band the strip's *Options* face renders whole) and
-  `panels` (what stands beside the canvas inside the tab) — not a group inside View, which
-  is about panels *around the tabs*, tabs, theme and zoom; `Project ▸ tests` holds the
-  Tests tabs' own panel toggle for the same reason. What is *about a step* stays on Step even though it runs on the canvas:
-  Connect, Link, Unlink, Isolate, Redirect and Lasso, which is also what keeps them on the
-  canvas's right-click (it renders the Step menu). `ARCHITECTURE.md`'s *View is the window;
-  Graph is the canvas* has the reasoning.
+- **View is the window; Graph is the canvas — and a verb is filed by where its subject is
+  picked.** The graph editor's own verbs are a top-level **Graph** menu, not a group inside
+  View, which is about panels *around the tabs*, tabs, theme and zoom (`Project ▸ tests`
+  holds the Tests tabs' own panel toggle for the same reason). A verb whose subject is picked
+  *on the canvas* and is not a step is Graph's: `new` (New Step, Paste's second seat — a
+  point), `select` (Find, Lasso, Go — the plane as a place), `narrow` (Select Only Steps /
+  Only Links — a mixed pick), `links` (Remove Link, Redirect — a picked arrow), then
+  `arrange` (Sort, Layout, Divide), `look` (Frame, Mark, Snap to Grid, Background — the band
+  the strip's *Options* face renders whole) and `panels` (what stands beside the canvas
+  inside the tab). A verb about picked **steps** is Step's — Rename, Delete, Connect, Link,
+  Unlink (the pair), Isolate, Reveal in Graph — and so is offered by every table that renders
+  Step, where nothing canvas-only is left to be greyed. `ARCHITECTURE.md`'s *View is the
+  window; Graph is the canvas* has the reasoning.
 - **A palette row says where the verb lives.** The command palette renders the two-line
   row (`framework/list_rows.py`): the label, its **menu path** (`Graph ▸ Divide`) under it,
   the shortcut at the right and the spec's glyph at the left — because a submenu entry's
@@ -217,8 +226,8 @@ paths:
   is the one fuzzy picker — a field over `PickerRow`s, the label outranking whatever else a
   row answers to (`also`: a verb's menu path, a step's key), and `landmark` saying which
   rows a long list opens on before anything is typed. The command palette is that picker
-  over the registry; `steps.find` (Ctrl+F, `/` on the canvas, Step ▸ navigate beside *Reveal in
-  Graph*) is it over a project's steps, opening on the milestones and features.
+  over the registry; `steps.find` (Ctrl+F, `/` on the canvas, Graph ▸ select) is it over a
+  project's steps, opening on the milestones and features.
   `GraphView.centre_on_step` is what a pick lands with, and `select_step` calls it, so
   `steps.reveal` centres from every view that reaches a step. Never zoom on a find — Frame
   is the verb that changes how much of the graph is in view.

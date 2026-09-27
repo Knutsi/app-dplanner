@@ -414,10 +414,9 @@ reasoning.
   bar, toolbars, `build_menu` popups — shows the greyed entry. `ARCHITECTURE.md`'s *Hidden
   means absent; disabled means not now* has the reasoning.
 - **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
-  `MENU_STRUCTURE`, so anything with a context menu owns a menu in that table — the canvas has
-  `Step`, the index tree has `Project`, the tab bar renders View's Tabs submenu (via
-  `build_menu`'s `submenu` filter), and a toolbar button may drop a submenu down the same
-  way (`ActionToolbar`'s `menus`). Make the thing under the cursor current *first*, then
+  `MENU_STRUCTURE` — the index tree has `Project`, the tab bar View's Tabs submenu (the
+  `submenu` filter) — and `fill_bands` composes bands of them: the canvas's by what is under
+  the cursor (`canvas_menus.py`). Make the thing under the cursor current *first*, then
   build; the menu then reads the same context every other presenter does.
   **A text widget's own standard menu is the exception**: `ProseEdit` appends *Insert
   Image…* to `createStandardContextMenu()`, because a verb acting on one widget's caret

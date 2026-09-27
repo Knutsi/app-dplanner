@@ -95,6 +95,9 @@ def chain(services, project):
 # mouse arrives — the scene only ever sees what no mode claimed.
 
 
+RIGHT = Qt.MouseButton.RightButton
+
+
 def send(
     app,
     tab,
@@ -102,6 +105,7 @@ def send(
     scene_pos,
     buttons=Qt.MouseButton.LeftButton,
     modifiers=Qt.KeyboardModifier.NoModifier,
+    button=Qt.MouseButton.LeftButton,
 ):
     viewport = view(tab).viewport()
     local = QPointF(view(tab).mapFromScene(scene_pos))
@@ -111,7 +115,7 @@ def send(
         kind,
         local,
         QPointF(viewport.mapToGlobal(local.toPoint())),
-        Qt.MouseButton.LeftButton,
+        button,
         buttons,
         modifiers,
     )
@@ -430,17 +434,8 @@ def test_a_new_step_lands_where_the_canvas_was_last_clicked(services, project, t
 
 def test_a_right_click_counts_as_the_click_new_places_at(services, project, tab, monkeypatch):
     """The menu's own New lands where the menu was raised, not where the mouse last was."""
-    from dplanner.modules.project_editor import module as editor
-
-    class _Unshown:
-        """The handler ends in a modal exec(); the test wants everything up to it."""
-
-        def exec(self, *_args: object) -> None:
-            return None
-
-    monkeypatch.setattr(editor, "build_menu", lambda *a, **k: _Unshown())
     tab._view.note_click(QPointF(0.0, 0.0))
-    tab._on_context_menu(tab._view.mapFromScene(QPointF(560.0, 320.0)))
+    offered(tab, QPointF(560.0, 320.0))
     silence_details(monkeypatch)
     services.actions.run("steps.new", services.context.current())
     entry = project.steps[-1].module_data["project_editor"]
@@ -598,6 +593,24 @@ def test_unlink_offers_itself_only_for_a_linked_pair(services, project, tab):
     assert state(services, "steps.unlink", context_of(services, second.id, first.id)).enabled
     # And Link stands down, so the two never both offer themselves.
     assert not state(services, "steps.link", context_of(services, first.id, second.id)).visible
+
+
+def test_remove_link_wants_picked_arrows_and_unlink_the_pair(services, project, tab):
+    """Two verbs, filed by where the link was picked: an arrow on the canvas, or its two
+    steps anywhere — in the order table, say, with no arrow in sight."""
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    pair = context_of(services, first.id, second.id)
+    assert state(services, "steps.unlink", pair).enabled
+    removal = state(services, "links.remove", pair)
+    assert not removal.enabled and removal.label == "Remove &Link — pick links first"
+
+    edge_item(tab, second, first).setSelected(True)
+    picked = services.context.current()
+    assert state(services, "links.remove", picked).enabled
+    assert not state(services, "steps.unlink", picked).enabled
+    services.actions.run("links.remove", picked)
+    assert "requires" not in services.document.step(second.id).edges
 
 
 def test_unlink_removes_the_edge(services, project, tab):
@@ -778,6 +791,34 @@ def test_delete_means_the_verb_the_selection_calls_for(app, services, project, t
     scene(tab).select_step(second.id)
     press_key(app, tab, Qt.Key.Key_Delete)
     assert len(project.steps) == 1
+
+
+def test_delete_on_steps_and_an_arrow_removes_everything_picked_in_one_undo(
+    app, services, project, tab
+):
+    """The key a mixed pick is deleted with: both steps, the links into them, and the arrow
+    picked beside them between two steps that stay — one entry on the stack, one Ctrl+Z."""
+    first, second = project.steps
+    third, fourth = Step(title="Ship it"), Step(title="Tell people")
+    for step in (third, fourth):
+        services.undo.push(AddNodeCommand(project.id, step))
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    services.undo.push(SetEdgesCommand(third.id, "requires", [second.id]))
+    services.undo.push(SetEdgesCommand(fourth.id, "requires", [third.id]))
+    scene(tab).select_steps([first.id, second.id])
+    edge_item(tab, fourth, third).setSelected(True)
+
+    press_key(app, tab, Qt.Key.Key_Delete)
+    assert [step.id for step in project.steps] == [third.id, fourth.id]
+    assert "requires" not in services.document.step(third.id).edges
+    assert "requires" not in services.document.step(fourth.id).edges
+    assert services.undo.undo_text() == "Delete 3 Items"
+
+    services.undo.undo()  # Once: everything comes back.
+    assert len(project.steps) == 4
+    assert services.document.step(second.id).edges["requires"] == [first.id]
+    assert services.document.step(third.id).edges["requires"] == [second.id]
+    assert services.document.step(fourth.id).edges["requires"] == [third.id]
 
 
 def test_deleting_a_multiple_selection_is_one_undo_step(services, project, tab):
@@ -1523,15 +1564,28 @@ def test_every_verb_on_the_strip_is_a_glyph_with_its_words_in_the_tooltip(servic
     assert button.toolTip().startswith("New Step")
 
 
-def test_the_graph_verbs_live_on_the_graph_menu_and_the_link_verbs_on_step(services):
-    """View is the window; Graph is the canvas — and what is *about a step* stays on Step,
-    which is also what keeps it on the canvas's right-click."""
-    where = {spec.id: (spec.menu, spec.submenu) for spec in services.actions.all_specs()}
-    assert where["canvas.sort_flow"] == ("Graph", "Sort")
-    assert where["canvas.divide_vertical"] == ("Graph", "Divide")
-    assert where["canvas.snap"] == ("Graph", None)
-    assert where["steps.redirect_to"] == ("Step", "Redirect")
-    assert where["steps.link"] == ("Step", None)
+def test_a_verb_is_filed_by_where_its_subject_is_picked(services):
+    """View is the window; Graph is the canvas. A verb about picked *steps* is Step's, one
+    about a point, the plane or a picked *arrow* is Graph's — and a step verb with no canvas
+    in it is what the order table's right-click renders, so nothing canvas-only is left on
+    Step to be greyed there."""
+    specs = services.actions.all_specs()
+    where = {spec.id: (spec.menu, spec.group, spec.submenu) for spec in specs}
+    assert where["canvas.sort_flow"] == ("Graph", "arrange", "Sort")
+    assert where["canvas.divide_vertical"] == ("Graph", "arrange", "Divide")
+    assert where["canvas.snap"] == ("Graph", "look", None)
+    assert where["steps.new"] == ("Graph", "new", None)
+    assert where["steps.paste_graph"] == ("Graph", "new", None)
+    assert where["steps.paste"] == ("Edit", "clipboard", None)
+    assert where["steps.lasso"] == ("Graph", "select", None)
+    assert where["steps.go_left"] == ("Graph", "select", "Go")
+    assert where["canvas.select_only_steps"] == ("Graph", "narrow", None)
+    assert where["links.remove"] == ("Graph", "links", None)
+    assert where["steps.redirect_to"] == ("Graph", "links", "Redirect")
+    assert where["steps.link"] == ("Step", "link", None)
+    assert where["steps.unlink"] == ("Step", "link", None)
+    assert where["steps.reveal"] == ("Step", "surfaces", None)
+    assert where["estimate.open"] == ("Project", "survey", None)
     strays = [
         spec.id
         for spec in services.actions.all_specs()
@@ -1621,7 +1675,7 @@ def test_find_is_ctrl_f_everywhere_and_slash_on_the_canvas(services):
     from dplanner.modules.project_editor.keymap import bound_actions
 
     spec = services.actions.spec("steps.find")
-    assert (spec.menu, spec.group) == ("Step", "navigate")
+    assert (spec.menu, spec.group) == ("Graph", "select")
     assert spec.icon is not None
     assert QKeySequence(QKeySequence.StandardKey.Find) in key_sequences(spec.shortcut)
     assert bound_actions(Qt.Key.Key_Slash, Qt.KeyboardModifier.NoModifier) == ("steps.find",)
@@ -1705,22 +1759,223 @@ def test_select_all_is_disabled_on_an_empty_project(services, project, tab):
     assert not state.enabled
 
 
-def test_right_clicking_inside_a_multi_selection_keeps_it(services, project, tab):
+# -- the right-click is composed by what is under it ------------------------------------------
+
+
+def entries(menu):
+    """A menu as it reads, mnemonics dropped: "|" for a rule, (title, entries) for a child."""
+    rendered: list[object] = []
+    for action in menu.actions():
+        if action.isSeparator():
+            rendered.append("|")
+        elif action.menu() is not None:
+            rendered.append((action.text().replace("&", ""), entries(action.menu())))
+        else:
+            rendered.append(action.text().replace("&", ""))
+    return rendered
+
+
+def labels(rendered):
+    """Every label in a rendered menu, at any depth, child menu titles included."""
+    found = []
+    for entry in rendered:
+        if isinstance(entry, tuple):
+            found += [entry[0], *labels(entry[1])]
+        elif entry != "|":
+            found.append(entry)
+    return found
+
+
+def offered(tab, scene_pos):
+    """What a right-click at a point offers — made current and built, never shown."""
+    menu = tab.context_menu(view(tab).mapFromScene(scene_pos))
+    rendered = entries(menu)
+    menu.deleteLater()
+    return rendered
+
+
+def test_a_right_click_on_an_arrow_picks_it_and_offers_the_link_verbs(services, project, tab):
+    """What an arrow is for, and nothing else: removed, or one of its ends moved."""
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    scene(tab).select_step(first.id)
+    edge = edge_item(tab, second, first)
+
+    assert offered(tab, a_point_on(edge)) == [
+        "Remove Link",
+        ("Redirect", ["To Step", "From Step"]),
+    ]
+    assert scene(tab).selection().steps == ()
+    assert scene(tab).selection().edges == (edge.ref,)
+
+
+def test_a_right_press_on_one_of_several_picked_arrows_keeps_them(app, services, project, tab):
+    """Handed to Qt, a right press on an arrow — selectable, not movable — clears the whole
+    selection before the menu is asked for, and Remove Link would take one arrow of three."""
+    first, second, third = chain(services, project)
+    services.undo.push(SetEdgesCommand(third.id, "requires", [second.id, first.id]))
+    edges = [edge_item(tab, second, first), edge_item(tab, third, second)]
+    edges.append(edge_item(tab, third, first))
+    for edge in edges:
+        edge.setSelected(True)
+
+    at = a_point_on(edges[0])
+    send(app, tab, QEvent.Type.MouseButtonPress, at, Qt.MouseButton.RightButton, button=RIGHT)
+    send(app, tab, QEvent.Type.MouseButtonRelease, at, Qt.MouseButton.NoButton, button=RIGHT)
+
+    assert offered(tab, at)[0] == "Remove 3 Links"
+    assert len(scene(tab).selection().edges) == 3
+
+
+def test_a_right_click_inside_a_pick_keeps_it(services, project, tab):
     """The menu must read the selection the user made, not collapse it to the node under
     the cursor — or "Delete 2 Steps" could never be said."""
     first, second = project.steps
     scene(tab).select_steps([first.id, second.id])
 
-    tab._select_for_menu(scene(tab).node(first.id))
-    assert set(scene(tab).selection().steps) == {first.id, second.id}
+    assert "Delete 2 Steps" in offered(tab, centre_of(scene(tab).node(first.id)))
+    assert scene(tab).selection().steps == (first.id, second.id)
 
 
-def test_right_clicking_an_unselected_step_makes_it_current(services, project, tab):
+def test_a_right_click_outside_the_pick_makes_the_card_the_pick(services, project, tab):
     first, second = project.steps
     scene(tab).select_step(first.id)
 
-    tab._select_for_menu(scene(tab).node(second.id))
+    offered(tab, centre_of(scene(tab).node(second.id)))
     assert scene(tab).selection().steps == (second.id,)
+
+
+def test_a_cards_menu_holds_only_what_is_about_the_step(services, project, tab):
+    """A card gets what acts on the step itself — edit, link, where it stands, its agent,
+    its details and its place in coverage — and nothing a table's Step menu adds: its type
+    and tests are set in Step Details, compiling is the Docs tab's, the project's views are
+    rows in the index beside the canvas, and none of the canvas's own verbs."""
+    first, _second = project.steps
+    # By name: a greyed entry carries its reason after one.
+    found = {
+        label.split(" — ")[0]
+        for label in labels(offered(tab, centre_of(scene(tab).node(first.id))))
+    }
+
+    for about_the_step in (
+        "Rename Step…",
+        "Connect Steps",
+        "Status",
+        "Estimate",
+        "Run Agent",
+        "Step Details…",
+        "Show in Coverage",
+    ):
+        assert about_the_step in found
+    for elsewhere in (
+        "Type",
+        "Test",
+        "Test Category",
+        "Test Sort Key",
+        "Compile with Agent",
+        "Show Order",
+        "Show Step Statuses",
+        "Show Tests",
+        "Test Details",
+        "Estimate Steps",
+        "Reveal in Graph",
+        "Redirect",
+        "Find Step…",
+        "Go",
+        "Lasso Select",
+        "New Step",
+    ):
+        assert elsewhere not in found
+
+
+def test_a_table_still_renders_the_whole_step_menu(services, project, tab):
+    """What a card leaves out is filed, not dropped: the menu bar and every table that
+    lists steps still offer it."""
+    from PySide6.QtWidgets import QMenu
+
+    from dplanner.framework.action_menu import fill_menu
+
+    step_menu = fill_menu(QMenu(), services.actions, services.context, "Step")
+    found = labels(entries(step_menu))
+    step_menu.deleteLater()
+    for verb in ("Type", "Test", "Compile with Agent", "Show Order", "Reveal in Graph"):
+        assert verb in found
+
+
+def test_empty_canvas_offers_making_selecting_and_the_plan(services, project, tab, monkeypatch):
+    """Nothing about a step: what to make where the click was, how to pick what is there,
+    and the looks over the whole plan the index has no row for — and the click lets go of
+    the pick, so nothing acts on it unseen."""
+    first, _second = project.steps
+    scene(tab).select_step(first.id)
+    nowhere = QPointF(3000.0, 3000.0)
+
+    rendered = offered(tab, nowhere)
+    assert scene(tab).selection().steps == ()
+    assert rendered[:2] == ["New Step", "Paste"]
+    found = {label.split(" — ")[0] for label in labels(rendered)}
+    for verb in ("Find Step…", "Lasso Select", "Go", "Select All Steps", "Estimate Steps"):
+        assert verb in found
+    assert "Preview Report" in found
+    for step_verb in ("Status", "Run Agent", "Rename Step…", "Delete Step", "Remove Link"):
+        assert step_verb not in found
+    # A row under the project in the index already opens each of these.
+    for listed in ("Open Specs", "Open Assets", "Show Steps", "Show Coverage", "Show Tests"):
+        assert listed not in found
+
+    silence_details(monkeypatch)
+    services.actions.run("steps.new", services.context.current())
+    entry = project.steps[-1].module_data["project_editor"]
+    assert (entry["x"], entry["y"]) == (
+        snapped(3000.0 - NODE_W / 2, GRID),
+        snapped(3000.0 - NODE_H / 2, GRID),
+    )
+
+
+def test_a_mixed_pick_leads_with_narrowing_and_offers_each_kind_below(services, project, tab):
+    """Nothing is about steps and arrows at once, so the mixed pick's menu narrows it, acts
+    on any of it, and keeps each kind's own verbs one level down."""
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    scene(tab).select_steps([second.id, first.id])
+    edge_item(tab, second, first).setSelected(True)
+
+    rendered = offered(tab, centre_of(scene(tab).node(first.id)))
+    assert rendered[:3] == ["Select Only Steps", "Select Only Links", "|"]
+    assert "Delete 3 Items" in rendered and "Copy 2 Steps" in rendered
+    assert [entry[0] for entry in rendered if isinstance(entry, tuple)] == ["Step", "Links"]
+    assert rendered[-1] == ("Links", ["Remove Link", ("Redirect", ["To Step", "From Step"])])
+    assert rendered[-3] == "|"  # Above the two children, and none between them.
+
+    services.actions.run("canvas.select_only_steps", services.context.current())
+    assert scene(tab).selection().steps == (second.id, first.id)
+    assert scene(tab).selection().edges == ()
+
+
+def test_only_links_lets_go_of_the_steps(services, project, tab):
+    first, second = project.steps
+    services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
+    edge = edge_item(tab, second, first)
+    scene(tab).select_step(first.id)
+    assert not state(services, "canvas.select_only_links", services.context.current()).enabled
+    edge.setSelected(True)
+
+    services.actions.run("canvas.select_only_links", services.context.current())
+    assert scene(tab).selection().steps == ()
+    assert scene(tab).selection().edges == (edge.ref,)
+
+
+def test_every_band_the_canvas_renders_names_a_live_group():
+    """A band naming a group nothing registers into renders nothing, silently — so the
+    table is held to MENU_STRUCTURE, the one thing a refiling has to keep it in step with."""
+    from dplanner.menus import MENU_STRUCTURE
+    from dplanner.modules.project_editor.canvas_menus import BANDS
+
+    for bands in BANDS.values():
+        for band in bands:
+            assert band.menu in MENU_STRUCTURE
+            named = (band.group,) if isinstance(band.group, str) else band.group or ()
+            assert set(named) <= set(MENU_STRUCTURE[band.menu])
 
 
 # -- the layout picker --------------------------------------------------------------------------

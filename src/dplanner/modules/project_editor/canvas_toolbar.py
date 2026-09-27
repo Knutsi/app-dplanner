@@ -6,7 +6,7 @@ none of them — the registry is the only thing between them, so adding a button
 string to :data:`GROUPS`, and the glyph comes with the spec.
 
 **The band is the structure a toolbar has**, so it is spelled out here rather than inferred
-from the menus, where these verbs sit under four different headings. It is named, because
+from the menus, where these verbs sit under three different headings. It is named, because
 nineteen glyphs in a row are nineteen riddles and six named bands of three or four are a
 tool palette; and it is the unit the strip folds by, so a band is either on the strip or
 whole in the ``…`` menu. ``framework/toolbar.py``'s ``Toolbar`` owns all of that.
@@ -48,7 +48,7 @@ GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     # Then where you are looking: a graph is a place before it is a thing to edit.
     ("Go", ("steps.find", "canvas.frame", "order.open")),
     ("Step", ("steps.new", "steps.rename", "steps.delete", "steps.lasso")),
-    ("Link", ("steps.connect", "steps.redirect_to", "steps.unlink", "steps.isolate")),
+    ("Link", ("steps.connect", "steps.redirect_to", "links.remove", "steps.isolate")),
     ("Arrange", ("canvas.sort_flow", "canvas.divide_vertical")),
     ("History", ("appshell.undo", "appshell.redo")),
 )
@@ -60,7 +60,7 @@ GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
 MENUS: dict[str, tuple[str, str]] = {
     "canvas.sort_flow": ("Graph", "Sort"),
     "canvas.divide_vertical": ("Graph", "Divide"),
-    "steps.redirect_to": ("Step", "Redirect"),
+    "steps.redirect_to": ("Graph", "Redirect"),
 }
 
 # Where the layout picker sits: it names the arrangement, which is this band's business.

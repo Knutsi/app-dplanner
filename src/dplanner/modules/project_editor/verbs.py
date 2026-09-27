@@ -9,13 +9,14 @@ It reads **two selected steps, in the order they were selected: the second waits
 first.** That is the drag written down — dragging from A's handle onto B means "A, then B" —
 so the canvas and the menu cannot come to mean different things.
 
-**Unlink has two ways of being told which link, and one behaviour.** Two selected steps means
-the link between them; selected *edges* mean those edges. Both end in the same command, so
-picking an arrow on the canvas and picking its two ends are the same verb rather than two that
-have to be kept agreeing. The same reasoning makes Delete act on the whole selection — and
-:func:`~dplanner.framework.step_selection.chosen_steps` is that rule written once, so Cut,
-Copy and Duplicate next door act on exactly what Delete would, and so does Run Agent in a
-module that cannot import this one.
+**A link is removed two ways, filed by where it was picked.** ``links.remove`` acts on the
+picked *arrows* — Graph ▸ links, what a right-click on an arrow offers — and ``steps.unlink``
+on the link between two picked *steps*, a step verb that works in a table with no arrow in
+sight. Both end in :meth:`StepVerbs._removal_of`, so the two cannot come to remove different
+things. **Delete removes everything picked**: the steps, the links into them, and any arrow
+picked beside them, in one command — :func:`~dplanner.framework.step_selection.chosen_steps`
+is the step half written once, so Cut, Copy and Duplicate next door act on exactly the steps
+Delete would, and so does Run Agent in a module that cannot import this one.
 
 **Delete asks nothing.** Every removal is one undo step, and a prompt in front of an undoable
 verb teaches the wrong lesson — that the gesture is dangerous, when Ctrl+Z is the safety net.
@@ -89,9 +90,9 @@ def _unnoticed_one(_step_id: StepId) -> None:
 def picked_edges(library: Library, context: Context) -> list[EdgeRef]:
     """The selected arrows the model still agrees exist — :func:`chosen_steps` for links.
 
-    Unlink acts on them and so does a redirect, which lives next door in ``canvas_verbs``
-    because it switches a mode rather than pushing a command; one definition, so no verb
-    can come to a different view of what "these links" means.
+    Remove Link and Delete act on them and so does a redirect, which lives next door in
+    ``canvas_verbs`` because it switches a mode rather than pushing a command; one
+    definition, so no verb can come to a different view of what "these links" means.
     """
     found = [parse_edge_id(entity) for entity in context.selected_entities(EDGE_KIND)]
     return [
@@ -134,12 +135,13 @@ class StepVerbs:
             # One New, not a submenu of kinds: a step is born plain and configured in the
             # details dialog that opens on it (through the ``created`` seam), where the
             # aspect bar offers every kind and facet at once. ``steps.new`` keeps its id —
-            # it is bound to ``N`` in the keymap and wears the toolbar's plus.
+            # it is bound to ``N`` in the keymap and wears the toolbar's plus. It is the
+            # Graph menu's because what it needs is a place: the canvas's last click.
             ActionSpec(
                 id="steps.new",
                 label="&New Step",
-                menu="Step",
-                group="edit",
+                menu="Graph",
+                group="new",
                 order=10,
                 icon=plus_icon,
                 tip="Add a step to the project in this tab and open its details",
@@ -175,9 +177,22 @@ class StepVerbs:
                 group="link",
                 order=20,
                 icon=unlink_icon,
-                tip="Remove the picked links, or the link between the two selected steps",
+                tip="Remove the link between the two selected steps",
                 state=self._can_unlink,
                 run=self._unlink,
+            ),
+            # The arrow's own verb, where a right-click on one finds it. F11's Auto-progress
+            # joins this band.
+            ActionSpec(
+                id="links.remove",
+                label="Remove &Link",
+                menu="Graph",
+                group="links",
+                order=10,
+                icon=unlink_icon,
+                tip="Remove the picked links",
+                state=self._can_remove_links,
+                run=self._remove_links,
             ),
             ActionSpec(
                 id="steps.isolate",
@@ -197,12 +212,12 @@ class StepVerbs:
                 group="edit",
                 order=30,
                 icon=trash_icon,
-                tip="Remove these steps. Links naming them are left alone, so undo stays exact",
+                tip="Remove these steps, the links into them and any link picked beside them",
                 state=self._can_delete,
                 run=self._delete,
             ),
             # The same verb's second seat, on the Edit menu beside Cut and Copy. Its home
-            # stays Step: the canvas, four tables and the toolbar render that menu by name.
+            # stays Step: a card's right-click, five tables and the toolbar render that menu.
             ActionSpec(
                 id="steps.delete_edit",
                 label="&Delete Step",
@@ -210,7 +225,7 @@ class StepVerbs:
                 group="clipboard",
                 order=50,
                 palette=False,
-                tip="Remove these steps. Links naming them are left alone, so undo stays exact",
+                tip="Remove these steps, the links into them and any link picked beside them",
                 state=self._can_delete,
                 run=self._delete,
             ),
@@ -272,7 +287,7 @@ class StepVerbs:
             return DISABLED
         if self._existing_link(context) is not None:
             # The documented exception to "disabled, never hidden": Link and Unlink are one
-            # slot, and a greyed "Already linked" beside an enabled Remove Link would say the
+            # slot, and a greyed "Already linked" beside an enabled Unlink Steps would say the
             # same fact twice. The label travels anyway, for the canvas reporting a drop onto
             # an already-linked node.
             return ActionState(visible=False, enabled=False, label="Already linked")
@@ -299,18 +314,9 @@ class StepVerbs:
         self.undo.push(SetEdgesCommand(waiter, "requires", [*waiting, *new]))
 
     def _can_unlink(self, context: Context) -> ActionState:
-        picked = picked_edges(self.library, context)
-        if picked:
-            if len(picked) == 1:
-                return ActionState(label="Remove &Link")
-            return ActionState(label=f"Remove {len(picked)} &Links")
         return ENABLED if self._existing_link(context) is not None else DISABLED
 
     def _unlink(self, context: Context) -> None:
-        picked = picked_edges(self.library, context)
-        if picked:
-            self.undo.push(self._removal_of(picked))
-            return
         found = self._existing_link(context)
         pair = self._pair(context)
         if found is None or pair is None:
@@ -318,6 +324,19 @@ class StepVerbs:
         waiter, kind = found
         other = pair[0] if pair[1] == waiter else pair[1]
         self.undo.push(self._removal_of([EdgeRef(waiter=waiter, kind=kind, source=other)]))
+
+    def _can_remove_links(self, context: Context) -> ActionState:
+        picked = picked_edges(self.library, context)
+        if not picked:
+            return ActionState(enabled=False, label="Remove &Link — pick links first")
+        if len(picked) == 1:
+            return ENABLED
+        return ActionState(label=f"Remove {len(picked)} &Links")
+
+    def _remove_links(self, context: Context) -> None:
+        picked = picked_edges(self.library, context)
+        if picked:
+            self.undo.push(self._removal_of(picked))
 
     def _removal_of(self, refs: list[EdgeRef]) -> Command:
         label = "Remove Link" if len(refs) == 1 else f"Remove {len(refs)} Links"
@@ -404,11 +423,17 @@ class StepVerbs:
         doomed = chosen_steps(context, self.library)
         if not doomed:
             return DISABLED
+        picked = picked_edges(self.library, context)
+        if picked:
+            return ActionState(label=f"&Delete {len(doomed) + len(picked)} Items")
         if len(doomed) == 1:
             return ENABLED
         return ActionState(label=f"&Delete {len(doomed)} Steps")
 
     def _delete(self, context: Context) -> None:
+        """Everything picked goes, in one undo step: a Delete that left the picked arrows
+        behind would be a second Delete the user did not know they owed."""
         doomed = chosen_steps(context, self.library)
         if doomed:
-            self.undo.push(remove_steps_command(self.library, doomed, "Delete"))
+            links = [ref.as_edge() for ref in picked_edges(self.library, context)]
+            self.undo.push(remove_steps_command(self.library, doomed, "Delete", links=links))

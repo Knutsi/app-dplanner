@@ -403,6 +403,7 @@ class SpecModule:
                 label="Open &Specs",
                 menu="Project",
                 group="open",
+                in_menus=False,  # Its seat is the project's row in the index — menus.py.
                 order=10,
                 tip="The documents this project answers to",
                 state=self._on_a_project,

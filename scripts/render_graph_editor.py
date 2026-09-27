@@ -1,13 +1,15 @@
 """Render the graph editor's chrome in the dark and the light theme, to PNG.
 
     uv run python scripts/render_graph_editor.py --out docs/screenshots/s7-graph-editor
+    uv run python scripts/render_graph_editor.py --menus --out docs/screenshots/f7-canvas-menus
 
 What S7 reworked: the strip of verbs over the canvas as glyphs in named bands, folding
 whole bands into its ``…`` menu; the *Find* picker, which opens on the plan's landmarks
 and searches every step; and the panel beside the canvas — the Problems list — inside the
 project tab rather than across the window. Since F5, the cards themselves (``cards``):
 each kind of step, who works it in the key block, the status washes, and a card at the
-minimum size. A whole application is built over a throwaway library — the tab is the tab
+minimum size. Since F7, with ``--menus`` and nothing else, what a right-click offers by what
+is under it. A whole application is built over a throwaway library — the tab is the tab
 host's, so nothing here hand-wires a surface the window would build differently — and torn
 down per theme.
 """
@@ -23,21 +25,24 @@ from tempfile import TemporaryDirectory
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["QT_QPA_PLATFORMTHEME"] = ""
 
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSettings
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, QSettings
 from PySide6.QtWidgets import QApplication, QWidget
 
 from dplanner.app import new_session
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
-from dplanner.domain.model import Step
+from dplanner.domain.model import Step, StepId
 from dplanner.domain.schedule import Wait
 from dplanner.domain.seed import create_library, seed_project
+from dplanner.framework.services import AppServices
+from dplanner.framework.session import AppSession
 from dplanner.modules.estimation.aspect import write as estimate_write
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.aspect import write as feature_write
-from dplanner.modules.project_editor.module import ProjectEditorModule
+from dplanner.modules.project_editor.module import ProjectActivity, ProjectEditorModule
 from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W, write_position
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
+from dplanner.modules.project_editor.selection import EdgeRef
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write
 from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
@@ -121,13 +126,16 @@ def discard(widget: QWidget) -> None:
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
-def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+def open_importer(
+    app: QApplication, theme: Theme, workspace: Path, name: str
+) -> tuple[AppSession, AppServices, list[StepId], ProjectActivity]:
+    """A whole application over a throwaway library holding the Importer plan, its tab open."""
     # Each theme renders the same states, so each starts from the same preferences: the
     # side panel this run opens is written to the (throwaway) store, and the second theme
     # would otherwise open with it already on.
     QSettings().clear()
     apply_theme(app, theme)
-    library_file = workspace / f"library-{theme.name}.json"
+    library_file = workspace / f"{name}-library-{theme.name}.json"
     create_library(library_file)
     init_repo(workspace)
     session = new_session()
@@ -136,7 +144,7 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     assert services is not None
     services.debounce.set_immediate(True)
 
-    directory = seed_project(workspace / f"importer-{theme.name}", "Importer")
+    directory = seed_project(workspace / f"{name}-{theme.name}", "Importer")
     project = services.repo.attach(directory)
     services.document.add_child(services.document.id, project)
     made = []
@@ -156,6 +164,12 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
         services.undo.push(SetEdgesCommand(made[waiter], "requires", [made[source]]))
 
     tab = services.tabs.open("project", project.id)
+    assert isinstance(tab, ProjectActivity)
+    return session, services, made, tab
+
+
+def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    session, services, made, tab = open_importer(app, theme, workspace, "importer")
     # A step picked, while the tab is still the window's current one and may say so — so
     # the strip and its … menu read as verbs about something rather than all greyed.
     tab.select_steps([made[3]])
@@ -202,6 +216,45 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     page.setParent(None)
     session.close()
     discard(page)
+
+
+def render_menus(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """What a right-click offers, by what is under it (F7): a card, an arrow, steps and an
+    arrow picked together, and empty canvas — each made current by the click, as a person's
+    would be, and grabbed as the pop-up the handler would show."""
+    session, _services, made, tab = open_importer(app, theme, workspace, "menus")
+    page = tab.widget
+    page.resize(*PAGE_SIZE)
+    page.show()
+    tab.frame()
+    settle(app)
+    scene, view = tab._scene, tab._view
+    arrow = scene._edges[EdgeRef(waiter=made[3], kind="requires", source=made[2])]
+
+    def card(index: int) -> QPointF:
+        node = scene.node(made[index])
+        assert node is not None
+        return node.body_scene_rect().center()
+
+    def mixed() -> QPointF:
+        scene.select_steps([made[1], made[2]])
+        arrow.setSelected(True)
+        return card(1)
+
+    shots = (
+        ("menu-card", lambda: card(3)),
+        ("menu-arrow", lambda: arrow.path().pointAtPercent(0.5)),
+        ("menu-mixed", mixed),
+        ("menu-background", lambda: QPointF(-900.0, 600.0)),
+    )
+    for name, aim in shots:
+        menu = tab.context_menu(view.mapFromScene(aim()))
+        menu.popup(QPoint(0, 0))
+        save(menu, out, name, theme, app)
+        menu.hide()
+        discard(menu)
+
+    session.close()
 
 
 def render_cards(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
@@ -264,6 +317,9 @@ def render_cards(app: QApplication, theme: Theme, out: Path, workspace: Path) ->
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory for the PNGs")
+    parser.add_argument(
+        "--menus", action="store_true", help="only the right-click menus (F7), nothing else"
+    )
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
@@ -276,6 +332,9 @@ def main(argv: list[str]) -> int:
         QSettings.setDefaultFormat(QSettings.Format.IniFormat)
         QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, tmp)
         for theme in (DARK, LIGHT):
+            if args.menus:
+                render_menus(app, theme, args.out, Path(tmp))
+                continue
             render(app, theme, args.out, Path(tmp))
             render_cards(app, theme, args.out, Path(tmp))
     return 0

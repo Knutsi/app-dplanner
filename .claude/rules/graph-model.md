@@ -22,6 +22,8 @@ paths:
   that deletes a step takes the links into it along**: Delete, Cut, `dplanner step remove`
   and `project clear-steps` are one `remove_steps_command`, a composite that undoes in
   reverse — steps back first, then the lists that named them — so nothing writes a ghost.
+  Delete hands it the arrows picked beside the steps as well (`links=`); they join the same
+  per-list removal, so a list losing both is rewritten once.
   `graph.requires-dangling` in lint is what names one that arrived from outside.
 - **A step has a number, and the key is how it is named everywhere.** `Step.number` is
   dealt by `Library.add_child` from the project's `last_number` high-water mark — one

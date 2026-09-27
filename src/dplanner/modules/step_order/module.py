@@ -315,14 +315,14 @@ class StepOrderModule:
 
         deps.tabs.register_factory(ORDER_KIND, factory)
         # The Project side is the index tree's "Order" row now; the verb's menu seat is
-        # the Step menu, so the canvas right-click still offers it — and the canvas
-        # toolbar reaches the same id through the registry.
+        # the Step menu's surfaces, which a table's right-click offers and a card's leaves
+        # to the index beside it — and the canvas toolbar reaches the same id.
         deps.actions.register(
             ActionSpec(
                 id="order.open",
                 label="Show &Order",
                 menu="Step",
-                group="open",
+                group="surfaces",
                 order=20,
                 icon=list_icon,
                 tip="What can be started now, and what waits for what",

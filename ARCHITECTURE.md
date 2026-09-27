@@ -630,13 +630,13 @@ is not in front of you at all"** — a storage provider without history has no *
 a feature behind a flag leaves no trace. The rule's short form is in `CLAUDE.md`.
 
 The reason it is a rule and not taste: a menu that reshapes itself with the selection cannot
-be learned. The user who saw *Open Specs* yesterday and cannot find it today has no way to
+be learned. The user who saw *Show in Coverage* yesterday and cannot find it today has no way to
 know whether the feature is gone or their context is wrong — a greyed entry answers that
 question before it is asked. It also keeps every surface stable: a toolbar row that reflows
 as the selection changes cannot be read, and the menubar's separators stop jumping.
 
 One documented exception: a verb whose *opposite* currently occupies its slot may hide.
-`steps.link` stands down when the pair is already linked, because *Remove Link* is the verb
+`steps.link` stands down when the pair is already linked, because *Unlink Steps* is the verb
 that belongs in that position and a greyed "Already linked" beside it would state the same
 fact twice. The label still rides on the hidden state — the canvas status bar reads it after
 a refused drop.
@@ -697,20 +697,107 @@ half a drawing-surface menu, and it left the surface this application is mostly 
 no heading of its own: the fastest way to a divide was the command palette, which then said
 only *Vertical*.
 
-They are a top-level **Graph** menu now, in three groups: `arrange` (the Sort, Layout and
-Divide child menus — moving cards, from the wholesale to one cut at a time), `look` (what is
-drawn without moving anything) and `panels` (what stands *beside* the canvas inside the
-tab). View went back to being about the window — which is what decides where the Features
-panel's switch sits: the panel is inside one project's tab, so it is the graph's chrome and
-not the window's, and View ▸ Panels is about the areas around the tabs.
+They are a top-level **Graph** menu now. View went back to being about the window — which
+is what decides where the Problems panel's switch sits: the panel is inside one project's
+tab, so it is the graph's chrome and not the window's, and View ▸ Panels is about the areas
+around the tabs.
 
-**What did *not* move is the point of the split.** Connect, Link, Unlink, Isolate and the
-Redirect pair stayed on **Step**, because a link is a fact about the steps it joins, and
-because the canvas's right-click renders the Step menu (*A right-click renders a menu, never
-a copy of one*) — moving them would have taken the graph's most-used verbs off the graph's
-own context menu to file them more tidily. Lasso stayed in Step's `navigate` group for the
-same reason: it selects steps. The test is not "which surface does this run on" — every one
-of these runs on the canvas — but "what is it about": a step, or the drawing of them.
+**A verb is filed by where its subject is picked.** The first split kept Connect, Link,
+Unlink, Isolate, the Redirect pair, Lasso, Find, Go and New on **Step**, and said why: the
+canvas's right-click rendered the Step menu whole, so moving them would have taken the
+graph's most-used verbs off the graph's own context menu to file them more tidily. That
+argument held only while one menu was all a right-click could be. Once the right-click was
+composed by what is under it (below), where a verb is filed stopped deciding where the
+canvas offers it, and the old filing showed its cost: every table that renders Step by name
+carried New, Find, Go, Lasso and Redirect greyed, because each needs a canvas the table does
+not have, and an arrow's right-click offered Rename. So the question became *what does the
+verb act on, and where is that picked*:
+
+- a **point** on the canvas — `new`: New Step, and Paste's second seat (its home is Edit,
+  where Ctrl+V lives; one enabled QAction may own a shortcut);
+- the **plane** as a place — `select`: Find, Lasso, Go;
+- a **mixed** pick — `narrow`: Select Only Steps, Select Only Links;
+- a picked **arrow** — `links`: Remove Link and the Redirect pair (Auto-progress next);
+- the drawing itself — `arrange`, `look`, `panels` as before;
+- picked **steps** — Step: Rename, Delete, Connect, Link, Unlink (the link between two
+  picked steps, which a table can offer with no arrow in sight), Isolate, and Reveal in
+  Graph, which moved from the retired `navigate` group to `surfaces` because it is the way
+  from a table's row to a step's card.
+
+The test is still not "which surface does this run on" — nearly every one of these runs on
+the canvas — but "what is its subject": a step, or something only the canvas can point at.
+
+### A right-click is composed by what is under it
+
+The canvas's right-click rendered the Step menu for everything: a card, an arrow and empty
+canvas all got New, Find, Go, Lasso, Redirect, Status and Run Agent — twenty verbs of which a
+handful applied to the thing clicked. It now renders a row of bands chosen by that thing
+(`project_editor/canvas_menus.py`):
+
+| Under the cursor | Bands |
+|---|---|
+| a card | Step's bands about the step itself: `edit`, `link`, `track`, `agent`, `open` |
+| an arrow | Graph ▸ `links` |
+| steps and arrows | Graph ▸ `narrow`, Edit ▸ `clipboard`, then the card's bands and `links` as `Step` and `Links` child menus |
+| empty canvas | Graph ▸ `new`, Graph ▸ `select`, Edit ▸ `selection`, Project ▸ `survey` |
+
+**The click makes its subject current, and the menu is a function of the selection.** A card
+or an arrow outside the pick becomes the pick, one inside keeps it — the rule the card had
+always followed, so "Delete 2 Steps" can be said — and empty canvas clears the pick and notes
+the point, so New and Paste land there. Choosing the row from the *selection* rather than from
+the item under the cursor means the verbs offered and the pick they act on are one fact: a
+mixed pick right-clicked on one of its cards is still a mixed pick. A mixed pick leads with
+narrowing it because nothing else is about steps and arrows at once.
+
+**A card is the step, not a table's Step menu.** The first cut rendered the Step menu whole
+on a card, which took the canvas's verbs off it and left a table's: Type, Test and the test
+filing menus (a step's kind is set in Step Details, where the aspect bar is, and a test is
+picked only in a Tests tab), Compile with Agent (the Docs tab's strip carries it with the
+profiles), Show Order, Show Step Statuses and Show Tests (each a row under the project in the
+index, standing beside the canvas), Test Details, Estimate Steps and Reveal in Graph (which
+on the graph would only centre what was just clicked). A table still wants all of those —
+from a row, the index is not beside you and the graph is a tab away — so they are **filed,
+not dropped**: `track` (Status, Estimate) came out of `classify`, `compile` out of `agent`,
+and `surfaces` out of `open`, and the card renders `edit`, `link`, `track`, `agent` and
+`open` while every table and the menu bar render the whole menu. Empty canvas follows the
+same rule for the project: Project ▸ `open` is the views the index already lists, so the
+background renders `survey` — Estimate Steps and Preview Report, the two looks over the
+whole plan with no row there — instead. The Project menu followed the same way: those seven
+views (Specs, Assets, Steps, Step Statuses, Time Estimates, Coverage, Tests) repeated rows
+standing beside it, so they are `in_menus=False` — the index row is their seat, the palette
+and anything running them by id still reach them, and no menu lists them twice. `fill_menu` takes several groups for this, in the
+menu's order and ruled as the menu rules them, so the card is one band and the mixed pick's
+`Step` child is the same band.
+
+**It is `fill_bands`, not an entry in `MENU_STRUCTURE`** — for the reason *A right-click on a
+test leads with the result* gives: an entry there is a place verbs are registered into, and
+nothing registers here. `fill_bands` (`framework/action_menu.py`) is the one policy both
+compositions use: a rule only between two bands that each drew something, none between two
+child menus (their names part them, as in Step's `classify`), and an empty child taken away.
+The cost of composing from groups is that a band naming a group nothing registers into
+renders nothing, silently — so a test holds the table to `MENU_STRUCTURE`, which is the check
+a refiling of the menu bar leans on. A new target (a stack's frame) is one more row and one
+more branch in `target_of`; a new arrow verb registers into Graph ▸ `links` and appears in
+the arrow's menu and the mixed pick's *Links* without an edit here.
+
+**An arrow had to become right-clickable, and Qt was in the way.** A right press on an item
+that is selectable but not movable is ignored by `QGraphicsItem`, falls through, and
+`QGraphicsScene` clears the whole selection before the context menu is asked for — measured,
+on Qt 6.11: three picked arrows, right-click one, and Remove Link took one. A card is movable
+and so kept its pick, which is why the canvas never noticed. `IdleMode` therefore claims
+every right press, as it claims a press on a handle; the context menu still arrives (Qt
+sends it whether or not the press was accepted), and the handler decides what the click
+picks. The same claim ended a stray `LinkDragMode` a right press on a card's handle used to
+start.
+
+**Delete removes everything picked, in one undo.** The Delete key named `steps.unlink` first,
+so on two linked steps it removed the link between them, and on steps and arrows picked
+together it deleted the steps and left the arrows. It now names `("steps.delete",
+"links.remove")`: `steps.delete` hands the picked arrows to `remove_steps_command` beside the
+steps, where they join the links into the doomed steps in **one** per-list removal (two
+commands on one list would each be built from the state before either ran), and the entry
+reads "Delete 3 Items"; with no step picked, `links.remove` takes the arrows alone. Unlink
+kept only the two-step case, where it is a step verb.
 
 ### A strip of verbs is cut into bands, and a band folds whole
 
@@ -982,7 +1069,11 @@ direction: a bare `Del` on the menu bar would fire in every list in the window, 
 `QKeySequence.StandardKey.Delete` binds Ctrl+D as well as `Del`, which would collide with
 Duplicate. So Delete keeps its canvas key and the Edit-menu entry shows no shortcut — and
 that entry is `steps.delete_edit`, the verb's second seat: `steps.delete` stays on the Step
-menu because the canvas, four tables and the toolbar render that menu by name.
+menu because a card's right-click, five tables and the toolbar render that menu by name.
+Paste has the mirror image: its home is Edit, with Ctrl+V, and `steps.paste_graph` is its
+second seat on Graph ▸ `new` beside New Step — both land where the canvas was clicked, which
+is what a right-click on empty canvas offers, and that menu cannot render Edit ▸ `clipboard`
+without four verbs greyed for want of a pick.
 
 **Deleting asks nothing any more.** A prompt in front of an undoable verb teaches the wrong
 lesson — that the gesture is dangerous, when Ctrl+Z is the safety net — and the CLI's `step
@@ -1758,8 +1849,9 @@ widget to ask.
 QAction fires wherever the application has focus and would eat a keystroke in the step
 description editor. `keymap.py` binds keys that exist only while the canvas has focus, and what
 they run is the same verb the menu runs. A key names the verbs it means *in order* and the first
-one the context allows runs — which is how one Delete key means "remove these links" when edges
-are picked and "remove these steps" when steps are, with no branch on the canvas at all.
+one the context allows runs — which is how one Delete key means "remove everything picked" when a
+step is among it and "remove these links" when only arrows are, with no branch on the canvas at
+all (*A right-click is composed by what is under it* has why steps go first).
 
 That leaves two families of verb, and the distinction is worth stating: **step verbs change the
 plan** (they push commands and are undoable), while **canvas verbs steer a surface** — move the

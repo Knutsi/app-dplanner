@@ -7,9 +7,9 @@ has focus, and the verb it runs is the same one the menu, the palette and the to
 so the state gate still decides whether anything happens.
 
 **A key names the verbs it means, in order; the first one the context allows runs.** That is
-what lets one Delete key mean "remove these links" when edges are picked and "remove these
-steps" when steps are, without a branch anywhere: the two actions already know which of them
-applies. Keys with one meaning are a one-element tuple and read the same way.
+what lets one Delete key mean "remove everything picked" when a step is among it and "remove
+these links" when only arrows are, without a branch anywhere: the two actions already know
+which of them applies. Keys with one meaning are a one-element tuple and read the same way.
 
 **Only bare keys belong here.** The Edit menu's verbs — Cut, Copy, Paste, Duplicate, Select
 All — carry their standard Ctrl shortcuts on the menu bar, because every text widget reclaims
@@ -60,8 +60,9 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     (Qt.Key.Key_S, _NONE): ("steps.lasso",),
     # A wait in front of the step: the wait module's verb, named here like any other.
     (Qt.Key.Key_W, _NONE): ("wait.insert_before",),
-    (Qt.Key.Key_Delete, _NONE): ("steps.unlink", "steps.delete"),
-    (Qt.Key.Key_Backspace, _NONE): ("steps.unlink", "steps.delete"),
+    # Steps first: that Delete takes any arrow picked beside them too, in the same undo.
+    (Qt.Key.Key_Delete, _NONE): ("steps.delete", "links.remove"),
+    (Qt.Key.Key_Backspace, _NONE): ("steps.delete", "links.remove"),
 }
 
 

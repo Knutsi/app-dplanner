@@ -234,6 +234,13 @@ class GraphScene(QGraphicsScene):
 
     def select_steps(self, step_ids: list[StepId]) -> None:
         """Select these, in this order — which is what a two-step verb reads back."""
+        self._select(step_ids, ())
+
+    def select_edges(self, refs: Sequence[EdgeRef]) -> None:
+        """Pick these arrows and nothing else — a right-click on one, or *Only Links*."""
+        self._select((), refs)
+
+    def _select(self, step_ids: Sequence[StepId], refs: Sequence[EdgeRef]) -> None:
         self._reselecting = True
         try:
             self.clearSelection()
@@ -241,6 +248,10 @@ class GraphScene(QGraphicsScene):
                 item = self._nodes.get(step_id)
                 if item is not None:
                     item.setSelected(True)
+            for ref in refs:
+                edge = self._edges.get(ref)
+                if edge is not None:
+                    edge.setSelected(True)
         finally:
             self._reselecting = False
         # setSelected fires selectionChanged one item at a time and Qt reports the set
@@ -266,6 +277,14 @@ class GraphScene(QGraphicsScene):
         for node in self._nodes.values():
             if node.is_over_handle(scene_pos):
                 return node
+        return None
+
+    def edge_at(self, scene_pos: QPointF) -> EdgeItem | None:
+        """The arrow under a point, by its stroked shape. A card drawn over one wins, so
+        ask :meth:`node_at` first."""
+        for item in self.items(scene_pos):
+            if isinstance(item, EdgeItem):
+                return item
         return None
 
     def node(self, step_id: StepId) -> StepNodeItem | None:
