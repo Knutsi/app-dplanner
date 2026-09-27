@@ -327,31 +327,20 @@ class DesignExampleDialog(DialogFrame):
         signals.addWidget(self.progress)
         # Standing notices: a fact that holds until it stops holding. In the application
         # this bar sits over the whole window's content (framework/main_window.py) — it is
-        # here so the two shapes can be compared with the lines above them. Three: a band
-        # with a declared count filling it, the same fact once it has gone quiet, and one
-        # that is owed. A count of nought is deliberate — a meter has to read as one before
-        # anything has happened, which is what the strip above it cannot do.
+        # here so the two shapes can be compared with the lines above them. Two: the one
+        # band every agent at work shares, filled by everything they counted and opening
+        # the list of them on a click, and a fact that is owed.
         self.notices = NoticeBar(self.body)
         self.notices.show_notice(
             Notice(
-                id="demo.agent",
-                words="An agent is at work on Payments — linking the steps · 8 of 20"
-                " · heard just now",
+                id="demo.agents",
+                words="2 agents are at work on Payments · S3, S7",
                 tone="warn",
                 busy=True,
                 fraction=0.4,
                 action="Clear",
-            )
-        )
-        self.notices.show_notice(
-            Notice(
-                id="demo.starting",
-                words="An agent is at work on Billing — reading the plan · 0 of 12"
-                " · heard just now",
-                tone="warn",
-                busy=True,
-                fraction=0.0,
-                action="Clear",
+                open=lambda: None,
+                open_tip="Show every agent at work",
             )
         )
         self.notices.show_notice(

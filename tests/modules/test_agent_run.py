@@ -1757,6 +1757,23 @@ def test_agent_prompt_carries_the_note_index_and_the_epilogue(cli_stdin, workspa
     assert shown["root"] == str(workspace / "discovery")
 
 
+def test_the_epilogue_takes_the_banner_down_once_the_pr_is_open(cli_stdin):
+    """A finished agent's banner was the one most often left standing. The briefing ties
+    taking it down to the moment the PR is open — the status set right after it ends the
+    claim — and still names the verb for a run that stops without a status."""
+    cli_stdin("project", "create", "Discovery")
+    cli_stdin("step", "add", "Discovery", "Deploy")
+    cli_stdin("agent", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    prompt = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))["prompt"]
+    pr = prompt.index("dplanner github set S1 --pr <number>")
+    assert "Once the PR is open, set the status" in prompt[pr : pr + 200]
+    assert "dplanner agent-work start" in prompt
+    assert prompt.count("dplanner agent-work end --step S1") == 2  # Preamble and epilogue.
+    assert prompt.rindex("dplanner agent-work end --step S1") > prompt.index(
+        "dplanner status set S1 blocked"
+    )
+
+
 def test_agent_prompt_says_where_the_plan_lives(cli_stdin, workspace):
     """The verb hands the briefing the same facts the window does: a plan with no code
     repository recorded and no index around it — here, its repository's root — is warned

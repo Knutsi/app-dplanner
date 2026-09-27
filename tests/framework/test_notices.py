@@ -7,6 +7,7 @@ stands**, so an ordinary window grows no chrome it did not ask for.
 """
 
 import pytest
+from PySide6.QtCore import Qt
 
 from dplanner.framework.notices import Notice, NoticeBar
 from dplanner.framework.signalling import tone_colour
@@ -90,10 +91,10 @@ def test_a_declared_count_says_how_far_and_no_count_says_nothing(bar):
 def test_a_notice_wears_its_tone_as_a_band_and_plain_information_wears_none(bar):
     """A standing fact is the one thing on screen a person must not read past, so the tone
     is the whole row rather than a dot beside the words. Information has no tone and no
-    band — which is how a claim that has gone quiet stops shouting without leaving."""
+    band — a fact that holds but asks nothing of the eye."""
     bar.show_notice(Notice(id="one", words="An agent is at work", tone="warn"))
     assert tone_colour(bar._rows["one"].notice().tone) == STATUS_TONES["warn"]
-    bar.show_notice(Notice(id="one", words="An agent was at work", tone="info"))
+    bar.show_notice(Notice(id="one", words="Just so you know", tone="info"))
     assert tone_colour(bar._rows["one"].notice().tone) is None
 
 
@@ -119,3 +120,49 @@ def test_a_verb_is_re_bound_even_when_the_words_did_not_change(bar):
 def test_a_notice_with_no_verb_shows_no_button(bar):
     bar.show_notice(Notice(id="one", words="Just so you know"))
     assert bar._rows["one"]._button.isHidden()
+
+
+def test_a_click_on_the_band_opens_what_it_sums_up(bar, qtbot):
+    """The band stands for more than its words can hold, so a click anywhere on it — the
+    words included, which are a label that passes the click on — opens the rest."""
+    opened = []
+    bar.show_notice(Notice(id="one", words="3 agents", open=lambda: opened.append(1)))
+    row = bar._rows["one"]
+    assert row.cursor().shape() == Qt.CursorShape.PointingHandCursor
+    qtbot.mouseClick(row, Qt.MouseButton.LeftButton)
+    qtbot.mouseClick(row._words, Qt.MouseButton.LeftButton)
+    assert opened == [1, 1]
+
+
+def test_the_verb_keeps_its_own_click(bar, qtbot):
+    ran, opened = [], []
+    bar.show_notice(
+        Notice(
+            id="one",
+            words="3 agents",
+            action="Clear",
+            act=lambda: ran.append(1),
+            open=lambda: opened.append(1),
+        )
+    )
+    qtbot.mouseClick(bar._rows["one"]._button, Qt.MouseButton.LeftButton)
+    assert (ran, opened) == ([1], [])
+
+
+def test_a_band_that_opens_nothing_is_not_a_target(bar, qtbot):
+    bar.show_notice(Notice(id="one", words="Just so you know"))
+    row = bar._rows["one"]
+    assert row.cursor().shape() != Qt.CursorShape.PointingHandCursor
+    assert row.toolTip() == ""
+
+
+def test_what_the_band_opens_is_re_bound_even_when_the_words_did_not_change(bar, qtbot):
+    opened = []
+    bar.show_notice(Notice(id="one", words="Waiting"))
+    bar.show_notice(
+        Notice(id="one", words="Waiting", open=lambda: opened.append(2), open_tip="More")
+    )
+    row = bar._rows["one"]
+    assert row.toolTip() == "More"
+    qtbot.mouseClick(row, Qt.MouseButton.LeftButton)
+    assert opened == [2]

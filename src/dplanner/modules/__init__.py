@@ -1321,6 +1321,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             notices=services.window,
             library=library,
             parent=services.window,
+            # The dialog behind the banner selects the step a row's agent is on.
+            reveal=reveal_step,
             key_of=_step_key,
         )
     )
@@ -2586,8 +2588,9 @@ def _agent_preamble(step: "Step", in_worktree: bool, facts: "RepositoryFacts | N
         " window open on this plan, and that is what tells them somebody else is editing"
         " it — without it they will edit the same steps you are rewriting and be asked to"
         " settle collisions they did not cause. Keep it current as you go"
-        f" (`dplanner agent-work set '<what now>' --done N --of M`), and end it when you"
-        f" stop (`dplanner agent-work end --step {ref}`)."
+        f" (`dplanner agent-work set '<what now>' --done N --of M`); setting the step's"
+        " status when you finish ends it, and if you stop without one, end it yourself"
+        f" (`dplanner agent-work end --step {ref}`)."
     )
     if in_worktree:
         name = _run_name(step)
@@ -2716,7 +2719,8 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
         f"This step is {key}. Its branch and worktree carry that key; open the PR title"
         f" with it (`{key}: …`) and record the branch and the PR on the step as they"
         f" exist: `dplanner github set {ref} --branch $(git branch --show-current)`,"
-        f" then `dplanner github set {ref} --pr <number>`.\n"
+        f" then `dplanner github set {ref} --pr <number>`. Once the PR is open, set the"
+        " status (below) straight away: it takes the window's banner down with it.\n"
         "As you work, keep the run state current:\n"
         f"- `dplanner agent-state set {ref} plan-for-review` when your plan is ready"
         " to review\n"
@@ -2751,9 +2755,9 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
         f" `dplanner note attach {project} <id> <file>` for files.\n"
         f"If you cannot finish, `dplanner status set {ref} blocked` and say why in the"
         " handoff note.\n"
-        f"Either way, finish by ending your working claim: `dplanner agent-work end --step"
-        f" {ref}` — the window says an agent is at work on this plan until"
-        " you do, and a banner nobody ended is one nobody believes next time."
+        "Each of those statuses ends your working claim. If you stop without setting one,"
+        f" end it yourself: `dplanner agent-work end --step {ref}` — a banner nobody ended"
+        " is one nobody believes next time."
     )
 
 
@@ -3315,12 +3319,16 @@ def default_cli_commands(
         *at_work_cli.commands(board=board, key_of=_step_key),
         # An agent's done waits for review: the verb reads who is reporting (an agent's
         # shell, the entry point's reading) and what the step is (an agent step), and a
-        # `--because` lands as a decision note in the same run.
+        # `--because` lands as a decision note in the same run. A status that says nobody
+        # is working the step ends the claim somebody made on it, on the board above.
         *status_cli.commands(
             is_wait=_is_wait,
             is_agent=_is_agent_step,
             in_agent_shell=lambda: bool(agent_shell_marker()),
             note_reason=_note_reason,
+            end_claim=lambda context, step: board.end(
+                context.library.project_of(step.id).id, step.id
+            ),
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),

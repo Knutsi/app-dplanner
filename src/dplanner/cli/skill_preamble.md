@@ -93,9 +93,10 @@ you work. So:
   you are about to do>'` puts a standing banner over their content saying somebody else is
   editing, `agent-work set '<what now>' --done N --of M` keeps it current, and `agent-work
   end` takes it down. Add `--step S7` when you are working one step, so several agents on
-  one plan each say which work is theirs. Every other `dplanner` command you run renews it,
-  so you never need a heartbeat — but nothing else can end it, and a banner nobody ended is
-  one nobody believes next time.
+  one plan each say which work is theirs — and then `status set S7 ready-for-review` (or
+  `ready-to-merge`, `done`, `blocked`) takes it down for you, so set the status as soon as
+  your PR is open. Every other `dplanner` command you run renews it, so you never need a
+  heartbeat; half an hour without one and the window stops showing it until your next.
 - **Do not invent structure the user did not ask for.** A plan with twenty imagined steps is
   harder to correct than an empty one.
 - **Show the shape.** `dplanner project graph <project>` renders the step graph as a

@@ -14,13 +14,17 @@ So this is one small record, written by the CLI and read by whoever wants to kno
     how far   ``done`` of ``of``, when the agent counts something
     when      ``started``, and ``seen`` — the last sign of life
 
-**Liveness is reported, never guessed.** An agent may think for twenty minutes without
-touching the CLI, and a crashed agent leaves its claim behind; no timeout can tell those
-apart, so nothing here tries. The record carries when the agent was last heard from and
-every reader says so out loud — :func:`is_fresh` only decides whether the words read as
-*is at work* or *was at work*, and a claim goes away when the agent ends it, when a person
-clears it, or when a later claim sweeps it as ancient. That is three ways out and no
-guessing, which is what makes it robust against an agent that stops without a word.
+**Silence lapses, and the next sign of life undoes it.** An agent may think for twenty
+minutes without touching the CLI, and a crashed agent leaves its claim behind; no timeout
+can tell those apart. The first version therefore let nothing go — a quiet claim changed
+tense and waited for a person — and the window collected bands from agents long finished,
+which taught the developer to read past the one surface they must not. So a claim not heard
+from in :data:`FRESH_MINUTES` *lapses*: :meth:`AtWorkBoard.claims` stops returning it, and
+every reader stops saying it at once. Its file stays, so the agent's next ``dplanner`` run
+renews it and it stands again — and that run is exactly when it matters, because an agent
+that is not touching the CLI is not touching the plan either. A claim is gone for good when
+the agent ends it, when ``status set`` says its step is finished, when a person clears it,
+or when a later claim sweeps it as a day old.
 
 **Every ``dplanner`` run is a sign of life.** :meth:`AtWorkBoard.touch` runs from
 ``cli/main.py`` on every invocation, so an agent that is working — writing statuses, adding
@@ -38,6 +42,7 @@ carried it would commit a heartbeat into everybody's history. See FORMAT.md.
 
 import json
 import re
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,15 +55,15 @@ FORMAT = 1
 DIRECTORY = "at-work"  # Under config_dir(); the composition root names the path.
 PLAN = "plan"  # The file-name half of a claim on no particular step.
 
-# Silence past which the words read "was at work … last heard 20 minutes ago" rather than
-# "is at work". Generous on purpose: an agent can spend a long time on one tool call, and
-# reading a working agent as gone is the more expensive mistake. It changes nothing about
-# what is stored — a claim is a claim until it is ended.
-FRESH_MINUTES = 15
+# Silence past which a claim lapses: no reader shows it until the agent's next sign of life.
+# Generous, since an agent can spend a long time on one tool call; and cheap to get wrong,
+# since the file stays and the agent's next ``dplanner`` run — its next touch of the plan —
+# renews it.
+FRESH_MINUTES = 30
 
 # A claim nobody ended and nobody has renewed since yesterday is swept by the next writer:
-# the machine rebooted, or an agent died in a way it could not report. Long enough that it
-# can never take a claim from an agent that is merely quiet.
+# the machine rebooted, or an agent died in a way it could not report. Until then a lapsed
+# claim's file is kept, so an agent that was merely quiet comes back with its words.
 SWEEP_HOURS = 24
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9_-]")
@@ -134,7 +139,7 @@ def quiet_seconds(claim: AtWork, now: datetime | None = None) -> int:
 
 
 def is_fresh(claim: AtWork, now: datetime | None = None) -> bool:
-    """Whether this reads as an agent that is at work, rather than one that was."""
+    """Whether the claim still stands — heard from within :data:`FRESH_MINUTES`."""
     return quiet_seconds(claim, now) < FRESH_MINUTES * 60
 
 
@@ -143,6 +148,17 @@ def fraction(claim: AtWork) -> float:
     if claim.of <= 0:
         return -1.0
     return min(1.0, claim.done / claim.of)
+
+
+def combined_fraction(claims: Sequence[AtWork]) -> float:
+    """How far along the agents are together — everything they said is done over everything
+    they said there is — or -1 when none of them offered a count. A claim with no count adds
+    nothing either way: it made no promise to weigh."""
+    counted = [claim for claim in claims if claim.of > 0]
+    if not counted:
+        return -1.0
+    done = sum(min(claim.done, claim.of) for claim in counted)
+    return done / sum(claim.of for claim in counted)
 
 
 def _moment(stamp: str) -> datetime | None:
@@ -159,14 +175,13 @@ def heard_words(claim: AtWork, now: datetime | None = None) -> str:
     seconds = quiet_seconds(claim, now)
     if not claim.seen:
         return "not heard from yet"
-    lead = "heard" if is_fresh(claim, now) else "last heard"
     if seconds < 90:
-        return f"{lead} just now"
+        return "heard just now"
     minutes = round(seconds / 60)
     if minutes < 60:
-        return f"{lead} {minutes} minutes ago"
+        return f"heard {minutes} minutes ago"
     hours = round(minutes / 60)
-    return f"{lead} {hours} hour{'s' if hours != 1 else ''} ago"
+    return f"heard {hours} hour{'s' if hours != 1 else ''} ago"
 
 
 def progress_words(claim: AtWork) -> str:
@@ -182,11 +197,38 @@ def claim_words(claim: AtWork, where: str = "", step: str = "", now: datetime | 
     here so the window and ``dplanner agent-work show`` cannot say it differently.
     """
     named = " · ".join(part for part in (where, step) if part)
-    lead = f"An agent {'is' if is_fresh(claim, now) else 'was'} at work"
-    if named:
-        lead = f"{lead} on {named}"
+    lead = f"An agent is at work on {named}" if named else "An agent is at work"
     rest = [part for part in (claim.doing, progress_words(claim), heard_words(claim, now)) if part]
     return f"{lead} — " + " · ".join(rest) if rest else lead
+
+
+def claims_words(
+    claims: Sequence[AtWork],
+    where: Callable[[AtWork], str],
+    step: Callable[[AtWork], str],
+    now: datetime | None = None,
+) -> str:
+    """One line about every standing claim — the banner's, which stands for all of them.
+
+    One claim is :func:`claim_words`, since there is room to say what it is doing. Several
+    are counted and named by project, each followed by its steps' keys — *3 agents are at
+    work on Payments · S3, S7; Billing* — and what each is doing is the dialog's to say. A
+    claim on a project the reader cannot name is counted and not named. ``where`` and
+    ``step`` are the reader's, as for :func:`claim_words`.
+    """
+    if not claims:
+        return ""
+    if len(claims) == 1:
+        (claim,) = claims
+        return claim_words(claim, where(claim), step(claim), now)
+    keys: dict[str, list[str]] = {}
+    for claim in claims:
+        title = where(claim)
+        if title:
+            keys.setdefault(title, []).extend(key for key in (step(claim),) if key)
+    named = "; ".join(f"{title} · {', '.join(ks)}" if ks else title for title, ks in keys.items())
+    lead = f"{len(claims)} agents are at work"
+    return f"{lead} on {named}" if named else lead
 
 
 # -- the directory of claims --------------------------------------------------------------------
@@ -205,15 +247,16 @@ class AtWorkBoard:
 
     # -- reading -------------------------------------------------------------------------
 
-    def claims(self, project: ProjectId = "") -> list[AtWork]:
-        """Every claim, or every claim on one project — in the order they began, so a new
-        one joins the end of a list rather than pushing what is there down."""
-        found = [claim for _path, claim in self._files() if not project or claim.project == project]
+    def claims(self, project: ProjectId = "", now: datetime | None = None) -> list[AtWork]:
+        """Every standing claim, or every one on ``project`` — in the order they began, so a
+        new one joins the end of a list rather than pushing what is there down. A claim that
+        has lapsed is not among them (the module docstring has why)."""
+        found = [
+            claim
+            for _path, claim in self._files()
+            if (not project or claim.project == project) and is_fresh(claim, now)
+        ]
         return sorted(found, key=lambda claim: (claim.started, claim.step))
-
-    def at_work(self, project: ProjectId, now: datetime | None = None) -> list[AtWork]:
-        """The claims on ``project`` that still read as an agent at work."""
-        return [claim for claim in self.claims(project) if is_fresh(claim, now)]
 
     # -- writing -------------------------------------------------------------------------
 
@@ -257,7 +300,8 @@ class AtWorkBoard:
         return self._write(changed)
 
     def touch(self, project: ProjectId) -> None:
-        """A sign of life: every ``dplanner`` run renews the project's standing claims.
+        """A sign of life: every ``dplanner`` run renews the project's claims — a lapsed one
+        too, which is how a quiet agent's claim stands again the moment it is back.
 
         It never creates one — running a verb is not a claim to be working, it is only
         evidence for a claim somebody made.

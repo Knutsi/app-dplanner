@@ -63,17 +63,25 @@ paths:
   finds out when a modal asks them to settle a collision they did not cause. So an agent
   announces itself — `dplanner agent-work start '<what I am doing>' [--step S7] [--of N]`,
   `agent-work set`, `agent-work end`, `agent-work show` — and `modules/agent_at_work/`
-  polls the claims at the watcher's cadence and stands one `Notice` per claim over the
-  window's content: an **amber band** across it (the `warn` tone — a caution about another
-  writer, never the red an error owns), the turning arc, the agent's words, its own count
-  filling that band with the percentage beside *Clear*, and when it was last heard from. A
-  claim that has gone quiet drops to plain information and loses the band. **Liveness is
-  reported, never guessed** (`domain/at_work.py`): nothing can see another process, so a
-  claim that has gone quiet changes tense — *was at work …
-  last heard 22 minutes ago* — instead of disappearing, and it ends three ways and no
-  other: the agent ends it, a person clears it from the banner, or a later claim sweeps
-  one nobody has renewed since yesterday. **Every `dplanner` run is the sign of life** —
-  `cli/main.py` renews the project's standing claims, so an agent that is working never
+  polls the claims at the watcher's cadence and stands **one `Notice` for every claim**
+  over the window's content: an **amber band** across it (the `warn` tone — a caution about
+  another writer, never the red an error owns), the turning arc, one agent's own line or a
+  count of them with their step keys (`claims_words`), everything they counted filling the
+  band with the percentage beside *Clear* (`combined_fraction`), and *Clear* ending every
+  claim it stands for. **A click on the band opens *Agents at Work*** (`Notice.open`;
+  `view.py`, a `DialogFrame` over a `RowWell`, non-modal like the Agents browser): a row
+  per claim with its words, its count as a bar, when it was last heard, *Reveal* and a ✕
+  that clears that one. Never a notice per claim again — four agents were four bands to
+  read past. **A silent claim lapses** (`domain/at_work.py`): not heard from in
+  `FRESH_MINUTES` (thirty) and `claims()` stops returning it, so every reader drops it at
+  once — but **a lapse deletes nothing**: the file stays until a later claim sweeps it as a
+  day old, and the agent's next `dplanner` run renews it, which is the moment it touches
+  the plan again. No tense, no quiet state: a claim stands or it does not. **A status that
+  says the work stopped ends the step's claim** — `status set <step> ready-for-review |
+  ready-to-merge | done | blocked`, whoever runs it, through the root's `end_claim`; the
+  briefing's epilogue says to set it as soon as the PR is open, and still names
+  `agent-work end` for a run that stops without one. **Every `dplanner` run is the sign of
+  life** — `cli/main.py` renews the project's claims, so an agent that is working never
   needs a heartbeat — and **only from inside an agent's shell**, the marker `entry.py`
   refuses the window word on, because a developer's own terminal must not vouch for
   somebody else. A claim is per user and per machine (`config_dir()/at-work/`, one file

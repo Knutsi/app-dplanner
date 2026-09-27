@@ -1,8 +1,8 @@
 """An agent's claim that it is at work: what is stored, and what is derived from it.
 
-The whole point of the record is that it never guesses. These tests pin the two halves of
-that: a claim stands until somebody ends it, and every reading of *how long ago* comes out
-of the stamp rather than out of a timeout that decided the agent was gone.
+These tests pin the two halves of a claim's life: it stands while the agent is heard from
+and lapses after half an hour of silence — without being deleted, so the agent's next run
+brings it back — and every reading of *how long ago* comes out of the stamp.
 """
 
 import json
@@ -16,6 +16,8 @@ from dplanner.domain.at_work import (
     AtWork,
     AtWorkBoard,
     claim_words,
+    claims_words,
+    combined_fraction,
     fraction,
     heard_words,
     is_fresh,
@@ -112,8 +114,8 @@ def test_a_claim_a_newer_build_wrote_is_read_for_what_it_carries(board, tmp_path
 def test_every_run_renews_the_claims_of_its_own_project(board):
     board.start("p1", doing="shaping")
     board.start("p2", doing="elsewhere")
-    _backdate(board, "p1", 30)
-    _backdate(board, "p2", 30)
+    _backdate(board, "p1", 10)
+    _backdate(board, "p2", 10)
     board.touch("p1")
     assert quiet_seconds(board.claims("p1")[0]) < 60
     assert quiet_seconds(board.claims("p2")[0]) > 60
@@ -135,34 +137,40 @@ def test_a_claim_nobody_renewed_since_yesterday_is_swept_by_the_next_one(board, 
 
 
 def test_a_quiet_claim_is_never_swept_while_it_is_merely_quiet(board):
-    """An agent can spend an hour on one tool call; only a day of silence is gone."""
+    """An agent can spend an hour on one tool call; only a day of silence is gone, so its
+    next run finds the claim still there to renew."""
     board.start("p1", doing="thinking")
     _backdate(board, "p1", 60 * (SWEEP_HOURS - 1))
     board.set("p2", doing="elsewhere")
+    board.touch("p1")
     assert {claim.project for claim in board.claims()} == {"p1", "p2"}
 
 
 # -- the reading --------------------------------------------------------------------------------
 
 
-def test_a_claim_reads_as_at_work_until_it_has_been_quiet_a_while(board):
+def test_a_claim_stands_until_it_has_been_quiet_half_an_hour(board):
     assert is_fresh(_quiet(FRESH_MINUTES - 1))
     assert not is_fresh(_quiet(FRESH_MINUTES + 1))
 
 
-def test_a_quiet_claim_is_still_a_claim(board):
-    """It stops reading as *at work*; it does not stop existing. Nothing here decides a
-    process is dead, because nothing here can see one."""
-    board.start("p1")
-    assert board.claims("p1")
-    assert not board.at_work("p1", now=datetime.now(UTC) + timedelta(minutes=FRESH_MINUTES + 1))
+def test_a_silent_claim_lapses_and_the_next_run_brings_it_back(board):
+    """Half an hour without a word and no reader shows it; the file stays, so the agent's
+    next ``dplanner`` run — its next touch of the plan — makes it stand again, words and
+    all."""
+    board.start("p1", doing="thinking")
+    _backdate(board, "p1", FRESH_MINUTES + 1)
+    assert board.claims() == []
+    assert board.claims("p1") == []
+    board.touch("p1")
+    (claim,) = board.claims("p1")
+    assert claim.doing == "thinking"
 
 
 def test_how_long_ago_is_said_coarsely(board):
     assert heard_words(_quiet(0)) == "heard just now"
     assert heard_words(_quiet(4)) == "heard 4 minutes ago"
-    assert heard_words(_quiet(FRESH_MINUTES + 5)) == f"last heard {FRESH_MINUTES + 5} minutes ago"
-    assert heard_words(_quiet(125)) == "last heard 2 hours ago"
+    assert heard_words(_quiet(125)) == "heard 2 hours ago"
     assert heard_words(AtWork(project="p1")) == "not heard from yet"
 
 
@@ -182,6 +190,40 @@ def test_the_words_say_what_where_how_far_and_when():
     )
 
 
-def test_the_words_change_tense_rather_than_disappearing():
-    claim = _quiet(FRESH_MINUTES + 10)
-    assert claim_words(claim, "Payments").startswith("An agent was at work on Payments")
+def test_agents_together_are_as_far_along_as_everything_they_counted():
+    """Everything said done over everything said there is — so a big job weighs more than a
+    small one — and a claim that offered no count adds nothing either way."""
+    claims = [
+        AtWork(project="p1", step="a", done=3, of=6),
+        AtWork(project="p1", step="b", done=9, of=10),
+        AtWork(project="p1", step="c"),
+    ]
+    assert combined_fraction(claims) == pytest.approx(12 / 16)
+    assert combined_fraction([AtWork(project="p1", done=40, of=10)]) == 1.0
+    assert combined_fraction([AtWork(project="p1")]) == -1.0
+    assert combined_fraction([]) == -1.0
+
+
+def test_one_claim_is_said_whole_and_several_are_counted_and_named():
+    seen = _quiet(0).seen
+    one = AtWork(project="p1", step="s7", doing="linking the steps", seen=seen)
+    titles = {"p1": "Payments", "p2": "Billing"}
+    keys = {"s3": "S3", "s7": "S7"}
+
+    def where(claim: AtWork) -> str:
+        return titles.get(claim.project, "")
+
+    def key(claim: AtWork) -> str:
+        return keys.get(claim.step, "")
+
+    assert claims_words([one], where, key) == claim_words(one, "Payments", "S7")
+    several = [
+        AtWork(project="p1", step="s3"),
+        one,
+        AtWork(project="p2"),  # The plan as a whole: named, with no key.
+        AtWork(project="elsewhere", step="x"),  # Counted, not named.
+    ]
+    assert claims_words(several, where, key) == "4 agents are at work on Payments · S3, S7; Billing"
+    strangers = [AtWork(project="a"), AtWork(project="b")]
+    assert claims_words(strangers, where, key) == "2 agents are at work"
+    assert claims_words([], where, key) == ""
