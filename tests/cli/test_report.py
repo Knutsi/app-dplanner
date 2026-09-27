@@ -19,11 +19,13 @@ import pytest
 from dplanner.cli.discovery import open_library
 from dplanner.cli.report import website
 from dplanner.cli.report.assemble import build
+from dplanner.cli.report.drawings import LIGHT, graph_svg
 from dplanner.cli.report.parts import (
     Change,
     Chart,
     Contribution,
     Graph,
+    Node,
     Plot,
     Series,
     Stretch,
@@ -40,6 +42,7 @@ from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.step_milestone.aspect import write as milestone
 from dplanner.modules.step_status.aspect import read as status_for
 from dplanner.modules.step_status.aspect import write as status
+from dplanner.theme.glyph_source import glyph_markup
 
 SCRIPTY = "<script>alert('x')</script> & friends"
 
@@ -87,6 +90,21 @@ def _plain(value: object) -> bool:
     return True
 
 
+def test_a_card_draws_who_works_it_over_its_key():
+    """The report's key block wears the canvas's glyph: its drawing inside a group that
+    names its own stroke — the key's ink, or the attention amber for a wait — because the
+    PDF's renderer knows no ``currentColor``."""
+    person = Node("a", "S1", "Interview", 0, 0, 220, 76, glyph=glyph_markup("person"))
+    wait = Node("b", "W2", "Hold", 300, 0, 220, 76, glyph=glyph_markup("clock"), glyph_tone="warn")
+    bare = Node("c", "S3", "Nobody said", 600, 0, 220, 76)
+    svg = graph_svg(Graph((person, wait, bare), ()), LIGHT)
+    assert f'stroke="{LIGHT.ink}"' in svg and glyph_markup("person") in svg
+    assert f'stroke="{LIGHT.attention}"' in svg and glyph_markup("clock") in svg
+    assert "currentColor" not in svg
+    assert svg.count('class="glyph') == 2  # A card with no glyph carries its key alone.
+    assert ">S3</text>" in svg
+
+
 def test_every_source_speaks_plain_data(cli_library, plan):
     with open_library(cli_library, default_module_formats(), io.StringIO()) as context:
         project = context.library.project(plan)
@@ -109,6 +127,8 @@ def test_every_source_speaks_plain_data(cli_library, plan):
     assert set(report.sections) >= {"overview", "plan", "order", "steps", "notes"}
     graph = next(p for p in report.sections["plan"] if isinstance(p, Graph))
     assert len(graph.nodes) == 3 and len(graph.edges) == 2
+    # Who works each card arrives as the glyph's drawing — data, since cli/ reads no theme.
+    assert {node.glyph for node in graph.nodes} == {glyph_markup("person")}
     steps = next(t for t in report.tables() if t.id == "steps")
     assert [c.label for c in steps.columns][:5] == ["Key", "Step", "Kind", "Status", "Estimate"]
 

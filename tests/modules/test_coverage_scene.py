@@ -151,9 +151,10 @@ def test_the_steps_lane_stands_between_the_spec_and_the_tests_when_asked_for(
     assert ("doc:guide", "test:T100") in pairs and len(scene.links) == 2 + 1 + 30
 
 
-def test_a_card_that_is_a_step_wears_the_spine(project, tab):
-    """Milestones, features and steps are steps, named by their key up the card's left edge
-    — the canvas's spine, from the one painter both surfaces share. A bucket is no step."""
+def test_a_card_that_is_a_step_wears_the_key_block(project, tab):
+    """Milestones, features and steps are steps, named by their key in the card's left edge
+    under who works them — the canvas's key block, from the one painter both surfaces share
+    and the root's one answer to who. A bucket is no step."""
     from PySide6.QtCore import QRectF
     from PySide6.QtGui import QImage, QPainter
 
@@ -162,6 +163,7 @@ def test_a_card_that_is_a_step_wears_the_spine(project, tab):
     assert scene.cards[feature_card(project, "Import")].item.key == "F2"
     assert scene.cards[f"milestone:{beta.id}"].item.key == "M3"
     assert scene.cards["bucket:none"].item.key == ""
+    assert scene.cards[f"milestone:{beta.id}"].item.glyph == ("person", "")
 
     def strip_and_fill(item_id):
         """The colour just inside the left edge and the body's own, low on the card."""
@@ -176,7 +178,7 @@ def test_a_card_that_is_a_step_wears_the_spine(project, tab):
         return image.pixelColor(6, low).name(), image.pixelColor(image.width() - 20, low).name()
 
     strip, fill = strip_and_fill(f"milestone:{beta.id}")
-    assert strip != fill  # The spine is a shade of its own beside the body.
+    assert strip != fill  # The key block is a shade of its own beside the body.
     strip, fill = strip_and_fill("bucket:none")
     assert strip == fill
 

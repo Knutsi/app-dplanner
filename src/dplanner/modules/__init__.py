@@ -605,16 +605,16 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
 
 
         A done step is muted with a green body — finished work recedes into a colour the
-        eye can skip; the spine down the card's left carries the step's key and is shaded
-        by status — busy for in-progress, bad for blocked, good for done, quiet otherwise;
-        a milestone is a purple-highlighted node wearing its label as a badge, a tag
-        medallion and the schedule's accumulated days and date as its stat (done outranks
-        it on the body — a shipped milestone reads finished, and the tag still says what
-        it was); an agent instruction is the spark medallion; a PR is a pill with its
-        state as a tone and a branch the fork glyph; a live agent run is the chip on the
-        bottom edge; a plain step's stat is its own estimate. The card says nothing in
-        words beyond its title and its key: every aspect it wears is one of these, never
-        a phrase.
+        eye can skip; the key block down the card's left carries the step's key under who
+        works it (:func:`_primary_glyph`) and is shaded by status — busy for in-progress,
+        bad for blocked, good for done, quiet otherwise; a milestone is a
+        purple-highlighted node wearing its label as a badge, a tag medallion and the
+        schedule's accumulated days and date as its stat (done outranks it on the body — a
+        shipped milestone reads finished, and the tag still says what it was); a PR is a
+        pill with its state as a tone and a branch the fork glyph; a live agent run is the
+        chip on the bottom edge; a plain step's stat is its own estimate. The card says
+        nothing in words beyond its title and its key: every aspect it wears is one of
+        these, never a phrase.
         """
         refs = github_read(step)
 
@@ -631,6 +631,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         status = step_status(step)
         milestone = milestone_read(step)
         wait = wait_read(step)
+        key_glyph, key_glyph_tone = _primary_glyph(step)
         if milestone:
             stat = milestone_stat
         elif wait is not None:
@@ -645,7 +646,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
             key_text=_step_key(step),
-            spine_tone=STEP_STATUS_TONES.get(status, ""),
+            key_tone=STEP_STATUS_TONES.get(status, ""),
+            key_glyph=key_glyph,
+            key_glyph_tone=key_glyph_tone,
             chip_text=chip_text,
             chip_tone=chip_tone,
             # Done outranks a kind, and a milestone outranks a feature: the coarser claim
@@ -2139,7 +2142,7 @@ def _step_key(step: "Step") -> str:
     the coarser claim wins, in the order the body tone ranks them, so a milestone that is
     also a feature reads ``M``. The letter is presentation over the stored number, which is why
     a step keeps its number when its kind changes and the letter follows. Read by the
-    canvas spine, every CLI row and lookup, the branch a run is named after, and the
+    key block on every card, every CLI row and lookup, the branch a run is named after, and the
     briefing that tells the agent which step it holds.
     """
     from dplanner.modules.feature.aspect import is_feature
@@ -2260,24 +2263,36 @@ def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
 
 def _step_type_icons(step: "Step") -> tuple[str, ...]:
     """What kind of thing a step is, in the medallion vocabulary the canvas painted
-    first: "tag" a milestone, "layers" a feature, "spark" an agent step, "beaker" one
-    carrying tests, "shield" a check, "clock" a wait. The order table's title column reads
-    the same answer, so a step is the same kind everywhere."""
+    first: "tag" a milestone, "layers" a feature, "beaker" one carrying tests, "shield" a
+    check. The order table's title column reads the same answer, so a step is the same kind
+    everywhere. Who works it is :func:`_primary_glyph`'s, and a card says a thing once."""
     from dplanner.modules.feature.aspect import is_feature
-    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_milestone.aspect import read as milestone_read
-    from dplanner.modules.step_wait.aspect import is_wait
     from dplanner.modules.testing.aspect import enabled as test_enabled
 
     return (
-        *(("clock",) if is_wait(step) else ()),
         *(("tag",) if milestone_read(step) else ()),
         *(("layers",) if is_feature(step) else ()),
-        *(("spark",) if agent_enabled(step) else ()),
         *(("beaker",) if test_enabled(step) else ()),
         *(("shield",) if check_read(step) else ()),
     )
+
+
+def _primary_glyph(step: "Step") -> tuple[str, str]:
+    """Who works a step, as the glyph beside its key and that glyph's tone: an agent's
+    sparkle, a person otherwise — a milestone, a feature and a check included, since a
+    person closes those — and for a wait nobody at all, so an amber clock, always.
+
+    The one rule, read by every card that shows a key: the canvas, the coverage lanes and
+    the report's graph. The tone is a status tone's word — "warn" is the attention amber —
+    so each surface resolves it the way it resolves its status washes."""
+    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
+    from dplanner.modules.step_wait.aspect import is_wait
+
+    if is_wait(step):
+        return "clock", "warn"
+    return ("spark" if agent_enabled(step) else "person"), ""
 
 
 def _time_readers() -> "TimeReaders":
@@ -2456,8 +2471,10 @@ def _report_sources() -> tuple["ReportSource", ...]:
             status_for=step_status,
             stats_of=_step_stats,
             badge_of=milestone_read,
-            # The report's picture of the graph wears the same shades the window does.
+            # The report's picture of the graph wears the same shades the window does, and
+            # the same glyph in each card's key block.
             colors_of=_milestone_colors,
+            glyph_of=_primary_glyph,
         ),
         order(
             schedule_of=project_schedule,
@@ -2844,8 +2861,10 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
             tests=tests,
             results=results,
             docs=docs,
-            # The milestone lane wears the same shades the canvas and the calendar do.
+            # The milestone lane wears the same shades the canvas and the calendar do, and a
+            # card that is a step the canvas's glyph in its key block.
             milestone_colors=_milestone_colors,
+            glyph=_primary_glyph,
         ),
         library,
         project,

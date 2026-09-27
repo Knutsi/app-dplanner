@@ -30,7 +30,7 @@ paths:
   the migration numbers an old project's steps in `children` order). The **letter is
   presentation**: `_step_key` in the root reads the kind — `M` milestone, `F` feature,
   `C` check, `S` otherwise, the coarser claim first — so a step keeps its number when its
-  kind changes and the letter follows. One rule, four readers: the canvas spine, every
+  kind changes and the letter follows. One rule, four readers: the card's key block, every
   CLI row and `find_step` (`S7`, `s7` and `7` all resolve; several projects' `7` is
   refused), the run name a worktree and branch carry, and the briefing's verbs. Never
   store the letter, and never mint a number anywhere but `add_child`.

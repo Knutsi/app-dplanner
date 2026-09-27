@@ -3,10 +3,12 @@
 Positions are the stored ones with the ambient layout filling the gaps
 (``placement.positions``), sizes the stored ones or the default footprint; edges are the
 steps' ``requires`` and ``relates`` with an end that no longer resolves skipped, as the
-scene skips them. What a card *wears* — its key, kind, status, the figure at its bottom
-right and a milestone's badge — arrives as readers from the composition root, the same
-answers the canvas's ``NodeAccent`` is built from, so the page and the window cannot dress a
-step differently.
+scene skips them. What a card *wears* — its key and the glyph over it, kind, status, the
+figure at its bottom right and a milestone's badge — arrives as readers from the composition
+root, the same answers the canvas's ``NodeAccent`` is built from, so the page and the window
+cannot dress a step differently. The glyph travels as its drawing, read from the vendored
+file by ``theme/glyph_source.py``: the report's renderer lives in ``cli/``, which may not read
+``theme/`` itself.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
@@ -27,6 +29,7 @@ from dplanner.domain.model import EDGE_KINDS, Library, Project, Step, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import node_size
+from dplanner.theme.glyph_source import glyph_markup
 
 
 def report_source(
@@ -39,6 +42,8 @@ def report_source(
     # Every milestone's own shade, by step id — one deal per project, the same one the
     # canvas paints and the timeline bands.
     colors_of: Callable[[Library, Project], dict[StepId, str]],
+    # Who works a step: the key block's glyph and its tone, as the canvas reads them.
+    glyph_of: Callable[[Step], tuple[str, str]],
 ) -> ReportSource:
     def source(library: Library, project: Project, _files: FilesFor, _day: date) -> Contribution:
         if not project.steps:
@@ -50,6 +55,7 @@ def report_source(
         for step in project.steps:
             x, y = placed_at[step.id]
             w, h = node_size(step)
+            glyph, glyph_tone = glyph_of(step)
             nodes.append(
                 Node(
                     id=step.id,
@@ -64,6 +70,8 @@ def report_source(
                     stat=stats.get(step.id, ""),
                     badge=badge_of(step),
                     color=colors.get(step.id, ""),
+                    glyph=glyph_markup(glyph) if glyph else "",
+                    glyph_tone=glyph_tone,
                 )
             )
         edges = [

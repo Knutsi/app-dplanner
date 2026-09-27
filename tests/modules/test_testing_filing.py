@@ -11,7 +11,7 @@ from dplanner.cli.command import CliError
 from dplanner.domain.model import Project, Step
 from dplanner.modules.testing import export, filing, runs
 from dplanner.modules.testing.aspect import MODULE_ID, Test, write
-from dplanner.theme.icons import GLYPH_DIR
+from dplanner.theme.glyph_source import GLYPH_DIR
 
 
 def project_with(*steps, catalog=()):

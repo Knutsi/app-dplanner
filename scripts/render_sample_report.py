@@ -30,6 +30,7 @@ from dplanner.core.storage.locations import init_repo
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Step
+from dplanner.domain.schedule import Wait
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.estimation.aspect import write as estimate
@@ -42,6 +43,7 @@ from dplanner.modules.step_milestone.aspect import write as milestone
 from dplanner.modules.step_status.aspect import write as status
 from dplanner.modules.step_ticket.aspect import Ticket
 from dplanner.modules.step_ticket.aspect import write as ticket
+from dplanner.modules.step_wait.aspect import write as wait
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.aspect import write as tests
@@ -60,8 +62,9 @@ PLAN: list[tuple[str, float | None, list[int], str, str]] = [
     ("Load test at ten times traffic", 3.0, [4], "pending", "check"),
     ("Search rewrite ships", None, [6, 7, 8], "pending", "milestone"),
     ("Migrate saved searches", 3.0, [9], "pending", ""),
-    ("Retire the old cluster", 2.0, [10], "pending", "agent"),
-    ("Old cluster gone", None, [11], "pending", "milestone"),
+    ("Wait out the change freeze", None, [10], "pending", "wait"),
+    ("Retire the old cluster", 2.0, [11], "pending", "agent"),
+    ("Old cluster gone", None, [12], "pending", "milestone"),
 ]
 
 DESCRIPTION = (
@@ -83,7 +86,7 @@ def build(root: Path) -> tuple[Path, Path]:
         library.set_field(project.id, "summary", "Replace the search stack before the lease ends.")
         start = date.today() - timedelta(days=40)
         SetModuleDataCommand(project.id, "estimation", write_start(start)).redo(library)
-        assumptions = write_project(project, efficiency=0.6, team=(2, 2))
+        assumptions = write_project(project, efficiency=0.6, team=(2, 2), today=date.today())
         SetModuleDataCommand(project.id, "time_estimates", assumptions).redo(library)
         steps = _steps(library, project.id)
         picture = attach(
@@ -129,7 +132,9 @@ def _steps(library: Library, project_id: str) -> list[Step]:
         if days is not None:
             SetModuleDataCommand(step.id, "estimation", estimate(days)).redo(library)
         if word != "pending":
-            SetModuleDataCommand(step.id, "step_status", status(word)).redo(library)
+            SetModuleDataCommand(step.id, "step_status", status(word, today=date.today())).redo(
+                library
+            )
         if kind == "milestone":
             SetModuleDataCommand(step.id, "step_milestone", milestone(title)).redo(library)
         if kind == "feature":
@@ -142,6 +147,8 @@ def _steps(library: Library, project_id: str) -> list[Step]:
             SetModuleDataCommand(step.id, "step_check", {"on": True}).redo(library)
         if kind == "agent":
             SetModuleDataCommand(step.id, "step_agent_instruction", {"on": True}).redo(library)
+        if kind == "wait":
+            SetModuleDataCommand(step.id, "step_wait", wait(Wait(days=5.0))).redo(library)
     SetEdgesCommand(steps[8].id, "relates", [steps[6].id]).redo(library)
     return steps
 

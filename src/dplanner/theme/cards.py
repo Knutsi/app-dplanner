@@ -1,6 +1,6 @@
 """The primitives every painted card is made of: its radius and paddings, the shadow it
-rests on, the opaque fill a tint lands as, the title face and wrap, and the spine that
-names a step.
+rests on, the opaque fill a tint lands as, the title face and wrap, and the key block that
+names a step and says who works it.
 
 Two surfaces paint cards — the graph canvas (``modules/project_editor/renderers.py``) and
 the coverage view — and modules never import each other, so what they share lives here
@@ -21,6 +21,7 @@ from PySide6.QtGui import (
     QPalette,
 )
 
+from dplanner.theme.icons import paint_glyph
 from dplanner.theme.tones import STATUS_TONES
 
 RADIUS = 8.0  # = theme.tokens.RADIUS_MD, matched by eye rather than import: this is a painter.
@@ -170,52 +171,87 @@ def title_lines(
     return [*lines, metrics.elidedText(line, Qt.TextElideMode.ElideRight, int(width))]
 
 
-# The spine: a strip down a card's left edge, clipped to the rounded body, carrying the
-# step's key read bottom-to-top and shaded by status. The chrome font's height plus five
-# or six pixels of air on either side of the key — at 18 it was two, and the number read
-# as jammed against the strip's edges; a four-character key runs some 30 px along it,
-# which the shortest card still has room for.
-SPINE_W = 26.0
-SPINE_FILL_ALPHA = 80  # A status tone's fill on the spine — a wash, not a swatch.
-SPINE_QUIET_ALPHA = 14  # No status to show: the spine is a shade darker than the body.
+# The key block: a strip down a card's left edge, clipped to the rounded body and shaded by
+# status, carrying who works the step — a glyph — over the step's key, set level. Wide
+# enough for the widest key a plan realistically deals: `M1234` set bold is 37 px at the
+# chrome font's nine points, which leaves some ten pixels of air either side at 56.
+KEY_BLOCK_W = 56.0
+KEY_GLYPH = 16.0  # The icon, at the size a glyph is drawn in a row or on a strip.
+KEY_GAP = 2.0  # Between the icon and the key under it: one pair, not two things.
+KEY_FILL_ALPHA = 80  # A status tone's fill on the block — a wash, not a swatch.
+KEY_QUIET_ALPHA = 14  # No status to show: the block is a shade darker than the body.
 
 
-def spine_fill(palette: QPalette, tone: str) -> QColor:
-    """The spine's wash: the status tone at a wash's alpha, or a quiet shade of ink."""
+def key_fill(palette: QPalette, tone: str) -> QColor:
+    """The block's wash: the status tone at a wash's alpha, or a quiet shade of ink."""
     toned = STATUS_TONES.get(tone)
     fill = QColor(toned if toned is not None else palette.text().color())
-    fill.setAlpha(SPINE_FILL_ALPHA if toned is not None else SPINE_QUIET_ALPHA)
+    fill.setAlpha(KEY_FILL_ALPHA if toned is not None else KEY_QUIET_ALPHA)
     return fill
 
 
-def paint_spine(
-    painter: QPainter, palette: QPalette, body: QRectF, key: str, tone: str, ink: QColor
+def key_glyph_ink(tone: str, ink: QColor) -> QColor:
+    """The block's glyph colour: ``ink``, or the status tone ``tone`` names at full strength —
+    a stroked glyph is a line two pixels wide, and at a wash's alpha it reads as a smudge."""
+    toned = STATUS_TONES.get(tone)
+    return QColor(toned.red(), toned.green(), toned.blue()) if toned is not None else QColor(ink)
+
+
+def key_font(base: QFont) -> QFont:
+    """The key's face: the chrome font, bold — the one thing on a card meant to be found
+    from across the surface."""
+    font = QFont(base)
+    font.setBold(True)
+    return font
+
+
+def key_block_height(base: QFont) -> float:
+    """The least height the glyph and the key under it need — what a card that grows to
+    fit its content must leave the block."""
+    return KEY_GLYPH + KEY_GAP + QFontMetricsF(key_font(base)).height()
+
+
+def key_block_rects(body: QRectF, base: QFont) -> tuple[QRectF, QRectF]:
+    """``(glyph, key)``: where the icon and the key go in ``body``'s block — the pair
+    centred on the strip both ways, the icon over the key. Pure, so a test can measure the
+    block without a painter."""
+    top = body.top() + (body.height() - key_block_height(base)) / 2
+    middle = body.left() + KEY_BLOCK_W / 2
+    glyph = QRectF(middle - KEY_GLYPH / 2, top, KEY_GLYPH, KEY_GLYPH)
+    key_h = QFontMetricsF(key_font(base)).height()
+    key = QRectF(body.left(), top + KEY_GLYPH + KEY_GAP, KEY_BLOCK_W, key_h)
+    return glyph, key
+
+
+def paint_key_block(
+    painter: QPainter,
+    palette: QPalette,
+    body: QRectF,
+    key: str,
+    tone: str,
+    ink: QColor,
+    glyph: str = "",
+    glyph_tone: str = "",
 ) -> None:
-    """The strip down the left edge: ``tone`` as a shade, ``key`` read bottom-to-top.
+    """The strip down the left edge: ``tone`` as a shade, ``glyph`` over ``key``.
 
     Clipped to the rounded body so the strip's outer corners follow the card's, painted
-    after the body so the wash sits on the fill and under nothing. The key is set in the
-    chrome font, bold — it is the one thing on the card meant to be found from across the
-    surface — and rotated a quarter turn anticlockwise, the way a spine on a shelf reads.
+    after the body so the wash sits on the fill and under nothing. The key and the glyph
+    are in ``ink`` unless ``glyph_tone`` names a status tone for the glyph — a wait's
+    clock is the attention amber (:func:`key_glyph_ink`).
     """
-    strip = QRectF(body.left(), body.top(), SPINE_W, body.height())
     clip = QPainterPath()
     clip.addRoundedRect(body, RADIUS, RADIUS)
     painter.save()
     painter.setClipPath(clip)
-    painter.fillRect(strip, spine_fill(palette, tone))
+    painter.fillRect(
+        QRectF(body.left(), body.top(), KEY_BLOCK_W, body.height()), key_fill(palette, tone)
+    )
+    glyph_rect, key_rect = key_block_rects(body, painter.font())
+    if glyph:
+        paint_glyph(painter, glyph_rect, glyph, key_glyph_ink(glyph_tone, ink))
     if key:
-        font = QFont(painter.font())
-        font.setBold(True)
-        painter.setFont(font)
+        painter.setFont(key_font(painter.font()))
         painter.setPen(ink)
-        metrics = QFontMetricsF(font)
-        length = metrics.horizontalAdvance(key)
-        painter.translate(strip.center())
-        painter.rotate(-90.0)
-        painter.drawText(
-            QRectF(-length / 2, -metrics.height() / 2, length, metrics.height()),
-            int(Qt.AlignmentFlag.AlignCenter),
-            key,
-        )
+        painter.drawText(key_rect, int(Qt.AlignmentFlag.AlignCenter), key)
     painter.restore()

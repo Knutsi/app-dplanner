@@ -19,11 +19,11 @@ the two collectors never read as one, and 42° from the done green — which add
 *mutes* its node, so the pair is told apart by weight as well as by hue, and a feature
 still wears its layer medallion. Fill low-alpha, border full-strength.
 
-The status tones — good, busy, bad, warn — are the spine's shades on the canvas and the dot
+The status tones — good, busy, bad, warn — are the key block's shades on a card and the dot
 a ``StatusLine`` wears in a dialog's footer: one word for "this is where the work stands"
 wherever it is said, which is why they live here and not with the canvas painters. Warn is
-the amber the chips already use: a caution rather than a failure, and the tone a standing
-notice washes its whole band in.
+the amber the chips already use: a caution rather than a failure, the tone a standing
+notice washes its whole band in, and a wait's clock in its key block.
 """
 
 from PySide6.QtGui import QColor
@@ -65,8 +65,8 @@ STATUS_TONES: dict[str, QColor] = {
     "bad": INVALID_TINT,
     "warn": WARN_TINT,
 }
-# A step's status as one of those tones: the spine's wash on every card that is a step. A
-# status with nothing to say — pending — is absent, and the spine stays a quiet shade.
+# A step's status as one of those tones: the key block's wash on every card that is a step. A
+# status with nothing to say — pending — is absent, and the block stays a quiet shade.
 STEP_STATUS_TONES: dict[str, str] = {"in-progress": "busy", "blocked": "bad", "done": "good"}
 
 

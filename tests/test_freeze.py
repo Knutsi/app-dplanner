@@ -20,7 +20,7 @@ from freeze.datas import PACKAGE, package_datas, shipped_files
 # rather than at somebody's first launch. The comment is the reader.
 READ_SITES = (
     "dplanner/theme/theme.qss",  # theme/__init__.py:35    resources.files
-    "dplanner/theme/glyphs/spec.svg",  # theme/icons.py:94       GLYPH_DIR.joinpath
+    "dplanner/theme/glyphs/spec.svg",  # theme/glyph_source.py:24  GLYPH_DIR.joinpath
     "dplanner/theme/glyphs/LICENSE",  # Help ▸ About names the set; the MIT notice
     "dplanner/assets/icons/dplanner-256.png",  # assets/__init__.py:17   files("dplanner.assets")
     "dplanner/cli/skill_preamble.md",  # cli/skill.py:45         Path(__file__).parent

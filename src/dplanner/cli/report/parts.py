@@ -246,7 +246,7 @@ class Node:
     y: float
     w: float
     h: float
-    kind: str = ""  # milestone | feature | check | agent | ""
+    kind: str = ""  # milestone | feature | check | wait | agent | ""
     status: str = ""  # pending | in-progress | done | blocked
     stat: str = ""  # The card's bottom-right figure: an estimate, a milestone's total.
     badge: str = ""  # A milestone's label on the top edge.
@@ -254,6 +254,11 @@ class Node:
     # its band wears in the timeline, so the report's picture of the graph and its
     # picture of the schedule name one milestone in one colour. "" for anything else.
     color: str = ""
+    # Who works the step, over its key: the glyph's drawing — the shapes inside a 24-unit
+    # SVG, stroked and unfilled — and its tone, "" for the key's ink or "warn" for the
+    # attention amber a wait's clock wears. "" draws the key alone.
+    glyph: str = ""
+    glyph_tone: str = ""
 
 
 @dataclass(frozen=True)
