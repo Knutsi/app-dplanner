@@ -493,6 +493,7 @@ class GraphView(QGraphicsView):
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self._zoom = 1.0
         self._framed = False
+        self._centred_on: StepId | None = None
         # What lies under the graph — the user's look, pushed by the activity like the marks.
         self._background = DEFAULT_BACKGROUND
         # The application's View ▸ Zoom is font size; a canvas zooms itself.
@@ -675,7 +676,19 @@ class GraphView(QGraphicsView):
             # Deferred to the next turn of the event loop rather than done here: at show
             # time the splitter has not given the viewport its real width yet, and fitting
             # a graph to a half-laid-out box zooms a readable one down to nothing.
-            QTimer.singleShot(0, self.frame_content)
+            QTimer.singleShot(0, self._first_look)
+
+    def _first_look(self) -> None:
+        """Frame the graph — unless a step was asked for before the view had its size.
+
+        A reveal that opens this tab centres at once, against a viewport not laid out yet,
+        and the frame a turn later would put the whole graph over it. So the first look
+        lands on that step again, now that the viewport is the size it will be.
+        """
+        if self._centred_on is None:
+            self.frame_content()
+        else:
+            self.centre_on_step(self._centred_on)
 
     def frame_content(self) -> None:
         """Look at the graph: centred, and zoomed out only as far as stays readable."""
@@ -707,7 +720,8 @@ class GraphView(QGraphicsView):
         What *Jump to* lands with, and what ``steps.reveal`` has done since: selecting a
         node that is off screen selects something nobody can see. The zoom is untouched —
         Frame is the verb that changes how much of the graph is in view, and a jump that
-        also zoomed would lose the scale somebody had chosen to work at.
+        also zoomed would lose the scale somebody had chosen to work at. Remembered for the
+        view's first look, which would otherwise frame the graph over it.
         """
         scene = self.scene()
         if not isinstance(scene, GraphScene):
@@ -715,6 +729,7 @@ class GraphView(QGraphicsView):
         node = scene.node(step_id)
         if node is None:
             return
+        self._centred_on = step_id
         self.centerOn(node.body_scene_rect().center())
         self._refresh_minimap()
 
