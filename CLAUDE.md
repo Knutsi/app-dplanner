@@ -113,7 +113,7 @@ The diagnoses, the recipes and the shiboken detail are the **`suite-crash` skill
 a worker dying with SIGSEGV names an innocent one.
 
 - **Never read a layout back** (`layout.itemAt(i)`): keep your own list of what you put in it
-  (`projects/card.py`'s `RepositoriesCard._held`). `takeAt` in a loop that drops the wrapper each
+  (`framework/notices.py`'s `NoticeBar._rows`). `takeAt` in a loop that drops the wrapper each
   turn is fine.
 - **Add a child layout to its parent before filling it**, and **never construct a
   `QLayoutItem` in Python** — `addStretch`/`addSpacing` instead.
@@ -311,10 +311,10 @@ reasoning.
   *that* tab's rows (Problems beside the canvas, the Test panel beside a roster), so two
   Tests tabs each carry one. The step editor left the areas entirely — `steps.details` is
   the *only* place a step's aspects are edited, since nine tabs do not fit a 360 px column
-  — and the project's own form is the **Dashboard tab** (`modules/project_dashboard/`),
-  opened about one project like the modal about one step. The areas hold the index alone,
-  and an area no panel stands in hides its View toggle. `ARCHITECTURE.md`'s *Where a panel
-  goes* and the sections it points at have the rest.
+  — and a project's forms are the tabs of **Project ▸ Settings…**, a dialog aimed at one
+  project like the modal about one step. The areas hold the index alone, and an area no
+  panel stands in hides its View toggle. `ARCHITECTURE.md`'s *Where a panel goes* and the
+  sections it points at have the rest.
 - **Double-clicking a step anywhere runs `steps.details`.** It is the one gesture across
   canvas, order, progression and estimates; a table runs it against a context naming exactly
   the row's step. Reveal-in-graph is `steps.reveal` in the Step menu, not a double-click.

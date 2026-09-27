@@ -1,4 +1,4 @@
-"""The Project dialog and the Repositories card: where a project's plan and code live.
+"""The Project dialog: what a project is, where its plan and code live, and its other forms.
 
 The dialog is built over a ``RepositoryServices`` of lambdas — git and gh never run — and
 its task bodies are run inline, so what a worker thread would deliver arrives on the line
@@ -157,6 +157,7 @@ def dialog(services, fakes, checkouts, project, monkeypatch):
     inline(built, monkeypatch)
     built.show_project(project.id)
     yield built
+    built.dispose()
     built.deleteLater()
 
 
@@ -541,61 +542,60 @@ def test_publish_runs_for_a_plan_repository_without_an_origin_and_is_greyed_afte
     assert dialog.plan_column.identity.text() == "acme/plans"
 
 
-# -- the card -------------------------------------------------------------------------------
+# -- the tabs -------------------------------------------------------------------------------
 
 
-def _card(services, project):
-    from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND
-
-    page = services.tabs.open(DASHBOARD_KIND, project.id).page
-    return next(c for c in page.cards if c.title.text() == "Repositories").body
-
-
-def test_the_card_states_the_plan_and_every_location_and_follows_the_facts(
-    services, project, tmp_path, library_repo
-):
-    card = _card(services, project)
-    assert card.plan_text.text() == "repo"  # The plan repository's folder: no origin yet.
-    assert card.texts() == ["no code repository recorded"]
-    assert card.note.isVisibleTo(card) and "inside the code" in card.note.text()
-    assert card.move_button.text() == SET_UP_PLAN
-
-    # In a plan repository's index it is unset: not a plan inside its code, so nothing
-    # to warn about and nothing to set up — the row says the code is missing.
-    from dplanner.core.storage.pointer import add_to_index
-
-    add_to_index(services.repo.project_dir(project.id))
-    services.undo.push(SetFieldCommand(project.id, "summary", "re-read"))
-    assert card.texts() == ["no code repository recorded"]
-    assert not card.note.isVisibleTo(card) and card.move_button.text() == MOVE_PLAN
-
-    code = separate(services, project, tmp_path)
-    assert card.texts() == [f"Code: acme/widget — {shown_path(code)}"]
-    assert not card.note.isVisibleTo(card)
-    # Apart from its code there is nothing to set *up* — but a plan repository picked
-    # wrongly is still moved, and the button says which offer this is.
-    assert card.move_button.text() == MOVE_PLAN
-    # Every row the project names, worded once for the card and the dialog's table.
-    rows = (
-        *code_row(CODE_URL),
-        Location("l2", "reporting", CODE_URL, path="reports/search"),
-        Location("l3", "spec", "https://github.com/acme/specs", path="products"),
+@pytest.fixture
+def tabbed(services, fakes, checkouts, project, monkeypatch):
+    """The settings dialog over the fakes, carrying every section the build registered."""
+    repos, _calls, _state = fakes
+    built = ProjectDialog(
+        services.document,
+        services.undo,
+        repos,
+        services.tasks,
+        services.theme,
+        checkouts=checkouts,
+        move=lambda _pid: None,
+        sections=services.project_settings.sections(),
+        parent=services.window,
     )
-    services.undo.push(SetFieldCommand(project.id, "locations", rows))
-    assert card.texts() == [
-        f"Code: acme/widget — {shown_path(code)}",
-        f"Reporting: acme/widget · reports/search/ — {shown_path(code / 'reports' / 'search')}",
-        "Spec: acme/specs · products/ — fetched on demand — not fetched yet",
+    inline(built, monkeypatch)
+    built.show_project(project.id)
+    yield built
+    built.dispose()
+    built.deleteLater()
+
+
+def test_the_tabs_are_repositories_then_every_registered_section_in_order(tabbed):
+    """Whoever registered a project section is a tab here; the dialog never learns whose,
+    and a section's hint is its tab's tooltip."""
+    bar = tabbed.tab_bar
+    assert [bar.tabText(i) for i in range(bar.count())] == [
+        "Repositories",
+        "Agent",
+        "Compilation instructions",
     ]
+    assert bar.currentIndex() == 0
+    assert "every document an agent compiles" in bar.tabToolTip(2)
 
 
-def test_the_cards_buttons_run_the_registry_verbs(services, project, monkeypatch):
-    card = _card(services, project)
-    ran = []
-    monkeypatch.setattr(services.actions, "run", lambda action_id, _context: ran.append(action_id))
-    card.settings_button.click()
-    card.move_button.click()
-    assert ran == ["projects.settings", "projects.move"]
+def test_the_name_and_summary_edit_the_project_undoably_and_follow_edits_elsewhere(
+    services, tabbed, project
+):
+    tabbed.summary_edit.setText("Replace the index")
+    tabbed.summary_edit.editingFinished.emit()
+    assert project.summary == "Replace the index"
+    services.undo.undo()
+    assert project.summary == "" and tabbed.summary_edit.text() == ""
+    services.undo.push(SetFieldCommand(project.id, "title", "Discovery Phase"))
+    assert tabbed.name_edit.text() == "Discovery Phase"
+
+
+def test_the_projects_forms_have_left_the_window_areas(services):
+    """No panel targets an area by default: the project's forms are this dialog's, the Test
+    panel stands inside the Tests tab, and the index is what is left."""
+    assert [spec.id for spec in services.panels.panels()] == ["index"]
 
 
 # -- the repositories folder ----------------------------------------------------------------
@@ -1055,8 +1055,8 @@ def test_a_glyph_button_stands_as_tall_as_the_field_it_is_beside(services, fakes
 # -- the words, and what the wizard asks about ----------------------------------------------------
 
 
-def test_a_location_is_worded_once_for_the_table_the_card_and_the_verbs(tmp_path):
-    from dplanner.domain.locations import Location, Placement
+def test_a_location_is_worded_once_for_every_surface(tmp_path):
+    from dplanner.domain.locations import Placement
     from dplanner.modules.projects.repos import location_words
 
     roles = roles_by_id([CODE])
@@ -1072,7 +1072,7 @@ def test_a_location_is_worded_once_for_the_table_the_card_and_the_verbs(tmp_path
 
 
 def test_the_wizard_asks_only_about_worked_in_repositories_the_machine_lacks(tmp_path):
-    from dplanner.domain.locations import Location, LocationRole
+    from dplanner.domain.locations import LocationRole
     from dplanner.modules.projects.repositories_page import missing_repositories
 
     roles = roles_by_id(

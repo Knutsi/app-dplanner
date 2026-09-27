@@ -154,10 +154,6 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         ProjectAssetsDeps,
         ProjectAssetsModule,
     )
-    from dplanner.modules.project_dashboard.module import (
-        ProjectDashboardDeps,
-        ProjectDashboardModule,
-    )
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import NodeAccent
     from dplanner.modules.projects.checkouts import CheckoutService
@@ -301,7 +297,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     store.checkout_changed.connect(lambda _repository: services.context.refresh())
 
     # -- git and GitHub for the project surfaces ----------------------------------------
-    # The Project dialog, the Repositories card, Open Project and Move Plan reach both
+    # The Project dialog, Open Project and Move Plan reach both
     # repositories through this one bundle; the root names the providers (rule 8) and
     # the github module's gh door (rule 5) so the projects module names neither.
 
@@ -689,13 +685,12 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     # The one briefing both the window and the CLI assemble from — see _default_briefing.
     briefing = _default_briefing()
 
-    # Three modules constructed before the list, because what each one hands the others
-    # reads better as wiring than as ordering:
+    # Modules constructed before the list, because what each one hands the others reads
+    # better as wiring than as ordering:
     #
     #   step_properties  owns THE step editor — `steps.details`, a modal and nothing else
     #   project_editor   opens projects into graph tabs
-    #   project_dashboard  the project's home tab; the index opens it, cards come from others
-    #   projects         puts projects in the index and opens them through the two above
+    #   projects         puts projects in the index and opens them through the one above
     #   estimation       owns the estimate, the start date and the bulk Estimates tab; the
     #                    order view hosts its bar
     #
@@ -876,21 +871,6 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             side_panel=SidePanel("Problems", problem_icon, problems.create_panel),
         )
     )
-    project_dashboard = ProjectDashboardModule(
-        ProjectDashboardDeps(
-            library=library,
-            actions=services.actions,
-            context=services.context,
-            tabs=services.tabs,
-            undo=services.undo,
-            debounce=services.debounce,
-            theme=services.theme,
-            # The page renders whatever registered a card here — the project-level
-            # counterpart of the step editor's inspector_sections.
-            cards=services.project_cards,
-        )
-    )
-
     # The collectors, wired once: the docs and tests modules group by them, and every walk
     # either module makes stops where these say.
     scopes = _scope_kinds()
@@ -1367,8 +1347,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             settings_sections=services.settings_sections,
             status=services.window,
             parent=services.window,
-            # Its project-level card: the standing instruction every briefing opens with.
-            cards=services.project_cards,
+            # Its Project ▸ Settings… tab: the standing instruction every briefing opens with.
+            project_settings=services.project_settings,
             files=store.files,
             # How staged assets are read at launch — bytes by absolute path.
             read_asset=read_absolute,
@@ -1586,16 +1566,14 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 autosave=services.autosave,
                 switcher=services.switcher,
                 settings_sections=services.settings_sections,
-                # The Repositories card: a card on the Dashboard tab, registered here
-                # before any such tab is built.
-                cards=services.project_cards,
+                # The Project dialog's tabs after Repositories: whatever other modules
+                # registered about a project, read when the dialog is first built.
+                project_settings=services.project_settings,
                 checkouts=checkouts,
                 repos=repos,
-                # The index opens a project without knowing what an activity is: a click
-                # on the project's row glances at its Dashboard, and *Show Steps* opens
-                # the graph.
+                # The index opens a project without knowing what an activity is: *Show
+                # Steps* and the Steps row open the graph; the project's row only selects.
                 open_steps=project_editor.open,
-                open_dashboard=lambda pid, preview: project_dashboard.open(pid, preview=preview),
                 # The store's membership face: attach/detach track directories, the
                 # model change itself is applied here, off the undo stack, with the
                 # membership origin the `library add` verb uses too.
@@ -1613,8 +1591,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                     + [problem.path.resolve() for problem in store.problems()]
                 ),
                 problems=store.problems,
-                # Rows under each project — the project row opens its Dashboard; these
-                # open the rest. Each renders the Project menu: the row stands for its
+                # Rows under each project — the project row only selects; these open what
+                # the project has. Each renders the Project menu: the row stands for its
                 # project, and the project's verbs all live there.
                 # A single click opens the same surface as a preview tab — the VS Code
                 # gesture: the next click's preview replaces it, activation keeps it.
@@ -1755,9 +1733,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 # own would teach four tests surfaces about documentation to serve none of it.
                 scopes=scopes,
                 files=store.files,
-                # Its project-level card: the compilation instructions every document
+                # Its Project ▸ Settings… tab: the compilation instructions every document
                 # compiled in this project follows.
-                cards=services.project_cards,
+                project_settings=services.project_settings,
                 # The description *is* the instructions (ARCHITECTURE.md), so it is what a
                 # collector says about itself — context in the briefing, and a cross-module
                 # fact, so it is decided here.
@@ -1875,11 +1853,6 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         ),
         step_properties,
         project_editor,
-        # After every module that registers a project card (projects,
-        # step_agent_instruction, docs): the page reads the registry when a tab opens, and
-        # reopen_tabs below opens tabs at startup — a card registered after it would be
-        # missing from every restored tab.
-        project_dashboard,
         step_order,
         progression,
         time_estimates,

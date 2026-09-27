@@ -1,15 +1,17 @@
 """Projects: the folders in the index, what you can do to a project, and where it lives.
 
-The tabs a project opens into belong to ``project_dashboard`` (its home) and
-``project_editor`` (its graph); this module never learns what they are. It is handed
-``open_dashboard`` and ``open_steps`` callbacks and calls them, which is the same seam the
-plan tree used before it and the reason two features can render the same thing without
-meeting. Its one tab is about no project: the Archive (``archive_tab.py``).
+The tab a project opens into belongs to ``project_editor`` (its graph); this module never
+learns what it is. It is handed an ``open_steps`` callback and calls it, which is the same
+seam the plan tree used before it and the reason two features can render the same thing
+without meeting. A project's row in the index only selects it. Its one tab is about no
+project: the Archive (``archive_tab.py``).
 
-Where a project lives is this module's other subject: the Project dialog (a column per
-repository — its log, what it is and where it is here, and a ⋯ menu of everything that
-changes either), the Repositories card on the Dashboard tab, Move Plan, and the *Settings
-▸ Repositories* page. Git and GitHub reach it only through the :class:`RepositoryServices`
+A project's forms are *Project ▸ Settings…*, the Project dialog: the name and summary, the
+Repositories tab — where a project lives, this module's other subject: a column per
+repository, its log, what it is and where it is here, and a ⋯ menu of everything that
+changes either — and a tab per section other modules registered into
+``services.project_settings``. Move Plan and the *Settings ▸ Repositories* page are here
+too. Git and GitHub reach it only through the :class:`RepositoryServices`
 the composition root fills in.
 
 Membership is here too — *File ▸ New Project…* (the Project dialog in create mode),
@@ -49,7 +51,7 @@ from dplanner.framework.autosave import AutosaveService
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
-from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
+from dplanner.framework.inspector import InspectorSectionRegistry
 from dplanner.framework.session import SessionControl
 from dplanner.framework.settings_registry import SettingsSection, SettingsSectionRegistry
 from dplanner.framework.tabs import TabHost
@@ -60,7 +62,6 @@ from dplanner.framework.widgets import notice
 from dplanner.framework.window import StatusHost
 from dplanner.modules.projects.archive_index import ArchiveSegment
 from dplanner.modules.projects.archive_tab import ARCHIVE_KIND, ArchiveActivity
-from dplanner.modules.projects.card import RepositoriesCard
 from dplanner.modules.projects.checkouts import CheckoutService
 
 # ProjectEntry is re-exported: contributors are wired through this module's Deps, and the
@@ -74,7 +75,7 @@ from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices, shown
 from dplanner.modules.projects.settings_page import build_page
 from dplanner.modules.projects.share_dialog import ShareProjectDialog
 from dplanner.modules.projects.verbs import ProjectVerbs
-from dplanner.theme.icons import archive_icon, branch_icon, container_icon
+from dplanner.theme.icons import archive_icon, container_icon
 
 
 @dataclass(frozen=True)
@@ -93,14 +94,12 @@ class ProjectsDeps:
     autosave: AutosaveService
     switcher: SessionControl
     settings_sections: SettingsSectionRegistry
-    # The Dashboard tab's card registry: the Repositories card goes there.
-    cards: InspectorSectionRegistry
+    # The Project dialog's tabs after Repositories, registered by other modules and read
+    # when the dialog is first built — after every module has registered.
+    project_settings: InspectorSectionRegistry
     # Show a project's graph — the "Show Steps" verb's and the Steps row's callback, wired
     # by the composition root to the project editor, which this module never imports.
     open_steps: Callable[[NodeId], None]
-    # Show a project's Dashboard, as a preview tab or for keeps — what a click on the
-    # project's own row in the index asks for. Wired by the composition root.
-    open_dashboard: Callable[[NodeId, bool], None]
     # Attach a directory and add the project to the library with the membership origin,
     # off the undo stack — also what restores an archived one. Checkouts are recorded
     # beside it, per repository, through `repos.set_checkout`.
@@ -188,17 +187,6 @@ class ProjectsModule:
             ),
         )
 
-        deps.cards.register(
-            InspectorSection(
-                id=f"{MODULE_ID}.repositories",
-                label="Repositories",
-                order=10,  # Ahead of the agent instruction (20) and docs (30).
-                icon=branch_icon,
-                factory=lambda: RepositoriesCard(
-                    deps.library, deps.repos, deps.actions, deps.context, deps.theme
-                ),
-            )
-        )
         deps.settings_sections.register(
             SettingsSection(
                 id=f"{MODULE_ID}.repositories", category=("Repositories",), factory=build_page
@@ -215,7 +203,6 @@ class ProjectsModule:
                 entries=deps.entries,
                 problems=deps.problems,
                 debounce=deps.debounce,
-                open_dashboard=deps.open_dashboard,
             )
 
         deps.segments.register(
@@ -265,6 +252,7 @@ class ProjectsModule:
         )
         accepted = bool(dialog.exec())
         spec = dialog.spec() if accepted else None
+        dialog.dispose()
         dialog.deleteLater()
         if spec is None:
             return
@@ -399,6 +387,7 @@ class ProjectsModule:
                 deps.theme,
                 checkouts=deps.checkouts,
                 move=self.move_plan,
+                sections=deps.project_settings.sections(),
                 parent=deps.parent,
             )
         self._dialog.show_project(project_id)

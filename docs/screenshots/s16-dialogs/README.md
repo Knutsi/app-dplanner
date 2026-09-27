@@ -10,7 +10,9 @@ temporary directory, so no path or preference of the rendering machine reaches a
 | `settings-appearance-*` | Appearance: one caption over the providers, each a switch over what it can do here. |
 | `settings-openai-*` | A page that was a `QFormLayout`: captions over the fields, and *Refresh* a quiet button whose glyph the arc turns in while a status line under the row says where the fetch stands. |
 | `settings-confluence-*` | Connected sites as a table with *Reconnect…* and *Forget* on a strip above it, greyed until a site is picked. |
-| `project-settings-*` | The Project dialog with Close alone, every edit live; both repositories apart, their logs side by side. |
+| `project-settings-*` | The Project dialog with Close alone, every edit live: the name and summary over its tabs, and the Repositories tab — both repositories apart, their logs side by side. |
+| `project-agent-*` | The Agent tab: the project's standing instruction, the same field the step Agent tab's Project part edits. |
+| `project-compilation-*` | The Compilation instructions tab: what every document compiled in the project follows. |
 | `project-colocated-*` | A plan still inside its code: the warning, and the plan column's empty state carrying *Set up a plan repository…* as its verb. |
 | `project-unset-*` | A plan in a plan repository whose code nobody named yet: the plan's own history, an empty code column saying so, no set-up offer and no warning. |
 | `project-create-*` | New Project: the plan repository, the folder, the code question with nothing picked, and the Locations table over a draft — with *Create* refused in words until the code is answered. |

@@ -8,7 +8,7 @@ filed under a feature that no longer waits on it.
 **Three tabs, because they are three documents.** *Fragments* is what the work wrote —
 read-only, each contribution under its step's heading. *Documentation* is what a collector
 makes of them, edited in place. *Compilation instructions* is the project's, a second binding
-over the field the project panel's card edits, because this is the page where somebody decides
+over the field *Project ▸ Settings…* edits, because this is the page where somebody decides
 how every document here should read.
 
 **The row says where a document stands in words, and the strip carries the verb.** The state
@@ -61,10 +61,10 @@ from dplanner.modules.docs.collect import (
     word_count,
 )
 from dplanner.modules.docs.section import (
+    CompilationInstructionsSection,
     CompiledSection,
     CompileLink,
     DocumentStanding,
-    InstructionsCard,
     Standing,
     ago,
 )
@@ -459,7 +459,7 @@ class _DocsPage(QWidget):
         self.tabs.addTab(compiled_page, DOCUMENT_TAB)
 
         # The project's own document, in the page where somebody decides how every document
-        # here should read: a second binding over the field the project panel's card edits,
+        # here should read: a second binding over the field Project ▸ Settings… edits,
         # which is the standing agent instruction's shape for the same reason.
         instructions_page = QWidget(self.tabs)
         instructions_layout = QVBoxLayout(instructions_page)
@@ -467,11 +467,9 @@ class _DocsPage(QWidget):
         instructions_layout.setSpacing(CAPTION_GAP)
         # No caption: the tab names it and the editor's placeholder says what it is for, so a
         # heading here would be the same words a third time.
-        self.instructions = InstructionsCard(
+        self.instructions = CompilationInstructionsSection(
             deps.library, deps.undo, deps.files, deps.pick_assets, deps.dictation
         )
-        # The card's height is a card's; here it has the page, so it takes what is left.
-        self.instructions.edit.setMaximumHeight(16_777_215)
         instructions_layout.addWidget(self.instructions, 1)
         self.tabs.addTab(instructions_page, INSTRUCTIONS_TAB)
 

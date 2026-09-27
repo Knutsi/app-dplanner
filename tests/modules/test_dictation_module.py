@@ -104,13 +104,14 @@ def test_the_real_build_lists_the_provider_pages_under_providers_and_the_key_act
 def test_every_prose_editor_in_the_build_wears_a_microphone_greyed_with_the_build_reason(
     services, make_project
 ):
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
     from dplanner.framework.dictation import NO_PROVIDER
     from dplanner.framework.markdown_toolbar import MarkdownToolbar
-    from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND
 
     project = make_project("Discovery")
-    # The project's prose cards are built with its Dashboard tab, not with the window.
-    services.tabs.open(DASHBOARD_KIND, project.id)
+    # The project's prose tabs are built with Project ▸ Settings…, not with the window.
+    on = Context({SCOPE_SELECTION: (ContextNode(selection_uri("project", project.id)),)})
+    services.actions.run("projects.settings", on)
     strips = services.window.findChildren(MarkdownToolbar)
     assert strips, "no strip was built"
     for strip in strips:

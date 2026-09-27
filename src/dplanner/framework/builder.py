@@ -245,7 +245,7 @@ class AppBuilder:
             index_segments=index_segments,
             panels=panels,
             inspector_sections=InspectorSectionRegistry(),
-            project_cards=InspectorSectionRegistry(),
+            project_settings=InspectorSectionRegistry(),
             step_details=InspectorSectionRegistry(),
             settings_sections=SettingsSectionRegistry(),
             clock=clock,

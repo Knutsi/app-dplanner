@@ -66,7 +66,7 @@ class InspectorSection:
     # disappears rather than sitting empty.
     shown_for: Callable[[str | None], bool] | None = None
     # How much of the leftover height a vertically stacking host gives this section's
-    # widget; tab and card hosts ignore it. One editor per host claims the room (1), the
+    # widget; a tab host ignores it. One editor per host claims the room (1), the
     # compact rows keep their size hint (0).
     stretch: int = 0
     # A standing convention the reader may not know — the unit a number is in, what a

@@ -107,14 +107,13 @@ def test_a_rebuild_that_loses_the_selected_row_announces_the_empty_selection(ser
     assert services.context.current().scope(SCOPE_SELECTION) == ()
 
 
-def test_activating_a_project_row_pins_its_dashboard(services, project):
-    """A project row is the project's home; the graph opens from its Steps entry."""
+def test_activating_a_project_row_opens_no_tab(services, project):
+    """A project row stands for its project; the graph opens from its Steps entry, and
+    its forms from *Project ▸ Settings…*."""
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
     row = panel.tree.topLevelItem(0).child(0)
     panel.tree.itemActivated.emit(row, 0)
-    (activity,) = services.tabs.activities()
-    assert activity.title == "Discovery — Dashboard"
-    assert not services.tabs.is_preview(activity)
+    assert services.tabs.activities() == []
 
 
 def test_the_steps_entry_opens_the_project_tab(services, project):
@@ -201,15 +200,14 @@ def test_a_modified_click_builds_a_selection_and_previews_nothing(services, proj
     assert services.tabs.activities() == []
 
 
-def test_clicking_a_project_row_previews_its_dashboard(services, project):
-    """A glance at the project's home, the way a click on an entry row glances at its
-    surface — the next glance replaces it."""
+def test_clicking_a_project_row_selects_it_and_opens_no_tab(services, project):
+    """A click selects the project — every Project verb then acts on it — and glances at
+    nothing: what shows while no tab is open is the window's, not the project's."""
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
     panel.tree.expandAll()
     click(panel, panel.tree.topLevelItem(0).child(0))
-    (activity,) = services.tabs.activities()
-    assert activity.title == "Discovery — Dashboard"
-    assert services.tabs.is_preview(activity)
+    assert services.tabs.activities() == []
+    assert services.context.current().focus_entity("project") == project.id
 
 
 # -- entry rows under a project ----------------------------------------------------------------
@@ -245,7 +243,6 @@ def entry_segment(services, project):
                 order=10,
             ),
         ),
-        open_dashboard=lambda node_id, preview: opened.append(("home", node_id, preview)),
     )
     yield segment, root, opened
     segment.dispose()
@@ -265,9 +262,9 @@ def test_entries_nest_under_each_project_in_order(entry_segment, project):
 
 def test_activating_an_entry_opens_it_for_its_project(entry_segment, project):
     segment, root, opened = entry_segment
-    segment.activated(root.child(0))  # The project row opens the project's home.
+    segment.activated(root.child(0))  # The project row opens nothing.
     segment.activated(root.child(0).child(1))
-    assert opened == [("home", project.id, False), ("specs", project.id)]
+    assert opened == [("specs", project.id)]
 
 
 def test_an_entry_row_stands_for_its_project_in_the_selection(entry_segment, project):

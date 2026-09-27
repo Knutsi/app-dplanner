@@ -455,7 +455,8 @@ class AssetsActivity(EntityActivity):
                     {SCOPE_SELECTION: (ContextNode(selection_uri("project", self.project_id)),)}
                 ),
             )
-        # A standing instruction has no verb that opens the project card; the row stays put.
+        # A standing instruction is a tab of Project ▸ Settings…, and no verb opens a tab
+        # there; the row stays put.
 
     # -- bytes, thumbnails, the lightbox -------------------------------------------------------
 

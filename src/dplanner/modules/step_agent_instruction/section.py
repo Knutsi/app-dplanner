@@ -7,8 +7,8 @@ only while it is the visible page, because re-laying a multi-kilobyte document p
 keystroke would fight the person typing on the other tab.
 
 **Components** is the editing surface: four collapsible parts in the order the prompt is
-assembled — the project's standing instruction (editable here and in the project panel's
-Agent card — one field, one undo stack), the step's own facts rendered by the same
+assembled — the project's standing instruction (editable here and in the Agent tab of
+*Project ▸ Settings…* — one field, one undo stack), the step's own facts rendered by the same
 ``prompt.section_lines`` the prompt is built with, what the project's notes hold for this
 step (the same function — the same no-drift rule), and this step's own instruction.
 
@@ -193,7 +193,7 @@ class AgentSection(QWidget):
         self._step_binding: TextBinding[Library] | None = None
         self._project_binding: TextBinding[Library] | None = None
 
-        # -- Project: the standing instruction, editable here and in the project panel.
+        # -- Project: the standing instruction, editable here and in Project ▸ Settings….
         self.project_edit = ProseEdit(self, undo=undo)
         self.project_edit.setObjectName("InspectorNotes")
         self.project_edit.setPlaceholderText(PROJECT_PLACEHOLDER)
@@ -669,14 +669,14 @@ class AgentSection(QWidget):
         self._project_binding = None
 
 
-class ProjectInstructionCard(ProseSection):
-    """The project panel's Agent card: the standing instruction, the tab's same field.
+class ProjectInstructionSection(ProseSection):
+    """The Agent tab of Project ▸ Settings…: the standing instruction, the step tab's
+    Project part over the same field.
 
     Two editors over one ``ModuleTextField`` — the binding's per-view origin keeps them
     from echoing each other, and one undo stack serves both. The editor, its gallery and
     its paste all come from :class:`ProseSection`; this subclass only aims them at the
-    project and pins the card's height — a card grows down the stack, not with its
-    content, and the inner scroller is DESIGN.md's accepted trade.
+    project.
     """
 
     def __init__(
@@ -696,17 +696,13 @@ class ProjectInstructionCard(ProseSection):
             field_for,
             undo,
             PROJECT_PLACEHOLDER,
+            margin=0,  # The dialog carries the margins.
             expand_title="Project Agent Instruction",
             attach_title="Attach to Instruction",
             dictation=dictation,
         )
         self._files = files
         self._pick_assets = pick_assets
-        # Six lines at least; the page the card is on gives it more when it has more.
-        self.edit.setMinimumHeight(self.edit.fontMetrics().lineSpacing() * 6 + 16)
-        layout = self.layout()
-        if layout is not None:
-            layout.setContentsMargins(0, 0, 0, 0)  # The hosting card carries the margins.
 
     def show_target(self, target_id: str | None) -> None:
         super().show_target(target_id)

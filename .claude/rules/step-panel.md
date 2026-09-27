@@ -2,14 +2,13 @@
 paths:
   - "src/dplanner/modules/step_{properties,description,milestone,check,start,status,ticket}/**"
   - "src/dplanner/modules/project_assets/**"
-  - "src/dplanner/modules/project_dashboard/**"
   - "src/dplanner/modules/*/{aspect,section}.py"
   - "src/dplanner/framework/{aspect_bar,aspect_toggle,inspector,module_data_section,prose_edit,prose_section,markdown_toolbar,markdown_highlight,markdown_view,text_binding,text_dialog,asset_gallery,asset_picker,mime_files,image_preview,cards,step_selection}.py"
   - "src/dplanner/domain/{aspects,assets,shelf,migrations}.py"
   - "src/dplanner/core/{module_data,formats}.py"
   - "src/dplanner/cli/{aspects,assets}.py"
   - "tests/framework/test_{aspect_bar,prose_edit,markdown_toolbar,markdown_highlight,text_dialog,asset_gallery,asset_picker,image_preview}.py"
-  - "tests/modules/test_{step_properties,step_details,aspect_editors,aspects,asset_sources,project_assets,step_description_section,step_milestone,step_start,step_status,project_dashboard}.py"
+  - "tests/modules/test_{step_properties,step_details,aspect_editors,aspects,asset_sources,project_assets,step_description_section,step_milestone,step_start,step_status}.py"
   - "tests/domain/test_{shelf,assets}.py"
   - "tests/cli/test_asset_verbs.py"
   - "scripts/render_step_details.py"
@@ -161,12 +160,12 @@ paths:
   left is every toggle, as a glyph. **Step ▸ New is one verb**: a step is born plain, titled "New
   step", and the details dialog opens on it with the name selected, where the bar says
   what it is.
-- **A module's project-level editor is a card, registered into `services.project_cards`.**
-  Same `InspectorSection` contract as a step tab, with a project id in `show_target`; the
-  Dashboard tab (`modules/project_dashboard/`) renders them, opened about one project and
-  never re-targeted, flowing as many across as the width allows; a section's `stretch`
-  says whether its card takes the page's leftover height (a prose editor does, with a
-  *minimum* height rather than a fixed one). Register before `project_dashboard` in
-  `default_modules()` — a tab reads the registry when it opens, and `reopen_tabs` opens
-  tabs at startup. The agent instruction's card is the example; `ARCHITECTURE.md`'s *The
-  dashboard hosts the same contract, as cards* has the reasoning.
+- **A module's project-level editor is a tab of *Project ▸ Settings…*, registered into
+  `services.project_settings`.** Same `InspectorSection` contract as a step tab, with a
+  project id in `show_target`; the Project dialog (`modules/projects/project_dialog.py`)
+  puts each after its own Repositories tab, labelled, glyphed and with the section's
+  `hint` as the tab's tooltip, and aims them only when the dialog moves to another project
+  — a prose tab rebinds whenever it is aimed. The dialog is built on first use, so there is
+  no position to keep in `default_modules()`. Leaving the dialog seals the undo step a tab
+  was growing. The agent instruction's tab is the example; `ARCHITECTURE.md`'s *A
+  project's forms live in its dialog* has the reasoning.

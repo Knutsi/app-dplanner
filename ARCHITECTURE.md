@@ -1069,8 +1069,8 @@ precondition rule every other presenter follows.
 
 The window has a centre — the tab groups — and three areas around it: **left, right and
 bottom**. Anything anchored in one is a `PanelSpec` in `services.panels`, and the framework's
-`PanelDock` puts it there. The index tree is one — and since the project's form became the
-Dashboard tab and the Test panel moved beside its roster, the only one. Right-clicking a
+`PanelDock` puts it there. The index tree is one — and since the project's forms moved into
+its dialog and the Test panel beside its roster, the only one. Right-clicking a
 panel's header moves it between areas or hides it, and *View ▸ Panels* switches it back on;
 an area no panel stands in hides its whole-side toggle, because HIDDEN is for a capability
 absent from this build and a verb that folds nothing teaches nothing.
@@ -1364,7 +1364,7 @@ way, which is the evidence that the shape survives a second host and a third.)
 and making the project form a peer of the aspects would force every aspect editor to answer
 "what if this is a project?" and hide itself — a second target vocabulary smuggled into every
 editor. (`shown_for` is not that: it hides a section per *step*, inside the one vocabulary.)
-It is the Dashboard tab's own form instead — *The project's home is a dashboard tab*.
+It is the Project dialog's own header instead — *A project's forms live in its dialog*.
 
 ## The step editor is a modal
 
@@ -1401,7 +1401,7 @@ canvas click. For a while the kinds it yielded to were named instead — a `narr
 tuple from the composition root, `("test",)`, so the Test panel had the area while a test
 was picked. Both halves of that arrangement have since left the areas: the Test panel
 stands inside the Tests tab (*A panel inside a tab follows the tab*) and the form is the
-Dashboard tab (*The project's home is a dashboard tab*), so there is nothing left to yield.
+Project dialog's (*A project's forms live in its dialog*), so there is nothing left to yield.
 
 **Why the dialog is not a breach of "one panel, not one per tab".** That rule forbids a panel
 *per surface*, where N tabs meant N copies on screen at once. The dialog is one transient host
@@ -1409,46 +1409,6 @@ the user summoned, disposed when it closes, and building a second stack of exten
 section contract's sanctioned use — one extension instance per host — which the project
 panel's cards had already proved. A test drives it the way the application does, through the
 `step_editor` fixture, because there is no anchored panel left to reach for.
-
-**The dashboard hosts the same contract, as cards.** A module with something to say about
-a *project* registers an `InspectorSection` into `services.project_cards` — the registry type
-is deliberately instantiated twice, because "a module-owned surface that appears when it has
-something to say" turned out to be identical for a panel tab and for a card stacked on a
-page. The Dashboard tab renders each as a `ToolCard` and drives the same lifecycle the step
-panel does, with a project id in `show_target`. That is what retired `project_repo`'s
-provider-and-Protocol handover (`RepoFields` + a `repo_fields` factory on the editor's Deps):
-the moment a second module wanted a project surface, "whoever turns up" became the right
-question, and a registry is for whoever turns up. The `step_agent_instruction` card — the
-project's standing instruction — is the second registrant, and each card must be registered
-before `project_dashboard` in the composition root's list: a tab reads the registry when it
-opens, and `reopen_tabs` opens tabs at startup.
-
-## The project's home is a dashboard tab
-
-The project's name and summary, and the cards the modules contribute about it, were a dock
-panel in the right area — the form the user saw whenever nothing narrower was picked. It is
-a tab now, `modules/project_dashboard/`, opened by *Project ▸ Show Dashboard* and by a
-click on the project's own row in the index (a preview, pinned by activation, the gesture
-every entry row already had).
-
-**It is opened about one project, like the modal is opened about one step.** The page reads
-no context: the tab names its project once, and that is the whole targeting. Two guards the
-dock panel needed vanish rather than being kept: the unchanged-id early return that stopped
-a context republished mid-typing from rebinding every card and throwing the cursor, and the
-yield-to-a-narrower-pick rule. Neither can happen to a page that is never re-targeted.
-
-**A page has the room a column never had.** Three cards of prose and repository facts in a
-360 px column were a scroll; on a tab the form's captions sit over its fields at a readable
-measure, and the cards flow into as many columns as the page is wide (`CardFlow`, one column
-at a panel's width) on a lane of their own, because a bare card on a tab page's ground is
-one faint border (`DESIGN.md`'s *Cards*). The right area is empty by default as a result,
-and its whole-side toggle hides until a panel is moved there.
-
-**The index's project row got a door of its own.** A click on a project used to select it
-and nothing more, because the form appeared in the area for the selection; with the form a
-tab, the same click glances at the Dashboard, and *Show Steps* — the verb and the first
-entry row — is the graph's. Qt still folds the row on a double-click, so activation both
-pins the tab and closes the folder; it is written down rather than fought.
 
 **The Details tab hosts the same contract, as blocks.** The first thing a step should show —
 what it is, how big it is, what it looks like — was scattered across an Estimate tab and a
@@ -1463,7 +1423,7 @@ that carries attachments (`shown_for`, re-asked on model changes exactly as the 
 re-asks it for tabs). Why a third registry instance and not a `placement` flag on
 `InspectorSection`: a host is addressed by *which registry you register into*. That keeps
 each host's vocabulary greppable, spares every host from filtering every section by a mode
-field, and is the same reasoning that made `project_cards` a second instance rather than a
+field, and is the same reasoning that made `project_settings` a second instance rather than a
 `kind` — three hosts now, and the dataclass still has no idea. Because the composite is
 just a section, the docked panel and the `steps.details` dialog render it identically for
 free.
@@ -1486,8 +1446,58 @@ GrowFlag that was promoting it behind the data's back — which is the real stat
 fix: **the cap is what makes `InspectorSection.stretch` authoritative.** Without it the
 declared stretch is advisory and Qt's propagation decides, which is why the bug read as
 arbitrary. `Maximum` rather than `Fixed`, so a panel shorter than its blocks still
-compresses rather than clipping. `framework/cards.py`'s `CardStack` had the trailing
-spacer from the start and never hit this, because no card asks for stretch.
+compresses rather than clipping. The card stack the project's forms once sat in had the
+trailing spacer from the start and never hit this, because no card asked for stretch.
+
+## A project's forms live in its dialog
+
+A project has a handful of things a person edits about it rather than about any step: its
+name and summary, where its plan and its code live, the standing instruction every briefing
+opens with, and the instructions every compiled document follows. They were a dock panel in
+the right area, then a **Dashboard tab** (`project_dashboard`), and are now the tabs of
+*Project ▸ Settings…* — the Project dialog (`modules/projects/project_dialog.py`), whose
+first tab, **Repositories**, is its own, and whose others are whatever registered into
+`services.project_settings`.
+
+**The tab said everything twice.** The dashboard's name and summary were the dialog's two
+fields again, and its Repositories card was the dialog's Locations table re-worded as
+lines — which is why `repos.location_words` had to be shared, so the two could not word one
+fact two ways. The only content of its own was two prose cards. So the host that already
+had the facts, the name and a Close-only footer took the two editors, and the second copy
+went. Nothing was lost in the move: the dialog already read `plan_in_code` and `warns` for
+its warning and its set-up offer, which is all the card's note and button said.
+
+**The registry survives, because the contract did.** Two modules still have something to
+say about a project, and neither should learn about the other or about the host: a
+registry is for whoever turns up. `project_settings` is an `InspectorSectionRegistry` like
+the step's tabs and its Details blocks, named after its host as `step_details` is, with a
+project id in `show_target`. The same registry is what first retired `project_repo`'s
+provider-and-Protocol handover (`RepoFields` + a `repo_fields` factory on the editor's
+Deps): the moment a second module wanted a project surface, "whoever turns up" became the
+right question. The dialog builds one extension per section when it is first built — on
+first use, after every module has registered — so the ordering rule the dashboard carried
+(register before `project_dashboard`, because `reopen_tabs` opened tabs at startup) went
+with it. A section's `hint` is its tab's tooltip; `stretch` means nothing to a tab host.
+
+**One dialog per window is re-aimed, so the aim is guarded.** Every *Settings…* calls
+`show_project`, and `ProseSection.show_target` rebinds whenever it is called, which throws
+the caret to the start. So the tabs are aimed only when the project changes — the
+unchanged-id guard the dock panel needed, which the dashboard dropped because nothing
+re-targeted it, and which a re-aimed dialog needs again. A context republished mid-typing
+reaches nothing, since the dialog reads no context. And because the dialog outlives a
+visit, **leaving it seals the undo step** a prose tab was growing (`hideEvent` →
+`break_coalescing`), as the dashboard did on deactivation: a text edit merges by field and
+time, not by who typed it, so the next visit's typing would otherwise grow the last one's
+step. `dispose()` lets go of the model before a dialog is deleted — New Project's create
+dialog calls it too, where its subscriptions used to outlive it.
+
+**The project row lost its door.** A click on a project's row in the index opened the
+Dashboard as a preview: a tab for every glance at the index. Now the row only selects its
+project. Every Project verb, *Settings…* among them, acts on it from the menu bar and the
+row's right-click; the Steps row opens the graph; a double-click still folds the row (Qt's
+behaviour, not fought). What shows while no tab is open is the window's to decide, not any
+one project's. The rule is `.claude/rules/step-panel.md`'s project-level editor bullet and
+`CLAUDE.md`'s panel bullet.
 
 ## A markdown toolbar is verbs over a selection, and one splice each
 
@@ -1549,8 +1559,8 @@ alternative — copy the text out, edit, copy it back on OK — would have inven
 place where prose lives and a Cancel button that discards work, both of which the binding
 discipline exists to prevent. The affordance is a small corner button `attach_expand` pins
 onto the editor itself, so every host — the Description block, the Agent tab's two
-instruction editors, the project card — offers the same gesture without growing a header
-row.
+instruction editors, the Project dialog's two prose tabs — offers the same gesture without
+growing a header row.
 
 ## A pasted image is an attachment and a link, not an embed
 
@@ -3224,8 +3234,8 @@ it has one from the moment it exists. This deliberately reverses an older decisi
 every tab is always visible; seven tabs on a step that is neither a milestone, an agent
 step nor tracked anywhere taught nothing and buried the four that mattered. Sections
 without a predicate (Estimate, Description, Handoff, GitHub) behave exactly as before,
-and the Dashboard tab's cards are exempt — the only card is the project's standing
-instruction, a project-level fact no step toggle should touch.
+and the Project dialog's tabs are exempt — they hold project-level facts no step toggle
+should touch.
 
 ### Every tab follows a toggle, and absence encodes the default
 
@@ -3584,8 +3594,8 @@ about a terminal the user owns from the moment it opens. The agent reports back 
 CLI instead (`status set`, `note add`), which the two-writers machinery already handles.
 
 The briefing opens with the **project's standing instruction** — the same module's prose on
-the project node, edited in the Dashboard tab's Agent card and in the Agent tab's Project
-part (two bindings over one field, one undo stack) — ahead of the step's `## Instructions`
+the project node, edited in *Project ▸ Settings…*'s Agent tab and in the step Agent tab's
+Project part (two bindings over one field, one undo stack) — ahead of the step's `## Instructions`
 (its description, unless a separate instruction exists — see *The description is the
 instructions*) and, after it, the notes index.
 
@@ -4292,7 +4302,7 @@ the project, whose code is simply not recorded yet (below). *Warns* is one predi
 plan is in its code (`plan_in_code`: legacy or colocated) and not accepted — asked by lint
 (`repo.legacy`, `repo.colocated`, exit 1; and the table's own `location.invalid`,
 `location.unknown_role`, `location.duplicate`), by the briefing's preamble (WARNING: leave
-the plan files alone), by the Project dialog and the Repositories card, and by the opening
+the plan files alone), by the Project dialog, and by the opening
 status line; `colocation: "accepted"` silences all of them at once, because it is the
 people on the project saying the shape is on purpose.
 
@@ -4334,7 +4344,7 @@ changed. A conflict handed to an agent is about plan files and opens in the plan
 repository whatever the code is. The github module's `repository_for`, `dplanner github`
 and the report's refs all read `code_remote`: the primary code repository, the plan's
 origin only for the legacy shape. `dplanner project show`, `location list`, `agent prompt --json` and
-the Repositories card print the same facts, and the briefing tells the agent the table
+the Project dialog's Locations table print the same facts, and the briefing tells the agent the table
 in words — which repositories the project is about and where each stands here, so an
 agent never guesses a path. Discovery (`cli/discovery.py`) gained one rule: a `dplanner`
 call from a checkout — or a worktree of it — whose `origin` is one of a project's code
@@ -4398,8 +4408,8 @@ link needs to name nothing but the plan.
 The two log columns kept their reasoning, which is the paragraph below.
 
 So the facts moved under the columns they belong to. Each column now answers the same two
-questions — `repos.code_lines` and `repos.plan_lines`, one derivation with two readers, so
-the dialog and the Repositories card cannot word the same fact differently — printed small
+questions — `repos.code_lines` and `repos.plan_lines`, one derivation for both columns, so
+no two surfaces can word the same fact differently — printed small
 under the well, with the vertical rule between them doing the work of saying which is
 which. A line with nothing to name says what is missing (*not checked out on this
 machine*) rather than standing blank, and `#RepoLineMissing` is what greys it: the shape
@@ -6054,7 +6064,7 @@ serve none of it.
 
 The project's **compilation instructions** are `modules/docs.md` beside the project — the
 `docs` id spanning node kinds, which `FORMAT.md` sanctions and `step_agent_instruction`
-already does. They have three presenters over one field: the Dashboard tab's card, a tab in
+already does. They have three presenters over one field: *Project ▸ Settings…*'s tab, a tab in
 the Documentation view (two bindings, one undo stack, the standing agent instruction's shape),
 and `dplanner docs set/show --for-project`. The CLI half is not a convenience: every compile
 briefing opens with them, so an agent compiling without a window launch must be able to read
@@ -7094,8 +7104,8 @@ gesture found it, which is what the next `c` needs.
 states, and the dock only ever asks for the first. A card bound to a project that is not
 on screen costs nothing; a card torn down and rebuilt costs the whole widget tree, twice
 per gesture, and throws away every text binding's caret. The step panel already had this
-rule in its unchanged-id early return; the project form had it too, until it became the
-Dashboard tab and stopped being re-targeted at all.
+rule in its unchanged-id early return; the project's forms have it too, in the Project
+dialog, whose tabs are aimed only when it moves to another project.
 
 **How it stays fixed.** `scripts/measure_scaling.py --scenarios connect,paste` drives
 the two gestures over the synthetic library with a step selected and reports, beside

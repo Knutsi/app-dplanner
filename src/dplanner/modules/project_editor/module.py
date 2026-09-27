@@ -1,8 +1,8 @@
 """A project open in a tab: its step graph, a toolbar over it, and the Problems list beside it.
 
 The tab is the canvas and its verbs. What the user selects on it is published into the
-context, and every verb and panel in the window follows from there; the project's own form
-is the Dashboard tab's (``modules/project_dashboard``), and a step's editor is a modal.
+context, and every verb and panel in the window follows from there; the project's own forms
+are *Project ▸ Settings…*, and a step's editor is a modal.
 
 Three seams keep this module from knowing about anything else in the application:
 
@@ -166,8 +166,6 @@ class ProjectEditorDeps:
     # How long a step takes, from whichever module owns estimates — the timeline sort reads
     # time through this, the same seam domain/schedule.py uses one level down.
     days_for: Callable[[Step], float | None] = field(default=_no_days)
-    # The project panel renders every section registered here as a card — the registry the
-    # composition root exposes as services.detail_cards. This module never learns whose.
     # A copied step carries its attachments: the file areas to read are the asset catalog's
     # sources, and what a copy may not carry is each owner's policy — see clipboard.py.
     file_modules: tuple[str, ...] = ()

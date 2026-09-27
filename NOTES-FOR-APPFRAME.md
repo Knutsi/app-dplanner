@@ -4454,3 +4454,35 @@ step with the state.
 
 **Upstream?** Yes, small and general: a strip whose lead verb should read without a hover
 has no other way to say so on the registry-fed path.
+
+## 60. From S4: the Dashboard retires into Project ▸ Settings…
+
+### `framework/cards.py` — `ToolCard` and `CardFlow` deleted
+
+**What we changed.** The card and the flow that reflowed cards into columns are gone, with
+the metrics only they read (`CARD_HEADER_GAP`, `STACK_MARGIN`, `CARD_MIN_WIDTH`). What stays
+is `card_rule()` and two metrics, `CARD_PADDING` and `STACK_SPACING`. A check's Covers tab
+still draws `#ToolCard` wells on a `#CardLane`, and the Project dialog uses the rule to part
+its two log columns.
+
+**Why.** The project's Dashboard tab was the flow's one host, and it said everything twice.
+Its name and summary were the Project dialog's fields again, and its Repositories card
+re-worded the dialog's Locations table. Its two prose editors are now tabs of the dialog.
+`ARCHITECTURE.md`'s *A project's forms live in its dialog* has the reasoning.
+
+**Upstream?** Nothing to carry. The template's stack still has its own host, and a wide
+window remains a case for the reflow entry above (§ `CardStack` is `CardFlow`).
+
+### `framework/services.py`, `builder.py` — `project_cards` is `project_settings`
+
+**What we changed.** A rename. The registry is named after its host now, as `step_details`
+is: the Project dialog's tabs after its own Repositories tab. The dialog builds its
+extensions on first use, so the rule that registrants must come before the host in the
+module list went with the tab.
+
+**Upstream?** With the registry, if it goes.
+
+### `framework/prose_section.py`, `inspector.py` — comments only
+
+`margin`'s comment names a dialog page instead of a card. `InspectorSection.stretch` now
+says only that a tab host ignores it, since the card host is gone.

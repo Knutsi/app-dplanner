@@ -432,17 +432,16 @@ src/dplanner/
 │   ├── library/             which library: File ▸ New/Open Project Library, the title; `library …` verbs
 │   ├── projects/            the Projects folder in the index, the project and `location` verbs, New
 │   │                        Project… (its code question: code_choice.py), Open Project… (link,
-│   │                        browse, then the Repositories page), the Project
-│   │                        dialog (the Locations table over the role registry, a log column per
-│   │                        repository), the location dialog (location_dialog.py), the Repositories
-│   │                        card, Move Plan, the repositories folder and the clone policy
-│   │                        (repositories_folder.py), the checkout service a verb gets a
+│   │                        browse, then the Repositories page), the Project dialog — Project ▸
+│   │                        Settings…: the name and summary over a Repositories tab (the
+│   │                        Locations table over the role registry, a log column per repository)
+│   │                        and a tab per section other modules register into project_settings
+│   │                        (Agent, Compilation instructions) — the location dialog
+│   │                        (location_dialog.py), Move Plan, the repositories folder and the clone
+│   │                        policy (repositories_folder.py), the checkout service a verb gets a
 │   │                        repository on this machine from (checkouts.py), and the archive:
 │   │                        Archive/Restore Project, the index's Archive folder
 │   │                        (archive_index.py) and the Archive tab (archive_tab.py)
-│   ├── project_dashboard/   the project's home tab: its name and summary, and a card per module with
-│   │                        something to say about the project (Repositories, Agent, Compilation
-│   │                        instructions) — what a click on the project's row in the index opens
 │   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, resize) and renderers,
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid,
 │   │                        the side panel; ground.py paints the background)

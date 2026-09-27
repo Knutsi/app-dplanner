@@ -155,7 +155,7 @@ class ProjectVerbs:
                 label="Show &Steps",
                 menu="Project",
                 group="open",
-                order=20,  # The index's order: Dashboard (5), Specs (10), Assets (15).
+                order=20,  # The index's order: Specs (10), Assets (15), then Steps.
                 tip="Show this project's graph",
                 state=self._on_a_project,
                 run=self._open,

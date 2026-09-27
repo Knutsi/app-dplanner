@@ -45,14 +45,6 @@ def test_the_tabs_come_back(session, services, project, library_file):
     assert open_uris(session) == [activity_uri(PROJECT_KIND, project.id)]
 
 
-def test_a_dashboard_tab_comes_back_too(session, services, project, library_file):
-    from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND
-
-    services.tabs.open(DASHBOARD_KIND, project.id)
-    assert session.reload()
-    assert open_uris(session) == [activity_uri(DASHBOARD_KIND, project.id)]
-
-
 def test_the_tab_the_user_was_on_is_the_one_they_come_back_to(
     session, services, project, make_project
 ):
@@ -93,7 +85,9 @@ def test_a_tab_whose_project_is_gone_is_not_reopened(session, project, library_f
 
 
 def test_a_tab_of_a_kind_this_build_has_no_longer_is_not_reopened(session, project, library_file):
-    remember(library_file, [activity_uri("a-feature-that-was-removed", project.id)])
+    """The Dashboard tab is the real case: it retired into *Project ▸ Settings…*, and a list
+    written while it existed still names it."""
+    remember(library_file, [activity_uri("dashboard", project.id)])
     assert session.reload()
     assert open_uris(session) == []
 

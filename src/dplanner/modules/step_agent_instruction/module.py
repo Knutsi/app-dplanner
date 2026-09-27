@@ -1,10 +1,10 @@
-"""The agent-instruction aspect, in the running application: the Agent tab, the project
-panel's Agent card, and Run Agent.
+"""The agent-instruction aspect, in the running application: the Agent tab, the Agent tab
+of Project ▸ Settings…, and Run Agent.
 
 The tab is the writing half — :class:`AgentSection` stacks the briefing's three parts
 (the project's standing instruction, what the project's notes hold for it, this step's own)
-and ``ModuleTextField`` does the binding work. The card is the same project field in the
-project panel, registered into ``deps.cards`` like any other project-level section.
+and ``ModuleTextField`` does the binding work. The project's own tab is the same field in
+the Project dialog, registered into ``deps.project_settings`` like any project-level section.
 
 Run Agent is the reading half: assemble the step's briefing (both instructions, plus
 whatever context the composition root hands in — this module never learns what a note
@@ -100,7 +100,7 @@ from dplanner.modules.step_agent_instruction.prompt import (
 from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog, RunAnywayDialog
 from dplanner.modules.step_agent_instruction.section import (
     AgentSection,
-    ProjectInstructionCard,
+    ProjectInstructionSection,
 )
 from dplanner.modules.step_agent_instruction.settings_page import (
     agent_command,
@@ -279,8 +279,8 @@ class StepAgentInstructionDeps:
     # Which of the two an agent works in is this module's decision (``_workdir``); a
     # conflict is settled in the plan's own repository, whatever the step's code is.
     facts_for: Callable[[StepId], RepositoryFacts]
-    # The project panel's card registry; None is a build without a project panel.
-    cards: InspectorSectionRegistry | None = None
+    # The Project dialog's tabs; None is a build without one.
+    project_settings: InspectorSectionRegistry | None = None
     # A checkout of each repository on this machine, cloned where the person's policy
     # says when there is none — the projects module's checkout service, handed over by
     # the root. Answers on the GUI thread with what landed and the first refusal.
@@ -390,14 +390,13 @@ class StepAgentInstructionModule:
                 ),
             )
         )
-        if deps.cards is not None:
-            deps.cards.register(
+        if deps.project_settings is not None:
+            deps.project_settings.register(
                 InspectorSection(
-                    id=f"{MODULE_ID}.card",
+                    id=f"{MODULE_ID}.project",
                     label="Agent",
                     order=20,
-                    stretch=1,  # A prose editor: it takes the page's leftover height.
-                    factory=lambda: ProjectInstructionCard(
+                    factory=lambda: ProjectInstructionSection(
                         deps.library, deps.undo, deps.files, deps.pick_assets, deps.dictation
                     ),
                     icon=typewriter_icon,

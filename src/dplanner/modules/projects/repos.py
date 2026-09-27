@@ -1,17 +1,17 @@
 """Qt-free shapes for the project surfaces that talk about repositories.
 
-The Project dialog, the Repositories card, Open Project and Move Plan all read the same
-two repositories and use git and GitHub the same handful of ways. What they need is one
-frozen bundle of callables the composition root fills in — :class:`RepositoryServices` —
-so a dialog test hands over lambdas and never spawns ``git`` or ``gh``, and the module
-never names a storage provider (architecture rule 8) or imports the github module (rule
-5). Every member marked BLOCKING is run inside a task body off the GUI thread and reads
-nothing but its arguments; the rest read the model and stay on the GUI thread.
+The Project dialog, Open Project and Move Plan all read the same two repositories and use
+git and GitHub the same handful of ways. What they need is one frozen bundle of callables
+the composition root fills in — :class:`RepositoryServices` — so a dialog test hands over
+lambdas and never spawns ``git`` or ``gh``, and the module never names a storage provider
+(architecture rule 8) or imports the github module (rule 5). Every member marked BLOCKING
+is run inside a task body off the GUI thread and reads nothing but its arguments; the rest
+read the model and stay on the GUI thread.
 
 The other shape here is what those surfaces *say*. A repository answers two questions —
 which repository it is, and where it is on this machine — and :func:`code_lines` and
-:func:`plan_lines` are the one derivation of both, so the dialog's columns and the panel's
-card cannot word the same fact two ways.
+:func:`plan_lines` are the one derivation of both, and :func:`location_words` of every
+row of the Locations table, so no surface words the same fact two ways.
 """
 
 from collections.abc import Callable, Mapping
@@ -136,7 +136,7 @@ def code_lines(facts: RepositoryFacts) -> RepoLines:
 
 @dataclass(frozen=True)
 class LocationWords:
-    """One location as every surface words it: the row of the table, the card's line.
+    """One location as every surface words it: a row of the Locations table.
 
     ``where`` always says something — a checkout, a managed clone fetched on demand, or
     that nothing is here yet — and ``missing`` is what a reader greys.
@@ -172,12 +172,6 @@ def location_words(placement: Placement, roles: Mapping[str, LocationRole]) -> L
             name, repository, position, f"kept by DPlanner at {shown_path(directory)}"
         )
     return LocationWords(name, repository, position, shown_path(directory))
-
-
-def location_lines(placement: Placement, roles: Mapping[str, LocationRole]) -> RepoLines:
-    """One location as two lines — which it is, and where it is here."""
-    words = location_words(placement, roles)
-    return RepoLines(words.identity, words.where, location_missing=words.missing)
 
 
 def plan_lines(facts: RepositoryFacts) -> RepoLines:

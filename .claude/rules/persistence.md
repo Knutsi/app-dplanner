@@ -180,8 +180,8 @@ paths:
   `checkout` as the primary row's; separated, colocated, legacy, unset; `warns` while
   `plan_in_code` unless `colocation == "accepted"`), and every reader asks it — lint's
   `repo.unset`/`repo.legacy`/`repo.colocated` and `location.invalid`/`unknown_role`/`duplicate`, the
-  briefing's preamble and its locations paragraph, the Project dialog, the Repositories
-  card, the opening status line. **No code row is two states, and the plan repository's
+  briefing's preamble and its locations paragraph, the Project dialog, the opening status
+  line. **No code row is two states, and the plan repository's
   `.dplanner` index tells them apart** (`indexed`): listed, the project is **unset** and
   nothing reads the plan repository as its code — Run Agent greys with *no code repository is
   recorded*, refs read nothing, `repo.unset` names `location add`, Move Plan leaves it
@@ -207,17 +207,18 @@ paths:
   plan repository is a choice that can be got wrong, and the surface that made it is the
   one that has to be able to change it — so the second move is not a special case, and the
   only thing it must not do is *inherit* (a plan leaving a plan repository keeps the
-  checkout it had, and gains none it never had). The card's button says which offer this
-  is — *Set up a plan repository…* inside the code, *Move Plan…* once out. `dplanner
+  checkout it had, and gains none it never had). The plan column's ⋯ says which offer
+  this is — *Set up a plan repository…* inside the code, *Move Plan…* once out. `dplanner
   project move` is the same function from the terminal; the briefing and the skill tell an
   agent to run it when the developer asks and never unasked. Never store a plan root, and
   never compare paths where `RepositoryFacts` already answers.
   `ARCHITECTURE.md`'s *A project names its locations* has the reasoning.
-- **The Project dialog is the Locations table over two log columns.** A location answers
-  two questions — *which repository and position is it* and *where is it on this machine*
-  — and the table (`locations_table.py`, the `Table` primitive) asks both of every row,
-  greyed where nothing is here yet; `repos.location_words` is the one wording, read by the
-  Repositories card too, so neither surface can word a fact the other way. **Add ▾ renders
+- **The Project dialog is the Locations table over two log columns.** They are its
+  Repositories tab, the first of *Project ▸ Settings…*'s tabs (the others are
+  `services.project_settings`', `step-panel.md`). A location answers two questions —
+  *which repository and position is it* and *where is it on this machine* — and the table
+  (`locations_table.py`, the `Table` primitive) asks both of every row, greyed where
+  nothing is here yet; `repos.location_words` is the one wording. **Add ▾ renders
   the role registry** and a row's **⋯** its verbs (edit, choose checkout, clone, open,
   remove), built when they open and greyed *with the reason in their words* rather than
   dropped; a right-click on a row renders the same ⋯. Adding or editing a row is one fit

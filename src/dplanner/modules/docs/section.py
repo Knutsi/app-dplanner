@@ -42,9 +42,6 @@ PROJECT_PLACEHOLDER = (
     "How this project's documentation should read — voice, audience, anything every"
     " document compiled here should follow. It opens every compile briefing."
 )
-# A card grows down the stack, not with its content; six lines is what the standing agent
-# instruction's card settled on and this sits beside it.
-CARD_LINES = 6
 
 
 @dataclass(frozen=True)
@@ -225,7 +222,7 @@ class CompiledSection(ProseSection):
         )
 
 
-class InstructionsCard(ProseSection):
+class CompilationInstructionsSection(ProseSection):
     """The project's compilation instructions: what every document compiled here follows.
 
     The same seam and the same reasoning as the standing agent instruction — written once
@@ -250,17 +247,13 @@ class InstructionsCard(ProseSection):
             field_for,
             undo,
             PROJECT_PLACEHOLDER,
+            margin=0,  # Every host carries the margins: the dialog, the view's page.
             expand_title="Compilation Instructions",
             attach_title="Attach to Compilation Instructions",
             dictation=dictation,
         )
         self._files = files
         self._pick_assets = pick_assets
-        # At least CARD_LINES; the page the card is on gives it more when it has more.
-        self.edit.setMinimumHeight(self.edit.fontMetrics().lineSpacing() * CARD_LINES + 16)
-        layout = self.layout()
-        if layout is not None:
-            layout.setContentsMargins(0, 0, 0, 0)  # The hosting card carries the margins.
 
     def show_target(self, target_id: str | None) -> None:
         super().show_target(target_id)

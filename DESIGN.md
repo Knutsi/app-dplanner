@@ -47,7 +47,8 @@ styling one surface by name.
 | busy, ok, warn, error or plain information in words | `StatusLine` | `framework/signalling.py` | the modal's *Signalling* block |
 | a list of facts about this machine | one `StatusLine` per row, grouped | `modules/checklist/dialog.py` | `docs/screenshots/f13-checklist/` |
 | a page with nothing in it | `EmptyState(stands_in_for=…)` | `framework/widgets.py` | `table-empty-*` |
-| module-owned features on a page, as many across as fit | `ToolCard`s in a `CardFlow`, on a `#CardLane` | `framework/cards.py` | the Project Dashboard tab |
+| module-owned pages about one thing, in a modal | a tab per `InspectorSection`: a `QTabBar` named `InspectorTabs` over a `QStackedLayout` | `modules/step_properties/panel.py`, `modules/projects/project_dialog.py` | `s6-step-details/`, `s16-dialogs/project-agent-*` |
+| independent things listed on a page | `#ToolCard` wells on a `#CardLane`, `framework/cards.py`'s metrics and `card_rule()` | `framework/cards.py` | a check's Covers tab in Step Details |
 | a panel a tab hosts beside its surface | `SidePanel`, `HostedSidePanel` | `framework/side_panel.py` | `s16-tests-view/test-panel-*` |
 | a caption over a block, a remark under it | `caption()`, `captioned()`, `note()`, `block()` | `framework/widgets.py` | the modal's form |
 | a settings page | `settings_page()`, then `block()`s — no margin of its own | `framework/settings_registry.py` | `s16-dialogs/settings-*` |
@@ -232,11 +233,12 @@ away joins its neighbours directly.
 
 ## Cards
 
-The one sanctioned box. A panel that hosts *independent features contributed by different
-modules* gives each feature a card (`framework/cards.py`: `ToolCard` in a `CardFlow`, which
-flows them into as many equal columns as the width allows — one at a panel's width).
-Cards separate features from each other; they never group one form's fields — that is
-still spacing.
+The one sanctioned box. A list of *independent things* on a page gives each a card — a check
+step's Covers tab is the worked example (`modules/testing/section.py`, metrics and
+`card_rule()` from `framework/cards.py`). Cards separate things from each other; they
+never group one form's fields — that is still spacing. Module-owned *forms* about one
+thing are not cards but tabs of a modal: the step's in Step Details, the project's in
+*Project ▸ Settings…*.
 
 - A card is a **well** on the elevated panel: `$BG_BASE`, 1 px `$BORDER`, `RADIUS_MD` —
   the same contrast as a plain field, so a panel of cards and a panel of fields read alike.
@@ -244,20 +246,19 @@ still spacing.
   colour as the well — a bare card is one faint border and the list has no shape. Give the
   list its own ground first: a *lane* (`$BG_ELEVATED`, 1 px `$BORDER`, `RADIUS_MD`) with
   the cards inside. `#CardLane` is the worked example.
-- 12 px padding inside; one `#InspectorCaption` header (with the feature's glyph in
-  `$TEXT_SECONDARY`, repainted on theme change) and 8 px to the body; 12 px between
-  cards; the stack keeps the panel's 16 px margins.
-- The stack **scrolls vertically and never horizontally**: cards wrap their text and
-  fit the panel's narrowest width (200 px). Alternate controls rather than placing
-  them side by side (Start *or* Stop, not both).
-- A card with nothing to say **hides entirely** (`tab_visible()` false) — never an empty
-  box. A card that always has something to say can **split in two** with a rule
-  (`card_rule()`, 12 px above and below): controls above, what they produced below. A
-  section that is empty *for now* says so in words rather than vanishing.
-- A card's action is a plain button. The one-primary rule applies to the panel, not to
+- 12 px padding inside (`CARD_PADDING`); 12 px between cards (`STACK_SPACING`); the
+  lane keeps the page's margins.
+- The lane **scrolls vertically and never horizontally**: cards wrap their text and fit
+  the narrowest width the page can be. Alternate controls rather than placing them side
+  by side (Start *or* Stop, not both).
+- A card with nothing to say **hides entirely** — never an empty box. A card that always
+  has something to say can **split in two** with a rule (`card_rule()`, 12 px above and
+  below): controls above, what they produced below. A list that is empty *for now* says
+  so in words rather than vanishing.
+- A card's action is a plain button. The one-primary rule applies to the page, not to
   each card, so no card gets the accent.
 - Avoid widgets with their own scroll bars inside a card (a text pane, a list): wheel
-  events stop at the inner scroller and the stack no longer scrolls under the cursor.
+  events stop at the inner scroller and the lane no longer scrolls under the cursor.
 
 ## Hierarchy
 
@@ -857,7 +858,10 @@ Dialogs:
   captioned blocks whose Create is refused in words, the plan repository carrying the `⋯`
   of the ways in beside it and the code repository a plain combo with nothing current
   until answered (F22); what a request came to in the footer's status slot, and the plan
-  column's set-up offer the verb of an `EmptyState`.
+  column's set-up offer the verb of an `EmptyState`. Settings mode is tabs (S4): the
+  step dialog's `#InspectorTabs` over Repositories, then every `project_settings`
+  section — the forms the Dashboard tab held, without its second copy of the name and the
+  locations.
 - *(done — S16)* `OpenProjectDialog`, `MovePlanDialog`, `RepositoriesFolderDialog`,
   `GhRepoListDialog` — on the frame; the repository picker's four glyph buttons one ⋯
   menu and its note a `StatusLine`; the GitHub list captioned, its listing in the status

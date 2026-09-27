@@ -594,9 +594,9 @@ QProgressBar::chunk {
     border-radius: 2px;
 }
 
-/* A feature's card in a panel (framework/cards.py): a well on the elevated panel, the
- * same contrast as a plain field. No colour here — it would cascade onto every label
- * inside. */
+/* A card (framework/cards.py's metrics; a check's Covers tab): a well on elevated
+ * ground, the same contrast as a plain field. No colour here — it would cascade onto every
+ * label inside. */
 #ToolCard {
     background-color: $BG_BASE;
     border: 1px solid $BORDER;
@@ -607,8 +607,8 @@ QProgressBar::chunk {
     background-color: $BORDER;
 }
 
-/* Progression lanes (modules/progression/view.py): a list on a tab page needs its own
- * ground, or its shape is one faint border. Elevated, so the #ToolCard rows inside sit
+/* A lane (a check's Covers tab, modules/testing/section.py): a list on a tab page
+ * needs its own ground, or its shape is one faint border. Elevated, so the #ToolCard rows inside sit
  * on the surface that well was designed against — see DESIGN.md §Cards. No colour here,
  * for #ToolCard's reason: it would cascade onto every label inside. */
 #CardLane {

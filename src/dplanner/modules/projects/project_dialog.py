@@ -1,19 +1,23 @@
 """The Project dialog: what a project is, where its plan and its code live, and what
 both repositories have been up to.
 
-*Project ▸ Settings…* — the name and summary above a rule, then **one column per
-repository**, parted by a vertical rule: the code on the left, the plan on the right,
-each with its branch over a well of rows, and under the well the two facts that column
-answers — *which repository is it* and *where is it on this machine* — with a ⋯ menu of
-everything that changes either. The divide is the teaching: the same two lines under both
-columns are what says these are two repositories and not three fields.
+*Project ▸ Settings…* — the name and summary, then a tab for everything else a project has
+a form for. **Repositories** is the dialog's own: the Locations table above a rule, then
+**one column per repository**, parted by a vertical rule: the code on the left, the plan on
+the right, each with its branch over a well of rows, and under the well the two facts that
+column answers — *which repository is it* and *where is it on this machine* — with a ⋯
+menu of everything that changes either. The divide is the teaching: the same two lines
+under both columns are what says these are two repositories and not three fields. The tabs
+after it are other modules' — every ``InspectorSection`` registered into
+``services.project_settings`` (the standing agent instruction, the compilation
+instructions), aimed at the project and never learned about.
 
 Every edit is live and undoable (the name and summary, the code repository and the
 colocation go through the undo stack; the checkout is written straight into the library
 file, a per-machine fact), so the dialog carries Close and nothing else — DESIGN.md's
 rule, the step details dialog the precedent — and one instance serves the window,
 re-aimed by ``show_project``. What the last request came to is said in the footer's
-status slot.
+status slot. Leaving the dialog seals the undo step a prose tab was growing.
 
 The logs are read off the GUI thread: one task body reads both histories and the code
 repository's open pull requests and hands back one :class:`_Logs`, stamped with the
@@ -46,7 +50,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtCore import Signal as QtSignal
-from PySide6.QtGui import QDesktopServices, QIcon, QPainter, QPaintEvent
+from PySide6.QtGui import QDesktopServices, QHideEvent, QIcon, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -58,6 +62,8 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPushButton,
     QSizePolicy,
+    QStackedLayout,
+    QTabBar,
     QVBoxLayout,
     QWidget,
 )
@@ -87,6 +93,7 @@ from dplanner.domain.plan_repo import ago
 from dplanner.domain.repositories import ACCEPTED, LEGACY, UNSET, RepositoryFacts
 from dplanner.framework.cards import card_rule
 from dplanner.framework.dialog import DialogFrame, LinePrompt
+from dplanner.framework.inspector import InspectorExtension, InspectorSection
 from dplanner.framework.list_rows import (
     DETAIL_ROLE,
     EMPHASIS_ROLE,
@@ -154,6 +161,7 @@ SETTINGS = "settings"
 CREATE = "create"
 SETTINGS_SIZE = (940, 770)
 CREATE_SIZE = (770, 620)
+REPOSITORIES = "Repositories"  # Settings mode's first tab: the dialog's own.
 # What the plan column says where the plan has no history of its own to show.
 SETUP_WORDS = "The plan's history is the code's — it has no repository of its own."
 
@@ -439,6 +447,7 @@ class ProjectDialog(DialogFrame):
         checkouts: CheckoutService,
         move: Callable[[NodeId], None],
         mode: str = SETTINGS,
+        sections: Sequence[InspectorSection] = (),
         parent: QWidget | None = None,
     ) -> None:
         create = mode == CREATE
@@ -554,6 +563,10 @@ class ProjectDialog(DialogFrame):
         self._folder_touched = False
         self._no_code = False  # *No code repository yet*, chosen: an answer, not a blank.
 
+        # -- settings mode: a tab per form, the ones after Repositories other modules' -----
+        self.tab_bar: QTabBar | None = None
+        self.extensions: list[InspectorExtension] = []
+
         self._unsubscribes = [
             library.field_changed.connect(self._on_field),
             library.structure_changed.connect(self._on_structure),
@@ -566,12 +579,56 @@ class ProjectDialog(DialogFrame):
                 unused.hide()  # Nothing exists yet to read a log of or act on.
             self._build_create_form(services, tasks, theme)
         else:
-            layout.addWidget(self.locations)
-            layout.addWidget(card_rule(body))
-            layout.addWidget(logs, 1)
-            layout.addWidget(self.warning_row)
-            layout.addWidget(self.gh_note)
+            self._build_tabs(logs, sections, theme)
             self.add_dismiss("Close")  # Every edit is live: Close, and nothing else.
+
+    def _build_tabs(
+        self, logs: QWidget, sections: Sequence[InspectorSection], theme: ThemeService
+    ) -> None:
+        """Settings…: under the name and summary, Repositories — the Locations table, the
+        two log columns and what is wrong — then a tab per section another module
+        registered about a project, in the registry's order, each built once and aimed by
+        :meth:`show_project`. The step dialog's tab idiom (``step_properties/panel.py``): a
+        bare ``#InspectorTabs`` bar over a stack."""
+        body, layout = self.body, self.body_layout
+        column = QVBoxLayout()
+        layout.addLayout(column, 1)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(SECTION_GAP)
+        tab_bar = self.tab_bar = QTabBar(body)
+        tab_bar.setObjectName("InspectorTabs")
+        tab_bar.setExpanding(False)
+        tab_bar.setDrawBase(False)
+        column.addWidget(tab_bar)
+        pages = QStackedLayout()
+        column.addLayout(pages, 1)
+        tab_bar.currentChanged.connect(pages.setCurrentIndex)
+
+        def add_tab(
+            label: str, icon: Callable[[str], QIcon] | None, hint: str, page: QWidget
+        ) -> None:
+            index = tab_bar.addTab(label)
+            tab_bar.setTabToolTip(index, hint)
+            pages.addWidget(page)
+            if icon is not None:
+                self._painters.append(lambda ink: tab_bar.setTabIcon(index, icon(ink)))
+
+        repositories = QWidget(body)
+        repositories.setObjectName("ProjectRepositories")
+        rows = QVBoxLayout(repositories)
+        rows.setContentsMargins(0, 0, 0, 0)
+        rows.setSpacing(SECTION_GAP)
+        rows.addWidget(self.locations)
+        rows.addWidget(card_rule(repositories))
+        rows.addWidget(logs, 1)
+        rows.addWidget(self.warning_row)
+        rows.addWidget(self.gh_note)
+        add_tab(REPOSITORIES, branch_icon, "", repositories)
+
+        self.extensions = [section.factory() for section in sections]
+        for section, extension in zip(sections, self.extensions, strict=True):
+            add_tab(section.label, section.icon, section.hint, extension.widget)
+        self._paint(theme.current)
 
     def _build_create_form(
         self, services: RepositoryServices, tasks: TaskService, theme: ThemeService
@@ -853,6 +910,11 @@ class ProjectDialog(DialogFrame):
     # -- aiming ---------------------------------------------------------------------------------
 
     def show_project(self, project_id: NodeId) -> None:
+        if project_id != self._project_id:
+            # Only on a change: a prose tab rebinds whenever it is aimed, and a second
+            # Settings… on the same project has no business moving its caret.
+            for extension in self.extensions:
+                extension.show_target(project_id)
         self._project_id = project_id
         self.code_column.show_message("Reading…")
         self.plan_column.show_message("Reading…")
@@ -1289,6 +1351,9 @@ class ProjectDialog(DialogFrame):
 
     def _on_structure(self, _parent_id: NodeId, _origin: object) -> None:
         if self._project_id is not None and not self._library.has(self._project_id):
+            self._project_id = None
+            for extension in self.extensions:
+                extension.show_target(None)
             self.close()
 
     def _on_checkout(self, _repository: str) -> None:
@@ -1312,6 +1377,22 @@ class ProjectDialog(DialogFrame):
         self._ink = theme.text_secondary
         for repaint in self._painters:
             repaint(theme.text_secondary)
+
+    def hideEvent(self, event: QHideEvent) -> None:  # noqa: N802 - Qt override
+        # A prose tab coalesces typing into one undo step, and the dialog outlives a visit:
+        # without the seal, typing on the next visit would grow the step this one left.
+        self._undo.break_coalescing()
+        super().hideEvent(event)
+
+    def dispose(self) -> None:
+        """Let go of the model — the dialog's own subscriptions and every tab's — before
+        the dialog is deleted, so no signal reaches a widget that is gone."""
+        for unsubscribe in self._unsubscribes:
+            unsubscribe()
+        self._unsubscribes.clear()
+        for extension in self.extensions:
+            extension.dispose()
+        self.extensions = []
 
 
 def _with_code(

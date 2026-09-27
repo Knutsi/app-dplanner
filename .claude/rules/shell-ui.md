@@ -145,8 +145,8 @@ paths:
 - **A single click in the index opens a preview tab** (`tabs.open(..., preview=True)`): at
   most one preview exists, the next preview replaces it, and a deliberate act — activation,
   or moving the tab — pins it. A preview-open of anything already open is a plain focus.
-  A project's own row previews its Dashboard (`open_dashboard` on `ProjectsDeps`, the
-  `open_steps` seam one level up); its entry rows preview their surfaces.
+  A project's own row only selects it — its forms are *Project ▸ Settings…*, and what
+  shows while no tab is open is the window's; its entry rows preview their surfaces.
   `ARCHITECTURE.md`'s *A click is a glance* has the rules and why no timer is involved.
 - **A panel inside a tab is a `SidePanel`, hosted through `HostedSidePanel`**
   (`framework/side_panel.py`). A dock panel follows the *window* — one instance, retargeted

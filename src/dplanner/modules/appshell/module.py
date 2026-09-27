@@ -334,7 +334,7 @@ class AppShellModule:
 
         register_area_toggle(PanelArea.LEFT, "Left Side Panel", "Ctrl+B", 10)
         register_area_toggle(PanelArea.RIGHT, "Right Side Panel", "Ctrl+Alt+B", 20)
-        # Nothing targets RIGHT by default any more — the project form is the Dashboard tab
+        # Nothing targets RIGHT by default any more — the project's forms are its dialog's
         # and the Test panel stands inside the Tests tab — so Ctrl+Alt+B is hidden until a
         # panel is moved there. BOTTOM has no registered panels either; Ctrl+J is reserved.
         # Collapse also flips when a gesture reveals a panel, so the checkmarks re-read here.

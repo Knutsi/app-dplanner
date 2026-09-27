@@ -109,6 +109,20 @@ this computer is off by default.
 - `dplanner note add Discovery handoff '<one line>' --step S3 --file -`
 """
 
+STANDING_INSTRUCTION = """Work in small, reviewable commits and keep the plan's step titles in \
+the commit subjects.
+
+- Run the four checks before you finish: the suite, ruff, mypy, and mypy for Windows.
+- Never merge a pull request yourself; the developer merges.
+- Ask before adding a dependency, and say its licence first.
+"""
+COMPILATION_INSTRUCTIONS = """Write for a developer joining the team next month: what each part \
+does, where it lives, and why it is shaped the way it is.
+
+## Voice
+
+Plain sentences, present tense, no marketing. Lead each page with what the reader can do.
+"""
 DIFF_PLANS = """diff --git a/discovery/project.dproj b/discovery/project.dproj
 index 3f1a2b4..9c0d7e1 100644
 --- a/discovery/project.dproj
@@ -537,7 +551,9 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
         save(settings, out, name, theme, app)
     settings.hide()
 
-    # -- the Project dialog, apart from its code and still inside it ---------------------------
+    # -- the Project dialog, apart from its code and still inside it, then its other tabs -------
+    services.document.set_text(discovery.id, "step_agent_instruction", STANDING_INSTRUCTION)
+    services.document.set_text(discovery.id, "docs", COMPILATION_INSTRUCTIONS)
     project = ProjectDialog(
         services.document,
         services.undo,
@@ -546,6 +562,7 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
         services.theme,
         checkouts=checkouts,
         move=lambda _pid: None,
+        sections=services.project_settings.sections(),
         parent=services.window,
     )
     inline(project._reader, project._worker)
@@ -556,6 +573,12 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
     save(project, out, "project-colocated", theme, app)
     project.show_project(satellite.id)
     save(project, out, "project-unset", theme, app)
+    project.show_project(discovery.id)
+    assert project.tab_bar is not None
+    for index, name in ((1, "project-agent"), (2, "project-compilation")):
+        project.tab_bar.setCurrentIndex(index)
+        save(project, out, name, theme, app)
+    project.dispose()
     discard(project)
 
     creating = ProjectDialog(

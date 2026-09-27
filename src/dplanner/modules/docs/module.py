@@ -65,9 +65,9 @@ from dplanner.modules.docs.aspect import (
 from dplanner.modules.docs.collect import Source, frontier, sources_for, state_of
 from dplanner.modules.docs.prompt import compile_body
 from dplanner.modules.docs.section import (
+    CompilationInstructionsSection,
     CompileLink,
     DocsSection,
-    InstructionsCard,
     Standing,
 )
 from dplanner.theme.icons import read_icon, refresh_icon, spark_icon
@@ -109,8 +109,8 @@ class DocsDeps:
     # Where a step's documentation images live — the store's `files`, so this module
     # never names a store.
     files: FilesFor | None = None
-    # The project panel's card stack. None in a build without a project panel.
-    cards: InspectorSectionRegistry | None = None
+    # The Project dialog's tabs. None in a build without one.
+    project_settings: InspectorSectionRegistry | None = None
     # What a collector says about itself — its description. Context in the briefing, not a
     # writing brief: which prose that is is a cross-module fact, so the root decides it.
     instructions: Callable[[Step], str] = lambda _step: ""
@@ -206,14 +206,13 @@ class DocsModule:
                 ),
             )
         )
-        if deps.cards is not None:
-            deps.cards.register(
+        if deps.project_settings is not None:
+            deps.project_settings.register(
                 InspectorSection(
-                    id=f"{MODULE_ID}.card",
+                    id=f"{MODULE_ID}.project",
                     label="Compilation instructions",
                     order=30,
-                    stretch=1,  # A prose editor: it takes the page's leftover height.
-                    factory=lambda: InstructionsCard(
+                    factory=lambda: CompilationInstructionsSection(
                         deps.library, deps.undo, deps.files, deps.pick_assets, deps.dictation
                     ),
                     icon=read_icon,

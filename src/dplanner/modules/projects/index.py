@@ -6,13 +6,13 @@ the graph editor is for — an index answers "what is in this workspace", and a 
 position in a graph, which a list of rows cannot show. An entry is different: it is a door
 into a project-scoped surface (its specs, say), not a copy of the project's content.
 
-The segment publishes what is selected and opens what is activated. A project row opens
-the project's home — its Dashboard — through the ``open_dashboard`` callback the
-composition root supplied, and an entry row opens its own surface through ``entry.open``;
-the segment never learns what an editor is. A plain click opens the same surface as a
+The segment publishes what is selected and opens what is activated. A project row only
+selects its project: its forms are *Project ▸ Settings…*, on the row's right-click with
+every other Project verb, and double-clicking it folds it (Qt's own behaviour, which
+nothing here fights). An entry row opens its own surface through ``entry.open``; the
+segment never learns what an editor is. A plain click opens the same surface as a
 *preview* tab — the glance that VS Code's next glance replaces — and activation is what
-keeps it. Double-clicking a project row also folds it (Qt's own double-click behaviour,
-which nothing here fights): the tab is kept and the folder closes.
+keeps it.
 """
 
 from collections.abc import Callable, Sequence
@@ -90,12 +90,8 @@ class ProjectsSegment:
         entries: tuple[ProjectEntry, ...] = (),
         problems: Callable[[], list[ProjectProblem]] = list,
         debounce: DebounceService | None = None,
-        open_dashboard: Callable[[NodeId, bool], None] | None = None,
     ) -> None:
         self._root = root
-        # (project id, preview) — the project row's own door; None is a build with no home
-        # tab, where a click on the row only selects it.
-        self._open_dashboard = open_dashboard
         # After a quiet spell, not per signal: the whole folder is redrawn. No Qt parent —
         # a segment is not a widget — so the service's cancel_all is what disarms it.
         self._rebuild_soon = Debounced(self.rebuild, parent=None, service=debounce)
@@ -137,36 +133,27 @@ class ProjectsSegment:
             kind, node_id = self._identity(item)
             if kind == "entry":
                 # An entry row stands for its project: publishing the project's URI is what
-                # keeps every Project verb and the project panel working from here.
+                # keeps every Project verb working from here.
                 kind, node_id = "project", self._entry_project(item)
             if not (kind and node_id):
                 continue
             uri = selection_uri(kind, node_id)
             # Dedupe: a project and its entry selected together are one project — a double
-            # entry would make selected_entity() answer None and hide the project's panel.
+            # entry would make selected_entity() answer None and grey every Project verb.
             if uri not in uris:
                 uris.append(uri)
         return [ContextNode(uri) for uri in uris]
 
     def clicked(self, item: QTreeWidgetItem) -> None:
-        kind, node_id = self._identity(item)
-        if kind == "entry":
-            entry = self._entry_of(item)
-            project_id = self._entry_project(item)
-            if entry and project_id and entry.open_preview is not None:
-                entry.open_preview(project_id)
-        elif kind == "project" and node_id and self._open_dashboard is not None:
-            self._open_dashboard(node_id, True)  # A glance at the project's home.
+        # Only an entry row opens anything; a project row is selected, and that is all.
+        entry, project_id = self._entry_of(item), self._entry_project(item)
+        if entry and project_id and entry.open_preview is not None:
+            entry.open_preview(project_id)
 
     def activated(self, item: QTreeWidgetItem) -> None:
-        kind, node_id = self._identity(item)
-        if kind == "entry":
-            entry = self._entry_of(item)
-            project_id = self._entry_project(item)
-            if entry and project_id:
-                entry.open(project_id)
-        elif kind == "project" and node_id and self._open_dashboard is not None:
-            self._open_dashboard(node_id, False)  # Kept; Qt folds the row as well.
+        entry, project_id = self._entry_of(item), self._entry_project(item)
+        if entry and project_id:
+            entry.open(project_id)
 
     def context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
         kind, _node_id = self._identity(item)
