@@ -1,8 +1,8 @@
 """The Estimates tab: many steps sized in one sitting, opened from a selection.
 
 What matters here is the seams: the action reads the same selection scope every verb reads,
-the rows write through the same command the detail panel writes, and the tab lands beside
-the canvas without either module knowing the other's name.
+the rows write through the same command the detail panel writes, and the tab opens where
+every view does without either module knowing the other's name.
 """
 
 import pytest
@@ -128,12 +128,13 @@ def test_the_action_greys_off_any_project(services):
     assert state.visible and not state.enabled
 
 
-def test_the_tab_opens_beside_the_canvas(services, project):
+def test_the_tab_opens_in_the_pane_it_was_opened_from(services, project):
+    """A view like any other: the window is not split for it."""
     services.tabs.open("project", project.id)
     select(services, project.steps[0])
     run_estimate_open(services)
 
-    assert services.tabs.group_count() == 2
+    assert services.tabs.group_count() == 1
     assert services.tabs.current_activity() is estimate_tab(services)
 
 

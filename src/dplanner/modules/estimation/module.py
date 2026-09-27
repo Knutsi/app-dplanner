@@ -25,7 +25,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.activity import follow_entity_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
-from dplanner.framework.context import Context, ContextService, activity_uri
+from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
@@ -80,19 +80,10 @@ class EstimationModule:
         """Open the project's Estimates tab, scoped to ``step_ids`` (or the whole project),
         showing only the unsized rows when asked — the Time tab's *Estimate missing*.
 
-        On its first open the tab is moved to the pane beside the one it was opened from,
-        so the list sits next to the canvas that selected the steps. On a re-run it stays
-        wherever the user has since put it — only the scope and the filter change.
+        It opens where every view does, in the pane it was opened from; a re-run finds the
+        tab wherever the user has since put it, and changes only the scope and the filter.
         """
-        tabs = self._deps.tabs
-        uri = activity_uri(ESTIMATE_KIND, project_id)
-        is_new = all(activity.uri != uri for activity in tabs.activities())
-        activity = tabs.open(ESTIMATE_KIND, project_id)
-        if is_new:
-            if tabs.can_move_right():
-                tabs.move_current_right()
-            elif tabs.can_move_left():
-                tabs.move_current_left()
+        activity = self._deps.tabs.open(ESTIMATE_KIND, project_id)
         assert isinstance(activity, BulkEstimateActivity)
         activity.set_scope(tuple(step_ids))
         if unestimated:
