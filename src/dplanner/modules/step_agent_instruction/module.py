@@ -236,6 +236,11 @@ def _our_version(node: Node, entry: str) -> str:
 
 
 NO_AGENT_ON_A_WAIT = "a wait has no work for an agent"
+# A person's own shell where a step's work is: its worktree, or the checkout a step that
+# works in place uses. Not a run — nothing is briefed, tracked or claimed.
+SHELL_IN_WORKTREE = "&Open Terminal in Worktree"
+SHELL_IN_CHECKOUT = "&Open Terminal in Checkout"
+NO_WORKTREE = "no worktree of it on this machine yet — Run Agent prepares one"
 
 
 @dataclass(frozen=True)
@@ -485,6 +490,19 @@ class StepAgentInstructionModule:
                 id=SETTINGS_SECTION,
                 category=("Agent profiles",),
                 factory=lambda parent: build_page(parent, harnesses=deps.harnesses),
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="agent.open_shell",
+                label=SHELL_IN_WORKTREE,
+                menu="Step",
+                group="agent",
+                order=35,
+                tip="A terminal of your own where the step's work is — not an agent — to run"
+                " something there",
+                state=self._can_open_shell,
+                run=self._open_shell,
             )
         )
         # Once per user and machine: every harness in every terminal worth naming, so the
@@ -753,6 +771,68 @@ class StepAgentInstructionModule:
             )
         menu.addSeparator()
         append_action(menu, deps.actions, deps.context, "agent.profiles")
+
+    # -- a shell of one's own ------------------------------------------------------------------
+
+    def _shell_place(self, step: Step) -> tuple[Path | None, str]:
+        """Where a plain shell for ``step`` opens — its worktree, or the checkout for a step
+        that works in place — or why nowhere can: the default profile's terminal first, as
+        Run Agent asks it, then the checkout, then the worktree Run Agent would have made.
+
+        The worktree is found by the same name the wrapper script gives it (``_run_name``),
+        so a step renamed since its agent ran is looked for under its new name."""
+        deps = self._deps
+        if refusal := launcher.template_refusal(launch_command()):
+            return None, refusal
+        facts = deps.facts_for(step.id)
+        if refusal := _workdir_refusal(facts, step):
+            return None, refusal
+        workdir = launcher.workdir(facts, step)
+        if workdir is None:
+            return None, "the project's code is not on this machine — Project ▸ Settings…"
+        if not uses_worktree(step):
+            return workdir.expanduser(), ""
+        tree = launcher.worktree_path(workdir.expanduser(), self._run_name(step))
+        return (tree, "") if tree.is_dir() else (None, NO_WORKTREE)
+
+    def _can_open_shell(self, context: Context) -> ActionState:
+        step = focused_step(context, self._deps.library)
+        if step is None:
+            return DISABLED
+        label = SHELL_IN_WORKTREE if uses_worktree(step) else SHELL_IN_CHECKOUT
+        _directory, refusal = self._shell_place(step)
+        plain = label.replace("&", "")
+        if refusal:
+            return ActionState(enabled=False, label=f"{plain} — {refusal}")
+        return ActionState(label=label)
+
+    def _open_shell(self, context: Context) -> None:
+        """Open the default profile's terminal on a plain shell where the step's work is.
+        No run is recorded and nothing is claimed; a terminal that does not open is a
+        notice, since there is no prompt to hand over instead."""
+        deps = self._deps
+        step = focused_step(context, deps.library)
+        if step is None:
+            return
+        directory, _refusal = self._shell_place(step)
+        if directory is None:
+            return  # The state gate already says why.
+        subject = f"{deps.step_key(step)} {step.title}".strip()
+        files = launcher.shell_script(
+            directory,
+            _window_title(subject, "shell"),
+            project_id=deps.library.project_of(step.id).id,
+        )
+        command = launcher.resolve_command(launch_command(), files, directory)
+        if command is None or launcher.spawn(command, directory, harnesses=deps.harnesses):
+            notice(
+                deps.parent,
+                "Open Terminal",
+                f"No terminal opened in {directory} — check the default profile's terminal"
+                " in Settings ▸ Agent profiles.",
+            )
+            return
+        deps.status.show_status(f"Terminal opened in {directory}", 4000)
 
     def _run_name(self, step: Step) -> str:
         """What this step's worktree and branch are called: the launcher's rule over the

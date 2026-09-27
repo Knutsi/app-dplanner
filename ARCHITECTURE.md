@@ -1531,6 +1531,21 @@ rebuilt on a tick loses the button being pressed. `RowWell.reconcile(keys, build
 keeps a row per key and updates it in place. A task's indeterminate bar became a busy
 `StatusLine`, the rule every other surface already follows: an unknown fraction is busy.
 
+**A table row's own verbs are a painted ⋮, not a well.** The Step statuses tabs wanted each
+row's verbs one click away — its agent's terminal, a shell in its worktree, its pull
+request — and they are still tables: a reader compares the rows' unlocks and projects down
+a column, and the rows are rebuilt wholesale on a settled change, never ticking under a
+pressed button. A well would have given up the columns; a button planted in each cell
+would have brought back everything the column-owned editors retired. So the ⋮ is a
+`Column(menu=True)` the delegate paints and the table hit-tests, as it does the check box
+and the chips, and a press says only *which row* and *where* (`menu_requested`): what a
+row *is* is the host's knowledge, so the host builds the menu — from the registry, never a
+copy. **It picks its row alone first**, where a right-click keeps a pick the row is in,
+because `focus_entity` answers with the first selected step: a ⋮ pressed on the third of
+three ticked rows would otherwise have offered the first one's terminal. And it never takes
+the table's slack, or a table with no stretching column would push the ⋮ to the far edge
+of a wide tab, away from the row it belongs to.
+
 **A list stays a list.** Standing note N28 said every `#OrderTable` borrower moves onto
 `Table`, and DESIGN.md says a list when there is one column of things. The implementation
 notes log is one column of things, and a one-column table would add a header nobody reads,
@@ -5149,6 +5164,46 @@ so the box can only appear where the question can still be answered yes: a ticke
 another group, the canvas, the order table, the palette. A test pins the silence, because a
 confirmation that never fires in the place people launch from is the kind of thing a later
 change removes by accident.
+
+**The Control Centre is the same board over every project** — what needs a person
+anywhere, rather than in the project whose tab is open. Six decisions shaped it:
+
+- **The same groups, and still no running work.** The step that asked for it named running
+  and upcoming lanes, written before this tab stopped being lanes; the developer kept the
+  table's rule on 27 September, so the Control Centre is the five groups above and a later
+  group is one row in `GROUPS`, on both tabs at once.
+- **Each project is walked on its own and the board is their merge.** Edges never cross a
+  project, so `progression()` per project is already right, and `merge()` only has to rank
+  what a person acts on again by `unlocks` over the whole — a stable sort over the walks
+  handed in library order, so ties go to the earlier project and then to that project's
+  own rank, and one walk merged is itself. `across()` is the two in one call for the
+  terminal. The tab keeps the walks and re-merges the picked ones, so the *Projects*
+  filter never walks a graph: a filter change is a merge and a table fill.
+- **Two tabs on one base, not one tab with a scope.** `StatusBoard` holds the strip, the
+  table, the row's ⋮ and the refresh; *Step statuses* and the Control Centre are siblings on
+  it. One class with a *None-means-every-project* scope was the first sketch, and
+  `follow_project_tabs` would have closed it on the first structure change: it closes any
+  instance of the type whose entity the library no longer has. The Control Centre also
+  publishes no project edge, which is the other thing that differs.
+- **A verb about one project reads the picked step's own when the view names none.**
+  *Show in ▸ Order* and *Step Statuses* were greyed — with no reason — on every Control
+  Centre row, because they asked the context for a project and a board of every project
+  names none. `framework/step_selection.py`'s `focused_project` is the rule Testing had
+  already written for itself, moved where the next module finds it.
+- **Nothing was added to launch across projects.** Run Agent's gate already resolves each
+  chosen step's project and asks for its checkout once per project; *Run 2 Agents…* over
+  two projects' ticks is the strip's existing seat, and a test pins that it opens each
+  shell in its own repository.
+- **The day turning is a change.** A dated wait is over on a day, and `status_for` reads
+  today when asked, so a window left open overnight showed yesterday's board until
+  somebody edited something. Both tabs re-run on `clock.day_changed`, as the Time tab does.
+
+`dplanner progression show --all [PROJECT …]` is the Control Centre in the terminal: every
+row names its project and says whether an agent works it, in the text and the JSON. The
+projects narrowing it are positionals because `--project` is already every verb's own
+option (`cli/main.py`), naming where a verb *acts* — a second definition would not even
+parse. The one-project JSON only gained fields, so an agent reading it before `--all`
+existed reads it still.
 
 ## The order says what order, and how much — never when
 

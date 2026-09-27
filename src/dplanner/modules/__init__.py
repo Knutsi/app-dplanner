@@ -1033,8 +1033,10 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             context=services.context,
             tabs=services.tabs,
             # The statuses through the status aspect's Qt-free reader — the tab never
-            # learns what one is stored as — with a wait done once it is over.
+            # learns what one is stored as — with a wait done once it is over, on the
+            # clock's day, which the tabs re-run on when it turns.
             status_for=_wait_aware(library, services.clock.today),
+            clock=services.clock,
             counts_as_work=_counts_as_work,
             # A step that collects its sources' work is ready once they are under review.
             auto_progresses=_auto_progresses,
@@ -1990,6 +1992,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 segments=services.index_segments,
                 theme=services.theme,
                 settings_sections=services.settings_sections,
+                # Under Home, the places that are the library's rather than one project's.
+                rows=(progression.control_centre_row(),),
             )
         ),
         # After every module that registers an activity factory: it reopens the tabs the
@@ -2566,7 +2570,8 @@ def _always_progresses(step: "Step") -> str:
 
 
 def _is_agent_step(step: "Step") -> bool:
-    """Whether an agent executes the step — the agent aspect's answer, for the status verb."""
+    """Whether an agent executes the step — the agent aspect's answer, for the status verb
+    and the rows of `progression show`."""
     from dplanner.modules.step_agent_instruction.aspect import enabled
 
     return enabled(step)
@@ -3677,6 +3682,7 @@ def default_cli_commands(
             counts_as_work=_counts_as_work,
             days_for=estimated_days,
             auto_progresses=_auto_progresses,
+            is_agent=_is_agent_step,
         ),
         # The timeline sort reads a step's length through estimation's Qt-free reader —
         # handed over here so neither cli.py imports the other.

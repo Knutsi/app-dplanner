@@ -4676,3 +4676,50 @@ pulled into `TabHost.reopen`. Both were taken out in review — Home is an ordin
 program opens at its start, and a blank window is allowed — so `tabs.py` is unchanged. A
 page for "nothing open" is still a reasonable template feature; it was not what this
 application wanted.
+
+## 66. From F10: the Control Centre — a row's own verbs in a table, and a filter renamed
+
+### `framework/table.py`, `framework/list_rows.py` — `Column(menu=True)`, `menu_requested`, `MENU_GLYPH`
+
+**What.** A column may be a row-menu column: the delegate paints `MENU_GLYPH` (`⋮`, now in
+`list_rows.py`, where the checklist's rows take it from too) on every row, in the secondary
+ink until the pointer is on it; the whole cell is the target (`menu_under`, mirroring
+`check_under`), with the pointing hand a chip gets. A left press announces
+`menu_requested(row, global point)` — the cell's bottom-left, where the menu drops — and picks
+nothing; a double click on it is swallowed. It never takes the table's slack: when no column
+is declared `stretch` and the last one is a menu, the column before it stretches instead of
+`setStretchLastSection`. `pick_row(row)` picks one row alone whatever keys are held — the
+host's first move before the menu renders — because `selectRow` asks an extended table's
+held modifiers how to pick, and under a Ctrl it adds to the pick.
+
+**Why.** The Step statuses tab and the Control Centre wanted each row's verbs — Show Agent
+Terminal, Open Pull Request, a shell in the worktree — one click from the row, and DESIGN.md
+forbids a button planted in a cell: it breaks the row's height, hover and selection as a
+unit. A painted, hit-tested target is the same answer the check box and the chips already
+are. The table says only *which row* and *where*; the host builds the menu, because what a
+row is (a step, a test) is the host's knowledge.
+
+**Upstream?** Yes. Any roster with per-row verbs wants it, and the template has the same
+choice between a planted button and nothing.
+
+### `framework/toolbar.py` — `FilterButton.relabel(key, text)`
+
+**What.** New words for one entry, and the face refreshed, without announcing `changed`.
+
+**Why.** A filter over projects is keyed by id and worded by title; renaming a picked project
+left the face wearing the old name, and the only way to refresh it was `set_active`, which
+announces a change that did not happen and rebuilds whatever listens.
+
+**Upstream?** Yes — a filter over anything nameable needs it.
+
+### `framework/step_selection.py` — `focused_project(context, library)`
+
+**What.** The project the context names, else the focused step's own. Testing's private
+`_focused_project` became it, and Order's and Step statuses' *open* verbs now read it.
+
+**Why.** The Control Centre spans every project and names none, so *Show in ▸ Order* and
+*Show in ▸ Step Statuses* were greyed — with no reason — on every one of its rows. Testing
+had already written the fallback for its own verbs; one rule in the framework is what keeps
+the next module from writing a fourth.
+
+**Upstream?** Yes, beside `focused_step` and `chosen_steps`, whose file it is.

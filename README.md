@@ -73,7 +73,10 @@ spec figures, tests, checks and the two documentation ones — each with verbs i
 work goes in and how much of it there is, and `dplanner schedule show` dates it. *Step
 statuses* reads the same graph with the statuses in hand: a table of what needs a person
 right now — blocked, ready to merge, ready for review, ready to start — and `dplanner
-progression show` beside it. An agent's work ends at *ready for review*, never at done:
+progression show` beside it. The *Control Centre*, under Home, is the same table across
+every project, each row naming its own and a *Projects* filter to narrow it (`dplanner
+progression show --all`), and every row's ⋮ reaches its agent's terminal, a shell in its
+worktree and its pull request. An agent's work ends at *ready for review*, never at done:
 somebody looks next.
 Tests are what a step must keep passing once it is done: a step carries several, a *check*
 step gathers every test it waits on, and a *test run* records what each one did. Every
@@ -213,8 +216,9 @@ the default first (what the Agent tab's button and the palette run), then *Manag
 Profiles…*; every agent in Ghostty, herdr and the platform's own terminal is there from
 the first start, and *Add Detected…* on the settings page pairs whatever agents and
 terminals are installed here. Select several ready steps — on the canvas, or by ticking them in the
-*Step statuses* tab and dropping its Run Agent arrow down — and one gesture launches
-one agent per step, all through the profile you pick. The step wears a chip and a marching ring while the shell runs, the
+*Step statuses* tab or the *Control Centre*, across projects, and dropping its Run Agent
+arrow down — and one gesture launches one agent per step, each in its own project's
+checkout, all through the profile you pick. The step wears a chip and a marching ring while the shell runs, the
 chip follows what the agent reports (`dplanner agent-state set … needs-input` when it has
 a question), and the ring goes when the shell ends — finished, failed or closed, which
 the status bar says, with the tokens the run consumed once its CLI's record has been read
@@ -518,7 +522,8 @@ src/dplanner/
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
-│   ├── progression/         the *Step statuses* tab and `dplanner progression show`
+│   ├── progression/         the *Step statuses* tab, the *Control Centre* over every project,
+│   │                        and `dplanner progression show [--all]`
 │   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab
 │   │                        (activity.py: four figures, then a page at a time — shift_view.py the
 │   │                        milestones against the plan compared with, work_view.py the scope and the

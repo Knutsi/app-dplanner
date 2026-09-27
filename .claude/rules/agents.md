@@ -108,6 +108,16 @@ paths:
   the Problems panel's run; unlike those, it also has no prompt, so a launch that opens no
   terminal ends in a **notice** rather than the prompt fallback.
   `ARCHITECTURE.md`'s *An agent may be opened with nothing to do* has the reasoning.
+- **A shell of your own where a step's work is, and it is not a run.** *Step ▸ Open
+  Terminal in Worktree* (`agent.open_shell`; *…in Checkout* for a step whose worktree is
+  off) opens the default profile's terminal on `launcher.shell_script` — `cd` there, export
+  `$DPLANNER_PROJECT`, then the person's `$SHELL` (on Windows a `cmd` of its own, since a
+  row that runs the script and closes would close on the prompt) — and nothing else: no
+  briefing, no shell facts, no exit file, no run recorded, nothing claimed in progress, a
+  `notice()` when no terminal opens. Its directory is found by the wrapper script's own
+  name for it (`worktree_path(workdir, _run_name(step))`), so it is greyed with *Run Agent
+  prepares one* until that directory exists. It is in Step ▸ `agent` beside *Show Agent
+  Terminal* and *Open Pull Request*, so a status row's ⋮ offers all three.
 - **A worktree is the step's decision, and the run is named after the step.** Whether the
   agent gets a fresh git worktree is the agent aspect's `worktree` (absent = on; the Agent
   tab's checkbox, `dplanner agent worktree <step> off`, `step add --no-worktree`) — a fact
@@ -233,7 +243,10 @@ paths:
   the one profile — with a multiplexer, one pane each. The Step statuses tab's strip is
   the same verb again: `agent.run` seated with its arrow dropping this child
   (`StripVerb("agent.run", data_menu=RUN_MENU_ID)`), over the rows ticked in its check
-  column — which are the published selection, so no context is constructed for it.
+  column — which are the published selection, so no context is constructed for it. **The
+  Control Centre's strip is the same seat over ticks from several projects**, and nothing
+  was added for it: the gate asks each chosen step's own project where a shell opens, so
+  *Run 2 Agents…* over two projects is one gesture opening each in its own checkout.
 - **A review is a conversation kept on the step that asks.** `modules/step_review/` holds
   two aspect ids. `step_review` is the settings: agent, lenses and cap, with absence
   meaning the default profile, architecture and security, and three rounds.

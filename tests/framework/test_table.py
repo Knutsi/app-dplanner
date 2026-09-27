@@ -805,3 +805,88 @@ def test_the_box_is_drawn_from_the_selection_and_a_heading_has_none(ticked, app)
     assert drawn() != unticked
     # Sized to the box — past the group's indent, as every first column hangs — not to a word.
     assert ticked.columnWidth(0) < box.right() + box.width()
+
+
+# -- a row-menu column: the row's own verbs, behind a ⋮ -------------------------------------
+
+
+@pytest.fixture
+def menued(app):
+    """A ticked roster whose rows end in a ⋮, with no column declared to stretch."""
+    made = Table(
+        (Column("", check=True), Column("Step"), Column("", menu=True)), selection="extended"
+    )
+    made.add_heading("Ready", key="ready")
+    for title in ("One", "Two", "Three"):
+        made.add_row(["", title, ""])
+    made.resize(400, 240)
+    made.show()
+    app.processEvents()
+    yield made
+    made.deleteLater()
+
+
+def test_a_press_on_a_row_s_menu_asks_the_host_and_picks_nothing(menued):
+    """The host decides what the row is and builds its menu; the table only says which row
+    and where to drop it — under the ⋮'s own cell."""
+    asked: list[tuple[int, QPoint]] = []
+    menued.menu_requested.connect(lambda row, at: asked.append((row, at)))
+    QTest.mouseClick(menued.viewport(), Qt.MouseButton.LeftButton, pos=_centre(menued, 2, 2))
+    cell = menued.visualRect(menued.model().index(2, 2))
+    assert asked == [(2, menued.viewport().mapToGlobal(cell.bottomLeft()))]
+    assert _picked(menued) == []
+
+
+def test_a_heading_has_no_menu_and_a_double_click_on_one_opens_nothing(menued, app):
+    assert menued.menu_under(_centre(menued, 0, 2)) is None  # The heading row.
+    assert menued.menu_under(_centre(menued, 1, 1)) is None  # Beside the ⋮.
+    assert menued.menu_under(_centre(menued, 1, 2)) == 1
+    opened: list[int] = []
+    menued.cellActivated.connect(lambda row, _column: opened.append(row))
+    point = _centre(menued, 1, 2)
+    app.sendEvent(
+        menued.viewport(),
+        QMouseEvent(
+            QEvent.Type.MouseButtonDblClick,
+            QPointF(point),
+            QPointF(menued.viewport().mapToGlobal(point)),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    assert opened == []
+
+
+def test_the_pointer_says_a_menu_is_a_target_of_its_own(menued):
+    viewport = menued.viewport()
+    QTest.mouseMove(viewport, _centre(menued, 2, 2))
+    assert menued.hovered_menu() == 2
+    assert viewport.cursor().shape() == Qt.CursorShape.PointingHandCursor
+    QTest.mouseMove(viewport, _centre(menued, 2, 1))
+    assert menued.hovered_menu() is None
+    assert viewport.cursor().shape() != Qt.CursorShape.PointingHandCursor
+
+
+def test_the_menu_is_drawn_and_never_takes_the_slack(menued):
+    """The ⋮ is a glyph's width at the row's end; the column before it stretches instead."""
+    rect = menued.delegate.menu_rect(menued.visualRect(menued.model().index(2, 2)))
+    image = menued.viewport().grab().toImage()
+    ground = image.pixelColor(QPoint(rect.left(), rect.top()))
+    drawn = {
+        image.pixelColor(QPoint(x, y)).name()
+        for x in range(rect.left(), rect.right() + 1)
+        for y in range(rect.top(), rect.bottom() + 1)
+    }
+    assert drawn - {ground.name()}  # Something was painted over the row's ground.
+    assert menued.columnWidth(2) < 3 * rect.width()
+    assert menued.columnWidth(1) > menued.columnWidth(2) * 4
+
+
+def test_picking_a_row_picks_it_alone(menued):
+    """What a row's ⋮ does before its menu renders: the other ticks go, and no held key
+    turns the pick into an addition."""
+    for row in (1, 2):
+        menued.toggle_row(row)
+    menued.pick_row(3)
+    assert _picked(menued) == [3]

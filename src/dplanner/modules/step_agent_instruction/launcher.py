@@ -689,6 +689,59 @@ def _windows_script(
     return "\r\n".join(lines) + "\r\n"
 
 
+def shell_script(
+    directory: Path,
+    title: str,
+    *,
+    project_id: str = "",
+    platform: str = sys.platform,
+    run_dir: Path | None = None,
+) -> LaunchFiles:
+    """A wrapper that opens a person's own shell in ``directory`` — not an agent, not a run.
+
+    Nothing is reported back — no shell facts, no exit status, no prompt — because there is
+    nothing for the window to track or claim: it is a terminal where a step's work is, for
+    running something there by hand. ``$DPLANNER_PROJECT`` is exported as an agent's shell
+    has it, so a ``dplanner`` typed there reaches the same project. The ``LaunchFiles`` is
+    what :func:`resolve_command` fills a profile's terminal template from; its report files
+    are never written.
+    """
+    if run_dir is None:
+        run_dir = new_run_dir()
+    windows = platform.startswith("win")
+    files = LaunchFiles(
+        directory=run_dir,
+        prompt_file=run_dir / "prompt.md",
+        script=run_dir / ("shell.cmd" if windows else "shell.sh"),
+        shell_file=run_dir / SHELL_FILE,
+        exit_file=run_dir / EXIT_FILE,
+        title=window_title(title),
+    )
+    # newline="": each dialect ends its lines as its interpreter needs, as ``prepare`` says.
+    if windows:
+        lines = ["@echo off", f"title {files.title}", f'cd /d "{directory}"']
+        if project_id:
+            lines.append(f"set {PROJECT_ENV}={project_id}")
+        # A shell of its own: the ``cmd /k`` rows would keep theirs open anyway, but a row
+        # that runs the script and closes (Ghostty, herdr) would close on the prompt.
+        lines.append('"%ComSpec%" /k')
+        files.script.write_text("\r\n".join(lines) + "\r\n", encoding="utf-8", newline="")
+    else:
+        where = shlex.quote(str(directory))
+        lines = [
+            "#!/bin/sh",
+            f"printf '\\033]0;%s\\007' {shlex.quote(files.title)}",
+            f"cd {where} || {{ printf 'Could not open %s. Press Enter to close.\\n' {where};"
+            " read -r _; exit 1; }",
+        ]
+        if project_id:
+            lines.append(f"export {PROJECT_ENV}={shlex.quote(project_id)}")
+        lines.append('exec "${SHELL:-/bin/sh}"')
+        files.script.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="")
+        files.script.chmod(0o755)
+    return files
+
+
 def template_refusal(
     template: str,
     platform: str = sys.platform,

@@ -33,6 +33,7 @@ styling one surface by name.
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
 | a value set in a table's row | `Column(editor=NumberEditor(…) \| DateEditor(…))`, and `chips=` for its usual values | `framework/table.py` | `s15-tables-and-browsers/estimates-*` |
 | rows a person ticks, then acts on | `Column(check=True)` first, `selection="extended"` — the box *is* the selection | `framework/table.py` | `table-selected-*`, `f6-step-statuses/` |
+| a table row's own verbs | `Column(menu=True)` last — a painted ⋮; `menu_requested` hands the host the row, which renders its menu with `fill_bands` | `framework/table.py` | the table tab: `table-*`, `f10-control-centre/` |
 | rows that each carry their own verbs and outlive a refresh | `RowWell`, `WellRow` | `framework/row_well.py` | `s15-tables-and-browsers/tasks-*`, `agents-*` |
 | words in the status bar that open what they sum up | `StatusBarButton` | `framework/widgets.py` | — |
 | a fact that holds until it stops holding, over the whole window | `Notice`, `NoticeBar` | `framework/notices.py` | the modal's *Signalling* block |
@@ -532,6 +533,12 @@ once, its delegate painting what a row wears. Debug ▸ Design Examples ▸ Tabl
   like a chip — a quiet box on the hairline, the accent with a tick in its own ink — and
   is the one mark a picked row wears beside its edge, because it is the selection's own
   target rather than a second answer. The Step statuses tab is the example.
+- **A row's own verbs are a ⋮ at its end** (`Column(menu=True)`), the table's rather than a
+  button planted in a cell: painted in the secondary ink and brightening under the pointer,
+  the whole cell the target, a press dropping that row's menu of glyph and words — every
+  verb shown, greyed with its reason where it cannot run. It picks its row alone first, so
+  the menu is about the row it was pressed on. The column is a glyph's width at the row's
+  end and never takes the slack. The Step statuses tabs are the example.
 - A row that is a **fixed point** among its neighbours (a milestone) goes bold, and is the
   one weight in the table: a glance down a column of quiet lines finds the milestones
   without reading. Emphasis for any other reason is size or colour, never a second bold.

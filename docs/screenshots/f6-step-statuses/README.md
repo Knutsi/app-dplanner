@@ -3,12 +3,12 @@
 Rendered offscreen in the dark and the light theme. The tab by `scripts/render_boards.py`:
 
 ```
-uv run python scripts/render_boards.py --out docs/screenshots/f6-step-statuses
+uv run python scripts/render_boards.py --out docs/screenshots
 ```
 
 | Image | What it shows |
 |---|---|
-| `step-statuses-*` | the Step statuses tab: the strip (Run Agents, in words, with its profiles; Ready to Merge and Done as glyphs), the group filter, the table grouped Ready to merge · Ready for review · Ready to start · Waiting, a box on every row |
+| `step-statuses-*` | the Step statuses tab: the strip (Run Agents, in words, with its profiles; Ready to Merge and Done as glyphs), the group filter, the table grouped Ready to merge · Ready for review · Ready to start · Waiting, a box on every row and a ⋮ at its end (F10) |
 | `step-statuses-ticked-*` | the two reviews ticked: the box is the selection, and the strip's verbs act on it |
 | `step-statuses-review-*` | the filter on one group: its heading stands down, because the lit segment says it |
 

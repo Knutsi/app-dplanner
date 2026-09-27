@@ -46,6 +46,12 @@ are ticked for a verb — never a second state beside it: what the box says and 
 strip's verbs act on cannot disagree, because they are one fact. A double click on it is a
 second tick, never an activation.
 
+A column may be a **row-menu column** (``Column(menu=True)``): a ``⋮`` at the end of every
+row for what that row can be told, and a press on it announces ``menu_requested`` with the
+row and where to drop the menu, picking nothing — the host decides what the row is and
+builds the menu, as a right-click's does. It is painted and hit-tested like the box, never a
+button planted in a cell, so the row keeps its height, its hover and its selection whole.
+
 Three tables were written by hand before this one and disagreed on nine settings; the
 ``#OrderTable`` rules four widgets borrowed by name are what this replaces, one migration
 at a time. ``modules/debug/design_example.py`` is the reference to copy from.
@@ -110,6 +116,7 @@ from dplanner.framework.list_rows import (
     HEADING_ROLE,
     ICON_GAP,
     INK_ROLE,
+    MENU_GLYPH,
     MUTED_ROLE,
     STRUCK_ROLE,
     TINT_ROLE,
@@ -325,6 +332,9 @@ class Column:
     # The row's selection, drawn as a box a click toggles: ticking is picking. Wants a table
     # whose selection is "extended".
     check: bool = False
+    # The row's own verbs: a ⋮ on every row, a press on it announced as ``menu_requested``.
+    # Never takes the table's slack.
+    menu: bool = False
 
 
 @dataclass(frozen=True)
@@ -385,6 +395,8 @@ class Table(QTableWidget):
         self._rich = any(column.detail for column in columns)
         self._hovered: int | None = None
         self._chip: tuple[int, int, int] | None = None  # (row, column, position) under the pointer.
+        self._menu_hovered: int | None = None  # The row whose ⋮ is under the pointer.
+        self._pointing = False  # Whether the pointer is over a target of its own in a row.
         # Collapsible groups: which keys are folded (kept across a rebuild — the host's
         # refresh must not reopen what the reader shut), which heading row each key is on,
         # and which group each content row belongs to.
@@ -396,6 +408,8 @@ class Table(QTableWidget):
         self._edit_on_release: QPersistentModelIndex | None = None
         # A committed edit, as (row, column, value): the host's cue to push its command.
         self.edited: Signal[int, int, object] = Signal("table.edited")
+        # A row's ⋮ pressed, as (row, where to drop its menu): the host's cue to build it.
+        self.menu_requested: Signal[int, QPoint] = Signal("table.menu_requested")
         self._editable = next(
             (position for position, column in enumerate(columns) if column.editor is not None),
             None,
@@ -405,10 +419,19 @@ class Table(QTableWidget):
         header.setDefaultAlignment(_LEFT)
         header.setHighlightSections(False)
         # The last column takes the slack unless a column asks for it: a short fact after a
-        # stretching name would otherwise split that slack with it.
-        header.setStretchLastSection(not any(column.resize == "stretch" for column in columns))
+        # stretching name would otherwise split that slack with it. A row's ⋮ never does —
+        # it is a target the width of its glyph at the row's end — so behind one, the column
+        # before it stretches instead.
+        stretches = any(column.resize == "stretch" for column in columns)
+        header.setStretchLastSection(not stretches and not columns[-1].menu)
+        slack = (
+            max(position for position, column in enumerate(columns) if not column.menu)
+            if not stretches and columns[-1].menu
+            else None
+        )
         for position, column in enumerate(columns):
-            header.setSectionResizeMode(position, _RESIZE[column.resize])
+            mode = QHeaderView.ResizeMode.Stretch if position == slack else _RESIZE[column.resize]
+            header.setSectionResizeMode(position, mode)
         self.verticalHeader().setVisible(False)
         # A table takes its row height from the header, not from the delegate's hint;
         # without this a second line prints over the row below it.
@@ -454,6 +477,10 @@ class Table(QTableWidget):
         """The chip under the pointer, as (row, column, position along the cell)."""
         return self._chip
 
+    def hovered_menu(self) -> int | None:
+        """The row whose ⋮ is under the pointer."""
+        return self._menu_hovered
+
     def chips_at(self, row: int, column: int) -> list[LaidChip]:
         """The chips one cell paints, where it paints them, in viewport coordinates."""
         index = self.model().index(row, column)
@@ -466,6 +493,22 @@ class Table(QTableWidget):
         if not index.isValid() or not self._columns[index.column()].check:
             return None
         return None if self.is_heading(index.row()) else index.row()
+
+    def menu_under(self, point: QPoint) -> int | None:
+        """The row whose ⋮ is under ``point`` — the whole cell of a menu column is the target,
+        as a check column's is — or None."""
+        index = self.indexAt(point)
+        if not index.isValid() or not self._columns[index.column()].menu:
+            return None
+        return None if self.is_heading(index.row()) else index.row()
+
+    def pick_row(self, row: int) -> None:
+        """This row alone picked, whatever keys are held: ``selectRow`` asks an extended
+        table's held modifiers how to pick, so under a Ctrl it adds to the pick."""
+        flags = QItemSelectionModel.SelectionFlag
+        self.selectionModel().setCurrentIndex(
+            self.model().index(row, 0), flags.ClearAndSelect | flags.Rows
+        )
 
     def toggle_row(self, row: int) -> None:
         """Tick or untick one row: its selection toggled, every other row's left alone."""
@@ -652,11 +695,14 @@ class Table(QTableWidget):
     def leaveEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
         self._hover(None)
         self._hover_chip(None)
+        self._hover_menu(None)
         super().leaveEvent(event)
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
         super().mouseMoveEvent(event)
-        self._hover_chip(self.chip_under(event.position().toPoint()))
+        point = event.position().toPoint()
+        self._hover_chip(self.chip_under(point))
+        self._hover_menu(self.menu_under(point))
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
         """A press on a collapsible heading folds it, and goes no further.
@@ -669,18 +715,28 @@ class Table(QTableWidget):
         if key and event.button() == Qt.MouseButton.LeftButton:
             self.toggle_group(key)
             return
-        ticked = self.check_under(event.position().toPoint())
+        point = event.position().toPoint()
+        ticked = self.check_under(point)
         if ticked is not None and event.button() == Qt.MouseButton.LeftButton:
             self.toggle_row(ticked)
+            return
+        menu_row = self.menu_under(point)
+        if menu_row is not None and event.button() == Qt.MouseButton.LeftButton:
+            cell = self.visualRect(self.indexAt(point))
+            self.menu_requested.emit(menu_row, self.viewport().mapToGlobal(cell.bottomLeft()))
             return
         super().mousePressEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
         """On a box, the second click of a double click is a second tick — two quick clicks
-        on a check box toggle it twice, wherever it is — and never opens the row."""
-        ticked = self.check_under(event.position().toPoint())
+        on a check box toggle it twice, wherever it is — and never opens the row. On a ⋮ it
+        is nothing: the first press has dropped the menu already."""
+        point = event.position().toPoint()
+        ticked = self.check_under(point)
         if ticked is not None and event.button() == Qt.MouseButton.LeftButton:
             self.toggle_row(ticked)
+            return
+        if self.menu_under(point) is not None:
             return
         super().mouseDoubleClickEvent(event)
 
@@ -700,11 +756,25 @@ class Table(QTableWidget):
         if chip == self._chip:
             return
         self._chip = chip
-        if chip is None:
-            self.viewport().unsetCursor()
-        else:
-            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+        self._point(chip is not None or self._menu_hovered is not None)
         self.viewport().update()
+
+    def _hover_menu(self, row: int | None) -> None:
+        """A row's ⋮ is a target of its own too, and says so the way a chip does."""
+        if row == self._menu_hovered:
+            return
+        self._menu_hovered = row
+        self._point(row is not None or self._chip is not None)
+        self.viewport().update()
+
+    def _point(self, at_target: bool) -> None:
+        if at_target == self._pointing:
+            return
+        self._pointing = at_target
+        if at_target:
+            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+        else:
+            self.viewport().unsetCursor()
 
     def _hover(self, row: int | None) -> None:
         if row != self._hovered:
@@ -746,6 +816,13 @@ class TableDelegate(QStyledItemDelegate):
         else:
             top = rect.top() + (rect.height() - side) // 2
         return QRect(rect.left() + self._table.padding() + self.indent(index), top, side, side)
+
+    def menu_rect(self, rect: QRect) -> QRect:
+        """Where a row's ⋮ sits: a glyph's square in the middle of its cell — centred on the
+        row rather than on its first line, because it is the row's and not the name's, and
+        stands beside the row's other one-line facts."""
+        side = ICON_SIZE
+        return QRect(rect.center().x() - side // 2, rect.center().y() - side // 2, side, side)
 
     def indent(self, index: QModelIndex | QPersistentModelIndex) -> int:
         """How far this cell hangs in: a grouped row's first column, and nothing else.
@@ -863,6 +940,9 @@ class TableDelegate(QStyledItemDelegate):
         if self._table.columns()[index.column()].check and not heading:
             self._paint_check(painter, opt, index, selected)
             return
+        if self._table.columns()[index.column()].menu and not heading:
+            self._paint_menu(painter, opt, index)
+            return
 
         # Ink from the palette's text, never HighlightedText: the picked ground is the quiet
         # overlay, and on some themes the highlighted text is that very colour.
@@ -934,6 +1014,8 @@ class TableDelegate(QStyledItemDelegate):
         if self._table.columns()[column].check and not heading:
             box = self.check_rect(index, QRect(0, 0, 0, height))
             return QSize(box.right() + 1 + self._table.padding(), height)
+        if self._table.columns()[column].menu and not heading:
+            return QSize(ICON_SIZE + 2 * self._table.padding(), height)
         laid = self.chip_layout(index, QRect(0, 0, 0, height)) if not heading else []
         if laid:
             return QSize(laid[-1].rect.right() + 1 + self._table.padding(), height)
@@ -1047,6 +1129,28 @@ class TableDelegate(QStyledItemDelegate):
             tick = check_icon(palette.color(QPalette.ColorRole.BrightText))
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             tick.paint(painter, box.toAlignedRect().adjusted(1, 1, -1, -1))
+        painter.restore()
+
+    def _paint_menu(
+        self,
+        painter: QPainter,
+        opt: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+    ) -> None:
+        """A row's ⋮, in the secondary ink until the pointer is on it — a target of its own
+        brightens, as a chip does."""
+        ink = opt.palette.color(QPalette.ColorRole.Text)
+        if self._table.hovered_menu() != index.row():
+            ink.setAlpha(SECONDARY_ALPHA)
+        painter.save()
+        font = QFont(opt.font)
+        font.setBold(True)
+        # A glyph's height rather than a letter's: at the text's own size the dots are a
+        # speck beside the row's words, and the target is the whole cell anyway.
+        font.setPixelSize(ICON_SIZE)
+        painter.setFont(font)
+        painter.setPen(ink)
+        painter.drawText(self.menu_rect(opt.rect), Qt.AlignmentFlag.AlignCenter, MENU_GLYPH)
         painter.restore()
 
     def _chip_hit(

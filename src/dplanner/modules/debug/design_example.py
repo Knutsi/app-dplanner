@@ -23,13 +23,14 @@ is the fourth page, and the one that also shows a defect on purpose.
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QPoint, QSize, Qt
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLineEdit,
+    QMenu,
     QProgressBar,
     QToolButton,
     QVBoxLayout,
@@ -92,8 +93,10 @@ COLUMNS = (
     Column("Days", numeric=True),
     Column("Status"),
 )
-# The table tab's roster is ticked for its verbs: a check column is the selection, drawn.
-TICKED_COLUMNS = (Column("", check=True), *COLUMNS)
+# The table tab's roster is ticked for its verbs: a check column is the selection, drawn —
+# and each row ends in the ⋮ that drops what that one row can be told.
+TICKED_COLUMNS = (Column("", check=True), *COLUMNS, Column("", menu=True))
+ROW_MENU_TIP = "What you can do with this step"
 FILTERS = (("agent", "Agent steps"), ("milestone", "Milestones"), ("done", "Done"))
 GROUPINGS = ("Grouped by milestone", "Folding groups", "Flat")
 
@@ -228,7 +231,8 @@ def fill_sample(
     """The sample rows, narrowed by the active ``FILTERS`` keys, under their headings or flat.
 
     ``ticked`` fills a table whose first column is a check column (``TICKED_COLUMNS``): it
-    holds nothing but the box, which the table draws from the row's selection.
+    holds nothing but the box, which the table draws from the row's selection — and whose
+    last is the row's ⋮, which holds nothing but the glyph the table draws.
 
     ``folding`` gives each heading a ``key``, which is what makes it collapsible: a chevron,
     the whole row as the target, and what is shut remembered by key across this very
@@ -247,7 +251,9 @@ def fill_sample(
             )
             cells = sample_cells(row, ink)
             table.add_row(
-                [Cell(), *cells] if ticked else cells, tint=tint, data={KEY_ROLE: row.key}
+                [Cell(), *cells, Cell(tooltip=ROW_MENU_TIP)] if ticked else cells,
+                tint=tint,
+                data={KEY_ROLE: row.key},
             )
     table.fit_columns()
 
@@ -438,6 +444,7 @@ class DesignExampleActivity(ActivityBase):
         self.spinner = Spinner(self.widget).attach(self.refresh_action)
         self.spinner.follow(self._refresh_soon)
         self.table.itemSelectionChanged.connect(self._reword_verbs)
+        self.table.menu_requested.connect(self._drop_row_menu)
         self.filter.changed.connect(self._refresh_soon.trigger)
         self.group.currentIndexChanged.connect(lambda _index: self._refresh_soon.trigger())
         self._unsubscribe = theme.changed.connect(self._on_theme)
@@ -470,6 +477,27 @@ class DesignExampleActivity(ActivityBase):
         self.delete_action.setText(
             "Delete" if count == 0 else "Delete Step" if count == 1 else f"Delete {count} Steps"
         )
+
+    def row_menu(self, row: int) -> QMenu:
+        """What one row can be told: the row picked alone first, so the menu and the strip
+        agree about what it is about, then glyph and words, greyed with the reason where a
+        verb cannot run — never dropped, or the menu changes shape from row to row."""
+        self.table.pick_row(row)
+        (key,) = self.picked_keys()
+        sample = next(one for _heading, rows in self._groups for one in rows if one.key == key)
+        ink = ink_of(self.widget)
+        menu = QMenu(self.table)
+        words = "Run Agent" if sample.agent else "Run Agent — not an agent step"
+        run = menu.addAction(spark_icon(ink), words)
+        run.setEnabled(sample.agent)
+        menu.addSeparator()
+        menu.addAction(trash_icon(ink), "Delete Step").triggered.connect(self._delete_picked)
+        return menu
+
+    def _drop_row_menu(self, row: int, at: QPoint) -> None:
+        menu = self.row_menu(row)
+        menu.exec(at)
+        menu.deleteLater()
 
     def _add_step(self) -> None:
         self._minted += 1

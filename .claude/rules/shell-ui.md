@@ -93,6 +93,16 @@ paths:
   second answer: **never keep a *ticked* set beside the selection**, or the strip and the
   Step menu act on two different things. The Step statuses tab is the example;
   `ARCHITECTURE.md`'s *Progression is the status-aware frontier* has the reasoning.
+- **A table row's own verbs are a ⋮ at its end, painted by the table.** `Column(menu=True)`
+  paints `MENU_GLYPH` on every row and hit-tests the whole cell, like the box; a press
+  announces `Table.menu_requested(row, where)` and picks nothing, and the host builds the
+  menu — **rendered from the registry** (`fill_bands`), never written, as the Step statuses
+  tabs' `ROW_MENU` is. **The ⋮ picks its row alone before it renders** (`Table.pick_row`,
+  never `selectRow`, which adds to the pick under a held Ctrl), where a right-click
+  keeps a pick the row is in: the verbs about one step read the first picked, so a ⋮ on the
+  third of three ticked rows would otherwise show the first one's terminal. A menu column
+  never takes the table's slack. `ARCHITECTURE.md`'s *A roster has three shapes* has why
+  it is painted rather than a button in a cell.
 - **A group heading may fold, and the table remembers by key.** `Table.add_heading(text,
   key=…)` makes the rows after it a collapsible group: a disclosure chevron (drawn, not
   vendored — it is a picture of *state*, like the key badge and the filter funnel), and the

@@ -139,7 +139,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # once) is the aspect bar across Step Details, and Test (add, archive, record a result)
     # is the step's Tests tab there, the Tests strip and the Test panel. Its verbs are
     # `in_menus=False`, so the palette finds them under *Step ▸ Type* and *Step ▸ Test*.
-    # "agent" carries a step's work out: Run Agent and what follows one. "compile" is
+    # "agent" carries a step's work out: Run Agent and what follows one — its terminal, a
+    # shell of your own in its worktree, its pull request, clearing the run. "compile" is
     # Compile with Agent, which writes a collector's documentation from the fragments behind
     # it — a band of its own because a card does not offer it; the Docs tab does.
     # "open" is where this step is seen: Step Details, then the Show in child menu's

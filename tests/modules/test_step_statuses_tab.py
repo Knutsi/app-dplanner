@@ -493,3 +493,77 @@ def test_the_window_and_the_terminal_agree(services, project, tab):
         *(step.id for step in derived.waiting),
     ]
     assert tab.table.steps() == expected
+
+
+# -- a row's own verbs, behind its ⋮ ---------------------------------------------------------
+
+
+def test_one_project_s_rows_do_not_name_it(tab):
+    from dplanner.modules.progression.view import PROJECT_COLUMN
+
+    assert tab.table.isColumnHidden(PROJECT_COLUMN)
+
+
+def test_a_press_on_a_row_s_menu_asks_for_that_row_s_menu(app, project, tab, monkeypatch):
+    from PySide6.QtCore import QEvent
+
+    from dplanner.modules.progression.view import MENU_COLUMN
+
+    asked: list[int] = []
+    monkeypatch.setattr(tab, "row_menu", asked.append)
+    row = tab.table.row_of(project.steps[0].id)
+    _press(app, tab.table, row, MENU_COLUMN, kind=QEvent.Type.MouseButtonPress)
+    assert asked == [row]
+    assert tab.table.picked() == []  # The press picks nothing; the menu's builder does.
+
+
+def test_a_row_s_menu_is_about_that_row_alone_and_greys_what_cannot_run(
+    app, services, project, tab
+):
+    """Two rows ticked, the second's ⋮ pressed: the menu is about the second. The verbs
+    about one step read the first picked, so a pick of two would aim them elsewhere."""
+    from dplanner.modules.progression.view import CHECK_COLUMN
+
+    tab.on_activated()
+    b, c = project.steps[1], project.steps[2]
+    _press(app, tab.table, tab.table.row_of(b.id), CHECK_COLUMN)
+    _press(app, tab.table, tab.table.row_of(c.id), CHECK_COLUMN)
+    menu = tab.row_menu(tab.table.row_of(c.id))
+    assert menu is not None
+    assert tab.table.picked() == [c.id]
+    assert services.context.current().selected_entities("step") == [c.id]
+    entries = {action.text(): action for action in menu.actions() if not action.isSeparator()}
+    terminal = entries["Show Agent Terminal — no agent shell launched from here is running"]
+    assert not terminal.isEnabled()
+    assert not entries["Open Pull Request — no pull request recorded"].isEnabled()
+    assert any(words.startswith("Open Terminal in Worktree — ") for words in entries)
+    assert entries["Step De&tails…"].isEnabled()
+    run_agent = entries["Run Agent"].menu()
+    assert run_agent is not None
+    show_in = entries["Show in"].menu()
+    assert show_in is not None and "&Graph" in [a.text() for a in show_in.actions()]
+    menu.deleteLater()
+
+
+def test_a_step_behind_a_dated_wait_joins_ready_the_morning_it_may_start(services, make_project):
+    """Nothing in the plan changes overnight; the day does, and the tab hears it."""
+    from datetime import date
+
+    from dplanner.domain.schedule import Wait
+    from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
+    from dplanner.modules.step_wait.aspect import write as write_wait
+
+    services.clock.pin(date(2026, 9, 18))
+    project = make_project("Discovery")
+    library = services.document
+    for title in ("Parts arrive", "Unpack"):
+        AddNodeCommand(project.id, Step(title=title)).redo(library)
+    wait, unpack = project.steps
+    SetModuleDataCommand(wait.id, WAIT_ID, write_wait(Wait(until=date(2026, 9, 21)))).redo(library)
+    SetEdgesCommand(unpack.id, "requires", [wait.id]).redo(library)
+    tab = services.tabs.open("progression", project.id)
+    assert listed(tab) == ["# Waiting", "Unpack"]
+    services.clock.pin(date(2026, 9, 20))
+    assert listed(tab) == ["# Waiting", "Unpack"]
+    services.clock.pin(date(2026, 9, 21))
+    assert listed(tab) == ["# Ready to start", "Unpack"]

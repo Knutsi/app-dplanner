@@ -51,6 +51,7 @@ from dplanner.cli.checklist import (
     this_machine,
 )
 from dplanner.framework.dialog import DialogFrame
+from dplanner.framework.list_rows import MENU_GLYPH
 from dplanner.framework.signalling import TICKED, UNTICKED, Spinner, StatusLine, Tone
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
@@ -71,10 +72,6 @@ MUTE = "Don't warn me about this again"
 UNMUTE = "Warn me about this again"
 COPY = "Copy the command"
 MUTED = "not warning about this"
-
-# The ⋮ that carries a row's own verbs. A character rather than a painted icon, for the
-# Project dialog's reason: it names no verb, and every platform's font has it.
-ELLIPSIS = "\u22ee"
 
 
 def tone_for(check: MachineCheck, reading: Reading | None, *, muted: bool = False) -> Tone:
@@ -177,7 +174,7 @@ class _Row(QWidget):
 
         self.menu_button = QToolButton(self)
         self.menu_button.setAutoRaise(True)
-        self.menu_button.setText(ELLIPSIS)
+        self.menu_button.setText(MENU_GLYPH)
         self.menu_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
         self.menu_button.setToolTip(f"What to do about {check.label}")
         self.menu_button.clicked.connect(self.popup)
