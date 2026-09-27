@@ -34,10 +34,12 @@ site` writes it too): never write there yourself. Three rules follow:
   files by hand, and never in the code repository — a plan file on a code branch is what
   drifts.
 - **A plan kept inside its code repository is a warning, not a shape to build on.** The
-  window, `project lint` (`repo.unset`, `repo.colocated`) and every briefing say so. The
+  window, `project lint` (`repo.legacy`, `repo.colocated`) and every briefing say so. The
   way to keep it there on purpose is `project set <project> --accept-colocation`. While it
   stays there, do not touch anything under the plan's directory on your branch, and merge
   or rebase `main` before opening a PR — planning commits land on `main` while you work.
+  A project in a plan repository with no code recorded is *unset* (`repo.unset` naming
+  `location add`): the plan repository is never its code, so ask which code it is.
 - **Moving a plan is yours to run when the developer asks, never unasked.** `dplanner
   project move <project> --into <plan repository>` (`--init-repo` to start one there;
   `--to DIR` for an exact folder) copies the plan, lists it in the new repository's
@@ -56,10 +58,10 @@ you work. So:
 
 - **Call a step by its key.** Every row prints one — `S7`, `F3` for a feature step, `M1`
   for a milestone, `C2` for a check — and every step verb takes it (`dplanner status set
-  S7 done`; `s7` and a bare `7` work too). The number is the step's for life; the letter
-  follows what the step is. Use the key rather than a title, which may match two steps,
-  and put it first in anything you name after the step — a branch, a PR title (`S7: …`),
-  a commit message.
+  S7 ready-for-review`; `s7` and a bare `7` work too). The number is the step's for life;
+  the letter follows what the step is. Use the key rather than a title, which may match
+  two steps, and put it first in anything you name after the step — a branch, a PR title
+  (`S7: …`), a commit message.
 - **Read before writing.** `dplanner project list`, then `dplanner project show <project>`,
   then **`dplanner topology show <project>`** — the project's own account of how its graph
   is shaped, and printed with it the **default shape**, which is what applies wherever that
@@ -74,9 +76,10 @@ you work. So:
 - **Make small, named changes — and author them whole.** One `step add` per step, carrying
   everything the step needs in the same call: `--describe-file F`, `--agent` if an agent
   will execute it, `--days N`, `--attach a1`, `--test 'what must keep being true'`,
-  `--after` for its dependencies, and `--feature` on a step that *is* a feature (with
-  `--document`/`--quote` where it was read out of a spec). One authored step is one line in
-  the diff and one thing the user can disagree with; five half-steps are noise.
+  `--after` for its dependencies, `--feature` on a step that *is* a feature (with
+  `--document`/`--quote` where it was read out of a spec), and `--start` on the one step
+  the plan begins from. One authored step is one line in the diff and one thing the user
+  can disagree with; five half-steps are noise.
 - **The description is the briefing.** Write one good description per step — what it is,
   what done means (see *Writing descriptions*) — and mark agent-executed steps with
   `--agent` (or `dplanner agent on` later). The executing agent receives the description
@@ -233,7 +236,9 @@ Three shapes are worth knowing:
   the previous feature; a **milestone**
   (`dplanner milestone set`) gathers the features it adds since the previous milestone.
   None of them stores what it holds — it is read off the graph, so linking more work behind
-  one widens it automatically, and `--scope` takes any of the three.
+  one widens it automatically, and `--scope` takes any of the three. A feature's and a
+  milestone's walk stop at the plan's **start** (`dplanner start set`), so work fanning out
+  of the origin in parallel does not make the origin every feature's at once.
 - **`dplanner scope show <step>`** prints what one gathers: its features as headings, their
   tests under them. `--cumulative` gives everything behind it instead of only what it adds —
   what must pass to ship, rather than what is new.
@@ -300,6 +305,15 @@ step that only reads and reports. "It would be convenient" is not a reason: a st
 checkout shares the developer's working tree with every other agent and with the person.
 When you *execute* a step, its briefing tells you which worktree to expect; if you are
 not in it, stop and say so rather than working in the main checkout.
+
+**An agent finishes at Ready for review, never at done.** When your work on a step is
+finished, `dplanner status set S7 ready-for-review`: a person or a reviewing agent looks
+next, sets it `ready-to-merge` once it is accepted and `done` once it has landed — and
+nothing that waits on the step starts before then. From inside an agent's shell, `status
+set <agent step> done` on a step nobody has reviewed is refused; when there is genuinely
+nothing to review, say why — `dplanner status set S7 done --because '<reason>'` — and the
+reason is kept as a decision note on the step. Ready for review is the *step's* work
+finished; the agent-run state `plan-for-review` is your *plan* waiting for a look, mid-run.
 
 **Other agents work beside you — same repository, same project, same process names.**
 Never kill a process by name or pattern: `pkill -f`, `killall`, `kill $(pgrep …)`. Every

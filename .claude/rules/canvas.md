@@ -4,7 +4,7 @@ paths:
   - "src/dplanner/modules/problems/**"
   - "src/dplanner/theme/{cards,tones}.py"
   - "tests/modules/test_{project_editor,canvas,graph_layout,marks,problems}*.py"
-  - "tests/cli/test_{layout_cli,region_cli,step_duplicate}.py"
+  - "tests/cli/test_{layout_cli,step_duplicate}.py"
   - "scripts/render_graph_editor.py"
 ---
 
@@ -27,16 +27,16 @@ paths:
   press suppresses node dragging without a flag anywhere. A mode still only *reports* — the
   activity turns its signals into commands. The current mode is published into the context, so
   a mode-switch action's `checked` stays a pure function of it. A mode that drags something
-  the canvas draws — a region, a card's frame — is a `GestureMode`: it says what it holds, how
-  to restore it on Escape and what the release means, and inherits the rest.
+  the canvas draws — a card's frame, one side of a cut — is a `GestureMode`: it says what it
+  holds, how to restore it on Escape and what the release means, and inherits the rest.
   `ARCHITECTURE.md`'s *Who owns the canvas's input* has the reasoning; add a behaviour as a
   mode, never as a field.
 - **Lasso is a mode, and it touches cards.** `LassoMode` draws a `QPainterPath`, and on
   release the scene answers `nodes_touching(path)` by the node's *body* rect — never
   `scene.items(path)`, whose hit shape is the body plus `PAINT_MARGIN` and includes the
   edges. One lasso ends the mode, Shift on the release adds to the selection, and the mode
-  switch is `steps.lasso` (`S` on the canvas), the same shape as `steps.connect`. Region and
-  lasso share one `OutlinePreviewItem` through `Canvas.aim_outline`.
+  switch is `steps.lasso` (`S` on the canvas), the same shape as `steps.connect`. Lasso and
+  divide share one `OutlinePreviewItem` through `Canvas.aim_outline`.
 - **Divide is a mode, and it pushes a side.** `DivideMode` (Graph ▸ Divide ▸ Vertical or
   Horizontal; `D` and `Shift+D` on the canvas) lays a cut under the cursor from edge to
   edge, and the press hands over to `DivideDragMode`, a `GestureMode` that holds every card
@@ -78,7 +78,7 @@ paths:
   reasoning.
 - **A step something is wrong about wears a squiggle, and the reading is settled.** The
   editor's underline, 3 px of refusal red hanging `PROBLEM_DROP` below the body and
-  starting past the spine — *look here*, where the Problems panel is the asking. It stands
+  starting past the key block — *look here*, where the Problems panel is the asking. It stands
   for **every** lint check there is, which is why it replaced the orphan ring: `graph.orphan`
   is one such check, so a ring and a squiggle would have been two red vocabularies for one
   fact, and a *preference* that could hide a problem is not a way of looking. The canvas
@@ -115,19 +115,35 @@ paths:
   the card while Space was held — **and with Space held the arrows and `hjkl` page it**, a
   third of the viewport at a time, a tenth with Shift, claimed in the mode so the same keys
   stop selecting steps while the hand is on the plane.
-- **The spine is the card's left edge, and it says who and where.** `paint_spine`
-  (`theme/cards.py`, shared with the coverage lanes' step cards) draws a 26 px strip
-  inside the left edge, clipped to the body, carrying the key rotated a quarter turn and
-  washed by status — busy blue for in-progress, bad red for blocked, the good green for
-  done, a quiet shade otherwise (`NodeAccent.key_text`, `spine_tone`, read from
-  `theme/tones.py`'s `STEP_STATUS_TONES`; the 3 px status bar it replaces is gone). The
-  title and the left-edge decorations start past it (`LEFT_INSET`).
+- **The key block is the card's left edge, and it says who and where.** `paint_key_block`
+  (`theme/cards.py`, shared with the coverage lanes' step cards and copied by the report's
+  `drawings.py`, which a test holds to it) draws a 56 px strip inside the left edge,
+  clipped to the body and washed by status — busy blue for in-progress, warn amber for
+  ready-for-review (a person looks next), the good green for ready-to-merge and done (only
+  done also greens and mutes the body), bad red for blocked, a quiet shade otherwise
+  (`NodeAccent.key_tone`, read from `theme/tones.py`'s `STEP_STATUS_TONES`; a wait wears
+  none, whatever it stored — `_card_status`) — carrying the
+  key set level and bold, and over it **who works the step**: the sparkle for an agent
+  step, a person otherwise (milestones, features and checks included), and a wait's clock
+  in the attention amber, always (`key_glyph`, `key_glyph_tone`). The two ambers are told
+  apart by shape: a clock is a stroke on a quiet block, a review is the block's own wash.
+  **One rule, three surfaces**: `_primary_glyph` in the composition root answers for the
+  canvas, the coverage lanes and the report's graph, and Find's rows wear the same glyph.
+  The top edge's medallions say what a step *is* and never who works it — no spark and no
+  clock among them — because a card says a thing once. The title and the left-edge
+  decorations start past the block (`LEFT_INSET`), and `MIN_NODE_W` grew with it.
+  `ARCHITECTURE.md`'s *The key block names the card and says who works it* has the
+  reasoning. The icon's box (`KEY_GLYPH`, 28) is sized so a broad glyph spans a
+  three-character key; the report's copy of it is pinned by the same test.
+- **A milestone's outline is doubled** — `theme/cards.py`'s `MILESTONE_BORDER_W` on the canvas
+  and the coverage lanes, twice the report's own border there — and it is at least that when
+  the card is picked or aimed at: selection recolours a milestone's outline, never thins it.
 - **A picked node is lifted, not recoloured — and every card rests on a shadow.** Selection
   thickens the border to the accent, *gains* whatever fill the node already had (so a picked
   milestone is still purple), lifts the card two pixels over a deeper shadow than the faint
   one every card sits on, and claims a Z of its own. The fill is painted **opaque** —
   `renderers.over()` blends the tint over the palette's window colour — so nothing under a
-  card shows through it: not the shadow, not the ground's grid, not a region's wash. The
+  card shows through it: not the shadow, not the ground's grid. The
   rings composite, so a shadow's alpha buys twice what it looks like. `PAINT_MARGIN` is the
   one number every decoration is measured against and `boundingRect` is exactly it,
   **constant whether or not the node is selected**; `shape()` is the card and its resize
@@ -148,7 +164,7 @@ paths:
   crosses — painted by `ground.py`) and *Snap to Grid* are one `Look`, kept under one key,
   pushed to every canvas by one setter, and read by every toggle in `canvas_verbs.py`; the
   next preference is a field there, never a third copy of that plumbing. While snapping is
-  on, a drag, a resize, a region and a placed step land on `GRID` through the scene's one
+  on, a drag, a resize and a placed step land on `GRID` through the scene's one
   `snap()`; what reaches disk is `snapped(value)` — a whole unit, as a float — so a CLI verb
   stores what it was given, a sort what it computed, and `layout shift` — a drag by a
   distance — snaps that distance as the gesture would. The drawn pitch is
@@ -159,28 +175,34 @@ paths:
   placed by dependency depth every time the project opens — storing that would make merely
   opening a tab dirty the project, and every CLI-created step would grow a position file
   behind the user's back. A sort *action* (`canvas.sort_*`, `dplanner layout sort`) is a
-  user gesture, so it writes through the undo stack like a drag. Named layouts and regions
-  are project-level entries under the same `project_editor` id — `ARCHITECTURE.md`'s *An
+  user gesture, so it writes through the undo stack like a drag. Named layouts are a
+  project-level entry under the same `project_editor` id — `ARCHITECTURE.md`'s *An
   explicit sort persists; the ambient layout never does* has the reasoning.
+- **There are no regions; a project saved with them opens without them.** Titled rectangles
+  behind the graph were retired — annotation the graph knows nothing about goes stale with
+  every sort, tidy and move. `positions.DATA_FORMAT` is format 2, whose one migration drops
+  the project entry's `regions` and every named layout's region rects on read; that
+  migration is the only code that knows they existed. **The project entry's one composer
+  brings what it carries current first** (`entry_with` runs `migrated()`): an entry adopted
+  from another writer since the open has not met the migration pass, and stamping it format
+  2 as it stood would keep what the pass drops. `tests/old_canvas.py` is the old project
+  every proof of this opens. `ARCHITECTURE.md`'s *Regions were retired* has the reasoning.
 - **The canvas's spatial gestures exist as verbs, and geometry is derived on every read.**
   `dplanner layout show` (`--map`) measures the graph from the stored positions and
-  `positions.node_size` through `project_editor/geometry.py` and stores nothing — the
-  waves, the bounds, every overlap and the gaps between neighbouring columns and rows in
-  the sorts' pitches, read through the same **lanes** (`sorts.lanes`, `measured`) that
-  `layout tidy` acts on and the map is drawn on. `layout shift` is Divide as a verb:
-  `geometry.shift` is the side rule (the body's centre against the cut; a negative
-  distance brings the near side back; the distance snaps to `GRID` as the drag does) and
-  `geometry.divide_command` is the one `Divide Graph` composite both `_on_graph_divided`
-  and the verb push. `layout tidy` / `canvas.sort_tidy` (Graph ▸ Sort) is `sorts.tidy`, a
-  sort in kind — pure, deterministic, size-aware, idempotent — so it persists like one:
-  it keeps every cluster and its order, reads the cards into lanes on *edges* with an
-  inclusive half-pitch join, gives an overlap a sub-row, measures a hole against the
-  reach and rounds it, and closes one past `--gap` (`DEFAULT_AIR`, 2) to one gap. None
-  of the three reshapes the graph, so none declares `edits_graph`. Regions are neither
-  carried nor drawn, and the generated skill does not name their verbs (`in_skill=False`):
-  they are on their way out, and the canvas keeps them only for whoever already has some.
-  `ARCHITECTURE.md`'s *An explicit sort persists; the ambient layout never does* has the
-  reasoning.
+  `positions.node_size` through `project_editor/geometry.py` and stores nothing — the waves,
+  the bounds, every overlap and the gaps between neighbouring columns and rows in the sorts'
+  pitches, read through the same **lanes** (`sorts.lanes`, `measured`) that `layout tidy`
+  acts on and the map is drawn on. `layout shift` is Divide as a verb: `geometry.shift` is
+  the side rule (the body's centre against the cut; a negative distance brings the near side
+  back; the distance snaps to `GRID` as the drag does) and `geometry.divide_command` is the
+  one `Divide Graph` composite both `_on_graph_divided` and the verb push. `layout tidy` /
+  `canvas.sort_tidy` (Graph ▸ Sort) is `sorts.tidy`, a sort in kind — pure, deterministic,
+  size-aware, idempotent — so it persists like one: it keeps every cluster and its order,
+  reads the cards into lanes on *edges* with an inclusive half-pitch join, gives an overlap
+  a sub-row, measures a hole against the reach and rounds it, and closes one past `--gap`
+  (`DEFAULT_AIR`, 2) to one gap. None of the three reshapes the graph, so none declares
+  `edits_graph`. `ARCHITECTURE.md`'s *An explicit sort persists; the ambient layout never
+  does* has the reasoning.
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". One `QTimer` on the scene advances every ring and runs only while a node
@@ -213,8 +235,8 @@ paths:
   time. Cut/Copy/Duplicate act on `verbs.chosen_steps` exactly as Delete does; only Paste
   needs a current canvas. The Ctrl keys are **menu shortcuts** (every text widget reclaims
   them through `ShortcutOverride`; measured, not assumed) and Delete is **not** (a bare `Del`
-  would fire in every list, and `StandardKey.Delete` also claims Ctrl+D). Deleting steps and
-  regions no longer asks — undo is the safety net. A copy is a **clone**
+  would fire in every list, and `StandardKey.Delete` also claims Ctrl+D). Deleting steps no
+  longer asks — undo is the safety net. A copy is a **clone**
   (`project_editor/clipboard.py`): fresh ids, links between copies remapped and every link
   to the outside dropped, files in the payload and written after the one composite
   command, and a `PastePolicy` per module with a say (`testing` re-mints ids,

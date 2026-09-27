@@ -9,7 +9,9 @@ every aspect, assembles them — and nothing here imports a module.
 The four lint checks live here for the same reason. Three of them exist only because the
 walk can answer them: a step gathered by two features is genuinely ambiguous, a step two
 releases both reach is counted whole by each of them, and a step carrying tests that no
-feature gathers is work nobody planned into a release.
+feature gathers is work nobody planned into a release. The plan's start is none of these:
+a feature's and a milestone's walk stop at it, so work fanning out from the origin in
+parallel is not the origin gathered by every branch at once.
 """
 
 from argparse import ArgumentParser, Namespace
@@ -25,6 +27,7 @@ from dplanner.domain.scope import (
     StepPredicate,
     cone,
     gatherers,
+    handoffs,
     kind_of,
     leaders,
     stops_for,
@@ -34,7 +37,7 @@ from dplanner.domain.store import FilesFor
 # What a scope covers, as the module that owns tests answers it: (id, title, step title).
 type CoveredTest = tuple[str, str, str]
 # The same question the Covers tab asks: everything at and behind a step, optionally
-# truncated at the collectors it hands off to.
+# truncated at the boundaries it stops at.
 type CoveredBy = Callable[[Library, Project, StepId, StepPredicate | None], Sequence[CoveredTest]]
 
 
@@ -71,6 +74,7 @@ def commands(*, kinds: Sequence[ScopeKind], covered_by: CoveredBy) -> list[CliCo
             if found[0] not in claimed
         ]
         every = [found for group in groups for found in group.tests] + direct
+        after = handoffs(kinds, walked)
         data = {
             "step": step.id,
             "kind": kind.id,
@@ -83,11 +87,9 @@ def commands(*, kinds: Sequence[ScopeKind], covered_by: CoveredBy) -> list[CliCo
                 for group in groups
             ],
             "direct": [_row(found) for found in direct],
-            "after": [
-                {"id": boundary.id, "title": boundary.title} for boundary in walked.boundaries
-            ],
+            "after": [{"id": boundary.id, "title": boundary.title} for boundary in after],
         }
-        context.report(data, _render(step.title, kind, groups, direct, every, walked.boundaries))
+        context.report(data, _render(step.title, kind, groups, direct, every, after))
         return 0
 
     def configure(parser: ArgumentParser) -> None:
@@ -209,8 +211,14 @@ def lint_checks(
                 "gathers it, so no milestone counts it. Link it behind one.",
             )
             for step in project.steps
-            # A collector is gathered by construction: it is what gathers.
-            if step.id not in owners and kind_of(kinds, step) is None and carries_tests(step)
+            # A collector is gathered by construction: it is what gathers. And a step every
+            # feature's walk stops at without being a collector is the plan's start — no
+            # link can hand it to a feature, so a finding asking for one could not be acted
+            # on. (It relies on ``stops_at`` naming only collectors and the start.)
+            if step.id not in owners
+            and kind_of(kinds, step) is None
+            and not sub.stops_at(step)
+            and carries_tests(step)
         ]
 
     return [gathers_nothing, shared, crosses_milestones, ungathered]

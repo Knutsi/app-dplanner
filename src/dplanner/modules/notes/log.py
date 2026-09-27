@@ -21,8 +21,9 @@ for N documents per node; files it links live in the module's area beside the pr
 
 **Adding twice is not two notes.** An agent re-runs a command after a stale-workspace
 refusal, or an epilogue runs again; a title already in the log *on the same step* is that
-note, and :func:`same_note` is how ``note add`` and the card both say so — on the same
-step, so two steps may each leave a note by the same bad title without one being lost.
+note, and :func:`adding` is how ``note add`` and ``status set --because`` both keep to
+it — on the same step, so two steps may each leave a note by the same bad title without one
+being lost. (The window's *Add Note* mints a fresh, untitled one each time, on purpose.)
 Everything here is Qt-free and shared by the verbs and the card verbatim, so no two
 surfaces can disagree about what a note is.
 """
@@ -40,6 +41,7 @@ from dplanner.domain.assets import (
     area_assets,
     asset_references,
 )
+from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.ids import next_id
 from dplanner.domain.model import Library, Project
 from dplanner.domain.store import FilesFor
@@ -186,6 +188,18 @@ def same_note(records: Sequence[Note], title: str, step: str) -> Note | None:
     aside — or None. What makes recording a note twice one note."""
     wanted = title.strip().lower()
     return next((r for r in records if r.step == step and r.title.strip().lower() == wanted), None)
+
+
+def adding(project: Project, draft: Note) -> tuple[Note, SetModuleDataCommand | None]:
+    """``draft`` as the project's next note, and the command that appends it to the log — or
+    the note the step already carries by that title, and None: adding twice is one note.
+    The one way a verb adds a note, so every verb mints the id and keeps that rule."""
+    records = read_log(project)
+    existing = same_note(records, draft.title, draft.step)
+    if existing is not None:
+        return existing, None
+    note = replace(draft, id=next_note_id(records))
+    return note, SetModuleDataCommand(project.id, MODULE_ID, write_log([*records, note]))
 
 
 def find_note(project: Project, needle: str) -> Note:

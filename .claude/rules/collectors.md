@@ -1,13 +1,13 @@
 ---
 paths:
-  - "src/dplanner/modules/{testing,docs,notes,feature,coverage,step_check}/**"
+  - "src/dplanner/modules/{testing,docs,notes,feature,coverage,step_check,step_start}/**"
   - "src/dplanner/domain/scope.py"
   - "src/dplanner/core/anchors.py"
   - "src/dplanner/cli/scopes.py"
   - "tests/domain/test_scope.py"
   - "tests/core/test_anchors.py"
   - "tests/modules/test_{testing,docs,notes,feature,coverage,spec_passages,focus_seams}*.py"
-  - "tests/cli/test_{scopes,feature_verbs,coverage_verbs,note_verbs}.py"
+  - "tests/cli/test_{scopes,feature_verbs,coverage_verbs,note_verbs,start_verbs}.py"
   - "scripts/render_documentation.py"
 ---
 
@@ -33,8 +33,9 @@ paths:
   collectors are a fact about a test's **step** and the category is a fact about the
   **test**; the collector half is filled by `scope.gatherers()`, and a step nothing gathers
   lands under *Not in any feature*, the same steps `dplanner project lint` reports as
-  `scope.ungathered`. A step two features both wait on gets one **joint** heading rather
-  than two rows: a test listed twice is a test marked twice. **Category leads and is the
+  `scope.ungathered` — and the plan's start, which no link can hand to a feature. A step
+  two features both wait on gets one **joint** heading rather than two rows: a test listed
+  twice is a test marked twice. **Category leads and is the
   default while the project has one** — a flat roster of two hundred is unreadable, and a
   project with no categories would open on one heading saying *Uncategorised* — until the
   reader picks a grouping, after which their answer stands. `TestsTable` draws a spanned
@@ -250,13 +251,29 @@ paths:
   show`, `test-run start --scope`, and three lint checks. `ordering.upstream()` is the same
   function with nothing to stop it. Never store what a collector holds — `dplanner step
   link` relinks a graph with no window running to notice.
+- **The plan's start is nobody's.** `step_start` marks the one step a plan begins from, and
+  the two kinds that *own* work — a feature and a milestone — stop at it, so parallel work
+  fanning out of the origin (the shape `cli/shaping.md` recommends) is not the origin
+  gathered by every feature at once. A **check** still stops at nothing: it owns nothing and
+  stands for everything, the start included. Carrying is untouched — a start marked as a
+  milestone is a milestone with an empty cone, and `scope.gathers-nothing` says so. **A
+  boundary no kind carries is no hand-off**: `scope show`'s *after* and the Covers tab's
+  switch read `domain/scope.py`'s `handoffs()`, never `Cone.boundaries`, and
+  `scope.ungathered` skips the start (no link could hand it to a feature). Its own lint is
+  `graph.start` — a start that waits on something, a plan with two. The card wears no mark
+  of its own and the key stays `S`. `ARCHITECTURE.md`'s *The origin is nobody's* has the
+  reasoning.
 - **A `ScopeKind` is wired, never inferred.** `modules/__init__.py::_scope_kinds()` writes
   the three predicates literally: what carries a kind, where its cone stops, and — a
   separate question — which kind it is *read as a list of* (`gathers`). A milestone is read
-  as its features; a feature is the finest grain and reads flat. `step_check` is a bare
-  marker with no tab of its own; a feature step's tab edits the spec passages it was read
-  from; `modules/testing/` renders what any of them gathers, because a
-  list of tests is testing's business. That keeps the wiring one-directional. `ARCHITECTURE.md`'s *A check is a scope over the graph* has the
+  as its features; a feature is the finest grain and reads flat. It imports the aspect
+  readers itself, and **every walk asking who owns a step reads the kinds it returns**,
+  never a stopping rule of its own — the briefing's *Flows into* through `_flows_into`, the
+  coverage trace through its `Readers` — or the next rule added to one copy is missing from
+  the other. `step_check` is a bare marker with no tab of its own; a feature step's tab
+  edits the spec passages it was read from; `modules/testing/` renders what any of them
+  gathers, because a list of tests is testing's business. That keeps the wiring
+  one-directional. `ARCHITECTURE.md`'s *A check is a scope over the graph* has the
   reasoning, including why exclusivity is a predicate rather than a stored list.
 - **A feature is a step.** There is no catalogue and no verb that creates one: `step add
   --feature` is the door in — carrying `--document`/`--quote`/`--page`/`--strict` for a
@@ -306,7 +323,9 @@ paths:
   picks within its lane and clears the lanes to its right, Ctrl (or Shift) adds, the
   ground and Escape clear; every picked card's step is published; an empty lane says which
   pick would fill it. A card that is a step — a milestone, a feature, a step — wears the
-  canvas's spine, its key up the left edge washed by status. **A view whose extent is laid out to its viewport never reports that extent as
+  canvas's key block, who works it over its key, washed by status: the trace carries the
+  root's own answer (`Readers.glyph`, `Item.glyph`), and `LANE_MIN_W` grew with the block so
+  a narrow lane still reads two words of title. **A view whose extent is laid out to its viewport never reports that extent as
   its size hint** — `QGraphicsView.sizeHint()` *is* the scene rect, so honouring it widened
   the view, the scene and then the hint again, which is what pushed the index panel off the
   window and made the seam jump. Lane widths are whole numbers (a rounding error flickers

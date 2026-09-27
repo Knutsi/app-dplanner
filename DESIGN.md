@@ -32,6 +32,7 @@ styling one surface by name.
 | a dialog, a confirmation, a one-line prompt, what a gesture came to | `DialogFrame`, `confirm()`, `LinePrompt`, `notice()` | `framework/dialog.py`, `framework/widgets.py` | the modal: `dialog-*`, `dialog-refused-*`; every dialog on it: `s16-dialogs/` |
 | a table | `Table`, `Column`, `Cell`; `key_badge_icon` for a milestone | `framework/table.py`, `theme/icons.py` | the table tab: `table-*`, `table-selected-*` |
 | a value set in a table's row | `Column(editor=NumberEditor(…) \| DateEditor(…))`, and `chips=` for its usual values | `framework/table.py` | `s15-tables-and-browsers/estimates-*` |
+| rows a person ticks, then acts on | `Column(check=True)` first, `selection="extended"` — the box *is* the selection | `framework/table.py` | `table-selected-*`, `f6-step-statuses/` |
 | rows that each carry their own verbs and outlive a refresh | `RowWell`, `WellRow` | `framework/row_well.py` | `s15-tables-and-browsers/tasks-*`, `agents-*` |
 | words in the status bar that open what they sum up | `StatusBarButton` | `framework/widgets.py` | — |
 | a fact that holds until it stops holding, over the whole window | `Notice`, `NoticeBar` | `framework/notices.py` | the modal's *Signalling* block |
@@ -56,7 +57,7 @@ styling one surface by name.
 | what a picked row wears, and what it must not | — | `framework/list_rows.py`, `framework/table.py` | the rows tab: `rows-*` |
 | a control a strip offers only sometimes | `Toolbar.set_shown` — never `hide()` | `framework/toolbar.py` | the Time tab's day fields |
 | a setting on a strip that needs more than a menu — a slider, choices that stay lit | `PopoverButton`, `Popover` | `framework/popover.py` | the toolbars tab: `toolbars-budget-*`, `toolbars-history-*` |
-| exclusive choices shown at once — a surface's pages, a count | `Segmented` | `framework/segmented.py` | the toolbars tab's last strip, `toolbars-budget-*` |
+| exclusive choices shown at once — a surface's pages, a count, one group of a roster | `Segmented` | `framework/segmented.py` | the toolbars tab's last strip, `toolbars-budget-*`, `f6-step-statuses/` |
 | a slider over steps, with a step either way | `SliderRow` | `framework/slider_row.py` | `toolbars-history-*` |
 | when a rebuild is owed | `Debounced.pending_changed` | `framework/debounce.py` | — |
 | a margin, a gap, a height | a token | `theme/tokens.py` (*Tokens*) | — |
@@ -71,7 +72,7 @@ flows, and what each surface on the way must make unmistakable:
   Agent* is a plain button on the Agent tab. When the graph says the step's prerequisites
   are not done, a confirmation names them — the count in its window title (*Run 3 Agents*),
   the step and the steps it waits on in its body — with *Run Anyway* as the primary. The
-  status bar records the launch; the card's spine goes busy. Never ambiguous: **which
+  status bar records the launch; the card's key block goes busy. Never ambiguous: **which
   steps** the shells are about, and **whether a shell opened**.
 - **Import a spec → cite → plan.** The document lands in the tree and its strip says
   whether it is project-owned and editable or sourced and read-only. Selecting text and
@@ -184,12 +185,18 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
 - **Every card rests on a shadow**, faint, and a picked card lifts two pixels over a deeper
   one — the lift, not a colour, is what marks it (see *Colour* below). The fill is opaque:
   the ground never shows through a card.
-- **The spine names the card and says where it stands.** A 26 px strip inside the left
-  edge carries the step's key (`S7`, `F3`) set bold and read bottom-to-top, washed by
-  status: busy blue in progress, the bad red blocked, the good green done, a quiet shade of
-  ink otherwise. It is the one thing on a card meant to be found from across the graph, and
-  the 3 px status bar it replaced is gone — one strip, two facts. A coverage card that is a
-  step — a milestone, a feature, a step in the steps lane — wears the same spine.
+- **The key block names the card, says who works it and where it stands.** A 56 px strip
+  inside the left edge carries the step's key (`S7`, `F3`) set level and bold, and over it
+  one glyph for who does the work: sparkles for an agent, a person otherwise — a milestone,
+  a feature and a check included — and a clock in the attention amber for a wait, the one
+  glyph in the block that is not the key's ink. The strip is washed by status: busy blue in
+  progress, the warn amber ready for review — a person looks next — the good green ready to
+  merge and done (only done also greens and mutes the body), the bad red blocked, a quiet
+  shade of ink otherwise. A wait's amber is a stroke on a quiet block and a review's is the
+  block itself, so the two never read as one. It is the one thing on a card meant to be
+  found from across the graph — one strip, three facts — and the top edge's medallions never
+  repeat its glyph. A coverage card that is a step, and every card in the report, wears the
+  same block.
 - **The title is the card**: two points larger than the chrome, normal weight, wrapping onto
   as many lines as the card has room for above its bottom line. A card can be dragged larger
   by any edge or corner to show more of a long name; the default footprint fits two lines.
@@ -420,12 +427,15 @@ reasoning, including why the count of fields was the symptom rather than the dis
   colour map (`theme/palettes.py`; *View ▸ Milestone Colours* and the Time tab's picker set
   the same stored choice) and every milestone is dealt a shade of it by where it falls in
   the roadmap. One hex, eight surfaces: the card on the canvas, its badge and tag medallion,
-  the order table's row and key badge, the Ready-to-start board's card, the Tests tab's
+  the order table's row and key badge, the Step statuses tab's key badge, the Tests tab's
   grouping heading, the Docs tab's medallion, the coverage lane, the Milestone tab's swatch,
   the calendar's band and the report — so a colour means *this milestone* wherever it is
   seen. A shade never invents an alpha: `tones.toned(name, hex)` recolours the tone the
   purple had, so a milestone's card is exactly as loud as it always was. Nothing else in the
-  application deals colour by position, and nothing else should.
+  application deals colour by position, and nothing else should. **Its outline is doubled**
+  (`MILESTONE_BORDER_W`, 3 px on the canvas and the coverage lanes, 2 px in the report): a
+  milestone is a landmark at any zoom, and its outline is heavier than a selection's, so
+  picking one recolours it and never thins it.
 - **A selected item is lifted, not recoloured.** The accent goes on the border; the item's
   own fill *gains* rather than being replaced, so whatever the colour was saying — this is
   the second milestone, finished work is green — it still says while the item is picked. Where
@@ -505,6 +515,14 @@ once, its delegate painting what a row wears. Debug ▸ Design Examples ▸ Tabl
   milestone's row keeps its shade while picked (*Colour*). Nothing else marks it: the focus
   frame Qt draws round the *current cell* is stripped, because a dotted box lingering on
   the last cell clicked is a second mark, on one cell, for what the edge already says.
+- **A roster whose rows are ticked for a verb leads with a check column**
+  (`Column(check=True)`), and **the box is the selection** — never a second state beside
+  it, so what the box says and what the strip's verbs act on cannot disagree. A click on
+  the box adds its row or takes it out and leaves the rest; a click anywhere else picks the
+  row alone; a double click on the box is two ticks, never the row opened. It is painted
+  like a chip — a quiet box on the hairline, the accent with a tick in its own ink — and
+  is the one mark a picked row wears beside its edge, because it is the selection's own
+  target rather than a second answer. The Step statuses tab is the example.
 - A row that is a **fixed point** among its neighbours (a milestone) goes bold, and is the
   one weight in the table: a glance down a column of quiet lines finds the milestones
   without reading. Emphasis for any other reason is size or colour, never a second bold.
@@ -692,9 +710,9 @@ and one stylesheet rule for the progress bar:
   status bar carries the one-line record of a gesture (*3 agents launched*).
 - **A `StatusLine` is a glyph in a tone beside secondary words**: the glyph carries the
   mood, the words carry the fact, and a paragraph of red is shouting. Five tones — info
-  (the line's own ink), busy (the spine's blue), ok (the good green), warn (the chips'
+  (the line's own ink), busy (the key block's blue), ok (the good green), warn (the chips'
   attention amber), error (the bad red), `theme/tones.py`'s `STATUS_TONES`, the same shades
-  the canvas spine wears. **Warn is not a weaker error**: an error is this work failing and
+  a card's key block wears. **Warn is not a weaker error**: an error is this work failing and
   carries its remedy, where warn is something going on that the reader should not walk
   into — another writer at the same plan — which nobody can fix and everybody must see.
 - **A progress bar is 4 px, accent, no text, no frame** — one bare `QProgressBar` rule,
@@ -833,9 +851,10 @@ Dialogs:
   its own and built from `settings_page` and `block` — captions over fields, the standing
   explanations behind the caption's glyph.
 - *(done — S16)* `ProjectDialog` — Close alone in settings mode; create mode a form of
-  captioned blocks whose Create is refused in words, both repository fields carrying the
-  `⋯` of the ways in beside them; what a request came to in the footer's status slot, and
-  the plan column's set-up offer the verb of an `EmptyState`.
+  captioned blocks whose Create is refused in words, the plan repository carrying the `⋯`
+  of the ways in beside it and the code repository a plain combo with nothing current
+  until answered (F22); what a request came to in the footer's status slot, and the plan
+  column's set-up offer the verb of an `EmptyState`.
 - *(done — S16)* `OpenProjectDialog`, `MovePlanDialog`, `RepositoriesFolderDialog`,
   `GhRepoListDialog` — on the frame; the repository picker's four glyph buttons one ⋯
   menu and its note a `StatusLine`; the GitHub list captioned, its listing in the status

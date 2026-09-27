@@ -222,8 +222,8 @@ session markers (`CLAUDECODE`, and the variables that name a session's parent), 
 `claude` started under them makes itself a *child* session of the one that set them: no
 transcript on disk, ended when the parent's turn ends. When one agent's `pkill` (below)
 killed the first agent, its background window died with it, and every child session went
-too. So `entry.py` checks `AGENT_SHELL_MARKERS` before it opens a window and refuses with
-the reason. This *is* the vendor-variable check the list above declined — but for a
+too. So `entry.py` checks the shell's markers (`domain/agents.py`'s `shell_marker`, each
+harness's first) before it opens a window and refuses with the reason. This *is* the vendor-variable check the list above declined — but for a
 different question. Dispatch asks *what runs*, and there a missed vendor is a wrong
 answer; this asks *who owns the window*, and a missed vendor is a missing guard, which is
 the same as today. One row per agent CLI known to mark its shell, and the launcher scrubs
@@ -683,27 +683,26 @@ button's dropdown. The menu bar deliberately does not, and the reason is the sam
 the application, so a colour baked into one at startup would still be there three themes
 later. A pop-up has no such problem — it is thrown away when it closes.
 
-It earns its place on the Type submenu, where each toggle wears the very medallion its node
+It earns its place on the Type submenu, where each toggle wears the very glyph its node
 will wear, and it is what lets the aspect bar paint the same glyphs (through the specs, so
 they are the registry's and not a copy) instead of the panel hand-building a list of
 aspects it is not allowed to know.
 
 ### View is the window; Graph is the canvas
 
-The graph editor's own verbs — Sort, Layout, Divide, Region, Frame, the marks, Snap to Grid
-and the Background — used to be a `canvas` group inside **View**, and one inside **Project**
-for regions. That made View half a window menu (panels, tabs, theme, zoom) and half a
-drawing-surface menu, and it left the surface this application is mostly *about* with no
-heading of its own: the fastest way to a divide was the command palette, which then said
+The graph editor's own verbs — Sort, Layout, Divide, Frame, the marks, Snap to Grid and the
+Background — used to be a `canvas` group inside **View** (and regions, since retired, had
+one inside **Project**). That made View half a window menu (panels, tabs, theme, zoom) and
+half a drawing-surface menu, and it left the surface this application is mostly *about* with
+no heading of its own: the fastest way to a divide was the command palette, which then said
 only *Vertical*.
 
-They are a top-level **Graph** menu now, in four groups: `arrange` (the Sort, Layout and
-Divide child menus — moving cards, from the wholesale to one cut at a time), `regions`,
-`look` (what is drawn without moving anything) and `panels` (what stands *beside* the
-canvas inside the tab). View went back to being about the window — which is what decides
-where the Features panel's switch sits: the panel is inside one project's tab, so it is
-the graph's chrome and not the window's, and View ▸ Panels is about the areas around the
-tabs.
+They are a top-level **Graph** menu now, in three groups: `arrange` (the Sort, Layout and
+Divide child menus — moving cards, from the wholesale to one cut at a time), `look` (what is
+drawn without moving anything) and `panels` (what stands *beside* the canvas inside the
+tab). View went back to being about the window — which is what decides where the Features
+panel's switch sits: the panel is inside one project's tab, so it is the graph's chrome and
+not the window's, and View ▸ Panels is about the areas around the tabs.
 
 **What did *not* move is the point of the split.** Connect, Link, Unlink, Isolate and the
 Redirect pair stayed on **Step**, because a link is a fact about the steps it joins, and
@@ -847,7 +846,7 @@ wants. One field on the row, and the rule is the same both ways.
 **Landing is centring.** `steps.reveal` opened the project's tab and called `setSelected`,
 which selects a step that may be a screen away — a reveal that reveals nothing. The canvas
 grew `GraphView.centre_on_step`, and `ProjectActivity.select_step` calls it, so every view
-that reaches a step through the registry — the order table, the progression board, the
+that reaches a step through the registry — the order table, the Step statuses tab, the
 Agents browser, `feature.reveal` — now lands on it. The zoom is untouched: Frame is the
 verb that changes how much of the graph is in view, and a jump that also zoomed would lose
 the scale somebody had chosen to work at.
@@ -987,10 +986,10 @@ menu because the canvas, four tables and the toolbar render that menu by name.
 
 **Deleting asks nothing any more.** A prompt in front of an undoable verb teaches the wrong
 lesson — that the gesture is dangerous, when Ctrl+Z is the safety net — and the CLI's `step
-remove` has said so since it existed. Steps and regions both lost their prompt in one pass,
-because the Delete key runs whichever of them the selection calls for and one gesture should
-not sometimes ask. The prompts that remain guard what undo cannot reach: removing a project
-from the library, a release, an outside edit.
+remove` has said so since it existed. Steps and regions (since retired) lost their prompt in
+one pass, because the Delete key ran whichever of them the selection called for and one
+gesture should not sometimes ask. The prompts that remain guard what undo cannot reach:
+removing a project from the library, a release, an outside edit.
 
 ### Copy and paste are a clone through the same command
 
@@ -1759,12 +1758,14 @@ canvas through a typed callback on their own `Deps`. Where a node *is* is still 
 model — `layout.positions()` answers it — so "the nearest node to the right" is a pure function
 and only the last step, telling the canvas what to select, needs a window.
 
-**A gesture that drags something the canvas draws is a `GestureMode`.** The region drag,
-the region resize and the card resize each hold what they move (so a sync from the model
-leaves that geometry alone until the release), put it back on Escape, and report on the
-release before popping — three modes, one skeleton. The base owns the hold, the cursor, the
-Escape and the pop; a subclass says what it holds, how to restore it, and what the release
-means. The third copy of the skeleton was the moment to write the base, not the first.
+**A gesture that drags something the canvas draws is a `GestureMode`.** The card resize and
+the divide's drag each hold what they move (so a sync from the model leaves that geometry
+alone until the release), put it back on Escape, and report on the release before popping —
+two modes, one skeleton. The base owns the hold, the cursor, the Escape and the pop; a
+subclass says what it holds, how to restore it, and what the release means. It was written
+at the third copy of the skeleton, when a region's drag and resize were two of them; the
+regions went (*Regions were retired*) and the base stayed, because the divide had become a
+copy of its own by then.
 
 The lasso is the mode that shows the stack paying for itself. A rubber band is a box and a
 cluster on a busy canvas rarely is, so `LassoMode` claims the press, grows a path under the
@@ -1773,7 +1774,7 @@ rect, not Qt's hit shape, which is the body inflated by the paint margin and wou
 back the edges. It then calls `select_steps` and pops, so one lasso ends the mode the way one
 link ends connect; Shift on the release folds the catch into what was already selected.
 Nothing in it is new machinery: the outline it draws is the same `OutlinePreviewItem` the
-region mode drags out, reached through one `aim_outline` on the `Canvas` protocol.
+divide draws its band with, reached through one `aim_outline` on the `Canvas` protocol.
 
 The divide is the stack used twice over. `DivideMode` is switchable like the lasso — Graph ▸
 Divide ▸ Vertical or Horizontal, `D` or `Shift+D` on the canvas — and does nothing but lay a
@@ -1861,12 +1862,6 @@ project: two people sharing a repository can be looking at different layouts of 
 graph. The picker's modified dot is a comparison against the snapshot, recomputed — never
 stored.
 
-**Regions** ride the same project-level entry: titled rectangles painted below the edges,
-annotation the model never learns about. Every region gesture is one command writing the
-whole list; a body drag also carries the steps whose centres lie inside, as one composite —
-undo restores frame and steps together. A named layout snapshots region rects along with
-step positions, and applying it moves regions it still finds — never creates or deletes one.
-
 **The canvas's spatial gestures exist as verbs, and geometry is derived on every read.**
 An agent plans through the CLI and cannot see the canvas, so the picture had to become
 words: `dplanner layout show` measures the graph — the stored positions with the ambient
@@ -1902,14 +1897,42 @@ floor let eight points of snap noise collapse a kept empty row). The same lanes 
 prints is the number a tidy acts on. One number to know: the column pitch, 300, is not a
 multiple of the grid, 8, so a tidy of a flow layout moves alternate columns by four
 points and nothing else — the fixed point of a sorted graph is the sorted graph snapped.
-Regions are neither carried by a tidy nor drawn on the map: they are annotation on the
-way out, and a rule written for them now would be one more thing to retire. **The generated
-skill no longer names their verbs either** — the five carry `in_skill=False`, and the
-preamble's three lines telling an agent not to draw one went with them, since a skill that
-does not offer something need not forbid it. That is not the same act as deleting the verbs:
-the canvas still draws what a plan already has, and removing a verb an older script calls is
-a decision somebody should make on purpose rather than as a side effect of tidying a
-document.
+
+### Regions were retired
+
+Regions were titled rectangles painted behind the graph — "Database setup", "Finalize
+release" — kept as a list on the project's `project_editor` entry, snapshotted by every
+named layout beside the steps' seats, and drawn by the canvas, the minimap and the report.
+They are gone, for two reasons that are one. **A stack is to be the canvas's container** —
+canvas data over a real `requires` chain, planned in *DPlanner changes 2* and not built yet —
+and two containers would be two answers to "what belongs together". And **annotation
+nothing structures drifts**: the model never learned a
+region existed, so every sort, tidy, divide and hand-drag left the rectangles where they
+were and the steps somewhere else — `region fit` existed only to re-wrap one after the fact,
+and tidy and the map had already stopped carrying them. A stack will be read from the
+chain it stands on, so it cannot drift from the graph that way.
+
+**An old project opens exactly as it was, minus the rectangles.** `project_editor`'s data
+format went to 2, and its one migration drops the project entry's `regions` and every
+layout's region rects on read — the migration pass runs at every open, window and CLI, and
+persists what it changed, so the first open by this build cleans a plan once. The stamp
+moving from 1 to 2 rewrites every positioned step's entry too, once: a pass-through, the
+price every format bump pays (`estimation` and `step_status` paid it before). One door
+needed the same care: `positions.entry_with`, the composer every project-level write goes
+through, carries the keys it does not own untouched, and an entry *adopted* since the open
+— an import the CLI wrote while a window was up, a pull — has not met the migration pass.
+Stamping that format 2 as it stood would have kept its `regions` forever, so the composer
+brings what it carries current first — and an entry that held nothing but regions migrates
+to nothing, which must still replace it rather than read as "nothing to migrate". `tests/old_canvas.py` is the old project the proof
+opens: in a window, through `layout show --map` and `apply`, in a report, and as an export
+imported.
+
+**The verbs were deleted, not hidden.** When the skill stopped naming them they were kept
+runnable behind `in_skill=False`, on the grounds that removing a verb an older script calls
+is a decision to make on purpose. This is that decision, and the flag went with them —
+it existed for nothing else. What stayed is what the other gestures share: `GestureMode`
+(the card resize and the divide), `OutlinePreviewItem` and `aim_outline` (the lasso and the
+divide), and the `region` glyph, which a test category may wear.
 
 ### The canvas is a plane, and why that is one decision rather than three
 
@@ -2071,7 +2094,7 @@ fades a card's fill, border, title, medallions and the shadow under it together,
 what receding is, and `renderers.py` never learns that a spotlight exists. The coverage
 trace already dimmed its cards that way to light a path through its lanes, so the constant
 moved to `theme/cards.py` — the same argument that put the card primitives there. The ground
-and its regions stay as they are: they are the table, not the graph.
+stays as it is: it is the table, not the graph.
 
 ### The palette a painter is handed is a snapshot
 
@@ -2098,29 +2121,63 @@ agent created through the CLI grew a position file the next time a window happen
 test asserts the project is unchanged after a tab is opened, because that is the kind of rule
 that decays silently.
 
-### The spine names the card
+### The key block names the card and says who works it
 
 A step's key — `S7`, `F3` — is what a person says, what its branch and PR are named after,
 and what the agent's `dplanner` verbs address, so it has to be found from across the
-graph. It is painted on a **spine**: a 26 px strip inside the card's left edge, clipped to
-the rounded body, with the key set bold and rotated a quarter turn so it reads up the
-strip the way a book's spine does. Vertical, because a horizontal label wide enough to
-read would take a line the title needs; a spine costs the title 26 px of width and no
-height at all.
+graph. And a graph that plans agents beside people has a second question every card must
+answer at a glance: *who does this one?* Both are painted in the **key block**: a 56 px strip
+inside the card's left edge, clipped to the rounded body, with one glyph for who works the
+step over the key set level and bold, the pair centred.
 
-The spine is also where the card says where the step *stands*: its wash is the status —
-busy blue for in-progress, the bad red for blocked, the good green for done, and a quiet
-shade of ink otherwise, so the strip is always there and the key always has a ground. It
-replaces the 3 px status bar that sat in the same edge: one strip that carries the key and
-the status is the same idea as the bar with something to say written on it, and two
-strips down one edge would have been noise. The done wash sits on the done body's green
-— the body says the work receded, the spine says why. Everything on the left edge starts
-past it (`LEFT_INSET`): the medallions, the chip, the title.
+It used to be a 26 px *spine*, the key rotated a quarter turn up it the way a book's spine
+reads — vertical because a level label wide enough to read would take a line the title
+needs. The spec asked for the primary icon "in the same place as the step id", and an icon
+cannot be read sideways the way a word can, so the strip widened to hold both level: 56 px
+is the widest key a plan realistically deals (`M1234`, 37 px bold at the chrome font's nine
+points) with air either side. It costs the title thirty pixels of width and no height; the
+minimum card (`MIN_NODE_W`, 176 from 144) and the coverage lanes' minimum (`LANE_MIN_W`, 198
+from 168) grew by exactly that, so the narrowest title kept the room it had.
 
-The painter is `theme/cards.py`'s, beside the other card primitives, and the status → shade
-table is `theme/tones.py`'s `STEP_STATUS_TONES`, because the canvas is not the only surface
-where a step is a card: the coverage lanes' milestones, features and steps wear the same
-spine, so a key reads the same up every card that is a step.
+**Three glyphs and no more**: sparkles for an agent step, a person otherwise, and a clock
+for a wait. The person is on milestones, features and checks too — a person closes those,
+and a rule with exceptions is one nobody reads at a glance, which is the whole point of it.
+The clock is the one glyph not drawn in the
+key's ink: a wait is nobody's work, and it wears the attention amber — the chips' *careful*,
+`STATUS_TONES["warn"]` at full strength, since a stroked glyph at a wash's alpha reads as a
+smudge — whatever its date. The rule is written once, `_primary_glyph` in the composition
+root, and read by every surface that shows a key: the canvas (`NodeAccent.key_glyph`), the
+coverage lanes (`Readers.glyph`) and the report's graph (`Node.glyph_markup`); Find's rows
+wear it too. **The top edge's medallions stopped carrying the spark and the clock** when the block
+took them: they say what a step *is* — milestone, feature, tests, check — and a card that
+said who works it twice would be teaching the eye to read two places for one fact.
+
+The block is also where the card says where the step *stands*: its wash is the status —
+busy blue for in-progress, the warn amber for ready-for-review (a person looks next), the
+good green for ready-to-merge and done, the bad red for blocked, and a quiet shade of ink
+otherwise, so the strip is always there and the key always has a ground. Only done also
+greens and mutes the body, which is how the two greens are told apart; and a review's amber
+is the block itself where a wait's is a clock stroked on a quiet block, which is how the two
+ambers are. A wait has no status, so its block is quiet whatever it stored before it became
+one (`_card_status`, the status every card surface reads). It
+replaced the 3 px status bar that once sat in the same edge: one strip carrying the key,
+who works it and the status is the same idea as the bar with something to say written on
+it. The done wash sits on the done body's green — the body says the work receded, the block
+says why. Everything on the left edge starts past it (`LEFT_INSET`): the medallions, the
+chip, the title.
+
+The painter is `theme/cards.py`'s `paint_key_block`, beside the other card primitives, with
+the geometry as a pure `key_block_rects` a test and a card's height can ask without a
+painter; the status → shade table is `theme/tones.py`'s `STEP_STATUS_TONES`, because the
+canvas is not the only surface where a step is a card. The coverage lanes' milestones,
+features and steps wear the same block. **The report draws it too, from a copy**:
+`cli/report/drawings.py` may not read `theme/` (the CLI starts with no graphics stack, and
+`cli/` sits below `theme/` in the layers), so it keeps the block's numbers beside its other
+hex twins and a test holds them to `theme/cards.py`'s; the glyph itself travels as data —
+`theme/glyph_source.py`, the one Qt-free reader of the vendored files, hands its drawing to
+the module's `report.py`, which puts it on the `Node`. The drawing is placed as a group with
+its stroke named, never a nested `<svg>`, a `<use>` or `currentColor`, because the PDF goes
+through QtSvg, which honours none of the three.
 
 ### A picked node is lifted, not recoloured
 
@@ -2195,16 +2252,16 @@ aspects' phrases that once filled it as a subtitle were saying what the medallio
 badge, the bar and the pill already wear, and a card that repeats itself is a card that is
 harder to read.
 
-**The gesture is a mode, and the hit shape is the card.** `NodeResizeMode` is
-`RegionResizeMode`'s shape with eight grips instead of one: a band `GRAB_IN` inside the
-border and `EDGE_REACH` outside it, both bands at once being a corner, and the link handle
-winning its corner of the right edge as it does on the press. The edge under the pointer
-moves, the far edge is the limit (never below `MIN_NODE_W` by `MIN_NODE_H`), and the card is
-held for the gesture so a sync from the model leaves it alone. One `Resize Step` command
-writes seat and size together, because dragging the left edge moves both and undo must take
-both back. The pointer's resize arrows are the gesture's only announcement, shown by
-`IdleMode` on mouse moves with no button down — the one mode that can start a resize is the
-one that says where.
+**The gesture is a mode, and the hit shape is the card.** `NodeResizeMode` is a
+`GestureMode` with eight grips (the retired region resize had one): a band `GRAB_IN` inside
+the border and `EDGE_REACH` outside it, both bands at once being a corner, and the link
+handle winning its corner of the right edge as it does on the press. The edge under the
+pointer moves, the far edge is the limit (never below `MIN_NODE_W` by `MIN_NODE_H`), and the
+card is held for the gesture so a sync from the model leaves it alone. One `Resize Step`
+command writes seat and size together, because dragging the left edge moves both and undo
+must take both back. The pointer's resize arrows are the gesture's only announcement, shown
+by `IdleMode` on mouse moves with no button down — the one mode that can start a resize is
+the one that says where.
 
 ### The ground is a preference; snapping belongs to the gesture
 
@@ -2219,9 +2276,8 @@ coordinate was rounded to it on its way to disk, which would have made a snap *t
 nothing: a drag with snapping off would still have landed on the grid the moment the store
 wrote it. So `positions.snapped(value)` rounds to a whole unit — short JSON, and still the
 float every number on disk owes — and only the canvas passes `GRID`, only while snapping is
-on, through the scene's one `snap()`: a node or region drag (`itemChange`), a resize, a
-region being dragged out, and the seat of a placed step (a double-click, New, a paste, a
-drop). A CLI verb has no gesture and stores what it was given; a sort's output is what the
+on, through the scene's one `snap()`: a node drag (`itemChange`), a resize, a divide's
+distance, and the seat of a placed step (a double-click, New, a paste, a drop). A CLI verb has no gesture and stores what it was given; a sort's output is what the
 algorithm computed, and the layered ones land on round pitches by construction.
 
 **What is drawn is a coarsening of what snaps.** The ground shows every `pitch_for(zoom)`-th
@@ -2697,14 +2753,6 @@ parser the skill was generated from. An index's job is to tell you a verb **exis
 it is spelled; `--help` tells you what it does; reference.md is for reading every flag of
 everything at once. Each of the three is now used for what it is good at.
 
-**A verb the skill must not teach carries `in_skill=False`.** It is the CLI twin of
-`ActionSpec.in_menus=False`, and for the same reason: a thing can be legitimately available
-and legitimately not offered. The region verbs are what it exists for — registered, runnable,
-in `--help`, in neither generated file. The alternative was a noun denylist in the generator,
-which puts knowledge of one module's retirement into `cli/skill.py`; the flag keeps it on the
-command, where the module that owns it says so. A noun whose every verb is kept out is not a
-noun in the index at all, so `region` simply does not appear.
-
 ## Lint belongs to no feature
 
 `dplanner project lint` asks whether a plan is complete enough to hand to an agent — and
@@ -3053,7 +3101,7 @@ them in — and sets the mark past the last.
 kind is a set of toggles (*A kind is what a node is*): a stored letter would go stale the
 moment a toggle flipped, and renumbering on a kind change would break the branch. The
 root's `_step_key` ranks the kinds the way the body tone does — milestone over feature
-over check over step — and every reader takes the answer from there: the spine, every
+over check over step — and every reader takes the answer from there: the key block, every
 CLI row, `find_step` (which accepts `S7`, `s7` and bare `7`, and refuses a bare number
 that names a step in several projects the way it refuses a shared title), the run name,
 and the briefing's verbs, which address the step by key because a key is unambiguous
@@ -3128,8 +3176,9 @@ derivation — the graph can say what is *ready*, but only a person or an agent 
 is *finished* or *stuck* — yet storing it does not make it a field: `VALUE_FIELDS["step"]`
 is still `("title",)`, and that is the central design decision of the model holding. As an
 aspect it costs no project-format migration, absence encodes `pending`, both surfaces got
-the verb from one declaration (`dplanner status set '<step>' done` is how an agent reports
-back), and the derivation that wants it — the progression board's status-aware frontier —
+the verb from one declaration (`dplanner status set '<step>' ready-for-review` is how an
+agent reports back), and the derivation that wants it — the status-aware frontier the Step
+statuses tab reads —
 is handed a `status_for(step)` function, exactly as `schedule()` is handed `days_for`.
 
 The one enum also shows where an aspect's GUI does not have to be a tab: status registers a
@@ -3137,6 +3186,22 @@ The one enum also shows where an aspect's GUI does not have to be a tab: status 
 table, the menu bar and the palette all grew it from that single registration. The canvas
 never learned the vocabulary either — it renders a neutral `NodeAccent(muted, badge)`, and
 the composition root translates "done" into muted and a milestone label into the badge.
+
+**Six words, and one of them is where an agent stops.** *pending, in-progress,
+ready-for-review, ready-to-merge, done, blocked*, in the order work moves through them. The
+two in the middle came with agents doing the work: *ready-for-review* is the agent's work
+finished with somebody — a person or a reviewing agent — to look next, and
+*ready-to-merge* is accepted and waiting on its merge (*An agent finishes at Ready for
+review*, below, has why an agent stops there). The words are the progression walk's
+(`domain/progression.py`), and the aspect imports them rather than keeping a copy that a
+test had to pin. They cost **no format bump**: an older build reads a word it does not know
+as pending and leaves the entry on disk, which is what `read` has always done. `started` is
+stamped the first time a step enters any *worked* status — in progress, under review or
+waiting on its merge — because a step an agent ran without the claim still began when it
+came back. And **a status verb acts on every chosen step as one undo step** (`chosen_steps`,
+the same definition Delete and Run Agent read), is checked only when all of them already
+stand there, and greys with its reason when a wait is among them — which is what lets the
+Step statuses tab tick three reviews and accept them with one press.
 
 The *Type* submenu is the same idea one step further: one checkable toggle per type-ish
 aspect (Milestone, Feature, Agent, Ticket), each independent, because a Type radio group
@@ -3353,9 +3418,10 @@ which additionally *mutes* its node, so that pair is separated by weight as well
 The nearest claimed hue is the agent-run chip's teal, and that is a labelled pill on the
 bottom edge of a running step, never a body.
 
-Every Type toggle carries its **medallion glyph** — a painter from `theme/icons.py`'s
-`GLYPH_ICONS` vocabulary, the same one the canvas answers in — so one declaration puts the
-same glyph on the Type submenu entry, on the aspect bar and on the node itself.
+Every Type toggle carries **the glyph its node wears** — a medallion's, or for Agent and Wait
+the key block's — a painter from `theme/icons.py`'s `GLYPH_ICONS` vocabulary, the same one
+the canvas answers in, so one declaration puts the same glyph on the Type submenu entry, on
+the aspect bar and on the node itself.
 
 ### A step placed by pointing at a spot earns a stored position
 
@@ -3465,6 +3531,49 @@ the whole point of that pane. `note index --all` drops it, because *does this no
 this step?* is a question the narrower reach makes somebody ask, and no other verb answers
 it: `note list` is the log, not what reaches a step.
 
+## An agent finishes at Ready for review
+
+The spec was plain: agents must stop at *Ready for review*, never at done, because a person
+or a reviewing agent looks next. **Done means somebody accepted the work**, and an agent
+saying so about its own work is the one claim the plan cannot check. So three places say
+it, and one holds it:
+
+- **What agents read.** The briefing's epilogue (`_agent_epilogue`) ends at `status set
+  <key> ready-for-review`, and the skill's *Running as an agent step* says the same, both
+  naming the way out. Both word it apart from the agent-run state `plan-for-review`, which
+  is the agent's *plan* waiting for a look mid-run, not the step's work finished.
+- **What the CLI holds.** `status set <agent step> done` from inside an agent's shell, on a
+  step not already under review or waiting on its merge, exits 1, naming
+  `ready-for-review`. A reviewing agent is not stopped: from review or merge it may finish
+  the step. It is a guard on *who is reporting*, not on the word, so it reads the same fact
+  the window word refuses on — an agent CLI's marker in the environment, read by the
+  composition root's `agent_shell_marker` over `domain/agents.py`'s `shell_marker`, which
+  the entry point imports (the root, which wires the verb, may not import the entry
+  point, so the reading lives there rather than in `entry.py`). **A person's own terminal and
+  the window are never asked**: the developer marking a step done is the acceptance.
+- **The way out is a reason, and the reason is kept.** Some steps have nothing to review — a
+  docs-only change, a step that only reports. `--because '<reason>'` sets done and writes a
+  `decision` note on the step in the same run (*Done without review*, the reason as its
+  body), so skipping review is a recorded choice that reaches every later step's briefing,
+  never a silent one. A flag rather than a second word keeps the vocabulary to what a step
+  *is*, and a note rather than a field keeps the model to what it already stores.
+
+`tests/conftest.py` scrubs every harness's markers from the suite's environment, because the
+suite is routinely run *by* an agent, and a test that wants an agent's shell sets the marker
+itself.
+
+**Time reads review and merge as work in flight, and dates it from when it started.** Not
+landed — the percent, the Step statuses tab and `requires` all say so — so the Time tab, the
+recorder, the matrix, the report and the simulator read both words as *in progress*, through
+one fold in the root's `_time_readers()`, which every time surface reads through. The fold
+covers the day as well as the word. Moving a step to review stamps its `since` today, and the
+model credits in-flight work from `since`. Read raw, the day an agent finished would re-cost
+its step at the whole estimate from tomorrow and call the plan broken — a forecast that
+jumps late exactly when work lands. So `since_for` answers `started` for the two words, and
+`Readers.changed_on` keeps the raw day for the one question that wants it: *did a status
+change today?*, which the Work page draws a day solid by. The simulator plays only the
+prototype's four words, so a folded reading never reaches a real plan (a test pins both).
+
 ## Running an agent launches a peer, not a task
 
 *Run Agent* writes the briefing to a per-run temp directory — never the project, which
@@ -3551,7 +3660,7 @@ in the act.
 
 ### A launch says the work has started
 
-The graph gates launching by *reading* status (`status_for`, the progression board's
+The graph gates launching by *reading* status (`status_for`, the Step statuses tab's
 seam); a launch also *writes* one. When a shell opens, the step is claimed `in-progress`
 through `mark_started` — the writer half of the same seam, wired by the composition root
 to `step_status`'s own `record_started`, so the agent module never learns the vocabulary
@@ -4174,27 +4283,57 @@ plan on an empty machine, is asked nothing, and their first Save clones the repo
 repository and publishes; Run Agent on code nobody checked out clones and launches.
 
 `domain/repositories.py` is the one derivation over the three — `RepositoryFacts`, every
-row placed, with three states read off the code rows: **separated**, the shape the
-application wants; **colocated**, the same remote or either checkout inside the other; and
-**legacy**, no code location at all, read as colocated so nothing breaks on the day the
-build updates. *Warns* is one predicate — not separated and not accepted — asked by lint
-(`repo.unset`, `repo.colocated`, exit 1; and the table's own `location.invalid`,
+row placed, with four states read off the code rows: **separated**, the shape the
+application wants; **colocated**, the same remote or either checkout inside the other;
+**legacy**, no code location and no index line naming the project — a plan that is its
+repository's root, or one from before the index — read as colocated so nothing breaks on
+the day the build updates; and **unset**, no code location in a plan repository that lists
+the project, whose code is simply not recorded yet (below). *Warns* is one predicate — the
+plan is in its code (`plan_in_code`: legacy or colocated) and not accepted — asked by lint
+(`repo.legacy`, `repo.colocated`, exit 1; and the table's own `location.invalid`,
 `location.unknown_role`, `location.duplicate`), by the briefing's preamble (WARNING: leave
 the plan files alone), by the Project dialog and the Repositories card, and by the opening
 status line; `colocation: "accepted"` silences all of them at once, because it is the
 people on the project saying the shape is on purpose.
 
+**Unset is not legacy, and the index is what tells them apart.** For a while every
+project with no code row read as legacy, and *File ▸ New Project…* made exactly such
+projects: it never asked for the code, so a plan created in a plan repository was read as
+living inside its own code — Run Agent opened in the plan repository, the GitHub tab read
+its origin, lint told the person to `project move` a plan that was already where it
+belonged, and the Project dialog offered to set up a plan repository for it. The guess
+"no code named means the plan is in its code" was right for every plan made before the
+fact existed and wrong for every plan made in a plan repository since, and the two are
+told apart by a fact already on disk: a plan repository names its projects in its
+`.dplanner` index, while a plan from before it had none (and a project that *is* its
+repository's root is never listed). So a listed project with no code row is **unset** —
+no derivation reads it as anything: Run Agent and Open Agent in Code grey with *no code
+repository is recorded*, refs read nothing, `repo.unset` names `location add`, the briefing says
+the code is not recorded, the dialog shows the plan's own history with no set-up offer,
+and Move Plan moves it on still unset, because the repository it leaves was never its
+code. Accepting colocation does not quiet it, since there is no colocation to accept.
+`code_root` and `code_remote` are the fallback in one place — the plan's root and origin
+for legacy, nothing for unset — and every reader asks them rather than spelling the
+fallback itself, which is what let the guess spread to five readers in the first place.
+One shape pays for it: a plan made in a subfolder of its code after new projects began to
+be written into the index is listed, so it reads unset until its code row is recorded —
+which, naming the same repository, makes it colocated again. The alternative, a heuristic that
+looks for source files beside the plan, would be a guess about the person's tree; the
+index is their own word.
+
 The readers are seams the composition root wires. The agent module is handed
 `facts_for(step)` and decides *where an agent works*: the checkout of the code location
 the step's `workplace` names — an aspect with a default, the primary, because two code
 repositories in a project means some steps are in one and some in the other, and which is
-a fact about the step exactly as its worktree choice is — the plan's own repository for a
-project that records no code, greyed with the reason ("acme/ui is not checked out on this
-machine — Project ▸ Settings…") until a checkout is recorded — and `store.checkout_changed`
-refreshes the context, since nothing in the context graph changed. A conflict handed to
-an agent is about plan files and opens in the plan repository whatever the code is. The
-github module's `repository_for` is the primary code repository, the plan's origin only
-for the older shape. `dplanner project show`, `location list`, `agent prompt --json` and
+a fact about the step exactly as its worktree choice is — else `code_root`, the plan's own
+repository for the legacy shape and nowhere for an unset one, greyed with the reason
+("acme/ui is not checked out on this machine — Project ▸ Settings…", "no code repository
+is recorded — Project ▸ Settings…") until the fact is there — and
+`store.checkout_changed` refreshes the context, since nothing in the context graph
+changed. A conflict handed to an agent is about plan files and opens in the plan
+repository whatever the code is. The github module's `repository_for`, `dplanner github`
+and the report's refs all read `code_remote`: the primary code repository, the plan's
+origin only for the legacy shape. `dplanner project show`, `location list`, `agent prompt --json` and
 the Repositories card print the same facts, and the briefing tells the agent the table
 in words — which repositories the project is about and where each stands here, so an
 agent never guesses a path. Discovery (`cli/discovery.py`) gained one rule: a `dplanner`
@@ -4278,20 +4417,24 @@ exception that proves it — it has a spec, and the dialog reaches it through th
 callback the module hands in, which is the very function `projects.move` runs, so the
 menu and the card cannot mean different things by it.
 
-**Create mode keeps its form, and its fields carry the same ⋯.** With nothing on disk yet
-there is no log to read, so the fields *are* the answer — but *picking* a repository is a
-verb, and "no verb to run" was the reading that left one field without one. The plan
-repository always had its `RepoPicker`; the code repository had a bare combo box, so the
-only way to name it was to choose a checkout and let its origin back-fill the field — a
-discovery a person makes by accident, not a design. It now carries the ⋯ the code column
-has, over the two verbs that mean anything before a project exists (*Pick from GitHub…*,
-*Clone into Repositories Folder*), and it lists the code this library already plans;
-picking one of those brings that project's checkout with it through `known_checkout`, the
-seam the Open Project wizard already had for the same question. The two modes share the
-verbs rather than paralleling them — `_code_url`, `_set_repository` and `_record_checkout`
-answer into the form's fields or into the model, so neither mode can grow a behaviour the
-other lacks, and the checkout that disagrees with the repository named is asked about in
-both.
+**Create mode keeps its form, and it asks where the code is.** With nothing on disk yet
+there is no log to read, so the fields *are* the answer: the plan repository with its
+`RepoPicker`, the folder, and then the code repository — a question nobody can skip,
+because skipping it silently is what once made a plan in a plan repository read as its own
+code. `code_choice.py` is a plain combo box with nothing current until it is answered: the
+code repositories this library already plans first (picking one brings its checkout
+along, through the checkouts map every project shares), then the two ways to name another —
+*From GitHub…* over the listing `gh` knows, and *A folder on this computer…*, which reads
+the repository, the position and the checkout off one picked folder through
+`located_folder` — and then *No code repository yet*, which is an answer too: the project
+is created unset and says so everywhere until the code is recorded. Create is refused in
+words until one is picked. The combo is a **view of the draft**, never a second record:
+it shows the draft's primary code row, and the Locations table below edits the same draft,
+so a code row added or removed there moves it, and *No code repository yet* drops the
+draft's code rows. The two modes still share the verbs rather than paralleling them —
+`_code_url`, `_set_repository` and `_record_checkout` answer into the draft or into the
+model, so neither mode can grow a behaviour the other lacks. It is a combo and not a
+radio list or a strip of buttons because the list is the library's, and grows with it.
 
 **A plan repository holds several projects for several people.** Its root carries the
 `.dplanner` index (`FORMAT.md`), which is what lets *Open Project…* and `dplanner library
@@ -4302,7 +4445,8 @@ folder*, asked for once from the likely candidates on disk and kept per user.
 
 **Moving a plan is a storage operation that rewrites the working tree**, and so is
 synchronous (below): `domain/relocate.move_project` copies the plan entries, rewrites the
-meta with the code repository it left as the first code row, maintains both indexes, removes the source,
+meta — with the code repository it left as the first code row when the plan was legacy,
+and nothing added for an unset one — maintains both indexes, removes the source,
 re-points the store and commits on both sides, best-effort; the window pauses autosave
 around it and reloads after, because every view that cached a directory is rebuilt rather
 than patched. It is the one place colocation is *refused* rather than warned about: moving
@@ -4384,30 +4528,50 @@ ordering trap is worth naming: `TaskRunner` emits `busy_changed(False)` *before*
 ## Progression is the status-aware frontier
 
 **The surface is named for the question; the derivation keeps the answer's name.** A person
-opens this tab to find out what to start next, so it is called *Ready to start* — in the tab
-title, the two menu entries and the index row. Everything underneath stays `progression`:
-the walk, the module id, the activity kind, the action ids and `dplanner progression show`.
-That split is deliberate three ways. The derivation puts every step into one of six
-partitions and the frontier is only one of them, so *Ready to start* would be the wrong name
-for the function. The kind and the ids are the contract the per-user store remembers tabs by
-and the registry resolves verbs by, and renaming them would silently drop somebody's open
-tabs. And the verb is in every agent's generated skill, so renaming it moves the ground under
-an agent mid-plan for a word — a `later` note carries the question rather than this step.
+opens this tab to find out what needs them, so it is called *Step statuses* — in the tab
+title, the two menu entries and the index row — and the title counts the rows that need a
+person, the one number worth reading from across the window. Everything underneath stays
+`progression`: the walk, the module id, the activity kind, the action ids and `dplanner
+progression show`. That split is deliberate three ways. The derivation puts every step into
+one of eight partitions and the table shows only some of them, so *Step statuses* would be
+the wrong name for the function. The kind and the ids are the contract the per-user store
+remembers tabs by and the registry resolves verbs by, and renaming them would silently drop
+somebody's open tabs. And the verb is in every agent's generated skill, so renaming it moves
+the ground under an agent mid-plan for a word. (The tab was *Ready to start* until review
+and merge arrived; that name now belongs to one of its groups.)
 
-The board's header is the percent and the bar. It carried two more lines under the bar — the
-same counts in words (*12 done · 2 running · 5 ready*), then the same progress again in
-estimated days — and a bar drawn to scale already says both, in the one place the eye
-goes first. The terminal keeps them, because `dplanner progression show` has no bar and a
-line there costs nothing.
+**The tab is a table of what needs a person, not a board of lanes.** It was three lanes
+of cards under a percent and a bar — Running, Ready, Up next — and review and merge would
+have made five, each a column too narrow for its titles, with the eye walking across all of
+them to answer one question: *what needs me now?* The table answers it top to bottom, in
+the order the work is closest to done — **Blocked, Ready to merge, Ready for review, Ready
+to start** — then **Waiting**, what cannot start yet (temporary: a tab of what is going on
+will take it). **Work in progress is not listed**: an agent at work needs nobody, and a
+list of it is a report, not a queue. The percent and the bar went with the lanes; how far
+along a project is lives in the Time tab and the report, and the terminal still prints it.
+One `Segmented` over the table picks a group — one click, every group named at once, which
+is the primitive for exclusive choices shown together; a group on its own drops its heading
+because the lit segment already says it.
+
+**The rows are ticked, and the tick is the selection.** A check column (`Column(check=True)`)
+leads the table, and its box is drawn from the row's selection and toggles it — there is no
+second *ticked* state. That is what lets the strip seat real registry verbs rather than a
+host's copies: `agent.run` with its profiles under the arrow, `status.ready-to-merge` and
+`status.done` (`StripVerb`, named by the composition root, so this module never learns the
+agent or status modules exist), each restated on every context change from the published
+selection and greyed with its own reason. The Step menu on a right-click reads the same
+selection, so every presenter acts on exactly the ticked rows. The status verbs act on every
+chosen step for the same reason (*Status is an aspect*, above).
 
 `ordering.ready()` answers what the *graph* allows — wave one, nothing waited on. During
 execution that is the wrong question: a step deep in the graph whose prerequisites have all
 been finished is launchable today, and no wave number says so. `domain/progression.py`
-answers the execution question — every step in exactly one of *done / running / attention /
-ready / upcoming / waiting* — and it is deliberately a **new derivation beside the old one,
-not a refactor of it**: the frontier is a per-step check ("every `requires` target reads
-done"), not wave membership, and the two only coincide in a project where nothing has been
-finished yet. A test pins that equivalence; shared code would have pinned a coincidence.
+answers the execution question — every step in exactly one of *done / running / review /
+merge / attention / ready / upcoming / waiting* — and it is deliberately a **new derivation
+beside the old one, not a refactor of it**: the frontier is a per-step check ("every
+`requires` target reads done"), not wave membership, and the two only coincide in a project
+where nothing has been finished yet. A test pins that equivalence; shared code would have
+pinned a coincidence.
 
 The rules worth writing down, because each was a decision:
 
@@ -4416,17 +4580,24 @@ The rules worth writing down, because each was a decision:
   *launching*, not *recording* — an agent reporting `status set … done` out of order is
   reporting a fact, and a derivation that refused it would be arguing with reality.
 - **Blocked is attention, not waiting.** A blocked step is stuck on a person, so it leads
-  the running column wearing a warning rather than disappearing into the waited-on mass —
-  it is the row that needs eyes, and the board exists to route eyes.
-- **A blocked prerequisite still counts as "on the board"** for the one-move lookahead:
-  its dependents stay in *upcoming*, pointing at it. The alternative — demoting them to
-  waiting — would make the queue churn every time a prerequisite flips between in-progress
-  and blocked, and would hide exactly the lane that stalled.
+  the table rather than disappearing into the waited-on mass — it is the row that needs
+  eyes, and the tab exists to route eyes.
+- **Review and merge are on the board, and not done.** A step an agent finished is claimed
+  out of the graph like a running one — it is one move away for the lookahead and in no
+  percent — and **a plain `requires` is fulfilled by done alone**: nothing starts on work
+  nobody has accepted, or on work not merged yet. The Run Agent gate asks the same
+  question and so agrees, which a test pins.
+- **A blocked or reviewed prerequisite still counts as "on the board"** for the one-move
+  lookahead: its dependents stay in *upcoming*, pointing at it. The alternative — demoting
+  them to waiting — would make the queue churn every time a prerequisite flips between
+  in-progress, review and blocked, and would hide exactly the work that stalled.
 - **The lookahead is one move, not a forecast.** A step whose prerequisite is merely
   *upcoming* stays in waiting. Anything deeper is the order table's job.
-- **The frontier ranks by unlocks** — the count of transitive not-done dependents — because
-  all of the frontier is valid and the ranking is what makes some of it urgent. A done
-  dependent is walked through but not counted: its own dependents still wait through it.
+- **Every group a person acts on ranks by unlocks** — the count of transitive not-done
+  dependents, which the walk keeps for every step of work not done — because all of a group
+  is valid and the ranking is what makes some of it urgent: the review that frees three
+  steps before the one that frees none. A done dependent is walked through but not counted:
+  its own dependents still wait through it.
 
 The seam is the one the schedule made: `status_for(step)` and `days_for(step)` are handed
 in by the composition root from the aspects' Qt-free readers, so the domain never learns
@@ -4434,23 +4605,16 @@ what either is stored as, and the derivation is tested with a dict-backed functi
 is persisted, for the ordering's reason — `dplanner status set` changes the answer with no
 window running to notice. The tab (`modules/progression/`), `dplanner progression show` and
 `--json` are three readers of the one function, so no surface can recommend a launch
-another surface would dispute. The Ready lane's *Run N Agents* button is the same rule at
-the module layer: each ready card carries a tick, and the button renders the real
-`agent.run` action's state — evaluated against a context synthesised for exactly the ticked
-steps — so the gate's reason appears verbatim and no second copy of "what launching needs"
-exists. What it drops down is the Step menu's own Run Agent child (`agent_menu`, the data
-menu's fill handed over by the root), never a copy: the board offers exactly what the
-right-click offers. Opening the menu publishes the ticked steps first, because a menu
-entry — like every presenter — acts on the context the user has now, and the face counts
-what is ticked whatever the window's selection was.
+another surface would dispute.
 
-**A launch from that lane never raises the prerequisite confirmation, and that is the two
-rules agreeing rather than a gap.** `agent.run` asks before launching a step whose `requires`
-do not all read done; a step is in the Ready lane precisely because they do. The board and
-the gate are asking one question — "is anything this waits on unfinished?" — so the box can
-only appear where the question can still be answered yes: the canvas, the order table, the
-palette. A test pins the silence, because a confirmation that never fires in the place people
-launch from is the kind of thing a later change removes by accident.
+**A launch of ready-to-start rows never raises the prerequisite confirmation, and that is
+the two rules agreeing rather than a gap.** `agent.run` asks before launching a step whose
+`requires` do not all read done; a step is in *Ready to start* precisely because they do.
+The group and the gate are asking one question — "is anything this waits on unfinished?" —
+so the box can only appear where the question can still be answered yes: a ticked row in
+another group, the canvas, the order table, the palette. A test pins the silence, because a
+confirmation that never fires in the place people launch from is the kind of thing a later
+change removes by accident.
 
 ## The order says what order, and how much — never when
 
@@ -4479,7 +4643,8 @@ Three consequences worth writing down:
   dates that matter are chosen. A protocol with no implementor and a widget with no host
   are entropy, so both went.
 - **Wave 1 is called *Wave 1*.** It was *Ready to start*, on the argument that "wave 1" makes
-  the reader work out what it means. But the execution board now carries those words, and
+  the reader work out what it means. But the execution board then carried those words (a
+  group of the Step statuses tab does now), and
   they would name two different things: the graph's first wave (nothing before it) and the
   status-aware frontier (nothing it waits on is left undone). Those coincide only in a
   project where nothing has been finished — the very coincidence this document warns against
@@ -4761,7 +4926,7 @@ the day:
   `waited`), and `WAITING` until then. Derived on every read, like the rest of progression,
   so a wait releases its steps the morning it may with nobody marking anything.
 - **A wait looks like one, and only as the plan dates it now.** Its key's letter is `W`,
-  its medallion the clock, its stat how long it holds. On the Time tab the days it holds are
+  its key block wears the clock in the attention amber, its stat is how long it holds. On the Time tab the days it holds are
   hatched through both work plots and named, hatched on the calendar and named in its
   milestone's words; the report draws them as pale named bands, since QtSvg honours no
   pattern. What the page draws them from is `Snapshot.waits`, a field the snapshot carries
@@ -5630,8 +5795,11 @@ records it as a *boundary* and stops there:
 | Asked of | `stops_at` | Because |
 |---|---|---|
 | a check | nothing | it stands for everything behind it having passed |
-| a milestone | milestones | it holds what is new since the last one |
-| a feature | features and milestones | it holds its own work, up to the previous feature |
+| a milestone | milestones, and the start | it holds what is new since the last one |
+| a feature | features, milestones, and the start | it holds its own work, up to the previous feature |
+
+The start is the one row that is not a collector; *The origin is nobody's* below says why it
+is there at all.
 
 `ordering.upstream()` is that same function with nothing to stop it, which is why there is one
 walk here and not two.
@@ -5670,10 +5838,66 @@ milestone) and `scope.gathers-nothing`, which generalised the old `check.covers-
 
 A milestone honestly wants two answers: *what does it add* (the truncated walk) and *what must
 pass for it to ship* (the whole cone, regressions included). The Covers tab offers both — and
-shows the switch **exactly when the truncated walk found a boundary**. That is a pure function
-of the data rather than a property of the kind, which makes it right in two places at once: a
-check never has a boundary, and neither does the first milestone in a project, and in both
-cases the two readings are the same answer. A control with one outcome is noise.
+shows the switch **exactly when the truncated walk handed off to an earlier collector** (a
+boundary some kind carries — `handoffs()`). That is a pure function of the data rather than a
+property of the kind, which makes it right in two places at once: a check never has a
+boundary, and neither does the first milestone in a project, and in both cases the two
+readings are the same answer. A control with one outcome is noise.
+
+### The origin is nobody's
+
+The default topology (`cli/shaping.md`) asks for one step at the origin with work fanning out
+of it in parallel. Every branch traces back to that step, so every feature's cone reached it,
+`gatherers()` returned all of them, and `scope.shared` reported the recommended shape as an
+ambiguity. The remedy the finding offers — link one feature behind the other — would have
+serialised the very parallelism the shape exists for. The finding was right about the walk
+and wrong about the plan: the origin is not work any feature did.
+
+So a **Start** aspect (`modules/step_start/`, a bare `{"on": true}`) marks it, and the two
+kinds that *own* work — a milestone and a feature — stop at it. Four decisions shaped it:
+
+- **A marker, not an inference.** "The step nothing precedes" is several steps while a plan is
+  being built, and one of them is usually work somebody forgot to link. Inferring the origin
+  would make that step quietly nobody's too, where today the canvas rings it and
+  `graph.orphan` names it. The marker is the plan saying where it begins — the distinction
+  shaping.md already drew between *the plan begins here* and *somebody forgot a link*.
+- **Only the owners stop at it.** A check owns nothing; it stands for everything behind it
+  having passed, and the start's own tests are part of that. So a check still stops at
+  nothing — which also keeps *a check never has a boundary* true. `scope.shared` and
+  `scope.crosses-milestones` only ever ask the owning kinds, so the finding goes away all the
+  same.
+- **Carrying is untouched.** A start marked as a milestone is a milestone with an empty cone
+  (a start waits on nothing), and `scope.gathers-nothing` already says so with its own verb.
+  Excluding it from `carried_by` was considered, and it makes a half-scope: `scope show`
+  would refuse it while its key, `feature list` and the coverage trace still called it one.
+- **A boundary is not always a hand-off.** Stopping at the start makes it a boundary of every
+  feature right after it, and a boundary is what `scope show` names as *after* and what makes
+  the Covers tab offer a second reading. The start is neither — it is where the graph ends, not
+  an earlier collector that took something — so both ask `domain/scope.py`'s `handoffs()`,
+  the boundaries some kind carries, and `scope.ungathered` skips a step the feature kind stops
+  at without carrying (no link could hand it to one). Nothing new in `ScopeKind`: a third
+  field would have been read by exactly those two surfaces.
+
+What else it touched, and why it was allowed to: the start's documentation fragment and tests
+drop out of every feature's and milestone's reading, so a collector compiled *with* the
+start's fragment reads `docs.compiled-stale` once — true, since it no longer reads it — and
+the Tests and Documentation views group the start's own under *Not in any feature*, which is
+also true. Two walks wrote the feature stopping rule by hand (the briefing's *Flows into*, the
+coverage trace); both now read the wired kinds, which is how the Steps lane stopped drawing
+the origin under every feature. The start's shape has its own lint, **`graph.start`** — a
+start that waits on something, a plan with two — naming `step unlink` or `start clear`; the
+verbs refuse nothing, like `feature set`. It wears **no card mark**: the primary icon (F5)
+gives it the person glyph like any step, its key stays `S`, and the origin already reads as
+the origin, since every arrow leaves it. The noun is `start` (`dplanner start set|clear`,
+`step add --start`), not to be confused with `schedule start`, which dates the plan's first
+day.
+
+**The schedule still dates the start.** `domain/schedule.py`'s `stretches()` stops at
+milestones only, so `progress show`, the Time tab and milestone colours count the start in the
+first milestone while `scope show` and the coverage trace give it to none. That is on purpose:
+a stretch is the first milestone's whole cone and every later one's cone past the milestones
+before it, so the start — which the first cone reaches — is dated where it is worked, first.
+Ownership and dating are different questions, and only ownership was wrong.
 
 ### Who owns which half
 
@@ -6032,7 +6256,7 @@ recognises the moment. None needs action today.
   that shows on every selection, or listens to the whole library, is the one to hold
   to those rules.
 - **`project_editor` accretes by construction.** *Modules never import each other* means a
-  feature that lives *on* the canvas — regions, named layouts, sorts, the minimap — cannot
+  feature that lives *on* the canvas — named layouts, sorts, the minimap — cannot
   become its own package, so the surface-owning module grows instead (a quarter of all
   module code). The answer today is internal seams: Qt-free files per concern, split item
   and mode files, the keymap as a table. If a canvas feature ever needs its *own* Deps and
@@ -6476,7 +6700,8 @@ on every signal; and no tab asked which project the signal was about. One keystr
 description therefore ran the canvas's full automatic layout (even with every node placed),
 a topological sort and a schedule walk *per milestone step*, twenty-four schedule
 simulations for the Time tab, a fresh `QTableWidget` for the order, every card of the
-progression board, the docs and tests tables, and a directory listing for the Agent tab's
+progression board (now the Step statuses tab), the docs and tests tables, and a directory
+listing for the Agent tab's
 inherited context — for every open project, not only the one being edited — and then
 re-evaluated all ninety-nine action states. Measured headless over an eighty-step project
 with seven tabs open, that was **67 ms of synchronous work per keystroke**.

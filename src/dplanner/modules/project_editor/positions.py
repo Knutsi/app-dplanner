@@ -28,11 +28,34 @@ migration list — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 
 from typing import Any, TypeGuard
 
-from dplanner.core.module_data import ModuleDataFormat, stamped
+from dplanner.core.module_data import ModuleDataFormat, migrated, stamped
 from dplanner.domain.model import Project, Step
 
 MODULE_ID = "project_editor"
-DATA_FORMAT = ModuleDataFormat(MODULE_ID)
+
+
+def _drop_regions(data: dict[str, Any]) -> dict[str, Any]:
+    """Format 1 → 2: regions are retired.
+
+    Format 1 kept titled rectangles beside the project, ``"regions": [...]``, and every
+    named layout snapshotted their rects beside the steps' seats. A rectangle the graph
+    knew nothing about went stale with every sort, tidy and move, so both go — and a
+    project saved with them opens exactly as it was, minus the rectangles. A step's entry
+    never carried either key and passes through.
+    """
+    kept = {key: value for key, value in data.items() if key != "regions"}
+    layouts = kept.get("layouts")
+    if isinstance(layouts, dict):
+        kept["layouts"] = {
+            name: {k: v for k, v in body.items() if k != "regions"}
+            if isinstance(body, dict)
+            else body
+            for name, body in layouts.items()
+        }
+    return kept
+
+
+DATA_FORMAT = ModuleDataFormat(MODULE_ID, version=2, migrations=(_drop_regions,))
 
 # The canvas's snap pitch: a drag, a resize or a placement lands on it while Snap to Grid is
 # on, which keeps a hand-arranged graph tidy. The ground's dots and lines are drawn on a
@@ -46,8 +69,9 @@ NODE_W = 220.0
 NODE_H = 76.0
 # No card smaller than this on either side: room for a row of medallions across the top
 # and for one line of title over the detail line. Both on the grid, so a card resized down
-# to its minimum still sits on it.
-MIN_NODE_W = 144.0
+# to its minimum still sits on it. The width also leaves the narrowest title its room past
+# the key block (``KEY_BLOCK_W``), rounded up to the grid.
+MIN_NODE_W = 176.0
 MIN_NODE_H = 64.0
 
 type Size = tuple[float, float]
@@ -119,15 +143,17 @@ def write_position(x: float, y: float, size: Size | None = None) -> dict[str, An
 def entry_with(project: Project, key: str, value: Any) -> dict[str, Any]:
     """The project-level entry with one key replaced, the other keys carried untouched.
 
-    The named layouts and the regions share ``projects/<p>/modules/project_editor.json``,
-    and this is what lets each be written without knowing the other's shape. An empty value
-    drops its key, and ``stamped`` turns a bare entry into ``{}``, which deletes the file.
+    Every key on ``projects/<p>/modules/project_editor.json`` is written through here, so
+    each can be written without knowing another's shape. What it carries is brought to the
+    current format first: an entry adopted from another writer since the open — a CLI
+    import, a pull — has not been through the migration pass, and stamping it current as
+    it stood would keep whatever that pass drops forever. An empty value drops its key, and
+    ``stamped`` turns a bare entry into ``{}``, which deletes the file.
     """
-    entry = {
-        k: v
-        for k, v in (project.module_data.get(MODULE_ID) or {}).items()
-        if k not in (key, "format")
-    }
+    current = project.module_data.get(MODULE_ID) or {}
+    if (brought := migrated(current, DATA_FORMAT)) is not None:
+        current = brought
+    entry = {k: v for k, v in current.items() if k not in (key, "format")}
     if value:
         entry[key] = value
     return stamped(entry, DATA_FORMAT.version)

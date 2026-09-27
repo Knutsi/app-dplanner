@@ -410,7 +410,7 @@ into a child `QMenu` keyed `(group, submenu)`, created at the first *visible* sp
 position — the same placement rule as `DynamicMenuBar._submenu`. A child menu whose entries
 are all hidden is simply never created; a popup is rebuilt on every show, so absence is the
 static equivalent of the menu bar's dynamic hide. The `submenu="X"` filter path is unchanged
-(the tab bar's and the region popup's flat renders depend on it), and one local `add_entry`
+(the tab bar's flat render depends on it; the region popup's did until regions were retired), and one local `add_entry`
 helper builds flat and nested entries alike so the two can never drift.
 
 **Why.** The docstring literally admitted the flattening. Once a menu holds three submenus
@@ -2261,7 +2261,7 @@ lines; this is the only spot on them that was unspoken for. **Upstream?** Yes, w
 
 **What.** A shared painter for "a line with a chevron at the end", plus `link_icon`,
 `connect_icon`, `redirect_to_icon`, `redirect_from_icon`, `divide_vertical_icon` /
-`divide_horizontal_icon` (one `_divide_icon` rotated), `sort_icon`, `region_icon` and
+`divide_horizontal_icon` (one `_divide_icon` rotated), `sort_icon`, `region_icon` (since removed, with regions) and
 `grid_icon`. `trash_icon` and `frame_icon` widened from `str` to `str | QColor` like their
 neighbours, because an `ActionSpec.icon` is handed a `QColor`.
 
@@ -4357,3 +4357,82 @@ template applied over a refused toggle skips it, as it skips any disabled action
 **Upstream?** Yes: it is the template's own disabled-with-its-reason rule, given a seam on
 the one helper every aspect toggle goes through.
 
+
+## 56. From the primary-icons pass: the key block, and glyphs read without Qt
+
+### `theme/cards.py` — the spine became the key block
+
+**What we changed.** `SPINE_W`, `spine_fill` and `paint_spine` (a 26 px strip, the key rotated
+a quarter turn) became `KEY_BLOCK_W` (56 px), `key_fill`, `key_font`, `key_glyph_ink`,
+`key_block_height`, `key_block_rects` and `paint_key_block`: the same status-washed strip,
+now carrying a glyph over the key, set level. `key_block_rects` is the geometry as a pure
+function, so a test and a card that grows to fit its content ask it without a painter.
+
+**Why.** A card has to say who works a step — an agent or a person, or nobody for a wait — in
+the same place as its key, and an icon cannot be read sideways the way a word can.
+
+**Upstream?** The primitive, yes, as the template's card grammar: a strip that names a card
+and says what state it is in is not DPlanner's idea. The three glyphs and the rule choosing
+between them are DPlanner's and stay in its composition root.
+
+Later, on review: `KEY_GLYPH` went from 16 to 28, so a broad glyph spans the three-character
+key under it (a vendored glyph fills about 20 of its 24 units), and `MILESTONE_BORDER_W` (3.0)
+doubles a milestone's outline and stays at least that when the card is picked. Both are
+numbers a template card would want as parameters rather than constants.
+
+### `theme/glyph_source.py` — the vendored glyphs as text, with no Qt (new)
+
+**What we changed.** `GLYPH_DIR` moved here from `theme/icons.py`, with `glyph_source(name)`
+(the file as published) and `glyph_markup(name)` (the shapes inside its `<svg>` root).
+`icons.py`'s `_inked` reads through it, so the path is named once. Added to the no-Qt probe
+in `tests/test_architecture.py`.
+
+**Why.** The report draws a card's glyph too, and it is built by the CLI, which loads no Qt;
+a module's Qt-free `report.py` reads the drawing here and hands it to `cli/` as data.
+
+**Upstream?** Yes: any template application with a Qt-free report or export wants its icons
+without a graphics stack, and the split costs `icons.py` one import.
+
+### `theme/icons.py` — `person_icon`, and `"person"` in `GLYPH_ICONS`
+
+**What.** Tabler's `user`, vendored as `person`, for a step a person works. **Upstream?** No —
+a glyph is a line in the vendoring script, and which ones an application needs is its own.
+
+## 57. From F22: whether a plan repository names a project
+
+### `core/storage/pointer.py` — `indexed(path, repo_root)` (new)
+
+**What.** Whether the `.dplanner` index at `repo_root` — `path`'s repository root, which both
+callers have already found — lists a directory that is, or holds, `path`; `add_to_index`
+asks it instead of repeating the check inline. It takes the root rather than walking for it
+again because repository facts are read on every Run Agent state evaluation.
+**Why.** A project with no code row is read two ways — code not named yet when a plan
+repository lists it, the older colocated shape when nothing does — and the domain's
+repository facts ask this to tell them apart. It lives beside the index's other readers
+because `domain/` and `cli/` both need it and only `core/` sits below both. **Upstream?**
+No: the index is DPlanner's.
+
+## 58. From the review-statuses pass: a table whose rows are ticked
+
+### `framework/table.py` — `Column(check=True)`, `Table.check_under`, `Table.toggle_row`
+
+**What we changed.** A column may be a check column. Its cell holds nothing but a box. The
+delegate paints the box from the row's selection state: a quiet box on the hairline, or the
+accent with a tick in its own ink. The table hit-tests the whole cell, and a click there
+toggles that row's selection, leaving the other rows as they were. A double click on the box
+is a second tick and never an activation, so `cellActivated` does not fire from it. The box
+sits where a glyph would: past the padding and a group's indent, on the first line of a rich
+row.
+
+**Why.** The Step statuses tab is a roster whose rows are ticked for a verb (Run Agent, Ready
+to Merge, Done), and there was no way to draw a box. Planting a `QCheckBox` in a cell breaks
+the row-as-unit rule, and a second *ticked* state beside the selection would give the strip
+and the Step menu two answers to one question. So the box *is* the selection. Qt's own
+indicator (`PE_IndicatorItemViewItemCheck`) was tried first. It is drawn from colours no
+theme sets, and on a dark theme the unticked box all but vanished into the row. It is now
+painted the way chips are, from the palette.
+
+**Upstream?** Yes: nothing in it knows DPlanner, and "tick rows, then act on them" is a
+roster shape the template's table cannot express today. It also amends one rule: *a picked
+row is one ground, and nothing else marks it*. The one exception is a check column, because
+its box is the selection's own target.

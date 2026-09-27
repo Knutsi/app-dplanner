@@ -1,4 +1,4 @@
-"""Canvas accents: status bars, badges, glyphs and chips — through the neutral seam.
+"""Canvas accents: the key block, badges, glyphs and chips — through the neutral seam.
 
 The canvas never learns what "done", a milestone or an agent run is; the composition root
 translates the aspects into a :class:`NodeAccent`, and these tests drive the real wiring
@@ -11,11 +11,15 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
+from dplanner.domain.schedule import Wait
 from dplanner.modules.feature import aspect as feature
 from dplanner.modules.project_editor.renderers import NodeAccent
+from dplanner.modules.step_agent_instruction import aspect as agent
 from dplanner.modules.step_agent_run import aspect as agent_run
+from dplanner.modules.step_check import aspect as check
 from dplanner.modules.step_milestone import aspect as milestone
 from dplanner.modules.step_status import aspect as status
+from dplanner.modules.step_wait import aspect as wait
 
 
 @pytest.fixture
@@ -36,17 +40,17 @@ def node(tab, step):
     return tab._scene._nodes[step.id]
 
 
-def test_a_plain_step_has_no_accent_beyond_its_key(project, tab):
+def test_a_plain_step_has_no_accent_beyond_its_key_and_who_works_it(project, tab):
     # Flagged, because a bare step is exactly what lint has things to say about — no
     # description, no estimate. Everything else about it is the default.
-    assert node(tab, project.steps[0])._accent == NodeAccent(key_text="S1", flagged=True)
+    assert node(tab, project.steps[0])._accent == NodeAccent(
+        key_text="S1", key_glyph="person", flagged=True
+    )
 
 
 def test_the_key_letter_follows_the_kind_and_the_number_stays(services, project, tab):
-    """The spine reads the step's key: the number the project dealt, behind a letter for
+    """The key block reads the step's key: the number the project dealt, behind a letter for
     what the step is now — a milestone outranks a feature, a check ranks below both."""
-    from dplanner.modules.step_check import aspect as check
-
     step = project.steps[1]
     assert node(tab, step)._accent.key_text == "S2"
     services.undo.push(SetModuleDataCommand(step.id, check.MODULE_ID, check.write(True)))
@@ -67,7 +71,7 @@ def test_a_done_step_is_muted_with_a_green_body(services, project, tab):
     accent = node(tab, step)._accent
     assert accent.muted is True
     assert accent.body_tone == "good"
-    assert accent.spine_tone == "good"  # The spine says where the step stands, always.
+    assert accent.key_tone == "good"  # The key block says where the step stands, always.
 
 
 def test_a_shipped_milestone_reads_finished(services, project, tab):
@@ -151,7 +155,7 @@ def test_in_progress_gets_a_busy_bar(services, project, tab):
         )
     )
     accent = node(tab, step)._accent
-    assert accent.spine_tone == "busy"
+    assert accent.key_tone == "busy"
     assert accent.muted is False
 
 
@@ -162,13 +166,67 @@ def test_blocked_gets_a_bad_bar(services, project, tab):
             step.id, status.MODULE_ID, status.write("blocked", today=date(2026, 9, 21))
         )
     )
-    assert node(tab, step)._accent.spine_tone == "bad"
+    assert node(tab, step)._accent.key_tone == "bad"
 
 
-def test_an_instructed_step_wears_the_spark_medallion(services, project, tab):
+def test_review_wears_the_warn_key_block_and_merge_the_good_one(services, project, tab):
+    """Review is amber — a person looks next — and merge is green, accepted; neither is
+    done, so neither mutes the card or greens its body. The glyph over the key stays in ink:
+    amber in the block's glyph is a wait's alone."""
+    step = project.steps[0]
+    for word, tone in (("ready-for-review", "warn"), ("ready-to-merge", "good")):
+        services.undo.push(
+            SetModuleDataCommand(
+                step.id, status.MODULE_ID, status.write(word, today=date(2026, 9, 21))
+            )
+        )
+        accent = node(tab, step)._accent
+        assert (accent.key_tone, accent.muted, accent.body_tone) == (tone, False, "")
+        assert accent.key_glyph_tone == ""
+
+
+def test_a_wait_wears_no_status_it_carried_before_it_became_one(services, project, tab):
+    """A wait has no status, so one left from its life as a step washes nothing: the clock
+    stays the block's one amber, never a stroke on an amber review wash."""
+    step = project.steps[0]
+    for module_id, entry in (
+        (status.MODULE_ID, status.write("ready-for-review", today=date(2026, 9, 21))),
+        (wait.MODULE_ID, wait.write(Wait(days=2.0))),
+    ):
+        services.undo.push(SetModuleDataCommand(step.id, module_id, entry))
+    accent = node(tab, step)._accent
+    assert (accent.key_tone, accent.key_glyph, accent.key_glyph_tone) == ("", "clock", "warn")
+
+
+def test_an_instructed_step_wears_the_spark_in_its_key_block(services, project, tab):
     step = project.steps[0]
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
-    assert "spark" in node(tab, step)._accent.icons
+    accent = node(tab, step)._accent
+    assert (accent.key_glyph, accent.key_glyph_tone) == ("spark", "")
+
+
+@pytest.mark.parametrize(
+    ("mark", "glyph"),
+    [
+        (lambda: (milestone.MODULE_ID, milestone.write("MVP")), ("person", "")),
+        (lambda: (feature.MODULE_ID, feature.write()), ("person", "")),
+        (lambda: (check.MODULE_ID, check.write(True)), ("person", "")),
+        (lambda: (agent.MODULE_ID, agent.write_state(True)), ("spark", "")),
+        (lambda: (wait.MODULE_ID, wait.write(Wait(days=2.0))), ("clock", "warn")),
+    ],
+    ids=["milestone", "feature", "check", "agent", "wait"],
+)
+def test_who_works_a_step_is_one_glyph_and_the_medallions_never_repeat_it(
+    services, project, tab, mark, glyph
+):
+    """A sparkle for agent work, a person for everything else a person closes — milestones,
+    features and checks included — and an amber clock for a wait. The top edge's medallions
+    say what a step *is*, so neither the spark nor the clock is ever among them."""
+    step = project.steps[1]
+    services.undo.push(SetModuleDataCommand(step.id, *mark()))
+    accent = node(tab, step)._accent
+    assert (accent.key_glyph, accent.key_glyph_tone) == glyph
+    assert not {"spark", "clock"} & set(accent.icons)
 
 
 def test_prose_reaches_a_card_one_settle_later_rather_than_within_the_turn(
@@ -182,9 +240,9 @@ def test_prose_reaches_a_card_one_settle_later_rather_than_within_the_turn(
     try:
         services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
         app.processEvents()  # The canvas's own turn goes by without a sync.
-        assert "spark" not in node(tab, step)._accent.icons
+        assert node(tab, step)._accent.key_glyph == "person"
         services.debounce.flush_all()
-        assert "spark" in node(tab, step)._accent.icons
+        assert node(tab, step)._accent.key_glyph == "spark"
     finally:
         services.debounce.set_immediate(True)
 

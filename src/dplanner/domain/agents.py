@@ -147,6 +147,20 @@ class AgentHarness:
         return tuple(words)
 
 
+def shell_markers(harnesses: tuple[AgentHarness, ...]) -> tuple[str, ...]:
+    """What an agent CLI sets in every shell it runs: each harness's first marker — the
+    one that names the CLI itself rather than a session detail. A missed agent here costs
+    a guard, never a wrong answer: the window word refuses on it and ``status set`` holds
+    an agent's done at review on it, and neither decides what runs."""
+    return tuple(h.shell_markers[0] for h in harnesses if h.shell_markers)
+
+
+def shell_marker(harnesses: tuple[AgentHarness, ...], env: Mapping[str, str]) -> str:
+    """The marker set in ``env``, or "" when no agent's shell is around us. Set to nothing
+    is not set."""
+    return next((name for name in shell_markers(harnesses) if env.get(name)), "")
+
+
 def harness_by_id(harnesses: tuple[AgentHarness, ...], harness_id: str) -> AgentHarness | None:
     return next((h for h in harnesses if h.id == harness_id), None)
 

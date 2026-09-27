@@ -5,14 +5,17 @@
 What S7 reworked: the strip of verbs over the canvas as glyphs in named bands, folding
 whole bands into its ``…`` menu; the *Find* picker, which opens on the plan's landmarks
 and searches every step; and the panel beside the canvas — the Problems list — inside the
-project tab rather than across the window. A whole application is built over a throwaway
-library — the tab is the tab host's, so nothing here hand-wires a surface the window would
-build differently — and torn down per theme.
+project tab rather than across the window. Since F5, the cards themselves (``cards``):
+each kind of step, who works it in the key block, the status washes, and a card at the
+minimum size. A whole application is built over a throwaway library — the tab is the tab
+host's, so nothing here hand-wires a surface the window would build differently — and torn
+down per theme.
 """
 
 import argparse
 import os
 import sys
+from datetime import date
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -27,14 +30,24 @@ from dplanner.app import new_session
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
+from dplanner.domain.schedule import Wait
 from dplanner.domain.seed import create_library, seed_project
+from dplanner.modules.estimation.aspect import write as estimate_write
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.project_editor.module import ProjectEditorModule
+from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W, write_position
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
-from dplanner.modules.project_editor.positions import write_position
+from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
+from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write
+from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
+from dplanner.modules.step_check.aspect import write as check_write
 from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
 from dplanner.modules.step_milestone.aspect import write as milestone_write
+from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+from dplanner.modules.step_status.aspect import write as status_write
+from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
+from dplanner.modules.step_wait.aspect import write as wait_write
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
@@ -54,6 +67,41 @@ STEPS = (
 # Who waits on whom, by position in STEPS: the graph reads as a graph rather than as five
 # orphans, which is what the orphan mark would otherwise say about every card.
 EDGES = ((1, 0), (2, 0), (3, 1), (3, 2), (4, 3))
+
+# The cards, one row per question: who works it (a person, an agent, nobody — a wait), what
+# it is (a feature, a check, a milestone), where it stands (in progress, ready for review,
+# ready to merge, blocked, done), and the narrowest card there may be. Each row is a chain,
+# so no socket is marked as empty.
+DAY = date(2026, 9, 21)
+CARDS = (
+    (
+        ("Interview the operators", ()),
+        ("Write the column parser", ((AGENT_ID, agent_write(True)),)),
+        ("Wait for the export window", ((WAIT_ID, wait_write(Wait(days=3.0))),)),
+    ),
+    (
+        ("Bulk import", ((FEATURE_ID, feature_write()),)),
+        ("Import holds on a real dump", ((CHECK_ID, check_write(True)),)),
+        ("Ship the importer", ((MILESTONE_ID, milestone_write("Import")),)),
+    ),
+    (
+        (
+            "Map the columns",
+            ((AGENT_ID, agent_write(True)), (STATUS_ID, status_write("in-progress", today=DAY))),
+        ),
+        (
+            "Parse the dates",
+            (
+                (AGENT_ID, agent_write(True)),
+                (STATUS_ID, status_write("ready-for-review", today=DAY)),
+            ),
+        ),
+        ("Stage the loader", ((STATUS_ID, status_write("ready-to-merge", today=DAY)),)),
+        ("Load the fixtures", ((STATUS_ID, status_write("blocked", today=DAY)),)),
+        ("Read the spec", ((STATUS_ID, status_write("done", today=DAY)),)),
+    ),
+)
+CARDS_SIZE = (1400, 520)
 
 
 def settle(app: QApplication) -> None:
@@ -156,6 +204,63 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     discard(page)
 
 
+def render_cards(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """The cards on their own, with nothing beside the canvas: what each one says at a
+    glance, in the key block down its left edge and on its top edge."""
+    QSettings().clear()
+    apply_theme(app, theme)
+    library_file = workspace / f"cards-library-{theme.name}.json"
+    create_library(library_file)
+    session = new_session()
+    assert session.open_initial(library_file)
+    services = session.services
+    assert services is not None
+    services.debounce.set_immediate(True)
+
+    directory = seed_project(workspace / f"cards-{theme.name}", "Cards")
+    project = services.repo.attach(directory)
+    services.document.add_child(services.document.id, project)
+    rows = [
+        *(
+            [
+                (title, aspects, (column * 280.0, row * 120.0), None)
+                for column, (title, aspects) in enumerate(cards)
+            ]
+            for row, cards in enumerate(CARDS)
+        ),
+        # Clear of the minimap, which stands over the canvas's bottom-left corner.
+        [("Tidy the column names", (), (2 * 280.0, 3 * 120.0), (MIN_NODE_W, MIN_NODE_H))],
+    ]
+    for row in rows:
+        previous = None
+        for title, aspects, (x, y), size in row:
+            step = Step(title=title)
+            AddNodeCommand(project.id, step).redo(services.document)
+            position = write_position(x, y, size) if size else write_position(x, y)
+            SetModuleDataCommand(step.id, POSITION_KEY, position).redo(services.document)
+            # Described and estimated, so lint has nothing to say and no card wears the
+            # squiggle: this shot is about what a card says when nothing is wrong with it.
+            services.document.set_text(step.id, "step_description", f"{title}, in full.")
+            SetModuleDataCommand(step.id, "estimation", estimate_write(2.0)).redo(services.document)
+            for module_id, entry in aspects:
+                SetModuleDataCommand(step.id, module_id, entry).redo(services.document)
+            if previous is not None:
+                SetEdgesCommand(step.id, "requires", [previous]).redo(services.document)
+            previous = step.id
+
+    tab = services.tabs.open("project", project.id)
+    page = tab.widget
+    page.setParent(None)
+    page.resize(*CARDS_SIZE)
+    page.show()
+    tab.frame()
+    settle(app)
+    save(page, out, "cards", theme, app)
+    page.setParent(None)
+    session.close()
+    discard(page)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory for the PNGs")
@@ -172,6 +277,7 @@ def main(argv: list[str]) -> int:
         QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, tmp)
         for theme in (DARK, LIGHT):
             render(app, theme, args.out, Path(tmp))
+            render_cards(app, theme, args.out, Path(tmp))
     return 0
 
 

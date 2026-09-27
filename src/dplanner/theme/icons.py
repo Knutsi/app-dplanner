@@ -17,7 +17,6 @@ spinner (a frame per angle) and the filter funnel (two states in one width).
 
 from collections.abc import Callable
 from functools import lru_cache
-from importlib.resources import files
 
 from PySide6.QtCore import QPointF, QRectF, QSize, Qt
 from PySide6.QtGui import (
@@ -31,13 +30,13 @@ from PySide6.QtGui import (
 )
 from PySide6.QtSvg import QSvgRenderer
 
+from dplanner.theme.glyph_source import glyph_source
 from dplanner.theme.palettes import Palette
 
 ICON_SIZE = 16
 # A glyph nobody is pointing at is present without asking to be read.
 IDLE_GLYPH_ALPHA = 110
 
-GLYPH_DIR = files("dplanner.theme").joinpath("glyphs")
 # Which Tabler release the vendored SVGs beside this file came from. Stated here rather
 # than in the script that fetched them, because it is the *application* that has to say it:
 # Help ▸ About names the set and the version it is used at, which is what an MIT notice and
@@ -91,8 +90,7 @@ def _inked(name: str, ink: str) -> bytes:
     path should never repeat. The cache is keyed by colour, so a theme change simply asks
     for entries it has not got.
     """
-    raw = GLYPH_DIR.joinpath(f"{name}.svg").read_text(encoding="utf-8")
-    return raw.replace("currentColor", ink).encode("utf-8")
+    return glyph_source(name).replace("currentColor", ink).encode("utf-8")
 
 
 def paint_glyph(painter: QPainter, rect: QRectF, name: str, color: str | QColor) -> None:
@@ -242,11 +240,6 @@ def sort_icon(color: str | QColor) -> QIcon:
     return glyph_icon("sort", color)
 
 
-def region_icon(color: str | QColor) -> QIcon:
-    """A titled area drawn behind the graph."""
-    return glyph_icon("region", color)
-
-
 def grid_icon(color: str | QColor) -> QIcon:
     """Ruled dots: what a drag, a resize and a placed card land on."""
     return glyph_icon("grid", color)
@@ -378,8 +371,13 @@ def tag_icon(color: str | QColor) -> QIcon:
 
 
 def spark_icon(color: str | QColor) -> QIcon:
-    """Sparkles: there is machine guidance here."""
+    """Sparkles: an agent does this step."""
     return glyph_icon("spark", color)
+
+
+def person_icon(color: str | QColor) -> QIcon:
+    """A head and shoulders: a person does this step."""
+    return glyph_icon("person", color)
 
 
 def beaker_icon(color: str | QColor) -> QIcon:
@@ -530,15 +528,17 @@ def close_icon(color: str | QColor) -> QIcon:
     return icon
 
 
-# The medallion vocabulary the canvas paints, as row and menu icons: one glyph per kind name
-# a step can wear ("tag" a milestone, "layers" a feature, "spark" an agent step, "beaker" one
-# carrying tests, "shield" a check, "clock" a wait). It lives here, beside the glyphs, so a
-# surface that shows what kind a step is looks it up rather than keeping its own table.
+# What a step is and who works it, as row and menu icons: one glyph per name a card can wear
+# — the medallions ("tag" a milestone, "layers" a feature, "beaker" one carrying tests,
+# "shield" a check) and the key block's icon ("spark" an agent does it, "person" a person
+# does, "clock" it is a wait). It lives here, beside the glyphs, so a surface that shows what
+# a step is looks it up rather than keeping its own table.
 GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
     "step": step_icon,
     "tag": tag_icon,
     "layers": layers_icon,
     "spark": spark_icon,
+    "person": person_icon,
     "beaker": beaker_icon,
     "shield": shield_icon,
     "ticket": ticket_icon,

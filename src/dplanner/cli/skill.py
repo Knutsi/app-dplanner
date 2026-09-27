@@ -43,13 +43,7 @@ def _gates(command: CliCommand) -> str:
     """The markers a verb wears in the index: `†` for a verb that reads the topology first,
     `‡` for one that reads the house format of what it writes. The legend names them."""
     topology = "†" if command.edits_graph is not None else ""
-    return topology + ("‡" if _guide(command) is not None else "")
-
-
-def _guide(command: CliCommand) -> str | None:
-    """The house document this verb writes in the shape of — None for a verb that writes in
-    nobody's shape, and for one the skill does not offer at all."""
-    return command.reads_guide if command.in_skill else None
+    return topology + ("‡" if command.reads_guide is not None else "")
 
 
 def _description(aspects: Sequence[AspectSpec]) -> str:
@@ -109,19 +103,16 @@ def _skill(registry: CliRegistry, aspects: Sequence[AspectSpec]) -> str:
         "",
     ]
     for noun, commands in registry.groups().items():
-        offered = [command for command in commands if command.in_skill]
-        if not offered:  # A noun whose every verb is kept out is not a noun here at all.
-            continue
-        verbs = " · ".join(command.path[1] + _gates(command) for command in offered)
+        verbs = " · ".join(command.path[1] + _gates(command) for command in commands)
         lines.append(f"- `{PROG} {noun}` — {verbs}")
     lines += [
         "",
         f"† reads the topology first: `{PROG} topology show <project>` once, before it runs.",
     ]
     # A house document is the second door (`cli/gate.py`), and its legend is projected the
-    # same way the daggers are: one line per document any offered verb writes in the shape
+    # same way the daggers are: one line per document any verb writes in the shape
     # of, so a second one could never arrive unannounced.
-    guides = {guide for command in registry.commands() if (guide := _guide(command)) is not None}
+    guides = {command.reads_guide for command in registry.commands() if command.reads_guide}
     for verb in sorted(guides):
         lines.append(f"‡ reads the house format first: `{PROG} {verb}` once, before it runs.")
     lines += [
@@ -156,8 +147,6 @@ def _reference(registry: CliRegistry) -> str:
         "",
     ]
     for command in registry.commands():
-        if not command.in_skill:
-            continue
         lines += [f"## `{PROG} {command.id}`", "", command.summary, "", "```"]
         # The parser's own help, examples included: one rendering, so the reference and
         # `--help` cannot come to disagree.

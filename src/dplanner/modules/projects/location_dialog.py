@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dplanner.core.storage.locations import canonical_remote
 from dplanner.core.storage.provider import StorageError
 from dplanner.core.storage.sparse import Probe
 from dplanner.domain.locations import (
@@ -74,20 +75,25 @@ EXPANDED_DEPTH = 2  # The tree opens this many levels: enough to see, not the wh
 RecordCheckout = Callable[[str, Path], None]
 
 
-def known_repositories(rows: Sequence[Location], library: Library) -> list[str]:
-    """The repositories ``rows`` and the library already name, each once, the primary
-    code first — what the dialog's combo lists. Read off the model: no disk, no gh."""
+def known_repositories(
+    rows: Sequence[Location], library: Library, role: str | None = None
+) -> list[str]:
+    """The repositories ``rows`` and the library already name — those of ``role`` alone
+    when one is given — each once however git spells it, the primary code first: what the
+    dialog's combo lists, and New Project's code question. Read off the model: no disk, no
+    gh."""
     found: list[str] = []
     primary = primary_code(rows)
-    if primary is not None:
-        found.append(primary.repository)
-    for row in rows:
-        if row.repository not in found:
+    every = [
+        *([primary] if primary is not None else []),
+        *rows,
+        *(row for project in library.projects for row in project.locations),
+    ]
+    for row in every:
+        if role is not None and row.role != role:
+            continue
+        if not any(row.canonical == canonical_remote(known) for known in found):
             found.append(row.repository)
-    for project in library.projects:
-        for row in project.locations:
-            if row.repository not in found:
-                found.append(row.repository)
     return found
 
 

@@ -148,6 +148,26 @@ def test_new_project_is_seeded_into_the_picked_plan_repository_and_connected(
     assert "created" in services.window.statusBar().currentMessage()
 
 
+def test_no_code_repository_yet_creates_a_project_whose_code_is_unset(
+    services, library_repo, create
+):
+    """*No code repository yet* is an answer: the project lands in the plan repository's
+    index with no code row, and from then on it is unset — never read as its own code."""
+    from dplanner.domain.repositories import UNSET, repository_facts
+
+    create["spec"] = NewProjectSpec(
+        title="Alpha Search",
+        summary="",
+        plan=PlanTarget(library_repo),
+        folder="alpha-search",
+        locations=(),
+    )
+    run(services, "projects.new")
+    (project,) = services.document.projects
+    facts = repository_facts(project, services.repo.project_dir(project.id), {})
+    assert facts.state == UNSET and facts.code_root is None and facts.code_remote == ""
+
+
 def test_new_project_initialises_a_new_local_plan_repository(services, tmp_path, create):
     create["spec"] = NewProjectSpec(
         title="Solo",

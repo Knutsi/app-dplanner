@@ -46,6 +46,19 @@ def write_index(root: Path, lines: Sequence[str]) -> None:
     (root / POINTER_FILE).write_text(text, encoding="utf-8", newline="\n")
 
 
+def indexed(path: Path, repo_root: Path) -> bool:
+    """Whether the index at ``repo_root`` — ``path``'s repository root, which every caller
+    has already found — lists a directory that is, or holds, ``path``: whether a plan
+    repository names the project ``path`` is in. A repository root is never listed; a
+    project does not hold another, so for a project directory this is the exact line
+    :func:`add_to_index` looks for."""
+    found = path.resolve()
+    return any(
+        target != repo_root.resolve() and found.is_relative_to(target)
+        for _line, target in resolve_index(repo_root)
+    )
+
+
 def add_to_index(project_dir: Path) -> Path | None:
     """List ``project_dir`` in its repository's index, appended after what is there.
 
@@ -56,11 +69,10 @@ def add_to_index(project_dir: Path) -> Path | None:
     repo_root = find_repo_root(project_dir)
     if repo_root is None or repo_root.resolve() == project_dir.resolve():
         return None
-    lines = read_index(repo_root)
-    if any(target == project_dir.resolve() for _line, target in resolve_index(repo_root)):
+    if indexed(project_dir, repo_root):
         return None
     relative = PurePosixPath(*Path(os.path.relpath(project_dir, repo_root)).parts).as_posix()
-    write_index(repo_root, [*lines, relative])
+    write_index(repo_root, [*read_index(repo_root), relative])
     return repo_root / POINTER_FILE
 
 

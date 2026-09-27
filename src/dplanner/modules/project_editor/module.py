@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, Qt
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QMenu, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QVBoxLayout, QWidget
 
 from dplanner.core.signals import Signal as CoreSignal
 from dplanner.domain.commands import (
@@ -91,7 +91,6 @@ from dplanner.modules.project_editor.modes import (
     LASSO,
     REDIRECT_FROM,
     REDIRECT_TO,
-    REGION_CREATE,
     CanvasDeps,
     ConnectMode,
     DivideMode,
@@ -99,7 +98,6 @@ from dplanner.modules.project_editor.modes import (
     LassoMode,
     ModeBase,
     RedirectMode,
-    RegionCreateMode,
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
 from dplanner.modules.project_editor.placement import below, positions
@@ -111,19 +109,8 @@ from dplanner.modules.project_editor.positions import (
     write_position,
 )
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
-from dplanner.modules.project_editor.region_verbs import RegionVerbs
-from dplanner.modules.project_editor.regions import (
-    new_region,
-    read_regions,
-    set_regions_command,
-)
 from dplanner.modules.project_editor.renderers import NodeAccent
-from dplanner.modules.project_editor.selection import (
-    EDGE_KIND,
-    REGION_KIND,
-    CanvasSelection,
-    EdgeRef,
-)
+from dplanner.modules.project_editor.selection import EDGE_KIND, CanvasSelection, EdgeRef
 from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
 
 MODULE_ID = "project_editor"
@@ -137,7 +124,6 @@ LOOK_KEY = "look"
 SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
     CONNECT: ConnectMode,
     LASSO: LassoMode,
-    REGION_CREATE: RegionCreateMode,
     DIVIDE_VERTICAL: lambda deps: DivideMode(deps, Qt.Orientation.Vertical),
     DIVIDE_HORIZONTAL: lambda deps: DivideMode(deps, Qt.Orientation.Horizontal),
     REDIRECT_TO: lambda deps: RedirectMode(deps, WAITER),
@@ -231,9 +217,6 @@ class ProjectActivity(EntityActivity):
         self._scene.nodes_moved.connect(self._on_nodes_moved)
         self._scene.link_requested.connect(self._on_link_requested)
         self._scene.create_requested.connect(self._on_create)
-        self._scene.region_create_requested.connect(self._on_region_create)
-        self._scene.regions_moved.connect(self._on_regions_moved)
-        self._scene.region_resized.connect(self._on_region_resized)
         self._scene.node_resized.connect(self._on_node_resized)
         self._scene.graph_divided.connect(self._on_graph_divided)
         self._scene.redirect_requested.connect(self._on_redirect_requested)
@@ -453,7 +436,7 @@ class ProjectActivity(EntityActivity):
             for kind, targets in step.edges.items()
             for source in targets
         ]
-        self._scene.sync(nodes, edges, read_regions(project))
+        self._scene.sync(nodes, edges)
 
     def _on_structure(self, parent_id: NodeId, _origin: object = None) -> None:
         if not self._product.belongs_to(parent_id, self.project_id):
@@ -490,16 +473,9 @@ class ProjectActivity(EntityActivity):
         self._deps.context.set_scope(SCOPE_ACTIVITY, self.activity_nodes())
 
     def _publish_selection(self, selection: CanvasSelection) -> None:
-        nodes = (
-            tuple(ContextNode(selection_uri("step", step_id)) for step_id in selection.steps)
-            + tuple(
-                ContextNode(selection_uri(EDGE_KIND, edge.entity_id())) for edge in selection.edges
-            )
-            + tuple(
-                ContextNode(selection_uri(REGION_KIND, region_id))
-                for region_id in selection.regions
-            )
-        )
+        steps = (ContextNode(selection_uri("step", step_id)) for step_id in selection.steps)
+        edges = (ContextNode(selection_uri(EDGE_KIND, e.entity_id())) for e in selection.edges)
+        nodes = (*steps, *edges)
         self.publish_selection(nodes)
 
     def _move_command(self, step_id: StepId, x: float, y: float) -> Command:
@@ -637,48 +613,6 @@ class ProjectActivity(EntityActivity):
         point = self._view.last_click
         return None if point is None else self._snapped(*centred_on(point.x(), point.y()))
 
-    def _on_region_create(self, x: float, y: float, w: float, h: float) -> None:
-        project = self._project()
-        created = new_region("Region", x, y, w, h)
-        self._deps.undo.push(
-            set_regions_command(
-                project, [*read_regions(project), created], "Add Region", view_origin=self
-            )
-        )
-        self._deps.undo.break_coalescing()
-        self._scene.select_region(created.id)
-
-    def _on_regions_moved(
-        self,
-        moves: list[tuple[str, float, float]],
-        carried: list[tuple[StepId, float, float]],
-    ) -> None:
-        project = self._project()
-        placed = {region_id: (x, y) for region_id, x, y in moves}
-        updated = [
-            region.moved_to(*placed[region.id]) if region.id in placed else region
-            for region in read_regions(project)
-        ]
-        label = "Move Region" if len(moves) == 1 else f"Move {len(moves)} Regions"
-        commands: list[Command] = [set_regions_command(project, updated, label, view_origin=self)]
-        commands += [self._move_command(step_id, x, y) for step_id, x, y in carried]
-        if len(commands) == 1:
-            self._deps.undo.push(commands[0])
-        else:
-            self._deps.undo.push(CompositeCommand(label, commands))
-        self._deps.undo.break_coalescing()
-
-    def _on_region_resized(self, region_id: str, x: float, y: float, w: float, h: float) -> None:
-        project = self._project()
-        updated = [
-            region.moved_to(x, y).sized(w, h) if region.id == region_id else region
-            for region in read_regions(project)
-        ]
-        self._deps.undo.push(
-            set_regions_command(project, updated, "Resize Region", view_origin=self)
-        )
-        self._deps.undo.break_coalescing()
-
     def _select_for_menu(self, node: StepNodeItem | None) -> None:
         """Make the thing under the cursor current — without collapsing a multi-selection
         the click landed inside, or the menu's verbs would lose the other N-1 steps."""
@@ -690,21 +624,12 @@ class ProjectActivity(EntityActivity):
 
         assert isinstance(position, QPoint)
         scene_pos = self._view.mapToScene(position)
-        node = self._scene.node_at(scene_pos)
-        region = self._scene.region_at(scene_pos) if node is None else None
-        if region is not None:
-            if region.region_id not in self._scene.selection().regions:
-                self._scene.select_region(region.region_id)
-            menu: QMenu = build_menu(
-                self._deps.actions, self._deps.context, "Graph", self._view, submenu="Region"
-            )
-        else:
-            # New places a node where the menu was raised, so the right-click counts as a
-            # click — the keyboard menu key sends no press, and would otherwise reuse a
-            # stale point.
-            self._view.note_click(scene_pos)
-            self._select_for_menu(node)
-            menu = build_menu(self._deps.actions, self._deps.context, "Step", self._view)
+        # New places a node where the menu was raised, so the right-click counts as a
+        # click — the keyboard menu key sends no press, and would otherwise reuse a
+        # stale point.
+        self._view.note_click(scene_pos)
+        self._select_for_menu(self._scene.node_at(scene_pos))
+        menu = build_menu(self._deps.actions, self._deps.context, "Step", self._view)
         menu.exec(self._view.viewport().mapToGlobal(position))
 
 
@@ -763,13 +688,6 @@ class ProjectEditorModule:
             set_look=self._set_look,
             side_panel=deps.side_panel,
         )
-        self._region_verbs = RegionVerbs(
-            library=deps.library,
-            undo=deps.undo,
-            parent=deps.parent,
-            current_project=self._current_project,
-            set_region_mode=lambda on: self._set_mode(REGION_CREATE, on),
-        )
 
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         """Show a project in a tab. Handed to the index segment as a plain function."""
@@ -815,7 +733,6 @@ class ProjectEditorModule:
         self._clipboard_verbs.register_into(deps.actions)
         self._canvas_verbs.register_into(deps.actions)
         self._layout_verbs.register_into(deps.actions)
-        self._region_verbs.register_into(deps.actions)
         # A project that goes away takes its tab with it, and a rename reaches the tab.
         follow_entity_tabs(
             deps.tabs,

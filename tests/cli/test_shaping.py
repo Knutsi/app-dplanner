@@ -40,8 +40,9 @@ def test_the_guide_draws_the_shape_a_graph_should_take():
     assert "Milestones in a chain" in prose
     assert "branches out and collects back" in prose
     assert "Sequential milestones, parallel steps" in prose
-    # A marker node is still a step, and lint asks a step for these two.
-    assert "'Project start' --days 0" in prose and "--describe-file -" in prose
+    # The origin is marked, so the features fanning out of it do not all claim it; and a
+    # marker node is still a step, which lint asks for an estimate and a description.
+    assert "'Project start' --start --days 0" in prose and "--describe-file -" in prose
 
 
 def test_the_guide_asks_for_the_release_scope_rather_than_inventing_it():
@@ -62,7 +63,7 @@ def test_the_guide_cuts_steps_for_an_agent_to_run():
 
 def test_the_spatial_loop_moved_here_with_the_rest_of_the_shaping(skill):
     """Look, sort, make room or tidy, look again, keep — a shaping act, so it left the
-    skill with its neighbours. The skill keeps only the rule that regions are gone."""
+    skill with its neighbours."""
     prose = " ".join(guide().split())
     assert "layout show <project> --map" in prose
     assert "layout shift <project> --x 640 --by 300" in prose
@@ -71,7 +72,6 @@ def test_the_spatial_loop_moved_here_with_the_rest_of_the_shaping(skill):
     assert "when the same sentence appears on several pages" in prose
     assert "unless the project's topology says otherwise" in prose
     assert "lump similar work into one large step" in prose
-    assert "region" not in prose.lower()
     assert "## Working from a specification" not in skill
 
 

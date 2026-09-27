@@ -3,9 +3,16 @@
 import json
 
 import pytest
+from tests.old_canvas import PLAN, SEATS, old_export, plant
 
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.project_editor.positions import read_position
+from dplanner.modules.project_editor.positions import (
+    MODULE_ID,
+    NODE_H,
+    NODE_W,
+    node_size,
+    read_position,
+)
 
 
 @pytest.fixture
@@ -26,7 +33,7 @@ def test_save_list_apply_round_trip(cli, cli_library):
     assert "updated" in cli("layout", "save", "Discovery", "plan")
 
     listed = json.loads(cli("layout", "list", "Discovery", "--json"))
-    assert listed["layouts"] == [{"name": "plan", "steps": 2, "regions": 0}]
+    assert listed["layouts"] == [{"name": "plan", "steps": 2}]
 
     cli("layout", "apply", "Discovery", "plan")
     library = reload(cli_library)
@@ -74,13 +81,12 @@ def test_show_measures_the_graph(cli):
     assert "2 steps in 1 columns x 2 rows" in said
     assert "overlaps: none" in said
     assert "gap 44 (1.0 pitch)" in said
-    assert "regions: none" in said
 
     data = json.loads(cli("layout", "show", "Discovery", "--json"))
     assert [row["key"] for row in data["steps"]] == ["S1", "S2"]
     assert data["bounds"] == {"x": 40.0, "y": 40.0, "w": 220.0, "h": 196.0}
     assert data["rows"]["lanes"][1]["pitches"] == 1.0
-    assert data["overlaps"] == [] and data["regions"] == []
+    assert data["overlaps"] == []
 
 
 def test_show_draws_a_map(cli):
@@ -137,3 +143,73 @@ def test_tidy_resolves_an_overlap_and_is_idempotent(cli, cli_library):
     assert "--gap needs at least 1 pitch" in cli(
         "layout", "tidy", "Discovery", "--gap", "0", expect=1
     )
+
+
+# -- a project saved with regions ----------------------------------------------------------------
+
+
+@pytest.fixture
+def old(cli, cli_library):
+    """Discovery, three steps, as a build with regions left it (``tests/old_canvas.py``)."""
+    cli("step", "add", "Discovery", "Ship it")
+    return plant(cli_library, "Discovery")
+
+
+def assert_seated(steps, seats):
+    """Every card where ``seats`` puts it, at the size ``SEATS`` gave it."""
+    for step, (x, y), (_x, _y, size) in zip(steps, seats, SEATS, strict=True):
+        assert read_position(step) == (x, y), step.title
+        assert node_size(step) == (size or (NODE_W, NODE_H)), step.title
+
+
+def assert_regionless(project, directory):
+    entry = project.module_data[MODULE_ID]
+    assert entry["format"] == 2
+    assert set(entry["layouts"]) == {"Plan", "Earlier"}
+    assert all(step.module_data[MODULE_ID]["format"] == 2 for step in project.steps)
+    for written in directory.rglob(f"{MODULE_ID}.json"):
+        assert "regions" not in written.read_text(), written
+
+
+def test_a_project_saved_with_regions_opens_without_them(cli, cli_library, workspace, old):
+    assert "Plan  (3 steps)" in cli("layout", "list", "Discovery")
+    project = reload(cli_library).projects[0]
+    assert_regionless(project, workspace / "discovery")
+    assert_seated(project.steps, [seat[:2] for seat in SEATS])
+
+
+def test_an_old_project_is_measured_and_mapped(cli, old):
+    data = json.loads(cli("layout", "show", "Discovery", "--json"))
+    assert [(row["x"], row["y"], row["w"]) for row in data["steps"]] == [
+        (40.0, 56.0, NODE_W),
+        (320.0, 48.0, 264.0),
+        (640.0, 56.0, NODE_W),
+    ]
+    assert set(data) == {"project", "steps", "bounds", "waves", "overlaps", "columns", "rows"}
+    assert cli("layout", "show", "Discovery", "--map").splitlines()[0].split() == [
+        "S1",
+        "S2",
+        "S3",
+    ]
+
+
+def test_an_old_layout_applies_without_its_regions(cli, cli_library, old):
+    assert json.loads(cli("layout", "apply", "Discovery", "Plan", "--json"))["moved"] == 3
+    assert_seated(reload(cli_library).projects[0].steps, PLAN)
+    cli("layout", "apply", "Discovery", "Earlier")
+    assert_seated(reload(cli_library).projects[0].steps, [seat[:2] for seat in SEATS])
+
+
+def test_an_old_project_reports_without_its_regions(cli, old):
+    page = cli("report", "html", "Discovery")
+    assert '<svg class="graph"' in page
+    assert "Database setup" not in page and 'class="region"' not in page
+
+
+def test_an_old_export_imports_without_its_regions(cli, cli_stdin, cli_library, workspace, old):
+    document = old_export(json.loads(cli("project", "export", "Discovery")))
+    cli_stdin("project", "import", "--title", "Imported", stdin=json.dumps(document))
+    cli("layout", "list", "Imported")  # The next open migrates what the import wrote.
+    imported = next(p for p in reload(cli_library).projects if p.title == "Imported")
+    assert_regionless(imported, workspace / "imported")
+    assert_seated(imported.steps, [seat[:2] for seat in SEATS])

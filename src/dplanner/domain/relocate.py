@@ -9,7 +9,9 @@ while its transaction flushes what the move marked.
 What moves is the plan, ``PLAN_ENTRIES``: ``project.dproj``, ``modules/`` and ``steps/``,
 module file areas included, so specs, images and attachments travel. What is written into
 the moved ``project.dproj`` is the one fact the plan needs from then on — the code
-repository it came out of, as git names it. What stays behind, on purpose: the plan's
+repository it came out of, as git names it — for a plan of the older shape; a plan a plan
+repository held with no code named leaves a repository that was never its code, and moves
+on with nothing added. What stays behind, on purpose: the plan's
 history, which was the code's history (the target starts at *Add «title»*), and the
 worktrees under the code checkout, which are code. Both repositories are committed, scoped
 to exactly what changed in each; a commit that cannot be made — no git identity, say — is
@@ -35,8 +37,9 @@ from dplanner.core.storage.locations import (
 )
 from dplanner.core.storage.pointer import POINTER_FILE, add_to_index, remove_from_index
 from dplanner.core.storage.provider import StorageError, VersionedStorage
-from dplanner.domain.locations import CODE, Location, primary_code, write_locations
+from dplanner.domain.locations import CODE, Location, write_locations
 from dplanner.domain.model import ProjectId
+from dplanner.domain.repositories import LEGACY, repository_facts
 from dplanner.domain.store import PLAN_ENTRIES, PROJECT_META, LibraryStore
 
 # The origin the move's two field changes carry: no view made them, so every view repaints —
@@ -88,26 +91,25 @@ def move_project(
         raise RelocateError(
             "the project has unsaved edits in this window — let them reach disk, then try again"
         )
-    primary = primary_code(project.locations)
-    code = (primary.repository if primary is not None else origin_url(source)) or str(
-        main_checkout(source_root)
-    )
-    # The moved plan names the code it came out of as its first code row; a table that
-    # already has one is left exactly as it stands.
-    locations = (
-        project.locations
-        if primary is not None
-        else (Location("l1", CODE.id, code), *project.locations)
-    )
-    recorded = store.checkout_for(code)
+    # A legacy plan names the code it came out of as its first code row; a table that
+    # already has one is left exactly as it stands, and an unset plan — one a plan
+    # repository holds, whose code nobody has named — moves on still unset: the repository
+    # it leaves was never its code.
+    facts = repository_facts(project, source, {})
+    legacy = facts.state == LEGACY
+    code = facts.code_remote or (str(main_checkout(source_root)) if legacy else "")
+    locations = (Location("l1", CODE.id, code), *project.locations) if legacy else project.locations
+    recorded = store.checkout_for(code) if code else None
     # A plan leaving the repository that also held its code leaves *from* the checkout, so
     # that is where the code is from now on. A plan already apart from its code leaves a
     # repository that is not the code's, and inherits nothing: it keeps what was recorded,
     # or stays uncheckedout here.
     checkout = recorded or (
-        main_checkout(source_root) if _is_code_repository(source_root, code, recorded) else None
+        main_checkout(source_root)
+        if code and _is_code_repository(source_root, code, recorded)
+        else None
     )
-    if _is_code_repository(target_root, code, checkout):
+    if code and _is_code_repository(target_root, code, checkout):
         raise RelocateError(
             f"{target_root} is the code repository — the plan would still live inside the "
             "code it plans; pick a plan repository"

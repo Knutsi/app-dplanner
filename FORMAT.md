@@ -225,9 +225,12 @@ else's `.gitattributes` is a bigger intrusion than this needs.
 **Two keys on the project say where it stands with its code.** `"locations"` is the table
 of places the project is about — rows of `{"id", "role", "repository", "path", "ref",
 "label"}`, absence encoding the default: no `path` is the root, no `ref` the repository's
-default branch, no `label` the only row of its role, and no `locations` at all a project
-that plans the repository it sits in — the older shape, warned about by lint, the briefing
-and the window until it is moved or accepted. The `id` (`l1`, `l2`, …) is minted per
+default branch, no `label` the only row of its role, and no code row at all one of two
+things, told apart by the `.dplanner` index below: a project the index lists has its code
+**not set yet**, and nothing reads the plan repository as its code; one it does not list —
+a project that is its repository's root, or one from before the index — plans the
+repository it sits in, the older shape, warned about by lint, the briefing and the window
+until it is moved or accepted. The `id` (`l1`, `l2`, …) is minted per
 project and kept while the row is edited, because a spec source and a step's workplace
 name a row by it; `role` is a word from the registry — the domain's `code`, and `spec` and
 `reporting` from the modules that act on them — and **a role this build does not
@@ -235,8 +238,8 @@ know is loaded and written back untouched**, the edge-kind rule; the first `code
 *the* code repository every older reader means. `"colocation": "accepted"` is the
 acceptance: the people on the project decided the plan stays inside its code on purpose,
 and every warning stands down. Both are set by the Project dialog and the `dplanner
-location` and `project set` verbs; `project move` adds the first code row and drops the
-second as it goes. Format 3 moved the earlier `"repository"` string into the first row.
+location` and `project set` verbs; `project move` adds the first code row to a plan of
+the older shape and drops the second as it goes. Format 3 moved the earlier `"repository"` string into the first row.
 
 **Edges are keyed by kind**: `"edges": {"requires": ["<step id>", …]}`. One line per edge
 rather than an object per edge, and the direction cannot be read the wrong way round —
@@ -418,9 +421,13 @@ cannot change meaning when the graph does, and a **missing result reads as pendi
 absence rule again, so a run over two hundred tests writes two hundred ids and no statuses.
 `project_editor` is another instance: a position
 beside each step — `{"x": 40.0, "y": 160.0}`, plus `"w"` and `"h"` only for a card somebody
-resized — and the named layouts and regions beside the project (`{"layouts": {...},
-"regions": [...]}`, coordinates as whole-unit floats: a canvas gesture snaps to the grid, a
-write never does). `feature` is
+resized — and the named layouts beside the project (`{"layouts": {"<name>": {"steps":
+{"<step id>": [x, y]}}}}`, coordinates as whole-unit floats: a canvas gesture snaps to the
+grid, a write never does). It is format 2: format 1 also kept titled rectangles beside the
+project (`"regions": [...]`) and each layout's rects for them (`"regions": {"<id>": [x, y,
+w, h]}`), and regions were retired, so the one migration drops both on read — a project
+saved with them opens as it was, minus the rectangles (`ARCHITECTURE.md`'s *Regions were
+retired*). A step's entry went to 2 unchanged. `feature` is
 the fifth: beside a step, `{"on": true, "cites": [{"document": "auth-spec", "quote": "…",
 "page": 4, "digest": "<sha16>"}]}` (format 3; formats 1 and 2 kept a catalogue beside the
 *project* and only the record's id beside the step, collapsed onto the steps at open —
@@ -520,20 +527,23 @@ simply a group of one. All three keys are why the format is **3**; they arrived 
 and none has been on anybody's disk without the others, so one pass-through migration
 records what two would have.
 
-**An aspect toggled on with nothing to say yet is a marker entry.** A step's "on/off" for
-a toggleable aspect is the presence of its `module_data` entry, and two aspects need a
-shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type toggle
-enables it before any field is filled (a filled ticket's entry replaces the marker),
-`step_check` writes `{"on": true}` and never anything else — what it *gathers* is the
-graph's answer, not a stored list — and `step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when the step
-opts into an instruction distinct from its description, and `"worktree": false` when its
-agent is to work in the checkout itself rather than a fresh worktree (absence is on: the
-opt-outs are the only keys ever added) — beside the step whose prose file
-may not exist at all. Both are format 1 of their existing `ModuleDataFormat`s; a step
-carrying only the old prose file still reads as agent-on, so no migration ships with them.
-A feature is one of them: `{"on": true}` with no `cites` is a feature that was read from
-no specification, which is the whole answer — and it is what the retired `step_feature`
-module wrote, so that marker needs nothing done to it beyond its stamp.
+**An aspect toggled on with nothing to say yet is a marker entry.** A step's "on/off" for a
+toggleable aspect is the presence of its `module_data` entry, and several aspects need a
+shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type toggle enables
+it before any field is filled (a filled ticket's entry replaces the marker), `step_check`
+writes `{"on": true}` and never anything else — what it *gathers* is the graph's answer, not
+a stored list — `step_start` writes `{"on": true}` on the one step the plan begins from and
+never anything else, since what it changes is where the walks stop, not anything the step
+holds — and `step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when
+the step opts into an instruction distinct from its description, and `"worktree": false`
+when its agent is to work in the checkout itself rather than a fresh worktree (absence is
+on), and `"workplace"` naming a code location other than the primary — beside the step whose
+prose file may not exist at all. Those four are format 1 of their own `ModuleDataFormat`s; a
+step carrying only the old prose file still reads as agent-on, so no migration ships with
+them. A feature's marker is one more, in its own format: `{"on": true}` with no `cites` is a
+feature that was read from no specification, which is the whole answer — and it is what the
+retired `step_feature` module wrote, so that marker needs nothing done to it beyond its
+stamp.
 
 **What a step's agent runs consumed is a ledger of rows, never a total.** `agent_usage`
 (a second aspect id in `step_agent_run/`) writes `{"runs": [{"harness": "claude",
@@ -623,9 +633,13 @@ and to format 3 for `changed`: an older build's writer rebuilds every row, so th
 is how it knows it would drop what it cannot write.
 **A status remembers two days** for the same reason: `step_status.json` (format 2) is
 `{"status": "done", "since": "2026-09-18", "started": "2026-09-14"}` — the day the status
-last changed, and the day the step first went in progress — stamped by the aspect's
-`write`, so the window, `dplanner status set` and an agent's launch all record them, and
-restored by undo with the rest of the entry. Pending is still absence, but a step set back
+last changed, and the day the step first went into a worked status (in progress, ready for
+review, ready to merge) — stamped by the aspect's `write`, so the window, `dplanner status
+set` and an agent's launch all record them, and restored by undo with the rest of the
+entry. The word is one of `pending`, `in-progress`, `ready-for-review`, `ready-to-merge`,
+`done`, `blocked`; the two in the middle came later **with no format bump**, because a
+build that does not know a word reads it as pending and leaves the entry as it is — which
+is what an older build does with them. Pending is still absence, but a step set back
 to pending keeps its days: an entry with no `status` key, which reads as pending. A copy
 keeps the status and forgets the days, which were the original's. An older entry has no
 days, and every reader takes that as "not said", never as today.

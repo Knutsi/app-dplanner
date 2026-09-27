@@ -15,7 +15,8 @@ paths:
   to a per-run temp directory, never the project. The agent reports back through the CLI
   (`status set`, `agent-state set`, `note add`). **The graph gates launching**: a step
   whose `requires` do not all read done (through `status_for` on the module's Deps, the
-  progression board's seam, where a wait reads done once it is over) gets a confirmation
+  Step statuses tab's seam, where a wait reads done once it is over and a step under
+  review or waiting on its merge does not) gets a confirmation
   naming them before a shell opens — the
   person may know the work landed unrecorded, so it asks rather than refuses, **once for
   the whole gesture** whichever of the chosen steps wait.
@@ -57,6 +58,19 @@ paths:
   `launcher.current_command` reads a stale one as the harness. The skill and the
   briefing's preamble both say *never kill by name or pattern*.
   `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
+- **An agent's run ends at Ready for review, and the CLI holds it there.** The briefing's
+  epilogue (`_agent_epilogue`) and the skill's *Running as an agent step* end at
+  `status set <key> ready-for-review` — a person or a reviewing agent looks next and sets
+  `ready-to-merge`, then `done` — worded apart from the mid-run `plan-for-review`, which is
+  the agent's *plan* waiting for a look. `status set <agent step> done` **from inside an
+  agent's shell**, on a step not already under review or waiting on its merge, exits 1
+  naming `ready-for-review` — unless `--because '<reason>'`, which sets done and keeps the
+  reason as a `decision` note on the step in the same run. A person's own terminal and the
+  window are never asked: the guard is about who reports, read through
+  `domain/agents.py`'s `shell_marker` over the harnesses (the entry point's window guard
+  reads the same), and `tests/conftest.py`'s `_no_agent_shell` scrubs the markers so the
+  suite never depends on being run by an agent. `ARCHITECTURE.md`'s *An agent finishes at
+  Ready for review* has the reasoning.
 - **A step names the code location it works in.** With several code rows in a project,
   the agent-instruction entry's `workplace` holds a location id (`aspect.workplace`,
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
@@ -67,7 +81,8 @@ paths:
 - **An agent may be opened with nothing to do, and that is a second invocation.**
   *Project ▸ Open Agent in Code* is the same profiles in the same child menu, opening a
   shell where a step's agent would work (the code checkout — cloned first, where the
-  clone policy says, when nobody has one here — else the plan's repository)
+  clone policy says, when nobody has one here — else the plan's repository for the legacy
+  shape, and greyed while the project's code is not set)
   with the harness's `open_command` — `claude`, `codex`, `opencode` — and **no briefing at
   all**: no `prompt.md`, no opening line, no worktree. It is the planning before the plan,
   when a spec has landed and there is no step to be about yet. The bare command is the
@@ -202,7 +217,7 @@ paths:
   coming first-start checklist reuses. A profile's name
   follows its choices — *Claude Code in herdr* — until somebody types one, and a taken
   name is numbered rather than refused. Over a selection every chosen step goes through
-  the one profile — with a multiplexer, one pane each. The Ready-to-start board's Ready
-  lane is the same menu again: each ready card carries a tick, and the lane's *Run N
-  Agents* button (top right, level with the caption) drops the child down over the
-  ticked steps, publishing them as it opens.
+  the one profile — with a multiplexer, one pane each. The Step statuses tab's strip is
+  the same verb again: `agent.run` seated with its arrow dropping this child
+  (`StripVerb("agent.run", data_menu=RUN_MENU_ID)`), over the rows ticked in its check
+  column — which are the published selection, so no context is constructed for it.

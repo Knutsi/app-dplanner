@@ -670,7 +670,7 @@ def step(services, make_project):
     from dplanner.domain.commands import AddNodeCommand
     from dplanner.domain.model import Step
 
-    project = make_project("Discovery")
+    project = make_project("Discovery", legacy=True)
     step = Step(title="Deploy")
     AddNodeCommand(project.id, step).redo(services.document)
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")

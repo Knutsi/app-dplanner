@@ -278,6 +278,8 @@ def _graph(graph: Graph, colors: Colors) -> str:
         '<span class="swatch kind-feature">feature</span>'
         '<span class="swatch status-done">done</span>'
         '<span class="swatch status-in-progress">in progress</span>'
+        '<span class="swatch status-ready-for-review">ready for review</span>'
+        '<span class="swatch status-ready-to-merge">ready to merge</span>'
         '<span class="swatch status-blocked">blocked</span>'
         '<span class="swatch edge-requires">requires</span>'
         '<span class="swatch edge-relates">relates</span>'

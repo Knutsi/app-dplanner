@@ -1,41 +1,42 @@
-"""Ready to start: the execution surface for a project — as a tab beside its graph.
+"""Step statuses: what needs a person in a project right now — as a tab beside its graph.
 
-The graph plans the work; this board is for the weeks the work is *happening*: how far
-along the project is, what is running or stuck, what can be launched right now and what
-one more finish would free. The walk itself is the domain's (``domain/progression.py``)
-— this module renders it and adds nothing to the model, so the tab, ``dplanner
-progression show`` and ``--json`` can never disagree.
+The graph plans the work; this tab is for the weeks the work is *happening*, and it asks one
+question: what needs me? A table answers it, grouped the way the work comes back to a
+person — Blocked, Ready to merge, Ready for review, Ready to start — with Waiting, what
+cannot start yet, last. Work an agent is doing is not listed: it needs nobody. The walk
+itself is the domain's (``domain/progression.py``) — this module renders it and adds
+nothing to the model, so the tab, ``dplanner progression show`` and ``--json`` can never
+disagree.
 
-**The surface is named for the question, the derivation for the answer.** A person opens
-this tab to find out what to start next, so it is called *Ready to start*; the walk stays
-``progression()`` and so does the verb, because the frontier is only one of the six
-partitions it computes. The module id, the activity kind and the action ids are the
-on-disk and in-registry contract and are untouched by the renaming.
+**The surface is named for the question, the derivation for the answer.** The tab is
+*Step statuses*, with the count of rows needing a person in its title; the walk stays
+``progression()`` and so does the verb, because the groups are only some of the partitions
+it computes. The module id, the activity kind and the action ids are the on-disk and
+in-registry contract and are untouched by the renaming.
 
 Four seams, all established elsewhere in this application:
 
 - **Statuses arrive as a function** (``status_for``), wired by the composition root from
   the status aspect's Qt-free reader — this module never learns what one is stored as.
-- **Selecting a card publishes the selection scope**, so the Step menu's verbs target it.
-- **Activating one opens its details**, by running ``steps.details`` against a context
-  naming exactly that card's step — the same seam the Run button already uses.
-- **Run Agent arrives as a state and a menu** (``agent_state``, ``agent_menu``), closed
-  over the real action and the Step menu's own Run Agent child by the composition root.
-  The Ready lane's *Run N Agents* button renders the gate's answer over the ticked steps
-  — a disabled one wears the reason — and drops that child menu down, so the board
-  offers what the menu offers and this module never learns the agent module exists.
-  ``None`` is a build without an agent: the button and the ticks are absent, not greyed.
+- **The ticked rows are the selection**, published as the selection scope, so the Step
+  menu's verbs, the strip's and Run Agent's profiles all act on exactly them.
+- **The strip seats registry verbs the root names** (``verbs``) — Run Agent with its
+  profiles, the status verbs a person moves finished work on with — each restated on every
+  context change, greyed with its own reason, and never a copy: this module never learns
+  the agent or status modules exist.
+- **Activating a row opens its details**, by running ``steps.details`` against a context
+  naming exactly that row's step.
 """
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QPoint
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QHBoxLayout, QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
-from dplanner.domain.progression import progression
+from dplanner.domain.progression import Progression, progression
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -55,17 +56,23 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.debounce import Debounced, DebounceService
+from dplanner.framework.segmented import Segmented
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
-from dplanner.framework.widgets import captioned, centered_column
-from dplanner.modules.progression.view import BOARD_MAX_WIDTH, ProgressionBoard, RunControl
+from dplanner.framework.toolbar import Toolbar
+from dplanner.framework.widgets import EmptyState
+from dplanner.modules.progression.view import ALL, GROUPS, StatusTable, needing_a_person
+from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 MODULE_ID = "progression"
 PROGRESSION_KIND = "progression"
 
-PANEL_MARGIN = 16
-CAPTION_GAP = 6
-BLOCK_GAP = 12
+FILTERS = (
+    (ALL, "All", "Everything that needs a person, then what is waiting"),
+    *((group.key, group.label, group.heading) for group in GROUPS),
+)
+NO_STEPS = "No steps yet."
+NOTHING_NEEDED = "Nothing needs you right now."
 
 
 def _pending(_step: Step) -> str:
@@ -74,6 +81,15 @@ def _pending(_step: Step) -> str:
 
 def _no_badge(_step_id: StepId) -> QIcon | None:
     return None
+
+
+@dataclass(frozen=True)
+class StripVerb:
+    """A registry verb the strip seats over the ticked rows, and the data child menu its
+    arrow drops down, if it has one — Run Agent's profiles."""
+
+    action_id: str
+    data_menu: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,78 +103,82 @@ class ProgressionDeps:
     # composition root from the status aspect's Qt-free reader; the honest default is a
     # build where nothing is claimed.
     status_for: Callable[[Step], str] = field(default=_pending)
-    # Whether a step is work at all: a wait is not, and is on no lane and in no count.
+    # Whether a step is work at all: a wait is not, and is on no row and in no count.
     counts_as_work: Callable[[Step], bool] = field(default=lambda _step: True)
-    # The Run Agent gate, closed over the real action, and the fill of the Step menu's
-    # Run Agent child — the profiles, then Manage Agent Profiles… — which the Ready lane's
-    # button drops down. None is a build without an agent: the button is absent from the
-    # board, not disabled.
-    agent_state: Callable[[Context], ActionState] | None = None
-    agent_menu: Callable[[QMenu], None] | None = None
+    # The verbs a person runs over the ticked rows, named by the composition root: which
+    # they are is a fact about other modules. None seated is a build without them.
+    verbs: tuple[StripVerb, ...] = ()
     # A milestone's key and its own shade of the project's colour map, or None for a step
-    # that is not one — the badge its card leads with. Wired by the composition root: which
+    # that is not one — the badge its row leads with. Wired by the composition root: which
     # map a project uses is one module's assumption and the key is another's letter.
     milestone_badge: Callable[[StepId], QIcon | None] = field(default=_no_badge)
+    # The step's key, under its title, and the canvas medallion naming what it is.
+    key_of: Callable[[Step], str] = field(default=lambda _step: "")
+    glyph_of: Callable[[Step], str] = field(default=lambda _step: "step")
+
+
+def _nodes(step_ids: list[StepId]) -> tuple[ContextNode, ...]:
+    return tuple(ContextNode(selection_uri("step", step_id)) for step_id in step_ids)
 
 
 class ProgressionActivity(EntityActivity):
-    """One project's execution board."""
+    """One project's Step statuses."""
 
     def __init__(self, deps: ProgressionDeps, project_id: NodeId) -> None:
         super().__init__(deps.context, "project", project_id)
         self._deps = deps
         self._product = deps.library
         self.project_id = project_id
-
-        # The caption, note and board share one column capped at a readable measure —
-        # three lanes say nothing more by being wider, so past that the column centres.
-        content = QWidget()
-        layout = QVBoxLayout(content)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(CAPTION_GAP)
-
-        # The caption is a row so the indicator has a right end to stand at: a board has no
-        # control strip, and DESIGN.md's *Signalling* puts it at the strip's right. How the
-        # lanes are filled stands behind the caption's info glyph rather than in a paragraph
-        # under it (DESIGN.md's *Words*): it is a convention, and a convention is read once.
-        head = QHBoxLayout()
-        layout.addLayout(head)
-        head.addWidget(
-            captioned(
-                "Ready to start",
-                content,
-                hint="What can be launched right now, from the graph and the stored "
-                "statuses. Ready steps rank by what finishing them unblocks; Up next is "
-                "one finish away.",
-            ),
-            1,
-        )
-        self.updating = UpdatingIndicator(content)
-        head.addWidget(self.updating)
-        layout.addSpacing(BLOCK_GAP)
-
-        self.board = ProgressionBoard(
-            select=self._publish,
-            details=self._open_details,
-            menu=self._on_context_menu,
-            run_control=self._run_control,
-            milestone_badge=deps.milestone_badge,
-            parent=content,
-        )
-        layout.addWidget(self.board, 1)
+        self._filter = ALL
+        self._found: Progression | None = None
+        self._needing = 0
 
         page = QWidget()
-        outer = QVBoxLayout(page)
-        outer.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
-        outer.addWidget(centered_column(content, BOARD_MAX_WIDTH))
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN, PANEL_MARGIN)
+        layout.setSpacing(SECTION_GAP)
+
+        # The strip: what acts on the ticked rows, then which rows to look at.
+        strip = QHBoxLayout()
+        layout.addLayout(strip)  # Before it is filled: a parentless layout leaks its items.
+        strip.setSpacing(FIELD_GAP)
+        self.controls = Toolbar(page)
+        for verb in deps.verbs:
+            self.controls.add_action(
+                deps.actions, deps.context, verb.action_id, data_menu=verb.data_menu
+            )
+        if deps.verbs:
+            self.controls.add_divider()
+        self.filter = Segmented(FILTERS, page)
+        self.filter.set_value(ALL)
+        self.filter.picked.connect(lambda value: self.set_filter(str(value)))
+        self.controls.add_widget(self.filter)
+        strip.addWidget(self.controls, 1)
+        # Outside the strip, so folding the verbs into … can never take it.
+        self.updating = UpdatingIndicator(page)
+        strip.addWidget(self.updating)
+
+        self.table = StatusTable(
+            key_of=deps.key_of,
+            glyph_of=deps.glyph_of,
+            milestone_badge=deps.milestone_badge,
+            parent=page,
+        )
+        self.table.itemSelectionChanged.connect(self._on_selection)
+        self.table.cellActivated.connect(self._on_row_activated)
+        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._on_context_menu)
+        layout.addWidget(self.table, 1)
+        self.empty = EmptyState(parent=page, stands_in_for=self.table)
+        layout.addWidget(self.empty, 1)
 
         self._widget = page
         library = self._product
-        # After a quiet spell, not per signal: every card is rebuilt.
+        # After a quiet spell, not per signal: every row is rebuilt.
         self._refresh_soon = Debounced(self._refresh, parent=page, service=deps.debounce)
         self.updating.follow(self._refresh_soon)
         self._unsubscribes = [
-            # This project only, and no prose: the board reads statuses and titles.
+            # This project only, and no prose: the table reads statuses, titles and links.
             follow_project(
                 library,
                 self.project_id,
@@ -181,16 +201,37 @@ class ProgressionActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — Ready to start"
+        """The project, and how many rows need a person — said only when some do."""
+        name = self._project().title or "Untitled project"
+        count = f" ({self._needing})" if self._needing else ""
+        return f"{name} — Step statuses{count}"
 
     @property
     def widget(self) -> QWidget:
         return self._widget
 
+    def on_activated(self) -> None:
+        super().on_activated()
+        self._on_selection()
+
     def close(self) -> None:
+        self._refresh_soon.cancel()
         for unsubscribe in self._unsubscribes:
             unsubscribe()
         self._unsubscribes.clear()
+        self.controls.dispose()
+
+    # -- which rows ----------------------------------------------------------------------------
+
+    def set_filter(self, key: str) -> None:
+        """Look at one group — a ``GROUPS`` key — or at all of them (``ALL``)."""
+        self._filter = key
+        self.filter.set_value(key)
+        self._show()
+
+    @property
+    def filter_key(self) -> str:
+        return self._filter
 
     # -- internals -----------------------------------------------------------------------------
 
@@ -201,65 +242,54 @@ class ProgressionActivity(EntityActivity):
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         deps = self._deps
-        found = progression(self._product, self._project(), deps.status_for, deps.counts_as_work)
-        self.board.show_progress(found)
+        self._found = progression(
+            self._product, self._project(), deps.status_for, deps.counts_as_work
+        )
+        self._show()
+        needing = needing_a_person(self._found)
+        if needing != self._needing:
+            self._needing = needing
+            deps.tabs.set_tab_title(self, self.title)
 
-    def _publish(self, step_id: StepId | None) -> None:
-        self._publish_all([] if step_id is None else [step_id])
+    def _show(self) -> None:
+        found = self._found
+        if found is None:
+            return
+        before = self.table.picked()
+        self.table.show_rows(found, self._filter)
+        if self.table.picked() != before:
+            self._on_selection()  # A ticked step left the rows shown.
+        if self.table.rowCount():
+            self.empty.say("")
+        elif not found.total:
+            self.empty.say(NO_STEPS)
+        elif self._filter == ALL:
+            self.empty.say(NOTHING_NEEDED)
+        else:
+            self.empty.say(next(group.empty for group in GROUPS if group.key == self._filter))
 
-    def _publish_all(self, step_ids: list[StepId]) -> None:
-        self.publish_selection(_nodes(step_ids))
+    # -- speaking for the user -----------------------------------------------------------------
 
-    def _step_context(self, step_id: StepId) -> Context:
-        """A context naming exactly this card's step — what a verb run from the card is
-        handed, so it acts on the card even when this pane is not the active one and
-        its publish was suppressed."""
-        return Context({SCOPE_SELECTION: _nodes([step_id])})
+    def _on_selection(self) -> None:
+        self.publish_selection(_nodes(self.table.picked()))
 
-    def _open_details(self, step_id: StepId) -> None:
-        # Select first, so the window agrees about what the dialog is showing; then run the
-        # verb against this card's own step, the same way the Run button does.
-        self._publish(step_id)
-        self._deps.actions.run("steps.details", self._step_context(step_id))
+    def _on_row_activated(self, row: int, _column: int) -> None:
+        step_id = self.table.step_at(row)
+        if step_id is not None:
+            # Against a context naming exactly this row's step, not the service's — the
+            # double-click means the row under it even if a publish was suppressed.
+            context = Context({SCOPE_SELECTION: _nodes([step_id])})
+            self._deps.actions.run("steps.details", context)
 
-    def _run_control(self, step_ids: list[StepId]) -> RunControl | None:
-        """The Run N Agents button over the ticked steps: the gate's own answer, and the
-        Step menu's Run Agent child as its dropdown.
-
-        The gate is asked against a context naming exactly the ticked steps, so the face
-        counts what is ticked whatever the window's selection is; opening the menu then
-        publishes them, because its entries — like every presenter — act on the context
-        the user has now. A press on the board makes this pane the active one first.
-        """
-        deps = self._deps
-        if deps.agent_state is None or deps.agent_menu is None:
-            return None  # A build without an agent: the capability is absent, not greyed.
-        agent_menu = deps.agent_menu
-        count = len(step_ids)
-        label = f"Run {count} Agent{'' if count == 1 else 's'}" if count else "Run Agents"
-        if not count:
-            reason = "Tick the ready steps to run, then pick an agent and a terminal"
-            return RunControl(label, False, reason, agent_menu)
-        state = deps.agent_state(Context({SCOPE_SELECTION: _nodes(step_ids)}))
-        reason = "Pick an agent and a terminal"
-        if not state.enabled and state.label:
-            reason = state.label  # The gate's own words: a disabled face teaches why.
-
-        def fill(menu: QMenu) -> None:
-            self._publish_all(step_ids)
-            agent_menu(menu)
-
-        return RunControl(label, state.enabled, reason, fill)
-
-    def _on_context_menu(self, _step_id: StepId, position: QPoint) -> None:
-        # The card published its step on the press, so the menu reads the same context
-        # every other presenter does.
-        menu = build_menu(self._deps.actions, self._deps.context, "Step", self.board)
-        menu.exec(position)
-
-
-def _nodes(step_ids: list[StepId]) -> tuple[ContextNode, ...]:
-    return tuple(ContextNode(selection_uri("step", step_id)) for step_id in step_ids)
+    def _on_context_menu(self, position: QPoint) -> None:
+        row = self.table.rowAt(position.y())
+        step_id = self.table.step_at(row)
+        if step_id is None:
+            return
+        if step_id not in self.table.picked():
+            self.table.selectRow(row)
+        menu: QMenu = build_menu(self._deps.actions, self._deps.context, "Step", self.table)
+        menu.exec(self.table.viewport().mapToGlobal(position))
 
 
 class ProgressionModule:
@@ -282,11 +312,11 @@ class ProgressionModule:
         deps.actions.register(
             ActionSpec(
                 id="progression.open",
-                label="Show &Ready to Start",
+                label="Show Step Stat&uses",
                 menu="Project",
                 group="open",
                 order=30,
-                tip="What can be launched right now, and how far along the project is",
+                tip="What needs a person right now: blocked, to merge, to review, to start",
                 state=self._on_a_project,
                 run=self._open,
             )
@@ -296,11 +326,11 @@ class ProgressionModule:
         deps.actions.register(
             ActionSpec(
                 id="progression.open_step",
-                label="Show &Ready to Start",
+                label="Show Step Stat&uses",
                 menu="Step",
                 group="open",
                 order=30,
-                tip="What can be launched right now, and how far along the project is",
+                tip="What needs a person right now: blocked, to merge, to review, to start",
                 palette=False,
                 state=self._on_a_project,
                 run=self._open,

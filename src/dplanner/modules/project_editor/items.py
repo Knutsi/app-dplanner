@@ -48,7 +48,7 @@ HANDLE_GRAB = 12.0
 GRAB_IN = 6.0
 EDGE_REACH = 8.0
 
-# The outline preview's wash: the same faint ink a region's body wears.
+# The outline preview's wash: faint ink, so what it encloses still reads through it.
 OUTLINE_FILL_ALPHA = 10
 
 # An arrow hanging off the selection is *lit*: the accent that says "this one" on the picked
@@ -400,8 +400,8 @@ class LinkPreviewItem(QGraphicsPathItem):
 
 
 class OutlinePreviewItem(QGraphicsPathItem):
-    """The dashed outline that follows a gesture drawing an area: a region being dragged
-    out, a lasso being drawn. One item, since one gesture runs at a time."""
+    """The dashed outline that follows a gesture drawing an area: a lasso being drawn, the
+    room a divide is making. One item, since one gesture runs at a time."""
 
     def __init__(self) -> None:
         super().__init__()

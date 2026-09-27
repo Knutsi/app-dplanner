@@ -1,4 +1,4 @@
-"""What a step gathers: the cone behind it, truncated at the collectors it hands off to.
+"""What a step gathers: the cone behind it, truncated at the boundaries it stops at.
 
 `ordering.py` answers *in what order*; this answers *what belongs to what*. A **collector**
 is a step that stands for everything behind it — a check, a feature, a milestone. What it
@@ -11,7 +11,8 @@ gathers the features behind it, not the ones an earlier milestone already took; 
 gathers its own work, not the work behind the feature it follows. So the walk takes a
 ``stops_at`` predicate: a step that satisfies it is recorded as a **boundary** and not
 traversed through. With no predicate the walk is the whole cone, which is what a check means
-and what ``ordering.upstream()`` is.
+and what ``ordering.upstream()`` is. A boundary is usually a collector, but not always — the
+plan's start stops a feature's walk too, and :func:`handoffs` tells the two apart.
 
 **Handed functions, never a schema** — the rule ``schedule()`` and ``progression()`` already
 live by. Nothing in this file knows what a feature is; the composition root, the one place
@@ -30,10 +31,12 @@ StepPredicate = Callable[[Step], bool]
 class ScopeKind:
     """One kind of collector, described where every surface can read it.
 
-    ``carried_by`` says whether a step declares a scope of this kind; ``stops_at`` says which
-    collectors it hands off to — itself and anything above it, so a feature stops at features
-    and milestones while a milestone stops only at milestones. A check stops at nothing: it
-    stands for *everything* verified behind it, which is the point of declaring one.
+    ``carried_by`` says whether a step declares a scope of this kind; ``stops_at`` says where
+    its walk stops — the collectors it hands off to, itself and anything above it, so a
+    feature stops at features and milestones while a milestone stops only at milestones, and
+    the plan's start, which is nobody's (:func:`handoffs` keeps the collectors apart from it).
+    A check stops at nothing: it stands for *everything* verified behind it, which is the
+    point of declaring one.
 
     ``gathers`` names the kind whose carriers become headings **inside** this one's contents:
     a milestone is read as a list of features. It is not the same question as ``stops_at`` and
@@ -70,7 +73,7 @@ def cone(
     *,
     stops_at: StepPredicate | None = None,
 ) -> Cone:
-    """The cone behind ``step_id``, truncated at the collectors it hands off to.
+    """The cone behind ``step_id``, truncated at the boundaries ``stops_at`` names.
 
     A step is in ``steps`` exactly when some path of ``requires`` edges reaches it from the
     origin without crossing a boundary — so a step behind an earlier feature *and* reachable
@@ -157,6 +160,19 @@ def leaders(kinds: Sequence[ScopeKind], kind: ScopeKind, reached: Sequence[Step]
         return []
     sub = next((found for found in kinds if found.id == kind.gathers), None)
     return [] if sub is None else [step for step in reached if sub.carried_by(step)]
+
+
+def handoffs(kinds: Sequence[ScopeKind], walked: Cone) -> tuple[Step, ...]:
+    """The collectors a walk handed off to: the boundaries some kind carries.
+
+    A walk can also stop at a step that collects nothing — the plan's start, which the
+    composition root has a feature's and a milestone's walk stop at so that the origin is
+    nobody's. That is where the graph ends, not an earlier collector that already took
+    something, so it is no *after* to name and no second reading to offer. Both surfaces
+    that offer one ask this rather than ``boundaries``: ``dplanner scope show`` and the
+    Covers tab's switch.
+    """
+    return tuple(step for step in walked.boundaries if kind_of(kinds, step) is not None)
 
 
 def stops_for(kinds: Sequence[ScopeKind], step: Step) -> StepPredicate | None:

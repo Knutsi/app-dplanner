@@ -7,6 +7,7 @@ import pytest
 from dplanner.core.storage.pointer import (
     POINTER_FILE,
     add_to_index,
+    indexed,
     read_index,
     remove_from_index,
     resolve_index,
@@ -68,3 +69,14 @@ def test_removing_drops_the_line_and_the_file_when_it_empties(repo):
     assert read_index(repo) == ["billing"]
     remove_from_index(repo / "billing")
     assert not (repo / POINTER_FILE).exists()
+
+
+def test_indexed_answers_for_a_listed_project_and_anything_inside_it(repo):
+    search = repo / "search"
+    search.mkdir()
+    assert not indexed(search, repo)
+    add_to_index(search)
+    assert indexed(search, repo) and indexed(search / "modules" / "github", repo)
+    assert not indexed(repo, repo) and not indexed(repo / "billing", repo)
+    (repo / POINTER_FILE).write_text(".\nsearch\n")  # A line naming the root lists nothing.
+    assert not indexed(repo / "billing", repo)

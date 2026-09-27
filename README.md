@@ -69,9 +69,11 @@ graph editor and the order view are in place and tested. Fourteen aspects ship �
 ticket, description, agent instruction, agent run, status, milestone, feature, GitHub refs,
 spec figures, tests, checks and the two documentation ones — each with verbs in the CLI and most with an editor in Step Details
 (`dplanner aspect list` is the authoritative roll call). Estimation runs over the graph: the order table says what order the
-work goes in and how much of it there is, and `dplanner schedule show` dates it. *Ready to
-start* reads the same graph with the statuses in hand: the execution board and `dplanner
-progression show` say what can be launched right now.
+work goes in and how much of it there is, and `dplanner schedule show` dates it. *Step
+statuses* reads the same graph with the statuses in hand: a table of what needs a person
+right now — blocked, ready to merge, ready for review, ready to start — and `dplanner
+progression show` beside it. An agent's work ends at *ready for review*, never at done:
+somebody looks next.
 Tests are what a step must keep passing once it is done: a step carries several, a *check*
 step gathers every test it waits on, and a *test run* records what each one did. Every
 image and file a project carries is browsable in one place — the Assets tab and
@@ -132,7 +134,9 @@ The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` als
 one). A plan lives in a **plan repository** — a git repository holding several projects,
 listed in its `.dplanner` index — and records the **code repository** it is about, so an
 agent works in the code and every `dplanner` call reaches the plan. *File ▸ New Project…*
-starts one in a plan repository you pick, initialise or clone; *Open Project…* is a wizard
+starts one in a plan repository you pick, initialise or clone, and asks which code it is
+about — one this library already plans, one on GitHub, a folder on this computer, or *No
+code repository yet*, which leaves the code to record later; *Open Project…* is a wizard
 over the two ways into a library — a **project link** somebody sent you, or a plan
 repository browsed for the projects you work on; *Project ▸ Settings…* is one column per
 repository — its log and open pull requests over what the repository is and where it is on
@@ -204,7 +208,7 @@ the default first (what the Agent tab's button and the palette run), then *Manag
 Profiles…*; every agent in Ghostty, herdr and the platform's own terminal is there from
 the first start, and *Add Detected…* on the settings page pairs whatever agents and
 terminals are installed here. Select several ready steps — on the canvas, or by ticking them in the
-*Ready to start* board and dropping its *Run N Agents* button down — and one gesture launches
+*Step statuses* tab and dropping its Run Agent arrow down — and one gesture launches
 one agent per step, all through the profile you pick. The step wears a chip and a marching ring while the shell runs, the
 chip follows what the agent reports (`dplanner agent-state set … needs-input` when it has
 a question), and the ring goes when the shell ends — finished, failed or closed, which
@@ -322,7 +326,7 @@ src/dplanner/
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 ├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
 ├── scripts/render_design_example.py  Debug ▸ Design Examples — the modal, the table, the toolbars and the rows — both themes, to PNG
-├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/
+├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/ — and the cards — f5-key-block/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 ├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
 ├── scripts/render_windows_check.py  Debug ▸ Windows Check, live and greyed with its reason — docs/screenshots/s17-windows/
@@ -426,7 +430,8 @@ src/dplanner/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── library/             which library: File ▸ New/Open Project Library, the title; `library …` verbs
 │   ├── projects/            the Projects folder in the index, the project and `location` verbs, New
-│   │                        Project…, Open Project… (link, browse, then the Repositories page), the Project
+│   │                        Project… (its code question: code_choice.py), Open Project… (link,
+│   │                        browse, then the Repositories page), the Project
 │   │                        dialog (the Locations table over the role registry, a log column per
 │   │                        repository), the location dialog (location_dialog.py), the Repositories
 │   │                        card, Move Plan, the repositories folder and the clone policy
@@ -437,7 +442,7 @@ src/dplanner/
 │   ├── project_dashboard/   the project's home tab: its name and summary, and a card per module with
 │   │                        something to say about the project (Repositories, Agent, Compilation
 │   │                        instructions) — what a click on the project's row in the index opens
-│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, regions, resize) and renderers,
+│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, resize) and renderers,
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid,
 │   │                        the side panel; ground.py paints the background)
 │   │                        (canvas_toolbar.py is the strip in named bands; find.py the rows Find offers;
@@ -483,6 +488,8 @@ src/dplanner/
 │   │                        menu, `dplanner feature` (list, show, cite, uncite, reanchor)
 │   │                        (migrate.py collapses the old project catalogue onto its steps)
 │   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
+│   ├── step_start/          the step a plan begins from, which no feature or milestone gathers —
+│   │                        the Type ▸ Start toggle, `dplanner start`, `step add --start`, `graph.start`
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll
@@ -493,7 +500,7 @@ src/dplanner/
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show`
-│   ├── progression/         the *Ready to start* board and `dplanner progression show`
+│   ├── progression/         the *Step statuses* tab and `dplanner progression show`
 │   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab
 │   │                        (activity.py: four figures, then a page at a time — shift_view.py the
 │   │                        milestones against the plan compared with, work_view.py the scope and the
@@ -567,8 +574,10 @@ src/dplanner/
                            provider — every Omarchy default, generated from its colors.toml through one
                            mapping — the palette, a chrome-only stylesheet, the glyphs, tones.py (the
                            semantic colours a node body and a kind button share), palettes.py (the
-                           colour maps a project's milestones are shaded along, Qt-free) and cards.py,
-                           the card primitives the canvas and the coverage view both paint with
+                           colour maps a project's milestones are shaded along, Qt-free), cards.py,
+                           the card primitives the canvas and the coverage view both paint with — the
+                           key block among them — and glyph_source.py, the glyphs as text for the
+                           Qt-free report
 ```
 
 ## Where it came from

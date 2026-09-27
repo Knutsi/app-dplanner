@@ -7,9 +7,10 @@ renders the same strings through ``QSvgRenderer``. QtSvg reads no CSS variables 
 theme, which wins over a presentation attribute.
 
 The grammar is the window's (``project_editor/renderers.py``, ``time_estimates/work_view.py``):
-cards with an 8 px radius, a 26 px spine carrying the key rotated a quarter turn and washed
-by status, the body tinted by kind — a milestone its own shade of the project's colour map,
-teal a feature, green a done step —
+cards with an 8 px radius, a 56 px key block carrying who works the step — its glyph, drawn
+from the vendored file the canvas paints — over the key, washed by status, the body tinted by
+kind — a milestone its own shade of the project's colour map, teal a feature, green a done
+step —
 the estimate at the bottom right; cubic edges with a head for ``requires`` and dashes for
 ``relates``; 2 px lines, 8 px end markers ringed with the surface, hairline grid, the axis
 marked at calendar boundaries. Text is measured by an average glyph width, which is what a
@@ -32,6 +33,15 @@ from dplanner.cli.report.parts import (
     Series,
     Stretch,
     Timeline,
+)
+from dplanner.domain.progression import (
+    BLOCKED,
+    DONE,
+    IN_PROGRESS,
+    READY_FOR_REVIEW,
+    READY_TO_MERGE,
+    REVIEW_AND_MERGE,
+    phrase,
 )
 from dplanner.domain.schedule import (
     SATURDAY,
@@ -63,7 +73,8 @@ class Colors:
 
 
 # The hex twins of ``theme/themes.py``'s LIGHT and DARK and ``theme/tones.py``'s tones.
-# Copied rather than imported: ``theme/__init__.py`` loads Qt, and this layer may not.
+# Copied rather than imported: ``cli/`` sits below ``theme/`` and may not read it
+# (``tests/test_architecture.py``).
 _TONES = {
     "good": "#78c88c",
     "busy": "#6ea0dc",
@@ -107,7 +118,14 @@ GLYPH = 0.56  # An average glyph's width as a share of the font size, for wrappi
 # -- the graph ---------------------------------------------------------------------------------
 
 NODE_FONT = 13.0
-SPINE_W = 26.0
+# The key block: ``theme/cards.py``'s geometry, copied for the layer rule above and held to
+# it by a test, so the page's card and the window's are one shape.
+KEY_BLOCK_W = 56.0
+KEY_GLYPH = 28.0
+KEY_GAP = 2.0
+KEY_FONT = 11.0
+KEY_LINE = 13.0
+GLYPH_BOX = 24.0  # The view box a vendored glyph is drawn in.
 RADIUS = 8.0
 PADDING = 12.0
 PAD_Y = 8.0
@@ -120,13 +138,11 @@ HEAD = 8.0
 
 
 def graph_bounds(graph: Graph) -> tuple[float, float, float, float]:
-    """The drawing's viewBox — every card and region, with a margin — as x, y, width, height."""
-    xs = [node.x for node in graph.nodes] + [region.x for region in graph.regions]
-    ys = [node.y for node in graph.nodes] + [region.y for region in graph.regions]
-    rights = [node.x + node.w for node in graph.nodes] + [r.x + r.w for r in graph.regions]
-    bottoms = [node.y + node.h for node in graph.nodes] + [r.y + r.h for r in graph.regions]
-    x0, y0 = min(xs) - GRAPH_MARGIN, min(ys) - GRAPH_MARGIN
-    x1, y1 = max(rights) + GRAPH_MARGIN, max(bottoms) + GRAPH_MARGIN
+    """The drawing's viewBox — every card, with a margin — as x, y, width, height."""
+    x0 = min(node.x for node in graph.nodes) - GRAPH_MARGIN
+    y0 = min(node.y for node in graph.nodes) - GRAPH_MARGIN
+    x1 = max(node.x + node.w for node in graph.nodes) + GRAPH_MARGIN
+    y1 = max(node.y + node.h for node in graph.nodes) + GRAPH_MARGIN
     return x0, y0, x1 - x0, y1 - y0
 
 
@@ -142,15 +158,6 @@ def graph_svg(graph: Graph, colors: Colors) -> str:
         f'width="{_n(width)}" height="{_n(height)}" font-family="{FONT}" '
         f'font-size="{_n(NODE_FONT)}">'
     ]
-    for region in graph.regions:
-        out.append(
-            f'<g class="region"><rect x="{_n(region.x)}" y="{_n(region.y)}" '
-            f'width="{_n(region.w)}" height="{_n(region.h)}" rx="{_n(RADIUS)}" '
-            f'fill="{colors.ink}" fill-opacity="0.04" stroke="{colors.ink}" '
-            f'stroke-opacity="0.24" stroke-width="1"/>'
-            f'<text x="{_n(region.x + 10)}" y="{_n(region.y + 17)}" fill="{colors.secondary}" '
-            f'font-size="12" font-weight="600">{_t(region.title)}</text></g>'
-        )
     for edge in graph.edges:
         source, target = by_id.get(edge.source), by_id.get(edge.target)
         if source is None or target is None:
@@ -191,48 +198,45 @@ def _arrow_head(x: float, y: float, angle: float, color: str) -> str:
     return f'<polygon points="{points}" fill="{color}" fill-opacity="0.6"/>'
 
 
+# The statuses a card names in a pill on its bottom edge, beside the wash its key block wears:
+# work somebody has in hand. Done says it with a tick and a faded title; pending says nothing.
+PILLED_STATUSES = (IN_PROGRESS, *REVIEW_AND_MERGE, BLOCKED)
+
+
+def _status_fill(status: str, colors: Colors) -> str | None:
+    """The key block's wash for a status, or None for one with nothing to say."""
+    return {
+        IN_PROGRESS: colors.busy,
+        READY_FOR_REVIEW: colors.attention,
+        READY_TO_MERGE: colors.good,
+        BLOCKED: colors.bad,
+        DONE: colors.good,
+    }.get(status)
+
+
 def _card(node: Node, colors: Colors) -> str:
     x, y, w, h = node.x, node.y, node.w, node.h
-    done = node.status == "done"
+    done = node.status == DONE
     tone = _body_tone(node, colors)
-    spine = {"in-progress": colors.busy, "blocked": colors.bad, "done": colors.good}.get(
-        node.status
-    )
+    wash = _status_fill(node.status, colors)
     out = [
         f'<g class="node kind-{node.kind or "step"} status-{node.status or "pending"}" '
         f'data-step="{_t(node.id)}"><title>{_t(node.key + " " + node.title)}</title>'
         f'<rect class="shadow" x="{_n(x)}" y="{_n(y + 2)}" width="{_n(w)}" height="{_n(h)}" '
         f'rx="{_n(RADIUS)}" fill="{colors.ink}" fill-opacity="0.06"/>'
         f'<rect class="body" x="{_n(x)}" y="{_n(y)}" width="{_n(w)}" height="{_n(h)}" '
-        f'rx="{_n(RADIUS)}" fill="{colors.surface}" stroke="{colors.border}" stroke-width="1"/>'
+        f'rx="{_n(RADIUS)}" fill="{colors.surface}" stroke="{colors.border}" '
+        f'stroke-width="{2 if node.kind == "milestone" else 1}"/>'
     ]
     if tone is not None:
         out.append(
             f'<rect class="tint" x="{_n(x)}" y="{_n(y)}" width="{_n(w)}" height="{_n(h)}" '
             f'rx="{_n(RADIUS)}" fill="{tone}" fill-opacity="0.16"/>'
         )
-    # The spine: rounded on the card's left corners, square against the body.
-    r = RADIUS
-    spine_path = (
-        f"M{_n(x + r)},{_n(y)} H{_n(x + SPINE_W)} V{_n(y + h)} H{_n(x + r)} "
-        f"Q{_n(x)},{_n(y + h)} {_n(x)},{_n(y + h - r)} V{_n(y + r)} "
-        f"Q{_n(x)},{_n(y)} {_n(x + r)},{_n(y)} Z"
-    )
-    if spine is not None:
-        out.append(f'<path class="spine" d="{spine_path}" fill="{spine}" fill-opacity="0.38"/>')
-    else:
-        out.append(
-            f'<path class="spine" d="{spine_path}" fill="{colors.ink}" fill-opacity="0.06"/>'
-        )
-    cx, cy = x + SPINE_W / 2, y + h / 2
-    out.append(
-        f'<text class="key" x="{_n(cx)}" y="{_n(cy)}" transform="rotate(-90 {_n(cx)} {_n(cy)})" '
-        f'text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="700" '
-        f'fill="{colors.ink}" fill-opacity="0.85">{_t(node.key)}</text>'
-    )
-    inner_x = x + SPINE_W + 4 + PAD_Y
-    inner_w = w - SPINE_W - 4 - PAD_Y - PADDING
-    reserved = LINE_H if (node.stat or node.status in ("in-progress", "blocked")) else 0.0
+    out.append(_key_block(node, wash, colors))
+    inner_x = x + KEY_BLOCK_W + PAD_Y
+    inner_w = w - KEY_BLOCK_W - PAD_Y - PADDING
+    reserved = LINE_H if (node.stat or node.status in PILLED_STATUSES) else 0.0
     max_lines = max(1, int((h - 2 * PAD_Y - reserved) // LINE_H))
     title = ("✓ " if done else "") + node.title
     lines = _wrap(title, inner_w, NODE_FONT, max_lines)
@@ -251,9 +255,9 @@ def _card(node: Node, colors: Colors) -> str:
             f'text-anchor="end" font-size="{_n(STAT_FONT)}" fill="{colors.ink}"'
             f"{' font-weight="700"' if node.kind == 'milestone' else ''}>{_t(node.stat)}</text>"
         )
-    if node.status in ("in-progress", "blocked"):
-        word = node.status.replace("-", " ")
-        out.append(_pill(inner_x - 4, y + h - PILL_H / 2, word, spine or colors.ink, colors))
+    if node.status in PILLED_STATUSES:
+        word = phrase(node.status)
+        out.append(_pill(inner_x - 4, y + h - PILL_H / 2, word, wash or colors.ink, colors))
     if node.badge:
         width = _text_width(node.badge, 10.0) + 12
         out.append(
@@ -269,9 +273,49 @@ def _card(node: Node, colors: Colors) -> str:
     return "".join(out)
 
 
+def _key_block(node: Node, wash: str | None, colors: Colors) -> str:
+    """The strip down the card's left edge — rounded on the card's corners, square against
+    the body — washed by status, with the glyph over the key, the pair centred.
+
+    The glyph is its vendored drawing in a group that scales the 24-unit box to the canvas's
+    glyph size and says the stroke itself: no nested ``<svg>``, no ``<use>`` and no
+    ``currentColor``, since the PDF goes through QtSvg. The key's baseline is placed rather
+    than asked for with ``dominant-baseline``, as the title's lines are.
+    """
+    x, y, h, r = node.x, node.y, node.h, RADIUS
+    path = (
+        f"M{_n(x + r)},{_n(y)} H{_n(x + KEY_BLOCK_W)} V{_n(y + h)} H{_n(x + r)} "
+        f"Q{_n(x)},{_n(y + h)} {_n(x)},{_n(y + h - r)} V{_n(y + r)} "
+        f"Q{_n(x)},{_n(y)} {_n(x + r)},{_n(y)} Z"
+    )
+    if wash is not None:
+        out = f'<path class="key-block" d="{path}" fill="{wash}" fill-opacity="0.38"/>'
+    else:
+        out = f'<path class="key-block quiet" d="{path}" fill="{colors.ink}" fill-opacity="0.06"/>'
+    top = y + (h - KEY_GLYPH - KEY_GAP - KEY_LINE) / 2
+    middle = x + KEY_BLOCK_W / 2
+    if node.glyph_markup:
+        toned = node.glyph_tone == "warn"
+        stroke = colors.attention if toned else colors.ink
+        scale = f"{KEY_GLYPH / GLYPH_BOX:.4g}"  # Not _n: two decimals would round two thirds.
+        out += (
+            f'<g class="{"glyph-toned" if toned else "glyph"}" '
+            f'transform="translate({_n(middle - KEY_GLYPH / 2)} {_n(top)}) scale({scale})" '
+            f'fill="none" stroke="{stroke}" stroke-opacity="{"1" if toned else "0.85"}" '
+            f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
+            f"{node.glyph_markup.replace('currentColor', stroke)}</g>"
+        )
+    baseline = top + KEY_GLYPH + KEY_GAP + KEY_FONT
+    return out + (
+        f'<text class="key" x="{_n(middle)}" y="{_n(baseline)}" text-anchor="middle" '
+        f'font-size="{_n(KEY_FONT)}" font-weight="700" fill="{colors.ink}" '
+        f'fill-opacity="0.85">{_t(node.key)}</text>'
+    )
+
+
 def _body_tone(node: Node, colors: Colors) -> str | None:
     # Done outranks a kind, and a milestone outranks a feature — the canvas's rule.
-    if node.status == "done":
+    if node.status == DONE:
         return colors.good
     if node.kind == "milestone":
         # Its own shade where the plan deals one; the family otherwise, which is what a

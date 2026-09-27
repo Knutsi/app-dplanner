@@ -56,25 +56,28 @@ from dplanner.modules.coverage.trace import (
     COLUMN_TITLES,
     FEATURES,
     MILESTONES,
+    NO_MILESTONE,
     SPEC,
     Item,
     Trace,
 )
 from dplanner.theme.cards import (
     FILL_ALPHA,
+    KEY_BLOCK_W,
     LIFT,
     LIFTED_SHADOW,
     LINE_GAP,
+    MILESTONE_BORDER_W,
     PAD_Y,
     PADDING,
     RADIUS,
     RESTING_SHADOW,
     SELECTED_BORDER_W,
     SELECTED_FILL_GAIN,
-    SPINE_W,
+    key_block_height,
     over,
+    paint_key_block,
     paint_shadow,
-    paint_spine,
     title_font,
     title_lines,
 )
@@ -89,7 +92,9 @@ LANE_PAD = float(SECTION_GAP)
 CARD_GAP = float(SECTION_GAP)
 GUTTER = 56.0  # Room for a curve to read as a curve…
 GUTTER_NARROW = 32.0  # …and what it gives up on a narrow viewport before the lanes do.
-LANE_MIN_W = 168.0  # Two words of title beside a medallion; narrower is unreadable.
+# Two words of title beside a medallion and past a step's key block (``KEY_BLOCK_W``);
+# narrower is unreadable.
+LANE_MIN_W = 198.0
 NARROW_VIEWPORT = 1100.0
 CAPTION_H = 28.0
 THUMB_W = 4.0
@@ -157,7 +162,10 @@ class CardItem(QGraphicsObject):
         height = PAD_Y * 2 + lines * titles.height()
         if self.item.detail:
             height += LINE_GAP + chrome.height()
-        self.height = max(height, MEDALLION_D + PAD_Y * 2)
+        least = MEDALLION_D + PAD_Y * 2
+        if self.item.key:  # The key block's glyph and key, with a little air round the pair.
+            least = max(least, key_block_height(base) + PAD_Y)
+        self.height = max(height, least)
         return self.height
 
     def body(self) -> QRectF:
@@ -172,8 +180,8 @@ class CardItem(QGraphicsObject):
         return path
 
     def _inset(self) -> float:
-        """Where the content starts: past the spine, on a card that is a step."""
-        return SPINE_W + PAD_Y if self.item.key else PADDING
+        """Where the content starts: past the key block, on a card that is a step."""
+        return KEY_BLOCK_W + PAD_Y if self.item.key else PADDING
 
     def _title_width(self) -> float:
         glyph = MEDALLION_D + PADDING / 2 if kind_of(self.item) in GLYPHS else 0.0
@@ -209,7 +217,7 @@ class CardItem(QGraphicsObject):
             text.setAlpha(SECONDARY_ALPHA)
         if self.item.key:
             tone = STEP_STATUS_TONES.get(self.item.status, "")
-            paint_spine(painter, palette, body, self.item.key, tone, text)
+            paint_key_block(painter, palette, body, self.item.key, tone, text, *self.item.glyph)
         left = inner.left()
         glyph = GLYPHS.get(kind_of(self.item))
         if glyph is not None:
@@ -259,6 +267,8 @@ class CardItem(QGraphicsObject):
             border = QColor(palette.text().color())
             border.setAlpha(MUTED_BORDER_ALPHA if self.item.muted else 90)
             width = 1.0
+        if self.item.column == MILESTONES and self.item.id != NO_MILESTONE:
+            width = max(width, MILESTONE_BORDER_W)
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(over(palette.window().color(), tint))
         painter.drawRoundedRect(body, RADIUS, RADIUS)

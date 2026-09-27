@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/dplanner/modules/step_{properties,description,milestone,check,status,ticket}/**"
+  - "src/dplanner/modules/step_{properties,description,milestone,check,start,status,ticket}/**"
   - "src/dplanner/modules/project_assets/**"
   - "src/dplanner/modules/project_dashboard/**"
   - "src/dplanner/modules/*/{aspect,section}.py"
@@ -9,7 +9,7 @@ paths:
   - "src/dplanner/core/{module_data,formats}.py"
   - "src/dplanner/cli/{aspects,assets}.py"
   - "tests/framework/test_{aspect_bar,prose_edit,markdown_toolbar,markdown_highlight,text_dialog,asset_gallery,asset_picker,image_preview}.py"
-  - "tests/modules/test_{step_properties,step_details,aspect_editors,aspects,asset_sources,project_assets,step_description_section,step_milestone,step_status,project_dashboard}.py"
+  - "tests/modules/test_{step_properties,step_details,aspect_editors,aspects,asset_sources,project_assets,step_description_section,step_milestone,step_start,step_status,project_dashboard}.py"
   - "tests/domain/test_{shelf,assets}.py"
   - "tests/cli/test_asset_verbs.py"
   - "scripts/render_step_details.py"
@@ -23,10 +23,10 @@ paths:
   by `show_step`, so it stays on the step it was opened about; a test reaches it through the
   `step_editor` fixture, which is the application's own path. `ARCHITECTURE.md`'s *The step
   editor is a modal* has the reasoning.
-- **A toggleable aspect's tab follows the aspect.** Milestone, Feature, Agent, Ticket, Test
-  and Check are Step ▸ Type toggles (independent, never a radio group), and each registers its
-  `InspectorSection` with a `shown_for` predicate so its tab exists only on a step that
-  carries the aspect. **The description is an agent step's instructions** — the briefing's
+- **A toggleable aspect's tab follows the aspect.** Milestone, Feature, Agent, Ticket, Test,
+  Check and Start are Step ▸ Type toggles (independent, never a radio group), and each that
+  has a tab registers its `InspectorSection` with a `shown_for` predicate so the tab exists
+  only on a step that carries the aspect — Check and Start are bare markers with none. **The description is an agent step's instructions** — the briefing's
   `## Instructions` block, decided by the composition root's `_briefing_instruction`; a
   *separate* instruction (the checkbox in the Details tab's Description block,
   `dplanner agent set`; dropped atomically with `agent set --clear`) is the opt-out for a
@@ -57,7 +57,7 @@ paths:
   `ActionRegistry.run`, so a toggle keeps its own undo command. **What no longer fits folds
   into that strip's `…` menu as glyph *and* words** — never Qt's `»`, which pops the hidden
   buttons up as glyphs again. The strip is **dense**: these glyphs are read as one set
-  rather than aimed at one at a time, and at the verb strip's metrics only five of the ten
+  rather than aimed at one at a time, and at the verb strip's metrics only five of the twelve
   toggles fit the width the panel can actually be. **On the right is one dropdown named
   *Template*** — `StepPropertiesDeps.templates`, named by the composition root: a label and
   the *set* of toggles that are on (Step, Milestone, Feature, Agent, Check). The face says

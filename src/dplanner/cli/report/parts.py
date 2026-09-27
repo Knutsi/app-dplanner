@@ -246,14 +246,19 @@ class Node:
     y: float
     w: float
     h: float
-    kind: str = ""  # milestone | feature | check | agent | ""
-    status: str = ""  # pending | in-progress | done | blocked
+    kind: str = ""  # milestone | feature | check | wait | agent | ""
+    status: str = ""  # One of the status aspect's words; "" and pending say nothing.
     stat: str = ""  # The card's bottom-right figure: an estimate, a milestone's total.
     badge: str = ""  # A milestone's label on the top edge.
     # A milestone's own shade of the project's colour map, as "#rrggbb" — the same hex
     # its band wears in the timeline, so the report's picture of the graph and its
     # picture of the schedule name one milestone in one colour. "" for anything else.
     color: str = ""
+    # Who works the step, over its key: the glyph's drawing — the shapes inside a 24-unit
+    # SVG, stroked and unfilled — and its tone, "" for the key's ink or "warn" for the
+    # attention amber a wait's clock wears. "" draws the key alone.
+    glyph_markup: str = ""
+    glyph_tone: str = ""
 
 
 @dataclass(frozen=True)
@@ -264,19 +269,9 @@ class Edge:
 
 
 @dataclass(frozen=True)
-class Region:
-    title: str
-    x: float
-    y: float
-    w: float
-    h: float
-
-
-@dataclass(frozen=True)
 class Graph:
     nodes: tuple[Node, ...]
     edges: tuple[Edge, ...]
-    regions: tuple[Region, ...] = ()
 
 
 Part = Figure | Table | Chart | Timeline | Prose | Graph

@@ -21,7 +21,8 @@ paths:
   `-style`/`-platform` follow the word; `spawn_instance` and `python -m dplanner` go through
   the same door; the word is not a noun and the skill never names it
   (`tests/cli/test_entry.py` reserves it). **And the word refuses inside an agent's
-  shell** (`AGENT_SHELL_MARKERS`, one row per agent CLI known to mark its shell): a window
+  shell** (`domain/agents.py`'s `shell_marker` over the harnesses, each one's first
+  marker — the one reading `status set` also holds an agent's done at review with): a window
   that is an agent's background process ends with the agent's turn and makes every agent
   it launches a *child session* of the first — no transcript, ended with its parent — which
   is how one stray window took four agents down. Not a dispatch rule, a guard on who owns
@@ -147,11 +148,8 @@ paths:
   that read the topology first, a `‡` on the ones that read a house format first, and a
   legend line per mark — all three projected from the registry — because a summary per verb
   was a third of a file loaded every session and said what `reference.md` and `--help` both
-  already say.
-  A verb the skill must not teach carries **`in_skill=False`**, the CLI twin of
-  `ActionSpec.in_menus`: registered, runnable, described by `--help` like any other, named
-  by no generated file. The region verbs are what it exists for. `ARCHITECTURE.md`'s *The
-  skill's command list is an index, not a manual* has the reasoning and the measurement.
+  already say. `ARCHITECTURE.md`'s *The skill's command list is an index, not a manual* has
+  the reasoning and the measurement.
 - **The skill is written to every home an agent reads, and the one that installs DPlanner
   is hand-written.** `SKILL.md` is an open format, so one generated skill serves Claude
   Code, Codex and OpenCode; `cli/skill.py`'s `SKILL_HOMES` names the directories they read

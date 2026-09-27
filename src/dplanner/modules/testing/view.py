@@ -3,8 +3,8 @@
 Shared by the step panel's Tests tab, the Tests table, the Test panel and the preview a
 reference opens, so a failed test reads the same wherever it is shown. The colours are
 **constant** ``QColor``s rather than theme fields — ``DESIGN.md``'s second deliberate
-exception, the same stance the progression board takes: a status means one thing, and it
-must mean it on all twenty-two themes.
+exception, the same stance a step's status tones take (``theme/tones.py``): a status means
+one thing, and it must mean it on all twenty-two themes.
 
 :class:`TestHead` and :class:`TestBody` are the test *as it is read*: what it is called,
 where it is filed, how it last did, and its body rendered. The Test panel puts its verb

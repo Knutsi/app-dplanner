@@ -41,8 +41,8 @@ from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.locations import Placement
 from dplanner.domain.model import Library, Node, NodeId, Step, StepId
-from dplanner.domain.progression import DONE
-from dplanner.domain.repositories import RepositoryFacts
+from dplanner.domain.progression import DONE, phrase
+from dplanner.domain.repositories import UNSET, RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
 from dplanner.framework.action_menu import append_action
 from dplanner.framework.action_registry import (
@@ -153,13 +153,14 @@ def _all_done(_step: Step) -> str:
 def _workdir(facts: RepositoryFacts, step: Step | None = None) -> Path | None:
     """Where an agent on this project works — a step's, or one opened with nothing to do:
     the checkout of the code location the step names (its ``workplace``, else the
-    project's primary code row) when the project records one, else the plan's own
-    repository, the older shape of a plan kept beside its code. None when neither is
+    project's primary code row) when the project records one, else where the facts read
+    the code as being — the plan's own repository for the older shape of a plan kept
+    beside its code, nowhere for a project whose code is not set. None when it is not
     here."""
     placement = _code_placement(facts, step)
     if placement is not None:
         return placement.root if placement.here else None
-    return None if facts.repository else facts.plan_root
+    return facts.code_root
 
 
 def _code_placement(facts: RepositoryFacts, step: Step | None) -> Placement | None:
@@ -193,6 +194,8 @@ def _workdir_refusal(facts: RepositoryFacts, step: Step | None = None) -> str:
         return ""
     if facts.plan_root is None:
         return "the project's folder is not in a git repository"
+    if facts.state == UNSET:
+        return "no code repository is recorded — Project ▸ Settings…"
     return ""
 
 
@@ -300,7 +303,7 @@ class StepAgentInstructionDeps:
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
     # What a step's status claims, through the status aspect's Qt-free reader — the
-    # progression board's seam. Run Agent asks before launching on a step whose
+    # Step statuses tab's seam. Run Agent asks before launching on a step whose
     # prerequisites do not all read done; this module never learns the vocabulary's shape.
     status_for: Callable[[Step], str] = field(default=_all_done)
     # The writer half of the same seam: work on the step has begun. Run Agent calls it as
@@ -428,6 +431,7 @@ class StepAgentInstructionModule:
                 order=10,
                 in_menus=False,
                 tip="Open a terminal with the agent briefed on this step",
+                icon=spark_icon,
                 state=self._can_run,
                 run=self._run,
             )
@@ -733,7 +737,7 @@ class StepAgentInstructionModule:
 
     def _fill_profiles(self, menu: QMenu) -> None:
         """Step ▸ Run Agent: the profiles over the step the context names — the same child
-        menu the progression board's *Run Agents* button drops down."""
+        menu the Step statuses tab's Run Agent arrow drops down."""
         self._fill_with(menu, self._can_run, self._run)
 
     def _fill_open_profiles(self, menu: QMenu) -> None:
@@ -800,7 +804,7 @@ class StepAgentInstructionModule:
         deps = self._deps
 
         def listed(unfinished: Sequence[Step]) -> list[str]:
-            return [f"• {_titled(r)} — {deps.status_for(r)}" for r in unfinished]
+            return [f"• {_titled(r)} — {phrase(deps.status_for(r))}" for r in unfinished]
 
         if len(waiting) == 1:
             step, unfinished = waiting[0]

@@ -18,10 +18,12 @@ from PySide6.QtGui import QColor
 from dplanner.domain.model import Project, StepId
 from dplanner.framework.picker import PickerRow
 from dplanner.modules.project_editor.renderers import NodeAccent
+from dplanner.theme.cards import key_glyph_ink
 from dplanner.theme.icons import glyph_painter, key_badge_icon, step_icon
 
 # The medallion a step wears, as the word this list says it by — coarsest claim first, the
-# same order ``_step_key`` reads a step's letter in.
+# same order ``_step_key`` reads a step's letter in. The row's glyph is the key block's: who
+# works the step, where the word under the title says what it is.
 KINDS: tuple[tuple[str, str], ...] = (
     ("tag", "Milestone"),
     ("layers", "Feature"),
@@ -46,8 +48,8 @@ def _row(step_id: StepId, title: str, accent: NodeAccent, ink: QColor) -> Picker
         icon = key_badge_icon(key, accent.tone_color or ink)
         trailing = ""
     else:
-        painter = glyph_painter(accent.icons[0]) if accent.icons else None
-        icon = (painter or step_icon)(ink)
+        painter = glyph_painter(accent.key_glyph) or step_icon
+        icon = painter(key_glyph_ink(accent.key_glyph_tone, ink))
         trailing = key
     return PickerRow(
         id=step_id,

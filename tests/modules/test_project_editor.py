@@ -13,7 +13,7 @@ from datetime import date
 
 import pytest
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSizeF, Qt
-from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter
+from PySide6.QtGui import QColor, QFont, QImage, QKeyEvent, QMouseEvent, QPainter
 
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -33,7 +33,6 @@ from dplanner.modules.project_editor.modes import (
     PAN,
     REDIRECT_FROM,
     REDIRECT_TO,
-    REGION_CREATE,
 )
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped
 from dplanner.modules.project_editor.renderers import (
@@ -1511,8 +1510,6 @@ def test_the_strip_is_named_bands_of_glyphs(services, project, tab):
     assert named == ["Problems", "Go", "Step", "Link", "Arrange", "History", "Options"]
     seated = {verb for _name, verbs in bands(tab) for verb in verbs}
     assert {"Find Step…", "New Step", "Undo", "Look"} <= seated
-    # Regions are on their way out, and the strip is where that shows first.
-    assert not any("Region" in verb for verb in seated)
 
 
 def test_every_verb_on_the_strip_is_a_glyph_with_its_words_in_the_tooltip(services, project, tab):
@@ -1533,13 +1530,12 @@ def test_the_graph_verbs_live_on_the_graph_menu_and_the_link_verbs_on_step(servi
     assert where["canvas.sort_flow"] == ("Graph", "Sort")
     assert where["canvas.divide_vertical"] == ("Graph", "Divide")
     assert where["canvas.snap"] == ("Graph", None)
-    assert where["regions.new"] == ("Graph", "Region")
     assert where["steps.redirect_to"] == ("Step", "Redirect")
     assert where["steps.link"] == ("Step", None)
     strays = [
         spec.id
         for spec in services.actions.all_specs()
-        if spec.id.startswith(("canvas.", "regions.")) and spec.menu != "Graph"
+        if spec.id.startswith("canvas.") and spec.menu != "Graph"
     ]
     assert strays == []
 
@@ -1800,131 +1796,46 @@ def test_applying_a_layout_is_one_undo_step_that_restores_every_position(service
     assert snapshot(services.document, project).steps == scattered.steps
 
 
-# -- regions ------------------------------------------------------------------------------------
+# -- a project saved with regions ----------------------------------------------------------------
 
 
-def add_region(services, project, x, y, w, h, title="Region"):
-    from dplanner.modules.project_editor.regions import (
-        new_region,
-        read_regions,
-        set_regions_command,
-    )
+@pytest.fixture
+def reopened(app, cli, cli_library, at_work_board):
+    """A window opened over Discovery as a build with regions left it: three steps, their
+    ids in order, and the running application — built the way ``main`` builds it, so the
+    migration pass runs before the canvas reads anything."""
+    from tests.old_canvas import plant
 
-    region = new_region(title, x, y, w, h)
-    services.undo.push(set_regions_command(project, [*read_regions(project), region], "Add Region"))
-    return region
+    from dplanner.app import new_session
 
-
-def regions_of(services, project):
-    from dplanner.modules.project_editor.regions import read_regions
-
-    return read_regions(services.document.project(project.id))
-
-
-def test_dragging_out_a_region_is_one_undo_step(app, services, project, tab):
-    tab.set_mode(REGION_CREATE, True)
-    drag(app, tab, QPointF(400.0, 296.0), QPointF(720.0, 536.0))
-
-    found = regions_of(services, project)
-    assert len(found) == 1
-    assert (found[0].x, found[0].y, found[0].w, found[0].h) == (400.0, 296.0, 320.0, 240.0)
-    assert services.undo.undo_text() == "Add Region"
-    # One region ends the mode, the way one link ends connect.
-    assert view(tab).modes.current().name == IDLE
-    services.undo.undo()
-    assert regions_of(services, project) == []
+    cli("project", "create", "Discovery")
+    for title in ("Read the spec", "Draft the model", "Ship it"):
+        cli("step", "add", "Discovery", title)
+    step_ids = plant(cli_library, "Discovery")
+    session = new_session(at_work=at_work_board)
+    assert session.open_initial(cli_library)
+    assert session.services is not None
+    session.services.debounce.set_immediate(True)
+    yield session.services, step_ids
+    session.close()
 
 
-def test_a_body_drag_carries_the_steps_whose_centres_lie_inside(app, services, project, tab):
-    first, second = project.steps  # at (40, 40) and (40, 200) in the automatic layout
-    region = add_region(services, project, 0.0, 0.0, 300.0, 120.0)  # first inside, second out
+def test_a_project_saved_with_regions_opens_on_the_canvas_without_them(reopened):
+    """Regions were retired, and a plan that had them opens exactly as it was, minus the
+    rectangles."""
+    from tests.old_canvas import SEATS
 
-    drag(app, tab, QPointF(280.0, 80.0), QPointF(440.0, 240.0))  # body: off node, off strip
+    services, step_ids = reopened
+    project = services.document.projects[0]
+    tab = services.tabs.open("project", project.id)
 
-    found = regions_of(services, project)[0]
-    assert (found.x, found.y) == (160.0, 160.0)
-    from dplanner.modules.project_editor.positions import read_position
-
-    assert read_position(services.document.step(first.id)) == (200.0, 200.0)
-    assert read_position(services.document.step(second.id)) is None
-    assert services.undo.undo_text() == "Move Region"
-
-    services.undo.undo()  # One step back restores the frame and the carried step together.
-    assert (regions_of(services, project)[0].x, regions_of(services, project)[0].y) == (
-        region.x,
-        region.y,
-    )
-    assert "project_editor" not in services.document.step(first.id).module_data
-
-
-def test_a_title_drag_moves_the_frame_alone(app, services, project, tab):
-    first, _second = project.steps
-    add_region(services, project, 0.0, 0.0, 300.0, 120.0)
-
-    drag(app, tab, QPointF(260.0, 12.0), QPointF(340.0, 92.0))  # the title strip
-
-    found = regions_of(services, project)[0]
-    assert (found.x, found.y) == (80.0, 80.0)
-    assert "project_editor" not in services.document.step(first.id).module_data
-
-
-def test_the_corner_grip_resizes(app, services, project, tab):
-    add_region(services, project, 400.0, 296.0, 200.0, 120.0)
-
-    drag(app, tab, QPointF(592.0, 408.0), QPointF(840.0, 656.0))  # the bottom-right grip
-
-    found = regions_of(services, project)[0]
-    # The drag runs through the view's pixel grid, so allow one grid cell of rounding.
-    assert abs(found.w - 440.0) <= 8.0 and abs(found.h - 360.0) <= 8.0
-    assert found.w % 8 == 0 and found.h % 8 == 0
-    assert (found.x, found.y) == (400.0, 296.0)
-    assert services.undo.undo_text() == "Resize Region"
-
-
-def test_double_clicking_the_title_renames(app, services, project, tab, monkeypatch):
-    add_region(services, project, 400.0, 300.0, 200.0, 120.0)
-    monkeypatch.setattr(
-        "dplanner.modules.project_editor.region_verbs.QInputDialog.getText",
-        lambda *_args, **_kwargs: ("Database setup", True),
-    )
-
-    send(app, tab, QEvent.Type.MouseButtonDblClick, QPointF(500.0, 312.0))
-
-    assert regions_of(services, project)[0].title == "Database setup"
-    assert services.undo.undo_text() == "Rename Region"
-
-
-def test_the_delete_key_reaches_a_selected_region(app, services, project, tab):
-    region = add_region(services, project, 400.0, 300.0, 200.0, 120.0)
-    scene(tab).select_region(region.id)
-    press_key(app, tab, Qt.Key.Key_Delete)
-
-    assert regions_of(services, project) == []
-    assert services.undo.undo_text() == "Delete Region"
-
-
-def test_a_selected_region_reaches_the_context(services, project, tab):
-    region = add_region(services, project, 400.0, 300.0, 200.0, 120.0)
-    scene(tab).select_region(region.id)
-    uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
-    assert uris == [f"app://selection/region/{region.id}"]
-
-
-def test_a_node_over_a_region_still_drags_as_a_node(app, services, project, tab):
-    first, _second = project.steps
-    add_region(services, project, 0.0, 0.0, 300.0, 120.0)
-    node = scene(tab)._nodes[first.id]
-
-    start = centre_of(node)
-    send(app, tab, QEvent.Type.MouseButtonPress, start)
-    node.setPos(node.pos() + QPointF(240.0, 0.0))
-    send(app, tab, QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
-
-    assert services.undo.undo_text() == "Move Step"
-    assert (regions_of(services, project)[0].x, regions_of(services, project)[0].y) == (
-        0.0,
-        0.0,
-    )
+    drawn = {type(item).__name__ for item in scene(tab).items() if item.parentItem() is None}
+    assert drawn == {"StepNodeItem", "LinkPreviewItem", "OutlinePreviewItem"}
+    for step_id, (x, y, size) in zip(step_ids, SEATS, strict=True):
+        node = scene(tab)._nodes[step_id]
+        assert (node.pos().x(), node.pos().y()) == (x, y)
+        assert node.size() == (size or (NODE_W, NODE_H))
+    assert "regions" not in project.module_data["project_editor"]
 
 
 # -- the lasso -------------------------------------------------------------------------------------
@@ -2309,7 +2220,7 @@ def test_a_step_something_is_wrong_about_wears_a_squiggle(services, project, tab
     assert flagged(step).red() <= flagged(step).green() + 20
 
 
-def test_the_squiggle_starts_past_the_spine_and_stops_inside_the_card():
+def test_the_squiggle_starts_past_the_key_block_and_stops_inside_the_card():
     """It underlines the card's content, not its key — and stays within the body's width,
     so two cards side by side do not appear joined."""
     from dplanner.modules.project_editor.renderers import (
@@ -2634,36 +2545,66 @@ def render_card(tab, step_id) -> QImage:
     return image
 
 
-def test_the_spine_carries_the_key_and_is_shaded_by_status(services, project, tab):
-    """The strip down the left edge: the key's ink lands inside it and nowhere in the
-    title's column, and a status changes its wash — busy blue for in-progress, the good
-    green for done — while the body keeps its own fill beside it."""
-    from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-    from dplanner.modules.step_status.aspect import write as status
-    from dplanner.theme.cards import SPINE_W
+def block_colours(image: QImage) -> set[str]:
+    """Every colour inside the key block, clear of the card's rounded corners."""
+    from dplanner.theme.cards import KEY_BLOCK_W
+
+    return {
+        image.pixelColor(x, y).name()
+        for x in range(4, int(KEY_BLOCK_W) - 3)
+        for y in range(12, image.height() - 12)
+    }
+
+
+def inked(image: QImage, rect: QRectF, ground: QColor) -> QRectF:
+    """The bounds of whatever inside ``rect`` departs from ``ground`` — where a glyph or a
+    word actually landed."""
+    found = [
+        (x, y)
+        for x in range(int(rect.left()), int(rect.right()))
+        for y in range(int(rect.top()), int(rect.bottom()))
+        if abs(image.pixelColor(x, y).lightness() - ground.lightness()) > 40
+    ]
+    if not found:
+        return QRectF()
+    xs, ys = [x for x, _ in found], [y for _, y in found]
+    return QRectF(min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1)
+
+
+def test_the_key_block_carries_who_works_the_step_over_its_key(project, tab):
+    """The block down the left edge: the glyph lands where ``key_block_rects`` puts it, and
+    under it the key, set level — its ink wider than it is tall, which a key read up a
+    spine never was."""
+    from dplanner.theme.cards import key_block_rects
 
     step = project.steps[0]
     image = render_card(tab, step.id)
-    height = image.height()
-    inside = image.pixelColor(int(SPINE_W) + 8, height // 2)  # The body, past the spine.
+    glyph, key = key_block_rects(QRectF(image.rect()), QFont())
+    ground = image.pixelColor(4, 12)  # The block's own wash, above the pair.
+    assert not inked(image, glyph, ground).isEmpty()
+    word = inked(image, key, ground)
+    assert word.width() > word.height()
+    assert word.top() >= glyph.bottom()
 
-    def spine_colours():
-        return {
-            image.pixelColor(x, y).name()
-            for x in range(4, int(SPINE_W) - 3)
-            for y in range(12, height - 12)
-        }
 
-    quiet = spine_colours()
-    assert inside.name() not in quiet  # The strip is a shade of its own, even at rest.
-    assert len(quiet) > 1  # The key's glyphs put a second colour inside it.
+def test_the_key_block_is_shaded_by_status(services, project, tab):
+    """A status changes the block's wash — busy blue for in-progress, the good green for
+    done — while the body keeps its own fill beside it."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as status
+    from dplanner.theme.cards import KEY_BLOCK_W
+
+    step = project.steps[0]
+    image = render_card(tab, step.id)
+    inside = image.pixelColor(int(KEY_BLOCK_W) + 8, image.height() // 2)  # Past the block.
+    quiet = block_colours(image)
+    assert inside.name() not in quiet  # The block is a shade of its own, even at rest.
 
     services.undo.push(
         SetModuleDataCommand(step.id, STATUS_ID, status("in-progress", today=date(2026, 9, 21)))
     )
-    image = render_card(tab, step.id)
-    busy = spine_colours()
+    busy = block_colours(render_card(tab, step.id))
     assert busy != quiet
     busiest = max(busy, key=lambda name: QColor(name).blue() - QColor(name).red())
     assert QColor(busiest).blue() > QColor(busiest).red()  # A blue wash.
@@ -2671,16 +2612,106 @@ def test_the_spine_carries_the_key_and_is_shaded_by_status(services, project, ta
     services.undo.push(
         SetModuleDataCommand(step.id, STATUS_ID, status("done", today=date(2026, 9, 21)))
     )
-    image = render_card(tab, step.id)
-    greenest = max(spine_colours(), key=lambda name: QColor(name).green() - QColor(name).red())
+    done = block_colours(render_card(tab, step.id))
+    greenest = max(done, key=lambda name: QColor(name).green() - QColor(name).red())
     assert QColor(greenest).green() > QColor(greenest).red()  # A green wash.
+
+
+def test_a_waits_clock_is_amber(services, project, tab):
+    """A wait is nobody's work, and says so in the attention amber whatever its date — the
+    one glyph in the block that is not the key's ink."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.domain.schedule import Wait
+    from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
+    from dplanner.modules.step_wait.aspect import write as wait
+    from dplanner.theme.cards import key_block_rects
+
+    def amber(image: QImage) -> bool:
+        glyph, _key = key_block_rects(QRectF(image.rect()), QFont())
+        return any(
+            (colour := image.pixelColor(x, y)).red() > colour.blue() + 60
+            and colour.green() > colour.blue() + 30
+            for x in range(int(glyph.left()), int(glyph.right()))
+            for y in range(int(glyph.top()), int(glyph.bottom()))
+        )
+
+    step = project.steps[0]
+    assert not amber(render_card(tab, step.id))  # A person, in the key's ink.
+    services.undo.push(SetModuleDataCommand(step.id, WAIT_ID, wait(Wait(days=2.0))))
+    assert amber(render_card(tab, step.id))
+
+
+def test_the_reports_key_block_is_the_canvas_one():
+    """``cli/`` may not read ``theme/``, so the report keeps a copy of the block's geometry;
+    this is what keeps the copy honest."""
+    from dplanner.cli.report import drawings
+    from dplanner.theme import cards
+
+    assert drawings.KEY_BLOCK_W == cards.KEY_BLOCK_W
+    assert drawings.KEY_GLYPH == cards.KEY_GLYPH
+    assert drawings.KEY_GAP == cards.KEY_GAP
+
+
+def test_the_paper_draws_the_glyph(qapp):
+    """The PDF renders the graph through QtSvg, which honours a narrower SVG than a browser:
+    the glyph must come out in ink on paper, and a wait's in amber."""
+    from PySide6.QtSvg import QSvgRenderer
+
+    from dplanner.cli.report.drawings import (
+        GRAPH_MARGIN,
+        KEY_BLOCK_W,
+        KEY_GAP,
+        KEY_GLYPH,
+        KEY_LINE,
+        LIGHT,
+        graph_svg,
+    )
+    from dplanner.cli.report.parts import Graph, Node
+    from dplanner.theme.glyph_source import glyph_markup
+
+    nodes = (
+        Node("a", "S1", "Interview", 0, 0, 220, 76, glyph_markup=glyph_markup("person")),
+        Node(
+            "b",
+            "W2",
+            "Hold",
+            0,
+            120,
+            220,
+            76,
+            glyph_markup=glyph_markup("clock"),
+            glyph_tone="warn",
+        ),
+    )
+    renderer = QSvgRenderer(graph_svg(Graph(nodes, ()), LIGHT).encode())
+    size = renderer.defaultSize()
+    image = QImage(size, QImage.Format.Format_ARGB32)
+    image.fill(QColor(LIGHT.surface))
+    painter = QPainter(image)
+    renderer.render(painter)
+    painter.end()
+
+    def glyph_pixels(node: Node) -> list[QColor]:
+        top = node.y + (node.h - KEY_GLYPH - KEY_GAP - KEY_LINE) / 2 + GRAPH_MARGIN
+        left = node.x + KEY_BLOCK_W / 2 - KEY_GLYPH / 2 + GRAPH_MARGIN
+        return [
+            image.pixelColor(int(left) + dx, int(top) + dy)
+            for dx in range(int(KEY_GLYPH))
+            for dy in range(int(KEY_GLYPH))
+        ]
+
+    assert any(colour.lightness() < 110 for colour in glyph_pixels(nodes[0]))
+    assert any(
+        colour.red() > colour.blue() + 60 and colour.green() > colour.blue() + 30
+        for colour in glyph_pixels(nodes[1])
+    )
 
 
 def ink_in_corner(tab, step_id) -> int:
     """How far the card's bottom-right corner departs from its own fill, rendered over the
     theme's base: the stat's text pulls a pixel far from it, an empty corner stays flat.
     The card is rendered over the theme's own ground, since its ink is the theme's."""
-    from dplanner.theme.cards import PAD_Y, PADDING, SPINE_W
+    from dplanner.theme.cards import KEY_BLOCK_W, PAD_Y, PADDING
 
     node = scene(tab)._nodes[step_id]
     body = node.body_scene_rect()
@@ -2690,8 +2721,8 @@ def ink_in_corner(tab, step_id) -> int:
     painter = QPainter(image)
     scene(tab).render(painter, QRectF(image.rect()), body)
     painter.end()
-    # The fill is sampled past the spine, whose key and wash are ink of their own.
-    fill = image.pixelColor(int(SPINE_W + PADDING) + 4, height // 2)
+    # The fill is sampled past the key block, whose key and wash are ink of their own.
+    fill = image.pixelColor(int(KEY_BLOCK_W + PADDING) + 4, height // 2)
     line = int(PAD_Y) + 18
     return int(
         max(

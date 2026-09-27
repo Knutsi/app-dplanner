@@ -31,19 +31,20 @@ from PySide6.QtGui import (
 from dplanner.modules.project_editor.marks import Marks
 from dplanner.theme.cards import (
     FILL_ALPHA,
+    KEY_BLOCK_W,
     LIFT,
     LIFTED_SHADOW,
     LINE_GAP,
+    MILESTONE_BORDER_W,
     PAD_Y,
     PADDING,
     RADIUS,
     RESTING_SHADOW,
     SELECTED_BORDER_W,
     SELECTED_FILL_GAIN,
-    SPINE_W,
     over,
+    paint_key_block,
     paint_shadow,
-    paint_spine,
     title_font,
     title_lines,
 )
@@ -104,8 +105,8 @@ MUTED_BORDER_ALPHA = 50
 BADGE_H = 14.0
 BADGE_PAD = 6.0
 BADGE_INSET = 10.0  # From the node's right edge, clear of the link handle's corner.
-# Where the top-left medallions and the bottom-left chip start: past the spine, a gap on.
-LEFT_INSET = SPINE_W + 4.0
+# Where the top-left medallions and the bottom-left chip start: past the key block, a gap on.
+LEFT_INSET = KEY_BLOCK_W + 4.0
 
 # The chip on the bottom edge, left end — the badge's mirror, worn by a live agent run.
 CHIP_H = 14.0
@@ -170,8 +171,9 @@ class NodeAccent:
     (a milestone label); a ``chip`` sits on the bottom edge (a live agent run — and the
     same run wears the marching ring, so one field says both); a ``pill``
     sits on the second line with a tone that is "good" or "bad", never "merged";
-    ``branch`` and ``spark`` ask for the small glyphs beside it; ``key_text`` is what the
-    spine down the left edge reads, and ``spine_tone`` how it is shaded.
+    ``branch`` asks for the small fork glyph beside it. The key block down the left edge
+    reads ``key_text`` under ``key_glyph`` — who works the step — and is shaded by
+    ``key_tone``.
     """
 
     muted: bool = False
@@ -179,8 +181,12 @@ class NodeAccent:
     pill_text: str = ""  # "" → no pill.
     pill_tone: str = ""  # "" neutral | "good" | "bad".
     branch: bool = False  # Paint the branch glyph.
-    key_text: str = ""  # The step's key ("F7"), read up the spine; "" → a bare spine.
-    spine_tone: str = ""  # "" quiet | "good" | "busy" | "bad": the status, as a shade.
+    key_text: str = ""  # The step's key ("F7"), in the key block; "" → a bare block.
+    key_tone: str = ""  # "" quiet | "good" | "busy" | "warn" | "bad": the status.
+    # The glyph over the key: who works the step ("spark" an agent, "person" a person,
+    # "clock" nobody — it is a wait). "" → the key alone.
+    key_glyph: str = ""
+    key_glyph_tone: str = ""  # "" the key's ink | "warn": the attention amber.
     chip_text: str = ""  # "" → no chip.
     chip_tone: str = ""  # "" neutral | "info" | "attention".
     body_tone: str = ""  # "" plain | "highlight" | "good" | "feature": the node is a kind.
@@ -189,9 +195,9 @@ class NodeAccent:
     # milestone as well as that it is one. "" leaves every tone the constant it is.
     tone_color: str = ""
     # Icon medallions on the top edge, left end, in order: "tag" (a milestone the graph
-    # aims at), "layers" (a feature: it collects the work behind it), "spark" (there is
-    # machine guidance here), "beaker" (this step keeps tests), "shield" (a check: it
-    # stands for everything behind it passing).
+    # aims at), "layers" (a feature: it collects the work behind it), "beaker" (this step
+    # keeps tests), "shield" (a check: it stands for everything behind it passing). Who
+    # works the step is the key block's glyph, and a card says a thing once.
     icons: tuple[str, ...] = ()
     stat_text: str = ""  # The one number a step answers with — full ink, never faded.
     stat_strong: bool = False  # Bold the stat: this node's number is the point of it.
@@ -207,8 +213,8 @@ class RenderHints:
     Pushed by the scene when the mode stack changes — an item holds the hints as data and
     never asks which mode is current. ``handles``: "hover" shows the link handle on the
     hovered node only (idle), "always" fades one onto every node (connect mode, where
-    every handle is a target), "hidden" suppresses them (pan and the region modes, whose
-    presses do not link).
+    every handle is a target), "hidden" suppresses them (pan, resize, lasso, divide and
+    redirect, whose presses do not link).
     """
 
     handles: str = "hover"  # "hover" | "always" | "hidden"
@@ -236,8 +242,8 @@ def paint_node(
     accent: NodeAccent,
     state: NodeState,
 ) -> None:
-    """The default node: the spine with its key, the body, the title over a bottom line of
-    stat, pill and glyph, the edge decorations, and the link handle.
+    """The default node: the key block, the body, the title over a bottom line of stat, pill
+    and glyph, the edge decorations, and the link handle.
 
     Every card rests on a shadow; a selected one is drawn :data:`LIFT` above its seat over
     a deeper shadow, so the whole composition — badge, chip, medallions, handle — travels
@@ -256,13 +262,22 @@ def paint_node(
         painter.translate(0.0, -LIFT)
 
     paint_body(painter, palette, body, accent, state)
-    paint_spine(painter, palette, body, accent.key_text, accent.spine_tone, text_colour)
+    paint_key_block(
+        painter,
+        palette,
+        body,
+        accent.key_text,
+        accent.key_tone,
+        text_colour,
+        accent.key_glyph,
+        accent.key_glyph_tone,
+    )
     paint_marks(painter, palette, body, state)
     if accent.flagged:
         paint_problem(painter, body)
     if accent.chip_text:
         paint_ring(painter, body, accent.chip_tone, state.ring_phase)
-    inner = body.adjusted(SPINE_W + PAD_Y, PAD_Y, -PADDING, -PAD_Y)
+    inner = body.adjusted(KEY_BLOCK_W + PAD_Y, PAD_Y, -PADDING, -PAD_Y)
     detail = bool(accent.stat_text or accent.pill_text or accent.branch)
     reserved = painter.fontMetrics().height() + LINE_GAP if detail else 0.0
     paint_title(painter, inner, title, text_colour, accent.muted, reserved)
@@ -319,6 +334,8 @@ def paint_body(
         else:
             border = QColor(palette.text().color())
             border.setAlpha(MUTED_BORDER_ALPHA if muted else 90)
+    if accent.badge:  # A milestone, done or not: the badge is its label.
+        width = max(width, MILESTONE_BORDER_W)
     if state.selected:
         tint.setAlpha(min(255, round(tint.alpha() * SELECTED_FILL_GAIN)))
     painter.setPen(Qt.PenStyle.NoPen)
@@ -352,7 +369,7 @@ def paint_problem(painter: QPainter, body: QRectF) -> None:
 
     A run of quadratic arcs alternating either side of a line below the body — the editor's
     underline, which everybody already reads as *there is something to see here*. It starts
-    past the spine, so it underlines the card's *content* rather than its key, and it is
+    past the key block, so it underlines the card's *content* rather than its key, and it is
     drawn at full strength: a mark that has to be noticed cannot be a tint.
 
     It hangs outside the body, so its reach is in :data:`PAINT_MARGIN`; the whole of it
@@ -573,9 +590,9 @@ def paint_icon_medallions(
     """One small circle per aspect kind, on the top edge's left end — the badge's opposite.
 
     A glance at a node's top-left corner answers "what is this step": a tag means a
-    milestone, a spark means machine guidance, nothing means a plain step. The row starts
-    past the spine, so the key under it stays clear. The tag is the one medallion painted
-    in colour, and ``color`` is the milestone's own shade of the project's map.
+    milestone, layers a feature, nothing a plain step. The row starts past the key block, so
+    the block's glyph and the medallions never sit side by side. The tag is the one medallion
+    painted in colour, and ``color`` is the milestone's own shade of the project's map.
     """
     ink = QColor(palette.text().color())
     faded = QColor(ink)

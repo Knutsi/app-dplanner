@@ -81,6 +81,15 @@ paths:
   nothing short of the render sees it. Debug ▸ Design Examples ▸ Rows keeps the wrong one
   beside the right ones, and is the only place in the application that renders a defect
   deliberately.
+- **A roster ticked for a verb leads with a check column, and the box is the selection.**
+  `Column(check=True)` on an `"extended"` table: the delegate paints the box from the row's
+  selection — like a chip, from the palette, because the style's own indicator all but
+  vanished on a dark theme — and the table hit-tests the whole cell, a click toggling that
+  row alone and a double click being two ticks, never the row opened. It is the one mark a
+  picked row wears beside its edge, because it is the selection's own target rather than a
+  second answer: **never keep a *ticked* set beside the selection**, or the strip and the
+  Step menu act on two different things. The Step statuses tab is the example;
+  `ARCHITECTURE.md`'s *Progression is the status-aware frontier* has the reasoning.
 - **A group heading may fold, and the table remembers by key.** `Table.add_heading(text,
   key=…)` makes the rows after it a collapsible group: a disclosure chevron (drawn, not
   vendored — it is a picture of *state*, like the key badge and the filter funnel), and the
@@ -153,7 +162,7 @@ paths:
   screen keeps its content. `ARCHITECTURE.md`'s *A panel inside a tab follows the tab* has
   the reasoning.
 - **View is the window; Graph is the canvas.** The graph editor's own verbs are a
-  top-level **Graph** menu — `arrange` (Sort, Layout, Divide), `regions`, `look` (Frame,
+  top-level **Graph** menu — `arrange` (Sort, Layout, Divide), `look` (Frame,
   Mark, Snap to Grid, Background — the band the strip's *Options* face renders whole) and
   `panels` (what stands beside the canvas inside the tab) — not a group inside View, which
   is about panels *around the tabs*, tabs, theme and zoom; `Project ▸ tests` holds the
@@ -233,15 +242,18 @@ paths:
   that file's right-hand column. Qt's SVG renderer knows no `currentColor`, so the ink is
   substituted into the source and the colour's **alpha becomes the painter's opacity** —
   get that wrong and every strip reads a shade too loud. `paint_glyph` is the one painter,
-  and the canvas's medallions go through it too, so a kind's glyph on a card and the same
-  kind's glyph in a menu cannot differ. Four glyphs are still painted by hand because each
+  and the canvas's medallions and key block go through it too, so a kind's glyph on a card
+  and the same kind's glyph in a menu cannot differ. **The files are read in one place**,
+  `theme/glyph_source.py`, which loads no Qt: the report draws a card's glyph from its
+  `glyph_markup`, handed to `cli/` as data by a module's `report.py`, since `cli/` may not
+  read `theme/` itself. Four glyphs are still painted by hand because each
   is a picture of *state*: the key badge (it draws text), the colour strip (a gradient),
   the spinner (a frame per angle) and the filter funnel (two states in one width).
 - **An `ActionSpec` may carry a glyph, and only the pop-ups paint it.** `icon` is a
   `(QColor) -> QIcon` painter, rendered by `build_menu`, `append_action` and a toolbar
   dropdown — all built fresh on every open. The menu bar's QActions outlive every theme
   change, so a colour baked into one goes stale; that is the same trap as `option.palette`.
-  Every Type toggle carries the glyph its node's medallion wears (`theme/icons.py`'s
+  Every Type toggle carries the glyph its node wears (`theme/icons.py`'s
   `GLYPH_ICONS` vocabulary), so the Type submenu, the aspect bar and the node agree.
 - **A theme is provided, never listed.** `theme/providers.py` is the contract — a
   `ThemeProvider` is an id, a label, `refusal()` (why not on this machine, None when it

@@ -37,7 +37,7 @@ from dataclasses import dataclass, replace
 
 from dplanner.core.anchors import Anchor, blocks, covered_by
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.scope import StepPredicate, cone, gatherers
+from dplanner.domain.scope import ScopeKind, StepPredicate, cone, gatherers
 from dplanner.domain.store import FilesFor
 
 MILESTONES, FEATURES, SPEC, STEPS, OUTCOMES = 0, 1, 2, 3, 4
@@ -89,14 +89,22 @@ def _no_colors(_library: Library, _project: Project) -> dict[StepId, str]:
     return {}
 
 
+def _no_glyph(_step: Step) -> tuple[str, str]:
+    """Nobody said who works a step; its key block carries the key alone."""
+    return "", ""
+
+
 @dataclass(frozen=True)
 class Readers:
     """Every fact the trace is built from, as the module owning it answers it."""
 
     features: Callable[[Library, Project, FilesFor], Sequence[Feature]]
     documents: Callable[[Project, FilesFor], Sequence[Document]]
-    is_feature: StepPredicate
-    is_milestone: StepPredicate
+    # The collectors as the composition root wires them: who carries each, and where its
+    # walk stops — the same two answers every other scope reader gets, so a feature here
+    # holds exactly the work `scope show` says it does.
+    feature_kind: ScopeKind
+    milestone_kind: ScopeKind
     milestone_label: Callable[[Step], str]
     step_key: Callable[[Step], str]  # How every surface names a step: "S7".
     status: Callable[[Step], str]  # Where a step's work stands: "done", "blocked", …
@@ -108,6 +116,9 @@ class Readers:
     # Every milestone's own shade of the project's colour map, by step id — one deal per
     # project, the same one the canvas and the calendar read.
     milestone_colors: Callable[[Library, Project], dict[StepId, str]] = _no_colors
+    # Who works a step, as the glyph over its key and that glyph's tone — the canvas's own
+    # answer, so a card that is a step wears the same key block in both places.
+    glyph: Callable[[Step], tuple[str, str]] = _no_glyph
 
 
 # -- the picture ------------------------------------------------------------------------------
@@ -132,9 +143,11 @@ class Item:
     token: str = ""
     target: tuple[str, str] = ("", "")  # What double-clicking opens: (kind, key).
     muted: bool = False
-    # An item that is a step carries its key and status up the card's spine; "" for the rest.
+    # An item that is a step carries its key, its status and who works it — (glyph, tone) —
+    # in the card's key block; "" for the rest.
     key: str = ""
     status: str = ""
+    glyph: tuple[str, str] = ("", "")
 
 
 @dataclass(frozen=True)
@@ -244,9 +257,12 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     features = list(readers.features(library, project, files))
     documents = list(readers.documents(project, files))
     order = {step.id: index for index, step in enumerate(project.steps)}
-    milestones = [step for step in project.steps if readers.is_milestone(step)]
+    milestones = [step for step in project.steps if readers.milestone_kind.carried_by(step)]
     owners = gatherers(
-        library, project, carried_by=readers.is_milestone, stops_at=readers.is_milestone
+        library,
+        project,
+        carried_by=readers.milestone_kind.carried_by,
+        stops_at=readers.milestone_kind.stops_at,
     )
     known = {milestone.id for milestone in milestones}
 
@@ -348,6 +364,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 target=("feature", feature.id),
                 key=readers.step_key(step) if step is not None else "",
                 status=status,
+                glyph=readers.glyph(step) if step is not None else ("", ""),
             )
         )
 
@@ -379,6 +396,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 target=("step", milestone.id),
                 key=readers.step_key(milestone),
                 status=readers.status(milestone),
+                glyph=readers.glyph(milestone),
             )
         )
     if loose:
@@ -404,9 +422,6 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     results = readers.results(project)
     placed_steps: dict[StepId, int] = {}  # step id → index in items, to union a shared one.
     placed_tests: dict[str, int] = {}  # test id → index in items, to union a shared one.
-
-    def feature_stop(step: Step) -> bool:
-        return readers.is_feature(step) or readers.is_milestone(step)
 
     def held_by(root: StepId, stops_at: StepPredicate) -> list[Step]:
         """The steps a collector holds: its cone, and its own step, where a test or a
@@ -439,6 +454,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                         target=("step", step.id),
                         key=readers.step_key(step),
                         status=status,
+                        glyph=readers.glyph(step),
                     )
                 )
             for source in sources:
@@ -492,19 +508,22 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     for feature in ordered:
         tokens = frozenset({feature.id})
         sources = spec_hubs(tokens)
-        add_steps(held_by(feature.step, feature_stop), tokens, sources)
-        add_tests(readers.tests(library, project, feature.step, feature_stop), tokens, sources)
+        stops = readers.feature_kind.stops_at
+        add_steps(held_by(feature.step, stops), tokens, sources)
+        add_tests(readers.tests(library, project, feature.step, stops), tokens, sources)
         add_docs(feature.step, feature.title, tokens, [*sources, *step_hubs(tokens)])
     for milestone in milestones:
         token = milestone_token(milestone.id)
         # Work a milestone holds directly was read from no passage: it stands under the
         # milestone's own pick, with nothing in the spec lane to come from.
         own = frozenset({token})
-        work = held_by(milestone.id, readers.is_milestone)
+        work = held_by(milestone.id, readers.milestone_kind.stops_at)
         add_steps([step for step in work if step.id not in placed_steps], own, ())
         direct = [
             row
-            for row in readers.tests(library, project, milestone.id, readers.is_milestone)
+            for row in readers.tests(
+                library, project, milestone.id, readers.milestone_kind.stops_at
+            )
             if row.id not in placed_tests
         ]
         add_tests(direct, own, ())

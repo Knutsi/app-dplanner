@@ -703,3 +703,85 @@ def test_the_rows_value_is_the_one_accent_filled_chip(themed, theme):
         assert ground(0) != QColor(theme.accent) and ground(2) != QColor(theme.accent)
     finally:
         made.deleteLater()
+
+
+# -- a check column: the selection, drawn as a box -------------------------------------------
+
+
+@pytest.fixture
+def ticked(app):
+    made = Table((Column("", check=True), Column("Step")), selection="extended")
+    made.add_heading("Ready", key="ready")
+    for title in ("One", "Two", "Three"):
+        made.add_row(["", title])
+    made.resize(400, 240)
+    made.show()
+    app.processEvents()
+    yield made
+    made.deleteLater()
+
+
+def _centre(table: Table, row: int, column: int) -> QPoint:
+    return table.visualRect(table.model().index(row, column)).center()
+
+
+def _picked(table: Table) -> list[int]:
+    return sorted({index.row() for index in table.selectedIndexes()})
+
+
+def test_a_click_on_a_box_toggles_its_row_and_leaves_the_others(ticked):
+    for row in (1, 3):
+        QTest.mouseClick(ticked.viewport(), Qt.MouseButton.LeftButton, pos=_centre(ticked, row, 0))
+    assert _picked(ticked) == [1, 3]
+    QTest.mouseClick(ticked.viewport(), Qt.MouseButton.LeftButton, pos=_centre(ticked, 1, 0))
+    assert _picked(ticked) == [3]
+
+
+def test_a_click_beside_the_box_picks_the_row_alone(ticked):
+    for row in (1, 2):
+        QTest.mouseClick(ticked.viewport(), Qt.MouseButton.LeftButton, pos=_centre(ticked, row, 0))
+    QTest.mouseClick(ticked.viewport(), Qt.MouseButton.LeftButton, pos=_centre(ticked, 3, 1))
+    assert _picked(ticked) == [3]
+
+
+def test_a_double_click_on_a_box_is_two_ticks_and_never_opens_the_row(ticked, app):
+    opened: list[int] = []
+    ticked.cellActivated.connect(lambda row, _column: opened.append(row))
+    point = _centre(ticked, 2, 0)
+    QTest.mouseClick(ticked.viewport(), Qt.MouseButton.LeftButton, pos=point)
+    app.sendEvent(
+        ticked.viewport(),
+        QMouseEvent(
+            QEvent.Type.MouseButtonDblClick,
+            QPointF(point),
+            QPointF(ticked.viewport().mapToGlobal(point)),
+            Qt.MouseButton.LeftButton,
+            Qt.MouseButton.LeftButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+    assert _picked(ticked) == [] and opened == []
+
+
+def test_the_box_is_drawn_from_the_selection_and_a_heading_has_none(ticked, app):
+    assert ticked.check_under(_centre(ticked, 0, 0)) is None  # The heading row.
+    assert ticked.check_under(_centre(ticked, 2, 0)) == 2
+    assert ticked.check_under(_centre(ticked, 2, 1)) is None  # Beside the box.
+    box = ticked.delegate.check_rect(
+        ticked.model().index(2, 0), ticked.visualRect(ticked.model().index(2, 0))
+    )
+
+    def drawn() -> list[QColor]:
+        image = ticked.viewport().grab().toImage()
+        return [
+            image.pixelColor(QPoint(x, y))
+            for x in range(box.left(), box.right() + 1)
+            for y in range(box.top(), box.bottom() + 1)
+        ]
+
+    unticked = drawn()
+    ticked.toggle_row(2)
+    app.processEvents()
+    assert drawn() != unticked
+    # Sized to the box — past the group's indent, as every first column hangs — not to a word.
+    assert ticked.columnWidth(0) < box.right() + box.width()

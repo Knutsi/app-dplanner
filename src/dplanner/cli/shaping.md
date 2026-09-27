@@ -8,9 +8,11 @@ project's text alone on every read after this one.
 
 ## The shape to aim for
 
-**One step at the origin, named `Project start`, and nothing before it.** It is what every
-other step traces back to, and it is what makes *nothing precedes this* mean "the plan
-begins here" rather than "somebody forgot a link".
+**One step at the origin, named `Project start`, marked as the start, and nothing before
+it.** It is what every other step traces back to, and the marker is what makes *nothing
+precedes this* mean "the plan begins here" rather than "somebody forgot a link". It is also
+what lets the work fan out of it: no feature and no milestone gathers the start, so the
+parallel branches leaving it are each their own, not one step every feature claims at once.
 
 **Milestones in a chain.** A milestone is a release, and releases are sequential: the work
 of v2 starts from v1, or from a descendant of v1, never beside it. Between two milestones
@@ -27,10 +29,12 @@ collect, and `dplanner scope show`, `progress show` and `test-run start --scope`
 a release exactly. Leave a step hanging off two releases at once and all three count it
 twice.
 
-The start step is one command — `dplanner step add <project> 'Project start' --days 0
---describe-file -` — and those two flags are not optional: `--days 0` and a description, or
-`estimate.missing` and `description.missing` report it for the life of the plan. A marker
-is still a step.
+The start step is one command — `dplanner step add <project> 'Project start' --start
+--days 0 --describe-file -` — and none of those three flags is optional: without `--start`,
+`scope.shared` reports the origin as soon as two features fan out of it; without `--days 0`
+and a description, `estimate.missing` and `description.missing` report it for the life of
+the plan. A marker is still a step. On a plan that already has its origin, `dplanner start
+set <step>` marks it.
 
 ## Ask, then propose
 

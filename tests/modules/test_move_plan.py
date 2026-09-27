@@ -65,7 +65,7 @@ def boxes(monkeypatch):
 def test_the_move_lands_the_plan_in_the_new_repository_and_reloads(
     session, services, make_project, library_file, library_repo, tmp_path, boxes
 ):
-    project = make_project("Discovery")
+    project = make_project("Discovery", legacy=True)
     services.autosave.flush_now()
     old_window = services.window
     plans = init_repo(tmp_path / "plans")
@@ -89,7 +89,7 @@ def test_a_refused_move_leaves_everything_and_resumes_autosave(
     services, make_project, library_repo, boxes
 ):
     """Inside the code repository is the one place a plan is refused rather than warned."""
-    project = make_project("Discovery")
+    project = make_project("Discovery", legacy=True)
     services.autosave.flush_now()
     FakeWizard.chosen = PlanTarget(library_repo)
     FakeWizard.folder = "plans"

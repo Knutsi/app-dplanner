@@ -46,7 +46,7 @@ GLYPHS: dict[str, str] = {
     "divide-vertical": "separator-vertical",  # A cut, with room being made either side.
     "divide-horizontal": "separator-horizontal",
     "sort": "hierarchy-2",  # Laying the graph out by what feeds what.
-    "region": "rectangle",
+    "region": "rectangle",  # No canvas verb since regions went; a test category wears it.
     "grid": "grid-dots",
     "undo": "arrow-back-up",
     "redo": "arrow-forward-up",
@@ -95,13 +95,14 @@ GLYPHS: dict[str, str] = {
     "quote": "blockquote",
     "table": "table",
     "microphone": "microphone",  # Dictate: speak into the editor instead of typing.
-    # -- what a step *is*: the medallion vocabulary the canvas paints -------------------
+    # -- what a step *is* and who works it: the medallions, and the key block's icon -----
     "tag": "tag",  # A milestone.
     "layers": "stack-2",  # A feature: it collects the work behind it.
-    "spark": "sparkles",  # There is machine guidance here.
+    "spark": "sparkles",  # An agent does this step.
     "beaker": "flask",  # This step keeps tests.
     "shield": "shield-check",  # A check: everything behind it passing.
     "step": "square-rounded",
+    "person": "user",  # A person does this step.
     # -- what is wrong with the plan ---------------------------------------------------
     "problem": "alert-triangle",  # The Problems panel, and the count on its button.
     # -- the tables and browsers ------------------------------------------------------

@@ -31,16 +31,14 @@ shell is around it, and says why; the launcher scrubs the same markers for a win
 got them some other way. ``ARCHITECTURE.md``'s *The window is a word* has the reasoning.
 """
 
-import os
 import sys
-from collections.abc import Mapping
 
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import WINDOW_WORD, run
 from dplanner.core import user_path
 from dplanner.core.telemetry import Telemetry, install, journal_path
 from dplanner.modules import (
-    agent_harnesses,
+    agent_shell_marker,
     at_work_board,
     default_cli_commands,
     default_module_formats,
@@ -52,25 +50,12 @@ from dplanner.modules import (
 VALUE_OPTIONS = ("--library", "--project")
 
 
-def agent_shell_markers() -> tuple[str, ...]:
-    """What an agent CLI sets in every shell it runs: each harness's first marker — the
-    one that names the CLI itself rather than a session detail. Not a dispatch rule —
-    the word decides what runs — but a guard on who owns the window, and a missed agent
-    here costs a guard, not a wrong dispatch."""
-    return tuple(h.shell_markers[0] for h in agent_harnesses() if h.shell_markers)
-
-
 REFUSAL = (
     "dplanner window: not from inside an agent's shell ({marker} is set).\n"
     "A window opened here is the agent's background process: it ends when the agent's"
     " turn does,\nand every agent launched from it goes with it. Open DPlanner from your"
     " own terminal."
 )
-
-
-def agent_shell_marker(env: Mapping[str, str] = os.environ) -> str:
-    """The marker set in this environment, or "" when no agent's shell is around us."""
-    return next((name for name in agent_shell_markers() if env.get(name)), "")
 
 
 def _word_indices(argv: list[str]) -> list[int]:

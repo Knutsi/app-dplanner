@@ -65,7 +65,6 @@ HEADLESS_FILES = (
     "named_layouts.py",
     "sorts.py",
     "geometry.py",
-    "regions.py",
     "marks.py",
     "look.py",
     "schedule.py",
@@ -347,13 +346,15 @@ def test_the_theme_package_imports_without_qt() -> None:
     ``palettes`` is here for a second reason: the milestone colour maps are read by a
     module's Qt-free half (``time_estimates``' ``schedule.py``, ``cli.py`` and
     ``report.py``), so one ``QColor`` in that file would put a graphics stack in every
-    ``dplanner`` invocation. ``theme/tones.py`` is deliberately *not* in this probe — it
-    holds ``QColor`` constants and only the window reads it.
+    ``dplanner`` invocation. ``glyph_source`` is here for the same one: the report draws a
+    card's glyph from it, and the report is built by the CLI. ``theme/tones.py`` is
+    deliberately *not* in this probe — it holds ``QColor`` constants and only the window
+    reads it.
     """
     probe = (
         "import sys;"
         "import dplanner.theme, dplanner.theme.providers, dplanner.theme.omarchy;"
-        "import dplanner.theme.palettes;"
+        "import dplanner.theme.palettes, dplanner.theme.glyph_source;"
         "from dplanner.modules.theme_omarchy import themes;"
         "from dplanner.modules.theme_system import themes;"
         "assert 'PySide6' not in sys.modules, sorted(m for m in sys.modules if 'Side' in m)"

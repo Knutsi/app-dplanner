@@ -22,7 +22,7 @@ from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor
-from dplanner.cli.lint import LintCheck, LintFinding, project_findings
+from dplanner.cli.lint import LintCheck, LintFinding, project_findings, record_code_hint
 from dplanner.cli.lookup import (
     find_project,
     find_step,
@@ -87,7 +87,7 @@ from dplanner.domain.project_link import (
 )
 from dplanner.domain.project_link import read as read_link
 from dplanner.domain.relocate import RelocateError, move_project, target_in
-from dplanner.domain.repositories import ACCEPTED, RepositoryFacts, repository_facts
+from dplanner.domain.repositories import ACCEPTED, UNSET, RepositoryFacts, repository_facts
 from dplanner.domain.seed import seed_project
 from dplanner.domain.store import PROJECT_META, FilesFor
 
@@ -582,10 +582,11 @@ def _repository_lines(context: CliContext, project: Project, locating: Locating)
     plan = facts.plan_label or "not in a git repository"
     lines = [f"  plan: {plan}" + (f" ({facts.plan_root})" if facts.plan_root else "")]
     lines += [_location_line(found, locating) for found in facts.placements]
-    if facts.code is None:
-        lines.append(
-            f"  code: not set — `dplanner location add '{title}' --role code --repository URL`"
-        )
+    if facts.state == UNSET:
+        # Said once: the finding below names the verb that records it.
+        lines.append("  code: not set yet — the plan repository is not the code")
+    elif facts.code is None:
+        lines.append(f"  code: not set — {record_code_hint(title)}")
     lines += [
         f"  ! {finding.message}" for finding in project_findings(project, facts, locating.roles)
     ]
@@ -688,7 +689,9 @@ def _configure_create(parser: ArgumentParser) -> None:
         default=[],
         metavar="URL",
         help="a code repository this project changes, as git names its remote; repeatable, "
-        "the first is the primary — `dplanner location add` names the others",
+        "the first is the primary — `dplanner location add` names the others. Without it a "
+        "project in a plan repository has no code yet, and no agent can work on it until "
+        "`location add` names one",
     )
     parser.add_argument(
         "--checkout",
@@ -1296,8 +1299,7 @@ def _location_list(context: CliContext, args: Namespace, locating: Locating) -> 
     facts = _facts(context, project, locating)
     rows = [_location_row(found, locating) for found in facts.placements]
     lines = [_location_line(found, locating) for found in facts.placements] or [
-        f"  {project.title} names no locations yet — `dplanner location add "
-        f"'{project.title}' --role code --repository URL`"
+        f"  {project.title} names no locations yet — {record_code_hint(project.title)}"
     ]
     context.report({"project": project.id, "locations": rows}, "\n".join(lines))
     return 0
