@@ -4526,3 +4526,38 @@ menu entries only repeated them.
 
 **Upstream?** The wording, yes: the flag was always "seated elsewhere", not "seated in a data
 menu".
+
+## 62. From S23: a notice that opens what it sums up, and a lease that deletes nothing
+
+### `framework/notices.py` — `Notice.open`, `Notice.open_tip`
+
+**What we changed.** A notice may carry `open`, a callable a left click anywhere on its
+band runs, and `open_tip`, the band's tooltip. While `open` is set the row wears the
+pointing hand. It takes the press, so that the release comes back to it: Qt hands a
+release to whoever took the press. The verb button at the right keeps its own click. The
+words and the arc are labels, so they pass their clicks on to the row. `open` is rebound
+on an equal notice exactly as `act` is. Like `act`, it is not compared.
+
+**Why.** The window stood one notice per agent at work, so four agents were four amber
+rows over the content. They became one band that counts them (*3 agents are at work on
+Payments · S3, S7, S9*). What each one is doing had to go somewhere a click on that band
+reaches. A second verb beside *Clear* would have been two targets in a row designed to
+have one. The status-bar button already makes words open what they count, so the band
+now does the same.
+
+**Upstream?** Yes: nothing in it knows DPlanner. Any bar of standing facts wants "one
+row per owner, the details a click away" as soon as an owner has more than one thing to
+say.
+
+### A lesson, not a code change: a fact about another process may lapse if nothing is lost
+
+§44 said that a fact about another process is reported and never inferred. The claim was
+removed only by somebody who actually knew something. In use that turned out backwards
+for agents. They stop without a word far more often than they think for an hour, and a
+banner that is usually stale teaches people to read past it. The fix that held up is a
+lease that **hides and does not delete**. After thirty minutes of silence no reader shows
+the claim, but the file stays, and the peer's next sign of life brings it back. A short
+lease normally risks dropping a quiet peer's warning. That risk goes away when the peer's
+next act of writing is also its next sign of life. Worth carrying upstream as the amended
+rule. Reporting is still the default. A lapse is the right answer when showing a stale
+fact costs more than a gap, and when the gap closes itself.

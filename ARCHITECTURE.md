@@ -2526,22 +2526,29 @@ experience was of being ambushed by a tool that knew something it was not saying
 So the agent says it. `dplanner agent-work start '<what I am doing>'` writes a **claim** —
 project, optionally a step, one line of prose, optionally the agent's own count of what it
 is working through, when it started and when it was last heard from — and
-`modules/agent_at_work/` stands one notice per claim over the window's content until it is
-gone. Four decisions carry it.
+`modules/agent_at_work/` stands one notice for every claim over the window's content while
+any stands. Six decisions carry it.
 
-**Liveness is reported, never guessed.** This was the whole design question, and every
-version that tried to *decide* whether an agent was still there was worse than the one
-that refused to. A heartbeat the agent must remember is a heartbeat it will forget mid-task;
-a lease is a number that is either too short (the banner vanishes while the agent thinks for
-twenty minutes on one tool call) or too long (a crashed agent holds the screen for an hour);
-a pid is a process the announcing `dplanner` run does not own — its parent may be a shell
-that lives for the session or one that exits with the call, and nothing can tell which. So
-`domain/at_work.py` stores facts and derives readings: the claim carries `seen`, every
-reader prints how long ago that was, and `is_fresh` decides only whether the words read
-*is at work* or *was at work*. A quiet claim keeps its place and changes tense. It goes
-away three ways and no others — the agent ends it, a person clears it from the banner, or
-a claim made a day later sweeps one nobody has renewed since — and each of those is
-somebody actually knowing something, which no timeout is.
+**Silence lapses, and the next sign of life undoes it.** This was the whole design
+question. A heartbeat the agent must remember is a heartbeat it will forget mid-task; a pid
+is a process the announcing `dplanner` run does not own — its parent may be a shell that
+lives for the session or one that exits with the call, and nothing can tell which. The
+first version therefore decided nothing: a quiet claim changed tense (*was at work … last
+heard 40 minutes ago*) and stood until somebody who knew something ended it. In use that
+was the wrong way round. Agents finish and stop without a word far more often than they
+think for an hour, so the window collected bands from agents long gone, and a banner that
+is usually stale teaches the developer to read past the one surface they must not. So a
+claim not heard from in `FRESH_MINUTES` (thirty) **lapses**: `AtWorkBoard.claims()` stops
+returning it, and the window, `agent-work show` and the library watcher all stop saying it
+at once. What makes a lease safe here, where the usual objection is that it is too short,
+is that **a lapse deletes nothing**: the file stays until the day-old sweep, and the
+agent's next `dplanner` run renews it, so it stands again. That run is exactly the moment
+it matters — an agent that is not touching the CLI is not touching the plan either, and the
+banner exists to keep a person off the plan while an agent writes it. The tense went with
+it: one threshold where there were two, and every standing claim reads *is at work*, with
+when it was last heard said in its own words. It goes for good four ways — the agent ends
+it, `status set` says its step is finished (below), a person clears it, or a claim made a
+day later sweeps it.
 
 **Every `dplanner` run is the sign of life, and only an agent's is.** An agent that is
 working is already running verbs — a status, a note, a link — so `cli/main.py` renews the
@@ -2565,7 +2572,38 @@ lose each other's updates to a read-modify-write race, and a reader is a directo
 "an agent is at work" would be a surface asserting something only the other process knows,
 and the first time it was wrong the banner would stop meaning anything. That is also why
 there is no window verb to start one and why `agent_at_work` registers no action beyond the
-row's own *Clear*.
+band's own *Clear* and the dialog a click on it opens.
+
+**One band for every agent, and the list behind it.** The first build stood a notice per
+claim, and with four agents on one plan that was four amber rows over the content — four
+things to read past before the work, each saying most of what the one beside it said. What
+the person needs first is *that* agents are writing the plan and which steps they are on,
+so there is one notice: one agent's own line when there is one (it has room to say what the
+agent is doing), and otherwise a count with the projects and step keys (*3 agents are at
+work on DPlanner changes 2 · S4, F7, S23*, `claims_words`). Its meter is everything the
+agents counted together — done over total across the claims that declared a count
+(`combined_fraction`) — so a big job weighs more than a small one and a claim that promised
+nothing adds nothing either way. *Clear* on it ends every claim it stands for. The rest is
+behind a click on the band (`Notice.open`, the whole band as the target, the way a
+status-bar button opens what its words count): *Agents at Work*, the Agents browser's shape
+— a `DialogFrame` over a `RowWell`, non-modal so the poll keeps it current — with a row per
+claim saying what the agent wrote, its count as a bar, and when it was last heard, *Reveal*
+selecting its step, and a ✕ that clears that one claim, which is the only way to drop a
+dead agent's claim without clearing the live ones beside it. It is a dialog the person
+opened, which DESIGN.md's *never a modal for a background fact* does not forbid: the fact
+is still said where it bites, in the band.
+
+**A status that says the work stopped ends the claim on that step.** The banner a finished
+agent forgot to take down was the common stale one, and asking the briefing to say *end
+your claim* louder only moves the sentence. The one verb every finishing agent is sure to
+run is `status set` — the epilogue ends at `ready-for-review` and the CLI holds it there —
+so `ready-for-review`, `ready-to-merge`, `done` and `blocked` each end the claim on the step
+they are set on, in the same run and whoever runs them, because each says nobody is working
+it and a claim saying otherwise contradicts it. The composition root hands the board to
+`step_status/cli.py` as one callback (`end_claim`); a status set in the window ends nothing,
+since the window's only write to the board is the clear, and the lapse covers it. The
+briefing says it once, where it happens: *once the PR is open, set the status straight away
+— it takes the window's banner down with it*.
 
 The payoff is the collision. `library_watch` now asks one question of this module — is an
 agent at work on the project this conflict is in? — and while the answer is yes it leaves
@@ -2580,8 +2618,8 @@ from.
 
 What the banner is made of is the existing vocabulary and nothing new. DESIGN.md allows
 three motions in the whole application; the arc that says *something is running here* is
-one of them, and it leads a fresh claim. The tone is the reading — a warning while the
-agent is at work, plain information once it has gone quiet. The count is the one amendment:
+one of them, and it leads the band for as long as it stands. The tone is amber throughout —
+a lapsed claim is not shown at all rather than shown quietly. The count is the one amendment:
 a bar is for work whose end the application knows, and "never for an agent" was written
 when an agent's progress was unknowable. An agent that runs `agent-work set --done 8 --of
 20` has declared a count, and a declared count is a count; a claim that declares none still
@@ -3663,6 +3701,10 @@ it, and one holds it:
 `tests/conftest.py` scrubs every harness's markers from the suite's environment, because the
 suite is routinely run *by* an agent, and a test that wants an agent's shell sets the marker
 itself.
+
+The same `status set` also takes the agent's banner down: a status that says nobody is
+working the step ends the at-work claim on it — *An agent at work says so, and the window
+says it back* has why.
 
 **Time reads review and merge as work in flight, and dates it from when it started.** Not
 landed — the percent, the Step statuses tab and `requires` all say so — so the Time tab, the

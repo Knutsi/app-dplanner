@@ -15,8 +15,9 @@ says which work it is on; without one the claim is on the plan as a whole.
 
 **Nothing here proves an agent is alive, and nothing tries.** The claim's last sign of life
 is renewed by *every* ``dplanner`` run (``cli/main.py``), so an agent that is working
-renews it without thinking about it; an agent that is thinking for twenty minutes is quiet
-and says so in the words. ``domain/at_work.py`` has the reasoning.
+renews it without thinking about it; half an hour with none and the claim lapses until the
+next, and ``status set`` on the step ends it outright. ``domain/at_work.py`` has the
+reasoning.
 
 This is the CLI's alone. The window reads claims and can clear one a dead agent left, and
 there is no window verb that makes one: a claim is the other writer's statement about
@@ -29,7 +30,7 @@ from typing import Any
 
 from dplanner.cli import CliCommand, CliContext
 from dplanner.cli.lookup import find_step
-from dplanner.domain.at_work import AtWork, AtWorkBoard, claim_words, heard_words, is_fresh
+from dplanner.domain.at_work import AtWork, AtWorkBoard, claim_words, heard_words
 from dplanner.domain.model import Project, Step
 
 DOING_HELP = "one line about what you are doing, as the developer should read it"
@@ -176,6 +177,6 @@ def _key(step: Step | None, key_of: KeyOf | None) -> str:
 
 
 def _json(claim: AtWork) -> dict[str, Any]:
-    """The record plus the two things a reader would otherwise have to derive: whether it
-    still reads as at work, and the same words the window shows."""
-    return {**claim.to_json(), "at_work": is_fresh(claim), "heard": heard_words(claim)}
+    """The record plus what a reader would otherwise have to derive: when it was last heard
+    from, in the words the window shows."""
+    return {**claim.to_json(), "heard": heard_words(claim)}

@@ -50,8 +50,10 @@ paths:
   percentage stands at the right beside the verb. Plain `info` paints no band, which is what
   a fact that has stopped needing the eye becomes. It is the one place the 4 px
   `QProgressBar` is *not* the answer: a strip at nought per cent is a hairline nobody reads
-  as a meter. `ARCHITECTURE.md`'s *The banner is a band, and the band is the meter* has the
-  reasoning.
+  as a meter. **A band that stands for several things opens them**: `Notice.open` makes
+  the whole row the target (pointing hand, `open_tip`), the verb keeping its own click —
+  one band per owner, never a band per thing it counts. `ARCHITECTURE.md`'s *The banner is
+  a band, and the band is the meter* and *An agent at work says so* have the reasoning.
 - **A roster has three shapes, and each is a primitive.** A `Table` when a reader compares
   across rows — and a value set in the row is the column's `editor` (`NumberEditor`,
   `DateEditor`, `TextEditor`) or its `chips`, painted and hit-tested by the table, never a

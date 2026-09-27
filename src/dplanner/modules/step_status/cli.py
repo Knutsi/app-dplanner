@@ -12,6 +12,13 @@ naming ``ready-for-review`` — unless ``--because`` says why nothing needs revi
 is kept as a ``decision`` note on the step. A person in their own terminal is never asked,
 and neither is the window: the rule is about who is reporting, not about the word.
 ARCHITECTURE.md's *An agent finishes at Ready for review* has the reasoning.
+
+**A status that says nobody is working the step ends the claim on it.** An agent says it is
+at work with ``dplanner agent-work`` (``domain/at_work.py``), and the window stands a banner
+for it; ``ready-for-review``, ``ready-to-merge``, ``done`` and ``blocked`` each say the work
+has stopped, so setting one ends that step's claim in the same run, whoever sets it. The
+banner an agent forgot to take down was the common case, and the one verb every finishing
+agent is sure to run is this one.
 """
 
 import shlex
@@ -23,7 +30,13 @@ from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
-from dplanner.domain.progression import DONE, REVIEW_AND_MERGE
+from dplanner.domain.progression import (
+    BLOCKED,
+    DONE,
+    READY_FOR_REVIEW,
+    READY_TO_MERGE,
+    REVIEW_AND_MERGE,
+)
 from dplanner.modules.step_status.aspect import (
     MODULE_ID,
     NO_STATUS_ON_A_WAIT,
@@ -33,6 +46,9 @@ from dplanner.modules.step_status.aspect import (
     write,
 )
 
+# The statuses that say nobody is working a step any more: setting one ends its claim.
+STOPPED = (READY_FOR_REVIEW, READY_TO_MERGE, DONE, BLOCKED)
+
 
 def commands(
     *,
@@ -40,12 +56,14 @@ def commands(
     is_agent: Callable[[Step], bool],
     in_agent_shell: Callable[[], bool],
     note_reason: Callable[[CliContext, Step, str], tuple[str, bool]],
+    end_claim: Callable[[CliContext, Step], bool],
 ) -> list[CliCommand]:
     """``is_wait`` says a step is a wait, which has no status to set; ``is_agent`` that an
     agent executes it, and ``in_agent_shell`` that this command runs inside an agent CLI's
     shell — together, a done that skips review. ``note_reason`` keeps a ``--because`` as a
     decision note on the step and answers the note's id, and whether it was added — False
-    when the step already carried that note, which then stands as it was."""
+    when the step already carried that note, which then stands as it was. ``end_claim`` ends
+    an agent's at-work claim on the step and answers whether one stood."""
 
     def set_status(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
@@ -63,7 +81,8 @@ def commands(
         ):
             raise CliError(_review_first(step, args.step))
         note, added = note_reason(context, step, because) if because else ("", True)
-        _say(context, step, args.state, note, added)
+        ended = args.state in STOPPED and end_claim(context, step)
+        _say(context, step, args.state, note, added, ended)
         return 0
 
     return [
@@ -121,19 +140,31 @@ def _review_first(step: Step, needle: str) -> str:
     )
 
 
-def _say(context: CliContext, step: Step, status: str, note: str = "", added: bool = True) -> None:
+def _say(
+    context: CliContext,
+    step: Step,
+    status: str,
+    note: str = "",
+    added: bool = True,
+    ended: bool = False,
+) -> None:
     """Write ``status``, and say so — naming the note a ``--because`` was kept as, or the one
-    already there that it did not replace."""
+    already there that it did not replace, and the agent's claim it ended."""
     previous = step.module_data.get(MODULE_ID)
     entry = write(status, today=context.clock.today(), previous=previous)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
-    data = {"step": step.id, "status": status} | ({"note": note} if note else {})
+    data = (
+        {"step": step.id, "status": status}
+        | ({"note": note} if note else {})
+        | ({"claim_ended": True} if ended else {})
+    )
     kept = (
         (f" — the reason kept as {note}" if added else f" — a reason is already recorded as {note}")
         if note
         else ""
     )
-    context.report(data, f"{step.title}: {status}{kept}")
+    released = " — no agent at work on it now" if ended else ""
+    context.report(data, f"{step.title}: {status}{kept}{released}")
 
 
 def _show(context: CliContext, args: Namespace) -> int:

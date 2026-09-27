@@ -65,7 +65,9 @@ paths:
   the agent's *plan* waiting for a look. `status set <agent step> done` **from inside an
   agent's shell**, on a step not already under review or waiting on its merge, exits 1
   naming `ready-for-review` — unless `--because '<reason>'`, which sets done and keeps the
-  reason as a `decision` note on the step in the same run. A person's own terminal and the
+  reason as a `decision` note on the step in the same run — and a status that says the work
+  stopped also ends the step's at-work claim (`persistence.md`'s *An agent at work says
+  so*). A person's own terminal and the
   window are never asked: the guard is about who reports, read through
   `domain/agents.py`'s `shell_marker` over the harnesses (the entry point's window guard
   reads the same), and `tests/conftest.py`'s `_no_agent_shell` scrubs the markers so the

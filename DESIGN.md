@@ -749,14 +749,20 @@ and one stylesheet rule for the progress bar:
   one surface where the tone is the whole row rather than a glyph beside the words, because
   it is the one surface a person must not read past: the row is washed in its tone
   (`BAND_ALPHA`, a semantic tint over whatever ground the theme has) — amber while another
-  writer is at work, red while something is owed — and plain information wears none, which
-  is how a claim that has gone quiet stops shouting without leaving the screen. **A
+  writer is at work, red while something is owed — and plain information wears none. **A
   declared count fills that band from the left** at the same hue's greater weight and says
   how far in words at the right, beside the verb. It is the one place the 4 px bar is not
   used, and the reason is what a meter has to do before anything has happened: a strip at
   nought per cent is a hairline nobody reads as a meter, where a band saying *0%* is
   plainly something that fills.
-- **Never a modal for a background fact.** A modal asks; a fact is said where it bites.
+- **One band per owner, however many things it counts — and a click opens them.** Every
+  agent at work is one amber band (*3 agents are at work on Payments · S3, S7, S9*), filled
+  by everything they counted together; a band per agent was four rows to read past before
+  the work. What each is doing is behind a click anywhere on the band (`Notice.open`, the
+  pointing hand), in a dialog the person opened — *Agents at Work*, a `RowWell` like the
+  Agents browser — while the verb at the right keeps its own click.
+- **Never a modal for a background fact.** A modal asks; a fact is said where it bites. A
+  dialog the person opens from the band that says the fact is theirs, not the fact's.
   **And a modal waits while somebody else is already interrupting**: while an agent says it
   is at work, the collision question stands in the notice bar rather than being thrown over
   a person who has just been asked to keep their hands off the graph.

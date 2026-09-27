@@ -20,8 +20,12 @@ amber while another writer is at work, red while something is owed. A declared c
 that band from the left and says how far in words at the right, next to the verb, which is
 what a 4 px strip could not do: a strip at nought per cent is a hairline nobody reads as a
 meter, where an amber band that says *0%* is plainly something that fills. Plain
-information has no tone and so no band, which is what a claim that has gone quiet
-becomes — it stops shouting without leaving the screen.
+information has no tone and so no band: a fact that holds but asks nothing of the eye.
+
+**A notice may open what it sums up.** A band that stands for several things — every agent
+at work, say — cannot name them all in one row, so ``open`` makes the whole band the target
+for what it summarises, the way a status-bar button opens what its words count. The verb
+at the right keeps its own click; the rest of the row is the way in.
 
 **A notice is data, and showing the same notice twice is nothing.** The owner recomputes
 its notice whenever it likes — a poll, a settle — and hands it over; a row that would not
@@ -33,7 +37,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QPainter, QPaintEvent
+from PySide6.QtGui import QMouseEvent, QPainter, QPaintEvent
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -73,7 +77,8 @@ class Notice:
     puts the percentage beside the verb when it is 0..1; below zero the band is plain,
     which is the honest picture for work with no declared count. ``action`` is the words on
     a quiet verb at the right end, ``tip`` what it explains on hover, and ``act`` what it
-    runs.
+    runs. ``open``, when there is one, is what a click anywhere else on the band runs, and
+    ``open_tip`` says what it opens.
     """
 
     id: str
@@ -84,6 +89,8 @@ class Notice:
     action: str = ""
     tip: str = ""
     act: Callable[[], None] | None = field(default=None, compare=False)
+    open: Callable[[], None] | None = field(default=None, compare=False)
+    open_tip: str = ""
 
 
 class _NoticeRow(QWidget):
@@ -119,14 +126,15 @@ class _NoticeRow(QWidget):
 
         self._notice = replace(notice, id="")  # Never equal to the first show: forces a draw.
         self._act: Callable[[], None] | None = None
+        self._open: Callable[[], None] | None = None
         self._button.clicked.connect(self._run)
         self.show_notice(notice)
 
     def show_notice(self, notice: Notice) -> None:
+        self._bind(notice)  # Even when the words are the same: the closures may be newer.
         if notice == self._notice:
-            self._act = notice.act  # The words are the same; the closure may be newer.
             return
-        self._notice, self._act = notice, notice.act
+        self._notice = notice
         self._words.say(notice.words, notice.tone)
         self._button.setText(notice.action)
         self._button.setToolTip(notice.tip)
@@ -165,6 +173,30 @@ class _NoticeRow(QWidget):
             painter.setBrush(at_alpha(shade, FILLED_ALPHA))
             painter.drawRoundedRect(band, RADIUS_SM, RADIUS_SM)
         painter.end()
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        # Taken, so the release comes back here: Qt hands it to whoever took the press.
+        if self._open is not None and event.button() == Qt.MouseButton.LeftButton:
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        """A click on the band opens what it sums up. The verb is a button of its own and
+        takes its own clicks; the words and the arc are labels, which pass theirs to here."""
+        inside = self.rect().contains(event.position().toPoint())
+        if self._open is not None and event.button() == Qt.MouseButton.LeftButton and inside:
+            self._open()
+            return
+        super().mouseReleaseEvent(event)
+
+    def _bind(self, notice: Notice) -> None:
+        self._act, self._open = notice.act, notice.open
+        if notice.open is None:
+            self.unsetCursor()
+        else:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(notice.open_tip if notice.open is not None else "")
 
     def _counted(self) -> bool:
         """Whether the owner declared how far along this is."""
