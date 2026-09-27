@@ -4436,3 +4436,21 @@ painted the way chips are, from the palette.
 roster shape the template's table cannot express today. It also amends one rule: *a picked
 row is one ground, and nothing else marks it*. The one exception is a check column, because
 its box is the selection's own target.
+
+## 59. From the Step statuses strip: a registry verb that wears its words
+
+### `framework/toolbar.py` — `Toolbar.add_action(..., face=...)`
+
+**What we changed.** A registry-fed verb may carry fixed words beside its glyph. They are
+set as the action's `iconText`, which is what a `QToolButton` shows, and the button is
+switched to text beside icon. The action's `text()` is still restated from its state on every
+context change, so the tooltip and the `…` menu keep the full words — a count, a refusal —
+while the face stays short and one width.
+
+**Why.** The Step statuses tab moved onto the glyph strip and its Run Agents button lost the
+words it had worn as a hand-built button, and the developer wanted them back. `iconText` is
+Qt's own seam for "the short words on a tool button", so no second label had to be kept in
+step with the state.
+
+**Upstream?** Yes, small and general: a strip whose lead verb should read without a hover
+has no other way to say so on the registry-fed path.

@@ -1006,9 +1006,10 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         )
     )
     # Constructed before the list because the projects index opens the tab through it.
-    # Its strip seats verbs other modules own, named here by id — Run Agent with the Step
-    # menu's own profiles under its arrow, then the status verbs a person moves finished
-    # work on with — so neither module knows the other's name.
+    # Its strip seats verbs other modules own, named here by id — Run Agent, worded as the
+    # verb the tab leads with, with the Step menu's own profiles under its arrow, then the
+    # status verbs a person moves finished work on with — so neither module knows the
+    # other's name.
     progression = ProgressionModule(
         ProgressionDeps(
             library=library,
@@ -1021,7 +1022,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             status_for=_wait_aware(library, services.clock.today),
             counts_as_work=_counts_as_work,
             verbs=(
-                StripVerb("agent.run", data_menu=RUN_MENU_ID),
+                StripVerb("agent.run", data_menu=RUN_MENU_ID, face="Run Agents"),
                 StripVerb("status.ready-to-merge"),
                 StripVerb("status.done"),
             ),

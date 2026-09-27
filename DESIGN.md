@@ -584,7 +584,10 @@ Example Table wears one.
   `theme/glyphs/`'s vendored Tabler SVGs, inked in the secondary tone and re-inked on a
   theme change —
   and painted at the screen's device pixel ratio, because a 16-pixel pixmap shown at 16
-  points on a 2× display is upscaled, and every stroke in it goes soft.
+  points on a 2× display is upscaled, and every stroke in it goes soft. **The verb a
+  surface leads with may wear its words** beside the glyph (`add_action`'s `face`: *Run
+  Agents* on the Step statuses strip) — short and fixed, the state's words staying in the
+  tooltip.
 - **A control that drops a menu asks for its arrow's room** (`ARROW_ROOM` for a split
   button, `INDICATOR_ROOM` for a face). A styled subcontrol is outside Qt's size hint, so
   nothing widens the button by itself: without the padding the arrow is painted over the
