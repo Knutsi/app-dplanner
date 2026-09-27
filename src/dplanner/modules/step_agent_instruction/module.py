@@ -41,7 +41,7 @@ from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.locations import Placement
 from dplanner.domain.model import Library, Node, NodeId, Step, StepId
-from dplanner.domain.progression import DONE
+from dplanner.domain.progression import DONE, phrase
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
 from dplanner.framework.action_menu import append_action
@@ -300,7 +300,7 @@ class StepAgentInstructionDeps:
     # the root. Node id in, picked payloads out; None is a build without the browser.
     pick_assets: Callable[[str], "list[Payload]"] | None = None
     # What a step's status claims, through the status aspect's Qt-free reader — the
-    # progression board's seam. Run Agent asks before launching on a step whose
+    # Step statuses tab's seam. Run Agent asks before launching on a step whose
     # prerequisites do not all read done; this module never learns the vocabulary's shape.
     status_for: Callable[[Step], str] = field(default=_all_done)
     # The writer half of the same seam: work on the step has begun. Run Agent calls it as
@@ -428,6 +428,7 @@ class StepAgentInstructionModule:
                 order=10,
                 in_menus=False,
                 tip="Open a terminal with the agent briefed on this step",
+                icon=spark_icon,
                 state=self._can_run,
                 run=self._run,
             )
@@ -733,7 +734,7 @@ class StepAgentInstructionModule:
 
     def _fill_profiles(self, menu: QMenu) -> None:
         """Step ▸ Run Agent: the profiles over the step the context names — the same child
-        menu the progression board's *Run Agents* button drops down."""
+        menu the Step statuses tab's Run Agent arrow drops down."""
         self._fill_with(menu, self._can_run, self._run)
 
     def _fill_open_profiles(self, menu: QMenu) -> None:
@@ -800,7 +801,7 @@ class StepAgentInstructionModule:
         deps = self._deps
 
         def listed(unfinished: Sequence[Step]) -> list[str]:
-            return [f"• {_titled(r)} — {deps.status_for(r)}" for r in unfinished]
+            return [f"• {_titled(r)} — {phrase(deps.status_for(r))}" for r in unfinished]
 
         if len(waiting) == 1:
             step, unfinished = waiting[0]

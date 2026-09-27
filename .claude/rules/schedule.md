@@ -12,17 +12,25 @@ paths:
 # Schedule — order, progression, time estimates, progress and milestone colour
 
 - **Progression is derived, never stored** — `domain/progression.py` is the graph's
-  readiness with a `status_for(step)` handed in like `days_for`; the board, `dplanner
-  progression show` and `--json` are three readers of one function, and the frontier is a
-  per-step check, not `ordering.ready()`'s wave one. **The surface is named for the
-  question and the derivation for the answer**: the tab, its menu entries and its index
-  row say *Ready to start*, while the walk, the module id, the activity kind and the verb
-  stay `progression`, because the frontier is one of the six partitions it computes and a
-  renamed verb would move under every agent that has the skill. Its header is the percent
-  and the bar — the two lines under the bar said the same counts in words and then again
-  in estimated days, which the bar draws to scale; the terminal still prints both, where
-  there is no bar to read. `ARCHITECTURE.md`'s *Progression is the status-aware frontier*
-  has the partition rules and why each was a decision.
+  readiness with a `status_for(step)` handed in like `days_for`; the Step statuses tab,
+  `dplanner progression show` and `--json` are three readers of one function, and the
+  frontier is a per-step check, not `ordering.ready()`'s wave one. **Ready for review and
+  ready to merge are on the board and not done**: each is a partition of its own
+  (`review`, `merge`), one move away for the lookahead, out of the percent — and a plain
+  `requires` is fulfilled by `done` alone, so nothing starts on work nobody accepted.
+  **Every partition a person acts on is ranked by `unlocks`** (the map covers every step
+  of work not done), ties in project order. **The surface is named for the question and
+  the derivation for the answer**: the tab, its menu entries and its index row say *Step
+  statuses* — the title adds how many rows need a person — while the walk, the module id,
+  the activity kind and the verb stay `progression`, because the groups are some of the
+  partitions it computes and a renamed verb would move under every agent that has the
+  skill. **The tab is a table of what needs a person**, never lanes: Blocked, Ready to
+  merge, Ready for review, Ready to start, then Waiting (temporary, until a tab of what is
+  going on exists); running work is not listed, the header's percent and bar are gone, a
+  `Segmented` picks one group, and the strip seats the registry verbs the root names
+  (`StripVerb`: Run Agent with its profiles, Ready to Merge, Done) over the ticked rows —
+  a check column, whose box is the selection. `ARCHITECTURE.md`'s *Progression is the
+  status-aware frontier* has the partition rules and why each was a decision.
 - **The order says what order, and how much — never when.** The Order tab is the index,
   the step, its wave and its estimate, under one line of volume (`domain/schedule.py`'s
   `volume_words`: *62 days over 24 steps, 2 unestimated*, the sentence `order show`,
@@ -30,7 +38,8 @@ paths:
   once — accumulated days, days since the last milestone, a landing date per row, from a
   start date set on that page — and nobody schedules that way: `time_estimates` simulates
   two pools of workers and owns the start date, so the columns and the bar are gone and
-  **wave 1 is called *Wave 1***, the words *Ready to start* now naming the board alone.
+  **wave 1 is called *Wave 1***, the words *Ready to start* now naming a group of the
+  Step statuses tab alone.
   The CSV export and the published report keep the day counts and the dates, because a
   spreadsheet is opened to sort and sum.
 - **Staffing what-ifs are derived; only the assumptions are stored.** `dplanner schedule
@@ -80,6 +89,12 @@ paths:
   **a marker takes no worker** — both measured with the simulator's parallel scenarios
   (`ARCHITECTURE.md`'s *Milestones worked in parallel*, which also has the candidates
   rejected and why).
+  **Review and merge are work in flight, dated from when it started** — one fold in the
+  root's `_time_readers()`, which every time surface reads through: `status_for` answers
+  in progress for both, and `since_for` their `started`, because moving to review stamps
+  `since` today and the model credits in-flight work from it — the raw day re-costed the
+  step at its whole estimate the moment an agent finished. `Readers.changed_on` keeps the
+  raw day for what a recorded day counts as a change. `test_time_simulation.py` pins both.
   **Adjust for Efficiency** is the tab's opt-in exception: people's remaining work at the
   pace so far (`schedule.pace_so_far` — finished steps' stretched days over the working
   days they took, each half day shared among people's steps open in it; five working days
@@ -109,11 +124,11 @@ paths:
   never a kind of node, so it works unchanged in cones, ordering, cycles and copy and paste.
   Its model is the prototype's Delay, to the day (`test_schedule.py`'s waits), and so is
   the simulator's world (`test_time_waits.py`). **Elsewhere a wait is done when it is over
-  and no work at all**: the board, its verb and report and the Run Agent gate read
+  and no work at all**: the Step statuses tab, its verb and report and the Run Agent gate read
   `schedule.wait_status` — done once what it waits on is done and its day has come or its
   days are waited, `WAITING` until then — so what follows it is ready that day; the root's
-  one `_counts_as_work` keeps it off every lane and out of every volume (`schedule.volume`:
-  the board, the Estimates tab, `estimate rollup`, `schedule show`, `order show`, the Order
+  one `_counts_as_work` keeps it off every row and out of every volume (`schedule.volume`:
+  the Step statuses tab, the Estimates tab, `estimate rollup`, `schedule show`, `order show`, the Order
   tab) and lint; the Status verbs, the Agent and Test toggles and Run Agent refuse one,
   saying why (`aspect_toggle`'s `refusal`). **A wait looks like one**: `W` for its key's
   letter, the clock for its medallion, how long it holds for its stat; the Work page hatches
@@ -215,8 +230,8 @@ paths:
   shade — walked once per project by the composition root's `_milestone_colors` and handed
   down as a typed callback, so no module learns where a colour map is stored. Ten surfaces
   read it: the canvas card, its badge and its tag medallion, the order table's row wash
-  and **key badge**, the Ready-to-start board's card, the Tests tab's grouping heading, the
-  Docs tab's medallion, the coverage lane, the Milestone tab's swatch, the calendar's
+  and **key badge**, the Step statuses tab's key badge, the Tests tab's grouping heading,
+  the Docs tab's medallion, the coverage lane, the Milestone tab's swatch, the calendar's
   bands and the report's graph. `theme/tones.py`'s `toned(name, hex)` is the one place a
   shade takes a tone's alphas — never re-derive them — and the maps live in
   **`theme/palettes.py`** (Qt-free, hex strings) because three consumers need them and

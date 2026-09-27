@@ -71,7 +71,7 @@ so it lives as long as the layout does; when a cycle holding both is collected, 
 or `QSpacerItem` cleared before its layout deletes an item the C++ layout still holds. A
 `QObject` in the same position survives it — `~QObject` unregisters from its parent —
 which is why only layout items bite. **Never read a layout back**: keep your own list of
-what you put in it (`StatusColumn._held`, `MilestoneList._rows`) and read that; `takeAt`
+what you put in it (`projects/card.py`'s `RepositoriesCard._held`) and read that; `takeAt`
 in a loop that drops the wrapper each turn is fine. **And add a child layout to its parent
 before filling it**: a parentless `QHBoxLayout()` given `addWidget` and `addStretch` first
 leaves a `QWidgetItem` and a `QSpacerItem` wrapper alive on the Python side (none when

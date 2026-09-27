@@ -81,6 +81,15 @@ paths:
   nothing short of the render sees it. Debug ▸ Design Examples ▸ Rows keeps the wrong one
   beside the right ones, and is the only place in the application that renders a defect
   deliberately.
+- **A roster ticked for a verb leads with a check column, and the box is the selection.**
+  `Column(check=True)` on an `"extended"` table: the delegate paints the box from the row's
+  selection — like a chip, from the palette, because the style's own indicator all but
+  vanished on a dark theme — and the table hit-tests the whole cell, a click toggling that
+  row alone and a double click being two ticks, never the row opened. It is the one mark a
+  picked row wears beside its edge, because it is the selection's own target rather than a
+  second answer: **never keep a *ticked* set beside the selection**, or the strip and the
+  Step menu act on two different things. The Step statuses tab is the example;
+  `ARCHITECTURE.md`'s *Progression is the status-aware frontier* has the reasoning.
 - **A group heading may fold, and the table remembers by key.** `Table.add_heading(text,
   key=…)` makes the rows after it a collapsible group: a disclosure chevron (drawn, not
   vendored — it is a picture of *state*, like the key badge and the filter funnel), and the

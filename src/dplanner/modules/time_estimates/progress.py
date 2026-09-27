@@ -263,7 +263,7 @@ def take(
     days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
     status_for: Callable[[Step], str],
-    since_for: Callable[[Step], date | None],
+    changed_on: Callable[[Step], date | None],
     *,
     humans: int,
     agents: int,
@@ -294,7 +294,7 @@ def take(
         facts=facts,
         wait_of=wait_of,
     )
-    return snapshot_of(phases, today, days_for, status_for, since_for, wait_of)
+    return snapshot_of(phases, today, days_for, status_for, changed_on, wait_of)
 
 
 def snapshot_of(
@@ -302,7 +302,7 @@ def snapshot_of(
     day: date,
     days_for: Callable[[Step], float | None],
     status_for: Callable[[Step], str],
-    since_for: Callable[[Step], date | None],
+    changed_on: Callable[[Step], date | None],
     wait_of: Callable[[Step], Wait | None] = no_wait,
 ) -> Snapshot:
     """The plan on ``day`` from its dated stretches: each with what has landed in it and
@@ -319,7 +319,7 @@ def snapshot_of(
                 key=phase.milestone.id if phase.milestone else "",
                 tally=replace(
                     tally(work(phase), days_for, status_for),
-                    changed=sum(1 for step in work(phase) if since_for(step) == day),
+                    changed=sum(1 for step in work(phase) if changed_on(step) == day),
                 ),
                 # When its work began, which a re-dated stretch knows from its facts.
                 start=phase.began,

@@ -1,4 +1,4 @@
-"""The progression board: the execution surface, and the seams it reaches others through."""
+"""Step statuses: what needs a person right now, and the seams it reaches others through."""
 
 import json
 
@@ -7,6 +7,7 @@ import pytest
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+from dplanner.framework.list_rows import DETAIL_ROLE
 
 
 @pytest.fixture
@@ -36,163 +37,271 @@ def set_status(services, step, status):
 # -- what it shows ---------------------------------------------------------------------------
 
 
-def test_with_nothing_done_only_the_frontier_is_ready(services, project, tab):
-    assert tab.board.ready.titles() == ["A"]
-    assert tab.board.upcoming.titles() == ["B", "C"]
-    assert tab.board.running.titles() == []
-    assert tab.board.header.percent.text() == "0%"
+def listed(tab):
+    """The table as a person reads it: a heading as ``# words``, a row as its title."""
+    table = tab.table
+    rows = []
+    for row in range(table.rowCount()):
+        text = table.item(row, 0).text() if table.is_heading(row) else ""
+        if table.is_heading(row):
+            rows.append(f"# {text}")
+        else:
+            rows.append(table.item(row, 1).text())
+    return rows
 
 
-def test_reading_the_board_back_never_wraps_a_layout_item(monkeypatch, services, project, tab):
-    """A QLayoutItem wrapper is a double delete waiting for a gc pass (the `suite-crash`
-    skill): the column keeps its own list of what it laid out and reads that, never the
-    layout — including across a rebuild, which is what ``clear()`` used ``takeAt`` for."""
-    from PySide6.QtWidgets import QLayout
+def test_with_nothing_done_the_frontier_is_ready_and_the_rest_waits(services, project, tab):
+    assert listed(tab) == ["# Ready to start", "A", "# Waiting", "B", "C", "D"]
 
-    def refuse(_layout, _index):
-        raise AssertionError("itemAt() hands out a QLayoutItem wrapper; read the list instead")
 
-    monkeypatch.setattr(QLayout, "itemAt", refuse)
-    monkeypatch.setattr(QLayout, "takeAt", refuse)
-    a, _b, _c, _d = project.steps
+def test_the_groups_come_closest_to_done_first_and_running_work_is_not_listed(
+    services, make_project
+):
+    """Blocked, then the finished work a person looks at, then what can start, then what
+    cannot yet. An agent at work needs nobody: in progress and done are nowhere."""
+    project = make_project("Discovery")
+    library = services.document
+    words = {
+        "Stuck": "blocked",
+        "Reviewed": "ready-to-merge",
+        "Finished": "ready-for-review",
+        "Busy": "in-progress",
+        "Over": "done",
+        "Fresh": "",
+    }
+    for title, word in words.items():
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(library)
+        if word:
+            set_status(services, step, word)
+    tab = services.tabs.open("progression", project.id)
+    assert listed(tab) == [
+        "# Blocked",
+        "Stuck",
+        "# Ready to merge",
+        "Reviewed",
+        "# Ready for review",
+        "Finished",
+        "# Ready to start",
+        "Fresh",
+    ]
+
+
+def test_a_step_waiting_on_reviewed_work_waits(services, project, tab):
+    """A plain requires is fulfilled by done alone: B and C stay waiting while A is under
+    review or waiting on its merge, and start once it is done."""
+    a = project.steps[0]
+    for word in ("ready-for-review", "ready-to-merge"):
+        set_status(services, a, word)
+        assert "# Ready to start" not in listed(tab)
+        assert listed(tab)[-4:] == ["# Waiting", "B", "C", "D"]
     set_status(services, a, "done")
-    assert tab.board.ready.titles() == ["B", "C"]
-    assert tab.board.ready.cards()[0].title.text() == "B"
+    assert listed(tab) == ["# Ready to start", "B", "C", "# Waiting", "D"]
 
 
-def test_the_board_follows_a_status_change_and_its_undo(services, project, tab):
-    """Nothing is stored: a status write moves the cards, and undo moves them back."""
-    a, b, _c, _d = project.steps
-    set_status(services, a, "done")
-    assert tab.board.ready.titles() == ["B", "C"]
-    assert tab.board.upcoming.titles() == ["D"]
-    assert tab.board.header.percent.text() == "25%"
-
-    set_status(services, b, "in-progress")
-    assert tab.board.running.titles() == ["B"]
-    assert tab.board.ready.titles() == ["C"]
-
+def test_the_table_follows_a_status_change_and_its_undo(services, project, tab):
+    set_status(services, project.steps[0], "done")
+    assert listed(tab)[:3] == ["# Ready to start", "B", "C"]
     services.undo.undo()
-    assert tab.board.running.titles() == []
-    assert tab.board.ready.titles() == ["B", "C"]
+    assert listed(tab)[:2] == ["# Ready to start", "A"]
 
 
-def test_a_blocked_step_needs_attention_and_leads_the_running_column(services, project, tab):
-    a, b, _c, _d = project.steps
-    set_status(services, a, "done")
-    set_status(services, b, "in-progress")
-    set_status(services, project.steps[2], "blocked")
-    assert tab.board.running.titles() == ["C", "B"]  # Attention first.
-    blocked = tab.board.running.cards()[0]
-    assert "attention" in blocked.detail.text()
+def test_a_row_says_its_key_and_what_finishing_it_unblocks(services, project, tab):
+    from dplanner.modules.progression.view import STEP_COLUMN, UNBLOCKS_COLUMN
+
+    row = tab.table.row_of(project.steps[0].id)
+    assert tab.table.item(row, STEP_COLUMN).data(DETAIL_ROLE) == "S1"
+    assert tab.table.item(row, UNBLOCKS_COLUMN).text() == "3"
+    last = tab.table.row_of(project.steps[3].id)
+    assert tab.table.item(last, UNBLOCKS_COLUMN).text() == ""  # Nothing waits on D.
 
 
-def test_a_ready_card_says_what_it_unblocks(services, project, tab):
-    card = tab.board.ready.cards()[0]
-    assert card.title.text() == "A"
-    assert card.detail.text() == "Unblocks 3"
+def test_the_filter_shows_one_group_and_says_so_when_it_is_empty(services, project, tab):
+    """One click on a segment; a single group needs no heading, since the filter says it."""
+    tab.filter.button("waiting").click()
+    assert tab.filter_key == "waiting"
+    assert listed(tab) == ["B", "C", "D"]
+    tab.filter.button("review").click()
+    assert tab.table.rowCount() == 0
+    assert tab.empty.isVisibleTo(tab.widget) and not tab.table.isVisibleTo(tab.widget)
+    assert tab.empty.label.text() == "Nothing is ready for review."
+    tab.filter.button("all").click()
+    assert listed(tab)[:2] == ["# Ready to start", "A"]
+    assert tab.table.isVisibleTo(tab.widget)
 
 
-def test_the_columns_say_so_when_they_are_empty(services, tab, project):
+def test_an_empty_project_and_a_finished_one_say_so(services, make_project):
+    project = make_project("Empty")
+    tab = services.tabs.open("progression", project.id)
+    assert tab.empty.label.text() == "No steps yet."
+    step = Step(title="Only")
+    AddNodeCommand(project.id, step).redo(services.document)
+    set_status(services, step, "in-progress")
+    assert tab.empty.label.text() == "Nothing needs you right now."
+
+
+def test_the_title_counts_what_needs_a_person_and_follows_a_rename(services, project, tab):
+    """Blocked, merge, review and start count; waiting does not. None needing anybody
+    drops the count rather than saying nought."""
+    from dplanner.domain.commands import SetFieldCommand
+
+    assert tab.title == "Discovery — Step statuses (1)"
+    assert services.tabs.tab_title(tab) == tab.title
+    set_status(services, project.steps[0], "done")
+    assert services.tabs.tab_title(tab) == "Discovery — Step statuses (2)"
     for step in project.steps:
-        set_status(services, step, "done")
-    assert tab.board.header.percent.text() == "100%"
-    assert "All done" in _notes(tab.board.ready)
+        set_status(services, step, "in-progress")
+    assert services.tabs.tab_title(tab) == "Discovery — Step statuses"
+    services.undo.push(SetFieldCommand(project.id, "title", "Discovery Phase"))
+    assert services.tabs.tab_title(tab) == "Discovery Phase — Step statuses"
 
 
-def _notes(column):
-    from PySide6.QtWidgets import QLabel
-
-    texts = []
-    for index in range(column._rows.count()):
-        item = column._rows.itemAt(index)
-        widget = item.widget() if item is not None else None
-        if isinstance(widget, QLabel):
-            texts.append(widget.text())
-    return " ".join(texts)
+# -- ticking is picking ------------------------------------------------------------------------
 
 
-# -- the seams -------------------------------------------------------------------------------
-
-
-def test_selecting_a_card_publishes_it_so_the_step_verbs_target_it(services, project, tab):
-    tab.board.ready.cards()[0].select()
-
-    context = services.context.current()
-    assert context.selected_entities("step") == [project.steps[0].id]
-    assert services.actions.spec("steps.rename").state(context).enabled
-
-
-def test_double_clicking_a_card_opens_its_details(app, services, project, tab, monkeypatch):
-    """The card runs the same ``steps.details`` verb every other view's double-click runs,
-    against a context naming exactly its own step."""
-    # A hand-built event rather than QTest.mouseDClick: QTest's press never sees a release,
-    # so QApplication.mouseButtons() would stay "held" for every later test in the process.
+def _press(app, table, row, column, kind=None):
+    """A left button event at a cell's centre, hand-built: QTest's press never sees a
+    release, so ``QApplication.mouseButtons()`` would stay held for every later test."""
     from PySide6.QtCore import QEvent, QPointF, Qt
     from PySide6.QtGui import QMouseEvent
 
-    from dplanner.modules.step_properties.dialog import StepDetailsDialog
+    rect = table.visualRect(table.model().index(row, column))
+    centre = QPointF(rect.center())
+    viewport = table.viewport()
+    for event_kind in (
+        [kind] if kind else [QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonRelease]
+    ):
+        app.sendEvent(
+            viewport,
+            QMouseEvent(
+                event_kind,
+                centre,
+                QPointF(viewport.mapToGlobal(centre.toPoint())),
+                Qt.MouseButton.LeftButton,
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+            ),
+        )
 
-    shown = []
+
+def test_a_click_on_a_box_ticks_that_row_and_the_ticks_are_published(app, services, project, tab):
+    """The box is the selection's own target: a click adds its row and leaves the others,
+    and what is ticked is what the Step menu and the strip act on."""
+    from dplanner.modules.progression.view import CHECK_COLUMN
+
+    tab.on_activated()
+    b, c = project.steps[1], project.steps[2]
+    _press(app, tab.table, tab.table.row_of(b.id), CHECK_COLUMN)
+    _press(app, tab.table, tab.table.row_of(c.id), CHECK_COLUMN)
+    assert tab.table.picked() == [b.id, c.id]
+    assert services.context.current().selected_entities("step") == [b.id, c.id]
+    _press(app, tab.table, tab.table.row_of(b.id), CHECK_COLUMN)
+    assert tab.table.picked() == [c.id]
+
+
+def test_a_double_click_on_a_box_is_two_ticks_and_opens_nothing(
+    app, services, project, tab, monkeypatch
+):
+    from PySide6.QtCore import QEvent
+
+    from dplanner.modules.progression.view import CHECK_COLUMN
+
+    opened = []
+    monkeypatch.setattr(services.actions, "run", lambda action_id, ctx: opened.append(action_id))
+    row = tab.table.row_of(project.steps[0].id)
+    _press(app, tab.table, row, CHECK_COLUMN)
+    _press(app, tab.table, row, CHECK_COLUMN, QEvent.Type.MouseButtonDblClick)
+    assert tab.table.picked() == [] and opened == []
+
+
+def test_double_clicking_a_row_opens_its_details(app, services, project, tab, monkeypatch):
+    """The one gesture across the application: against a context naming the row's step."""
+    from PySide6.QtCore import QEvent
+
+    from dplanner.modules.progression.view import STEP_COLUMN
+
+    opened = []
     monkeypatch.setattr(
-        StepDetailsDialog, "exec", lambda self: shown.append(self.panel.current_step_id())
+        services.actions,
+        "run",
+        lambda action_id, ctx: opened.append((action_id, ctx.selected_entities("step"))),
     )
-    card = tab.board.ready.cards()[0]
-    centre = QPointF(card.rect().center())
-    app.sendEvent(
-        card,
-        QMouseEvent(
-            QEvent.Type.MouseButtonDblClick,
-            centre,
-            QPointF(card.mapToGlobal(centre.toPoint())),
-            Qt.MouseButton.LeftButton,
-            Qt.MouseButton.LeftButton,
-            Qt.KeyboardModifier.NoModifier,
-        ),
-    )
-    assert shown == [project.steps[0].id]
+    a = project.steps[0]
+    row = tab.table.row_of(a.id)
+    _press(app, tab.table, row, STEP_COLUMN)
+    _press(app, tab.table, row, STEP_COLUMN, QEvent.Type.MouseButtonDblClick)
+    assert opened == [("steps.details", [a.id])]
 
 
-def test_a_background_board_does_not_publish_its_selection(services, project, tab):
+def test_the_ticks_survive_a_rebuild_by_step(services, project, tab):
+    """An accepted review is still ticked in its new group."""
+    a = project.steps[0]
+    set_status(services, a, "ready-for-review")
+    tab.table.toggle_row(tab.table.row_of(a.id))
+    set_status(services, a, "ready-to-merge")
+    assert listed(tab)[:2] == ["# Ready to merge", "A"]
+    assert tab.table.picked() == [a.id]
+
+
+def test_a_background_tab_does_not_publish_its_selection(services, project, tab):
     """One selection scope; only the pane the user is in may write to it."""
     tab.on_deactivated()
-    tab.board.ready.cards()[0].select()
+    tab.table.toggle_row(tab.table.row_of(project.steps[0].id))
     assert services.context.current().selected_entities("step") == []
 
 
-def test_ticking_ready_cards_counts_them_on_the_run_button_and_publishes_them(
+# -- the strip acts on the ticked rows -------------------------------------------------------
+
+
+def test_the_strip_seats_run_agent_and_the_status_verbs_greyed_until_a_row_is_ticked(
     services, project, tab
 ):
-    """The Ready lane's button renders the real action's state over the ticked steps —
-    the reason is the gate's, never a copy — and its dropdown is the Step menu's own Run
-    Agent child, which acts on the ticked steps because opening it publishes them."""
-    board = tab.board
-    button = board.run_button
-    assert button is not None and button.text() == "Run Agents" and not button.isEnabled()
-    assert button.toolTip().startswith("Tick the ready steps")
-    cards = board.ready.cards()
-    assert all(card.check_box is not None for card in cards)
+    tab.on_activated()
+    for action_id in ("agent.run", "status.ready-to-merge", "status.done"):
+        button = tab.controls.button_for(action_id)
+        assert button is not None and not button.isEnabled(), action_id
 
-    cards[0].check_box.setChecked(True)
-    assert button.text() == "Run 1 Agent"
+
+def test_accepting_reviews_moves_them_to_merge_and_done_takes_them_away(services, project, tab):
+    """Ready to Merge and Done are the Step ▸ Status verbs themselves, run over every
+    ticked row as one undo step."""
+    tab.on_activated()
+    a, b = project.steps[0], project.steps[1]
+    set_status(services, a, "done")
+    set_status(services, b, "ready-for-review")
+    c = project.steps[2]
+    set_status(services, c, "ready-for-review")
+    for step in (b, c):
+        tab.table.toggle_row(tab.table.row_of(step.id))
+    merge = tab.controls.button_for("status.ready-to-merge")
+    assert merge.isEnabled() and not merge.isChecked()
+    merge.click()
+    assert listed(tab)[:3] == ["# Ready to merge", "B", "C"]
+    assert tab.table.picked() == [b.id, c.id]
+    assert merge.isChecked()  # Every ticked row stands there now.
+    tab.controls.button_for("status.done").click()
+    assert listed(tab) == ["# Ready to start", "D"]
+    services.undo.undo()
+    assert listed(tab)[:3] == ["# Ready to merge", "B", "C"]  # Both, in one step.
+
+
+def test_ticking_ready_rows_offers_run_agent_with_the_gates_reason(services, project, tab):
+    """The strip renders the real action's state over the ticked rows — the reason is the
+    gate's, never a copy — and its arrow drops the Step menu's own Run Agent child."""
+    tab.on_activated()
+    tab.table.toggle_row(tab.table.row_of(project.steps[0].id))
+    button = tab.controls.button_for("agent.run")
     assert not button.isEnabled()  # No instruction, no checkout: the gate says why.
-    assert button.toolTip().startswith("Run Agent — ")
-    assert board.ticked() == [cards[0].step_id]
-
-    menu = board.run_menu()
-    assert menu is not None
+    assert "Run Agent — " in button.toolTip()
+    menu = tab.controls.menu_for("agent.run")
     labels = [a.text() for a in menu.actions() if not a.isSeparator()]
     assert labels[-1] == "&Manage Agent Profiles…" and len(labels) > 1
-    assert services.context.current().selected_entities("step") == [cards[0].step_id]
-
-    cards[0].check_box.setChecked(False)
-    assert button.text() == "Run Agents" and board.ticked() == []
 
 
 @pytest.fixture
 def ready_agents(services, make_project):
-    """A finished step and five agent steps waiting on it: five cards in the Ready lane,
-    each briefed enough to launch. What a board looks like the morning a milestone lands."""
+    """A finished step and five agent steps waiting on it: five rows ready to start,
+    each briefed enough to launch. What the tab looks like the morning a milestone lands."""
     project = make_project("Discovery")
     done = Step(title="Groundwork")
     AddNodeCommand(project.id, done).redo(services.document)
@@ -227,16 +336,16 @@ def test_the_ticked_ready_steps_launch_in_one_gesture_and_nothing_is_asked(
 ):
     """Three ticks, one press, three peers — and no confirmation, which is not an omission.
 
-    The gate asks before launching a step whose prerequisites are not done; a step is in
-    this lane precisely because they are. The lane's rule and the gate's question are the
-    same question, so a launch from here can only ever be a quiet one — and a box that
-    never appears in the place a person launches from is worth a test saying so.
+    The gate asks before launching a step whose prerequisites are not done; a step is
+    ready to start precisely because they are. The group's rule and the gate's question
+    are the same question, so a launch from here can only ever be a quiet one — and a box
+    that never appears in the place a person launches from is worth a test saying so.
     """
     from dplanner.modules.step_agent_instruction import launcher
     from dplanner.modules.step_agent_run.aspect import launched
 
     tab = services.tabs.open("progression", ready_agents.id)
-    board = tab.board
+    tab.on_activated()
     prepared = []
 
     def resolve(_template, files, _workdir):
@@ -247,118 +356,48 @@ def test_the_ticked_ready_steps_launch_in_one_gesture_and_nothing_is_asked(
     monkeypatch.setattr(launcher, "resolve_command", resolve)
     boxes = _boxes(monkeypatch)
 
-    cards = board.ready.cards()[:3]
-    for card in cards:
-        card.check_box.setChecked(True)
-    assert board.run_button.text() == "Run 3 Agents"
-    assert board.run_button.isEnabled(), board.run_button.toolTip()
+    chosen = [step.id for step in ready_agents.steps[1:4]]
+    for step_id in chosen:
+        tab.table.toggle_row(tab.table.row_of(step_id))
+    button = tab.controls.button_for("agent.run")
+    assert button.isEnabled(), button.toolTip()
+    assert button.defaultAction().text() == "Run 3 Agents…"
 
-    menu = board.run_menu()
+    menu = tab.controls.menu_for("agent.run")
     default_profile = next(entry for entry in menu.actions() if not entry.isSeparator())
     default_profile.trigger()
 
     assert len(prepared) == 3
     assert len({files.directory for files in prepared}) == 3
     assert boxes == []
-    assert all(launched(services.document.step(card.step_id)) for card in cards)
+    assert all(launched(services.document.step(step_id)) for step_id in chosen)
 
 
-def test_more_ticks_than_the_limit_grey_the_button_with_the_count_as_the_reason(
+def test_more_ticks_than_the_limit_grey_run_agent_with_the_count_as_the_reason(
     services, ready_agents
 ):
     """Past *Settings ▸ Agent profiles*' limit the count itself refuses, before any step is
-    asked about — so the face says the cap rather than naming one step's problem."""
+    asked about — so the verb says the cap rather than naming one step's problem."""
     from dplanner.modules.step_agent_instruction.settings_page import DEFAULT_MAX_AGENTS
 
     tab = services.tabs.open("progression", ready_agents.id)
-    board = tab.board
-    cards = board.ready.cards()
-    assert len(cards) == DEFAULT_MAX_AGENTS + 1
-
-    for card in cards:
-        card.check_box.setChecked(True)
-    assert board.run_button.text() == f"Run {len(cards)} Agents"
-    assert not board.run_button.isEnabled()
-    assert board.run_button.toolTip() == (
-        f"Run {len(cards)} Agents — at most {DEFAULT_MAX_AGENTS} at a time "
+    tab.on_activated()
+    ready = [step.id for step in ready_agents.steps[1:]]
+    assert len(ready) == DEFAULT_MAX_AGENTS + 1
+    for step_id in ready:
+        tab.table.toggle_row(tab.table.row_of(step_id))
+    button = tab.controls.button_for("agent.run")
+    assert not button.isEnabled()
+    assert button.defaultAction().text() == (
+        f"Run {len(ready)} Agents — at most {DEFAULT_MAX_AGENTS} at a time "
         "(Settings ▸ Agent profiles)"
     )
-
-    cards[0].check_box.setChecked(False)  # One fewer is the whole remedy.
-    assert board.run_button.isEnabled(), board.run_button.toolTip()
-
-
-def _click(app, card, kind=None):
-    """A left button event on the card's centre. A hand-built event rather than QTest's:
-    QTest's press never sees a release, so `QApplication.mouseButtons()` would stay held
-    for every later test in the process."""
-    from PySide6.QtCore import QEvent, QPointF, Qt
-    from PySide6.QtGui import QMouseEvent
-
-    centre = QPointF(card.rect().center())
-    app.sendEvent(
-        card,
-        QMouseEvent(
-            kind or QEvent.Type.MouseButtonPress,
-            centre,
-            QPointF(card.mapToGlobal(centre.toPoint())),
-            Qt.MouseButton.LeftButton,
-            Qt.MouseButton.LeftButton,
-            Qt.KeyboardModifier.NoModifier,
-        ),
-    )
+    tab.table.toggle_row(tab.table.row_of(ready[0]))  # One fewer is the whole remedy.
+    assert button.isEnabled(), button.toolTip()
 
 
-def test_clicking_a_ready_card_anywhere_ticks_it(app, services, project, tab):
-    """The tick is a thirteen-pixel target and the card is the thing being chosen, so the
-    whole card is the target — and clicking it again takes it back out of the run."""
-    card = tab.board.ready.cards()[0]
-    assert card.check_box is not None and not card.check_box.isChecked()
-
-    _click(app, card)
-    assert card.check_box.isChecked() and tab.board.ticked() == [card.step_id]
-    assert services.context.current().selected_entities("step") == [card.step_id]
-
-    _click(app, card)
-    assert not card.check_box.isChecked() and tab.board.ticked() == []
-
-
-def test_a_double_click_opens_the_details_and_leaves_the_run_alone(
-    app, services, project, tab, monkeypatch
-):
-    """Opening a card is not choosing it: the press that began the double click ticked it,
-    and the double click puts it back."""
-    from PySide6.QtCore import QEvent
-
-    from dplanner.modules.step_properties.dialog import StepDetailsDialog
-
-    shown = []
-    monkeypatch.setattr(
-        StepDetailsDialog, "exec", lambda self: shown.append(self.panel.current_step_id())
-    )
-    card = tab.board.ready.cards()[0]
-
-    _click(app, card)  # The press Qt sends first.
-    _click(app, card, QEvent.Type.MouseButtonDblClick)
-
-    assert shown == [card.step_id]
-    assert not card.check_box.isChecked() and tab.board.ticked() == []
-
-
-def test_a_cards_second_line_starts_where_its_title_does(app, services, project, tab):
-    """The tick stands beside line one and the words are one column under it: a detail that
-    began under the tick would be indented from the name it belongs to."""
-    card = tab.board.ready.cards()[0]
-    assert card.detail.isVisible() and card.detail.text() == "Unblocks 3"
-    assert card.detail.x() == card.title.x()
-    # One line tall, so its indicator sits on the title's first line however far it wraps.
-    from PySide6.QtGui import QFontMetrics
-
-    assert card.check_box.height() == QFontMetrics(card.title.font()).height()
-
-
-def test_a_build_without_an_agent_has_no_button_at_all(services, project):
-    """Hidden means absent: agent_state=None is a build where the capability does not exist."""
+def test_a_build_without_the_verbs_seats_none(services, project):
+    """Hidden means absent: a build the root names no verbs for has a strip of the filter."""
     from dplanner.modules.progression.module import ProgressionActivity, ProgressionDeps
 
     activity = ProgressionActivity(
@@ -371,23 +410,14 @@ def test_a_build_without_an_agent_has_no_button_at_all(services, project):
         ),
         project.id,
     )
-    assert activity.board.run_button is None
-    assert all(card.check_box is None for card in activity.board.ready.cards())
+    assert activity.controls.button_for("agent.run") is None
     activity.close()
     # Built bare, so no tab host will delete the page: a top-level widget left to the
     # boundary collector dies inside it, which is how a worker segfaulted on this test.
     activity.widget.deleteLater()
 
 
-def test_the_tab_is_titled_for_its_project_and_follows_a_rename(services, project, tab):
-    from dplanner.domain.commands import SetFieldCommand
-
-    assert tab.title == "Discovery — Ready to start"
-    services.undo.push(SetFieldCommand(project.id, "title", "Discovery Phase"))
-    assert "Discovery Phase — Ready to start" in [a.title for a in services.tabs.activities()]
-
-
-def test_a_deleted_project_takes_its_board_with_it(services, project, tab):
+def test_a_deleted_project_takes_its_tab_with_it(services, project, tab):
     from dplanner.domain.commands import RemoveNodeCommand
 
     services.undo.push(RemoveNodeCommand(project.id))
@@ -438,24 +468,26 @@ def test_the_cli_gives_the_same_answer(cli):
     assert text.splitlines()[0] == "33% done — 1 of 3 steps"
     assert "Ready to launch:" in text
 
+    cli("status", "set", "B", "ready-for-review")
+    found = json.loads(cli("progression", "show", "Discovery", "--json"))
+    assert [s["title"] for s in found["review"]] == ["B"] and found["counts"]["review"] == 1
+    assert found["ready"] == [] and [s["title"] for s in found["upcoming"]] == ["C"]
+    assert "Ready for review:\n  B  (unblocks 1)" in cli("progression", "show", "Discovery")
+    cli("status", "set", "B", "ready-to-merge")
+    found = json.loads(cli("progression", "show", "Discovery", "--json"))
+    assert [s["title"] for s in found["merge"]] == ["B"] and found["counts"]["merge"] == 1
 
-def test_the_window_and_the_terminal_agree(services, project, tab, tmp_path):
-    """The tab and the verb read one derivation, asserted where they meet: the titles."""
+
+def test_the_window_and_the_terminal_agree(services, project, tab):
+    """The tab and the verb read one derivation, asserted where they meet: the steps."""
     from dplanner.domain.progression import progression as derive
     from dplanner.modules.step_status.aspect import read as status_read
 
     set_status(services, project.steps[0], "done")
     derived = derive(services.document, project, status_read)
-    assert tab.board.ready.titles() == [row.step.title for row in derived.ready]
-    assert tab.board.upcoming.titles() == [c.step.title for c in derived.upcoming]
-
-
-def test_the_domain_speaks_the_status_modules_vocabulary():
-    """domain/progression.py names three of the status aspect's words without importing
-    it (the domain may not learn the module's schema). This is the one place both are
-    importable, so it pins the copy: rename a status in the aspect and this fails instead
-    of the board silently reclassifying every step."""
-    from dplanner.domain import progression
-    from dplanner.modules.step_status.aspect import STATUSES
-
-    assert {progression.DONE, progression.IN_PROGRESS, progression.BLOCKED} <= set(STATUSES)
+    expected = [
+        *(step.id for step in derived.ready),
+        *(coming.step.id for coming in derived.upcoming),
+        *(step.id for step in derived.waiting),
+    ]
+    assert tab.table.steps() == expected

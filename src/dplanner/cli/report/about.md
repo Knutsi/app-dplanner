@@ -11,7 +11,8 @@ from the same files the planning tool works with.
   actually landed (ink). A milestone stands on it as a named hairline where the plan lands it.
 - **Plan** is the work as a graph. A card is a step; an arrow means the step at its head
   waits for the one at its tail; a dashed line is a plain relation. The strip on a card's left
-  carries its key and is washed by status — blue in progress, red blocked, green done. Click a
+  carries its key and is washed by status — blue in progress, amber ready for review, green
+  ready to merge or done (a done card is green all over), red blocked. Click a
   card, a row or a milestone anywhere on the page to open it.
 - **Timeline** is the milestones in sequence, each bar from its start to where the plan lands
   it, filled as far as its work has landed; a small triangle marks a date somebody set. The

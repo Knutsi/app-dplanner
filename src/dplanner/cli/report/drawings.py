@@ -42,6 +42,10 @@ from dplanner.domain.schedule import (
     short_date,
 )
 
+# The statuses a card says in words, in a pill on its bottom edge: work somebody has in
+# hand. Done says it with a tick and a faded title; pending says nothing.
+PILLED_STATUSES = ("in-progress", "ready-for-review", "ready-to-merge", "blocked")
+
 
 @dataclass(frozen=True)
 class Colors:
@@ -195,9 +199,13 @@ def _card(node: Node, colors: Colors) -> str:
     x, y, w, h = node.x, node.y, node.w, node.h
     done = node.status == "done"
     tone = _body_tone(node, colors)
-    spine = {"in-progress": colors.busy, "blocked": colors.bad, "done": colors.good}.get(
-        node.status
-    )
+    spine = {
+        "in-progress": colors.busy,
+        "ready-for-review": colors.attention,
+        "ready-to-merge": colors.good,
+        "blocked": colors.bad,
+        "done": colors.good,
+    }.get(node.status)
     out = [
         f'<g class="node kind-{node.kind or "step"} status-{node.status or "pending"}" '
         f'data-step="{_t(node.id)}"><title>{_t(node.key + " " + node.title)}</title>'
@@ -232,7 +240,7 @@ def _card(node: Node, colors: Colors) -> str:
     )
     inner_x = x + SPINE_W + 4 + PAD_Y
     inner_w = w - SPINE_W - 4 - PAD_Y - PADDING
-    reserved = LINE_H if (node.stat or node.status in ("in-progress", "blocked")) else 0.0
+    reserved = LINE_H if (node.stat or node.status in PILLED_STATUSES) else 0.0
     max_lines = max(1, int((h - 2 * PAD_Y - reserved) // LINE_H))
     title = ("✓ " if done else "") + node.title
     lines = _wrap(title, inner_w, NODE_FONT, max_lines)
@@ -251,7 +259,7 @@ def _card(node: Node, colors: Colors) -> str:
             f'text-anchor="end" font-size="{_n(STAT_FONT)}" fill="{colors.ink}"'
             f"{' font-weight="700"' if node.kind == 'milestone' else ''}>{_t(node.stat)}</text>"
         )
-    if node.status in ("in-progress", "blocked"):
+    if node.status in PILLED_STATUSES:
         word = node.status.replace("-", " ")
         out.append(_pill(inner_x - 4, y + h - PILL_H / 2, word, spine or colors.ink, colors))
     if node.badge:

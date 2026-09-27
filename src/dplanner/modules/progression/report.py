@@ -1,6 +1,6 @@
 """What progression says in a report: how far along, and what can start now.
 
-The same derivation as the board and ``dplanner progression show`` — statuses and
+The same derivation as the Step statuses tab and ``dplanner progression show`` — statuses and
 estimates through the readers the root hands over — placed at the top of the overview,
 because "how far along" is the first thing every reader asks.
 
@@ -72,10 +72,10 @@ def report_source(
         if found.ready:
             rows = tuple(
                 Row(
-                    (key_of(row.step), row.step.title or "Untitled step", str(row.unlocks)),
-                    step_id=row.step.id,
+                    (key_of(step), step.title or "Untitled step", str(found.unlocks[step.id])),
+                    step_id=step.id,
                 )
-                for row in found.ready
+                for step in found.ready
             )
             placed.append(
                 Placed(

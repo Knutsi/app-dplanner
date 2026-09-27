@@ -247,7 +247,7 @@ class Node:
     w: float
     h: float
     kind: str = ""  # milestone | feature | check | agent | ""
-    status: str = ""  # pending | in-progress | done | blocked
+    status: str = ""  # One of the status aspect's words; "" and pending say nothing.
     stat: str = ""  # The card's bottom-right figure: an estimate, a milestone's total.
     badge: str = ""  # A milestone's label on the top edge.
     # A milestone's own shade of the project's colour map, as "#rrggbb" — the same hex

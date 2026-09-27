@@ -21,7 +21,8 @@ paths:
   `-style`/`-platform` follow the word; `spawn_instance` and `python -m dplanner` go through
   the same door; the word is not a noun and the skill never names it
   (`tests/cli/test_entry.py` reserves it). **And the word refuses inside an agent's
-  shell** (`AGENT_SHELL_MARKERS`, one row per agent CLI known to mark its shell): a window
+  shell** (`domain/agents.py`'s `shell_marker` over the harnesses, each one's first
+  marker — the one reading `status set` also holds an agent's done at review with): a window
   that is an agent's background process ends with the agent's turn and makes every agent
   it launches a *child session* of the first — no transcript, ended with its parent — which
   is how one stray window took four agents down. Not a dispatch rule, a guard on who owns

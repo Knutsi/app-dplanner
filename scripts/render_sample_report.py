@@ -53,9 +53,9 @@ PLAN: list[tuple[str, float | None, list[int], str, str]] = [
     ("Write the discovery brief", 2.0, [0], "done", ""),
     ("Discovery done", None, [1], "done", "milestone"),
     ("Design the search index", 4.0, [2], "done", ""),
-    ("Build the indexer", 6.0, [3], "in-progress", "feature"),
-    ("Query language parser", 5.0, [3], "in-progress", "feature"),
-    ("Ranking experiments", 8.0, [4, 5], "pending", ""),
+    ("Build the indexer", 6.0, [3], "ready-to-merge", "feature"),
+    ("Query language parser", 5.0, [3], "ready-for-review", "feature"),
+    ("Ranking experiments", 8.0, [4, 5], "in-progress", ""),
     ("Search results page", 4.0, [5], "blocked", "feature"),
     ("Load test at ten times traffic", 3.0, [4], "pending", "check"),
     ("Search rewrite ships", None, [6, 7, 8], "pending", "milestone"),
@@ -83,7 +83,7 @@ def build(root: Path) -> tuple[Path, Path]:
         library.set_field(project.id, "summary", "Replace the search stack before the lease ends.")
         start = date.today() - timedelta(days=40)
         SetModuleDataCommand(project.id, "estimation", write_start(start)).redo(library)
-        assumptions = write_project(project, efficiency=0.6, team=(2, 2))
+        assumptions = write_project(project, efficiency=0.6, team=(2, 2), today=date.today())
         SetModuleDataCommand(project.id, "time_estimates", assumptions).redo(library)
         steps = _steps(library, project.id)
         picture = attach(
@@ -129,7 +129,8 @@ def _steps(library: Library, project_id: str) -> list[Step]:
         if days is not None:
             SetModuleDataCommand(step.id, "estimation", estimate(days)).redo(library)
         if word != "pending":
-            SetModuleDataCommand(step.id, "step_status", status(word)).redo(library)
+            entry = status(word, today=date.today())
+            SetModuleDataCommand(step.id, "step_status", entry).redo(library)
         if kind == "milestone":
             SetModuleDataCommand(step.id, "step_milestone", milestone(title)).redo(library)
         if kind == "feature":

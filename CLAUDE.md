@@ -113,7 +113,7 @@ The diagnoses, the recipes and the shiboken detail are the **`suite-crash` skill
 a worker dying with SIGSEGV names an innocent one.
 
 - **Never read a layout back** (`layout.itemAt(i)`): keep your own list of what you put in it
-  (`StatusColumn._held`, `MilestoneList._rows`). `takeAt` in a loop that drops the wrapper each
+  (`projects/card.py`'s `RepositoriesCard._held`). `takeAt` in a loop that drops the wrapper each
   turn is fine.
 - **Add a child layout to its parent before filling it**, and **never construct a
   `QLayoutItem` in Python** — `addStretch`/`addSpacing` instead.

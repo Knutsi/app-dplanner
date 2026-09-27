@@ -623,9 +623,13 @@ and to format 3 for `changed`: an older build's writer rebuilds every row, so th
 is how it knows it would drop what it cannot write.
 **A status remembers two days** for the same reason: `step_status.json` (format 2) is
 `{"status": "done", "since": "2026-09-18", "started": "2026-09-14"}` — the day the status
-last changed, and the day the step first went in progress — stamped by the aspect's
-`write`, so the window, `dplanner status set` and an agent's launch all record them, and
-restored by undo with the rest of the entry. Pending is still absence, but a step set back
+last changed, and the day the step first went into a worked status (in progress, ready for
+review, ready to merge) — stamped by the aspect's `write`, so the window, `dplanner status
+set` and an agent's launch all record them, and restored by undo with the rest of the
+entry. The word is one of `pending`, `in-progress`, `ready-for-review`, `ready-to-merge`,
+`done`, `blocked`; the two in the middle came later **with no format bump**, because a
+build that does not know a word reads it as pending and leaves the entry as it is — which
+is what an older build does with them. Pending is still absence, but a step set back
 to pending keeps its days: an entry with no `status` key, which reads as pending. A copy
 keeps the status and forgets the days, which were the original's. An older entry has no
 days, and every reader takes that as "not said", never as today.

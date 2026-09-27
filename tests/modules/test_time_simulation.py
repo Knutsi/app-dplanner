@@ -219,3 +219,46 @@ def test_the_world_changes_the_team_on_the_day_of_a_rebudget():
     assert any(
         "the team becomes 2 people + 3 agents at 60% focus" in e for e in played.days[at].events
     )
+
+
+# -- review and merge: work in flight ------------------------------------------------------------
+
+
+def test_time_reads_a_step_under_review_as_work_still_in_flight():
+    """A step an agent finished is not landed, and neither is its work begun again: moving
+    it from in progress to ready for review on a later day moves no landing — the root's
+    fold reads it in progress since it started — and that day still counts a change.
+    Played through the simulator's own writers and readers."""
+    from dplanner.modules.time_estimates.simulation.frames import Frame
+
+    plan = sample_plan(1)  # Dated from Monday: a step begun on Wednesday would be late.
+    assert plan.state.start == MONDAY
+    replay = _replay()
+    order = tuple(step.id for step in plan.steps)
+    replay.apply(Frame(day=MONDAY, plan=plan.state, steps=plan.steps, order=order))
+    start = plan.steps[0]  # Project start: nothing to do, done the day work began.
+    first = max(
+        (step for step in plan.steps if step.requires == (start.id,) and not step.agent),
+        key=lambda step: step.estimate or 0.0,
+    )
+    working = replace(first, status=IN_PROGRESS, since=MONDAY, started=MONDAY)
+    done = replace(start, status="done", since=MONDAY, started=MONDAY)
+    replay.apply(Frame(day=MONDAY, steps=(done, working)))
+    later = MONDAY + timedelta(days=2)  # Wednesday: two working days in.
+    before = replay.forecast(later)
+    for word in ("ready-for-review", "ready-to-merge"):
+        replay.apply(Frame(day=later, steps=(replace(working, status=word, since=later),)))
+        after = replay.forecast(later)
+        assert before is not None and after is not None
+        assert [one.finish for one in after.stretches] == [one.finish for one in before.stretches]
+        changed = sum(one.tally.changed for one in after.stretches)
+        assert changed == sum(one.tally.changed for one in before.stretches) + 1, word
+
+
+@pytest.mark.parametrize("scenario", SCENARIOS, ids=lambda scenario: scenario.id)
+def test_the_world_plays_the_prototypes_four_words_and_no_others(scenario):
+    """The review words are never the simulator's: a folded reading can never be written
+    back over a plan, because nothing here writes one at all."""
+    frames = scenario.play(1).frames()
+    words = {state.status for frame in frames for state in frame.steps}
+    assert words <= {"pending", "in-progress", "done", "blocked"}

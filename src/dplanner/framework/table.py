@@ -39,6 +39,13 @@ position before a word of them is: which steps are small, which are large, which
 sized at all. With an editor beside them a last chip opens it, and wears the row's value
 when that is none of the chips, so a value off the scale is never shown as no value.
 
+A column may be a **check column** (``Column(check=True)``): a box on every row, ticked
+exactly while the row is picked, and a click on it adds that row to the selection or takes
+it out, leaving the rest alone. It is the selection's own target — a roster whose rows
+are ticked for a verb — never a second state beside it: what the box says and what the
+strip's verbs act on cannot disagree, because they are one fact. A double click on it is a
+second tick, never an activation.
+
 Three tables were written by hand before this one and disagreed on nine settings; the
 ``#OrderTable`` rules four widgets borrowed by name are what this replaces, one migration
 at a time. ``modules/debug/design_example.py`` is the reference to copy from.
@@ -110,7 +117,7 @@ from dplanner.framework.list_rows import (
 )
 from dplanner.framework.widgets import NumberBox
 from dplanner.theme.cards import detail_font
-from dplanner.theme.icons import ICON_SIZE, KEY_BADGE_W
+from dplanner.theme.icons import ICON_SIZE, KEY_BADGE_W, check_icon
 from dplanner.theme.tokens import (
     CELL_PADDING_H,
     CELL_PADDING_V,
@@ -314,6 +321,9 @@ class Column:
     # The usual values, painted in the cell as chips and picked with a click; with an editor
     # a last chip opens it.
     chips: tuple[Chip, ...] = ()
+    # The row's selection, drawn as a box a click toggles: ticking is picking. Wants a table
+    # whose selection is "extended".
+    check: bool = False
 
 
 @dataclass(frozen=True)
@@ -446,6 +456,19 @@ class Table(QTableWidget):
         """The chips one cell paints, where it paints them, in viewport coordinates."""
         index = self.model().index(row, column)
         return self.delegate.chip_layout(index, self.visualRect(index))
+
+    def check_under(self, point: QPoint) -> int | None:
+        """The row whose box is under ``point`` — the whole cell of a check column is the
+        target, since it holds nothing else — or None."""
+        index = self.indexAt(point)
+        if not index.isValid() or not self._columns[index.column()].check:
+            return None
+        return None if self.is_heading(index.row()) else index.row()
+
+    def toggle_row(self, row: int) -> None:
+        """Tick or untick one row: its selection toggled, every other row's left alone."""
+        flags = QItemSelectionModel.SelectionFlag
+        self.selectionModel().setCurrentIndex(self.model().index(row, 0), flags.Toggle | flags.Rows)
 
     def chip_under(self, point: QPoint) -> tuple[int, int, int] | None:
         index = self.indexAt(point)
@@ -643,7 +666,20 @@ class Table(QTableWidget):
         if key and event.button() == Qt.MouseButton.LeftButton:
             self.toggle_group(key)
             return
+        ticked = self.check_under(event.position().toPoint())
+        if ticked is not None and event.button() == Qt.MouseButton.LeftButton:
+            self.toggle_row(ticked)
+            return
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt override
+        """On a box, the second click of a double click is a second tick — two quick clicks
+        on a check box toggle it twice, wherever it is — and never opens the row."""
+        ticked = self.check_under(event.position().toPoint())
+        if ticked is not None and event.button() == Qt.MouseButton.LeftButton:
+            self.toggle_row(ticked)
+            return
+        super().mouseDoubleClickEvent(event)
 
     def edit_after_release(self, index: QModelIndex | QPersistentModelIndex) -> None:
         """Open the editor once the click that asked for it is over: Qt ends a release by
@@ -696,6 +732,17 @@ class TableDelegate(QStyledItemDelegate):
         if self._table.columns()[column].glyph:
             left += GLYPH_SLOT + ICON_GAP
         return left
+
+    def check_rect(self, index: QModelIndex | QPersistentModelIndex, rect: QRect) -> QRect:
+        """Where a check column's box sits: past the padding and the group's indent, on the
+        first line of a rich row — the box is the name's, like the glyph, and a glyph's size."""
+        side = ICON_SIZE
+        if self._table.rich():
+            line = QFontMetrics(self._table.font()).height()
+            top = rect.top() + ROW_PADDING_V + (line - side) // 2
+        else:
+            top = rect.top() + (rect.height() - side) // 2
+        return QRect(rect.left() + self._table.padding() + self.indent(index), top, side, side)
 
     def indent(self, index: QModelIndex | QPersistentModelIndex) -> int:
         """How far this cell hangs in: a grouped row's first column, and nothing else.
@@ -808,6 +855,9 @@ class TableDelegate(QStyledItemDelegate):
         if self._table.columns()[index.column()].chips and not heading:
             self._paint_chips(painter, opt, index)
             return
+        if self._table.columns()[index.column()].check and not heading:
+            self._paint_check(painter, opt, index, selected)
+            return
 
         # Ink from the palette's text, never HighlightedText: the picked ground is the quiet
         # overlay, and on some themes the highlighted text is that very colour.
@@ -876,6 +926,9 @@ class TableDelegate(QStyledItemDelegate):
         column = index.column()
         slot = GLYPH_SLOT + ICON_GAP if self._table.columns()[column].glyph else 0
         height = row_height(option.font, rich=self._table.rich() and not heading)
+        if self._table.columns()[column].check and not heading:
+            box = self.check_rect(index, QRect(0, 0, 0, height))
+            return QSize(box.right() + 1 + self._table.padding(), height)
         laid = self.chip_layout(index, QRect(0, 0, 0, height)) if not heading else []
         if laid:
             return QSize(laid[-1].rect.right() + 1 + self._table.padding(), height)
@@ -959,6 +1012,36 @@ class TableDelegate(QStyledItemDelegate):
             )
             painter.setPen(ink)
             painter.drawText(box, Qt.AlignmentFlag.AlignCenter, laid.chip.text)
+        painter.restore()
+
+    def _paint_check(
+        self,
+        painter: QPainter,
+        opt: QStyleOptionViewItem,
+        index: QModelIndex | QPersistentModelIndex,
+        ticked: bool,
+    ) -> None:
+        """A check column's box, painted like a chip rather than by the style: a quiet box
+        on the hairline, and the accent with a tick in its own ink once the row is picked.
+        The style's indicator is drawn from colours no theme sets, and on a dark theme it
+        all but vanished into the row — the one target a ticked roster is read by."""
+        palette = opt.palette
+        box = QRectF(self.check_rect(index, opt.rect)).adjusted(0.5, 0.5, -0.5, -0.5)
+        over = self._table.hovered_row() == index.row()
+        if ticked:
+            ground = border = palette.color(QPalette.ColorRole.Accent)
+        else:
+            ground = palette.color(QPalette.ColorRole.Button)
+            border = palette.color(QPalette.ColorRole.Light if over else QPalette.ColorRole.Mid)
+        painter.save()
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(border, 1))
+        painter.setBrush(ground)
+        painter.drawRoundedRect(box, RADIUS_SM - 1, RADIUS_SM - 1)
+        if ticked:
+            tick = check_icon(palette.color(QPalette.ColorRole.BrightText))
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+            tick.paint(painter, box.toAlignedRect().adjusted(1, 1, -1, -1))
         painter.restore()
 
     def _chip_hit(

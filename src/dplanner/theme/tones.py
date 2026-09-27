@@ -67,7 +67,16 @@ STATUS_TONES: dict[str, QColor] = {
 }
 # A step's status as one of those tones: the spine's wash on every card that is a step. A
 # status with nothing to say — pending — is absent, and the spine stays a quiet shade.
-STEP_STATUS_TONES: dict[str, str] = {"in-progress": "busy", "blocked": "bad", "done": "good"}
+# Ready for review wears warn — the amber the agent chip says *plan ready* in: a person
+# looks next — and ready to merge the good green, accepted; only done also greens and
+# mutes the body, so the two greens are told apart by the card.
+STEP_STATUS_TONES: dict[str, str] = {
+    "in-progress": "busy",
+    "ready-for-review": "warn",
+    "ready-to-merge": "good",
+    "blocked": "bad",
+    "done": "good",
+}
 
 
 def toned(name: str, color: str = "") -> tuple[QColor, QColor] | None:

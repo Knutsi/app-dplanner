@@ -118,9 +118,11 @@ paths:
 - **The spine is the card's left edge, and it says who and where.** `paint_spine`
   (`theme/cards.py`, shared with the coverage lanes' step cards) draws a 26 px strip
   inside the left edge, clipped to the body, carrying the key rotated a quarter turn and
-  washed by status — busy blue for in-progress, bad red for blocked, the good green for
-  done, a quiet shade otherwise (`NodeAccent.key_text`, `spine_tone`, read from
-  `theme/tones.py`'s `STEP_STATUS_TONES`; the 3 px status bar it replaces is gone). The
+  washed by status — busy blue for in-progress, warn amber for ready-for-review (a person
+  looks next), the good green for ready-to-merge and done (only done also greens and
+  mutes the body), bad red for blocked, a quiet shade otherwise (`NodeAccent.key_text`,
+  `spine_tone`, read from `theme/tones.py`'s `STEP_STATUS_TONES`; the 3 px status bar it
+  replaces is gone). The
   title and the left-edge decorations start past it (`LEFT_INSET`).
 - **A picked node is lifted, not recoloured — and every card rests on a shadow.** Selection
   thickens the border to the accent, *gains* whatever fill the node already had (so a picked

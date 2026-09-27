@@ -165,6 +165,20 @@ def test_blocked_gets_a_bad_bar(services, project, tab):
     assert node(tab, step)._accent.spine_tone == "bad"
 
 
+def test_review_wears_the_warn_spine_and_merge_the_good_one(services, project, tab):
+    """Review is amber — a person looks next — and merge is green, accepted; neither is
+    done, so neither mutes the card or greens its body."""
+    step = project.steps[0]
+    for word, tone in (("ready-for-review", "warn"), ("ready-to-merge", "good")):
+        services.undo.push(
+            SetModuleDataCommand(
+                step.id, status.MODULE_ID, status.write(word, today=date(2026, 9, 21))
+            )
+        )
+        accent = node(tab, step)._accent
+        assert (accent.spine_tone, accent.muted, accent.body_tone) == (tone, False, "")
+
+
 def test_an_instructed_step_wears_the_spark_medallion(services, project, tab):
     step = project.steps[0]
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")

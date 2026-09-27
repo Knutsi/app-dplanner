@@ -1,9 +1,10 @@
 """``dplanner progression show`` — what can be launched right now, and how far along.
 
 ``order show`` answers what the graph *allows*; this answers where the work *is*: percent
-done, what is running or stuck, the frontier ranked by what finishing it unlocks, and
-what comes one move later. One derivation — ``domain/progression.py`` — feeds this verb,
-the tab and ``--json``, so the three can never disagree.
+done, what is stuck, waiting on a merge or a review, or running, the frontier ranked by
+what finishing it unlocks, and what comes one move later. One derivation —
+``domain/progression.py`` — feeds this verb, the Step statuses tab and ``--json``, so the
+three can never disagree.
 
 The status and estimate readers arrive as functions from the composition root, the same
 hand-over ``layout_cli.commands(days_for=…)`` uses — neither ``cli.py`` imports the other.
@@ -74,16 +75,20 @@ def _show(
         "counts": {
             "done": len(found.done),
             "running": len(found.running),
+            "review": len(found.review),
+            "merge": len(found.merge),
             "attention": len(found.attention),
             "ready": len(found.ready),
             "upcoming": len(found.upcoming),
             "waiting": len(found.waiting),
         },
         "attention": named(found.attention),
+        "merge": named(found.merge),
+        "review": named(found.review),
         "running": named(found.running),
         "ready": [
-            {"id": row.step.id, "title": row.step.title, "unlocks": row.unlocks}
-            for row in found.ready
+            {"id": step.id, "title": step.title, "unlocks": found.unlocks[step.id]}
+            for step in found.ready
         ],
         "upcoming": [
             {
@@ -120,15 +125,15 @@ def _report(found: Progression, weighted: tuple[float, float] | None) -> str:
             lines.append(f"{label}:")
             lines.extend(f"  {row}" for row in rows)
 
+    def unblocking(step: Step) -> str:
+        unlocks = found.unlocks.get(step.id, 0)
+        return f"{title(step)}  (unblocks {unlocks})" if unlocks else title(step)
+
     section("Needs attention", [title(step) for step in found.attention])
+    section("Ready to merge", [unblocking(step) for step in found.merge])
+    section("Ready for review", [unblocking(step) for step in found.review])
     section("Running", [title(step) for step in found.running])
-    section(
-        "Ready to launch",
-        [
-            f"{title(row.step)}  (unblocks {row.unlocks})" if row.unlocks else title(row.step)
-            for row in found.ready
-        ],
-    )
+    section("Ready to launch", [unblocking(step) for step in found.ready])
     section(
         "Up next",
         [
