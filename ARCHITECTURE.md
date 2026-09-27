@@ -4240,6 +4240,34 @@ The window has no verb that posts a finding, because only an agent writes one. T
 tab shows the conversation read-only, following the ledger as the verbs write it. The rule
 is in `.claude/rules/agents.md`, and the edge rule in `.claude/rules/graph-model.md`.
 
+**A conversation is read in a dialog of its own, and the ledger is what opens it.** The
+Review tab lists each message as a heading and its first line, which says where a review
+stands but not what it said, and a finding is prose. *Step ▸ Review Conversation…* — and
+the tab's *Open Conversation…*, and a double-click on one of its rows — opens
+`step_review/conversation.py`:
+- the messages on the left, each wearing who said it: the review's glyph for the step that
+  asks, the agent's for the step that answers;
+- the picked message rendered in full on the right;
+- where the conversation stands, in the footer's status slot.
+
+Three choices shaped it:
+
+- **It is enabled by the ledger, not by the aspect.** A collector sending work back upstream
+  keeps the same `review_rounds` entry and talks with the same verbs (*A collector talks the
+  same way*). Gating on `is_review` would have hidden the one conversation that has no other
+  place in the window. The state asks `rounds(step)`, one entry's rows, because an action
+  state runs on every announce. It greys with *no rounds yet* on a review and *not a review*
+  anywhere else.
+- **It follows the ledger while it is open.** An agent's `review reply` arrives from another
+  process. The watcher adopts it on a timer of its own rather than a settle, so nothing holds
+  the adoption back behind the modal: *A settle behind a modal waits for it* is about the
+  views behind one. The dialog hears `module_data_changed` directly, as the tab does. It keeps
+  the reader's pick by the message's identity (party, round, kind), not its row, because a
+  collector's ledger can gain a stamp on an earlier round.
+- **One builder names each message**, for the tab and the dialog alike (`message_rows`,
+  `where_it_stands`), so the two cannot word a message differently. The tab's full-text
+  tooltip went: the dialog is where a message is read.
+
 **Both agents are briefed with the protocol, because the verbs alone do not say when to
 use them.** A review and its subject are two peers in two terminals that never talk except
 through the plan, so each briefing has to carry its half of the conversation in full:

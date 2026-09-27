@@ -266,7 +266,12 @@ paths:
   - **Every status a `review` verb moves goes through `status_command`**, the writer
     `status set` uses, handed in as the root's `set_status`. A stopped status ends a claim
     exactly as `status set` does.
-  - **The window posts nothing**: the Review tab is the settings and a read-only list.
+  - **The window posts nothing, and reads all of it**: the Review tab is the settings and a
+    read-only list, and *Step ▸ Review Conversation…* (`review.conversation`; the tab's
+    *Open Conversation…* and a row's double-click) opens `conversation.py`'s dialog — every
+    message beside the picked one in full, live on the ledger. It is **enabled by the ledger,
+    never by the aspect** (`rounds(step)`), so a collector's upstream conversation opens
+    too, and the tab and the dialog build their rows with one `message_rows`.
   - **Each side is briefed with the conversation.** A review's `## Instructions` is
     generated (`_review_instruction`) from its aspect and its subject — whom, each lens's
     `Lens.asks` (an id this build does not name is a skill to use), the round protocol and

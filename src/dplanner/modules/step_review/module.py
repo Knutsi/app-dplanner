@@ -1,18 +1,30 @@
-"""The review aspect, in the running application: the Review toggle and the Review tab.
+"""The review aspect, in the running application: the Review toggle, the Review tab and
+the verb that reads a conversation.
 
 The conversation is not driven from here. Reviewer and reviewed step talk through
-``dplanner review …`` (``cli.py``), and the tab shows what they said as the ledger changes;
-a window has no verb that posts a finding, because only an agent writes one.
+``dplanner review …`` (``cli.py``), and the tab and *Review Conversation…* show what they
+said as the ledger changes; a window has no verb that posts a finding, because only an
+agent writes one.
 """
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
+from PySide6.QtWidgets import QWidget
+
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.model import Library, Step
-from dplanner.framework.action_registry import ActionRegistry
+from dplanner.framework.action_registry import (
+    DISABLED,
+    ENABLED,
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
+)
 from dplanner.framework.aspect_toggle import aspect_toggle
+from dplanner.framework.context import Context
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
+from dplanner.framework.step_selection import focused_step
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_review.aspect import (
     DATA_FORMAT,
@@ -23,10 +35,14 @@ from dplanner.modules.step_review.aspect import (
     is_review,
     write,
 )
+from dplanner.modules.step_review.conversation import open_conversation
 from dplanner.modules.step_review.rounds import DATA_FORMAT as ROUNDS_FORMAT
 from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
+from dplanner.modules.step_review.rounds import rounds
 from dplanner.modules.step_review.section import ReviewSection
 from dplanner.theme.icons import review_icon
+
+CONVERSATION = "Re&view Conversation…"
 
 
 @dataclass(frozen=True)
@@ -41,6 +57,7 @@ class StepReviewDeps:
     # profile — the choices the Agent field lays out, the default first.
     harnesses: Sequence[AgentHarness]
     default_profile: Callable[[], str]
+    parent: QWidget  # What the conversation dialog opens over.
 
 
 class StepReviewModule:
@@ -86,6 +103,35 @@ class StepReviewModule:
                 refusal=lambda step: NO_REVIEW_ON_A_WAIT if deps.is_wait(step) else "",
             )
         )
+        deps.actions.register(
+            ActionSpec(
+                id="review.conversation",
+                label=CONVERSATION,
+                menu="Step",
+                group="agent",
+                order=25,  # After Preview Agent Prompt: what the agents were told, then said.
+                tip="Read what a review and the step it reviews said to each other",
+                state=self._conversation_state,
+                run=self._show_conversation,
+            )
+        )
+
+    def _conversation_state(self, context: Context) -> ActionState:
+        """Open on any step that has asked a round: a review, or a collector that sent work
+        back upstream — the ledger is the same on both."""
+        step = focused_step(context, self._deps.library)
+        if step is None:
+            return DISABLED
+        if rounds(step):
+            return ENABLED
+        reason = "no rounds yet" if is_review(step) else "not a review"
+        return ActionState(enabled=False, label=f"Review Conversation — {reason}")
+
+    def _show_conversation(self, context: Context) -> None:
+        deps = self._deps
+        step = focused_step(context, deps.library)
+        if step is not None:
+            open_conversation(deps.library, step.id, deps.key_of, deps.parent)
 
 
 class ReviewRoundsModule:

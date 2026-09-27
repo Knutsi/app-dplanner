@@ -4,19 +4,20 @@ conversation so far.
 The settings are one undoable entry, the same one ``dplanner review set`` writes. The
 conversation under them is read-only: it is what the reviewer and the reviewed step said
 through ``dplanner review …``, and it follows the ledger as those verbs write it, whether
-they ran in this window or in a terminal beside it.
+they ran in this window or in a terminal beside it. The list is the quick look; a message
+is read in full in the conversation dialog, opened from here on it or on the newest.
 """
 
 from collections.abc import Callable, Sequence
-from datetime import datetime
 from typing import Any
 
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QHBoxLayout,
     QLineEdit,
-    QListWidgetItem,
+    QPushButton,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -24,39 +25,32 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.model import Library, NodeId, Step
-from dplanner.framework.list_rows import DETAIL_ROLE, TRAILING_ROLE, RichList
+from dplanner.framework.list_rows import DETAIL_ROLE, RichList
 from dplanner.framework.module_data_section import ModuleDataSection
-from dplanner.framework.signalling import StatusLine, Tone
+from dplanner.framework.signalling import StatusLine
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import EmptyState, block, caption
+from dplanner.framework.widgets import EmptyState, block, caption, ink_of, quiet
 from dplanner.modules.step_review.aspect import (
     DEFAULT_AGENT,
     LENSES,
     MODULE_ID,
     ReviewSettings,
     settings,
-    subjects,
     write,
 )
-from dplanner.modules.step_review.rounds import (
-    APPROVED,
-    ASKER,
-    ENDED_STATES,
-    ESCALATED,
-    POSTED,
-    REPLIED,
-    Message,
-    last,
-    messages,
-    rounds,
-    standing,
-    with_party,
+from dplanner.modules.step_review.conversation import (
+    KEY_ROLE,
+    NO_ROUNDS,
+    message_rows,
+    open_conversation,
+    reink,
+    where_it_stands,
 )
 from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
 from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 MOST_ROUNDS = 10
-NO_ROUNDS = "No rounds yet"
+OPEN_CONVERSATION = "Open Conversation…"
 
 
 class ReviewSection(ModuleDataSection):
@@ -90,7 +84,10 @@ class ReviewSection(ModuleDataSection):
         self.max_rounds.setKeyboardTracking(False)
         self.max_rounds.valueChanged.connect(lambda _rounds: self.commit())
         self.standing = StatusLine(self)
+        self.conversation_button = quiet(QPushButton(OPEN_CONVERSATION, self))
+        self.conversation_button.clicked.connect(lambda: self._open(None))
         self.conversation = RichList(self)
+        self.conversation.itemActivated.connect(lambda item: self._open(str(item.data(KEY_ROLE))))
         self.empty = EmptyState(NO_ROUNDS, self, stands_in_for=self.conversation)
 
         layout = QVBoxLayout(self)
@@ -112,7 +109,13 @@ class ReviewSection(ModuleDataSection):
         cap_row.addWidget(self.max_rounds)
         cap_row.addStretch(1)
         block(layout, caption("Round cap", self), cap)
-        talk = block(layout, caption("Conversation", self), self.standing)
+        where = QWidget(self)
+        where_row = QHBoxLayout(where)
+        where_row.setContentsMargins(0, 0, 0, 0)
+        where_row.setSpacing(FIELD_GAP)
+        where_row.addWidget(self.standing, 1)
+        where_row.addWidget(self.conversation_button)
+        talk = block(layout, caption("Conversation", self), where)
         talk.addWidget(self.conversation, 1)
         talk.addWidget(self.empty, 1)
         layout.setStretchFactor(talk, 1)
@@ -186,55 +189,19 @@ class ReviewSection(ModuleDataSection):
         self.conversation.clear()
         if step is None:
             self.standing.clear()
+            self.conversation_button.setEnabled(False)
             self.empty.say(NO_ROUNDS)
             return
-        text, tone = self._standing(step)
-        self.standing.say(text, tone)
-        held = rounds(step)
-        for said in messages(held):
-            self.conversation.addItem(self._row(step, said))
-        self.empty.say("" if held else NO_ROUNDS)
+        self.standing.say(*where_it_stands(self._library, step, self._key_of))
+        rows = message_rows(self._library, step, self._key_of, ink_of(self.conversation))
+        for item in rows:
+            self.conversation.addItem(item)
+        self.conversation_button.setEnabled(bool(rows))
+        self.empty.say("" if rows else NO_ROUNDS)
 
-    def _standing(self, step: Step) -> tuple[str, Tone]:
-        reviewed = subjects(self._library, step)
-        if not reviewed:
-            return "Reviews nothing yet — link it after the step it reviews", "warn"
-        if len(reviewed) > 1:
-            keys = ", ".join(self._ref(each) for each in reviewed)
-            return f"Reviews {keys} at once — a review takes one step", "warn"
-        (subject,) = reviewed
-        held = last(step, subject.id)
-        text = standing(held, self._ref(step), self._ref(subject))
-        cap = settings(step).max_rounds
-        if held is None or held.state not in ENDED_STATES:
-            text += f" — {len(with_party(step, subject.id))} of {cap} rounds"
-        text = text[0].upper() + text[1:]
-        if held is not None and held.state == APPROVED:
-            return text, "ok"
-        if held is not None and held.state == ESCALATED:
-            return text, "warn"
-        return text, "info"
-
-    def _row(self, step: Step, said: Message) -> QListWidgetItem:
-        party = (
-            self._library.step(said.round.party) if self._library.has(said.round.party) else None
-        )
-        sender = self._ref(step) if said.sender == ASKER else self._ref(party) if party else "?"
-        heading = {
-            POSTED: f"{sender}'s findings",
-            REPLIED: f"{sender}'s reply",
-            ESCALATED: "Handed to a person",
-            APPROVED: "Approved",
-        }[said.kind]
-        item = QListWidgetItem(f"Round {said.round.number} · {heading}")
-        first = said.text.strip().splitlines()[0] if said.text.strip() else ""
-        item.setData(DETAIL_ROLE, first)
-        item.setData(TRAILING_ROLE, _when(said.at))
-        item.setToolTip(said.text.strip())
-        return item
-
-    def _ref(self, step: Step) -> str:
-        return self._key_of(step) or f"“{step.title}”"
+    def _open(self, at: str | None) -> None:
+        if self._step_id is not None:
+            open_conversation(self._library, self._step_id, self._key_of, self.window(), at=at)
 
     def _on_rounds(self, node_id: NodeId, module_id: str, _origin: object) -> None:
         if module_id == ROUNDS_ID and node_id == self._step_id:
@@ -244,10 +211,7 @@ class ReviewSection(ModuleDataSection):
         if step_id == self._step_id:
             self._show_conversation(self.step())
 
-
-def _when(stamp: str) -> str:
-    """``27 Sep 14:02`` where this machine is — or the stamp as written, when unreadable."""
-    try:
-        return datetime.fromisoformat(stamp).astimezone().strftime("%d %b %H:%M")
-    except ValueError:
-        return stamp
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        if event.type() == QEvent.Type.PaletteChange:
+            reink(self.conversation)
+        super().changeEvent(event)
