@@ -180,7 +180,7 @@ paths:
   axis. *Work* (`work_view.py`) is two plots on **one scale in days**
   (`Presented.scale`): the scope against the plan compared with, warm where it holds more
   and cool where less, a ▲ or ▼ each day it changed (`scope_marks`, by the day's sum);
-  and the work done, **dotted across a day no step changed status** (`Burnup.active`),
+  and the work done, **dotted, paler, across a day no step changed status** (`Burnup.active`),
   beside the plan's schedule from the day shown on, each milestone marked where it ends —
   **milestones landing on one day share the mark**, a wedge each, and the name.
   Weekends are pale bands through both. **Both surfaces draw the same page**: the report's

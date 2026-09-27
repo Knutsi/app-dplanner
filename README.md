@@ -17,6 +17,13 @@ the terminal you chose — Claude Code, Codex or OpenCode, in herdr, Ghostty or 
 > notice, and nothing about compatibility between versions — of the files a plan is kept
 > in, or of the features that write them — is guaranteed in any way.
 
+![The Time tab's Work page, played day by day through a project whose scope keeps growing](docs/screenshots/readme/time-work.gif)
+
+*The Time tab dates the plan from what has actually happened. Played here through a
+simulated project that keeps growing, the scope rises against the plan it started from
+(above), the work done climbs toward the plan's schedule (below), and each milestone is
+checked off as it lands.*
+
 ## Installing
 
 The quickest way is to hand it to your coding agent: give it the skill that installs

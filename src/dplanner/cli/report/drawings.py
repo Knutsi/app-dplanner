@@ -340,6 +340,9 @@ LINE_W = 2.0
 MARKER = 4.0
 LANDING_MARK = 3.5
 CHECK_MARK = 6.0  # A done milestone's circle, with its check.
+# A day no step changed status: the done line dotted, at half its ink.
+IDLE_OPACITY = 0.5
+_DOTTED = ' stroke-dasharray="0.1 4" stroke-linecap="round"'
 CHANGE_MARK = 7.0  # A day's ▲ or ▼ under the scope line.
 ARROW_HEAD = 5.0
 # The window's alphas (``time_estimates/plotting.py``), as opacities.
@@ -562,7 +565,7 @@ def _keys(plot: Plot, colors: Colors) -> list[tuple[str, Callable[[float, float]
         ("done", line(colors.ink, "key-ink")),
         (
             "no status change",
-            line(colors.ink, "key-ink", ' stroke-dasharray="0.1 4" stroke-linecap="round"'),
+            line(colors.ink, "key-ink", f' stroke-opacity="{IDLE_OPACITY}"{_DOTTED}'),
         ),
         ("the plan's schedule", line(colors.secondary, "key-secondary", dashed)),
     ]
@@ -788,8 +791,8 @@ def _idle(
             f'<line class="idle-mask" x1="{_n(x0)}" x2="{_n(x1)}" y1="{_n(at)}" y2="{_n(at)}" '
             f'stroke="{colors.surface}" stroke-width="{_n(LINE_W + 1)}"/>'
             f'<line class="idle" x1="{_n(x0)}" x2="{_n(x1)}" y1="{_n(at)}" y2="{_n(at)}" '
-            f'stroke="{colors.ink}" stroke-width="{_n(LINE_W)}" stroke-dasharray="0.1 4" '
-            f'stroke-linecap="round"/>'
+            f'stroke="{colors.ink}" stroke-width="{_n(LINE_W)}" stroke-opacity="{IDLE_OPACITY}"'
+            f"{_DOTTED}/>"
         )
         day = end + _ONE_DAY
     return "".join(out)
