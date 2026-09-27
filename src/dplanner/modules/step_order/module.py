@@ -45,7 +45,12 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
+from dplanner.framework.activity import (
+    EntityActivity,
+    follow_project,
+    follow_project_tabs,
+    project_tab_title,
+)
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -133,6 +138,9 @@ class StepOrderDeps:
     step_key: Callable[[StepId], str] = field(default=_no_color)
     # Whether a step is work at all: a wait is not, and is no part of the volume.
     counts_as_work: Callable[[Step], bool] = field(default=lambda _step: True)
+    # Whether a step is finished — its row wears a check and its title is struck through.
+    # Wired by the composition root; this module never learns where a status is stored.
+    step_done: Callable[[StepId], bool] = field(default=lambda _step_id: False)
 
 
 class OrderActivity(EntityActivity):
@@ -204,6 +212,7 @@ class OrderActivity(EntityActivity):
             deps.step_icons,
             deps.milestone_color,
             deps.step_key,
+            deps.step_done,
             page,
         )
         self.table.itemSelectionChanged.connect(self._on_selection)
@@ -234,7 +243,7 @@ class OrderActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — Order"
+        return project_tab_title(self._product, self.project_id, "Order")
 
     @property
     def widget(self) -> QWidget:
@@ -360,13 +369,7 @@ class StepOrderModule:
                 run=self._export,
             )
         )
-        follow_entity_tabs(
-            deps.tabs,
-            OrderActivity,
-            deps.library.has,
-            closes_on=deps.library.structure_changed,
-            retitles_on=deps.library.field_changed,
-        )
+        follow_project_tabs(deps.tabs, OrderActivity, deps.library)
 
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")

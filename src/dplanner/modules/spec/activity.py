@@ -37,7 +37,7 @@ from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, NodeId, Project, TextEdit
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.action_registry import PATH_SEPARATOR, ActionRegistry
-from dplanner.framework.activity import EntityActivity
+from dplanner.framework.activity import EntityActivity, project_tab_title
 from dplanner.framework.asset_gallery import AssetGallery
 from dplanner.framework.autosave import FLUSH_DELAY_MS
 from dplanner.framework.context import (
@@ -345,7 +345,7 @@ class SpecsActivity(EntityActivity):
         page.setTabOrder(self.list, self._editor)
         self._widget = page
         # No `field_changed` subscription: nothing here reads a field — the list shows
-        # index data, and the tab's title follows the project through `follow_entity_tabs`.
+        # index data, and the tab's title follows the project through `follow_project_tabs`.
         self._theme = theme
         self._unsubscribes += [
             library.module_data_changed.connect(self._on_module_data),
@@ -378,7 +378,7 @@ class SpecsActivity(EntityActivity):
         something to take in without opening the tab — and reads what it is by doing so.
         """
         mark = UPDATES_MARK if self._stale() else ""
-        return f"{self._project().title or 'Untitled project'} — Specs{mark}"
+        return project_tab_title(self._product, self.project_id, f"Specs{mark}")
 
     def _stale(self) -> list[Freshness]:
         """Every source of this project the last check found something at."""

@@ -29,7 +29,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import follow_entity_tabs
+from dplanner.framework.activity import follow_project_tabs
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.dialog import LinePrompt
@@ -417,14 +417,10 @@ class SpecModule:
                 run=self._open,
             )
         )
-        follow_entity_tabs(
-            deps.tabs,
-            SpecsActivity,
-            deps.library.has,
-            closes_on=deps.library.structure_changed,
-            # The title says the project's name *and* whether a source has updates
-            # waiting, so it has two things to hear.
-            retitles_on=(deps.library.field_changed, self.updates_changed),
+        # The title says whether a source has updates waiting too, so it has a second
+        # thing to hear.
+        follow_project_tabs(
+            deps.tabs, SpecsActivity, deps.library, retitles_on=(self.updates_changed,)
         )
 
     # -- actions -------------------------------------------------------------------------------

@@ -8,7 +8,7 @@ the step has none, never hidden, so a card's right-click carries both.
 
 from dplanner.domain.model import NodeId, StepId
 from dplanner.framework.action_registry import DISABLED, ENABLED, ActionSpec, ActionState
-from dplanner.framework.activity import follow_entity_tabs
+from dplanner.framework.activity import follow_project_tabs
 from dplanner.framework.context import Context
 from dplanner.modules.coverage.activity import COVERAGE_KIND, CoverageActivity, CoverageDeps
 from dplanner.modules.coverage.trace import milestone_token
@@ -101,13 +101,7 @@ class CoverageModule:
                 run=self._show_passage,
             )
         )
-        follow_entity_tabs(
-            deps.tabs,
-            CoverageActivity,
-            deps.library.has,
-            closes_on=deps.library.structure_changed,
-            retitles_on=deps.library.field_changed,
-        )
+        follow_project_tabs(deps.tabs, CoverageActivity, deps.library)
 
     # -- states and verbs --------------------------------------------------------------------
 

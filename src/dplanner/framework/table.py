@@ -111,6 +111,7 @@ from dplanner.framework.list_rows import (
     ICON_GAP,
     INK_ROLE,
     MUTED_ROLE,
+    STRUCK_ROLE,
     TINT_ROLE,
     VALUE_ROLE,
     rich_row_height,
@@ -335,6 +336,7 @@ class Cell:
     glyph: QIcon | None = None
     secondary: bool = False  # The whole cell in the secondary tone (a finished step's row).
     emphasis: bool = False  # Bold: the one weight in a table, for a fixed point among its rows.
+    struck: bool = False  # The first line struck through: a finished step's title.
     ink: QColor | None = None  # The first line's colour: a result's tone, a milestone's shade.
     tooltip: str = ""
     value: object = None  # What an editor opens on, and what a commit replaces.
@@ -602,6 +604,7 @@ class Table(QTableWidget):
         item.setData(DETAIL_ROLE, cell.detail)
         item.setData(MUTED_ROLE, cell.secondary)
         item.setData(EMPHASIS_ROLE, cell.emphasis)
+        item.setData(STRUCK_ROLE, cell.struck)
         item.setData(INK_ROLE, cell.ink)
         item.setData(VALUE_ROLE, cell.value)
         item.setToolTip(cell.tooltip)
@@ -768,13 +771,15 @@ class TableDelegate(QStyledItemDelegate):
     def font_for(
         self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
     ) -> QFont:
-        """A cell's weight: bold for a heading and for a fixed point among its rows.
+        """A cell's font: bold for a heading and for a fixed point among its rows, struck
+        through for finished work.
 
         One answer, so what ``sizeHint`` measures is what ``paint`` draws.
         """
         font = QFont(option.font)
         if index.data(HEADING_ROLE) or index.data(EMPHASIS_ROLE):
             font.setBold(True)
+        font.setStrikeOut(bool(index.data(STRUCK_ROLE)))
         return font
 
     def elided(self, font: QFont, text: str, width: int) -> str:

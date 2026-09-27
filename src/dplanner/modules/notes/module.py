@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from dplanner.domain.model import Library, NodeId, Step
-from dplanner.framework.activity import follow_entity_tabs
+from dplanner.framework.activity import follow_project_tabs
 from dplanner.framework.context import ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.dictation import DictationService
@@ -49,13 +49,7 @@ class NotesModule:
     def register(self) -> None:
         deps = self._deps
         deps.tabs.register_factory(NOTES_KIND, self._activity)
-        follow_entity_tabs(
-            deps.tabs,
-            NotesActivity,
-            deps.library.has,
-            closes_on=deps.library.structure_changed,
-            retitles_on=deps.library.field_changed,
-        )
+        follow_project_tabs(deps.tabs, NotesActivity, deps.library)
 
     def open(self, project_id: NodeId, *, preview: bool = False) -> None:
         self._deps.tabs.open(NOTES_KIND, project_id, preview=preview)

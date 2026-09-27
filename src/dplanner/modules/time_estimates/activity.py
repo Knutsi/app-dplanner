@@ -55,7 +55,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId, Project, StepId
 from dplanner.domain.ordering import cyclic
 from dplanner.domain.schedule import format_date, format_days, short_date
-from dplanner.framework.activity import EntityActivity, follow_project
+from dplanner.framework.activity import EntityActivity, follow_project, project_tab_title
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -350,7 +350,7 @@ class TimeEstimatesActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — Time Estimates"
+        return project_tab_title(self._library, self.project_id, "Time Estimates")
 
     @property
     def widget(self) -> QWidget:

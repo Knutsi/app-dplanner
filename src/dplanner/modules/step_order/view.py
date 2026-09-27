@@ -10,6 +10,10 @@ steps or to the features: the rows the other kind occupies are hidden, never rem
 the numbering still reads as the whole order. A milestone is never hidden; with only the
 milestones and the features showing, the table is the roadmap — what each milestone adds.
 
+A finished step wears a check where its glyph was, over its title struck through. A
+milestone keeps its badge and its title: it is where work lands, and the key is what it is
+known by whether or not it has landed.
+
 **No calendar.** The table once ran the order out as dates — accumulated days, days since
 the last milestone, a landing date per row — one worker after another from a start date
 set on this page. That is not how the work happens and not how the plan is scheduled
@@ -31,7 +35,7 @@ from dplanner.domain.model import StepId
 from dplanner.domain.schedule import Scheduled, format_days
 from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.table import Cell, Column, Table
-from dplanner.theme.icons import key_badge_icon, layers_icon, step_icon
+from dplanner.theme.icons import check_icon, key_badge_icon, layers_icon, step_icon
 from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import recoloured
 
@@ -95,6 +99,7 @@ class OrderTable(Table):
         step_icons: Callable[[StepId], tuple[str, ...]] = lambda _step_id: (),
         milestone_color: Callable[[StepId], str] = lambda _step_id: "",
         step_key: Callable[[StepId], str] = lambda _step_id: "",
+        step_done: Callable[[StepId], bool] = lambda _step_id: False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(COLUMNS, parent=parent)
@@ -104,6 +109,7 @@ class OrderTable(Table):
         self._step_icons = step_icons
         self._milestone_color = milestone_color
         self._step_key = step_key
+        self._step_done = step_done
         self._kinds: list[str] = []  # One per row, in row order.
         self._shown = {KIND_STEP: True, KIND_FEATURE: True}
 
@@ -120,12 +126,14 @@ class OrderTable(Table):
             # The one weight in the table, and the whole row takes it: a milestone is where
             # a block of work lands, and a glance down the column finds them without reading.
             fixed = bool(milestone)
+            done = not fixed and self._step_done(place.step.id)
             cells = (
                 Cell(str(place.index), secondary=not fixed, emphasis=fixed),
                 Cell(
                     place.step.title or "Untitled step",
-                    glyph=self._title_icon(kinds, place.step.id, shade),
+                    glyph=self._title_icon(kinds, place.step.id, shade, done),
                     emphasis=fixed,
+                    struck=done,
                 ),
                 Cell(self._wave_label(place.wave - 1), emphasis=fixed),
                 Cell(format_days(scheduled.days), emphasis=fixed),
@@ -164,9 +172,10 @@ class OrderTable(Table):
     def kind_at(self, row: int) -> str:
         return self._kinds[row]
 
-    def _title_icon(self, kinds: tuple[str, ...], step_id: StepId, shade: str) -> QIcon:
+    def _title_icon(self, kinds: tuple[str, ...], step_id: StepId, shade: str, done: bool) -> QIcon:
         """What the row is, in the canvas medallions' vocabulary: the **key as a badge** for
-        a milestone, the layer stack for a feature, the card for a work step.
+        a milestone, the layer stack for a feature, the card for a work step — and a check
+        in place of either once the step is done.
 
         One icon per row: a step that is several things at once leads with the rarer claim
         ("tag" sorts first), and the trailing aspects column still says the rest. A milestone
@@ -177,6 +186,8 @@ class OrderTable(Table):
         faded.setAlpha(SECONDARY_ALPHA)
         if "tag" in kinds:
             return key_badge_icon(self._step_key(step_id), shade or MILESTONE_INK)
+        if done:
+            return check_icon(faded)
         if "layers" in kinds:
             return layers_icon(faded)
         return step_icon(faded)

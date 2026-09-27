@@ -101,6 +101,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     )
     from dplanner.domain.locations import Placement, roles_by_id
     from dplanner.domain.model import Library, Project, TextEdit
+    from dplanner.domain.progression import DONE
     from dplanner.domain.relocate import move_project
     from dplanner.domain.repositories import RepositoryFacts, repository_facts
     from dplanner.domain.schedule import Wait, format_days, schedule
@@ -1287,6 +1288,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             # the same one its card wears on the canvas and its band in the calendar.
             milestone_color=milestone_color,
             step_key=lambda step_id: _step_key(library.step(step_id)),
+            # The same answer the canvas card's ✓ and the report's read: a wait is never
+            # done here, whatever its day.
+            step_done=lambda step_id: _card_status(library.step(step_id)) == DONE,
         )
     )
 

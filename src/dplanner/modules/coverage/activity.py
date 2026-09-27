@@ -20,7 +20,7 @@ from dplanner.domain.model import Library, NodeId, Project, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
-from dplanner.framework.activity import EntityActivity, follow_project
+from dplanner.framework.activity import EntityActivity, follow_project, project_tab_title
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -201,7 +201,7 @@ class CoverageActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — Coverage"
+        return project_tab_title(self._deps.library, self.project_id, "Coverage")
 
     @property
     def widget(self) -> QWidget:

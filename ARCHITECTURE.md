@@ -455,6 +455,25 @@ right-click is asking for a menu. On the entry it is `open_preview`, a second ca
 beside `open`, both closed over the owning module's `open(..., preview=…)` by the
 composition root; `None` is an entry whose surface has no preview form.
 
+### A project tab says its project's short title
+
+Ten tabs are one side of a project — *Order*, *Estimates*, *Specs* — and each once led with
+the project's whole title, so three of them open on *DPlanner changes 2* filled the strip
+with one name. They now lead with a **short title** (`domain/short_titles.py`): the
+initials of a title of several words, numbers whole (*DC2*), a one-word title whole. The
+canvas tab is the project itself and keeps the whole title, so the long form is always on
+screen somewhere.
+
+**It is unique among the library's projects, so it is derived and never stored.** Two titles
+with the same initials grow letters of their first word until they part (*DerM*, *DelM*),
+and a pair that cannot part keeps its whole titles. That makes a title a fact about the
+siblings too: renaming one project can relabel another's tabs. So `follow_project_tabs`
+(`framework/activity.py`) re-reads every project tab's title when *any* project's field
+changes or the library's membership does — where `follow_entity_tabs` before it retitled
+only the renamed project's own tab — and ignores a step's field change, so typing a step's
+title costs no tab anything. `project_tab_title` is the one place the label is composed,
+where ten activities each had their own copy of the line.
+
 ## Where the user left off is remembered by key
 
 Two things follow a person across a restart: which folders in the index tree were open, and
@@ -7019,7 +7038,7 @@ these needed a timer; they were simply wrong, and the journal is what made them 
 changed)` in `framework/activity.py` asks the model's own `belongs_to` about the node each
 signal names — the parent of a structure change, the step of an edge or a text edit, the
 node of a field or module-data write — and `follow_target` does the same for a panel
-section whose step moves under it. It sits beside `follow_entity_tabs` because it is the
+section whose step moves under it. It sits beside `follow_project_tabs` because it is the
 same shape: feature-blind upkeep that seven modules had copied by hand. The filter is a
 question for the model rather than for the view because a view that reads the parent index
 itself is a second implementation of "which project is this node in", and there was

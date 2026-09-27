@@ -35,7 +35,7 @@ from dplanner.framework.action_registry import (
     ActionState,
     DataMenuSpec,
 )
-from dplanner.framework.activity import follow_entity_tabs
+from dplanner.framework.activity import follow_project_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
@@ -220,13 +220,7 @@ class DocsModule:
                 )
             )
         deps.tabs.register_factory(DOCS_KIND, self._activity)
-        follow_entity_tabs(
-            deps.tabs,
-            DocsActivity,
-            deps.library.has,
-            closes_on=deps.library.structure_changed,
-            retitles_on=deps.library.field_changed,
-        )
+        follow_project_tabs(deps.tabs, DocsActivity, deps.library)
         deps.segments.register(
             IndexSegment(id="docs", label="Docs", order=30, factory=self._segment, icon=read_icon)
         )

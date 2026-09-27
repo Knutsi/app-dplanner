@@ -361,6 +361,7 @@ src/dplanner/
 │   ├── schedule.py          the same walk carrying estimates: running totals, dates, and when each
 │   │                        step lands in a staffed simulation
 │   ├── progression.py       the status-aware frontier: what can be launched right now
+│   ├── short_titles.py      what a project is called on a tab: its initials, unique in the library
 │   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
 │   ├── shelf.py             where a turned-off aspect's data waits: turn_off / turn_on, and the migration into it
 │   ├── fields.py            bindable prose, keyed by the module that owns it

@@ -153,7 +153,7 @@ def test_the_title_counts_what_needs_a_person_and_follows_a_rename(services, pro
         set_status(services, step, "in-progress")
     assert services.tabs.tab_title(tab) == "Discovery — Step statuses"
     services.undo.push(SetFieldCommand(project.id, "title", "Discovery Phase"))
-    assert services.tabs.tab_title(tab) == "Discovery Phase — Step statuses"
+    assert services.tabs.tab_title(tab) == "DP — Step statuses"
 
 
 # -- ticking is picking ------------------------------------------------------------------------

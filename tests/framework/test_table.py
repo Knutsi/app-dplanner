@@ -25,6 +25,7 @@ from dplanner.framework.list_rows import (
     ICON_GAP,
     INK_ROLE,
     MUTED_ROLE,
+    STRUCK_ROLE,
     TINT_ROLE,
     VALUE_ROLE,
 )
@@ -409,6 +410,24 @@ def test_a_column_sized_to_its_contents_shows_them_whole(app):
     made.deleteLater()
 
 
+def test_a_struck_cell_is_drawn_struck_through_and_its_neighbours_are_not(table):
+    """A finished step's title. The stroke is the delegate's font, so what ``sizeHint``
+    measures is what ``paint`` draws."""
+    from PySide6.QtWidgets import QStyleOptionViewItem
+
+    table.add_row([Cell("Written", struck=True), "3 d"])
+    table.add_row(["Pending", "2 d"])
+    option = QStyleOptionViewItem()
+    table.initViewItemOption(option)
+
+    def struck(row: int, column: int) -> bool:
+        index = table.model().index(row, column)
+        return bool(table.delegate.font_for(option, index).strikeOut())
+
+    assert struck(0, 0)
+    assert not struck(0, 1) and not struck(1, 0)
+
+
 def test_a_host_numbers_its_own_roles_from_one_the_delegate_never_reads(table):
     """``HOST_ROLE`` is the promise: what a view stamps on its rows is its own business.
 
@@ -427,6 +446,7 @@ def test_a_host_numbers_its_own_roles_from_one_the_delegate_never_reads(table):
         TINT_ROLE,
         INK_ROLE,
         VALUE_ROLE,
+        STRUCK_ROLE,
     }
     assert all(role < HOST_ROLE for role in framework_roles)
 

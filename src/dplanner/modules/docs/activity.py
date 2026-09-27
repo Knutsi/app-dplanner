@@ -38,7 +38,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.model import Project, Step, StepId
 from dplanner.domain.scope import gatherers, kind_of
 from dplanner.domain.store import ModuleFileArea
-from dplanner.framework.activity import EntityActivity, follow_project
+from dplanner.framework.activity import EntityActivity, follow_project, project_tab_title
 from dplanner.framework.context import ContextNode, Uri, activity_uri, selection_uri
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.list_rows import (
@@ -159,7 +159,7 @@ class DocsActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — {DOCS_CAPTION}"
+        return project_tab_title(self._library, self.project_id, DOCS_CAPTION)
 
     @property
     def widget(self) -> QWidget:
@@ -196,7 +196,7 @@ class DocsActivity(EntityActivity):
 
     def _refresh(self) -> None:
         if not self._library.has(self.project_id):
-            return  # The tab is on its way out; follow_entity_tabs closes it.
+            return  # The tab is on its way out; follow_project_tabs closes it.
         project = self._project()
         self._sync_grouping(project)
         self.page.instructions.show_target(self.project_id)
