@@ -36,6 +36,8 @@ GLYPHS: dict[str, str] = {
     "edit": "pencil",
     "trash": "trash",
     "lasso": "lasso",
+    "new-stack": "layout-list",  # Two cards in a column: what a new stack is.
+    "make-stack": "fold-down",  # A line folded down into a column: stack these.
     "link": "link",
     "connect": "link-plus",  # A chain with a plus: the mode that adds one.
     "unlink": "unlink",

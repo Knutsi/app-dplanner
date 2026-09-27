@@ -336,7 +336,7 @@ src/dplanner/
 ├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
 ├── scripts/render_design_example.py  Debug ▸ Design Examples — the modal, the table, the toolbars and the rows — both themes, to PNG
 ├── scripts/render_home.py         Home at the program's start, its garden through a season (and, with --video, a film of one), the Projects folder's menu — docs/screenshots/f9-home/
-├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/ — and the cards — f5-key-block/
+├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/ — the cards — f5-key-block/ — and a stack's frame, its "+" and a link aimed at it — s18-stack-on-the-canvas/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 ├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
 ├── scripts/render_windows_check.py  Debug ▸ Windows Check, live and greyed with its reason — docs/screenshots/s17-windows/
@@ -469,7 +469,9 @@ src/dplanner/
 │   │                        (stacks.py is a stack: a chain drawn as one tall card, the fold every
 │   │                        arrangement reads it through, and the rule for what may link to one;
 │   │                        stack_edits.py every edit of one — new, make, add, move, take out,
-│   │                        dissolve, and the removal Delete runs — shared with `dplanner stack …`)
+│   │                        dissolve, and the removal Delete runs — shared with `dplanner stack …`;
+│   │                        stack_verbs.py the menu verbs that push them; items.py's StackItem the
+│   │                        frame and "+", and modes.py's BlockDragMode what drags one)
 │   ├── step_properties/     THE step editor — `steps.details`, a modal and nothing anchored
 │   │                        (its first tab, details.py, stacks whatever registered a Details
 │   │                        block, name.py leading it; every view's double-click on a step

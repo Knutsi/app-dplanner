@@ -414,11 +414,17 @@ class StepVerbs:
             if at is not None:
                 commands.append(SetModuleDataCommand(step.id, POSITION_KEY, write_position(*at)))
             command = commands[0] if len(commands) == 1 else CompositeCommand(label, commands)
+        self.born(step, command, named=carrying is not None)
+        return step
+
+    def born(self, step: Step, command: Command, *, named: bool = False) -> None:
+        """Push the command that makes ``step``, then place it and — unless it arrived
+        ``named`` — open its details: the one tail of every birth on the canvas, whether
+        :meth:`create` built the command or a stack verb did (New Stack, a stack's "+")."""
         self.undo.push(command)
         self.placed([step.id])
-        if carrying is None:
+        if not named:
             self.created(step.id)
-        return step
 
     def _rename(self, context: Context) -> None:
         step = focused_step(context, self.library)

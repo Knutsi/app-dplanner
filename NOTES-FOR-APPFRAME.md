@@ -4792,3 +4792,20 @@ the Control Centre's, so both use this one class instead of each module keeping 
 
 **Upstream?** Yes. The template's index has the same folders that are really buttons, and
 this is the smallest segment that answers all five hooks.
+
+## 70. From S18: a stack on the canvas
+
+### `framework/toolbar.py` — `Toolbar` folds again on a layout request
+
+**What.** `Toolbar.event` runs `_reflow` whenever a `LayoutRequest` arrives. Before, the fold
+ran only on `resizeEvent`.
+
+**Why.** A control that grows after the strip was laid out asks for a new layout and never
+resizes the strip, so the strip went on showing every band and overflowed until the window
+was next resized. Examples are the canvas's Problems count gaining a digit, or a glyph
+polished on first show. The graph strip's Step band gained New Stack and Make Stack, and
+the first render of it drew the bands on top of one another. `_reflow` only sets visibility,
+so running it again converges: a visibility that does not change asks for no layout.
+
+**Upstream?** Yes. Any overflowing strip whose buttons can change size needs it, and the
+template's has the same resize-only hook.

@@ -960,9 +960,11 @@ something, none between two child menus (their names part them, as in Step's `tr
 an empty child taken away. The cost of composing from groups is that a band naming a group
 nothing registers into renders nothing, silently — so a test holds every composition to
 what is registered (`tests/modules/test_menu_bar.py`), which is the check a refiling of the
-menu bar leans on. A new target (a stack's frame) is one more row and one
-more branch in `target_of`; a new arrow verb registers into Graph ▸ `links` and appears in
-the arrow's menu and the mixed pick's *Links* without an edit here.
+menu bar leans on. A stack's frame was the fifth target, and it took one row and one
+branch in `target_of`: a pick that is exactly one stack's members leads with the stack's own
+verbs and offers the card's one level down (*A stack's frame is the stack's handle*). A new
+arrow verb registers into Graph ▸ `links` and appears in the arrow's menu and the mixed
+pick's *Links* without an edit here.
 
 **An arrow had to become right-clickable, and Qt was in the way.** A right press on an item
 that is selectable but not movable is ignored by `QGraphicsItem`, falls through, and
@@ -1004,7 +1006,12 @@ own strip. The old answer was Qt's `»`, which pops the hidden buttons up as gly
 no help at all to somebody who could not read the glyph on the strip. The primitive takes
 a whole band off from the right and lists it in the `…` menu as glyph **and** words, with a
 rule where each band begins: half a band on the strip and half in a menu says less than
-either, because the bands are how the strip is read.
+either, because the bands are how the strip is read. **It folds again whenever a control
+asks for room, not only when the strip is resized**: the Problems count gaining a digit, or
+a glyph polished on first show, grows a button without resizing the strip, and a strip that
+folded only on a resize drew its bands over one another until the window next moved. That
+surfaced when the Step band gained New Stack and Make Stack (S18). `Toolbar.event` refolds
+on the `LayoutRequest` such a control posts.
 
 **A band's buttons are squares, and only a band's.** A palette is a grid of targets of one
 size, and a square is also what puts a glyph in the middle of its button rather than a few
@@ -2393,6 +2400,70 @@ without an auto-progress flag, the way a redirected one does. A link that no lon
 stays where it is, since moving a ghost is a write the graph's own refusals turn down, and a
 kind this build does not know is carried untouched. The seat is the first member's, so it is
 handed on whenever the first changes — and only when one was stored.
+
+### A stack's frame is the stack's handle
+
+S16 made a stack canvas data and S17 made every edit of one a command; this is the canvas
+learning to show one and let it be handled. `canvas.md`'s bullet of the same name has the
+rules. Five choices shaped it, each because the obvious alternative failed somewhere.
+
+**The column lives in the frame, on screen.** `StackItem.follow()` lays every member under
+the first card by `member_seats`, at the sizes the cards have *now*, and fits the frame round
+them. The alternative was letting each gesture place every member itself — the sync from
+`positions()`, the cut drag from `Packing.unfold`, a resize by hand — and a resize is where
+it broke: `NodeResizeMode` moves one card, so the cards under a growing member stayed put
+until the release and overlapped it meanwhile. With the column in `follow()` every gesture
+moves only what it means — a block drag moves each stack's first card — and the rest
+follows, so a live picture cannot disagree with the derived one. Two orderings keep it
+honest: the scene lays the frames out after the cards and before the arrows, and during the
+sync a card's move does not reach its frame at all, or a frame still holding a member the
+sync just took out would lay it back into the column. A stacked card grows only right and
+down, because `resize_command` stores no seat for a member below the first: a left or top
+drag would snap back on release.
+
+**An arrow meets an item at a port, and the chain stays arrows.** A stack takes its links in
+at the top and sends them out from under its "+", heading down, and the chain between is
+drawn straight down the frame's middle. The first design hid the chain's arrows and painted
+connectors in their place; review sank it, because a chain link is a real link — it can
+auto-progress, and the rails that say so live on `EdgeItem`; it lights when a member is
+picked, so the spotlight kept a member's stack-mates in view; and it can be picked and
+removed. So the edge asks each end for a port — `(point, heading)` — and a card answers its
+near edge travelling across, which is every curve the canvas drew before, while a member
+asks its frame. A link a broken stack carries into its middle answers from the card's own
+edge, so the break is drawn where it lands.
+
+**A press on a stack drags the stack, and a drag moves the pick.** Qt's item drag moves
+cards one by one; a member moved that way stood alone until the release, when
+`position_commands` turned its seat into its stack's. So a member is never Qt-movable, and
+a press on one — or on the frame, or on a picked card beside a stack — starts
+`BlockDragMode`, which moves each block's anchor and reports through the same `nodes_moved`
+Qt's drag does. The press picks what it landed on unless that is already picked, as Qt's
+does, so what moves is always the pick: moving only the stack out of a mixed pick left the
+other cards behind, and moving only the loose cards left the stack. The developer's note on
+S17 asked for exactly this — a drag on a stacked card moves the whole stack live — and left
+Shift free for reordering (F19).
+
+**A link end on a stack means its first or last card.** The domain already refuses a link
+into a stack's middle (*One in, one out is a rule the domain asks*), with words naming the
+first step. On the canvas that refusal would be the answer to nearly every drop, since a
+stack is mostly middle; so a drop anywhere on it — any card, its frame — *aims* at the first
+card for an arrowhead and the last for a tail (`GraphScene.link_end`), for a link drag,
+Connect and Redirect alike, and the ring lights the card the link will land on. The verdict
+is still `link_refusal`'s; the canvas only decides which card was meant. Only the last card
+shows a handle, and the line of a link being dragged starts where the arrow will, under the
+"+".
+
+**A greyed stack verb reads a reading built on first read.** Whether a stack is still one
+line, and whether a pick would make one, each take a walk over the project's links — the
+kind of work CLAUDE.md keeps out of an action state, which runs on every keystroke. The
+pattern there is a settle after a pause (`DocsModule._frontier_of`). Here it would have
+dropped a gesture: a stack's "+" runs `stacks.add_below` through its state gate, so a "+"
+pressed within the settle's 300 ms of New Stack would do nothing, and the suite — whose
+debounce runs inline — would never see it. So `StackVerbs` builds the answer the first time
+a state asks and forgets it when a link, a step or the canvas's own data changes: one walk
+per change to the graph, never one per keystroke, and the app and the tests read the same
+thing. The price is a refusal worded before a rename keeping the old title until the graph
+next moves.
 
 ### Regions were retired
 
@@ -3987,10 +4058,12 @@ one: somebody chose where it goes. So it is stored, and the choice arrives on th
 command as the node itself — a gesture is one undo, so New ▸ Feature at a point is one
 `CompositeCommand` of add, mark and place rather than three entries on the stack.
 
-That pushed the creation into one function. `StepVerbs.create()` is now the only place a
-step is born on the canvas, and the double-click on empty space — which already placed a
-node at a point — calls it too. The consolidation deleted a second implementation rather
-than adding a first.
+That pushed the creation into one function. `StepVerbs.create()` is now the way a step is
+born on the canvas, and the double-click on empty space — which already placed a node at a
+point — calls it too. The consolidation deleted a second implementation rather than adding a
+first. Stacks brought births whose command another module builds — New Stack's first step,
+a stack's "+" — so the tail every birth shares, push then `placed` then `created`, is
+`StepVerbs.born()`, and `create()` ends in it like the stack verbs do.
 
 Where "the point" comes from is `GraphView.last_click`, recorded on **every** button press
 *before* the mode stack is offered the event: "where I last clicked" is true whether or not

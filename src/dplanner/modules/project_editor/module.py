@@ -105,9 +105,15 @@ from dplanner.modules.project_editor.modes import (
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
 from dplanner.modules.project_editor.named_layouts import position_commands, resize_command
 from dplanner.modules.project_editor.placement import below, positions
-from dplanner.modules.project_editor.positions import DATA_FORMAT, centred_on, node_size
+from dplanner.modules.project_editor.positions import (
+    DATA_FORMAT,
+    centred_on,
+    node_size,
+    read_stack,
+)
 from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
 from dplanner.modules.project_editor.selection import EDGE_KIND, CanvasSelection, EdgeRef
+from dplanner.modules.project_editor.stack_verbs import StackVerbs
 from dplanner.modules.project_editor.stacks import read_stacks
 from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
 
@@ -209,7 +215,6 @@ class ProjectActivity(EntityActivity):
             base_mode=IdleMode,
             status=lambda text: deps.status.show_status(text, 4000),
             run_action=self.run_action,
-            step_stacks=lambda: read_stacks(self._project().steps),
         )
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
@@ -229,6 +234,7 @@ class ProjectActivity(EntityActivity):
             lambda moved: self._on_side_moved(CONTRACT_LABEL, moved)
         )
         self._scene.redirect_requested.connect(self._on_redirect_requested)
+        self._scene.stack_add_requested.connect(self._on_stack_add)
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
         # Once per event-loop turn, not once per signal: a paste of forty steps is forty
@@ -453,7 +459,7 @@ class ProjectActivity(EntityActivity):
         edge_accents = {
             EdgeRef(*edge): accent for edge, accent in self._deps.edge_accents(project.id).items()
         }
-        self._scene.sync(nodes, edges, edge_accents)
+        self._scene.sync(nodes, edges, edge_accents, read_stacks(project.steps))
 
     def _on_structure(self, parent_id: NodeId, _origin: object = None) -> None:
         if not self._product.belongs_to(parent_id, self.project_id):
@@ -509,9 +515,12 @@ class ProjectActivity(EntityActivity):
 
     def _on_nodes_moved(self, moved: list[tuple[StepId, float, float]]) -> None:
         # The writes carry each card's size and stack — a move rewrites the whole entry — and
-        # a stack member's seat moves its stack, whose seat is its first member's.
+        # a stack member's seat moves its stack, whose seat is its first member's. A gesture
+        # is named for what it moved: one stack is a Move Stack, however many cards it has.
         seats = {step_id: (x, y) for step_id, x, y in moved}
-        commands = position_commands(self._project(), seats, "Move Step", view_origin=self)
+        stacked = {read_stack(self._product.step(step_id)) for step_id in seats}
+        one = "Move Stack" if len(stacked) == 1 and "" not in stacked else "Move Step"
+        commands = position_commands(self._project(), seats, one, view_origin=self)
         if not commands:
             return
         if len(commands) == 1:
@@ -567,17 +576,27 @@ class ProjectActivity(EntityActivity):
         context naming both ends — the waiter last — so the refusal, the label and the
         command all come from one place. The canvas selection is left as the gesture found
         it — selecting the pair left Connect with no source for the next link."""
+        self._run_on("steps.link", (*sources, target), "Those steps cannot be linked")
+
+    def _on_stack_add(self, last: StepId) -> None:
+        """A stack's "+": Add Step Below, run on the stack's last step alone — the verb the
+        Stack menu offers, so the "+" cannot come to mean something the menu does not."""
+        self._run_on("stacks.add_below", (last,), "A step cannot be added to that stack")
+
+    def _run_on(self, action_id: str, step_ids: Sequence[StepId], refused: str) -> None:
+        """Run a verb on steps the gesture named rather than the ones picked, and say why
+        when its state refuses — the greyed entry's label is the reason."""
         context = Context(
             {
                 SCOPE_ACTIVITY: self.activity_nodes(),
                 SCOPE_SELECTION: tuple(
-                    ContextNode(selection_uri("step", step_id)) for step_id in (*sources, target)
+                    ContextNode(selection_uri("step", step_id)) for step_id in step_ids
                 ),
             }
         )
-        if not self.run_action("steps.link", context):
-            state = self._deps.actions.spec("steps.link").state(context)
-            self._deps.status.show_status(state.label or "Those steps cannot be linked", 4000)
+        if not self.run_action(action_id, context):
+            state = self._deps.actions.spec(action_id).state(context)
+            self._deps.status.show_status(state.label or refused, 4000)
 
     def _on_create(self, x: float, y: float) -> None:
         """Double-click on empty space: the same creation New runs, at the point."""
@@ -634,22 +653,27 @@ class ProjectActivity(EntityActivity):
         # stale point.
         self._view.note_click(scene_pos)
         self._select_for_menu(scene_pos)
-        bands = BANDS[target_of(self._scene.selection())]
+        bands = BANDS[target_of(self._scene.selection(), self._scene.stacks())]
         return fill_bands(QMenu(self._view), bands, self._deps.actions, self._deps.context)
 
     def _select_for_menu(self, scene_pos: QPointF) -> None:
         """Make the thing under the cursor current. A card or an arrow outside the pick
         becomes the pick; one inside it keeps it, or the menu's verbs would lose the rest.
-        Empty canvas clears it: what is offered there is about the canvas, not a pick."""
+        A stack's frame picks its members, as a click on it does. Empty canvas clears it:
+        what is offered there is about the canvas, not a pick."""
         picked = self._scene.selection()
         node = self._scene.node_at(scene_pos)
         edge = None if node is not None else self._scene.edge_at(scene_pos)
+        stack = None if node is not None or edge is not None else self._scene.frame_at(scene_pos)
         if node is not None:
             if node.step_id not in picked.steps:
                 self._scene.select_step(node.step_id)
         elif edge is not None:
             if edge.ref not in picked.edges:
                 self._scene.select_edges([edge.ref])
+        elif stack is not None:
+            if not set(stack.members) <= set(picked.steps) or picked.edges:
+                self._scene.select_steps(list(stack.members))
         elif picked.steps or picked.edges:
             self._scene.select_steps([])
 
@@ -692,6 +716,14 @@ class ProjectEditorModule:
             new_position=self._new_step_position,
             placed=self._on_placed,
             policies=deps.paste_policies,
+        )
+        self._stack_verbs = StackVerbs(
+            library=deps.library,
+            undo=deps.undo,
+            current_project=self._current_project,
+            new_position=self._new_step_position,
+            born=self._verbs.born,
+            status=lambda text: deps.status.show_status(text, 4000),
         )
         self._layout_verbs = LayoutVerbs(
             library=deps.library,
@@ -760,6 +792,7 @@ class ProjectEditorModule:
 
         deps.tabs.register_factory(PROJECT_KIND, factory)
         self._verbs.register_into(deps.actions)
+        self._stack_verbs.register_into(deps.actions)
         self._clipboard_verbs.register_into(deps.actions)
         self._canvas_verbs.register_into(deps.actions)
         self._layout_verbs.register_into(deps.actions)

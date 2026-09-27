@@ -108,9 +108,9 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # rather than being a step — a point, the plane's steps as a place, an arrow — and how
     # the graph is arranged and looked at. That is what makes it a menu rather than a group
     # inside View, and what tells the next person where to add one.
-    # "new" is what lands where the canvas was clicked: New Step, and Paste's second seat
-    # (its home is Edit, with Ctrl+V). "select" is the ways to a step on the plane — Find,
-    # Lasso, Select Nearest. "narrow" keeps one kind of a mixed pick: steps, or links.
+    # "new" is what lands where the canvas was clicked: New Step, New Stack, and Paste's
+    # second seat (its home is Edit, with Ctrl+V). "select" is the ways to a step on the
+    # plane — Find, Lasso, Select Nearest. "narrow" keeps one kind of a mixed pick: steps, or links.
     # "links" is what a picked arrow is for: Remove Link, Auto-progress and the Redirect
     # pair. The canvas's right-click renders these bands by what it lands on, which is why
     # each is a group of its own.
@@ -130,6 +130,11 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # That split is why some neighbours below are separate groups.
     # "edit" is Rename, Delete and Insert Wait Before — New is the Graph menu's, since what
     # it needs is a place.
+    # "stack" is Make Stack, which turns the picked steps into a stack, and "stacked" what
+    # acts on the stack a picked step stands in — Add Step Below, Take Out, Dissolve. Both
+    # feed the one Stack child menu, the rule between them drawn inside it, and a stack's
+    # frame on the canvas leads its right-click with "stacked" alone: a stack is never made
+    # of itself. New Stack is Graph's "new", beside New Step.
     # "track" is where a step stands and how long it takes: the Status and Estimate child
     # menus, acting on every picked step. A child menu sits at its first entry's order, so
     # the two claim bands of it — Status the 200s, Estimate the 400s — and ``order`` still
@@ -151,6 +156,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "Step": (
         "edit",
         "link",
+        "stack",
+        "stacked",
         "track",
         "classify",
         "agent",

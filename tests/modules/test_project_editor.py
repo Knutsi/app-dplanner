@@ -1948,7 +1948,7 @@ def test_empty_canvas_offers_making_selecting_and_the_plan(services, project, ta
 
     rendered = offered(tab, nowhere)
     assert scene(tab).selection().steps == ()
-    assert rendered[:2] == ["New Step", "Paste"]
+    assert rendered[:3] == ["New Step", "New Stack", "Paste"]
     found = {label.split(" — ")[0] for label in labels(rendered)}
     for verb in (
         "Find Step…",
@@ -2409,7 +2409,7 @@ def test_a_stack_is_drawn_as_a_column_and_moves_through_any_member(services, pro
     assert body_of(tab, third.id).topLeft() == top + QPointF(0.0, 96.0)
 
     scene(tab).nodes_moved.emit([(third.id, 600.0, 400.0)])
-    assert services.undo.undo_text() == "Move Step"
+    assert services.undo.undo_text() == "Move Stack"
     head = placement_of(services, second.id)
     assert (head["x"], head["y"], head["stack"]) == (600.0, 400.0 - 96.0, "s1")
     assert "x" not in placement_of(services, third.id)

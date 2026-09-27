@@ -18,9 +18,14 @@ Three rules keep it small:
   cursor, reached through :class:`Canvas`. There is no second reachability rule in here.
 
 A mode that drags something the canvas draws — a card by its frame, every card on one side
-of a cut — is a :class:`GestureMode`: it holds what it moves so a sync leaves the geometry
-alone, Escape puts everything back, and the release reports and pops. A new one says what it
-holds, how to restore it, and what the release means, and inherits the rest.
+of a cut, the pick with its stacks whole — is a :class:`GestureMode`: it holds what it moves
+so a sync leaves the geometry alone, Escape puts everything back, and the release reports and
+pops. A new one says what it holds, how to restore it, and what the release means, and
+inherits the rest.
+
+**A stack is one node to a link.** Wherever a link end lands on a stack — any of its cards,
+its frame — it means the stack's first card for an arrowhead and its last for a tail, the
+scene's ``link_end``; whether that link is legal is still ``link_refusal``'s alone.
 
 :class:`Canvas` is the whole of a mode's power over the canvas, which is why it is written
 out rather than inferred from passing the scene around: a mode can be driven in a test by
@@ -37,7 +42,7 @@ from typing import ClassVar, Protocol
 
 from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import QPainterPath
-from PySide6.QtWidgets import QGraphicsView
+from PySide6.QtWidgets import QApplication, QGraphicsView
 
 from dplanner.core.signals import Signal
 from dplanner.domain.model import SOURCE, WAITER, EdgeEnd, Redirection, StepId
@@ -58,6 +63,7 @@ CONNECT = "connect"
 PAN = "pan"
 LINK_DRAG = "link-drag"
 NODE_RESIZE = "node-resize"
+BLOCK_DRAG = "block-drag"
 LASSO = "lasso"
 DIVIDE_VERTICAL = "divide-vertical"
 DIVIDE_HORIZONTAL = "divide-horizontal"
@@ -96,6 +102,7 @@ HINTS_BY_MODE = {
     CONNECT: RenderHints(handles="always"),
     PAN: RenderHints(handles="hidden"),
     NODE_RESIZE: RenderHints(handles="hidden"),
+    BLOCK_DRAG: RenderHints(handles="hidden"),
     LASSO: RenderHints(handles="hidden"),
     DIVIDE_VERTICAL: RenderHints(handles="hidden"),
     DIVIDE_HORIZONTAL: RenderHints(handles="hidden"),
@@ -180,6 +187,10 @@ class Canvas(Protocol):
     graph_contracted: Signal[list[tuple[StepId, float, float]]]
     # The step the picked links are to hang off, and which end of them moves.
     redirect_requested: Signal[StepId, EdgeEnd]
+    # Cards a drag put down, at their new seats — Qt's own drag and a block drag alike.
+    nodes_moved: Signal[list[tuple[StepId, float, float]]]
+    # A stack's "+" was pressed: a step is wanted below this one, the stack's last.
+    stack_add_requested: Signal[StepId]
 
     def node_at(self, scene_pos: QPointF) -> StepNodeItem | None: ...
 
@@ -187,6 +198,20 @@ class Canvas(Protocol):
 
     # Every card on the canvas — what a divide parts into two sides.
     def nodes(self) -> list[StepNodeItem]: ...
+
+    # The stacks drawn now, whole — what a cut packs into blocks.
+    def stacks(self) -> list[Stack]: ...
+
+    # The stack whose frame or "+" is the topmost thing at a point; the stack whose "+" is.
+    def frame_at(self, scene_pos: QPointF) -> Stack | None: ...
+
+    def add_at(self, scene_pos: QPointF) -> Stack | None: ...
+
+    # What a link end landing on this step means: a stack's first card for an arrowhead,
+    # its last for a tail — and the card a link end at a point lands on, frames included.
+    def link_end(self, step_id: StepId, end: EdgeEnd) -> StepId: ...
+
+    def link_target_at(self, scene_pos: QPointF, end: EdgeEnd) -> StepNodeItem | None: ...
 
     def select_step(self, step_id: StepId | None) -> None: ...
 
@@ -239,9 +264,6 @@ class CanvasDeps:
     # Run an action id against the current context; False when the state gate refused it.
     # A mode never holds the registry, so it cannot run anything the menus could not.
     run_action: Callable[[str], bool]
-    # The stacks among the steps on the canvas — chains drawn as one tall card — read from
-    # the model when a gesture asks, so a cut drag carries each one whole.
-    step_stacks: Callable[[], Sequence[Stack]] = field(default=lambda: ())
 
 
 # -- the stack ---------------------------------------------------------------------------------
@@ -344,11 +366,11 @@ class _LinkingMode(ModeBase):
 
     def _aim(self, sources: tuple[StepId, ...], cursor: QPointF) -> None:
         canvas = self.deps.canvas
-        target = canvas.node_at(cursor)
+        target = canvas.link_target_at(cursor, WAITER)
         origin_node = canvas.node(sources[0])
         if origin_node is None:
             return
-        origin = origin_node.handle_scene_pos()
+        origin = origin_node.link_origin()
         ok = target is not None and self._refusal(sources, target.step_id) is None
         if target is None or target.step_id in sources:
             canvas.set_link_states(None, None)
@@ -359,14 +381,18 @@ class _LinkingMode(ModeBase):
     def _aim_at_step(self, sources: tuple[StepId, ...], target: StepId) -> None:
         """Aim at a whole node rather than at a point — what keyboard navigation produces."""
         canvas = self.deps.canvas
+        target = canvas.link_end(target, WAITER)
         origin_node, target_node = canvas.node(sources[0]), canvas.node(target)
         if origin_node is None or target_node is None:
             return
         ok = self._refusal(sources, target) is None
         canvas.set_link_states(target if ok else None, None if ok else target)
-        canvas.aim_preview(
-            origin_node.handle_scene_pos(), target_node.sceneBoundingRect().center(), ok
-        )
+        canvas.aim_preview(origin_node.link_origin(), target_node.sceneBoundingRect().center(), ok)
+
+    def _tails(self, step_ids: Sequence[StepId]) -> tuple[StepId, ...]:
+        """The steps a link would leave from: a stack's last card for any of its own, each
+        once — so a stack picked whole is one source, not every member."""
+        return tuple(dict.fromkeys(self.deps.canvas.link_end(s, SOURCE) for s in step_ids))
 
     def _propose(self, sources: tuple[StepId, ...], target: StepId) -> None:
         """Hand the steps to the activity, which runs ``steps.link`` exactly as the menu does."""
@@ -399,7 +425,7 @@ class LinkDragMode(_LinkingMode):
         return True
 
     def mouse_release(self, event: CanvasEvent) -> bool:
-        target = self.deps.canvas.node_at(event.scene_pos)
+        target = self.deps.canvas.link_target_at(event.scene_pos, WAITER)
         if target is not None and target.step_id not in self._sources:
             self._propose(self._sources, target.step_id)
         self._pop()
@@ -436,7 +462,7 @@ class ConnectMode(_LinkingMode):
     def enter(self) -> None:
         self._unsubscribe = self.deps.canvas.selection_changed.connect(self._on_selection)
         self.deps.view.viewport().setCursor(Qt.CursorShape.CrossCursor)
-        self._take_sources(self.deps.canvas.selection().steps)
+        self._take_sources(self._tails(self.deps.canvas.selection().steps))
 
     def exit(self) -> None:
         if self._unsubscribe is not None:
@@ -446,14 +472,16 @@ class ConnectMode(_LinkingMode):
         self._clear()
 
     def mouse_press(self, event: CanvasEvent) -> bool:
-        node = self.deps.canvas.node_at(event.scene_pos)
-        if node is None:
+        canvas = self.deps.canvas
+        source = canvas.link_target_at(event.scene_pos, SOURCE)
+        target = canvas.link_target_at(event.scene_pos, WAITER)
+        if source is None or target is None:
             self._take_sources(())
-        elif not self._sources or node.step_id in self._sources:
-            self.deps.canvas.select_step(node.step_id)
-            self._take_sources((node.step_id,))
+        elif not self._sources or source.step_id in self._sources:
+            canvas.select_step(source.step_id)
+            self._take_sources((source.step_id,))
         else:
-            self._finish(node.step_id)
+            self._finish(target.step_id)
         return True  # Consumed either way: no node dragging and no rubber band in this mode.
 
     def mouse_move(self, event: CanvasEvent) -> bool:
@@ -474,7 +502,8 @@ class ConnectMode(_LinkingMode):
             self._take_sources(())
             return True
         if key.key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            target = self.deps.canvas.selected_step()
+            picked = self.deps.canvas.selected_step()
+            target = None if picked is None else self.deps.canvas.link_end(picked, WAITER)
             if self._sources and target is not None and target not in self._sources:
                 self._finish(target)
             return True
@@ -545,7 +574,7 @@ class RedirectMode(ModeBase):
         self.deps.canvas.set_link_states(None, None)
 
     def mouse_press(self, event: CanvasEvent) -> bool:
-        node = self.deps.canvas.node_at(event.scene_pos)
+        node = self.deps.canvas.link_target_at(event.scene_pos, self._end)
         if node is not None:
             plan = self._plan(node.step_id)
             if plan.moving:
@@ -557,7 +586,7 @@ class RedirectMode(ModeBase):
         return True  # Consumed either way: no node dragging and no rubber band in here.
 
     def mouse_move(self, event: CanvasEvent) -> bool:
-        node = self.deps.canvas.node_at(event.scene_pos)
+        node = self.deps.canvas.link_target_at(event.scene_pos, self._end)
         if node is None:
             self.deps.canvas.set_link_states(None, None)
         elif self._plan(node.step_id).moving:
@@ -705,7 +734,9 @@ class NodeResizeMode(GestureMode):
         self._seat = QRectF(node.pos(), QSizeF(*node.size()))
 
     def held(self) -> set[StepId]:
-        return {self._node.step_id}
+        # A card in a stack moves the cards under it as it grows: the column is held whole.
+        stack = self._node.stack
+        return {self._node.step_id} if stack is None else set(stack.members)
 
     def restore(self) -> None:
         self._node.set_size(*self._was_size)
@@ -733,6 +764,118 @@ class NodeResizeMode(GestureMode):
             self.deps.canvas.node_resized.emit(self._node.step_id, at.x(), at.y(), w, h)
         self.pop()
         return True
+
+
+class BlockDragMode(GestureMode):
+    """The pick dragged as blocks: a stack moves whole, and a card on its own moves itself.
+
+    Qt's own item drag moves cards one by one, so it cannot keep a stack a column; this
+    mode moves each block's anchor — a stack's first card, or a loose card — by the
+    pointer's travel, and every stack's frame lays its column under its first card as it
+    goes (``StackItem.follow``). It starts wherever a press means the stack: its frame, any
+    of its cards, or a picked card while the pick holds a stack.
+
+    A press picks what it landed on unless that is already picked, as Qt's does, so what
+    moves is always the pick; a press that never travels past the drag distance is a click,
+    and a click leaves ``click`` picked — the card pressed, as Qt's click narrows to it, or
+    nothing more for a frame, whose press already picked its stack. The release reports the
+    anchors through ``nodes_moved``, where a member's seat is its stack's; Escape puts every
+    block back.
+    """
+
+    name = BLOCK_DRAG
+    cursor = Qt.CursorShape.ClosedHandCursor
+
+    def __init__(
+        self, deps: CanvasDeps, grab: CanvasEvent, click: Sequence[StepId] | None = None
+    ) -> None:
+        super().__init__(deps)
+        self._grab = grab
+        self._click = None if click is None else list(click)
+        self._dragging = False
+        canvas = deps.canvas
+        anchors: dict[StepId, None] = {}
+        held: set[StepId] = set()
+        for step_id in canvas.selection().steps:
+            node = canvas.node(step_id)
+            stack = None if node is None else node.stack
+            anchors[step_id if stack is None else stack.head] = None
+            held.update((step_id,) if stack is None else stack.members)
+        self._held = held
+        self._from = {
+            anchor: node.pos() for anchor in anchors if (node := canvas.node(anchor)) is not None
+        }
+
+    def held(self) -> set[StepId]:
+        return self._held
+
+    def restore(self) -> None:
+        self._place(QPointF())
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        travel = event.view_pos - self._grab.view_pos
+        if not self._dragging and travel.manhattanLength() < QApplication.startDragDistance():
+            return True
+        self._dragging = True
+        self._place(event.scene_pos - self._grab.scene_pos)
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        canvas = self.deps.canvas
+        moved = [
+            (anchor, node.pos().x(), node.pos().y())
+            for anchor, was in self._from.items()
+            if (node := canvas.node(anchor)) is not None and node.pos() != was
+        ]
+        if moved:
+            canvas.nodes_moved.emit(moved)
+        elif not self._dragging and self._click is not None:
+            canvas.select_steps(self._click)
+        self.pop()
+        return True
+
+    def double_click(self, event: CanvasEvent) -> bool:
+        return True  # A press in flight is a drag or a click; the double click comes after.
+
+    def _place(self, travel: QPointF) -> None:
+        # Each card snaps itself as it lands (StepNodeItem.itemChange), as under Qt's drag.
+        for anchor, was in self._from.items():
+            node = self.deps.canvas.node(anchor)
+            if node is not None:
+                node.setPos(was + travel)
+
+
+def drag_the_pick(
+    deps: CanvasDeps, event: CanvasEvent, node: StepNodeItem | None, stack: Stack | None
+) -> BlockDragMode | None:
+    """The block drag a press starts, having picked what the press landed on — or None when
+    the press is Qt's: a card on its own, in a pick that holds no stack.
+
+    A press on a card picks it unless it is picked already, the way Qt's press does; a press
+    on a frame picks every member of its stack, added to the pick with Ctrl or Shift held.
+    """
+    canvas = deps.canvas
+    picked = list(canvas.selection().steps)
+    if node is not None:
+        if node.step_id not in picked:
+            if node.stack is None:
+                return None
+            canvas.select_steps([node.step_id])
+        elif node.stack is None and not any(
+            (other := canvas.node(step_id)) is not None and other.stack is not None
+            for step_id in picked
+        ):
+            return None
+        return BlockDragMode(deps, event, click=[node.step_id])
+    assert stack is not None
+    adding = event.modifiers & (
+        Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier
+    )
+    if adding:
+        canvas.select_steps([*picked, *(m for m in stack.members if m not in picked)])
+    elif not set(stack.members) <= set(picked):
+        canvas.select_steps(list(stack.members))
+    return BlockDragMode(deps, event)
 
 
 class LassoMode(ModeBase):
@@ -908,7 +1051,7 @@ class _CutDragMode(GestureMode):
         self._cards: dict[StepId, Point] = {
             node.step_id: (node.pos().x(), node.pos().y()) for node in nodes
         }
-        self._packing = Packing(deps.step_stacks(), {node.step_id: node.size() for node in nodes})
+        self._packing = Packing(deps.canvas.stacks(), {node.step_id: node.size() for node in nodes})
         self._placed = self._packing.blocks(self._cards)
         self._sizes = self._packing.sizes
         self._moved: dict[StepId, Point] = {}
@@ -1040,8 +1183,10 @@ def visible_scene_rect(view: QGraphicsView) -> QRectF:
 
 
 class IdleMode(ModeBase):
-    """The base. Qt does selection, rubber banding and node dragging; this catches the rest:
-    a press on a card's link handle or on its frame, and every right press."""
+    """The base. Qt does selection, rubber banding and a loose card's drag; this catches the
+    rest: every right press, and a left press on a card's link handle, a stack's "+", a
+    card's resize band, a card in a stack, and a stack's frame — in that order, each
+    before the next may claim the point. An arrow drawn over a frame is Qt's to pick."""
 
     name = IDLE
 
@@ -1050,32 +1195,49 @@ class IdleMode(ModeBase):
             # The context menu decides what a right-click picks. Handed to Qt, a right press
             # on an arrow — selectable, not movable — clears the whole selection first.
             return True
-        node = self.deps.canvas.node_at(event.scene_pos)
+        canvas = self.deps.canvas
+        node = canvas.node_at(event.scene_pos)
         if node is not None and node.is_over_handle(event.scene_pos):
             # Claimed before Qt sees it, so the press starts neither a move nor a rubber band.
-            if self.stack is not None:
-                self.stack.push(LinkDragMode(self.deps, node.step_id))
+            self._push(LinkDragMode(self.deps, node.step_id))
+            return True
+        if event.button != Qt.MouseButton.LeftButton:
+            return False
+        added = canvas.add_at(event.scene_pos)
+        if added is not None:
+            canvas.stack_add_requested.emit(added.members[-1])
             return True
         if node is not None:
             edge = node.edge_at(event.scene_pos)
-            if edge and event.button == Qt.MouseButton.LeftButton and self.stack is not None:
-                self.stack.push(NodeResizeMode(self.deps, node, edge))
+            if edge:
+                self._push(NodeResizeMode(self.deps, node, edge))
                 return True
-        return False
+            if event.modifiers & Qt.KeyboardModifier.ControlModifier:
+                return False  # Qt's toggle of one card in the pick.
+            return self._push(drag_the_pick(self.deps, event, node, None))
+        stack = canvas.frame_at(event.scene_pos)
+        return stack is not None and self._push(drag_the_pick(self.deps, event, None, stack))
 
     def mouse_move(self, event: CanvasEvent) -> bool:
         """Cursor feedback only — the event still falls through to Qt, which hovers and
-        drags. A card's frame shows the resize arrows so the gesture can be found; the
-        handle wins its corner of the right edge, as it does on the press."""
+        drags. A card's frame shows the resize arrows so the gesture can be found, the
+        handle winning its corner of the right edge as it does on the press; a stack's "+"
+        shows a pointing hand, and its frame an open one: room to take hold of."""
         if event.buttons == Qt.MouseButton.NoButton:
-            node = self.deps.canvas.node_at(event.scene_pos)
-            edge = ""
-            if node is not None and not node.is_over_handle(event.scene_pos):
-                edge = node.edge_at(event.scene_pos)
+            canvas = self.deps.canvas
+            node = canvas.node_at(event.scene_pos)
+            cursor: Qt.CursorShape | None = None
+            if canvas.add_at(event.scene_pos) is not None:
+                cursor = Qt.CursorShape.PointingHandCursor
+            elif node is not None:
+                edge = "" if node.is_over_handle(event.scene_pos) else node.edge_at(event.scene_pos)
+                cursor = RESIZE_CURSORS[edge] if edge else None
+            elif canvas.frame_at(event.scene_pos) is not None:
+                cursor = Qt.CursorShape.OpenHandCursor
             viewport = self.deps.view.viewport()
-            if edge:
-                if viewport.cursor().shape() != RESIZE_CURSORS[edge]:
-                    viewport.setCursor(RESIZE_CURSORS[edge])
+            if cursor is not None:
+                if viewport.cursor().shape() != cursor:
+                    viewport.setCursor(cursor)
             elif viewport.testAttribute(Qt.WidgetAttribute.WA_SetCursor):
                 viewport.unsetCursor()
         return False
@@ -1087,6 +1249,15 @@ class IdleMode(ModeBase):
             self.deps.canvas.select_step(node.step_id)
             self.deps.run_action("steps.details")
             return True
+        if self.deps.canvas.frame_at(event.scene_pos) is not None:
+            return True  # A stack's frame is the stack's, never room for a new step.
         point = event.scene_pos
         self.deps.canvas.create_requested.emit(*centred_on(point.x(), point.y()))
+        return True
+
+    def _push(self, mode: ModeBase | None) -> bool:
+        """Start ``mode``, if there is one: True when the press is now a mode's."""
+        if mode is None or self.stack is None:
+            return False
+        self.stack.push(mode)
         return True

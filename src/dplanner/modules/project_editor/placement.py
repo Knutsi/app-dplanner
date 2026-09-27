@@ -86,24 +86,32 @@ def boxes(library: Library, project: Project) -> list[Box]:
 
 
 def free_spot(
-    library: Library, project: Project, size: Size = (NODE_W, NODE_H)
+    library: Library,
+    project: Project,
+    size: Size = (NODE_W, NODE_H),
+    near: tuple[float, float] | None = None,
 ) -> tuple[float, float]:
     """A grid-snapped top-left no card overlaps: a fresh column, right of everything.
 
     Where a step born by a gesture with no point goes — the Specs tab's *New feature
-    step…*, and whatever asks next. It walks *down* a row at a time from the top of the
-    graph while anything is in the way, so a second one made straight after the first sits
-    under it rather than on it, and the column it opens is a column nothing is in.
+    step…*, New Stack with no click yet, and whatever asks next. It walks *down* a row at a
+    time from the top of the graph while anything is in the way, so a second one made
+    straight after the first sits under it rather than on it, and the column it opens is a
+    column nothing is in. ``near`` names the column's top instead — a step taken out of a
+    stack goes beside its frame, at its own row, and walks down from there.
 
     A stored position, rather than letting the ambient layout answer, for the same reason
     a step placed by pointing earns one: the alternative is ``layered_flow`` computing a
     coordinate against an arrangement nobody chose, which lands on a hand-placed card.
     """
     drawn = boxes(library, project)
-    if not drawn:
+    if near is not None:
+        x, top = snapped(near[0], GRID), snapped(near[1], GRID)
+    elif not drawn:
         return (snapped(ORIGIN, GRID), snapped(ORIGIN, GRID))
-    x = snapped(max(left + width for left, _top, width, _height in drawn) + H_GAP, GRID)
-    top = snapped(min(top for _left, top, _width, _height in drawn), GRID)
+    else:
+        x = snapped(max(left + width for left, _top, width, _height in drawn) + H_GAP, GRID)
+        top = snapped(min(top for _left, top, _width, _height in drawn), GRID)
     width, height = size
     row = 0
     while any(_overlaps((x, top + row * V_PITCH, width, height), box) for box in drawn):

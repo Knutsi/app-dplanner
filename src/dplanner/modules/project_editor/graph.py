@@ -1,10 +1,12 @@
-"""The canvas: steps as nodes, edges as arrows, and what the user has picked out of them.
+"""The canvas: steps as nodes, edges as arrows, stacks as frames round their cards, and what
+the user has picked out of them.
 
-**Every item diffs by key.** :meth:`GraphScene.sync` reconciles nodes by step id and edges by
-:class:`EdgeRef` — creating, updating and removing, never clearing — for one reason that covers
-both: an item the user is holding on to must keep its identity. A node may be under the mouse
-mid-drag; an edge may be selected, waiting for Delete. Rebuilding either wholesale throws that
-away, and the edges used to be rebuilt wholesale, which is why they could not be selected.
+**Every item diffs by key.** :meth:`GraphScene.sync` reconciles nodes by step id, frames by
+stack id and edges by :class:`EdgeRef` — creating, updating and removing, never clearing — for
+one reason that covers them all: an item the user is holding on to must keep its identity. A
+node may be under the mouse mid-drag; an edge may be selected, waiting for Delete. Rebuilding
+either wholesale throws that away, and the edges used to be rebuilt wholesale, which is why
+they could not be selected.
 
 **The scene reports; it never writes.** Every gesture ends in a signal, and the activity turns
 that into a command on the undo stack. So a drag is undoable, and the model stays the only
@@ -39,13 +41,15 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.core.signals import Signal
-from dplanner.domain.model import EdgeEnd, Redirection, StepId
+from dplanner.domain.model import WAITER, EdgeEnd, Redirection, StepId
 from dplanner.framework.widgets import install_ctrl_wheel_zoom
 from dplanner.modules.project_editor.ground import paint_ground
 from dplanner.modules.project_editor.items import (
     EdgeItem,
     LinkPreviewItem,
     OutlinePreviewItem,
+    StackAddItem,
+    StackItem,
     StepNodeItem,
 )
 from dplanner.modules.project_editor.keymap import bound_actions
@@ -124,6 +128,12 @@ class GraphScene(QGraphicsScene):
         self._spotlight_held = False
         self._nodes: dict[StepId, StepNodeItem] = {}
         self._edges: dict[EdgeRef, EdgeItem] = {}
+        # Every stack's frame by stack id, and the frame each member stands in.
+        self._frames: dict[str, StackItem] = {}
+        self._frame_of: dict[StepId, StackItem] = {}
+        # True while sync places the cards: a moved card's stack is laid out once, after,
+        # over the membership the sync brings — never over the one it is replacing.
+        self._syncing = False
         # Both the drag record and the "this node owns its own position" guard: one dict,
         # so the two can never disagree.
         self._press_at: dict[StepId, QPointF] = {}
@@ -159,6 +169,8 @@ class GraphScene(QGraphicsScene):
         self.graph_contracted: Signal[list[tuple[StepId, float, float]]] = Signal()
         # The step the picked links are to hang off, and which of their ends moves.
         self.redirect_requested: Signal[StepId, EdgeEnd] = Signal()
+        # A stack's "+" was pressed: a step is wanted below this one, its last.
+        self.stack_add_requested: Signal[StepId] = Signal()
 
         self.selectionChanged.connect(self._on_selection)
         # True while select_steps reconciles Qt's selection item by item, so
@@ -180,28 +192,35 @@ class GraphScene(QGraphicsScene):
         nodes: list[NodeSpec],
         edges: list[EdgeRef],
         edge_accents: Mapping[EdgeRef, EdgeAccent] | None = None,
+        stacks: Sequence[Stack] = (),
     ) -> None:
         """Make the scene the graph: ``edge_accents`` dresses the arrows it names, and an
-        arrow it leaves out is plain."""
+        arrow it leaves out is plain. Cards first, then the stacks' frames round them, then
+        the arrows — each over what the one before it has just placed."""
         accents = edge_accents or {}
         wanted = {spec.step_id for spec in nodes}
-        for spec in nodes:
-            item = self._nodes.get(spec.step_id)
-            if item is None:
-                item = self._nodes[spec.step_id] = StepNodeItem(spec.step_id)
-                item.set_render_hints(self._hints)  # A node born mid-mode dresses for it.
-                item.set_marks(self._marks)
-                self.addItem(item)
-            item.set_title(spec.title)
-            item.set_accent(spec.accent)
-            item.set_ports(spec.ports)
-            # A node being dragged or resized owns its geometry until the gesture ends. The
-            # model is authoritative everywhere else — including when the CLI writes mid-drag.
-            if spec.step_id not in self._press_at and spec.step_id not in self._held_steps:
-                item.setPos(spec.x, spec.y)
-                item.set_size(*spec.size)
-        for gone_node in set(self._nodes) - wanted:
-            self.removeItem(self._nodes.pop(gone_node))
+        self._syncing = True
+        try:
+            for spec in nodes:
+                item = self._nodes.get(spec.step_id)
+                if item is None:
+                    item = self._nodes[spec.step_id] = StepNodeItem(spec.step_id)
+                    item.set_render_hints(self._hints)  # A node born mid-mode dresses for it.
+                    item.set_marks(self._marks)
+                    self.addItem(item)
+                item.set_title(spec.title)
+                item.set_accent(spec.accent)
+                item.set_ports(spec.ports)
+                # A node being dragged or resized owns its geometry until the gesture ends.
+                # The model is authoritative everywhere else — including a CLI write mid-drag.
+                if spec.step_id not in self._press_at and spec.step_id not in self._held_steps:
+                    item.setPos(spec.x, spec.y)
+                    item.set_size(*spec.size)
+            for gone_node in set(self._nodes) - wanted:
+                self.removeItem(self._nodes.pop(gone_node))
+        finally:
+            self._syncing = False
+        self._sync_frames(stacks)
 
         drawable = {ref for ref in edges if ref.source in self._nodes and ref.waiter in self._nodes}
         for gone_edge in set(self._edges) - drawable:
@@ -237,10 +256,48 @@ class GraphScene(QGraphicsScene):
         elif not live and self._ring_timer.isActive():
             self._ring_timer.stop()
 
+    def _sync_frames(self, stacks: Sequence[Stack]) -> None:
+        """One frame per stack whose every member has a card, diffed by stack id like the
+        cards, each told its members and laid out round them."""
+        wanted = {s.id: s for s in stacks if all(m in self._nodes for m in s.members)}
+        for gone in set(self._frames) - set(wanted):
+            stale = self._frames.pop(gone)
+            self.removeItem(stale.add)
+            self.removeItem(stale)
+        self._frame_of = {}
+        for stack in wanted.values():
+            frame = self._frames.get(stack.id)
+            if frame is None:
+                frame = self._frames[stack.id] = StackItem(stack)
+                frame.set_marks(self._marks)
+                self.addItem(frame)
+                self.addItem(frame.add)
+            frame.set_stack(stack, [self._nodes[member] for member in stack.members])
+            for member in stack.members:
+                self._frame_of[member] = frame
+        for step_id, node in self._nodes.items():
+            node.set_frame(self._frame_of.get(step_id))
+        for frame in self._frames.values():
+            frame.follow()
+
     def reflow_edges(self, step_id: StepId) -> None:
-        """Redraw the edges touching one node — called by the item while it is dragged."""
+        """Redraw what touches one node — called by the item while it moves or resizes.
+
+        A card in a stack moves its stack's column and frame first, and then every arrow
+        touching any member: the frame's middle, where its ports are, depends on them all.
+        """
+        if self._syncing:
+            return  # Sync lays out every frame and follows every arrow once it is done.
+        frame = self._frame_of.get(step_id)
+        if frame is not None:
+            if frame.following():
+                return  # The frame is moving its own members; it follows once, after.
+            frame.follow()
+            touched = set(frame.stack.members)
+        else:
+            touched = {step_id}
         for edge in self._edges.values():
-            if edge.source.step_id == step_id or edge.waiter.step_id == step_id:
+            if edge.source.step_id in touched or edge.waiter.step_id in touched:
                 edge.follow()
 
     def node_rects(self) -> list[QRectF]:
@@ -316,6 +373,61 @@ class GraphScene(QGraphicsScene):
     def node(self, step_id: StepId) -> StepNodeItem | None:
         return self._nodes.get(step_id)
 
+    def stacks(self) -> list[Stack]:
+        """The stacks drawn now — every one whose members all have a card."""
+        return [frame.stack for frame in self._frames.values()]
+
+    def frame_at(self, scene_pos: QPointF) -> Stack | None:
+        """The stack whose frame (or its "+") is the topmost thing at a point — None when a
+        card or an arrow is drawn over it there, which is then what the point means."""
+        for item in self.items(scene_pos):
+            if isinstance(item, StackItem):
+                return item.stack
+            if isinstance(item, StackAddItem):
+                return item.frame.stack
+            if isinstance(item, (StepNodeItem, EdgeItem)):
+                return None
+        return None
+
+    def add_at(self, scene_pos: QPointF) -> Stack | None:
+        """The stack whose "+" is under a point, unless a card is lifted over it."""
+        for item in self.items(scene_pos):
+            if isinstance(item, StackAddItem):
+                return item.frame.stack
+            if isinstance(item, (StepNodeItem, EdgeItem, StackItem)):
+                return None
+        return None
+
+    def link_end(self, step_id: StepId, end: EdgeEnd) -> StepId:
+        """The card a link end means when it lands on ``step_id``: a stack takes its links in
+        at its first step and sends them out from its last, so an arrowhead aimed anywhere
+        in one lands on the first and a tail on the last. A loose card is itself."""
+        frame = self._frame_of.get(step_id)
+        if frame is None:
+            return step_id
+        members = frame.stack.members
+        return members[0] if end == WAITER else members[-1]
+
+    def link_target_at(self, scene_pos: QPointF, end: EdgeEnd) -> StepNodeItem | None:
+        """The card a link end at this point lands on: the card under it, or the stack it is
+        on or over — its frame, its "+" — by :meth:`link_end`."""
+        node = self.node_at(scene_pos)
+        if node is not None:
+            step_id = node.step_id
+        else:
+            stack = next(
+                (
+                    item.stack if isinstance(item, StackItem) else item.frame.stack
+                    for item in self.items(scene_pos)
+                    if isinstance(item, (StackItem, StackAddItem))
+                ),
+                None,
+            )
+            if stack is None:
+                return None
+            step_id = stack.head
+        return self._nodes.get(self.link_end(step_id, end))
+
     def nodes(self) -> list[StepNodeItem]:
         """Every card — what a divide parts into the side that moves and the side that stays."""
         return list(self._nodes.values())
@@ -346,10 +458,12 @@ class GraphScene(QGraphicsScene):
             item.set_render_hints(hints)
 
     def set_marks(self, marks: Marks) -> None:
-        """Fan the user's marks out to every node, the same way."""
+        """Fan the user's marks out to every node and every stack's frame, the same way."""
         self._marks = marks
         for item in self._nodes.values():
             item.set_marks(marks)
+        for frame in self._frames.values():
+            frame.set_marks(marks)
 
     def set_spotlight(self, on: bool) -> None:
         """Whether the user's look fades what the selection is not linked to."""
@@ -437,6 +551,8 @@ class GraphScene(QGraphicsScene):
         for ref, edge in self._edges.items():
             edge.set_lit(ref in near.edges)
             edge.set_dimmed(dim and ref not in near.edges)
+        for frame in self._frames.values():
+            frame.set_dimmed(dim and not near.steps.intersection(frame.stack.members))
 
     def _selected_edges(self) -> tuple[EdgeRef, ...]:
         return tuple(
@@ -478,7 +594,6 @@ class GraphView(QGraphicsView):
         base_mode: Callable[[CanvasDeps], ModeBase],
         status: Callable[[str], None],
         run_action: Callable[[str], bool],
-        step_stacks: Callable[[], Sequence[Stack]] = lambda: (),
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(scene, parent)
@@ -509,7 +624,6 @@ class GraphView(QGraphicsView):
             view=self,
             status=status,
             run_action=run_action,
-            step_stacks=step_stacks,
         )
         self.modes = ModeStack(base_mode(self.deps))
         # The mode's look reaches the nodes here: one subscription on the stack, not
