@@ -2566,7 +2566,8 @@ def _always_progresses(step: "Step") -> str:
 
 
 def _is_agent_step(step: "Step") -> bool:
-    """Whether an agent executes the step — the agent aspect's answer, for the status verb."""
+    """Whether an agent executes the step — the agent aspect's answer, for the status verb
+    and the rows of `progression show`."""
     from dplanner.modules.step_agent_instruction.aspect import enabled
 
     return enabled(step)
@@ -3677,6 +3678,7 @@ def default_cli_commands(
             counts_as_work=_counts_as_work,
             days_for=estimated_days,
             auto_progresses=_auto_progresses,
+            is_agent=_is_agent_step,
         ),
         # The timeline sort reads a step's length through estimation's Qt-free reader —
         # handed over here so neither cli.py imports the other.
