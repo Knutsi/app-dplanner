@@ -4,6 +4,7 @@ paths:
   - "src/dplanner/cli/lookup.py"
   - "src/dplanner/modules/auto_progress/**"
   - "tests/domain/test_{model,ids}.py"
+  - "tests/modules/test_stack_edits.py"
   - "tests/modules/test_auto_progress*.py"
   - "tests/cli/test_auto_progress_verbs.py"
 ---
@@ -28,6 +29,23 @@ paths:
   Delete hands it the arrows picked beside the steps as well (`links=`); they join the same
   per-list removal, so a list losing both is rewritten once.
   `graph.requires-dangling` in lint is what names one that arrived from outside.
+- **What may link to what is the graph's four refusals, then the rules a module adds.**
+  `Library.link_rules` is a tuple the composition root installs — `default_link_rules()`,
+  on the window's library in `default_modules` and on the CLI's through `entry.py → run →
+  open_library` — and `link_refusal` asks each after its own four, so the canvas under the
+  cursor, `steps.link`'s state, Redirect and `step link` still ask one question. The stack's
+  "one in, one out" (`project_editor/stacks.link_rule`) is the first. **A rule judges only
+  the first redo of a link a person chose**: `SetEdgesCommand` asks with `rules` and on its
+  first redo alone, and an undo, a replayed redo, the store adopting another writer's list,
+  `project import`, a paste's clones and every rewire pass `rules=False` and meet only the
+  four — each carries links that already exist, and judged again one could refuse halfway
+  through a composite over a stack somebody broke. **An edit whose links depend on
+  something else it changes is a `rewire_command`**: every removal, then `between` (a
+  membership, a seat, a node born or removed), then every addition, so each graph on the
+  way is a part of the one before or the one after and the cycle check cannot trip
+  halfway; `remove_edges_command` and `remove_steps_command` are built on it. Never judge a
+  rule anywhere but `link_refusal`. `ARCHITECTURE.md`'s *One in, one out is a rule the
+  domain asks* has the reasoning and the proof.
 - **A step has a number, and the key is how it is named everywhere.** `Step.number` is
   dealt by `Library.add_child` from the project's `last_number` high-water mark — one
   sequence per project, never reused (a deleted step's branch may live on), kept through

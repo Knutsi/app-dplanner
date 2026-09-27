@@ -5,6 +5,8 @@
     uv run python scripts/render_graph_editor.py --contract --out docs/screenshots/f15-contract
     uv run python scripts/render_graph_editor.py --stacks \
         --out docs/screenshots/s16-stack-one-tall-card
+    uv run python scripts/render_graph_editor.py --stack-edits \
+        --out docs/screenshots/s17-editing-a-stack
     uv run python scripts/render_graph_editor.py --auto-progress \
         --out docs/screenshots/f11-auto-progress
     uv run python scripts/render_graph_editor.py --review \
@@ -18,12 +20,13 @@ each kind of step, who works it in the key block, the status washes, and a card 
 minimum size. Since F7, with ``--menus`` and nothing else, what a right-click offers by what
 is under it; since F15, with ``--contract``, Divide's dropdown offering Contract and a
 contract held mid-drag; since S16, with ``--stacks``, a stacked chain drawn as a column on
-the canvas and as a frame in the report; since F11, with ``--auto-progress``, parallel work
-handed to a step that collects it: the doubled links, and the arrow's menu with the toggle
-on; since F12, with ``--review``, a step and its review, the link into the review doubled by
-rule and its menu's toggle ticked and greyed. A whole application is built over a throwaway
-library — the tab is the tab host's, so nothing here hand-wires a surface the window would
-build differently — and torn down per theme.
+the canvas and as a frame in the report; since S17, with ``--stack-edits``, a member
+deleted with the chain closing round it and a broken stack in the Problems list; since F11,
+with ``--auto-progress``, parallel work handed to a step that collects it: the doubled
+links, and the arrow's menu with the toggle on; since F12, with ``--review``, a step and its
+review, the link into the review doubled by rule and its menu's toggle ticked and greyed. A
+whole application is built over a throwaway library — the tab is the tab host's, so nothing
+here hand-wires a surface the window would build differently — and torn down per theme.
 """
 
 import argparse
@@ -511,13 +514,14 @@ def render_auto_progress(app: QApplication, theme: Theme, out: Path, workspace: 
     discard(page)
 
 
-def render_stacks(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
-    """A stacked chain on the canvas — a column under its first member, nobody having placed
-    it — and the same plan's graph in the report, where the frame is drawn and the chain's
-    arrows are left out."""
+def open_stacked(
+    app: QApplication, theme: Theme, workspace: Path, name: str
+) -> tuple[AppSession, AppServices, list[StepId], ProjectActivity]:
+    """A whole application over a throwaway library holding a stacked chain — a step in,
+    three stacked, the milestone after — nobody having placed it, its tab open."""
     QSettings().clear()
     apply_theme(app, theme)
-    library_file = workspace / f"stacks-library-{theme.name}.json"
+    library_file = workspace / f"{name}-library-{theme.name}.json"
     create_library(library_file)
     init_repo(workspace)
     session = new_session()
@@ -527,7 +531,7 @@ def render_stacks(app: QApplication, theme: Theme, out: Path, workspace: Path) -
     services.debounce.set_immediate(True)
     library = services.document
 
-    directory = seed_project(workspace / f"stacks-{theme.name}", "Importer")
+    directory = seed_project(workspace / f"{name}-{theme.name}", "Importer")
     project = services.repo.attach(directory)
     library.add_child(library.id, project)
     made = []
@@ -544,6 +548,16 @@ def render_stacks(app: QApplication, theme: Theme, out: Path, workspace: Path) -
 
     tab = services.tabs.open("project", project.id)
     assert isinstance(tab, ProjectActivity)
+    return session, services, made, tab
+
+
+def render_stacks(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """A stacked chain on the canvas — a column under its first member, nobody having placed
+    it — and the same plan's graph in the report, where the frame is drawn and the chain's
+    arrows are left out."""
+    session, services, made, tab = open_stacked(app, theme, workspace, "stacks")
+    library = services.document
+    project = library.project_of(made[0])
     page = tab.widget
     page.resize(*STACK_SIZE)
     page.show()
@@ -640,6 +654,39 @@ def render_review(app: QApplication, theme: Theme, out: Path, workspace: Path) -
     discard(page)
 
 
+def render_stack_edits(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """Editing a stack (S17): the middle member picked, then deleted — the chain closes round
+    the gap — and a stack another writer broke, named in the Problems list beside the
+    canvas with the link that mends it."""
+    session, services, made, tab = open_stacked(app, theme, workspace, "stack-edits")
+    library = services.document
+    # Described, so the squiggles and the list say what this shot is about and nothing else.
+    for step_id in made:
+        library.set_text(step_id, "step_description", "What the step delivers.")
+    page = tab.widget
+    page.resize(*STACK_SIZE)
+    page.show()
+    tab.select_steps([made[2]])
+    tab.frame()
+    save(page, out, "delete-before", theme, app)
+
+    services.actions.run("steps.delete", services.context.current())
+    tab.frame()
+    save(page, out, "delete-after", theme, app)
+
+    # Another writer's edit: the stack's last member no longer waits on its first. Carried
+    # the way the store adopts it — no rule judges another writer's links.
+    library.set_edges(made[3], "requires", [], rules=False)
+    editor = next(m for m in services.modules if isinstance(m, ProjectEditorModule))
+    services.actions.run("canvas.side_panel", services.context.current())
+    tab.set_look(editor._look)
+    tab.frame()
+    save(page, out, "broken", theme, app)
+    page.setParent(None)
+    session.close()
+    discard(page)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory for the PNGs")
@@ -653,6 +700,11 @@ def main(argv: list[str]) -> int:
         "--stacks",
         action="store_true",
         help="only a stacked chain on the canvas and in the report (S16)",
+    )
+    parser.add_argument(
+        "--stack-edits",
+        action="store_true",
+        help="only a stack edited: a member deleted, and a broken stack named (S17)",
     )
     parser.add_argument(
         "--auto-progress",
@@ -682,6 +734,9 @@ def main(argv: list[str]) -> int:
                 continue
             if args.stacks:
                 render_stacks(app, theme, args.out, Path(tmp))
+                continue
+            if args.stack_edits:
+                render_stack_edits(app, theme, args.out, Path(tmp))
                 continue
             if args.auto_progress:
                 render_auto_progress(app, theme, args.out, Path(tmp))

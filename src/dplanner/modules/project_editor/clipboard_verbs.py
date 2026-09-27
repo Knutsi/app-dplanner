@@ -25,7 +25,6 @@ from dataclasses import dataclass
 from PySide6.QtCore import QByteArray, QMimeData, QObject
 from PySide6.QtGui import QGuiApplication, QKeySequence
 
-from dplanner.domain.commands import remove_steps_command
 from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_registry import (
@@ -49,6 +48,7 @@ from dplanner.modules.project_editor.clipboard import (
     to_json,
     write_files,
 )
+from dplanner.modules.project_editor.stack_edits import bridged_removal
 
 
 def held_clips() -> list[StepClip]:
@@ -210,7 +210,7 @@ class ClipboardVerbs:
         if not chosen:
             return
         self._copy(context)
-        self.undo.push(remove_steps_command(self.library, chosen, "Cut"))
+        self.undo.push(bridged_removal(self.library, chosen, "Cut"))
         self.undo.break_coalescing()
 
     def _paste(self, _context: Context) -> None:

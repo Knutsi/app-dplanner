@@ -22,10 +22,11 @@ the top of the stack.
 """
 
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any, Protocol
 
 from dplanner.domain.model import (
+    EDGE_KINDS,
     FIELD_LABELS,
     Edge,
     Library,
@@ -42,6 +43,10 @@ MERGE_WINDOW_SECONDS = 1.0
 
 # Passed by undo and redo. It matches no view binding, so every view applies the change.
 UNDO_ORIGIN: object = object()
+
+# One list an edge lives on: the step that waits, and the kind. A command that rewrites edges
+# replaces whole lists, so this is the unit it plans in.
+type EdgeList = tuple[StepId, str]
 
 
 class Command(Protocol):
@@ -153,14 +158,30 @@ class EditTextCommand:
 
 
 class SetEdgesCommand:
-    """Replace one kind of incoming edge on one step."""
+    """Replace one kind of incoming edge on one step.
+
+    The library's :attr:`~Library.link_rules` judge the **first** redo only, and only while
+    ``rules`` is on: that is the moment somebody chose the link. An undo puts back what was
+    there and a later redo replays what was judged already, so neither asks again — judged,
+    either could refuse halfway through a composite over a stack another writer broke
+    since, and the undo stack would drop the entry half applied. A command that copies or
+    moves links which already exist passes ``rules=False`` outright (:meth:`Library.set_edges`
+    names who).
+    """
 
     def __init__(
-        self, step_id: StepId, kind: str, targets: list[StepId], view_origin: object | None = None
+        self,
+        step_id: StepId,
+        kind: str,
+        targets: list[StepId],
+        view_origin: object | None = None,
+        *,
+        rules: bool = True,
     ) -> None:
         self.step_id = step_id
         self.kind = kind
         self.targets = list(targets)
+        self.rules = rules
         self._before: list[StepId] | None = None
         self._next_origin = view_origin
 
@@ -168,14 +189,17 @@ class SetEdgesCommand:
         return "Change Links"
 
     def redo(self, library: Library) -> None:
-        if self._before is None:
+        first = self._before is None
+        if first:
             self._before = list(library.step(self.step_id).edges.get(self.kind, []))
-        library.set_edges(self.step_id, self.kind, self.targets, self._next_origin)
+        library.set_edges(
+            self.step_id, self.kind, self.targets, self._next_origin, rules=self.rules and first
+        )
         self._next_origin = UNDO_ORIGIN
 
     def undo(self, library: Library) -> None:
         assert self._before is not None
-        library.set_edges(self.step_id, self.kind, self._before, UNDO_ORIGIN)
+        library.set_edges(self.step_id, self.kind, self._before, UNDO_ORIGIN, rules=False)
 
     def merge_with(self, other: Command) -> bool:
         return False
@@ -314,6 +338,59 @@ class CompositeCommand:
         return False
 
 
+def rewire_command(
+    library: Library,
+    lists: Mapping[EdgeList, Sequence[StepId]],
+    label: str,
+    between: Sequence[Command] = (),
+) -> CompositeCommand:
+    """Rewrite these edge lists to their final content, with ``between`` in the middle, as
+    one undo step: **every removal first, then** ``between``, **then every addition.**
+
+    A list that loses some ids and gains others is two writes — what it keeps, then what it
+    ends as — so every graph a redo passes through is a subset of the graph before or the
+    graph after, and so is every graph the undo passes through, run in reverse. A subset of
+    an acyclic graph is acyclic: the cycle check cannot trip halfway, whatever order the
+    lists come in. ``between`` is where what the links depend on changes — a stack's
+    membership and seat, a node born or removed — so the additions land on the finished
+    membership and the undo's re-additions on the one they came from. A waiter not yet in
+    the library reads as an empty list, which lets a node born in ``between`` gain its own
+    among the additions.
+
+    Written with ``rules=False``: what a rewire adds is a line its builder already refused
+    or allowed as a whole, plus links that existed before and are only moving — judged
+    again, a moved link whose far end sits in *another* stack somebody broke would refuse
+    and strand the composite. A kind this build does not know is carried, never rewritten.
+    ``ARCHITECTURE.md``'s *One in, one out is a rule the domain asks* has the argument.
+    """
+    removals: list[Command] = []
+    additions: list[Command] = []
+    for (waiter, kind), final in sorted(lists.items()):
+        if kind not in EDGE_KINDS:
+            continue
+        current = library.step(waiter).edges.get(kind, []) if library.has(waiter) else []
+        wanted = list(dict.fromkeys(final))
+        kept = [target for target in current if target in wanted]
+        if kept != current:
+            removals.append(SetEdgesCommand(waiter, kind, kept, rules=False))
+        if wanted != kept:
+            additions.append(SetEdgesCommand(waiter, kind, wanted, rules=False))
+    return CompositeCommand(label, [*removals, *between, *additions])
+
+
+def edge_list(
+    lists: dict[EdgeList, list[StepId]], library: Library, waiter: StepId, kind: str
+) -> list[StepId]:
+    """The list being planned for ``(waiter, kind)``, started from the model's the first time
+    it is named — how a builder edits many edges over one list each before a rewire writes
+    them, so two changes to one list never overwrite each other. A step not yet in the
+    library starts empty, as :func:`rewire_command` reads it."""
+    if (waiter, kind) not in lists:
+        current = library.step(waiter).edges.get(kind, []) if library.has(waiter) else []
+        lists[(waiter, kind)] = list(current)
+    return lists[(waiter, kind)]
+
+
 def remove_edges_command(library: Library, edges: Iterable[Edge], label: str) -> CompositeCommand:
     """Remove these ``(waiter, kind, source)`` edges as one undo step.
 
@@ -322,22 +399,22 @@ def remove_edges_command(library: Library, edges: Iterable[Edge], label: str) ->
     the second would put back what the first removed. Always a composite, so the undo
     entry says what was done rather than "Change Links".
     """
-    by_list: dict[tuple[StepId, str], set[StepId]] = {}
+    lists: dict[EdgeList, list[StepId]] = {}
     for waiter, kind, source in edges:
-        by_list.setdefault((waiter, kind), set()).add(source)
-    commands: list[Command] = [
-        SetEdgesCommand(
-            waiter,
-            kind,
-            [t for t in library.step(waiter).edges.get(kind, []) if t not in gone],
-        )
-        for (waiter, kind), gone in sorted(by_list.items())
-    ]
-    return CompositeCommand(label, commands)
+        held = edge_list(lists, library, waiter, kind)
+        if source in held:
+            held.remove(source)
+    return rewire_command(library, lists, label)
 
 
 def remove_steps_command(
-    library: Library, step_ids: Sequence[StepId], verb: str, *, links: Sequence[Edge] = ()
+    library: Library,
+    step_ids: Sequence[StepId],
+    verb: str,
+    *,
+    links: Sequence[Edge] = (),
+    bridges: Iterable[Edge] = (),
+    between: Sequence[Command] = (),
 ) -> CompositeCommand:
     """Remove these steps and every link into them as one undo step, named for the verb
     that asked — "Delete Step", "Cut 3 Steps" — and ``links`` besides: the arrows a Delete
@@ -350,6 +427,11 @@ def remove_steps_command(
     doomed live on the doomed nodes and travel with them; only the ones crossing in go,
     and a picked link joins them in the **one** removal, so a list that loses both is
     rewritten once (:func:`remove_edges_command` says why that matters).
+
+    ``bridges`` are links the removal makes across the gap it leaves — a stack closing its
+    chain round a deleted member — added once the steps are gone, and ``between`` runs with
+    the steps' removal (the stack's seat handed on). It is a :func:`rewire_command`, so no
+    graph on the way is anything but a subset of the one before or the one after.
     """
     doomed = list(step_ids)
     chosen = set(doomed)
@@ -359,11 +441,17 @@ def remove_steps_command(
         label = f"{verb} {len(doomed) + len(links)} Items"
     else:
         label = f"{verb} Step" if len(doomed) == 1 else f"{verb} {len(doomed)} Steps"
-    commands: list[Command] = [
-        *remove_edges_command(library, incoming, label).commands,
-        *(RemoveNodeCommand(step_id) for step_id in doomed),
-    ]
-    return CompositeCommand(label, commands)
+    lists: dict[EdgeList, list[StepId]] = {}
+    for waiter, kind, source in incoming:
+        held = edge_list(lists, library, waiter, kind)
+        if source in held:
+            held.remove(source)
+    for waiter, kind, source in bridges:
+        held = edge_list(lists, library, waiter, kind)
+        if source not in held:
+            held.append(source)
+    removing = [RemoveNodeCommand(step_id) for step_id in doomed]
+    return rewire_command(library, lists, label, [*removing, *between])
 
 
 def redirect_edges_command(
@@ -378,16 +466,12 @@ def redirect_edges_command(
     off the anchor at the moving end, so no half-applied state can hold a cycle the finished
     one does not (:meth:`Library.redirection` has the argument).
     """
-    lists: dict[tuple[StepId, str], list[StepId]] = {}
-
-    def held(waiter: StepId, kind: str) -> list[StepId]:
-        return lists.setdefault((waiter, kind), list(library.step(waiter).edges.get(kind, [])))
-
+    lists: dict[EdgeList, list[StepId]] = {}
     for waiter, kind, source in redirection.moving:
-        held(waiter, kind).remove(source)
+        edge_list(lists, library, waiter, kind).remove(source)
     for edge in redirection.moving:
         new_waiter, kind, new_source = redirection.moved(edge)
-        targets = held(new_waiter, kind)
+        targets = edge_list(lists, library, new_waiter, kind)
         if new_source not in targets:
             targets.append(new_source)
     commands: list[Command] = [

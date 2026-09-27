@@ -1,4 +1,4 @@
-"""``dplanner layout …`` and ``step duplicate`` — the graph editor's verbs.
+"""``dplanner layout …``, ``stack …`` and ``step duplicate`` — the graph editor's verbs.
 
 The same command objects the window pushes, so an apply here is undoable in a tab open on
 the same library. ``layout save`` upserts rather than refusing a collision: an agent
@@ -7,9 +7,12 @@ re-running a script should converge, and the window's Save-As prompt covers the 
 ``layout show``, ``layout shift``, ``layout contract`` and ``layout tidy`` are the agent's
 eyes and hands on the canvas: the geometry measured on every read and never stored
 (``geometry.py``), the Divide and Contract gestures as verbs building the very command the
-canvas pushes, and the sixth sort (``sorts.tidy``) applied like the other five. None
-reshapes the graph, so none reads the topology first. ``stack list`` says which chains the
-canvas draws as one tall card (``stacks.py``).
+canvas pushes, and the sixth sort (``sorts.tidy``) applied like the other five. None of
+those reshapes the graph, so none reads the topology first. ``stack list`` says which chains
+the canvas draws as one tall card (``stacks.py``); ``stack new``, ``make``, ``add``,
+``move``, ``take-out`` and ``dissolve`` build and reshape one with the very commands the
+canvas pushes (``stack_edits.py``), and those do read it first. ``lint_checks`` names a
+stack that is no longer one line.
 """
 
 import math
@@ -18,9 +21,11 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.lint import LintCheck, LintFinding
 from dplanner.cli.lookup import find_project, find_step, project_arg
 from dplanner.domain.commands import Command, CompositeCommand
-from dplanner.domain.model import Project, Step, StepId
+from dplanner.domain.model import Library, Project, Step, StepId
+from dplanner.domain.store import FilesFor
 from dplanner.modules.project_editor.clipboard import PastePolicy, clip, paste, write_files
 from dplanner.modules.project_editor.geometry import (
     CONTRACT_LABEL,
@@ -60,7 +65,22 @@ from dplanner.modules.project_editor.sorts import (
     tidy,
     timeline,
 )
-from dplanner.modules.project_editor.stacks import broken_reason, pack, read_stacks
+from dplanner.modules.project_editor.stack_edits import (
+    add_command,
+    dissolve_command,
+    make_command,
+    move_command,
+    new_stack_command,
+    take_out_command,
+)
+from dplanner.modules.project_editor.stacks import (
+    Stack,
+    broken_reason,
+    pack,
+    read_stacks,
+    stack_of,
+    stray_links,
+)
 
 SORT_NAMES = ("flow", "down", "spine", "timeline", "radial")
 TIDY_LABEL = "Tidy Layout"
@@ -265,28 +285,133 @@ def commands(
         context.report(data, "\n".join([headline, *lane_lines(after, axis)]))
 
     def _keys(project: Project) -> dict[StepId, str]:
-        return {step.id: key_of(step) or step.title for step in project.steps}
+        return keys_of(project, key_of)
 
     def _stack_list(context: CliContext, args: Namespace) -> int:
         project = find_project(context.library, args.project)
-        keys = _keys(project)
-        titles = {step.id: step.title for step in project.steps}
-        rows, lines = [], []
-        for stack in read_stacks(project.steps):
-            broken = broken_reason(stack, keys.__getitem__)
-            rows.append(
-                {
-                    "id": stack.id,
-                    "steps": [
-                        {"id": member, "key": keys[member], "title": titles[member]}
-                        for member in stack.members
-                    ],
-                    "broken": broken,
-                }
+        found = [_stack_row(project, stack, key_of) for stack in read_stacks(project.steps)]
+        context.report(
+            {"project": project.id, "stacks": [data for data, _line in found]},
+            "\n".join(line for _data, line in found) or "no stacks",
+        )
+        return 0
+
+    # -- stack edits: the canvas's commands, from the terminal ------------------------------
+
+    def _named_stack(context: CliContext, needle: str) -> tuple[Project, Stack]:
+        """The stack a member names — any of its steps names it."""
+        step = find_step(context.library, needle, context.current)
+        project = context.library.project_of(step.id)
+        stack = stack_of(project.steps, step.id)
+        if stack is None:
+            raise CliError(
+                f"{key_of(step) or step.title} is not in a stack — "
+                f"`dplanner stack list {project.title!r}` names them"
             )
-            named = " ".join(keys[member] for member in stack.members)
-            lines.append(f"{stack.id[:8]}  {named}" + (f" — broken: {broken}" if broken else ""))
-        context.report({"project": project.id, "stacks": rows}, "\n".join(lines) or "no stacks")
+        return project, stack
+
+    def _project_of(context: CliContext, needle: str) -> Project:
+        """The project a stack verb reshapes — what the topology gate asks about."""
+        return context.library.project_of(find_step(context.library, needle, context.current).id)
+
+    def _report_stack(
+        context: CliContext, project: Project, member: StepId, headline: str, **said: Any
+    ) -> None:
+        """What every stack edit reports: the stack as it stands now, beside what it did."""
+        stack = stack_of(project.steps, member)
+        data, line = (None, "") if stack is None else _stack_row(project, stack, key_of)
+        context.report(
+            {"project": project.id, "stack": data, **said},
+            f"{headline}\n{line}" if line else headline,
+        )
+
+    def _row(step: Step) -> dict[str, str]:
+        return {"id": step.id, "key": key_of(step), "title": step.title}
+
+    def _stack_new(context: CliContext, args: Namespace) -> int:
+        project = find_project(context.library, args.project)
+        step = Step(title=args.title)
+        context.apply(new_stack_command(project.id, step))
+        _report_stack(context, project, step.id, f"New stack of one: {key_of(step)} {step.title!r}")
+        return 0
+
+    def _stack_make(context: CliContext, args: Namespace) -> int:
+        library = context.library
+        steps = [find_step(library, needle, context.current) for needle in args.steps]
+        context.apply(_built(lambda: make_command(library, [step.id for step in steps])))
+        project = library.project_of(steps[0].id)
+        _report_stack(context, project, steps[0].id, f"Stacked {len(steps)} steps")
+        return 0
+
+    def _stack_add(context: CliContext, args: Namespace) -> int:
+        library = context.library
+        project, stack = _named_stack(context, args.stack)
+        if (args.step is None) == (args.new is None):
+            raise CliError("name the step to add, or --new TITLE for a new one — one of them")
+        step = (
+            Step(title=args.new)
+            if args.new is not None
+            else find_step(library, args.step, context.current)
+        )
+        unlinked = [] if args.new is not None else library.boundary_edges([step.id])
+        slot = None if args.at is None else _slot(args.at, len(stack.members) + 1)
+        context.apply(_built(lambda: add_command(library, step, stack, slot)))
+        headline = f"Added {key_of(step)} {step.title!r} to the stack"
+        if unlinked:
+            headline += f"; it arrived with no links ({len(unlinked)} taken off)"
+        _report_stack(context, project, step.id, headline, added=_row(step), unlinked=len(unlinked))
+        return 0
+
+    def _stack_move(context: CliContext, args: Namespace) -> int:
+        library = context.library
+        project, stack = _named_stack(context, args.step)
+        step = find_step(library, args.step, context.current)
+        slot = _slot(args.to, len(stack.members))
+        if stack.members.index(step.id) == slot:
+            headline = f"{key_of(step)} is already step {args.to} of its stack"
+        else:
+            context.apply(_built(lambda: move_command(library, stack, step.id, slot)))
+            headline = f"Moved {key_of(step)} to step {args.to} of its stack"
+        _report_stack(context, project, step.id, headline)
+        return 0
+
+    def _stack_take_out(context: CliContext, args: Namespace) -> int:
+        library = context.library
+        project, stack = _named_stack(context, args.step)
+        step = find_step(library, args.step, context.current)
+        context.apply(_built(lambda: take_out_command(library, stack, step.id)))
+        rest = [member for member in stack.members if member != step.id]
+        headline = f"Took {key_of(step)} {step.title!r} out of its stack; it has no links now"
+        _report_stack(
+            context, project, rest[0] if rest else step.id, headline, taken_out=_row(step)
+        )
+        return 0
+
+    def _stack_dissolve(context: CliContext, args: Namespace) -> int:
+        library = context.library
+        project, stack = _named_stack(context, args.step)
+        before = positions(library, project)
+        context.apply(dissolve_command(library, stack))
+        after = positions(library, project)
+        members = set(stack.members)
+        moved = [
+            step_id
+            for step_id, seat in after.items()
+            if step_id not in members and seat != before.get(step_id)
+        ]
+        keys = _keys(project)
+        named = " ".join(keys[member] for member in stack.members)
+        headline = f"Dissolved the stack {named} into a line"
+        if moved:
+            headline += f"; {len(moved)} step{'s' if len(moved) != 1 else ''} moved aside"
+        context.report(
+            {
+                "project": project.id,
+                "steps": [_row(library.step(member)) for member in stack.members],
+                "moved": [{"id": step_id, "key": keys[step_id]} for step_id in moved],
+            },
+            headline,
+        )
         return 0
 
     def _tidy(context: CliContext, args: Namespace) -> int:
@@ -432,6 +557,62 @@ def commands(
             examples=("dplanner stack list discovery", "dplanner stack list discovery --json"),
         ),
         CliCommand(
+            path=("stack", "new"),
+            summary="A new step that is a stack of one — add to it with `stack add`.",
+            configure=_new_args,
+            run=_stack_new,
+            examples=('dplanner stack new discovery "Parse the header"',),
+            edits_graph=lambda context, args: find_project(context.library, args.project),
+        ),
+        CliCommand(
+            path=("stack", "make"),
+            summary="Stack a line of linked steps where it stands: each waits on the one "
+            "before it and nothing else, and only the last has other steps waiting on it.",
+            configure=_make_args,
+            run=_stack_make,
+            examples=("dplanner stack make S4 S5 S6",),
+            edits_graph=lambda context, args: _project_of(context, args.steps[0]),
+        ),
+        CliCommand(
+            path=("stack", "add"),
+            summary="Put a step into a stack — an existing one arrives with no links of its "
+            "own; at the front it takes the stack's inputs, at the end its dependents.",
+            configure=_add_args,
+            run=_stack_add,
+            examples=(
+                'dplanner stack add S4 --new "Parse the footer"',
+                "dplanner stack add S4 S9 --at 1",
+            ),
+            edits_graph=lambda context, args: _project_of(context, args.stack),
+        ),
+        CliCommand(
+            path=("stack", "move"),
+            summary="Move a step to another place in its stack; the chain follows the new "
+            "order, and the first and last carry the stack's links.",
+            configure=_move_args,
+            run=_stack_move,
+            examples=("dplanner stack move S6 --to 1",),
+            edits_graph=lambda context, args: _project_of(context, args.step),
+        ),
+        CliCommand(
+            path=("stack", "take-out"),
+            summary="Take a step out of its stack with no links at all; the chain closes "
+            "round the gap.",
+            configure=_member_args,
+            run=_stack_take_out,
+            examples=("dplanner stack take-out S5",),
+            edits_graph=lambda context, args: _project_of(context, args.step),
+        ),
+        CliCommand(
+            path=("stack", "dissolve"),
+            summary="Take a stack apart into the line it stands for: its steps laid out in a "
+            "row from its place, and what lies beyond pushed aside. No link changes.",
+            configure=_member_args,
+            run=_stack_dissolve,
+            examples=("dplanner stack dissolve S4",),
+            edits_graph=lambda context, args: _project_of(context, args.step),
+        ),
+        CliCommand(
             path=("step", "duplicate"),
             summary="Copy steps — aspects, prose, attachments and the links among them — "
             "into a project, one row below the originals.",
@@ -444,6 +625,111 @@ def commands(
             edits_graph=_project_of_duplicate,
         ),
     ]
+
+
+def keys_of(project: Project, key_of: Callable[[Step], str]) -> dict[StepId, str]:
+    """Every step's readable key, its title where there is none."""
+    return {step.id: key_of(step) or step.title for step in project.steps}
+
+
+def _stack_row(
+    project: Project, stack: Stack, key_of: Callable[[Step], str]
+) -> tuple[dict[str, Any], str]:
+    """One stack as ``stack list`` and every stack edit report it: its steps in chain order,
+    and what breaks it when it is no longer one line."""
+    keys = keys_of(project, key_of)
+    titles = {step.id: step.title for step in project.steps}
+    broken = broken_reason(stack, keys.__getitem__, stray_links(stack, project.steps))
+    data = {
+        "id": stack.id,
+        "steps": [
+            {"id": member, "key": keys[member], "title": titles[member]} for member in stack.members
+        ],
+        "broken": broken,
+    }
+    named = " ".join(keys[member] for member in stack.members)
+    return data, f"{stack.id[:8]}  {named}" + (f" — broken: {broken}" if broken else "")
+
+
+def lint_checks(*, key_of: Callable[[Step], str] = _no_key) -> list[LintCheck]:
+    """``stack.broken``: a stack that is no longer one line — a gap in its chain, or a link
+    into or out of its middle that another writer or a hand edit brought in. Named on its
+    first step, with the link that mends it and the dissolve that ends it."""
+
+    def broken(_library: Library, project: Project, _files: FilesFor) -> list[LintFinding]:
+        keys = keys_of(project, key_of)
+        findings = []
+        for stack in read_stacks(project.steps):
+            strays = stray_links(stack, project.steps)
+            reason = broken_reason(stack, keys.__getitem__, strays)
+            if reason is None:
+                continue
+            fixes = [
+                f"`dplanner step link {keys[then]} {keys[first]}`" for first, then in stack.gaps
+            ]
+            fixes += [
+                f"`dplanner step unlink {keys[waiter]} {keys[source]}`"
+                for waiter, _kind, source in strays
+            ]
+            head = next(step for step in project.steps if step.id == stack.head)
+            findings.append(
+                LintFinding(
+                    check="stack.broken",
+                    subject_id=head.id,
+                    subject=head.title,
+                    message=f"heads a stack that is no longer one line: {reason} — "
+                    f"{', '.join(fixes)}, or `dplanner stack dissolve {keys[head.id]}`",
+                )
+            )
+        return findings
+
+    return [broken]
+
+
+def _built(build: Callable[[], Command]) -> Command:
+    """A stack edit's command, its refusal said as one line."""
+    try:
+        return build()
+    except ValueError as error:
+        raise CliError(str(error)) from error
+
+
+def _slot(place: int, count: int) -> int:
+    """A 1-based place among ``count`` as a member index, refused outside them."""
+    if not 1 <= place <= count:
+        raise CliError(f"a place in this stack is 1 to {count}, not {place}")
+    return place - 1
+
+
+def _new_args(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument("title", help="what the stack's first step is called")
+
+
+def _make_args(parser: ArgumentParser) -> None:
+    parser.add_argument("steps", nargs="+", metavar="STEP", help="the steps to stack, in any order")
+
+
+def _add_args(parser: ArgumentParser) -> None:
+    parser.add_argument("stack", help="the stack, named by any of its steps")
+    parser.add_argument(
+        "step", nargs="?", help="an existing step to put in (it arrives with no links)"
+    )
+    parser.add_argument("--new", metavar="TITLE", help="a new step to put in instead")
+    parser.add_argument(
+        "--at", type=int, metavar="N", help="its place, 1 for the front (default: the end)"
+    )
+
+
+def _move_args(parser: ArgumentParser) -> None:
+    parser.add_argument("step", help="the stacked step to move")
+    parser.add_argument(
+        "--to", type=int, required=True, metavar="N", help="its new place, 1 for the front"
+    )
+
+
+def _member_args(parser: ArgumentParser) -> None:
+    parser.add_argument("step", help="a stacked step")
 
 
 def _project_and_name(parser: ArgumentParser) -> None:

@@ -38,7 +38,7 @@ them. The graph can therefore grow features without learning a single thing abou
 """
 
 import uuid
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from typing import Any, Final, Literal
@@ -62,6 +62,12 @@ type Edge = tuple[StepId, str, StepId]
 type EdgeEnd = Literal["waiter", "source"]
 WAITER: Final[EdgeEnd] = "waiter"
 SOURCE: Final[EdgeEnd] = "source"
+
+# A rule a module adds to what may link to what: ``(library, waiter, kind, source)`` → why the
+# waiter cannot wait on the source, or None. Installed on a library by the composition root
+# and asked by :meth:`Library.link_refusal` after its own four refusals — the stack's "one in,
+# one out" is one (``ARCHITECTURE.md``'s *One in, one out is a rule the domain asks*).
+type LinkRule = Callable[["Library", StepId, str, StepId], str | None]
 
 # Edge kind -> whether it orders the graph. An ordering kind cannot contain a cycle; a
 # non-ordering one is just a link and may point anywhere inside the project.
@@ -282,6 +288,9 @@ class Library(Node):
         # model has levels. Ids are unique across kinds by construction — they are uuids.
         self._nodes: dict[NodeId, Node] = {self.id: self}
         self._parent: dict[NodeId, NodeId] = {}
+        # What modules add to the four refusals of link_refusal. Per instance, and empty until
+        # the composition root installs them, so a scratch library never inherits one.
+        self.link_rules: tuple[LinkRule, ...] = ()
 
         # One signal per kind of change, each carrying the origin that caused it.
         self.field_changed: Signal[NodeId, str, Origin] = Signal("field_changed")
@@ -415,13 +424,25 @@ class Library(Node):
 
         Four refusals, and each is a graph that would otherwise be quietly unsatisfiable: an
         unknown kind, a step pointing at itself, a target that does not exist or lives in
-        another project, and — for an ordering kind — a chain that leads back here.
+        another project, and — for an ordering kind — a chain that leads back here. Then
+        whatever :attr:`link_rules` the composition root installed, in order: a rule is a
+        module's, like a stack's "one in, one out", and the domain only asks it.
 
         This is a question as well as an answer. :meth:`set_edges` asks it before it writes,
         and a view dragging a link asks it under the cursor so it can refuse *before* the
         drop rather than with a dialog afterwards. One implementation, so the live feedback
         and the write can never disagree about what is legal.
         """
+        refusal = self._graph_refusal(step_id, kind, target)
+        if refusal is not None:
+            return refusal
+        for rule in self.link_rules:
+            if (refusal := rule(self, step_id, kind, target)) is not None:
+                return refusal
+        return None
+
+    def _graph_refusal(self, step_id: StepId, kind: str, target: StepId) -> str | None:
+        """The four refusals every graph owes, whatever rules a module adds."""
         if kind not in EDGE_KINDS:
             return f"{kind!r} is not an edge kind: {', '.join(sorted(EDGE_KINDS))}"
         if target == step_id:
@@ -434,7 +455,13 @@ class Library(Node):
         return None
 
     def set_edges(
-        self, step_id: StepId, kind: str, targets: list[StepId], origin: Origin = None
+        self,
+        step_id: StepId,
+        kind: str,
+        targets: list[StepId],
+        origin: Origin = None,
+        *,
+        rules: bool = True,
     ) -> None:
         """Replace one kind of incoming edge, refusing anything that cannot be true.
 
@@ -444,6 +471,14 @@ class Library(Node):
         is carried, never re-judged: the write cannot make the graph worse by keeping it,
         and carrying is the only way a list holding one can ever change again. Judging the
         whole list froze every survivor of a deleted step until somebody edited the file.
+
+        ``rules=False`` asks only the four refusals every graph owes, not the
+        :attr:`link_rules`. A rule judges a link a person chose; a write that *carries*
+        links passes False — an undo putting back what was there, a redo replayed, another
+        writer's list adopted, an import or a paste copying what exists, and a rewire moving
+        links that already existed round a line it rebuilt (``commands.rewire_command``).
+        Judged, each of those could refuse halfway through a composite over a stack some
+        other writer broke.
         """
         if kind not in EDGE_KINDS:
             # Checked here as well as in link_refusal: clearing an unknown kind passes no
@@ -455,7 +490,11 @@ class Library(Node):
         for target in wanted:
             if target in current:
                 continue
-            refusal = self.link_refusal(step_id, kind, target)
+            refusal = (
+                self.link_refusal(step_id, kind, target)
+                if rules
+                else self._graph_refusal(step_id, kind, target)
+            )
             if refusal is not None:
                 raise ValueError(refusal)
         if current == wanted:

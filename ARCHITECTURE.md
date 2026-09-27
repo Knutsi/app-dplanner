@@ -2203,7 +2203,8 @@ does not already say. **The one chosen is canvas data over a real chain.** Each 
 `project_editor` entry carries `"stack": "<id>"`, the order is the members' own `requires`,
 and nothing below the graph editor learns stacks exist: the schedule of a stacked plan is
 the schedule of the same plan unstacked, because it is the same graph. The price is that
-"one in, one out" is a rule someone has to keep rather than a shape the model has, and a
+"one in, one out" is a rule someone has to keep rather than a shape the model has (*One in,
+one out is a rule the domain asks*), and a
 stack broken from outside — a merge, a hand edit — is possible; it is read with its gaps
 (`Stack.gaps`), drawn with them, and named rather than repaired.
 
@@ -2243,6 +2244,93 @@ writer rebuilds the entry from the seat and the size and would destroy `stack`. 
 checks the stamp — the library's format 4 made the same trade — so an older build still
 drops it from a card it moves; the number is the record that it does. `canvas.md`'s *A stack
 is one tall card* has the rule.
+
+### One in, one out is a rule the domain asks
+
+A stack is canvas data over a chain (*A stack is presentation over a chain*), so "one in, one
+out" is not a shape the model has — it is a rule somebody has to keep. The spec's words were
+"1 in and 1 out: the first node gets the inputs, and the last one gets the outputs", and
+that is how it is read: links come in at the first member and leave from the last, each end
+may carry several, and the chain between is the stack's own. `canvas.md`'s *Every stack
+edit is one command* and `graph-model.md`'s *What may link to what* have the rules; this is
+why they are shaped so.
+
+**Where the rule lives.** `Library.link_refusal` is the only authority on a legal edge, and
+every surface already asks it — the canvas under the cursor, `steps.link`'s greyed state,
+Redirect's per-link answer, `step link`, `set_edges` before it writes. A second check in the
+canvas would have been a second answer, and the CLI would not have had it at all. But the
+domain may not import a module, and a stack is `project_editor`'s. So the library grew one
+seam: `link_rules`, a tuple of `(library, waiter, kind, source) → refusal` the composition
+root installs on the window's library in `default_modules` and on the CLI's through
+`entry.py → run → open_library`, asked after the four refusals every graph owes. A
+simulation's scratch library and a test's `Library()` carry none, because the tuple is set
+per instance.
+
+**The rule counts links; it never reads positions.** A `requires` link W ← S is refused when
+W already waits on a member of its own stack (W is below the first), when a member of S's
+own stack already waits on S (S is above the last), or — for a link between two members of
+one stack — when W already waits on anything or S already has a dependent. Every
+condition says *some other link exists*, which makes the rule **downward-closed**: a link
+that is legal in a graph is legal in every part of that graph with the same membership. That
+is what makes one gesture at a time safe. On a stack that is one line every new link into
+its middle meets one of the conditions or the cycle check, and a multi-target `set_edges`
+cannot sneak two interfering ones past it. Redirect judges each move against the graph as it
+stands, in which the chain link it would move still counts, so moving a chain link by
+either end is refused (a test pins it — judging against the after-state would open a gap).
+Counting rather than reading the chain's order also keeps the rule cheap: it scans for
+dependents only when an end is stacked. A stack somebody broke has several run heads, and
+each counts as a first member — lenient exactly where lint already speaks.
+
+**A rule judges what a person links, and nothing else.** An undo puts back what was there.
+A redo replayed later repeats a link that was judged when it was made. The store adopting
+another writer's list, `project import` and a paste's clones copy links that already exist.
+Judged, any of these could refuse — and in the middle of a composite that is the worst
+place: `UndoService` drops an entry whose undo raises, half applied, and a push that raises
+leaves its first half in the model with nothing to take it back. So `SetEdgesCommand` asks
+the rules on its first redo only, those paths pass `rules=False`, and the four refusals
+every graph owes still judge them all. The unlink, isolate and redirect a person runs may
+still open a gap; that is a removal, the rule has nothing to refuse, and lint's
+`stack.broken` names the result.
+
+**Every stack edit is a rewire, and the builder's refusal is its gate.** A stack edit moves
+links *and* changes membership, and the order matters. `rewire_command` takes each list's
+final content and writes every removal, then `between` — the membership, the seat, a node
+born or removed — then every addition. Every graph a redo passes through is then a part of
+the graph after, and every graph an undo passes through a part of the graph before; a part
+of an acyclic graph is acyclic, so the cycle check cannot trip halfway through, whatever
+order the lists come in. That one ordering also carries a stack edit's own logic:
+additions land on the finished membership, and an undo's re-additions on the one they came
+from. The rewire writes with `rules=False`. That was not the first design — the first had
+it judged, leaning on downward closure — and a review found the case that sank it. Stack S
+is clean, `[A, B, C]`; stack T is `[T1, Y]`, and another writer made Y wait on C as well,
+which breaks T but not S, since C is S's last and may have dependents. Delete C: the rewire
+removes Y's link to C, removes C, then moves Y's link onto the new last, B — and T's rule
+refuses it, because Y already waits on T1. The delete would stop halfway. What a rewire
+adds is a line its builder already allowed as a whole, plus links that existed before and
+are only moving, so judging it again adds nothing but that failure. **The gate is the
+builder**: `make_refusal`, `line_refusal` and `join_refusal` refuse what cannot come out one
+line, and the tests walk every builder part by part to prove the graph after is one line
+and every graph on the way is a part of the one before or after (`stack_helpers.walk`).
+
+**Why a broken stack refuses edits but never a Delete or a dissolve.** Over a stack that is
+one line, the relink's result is one line by construction. Over a broken one it would
+silently mend gaps or carry a stray link into a new place — links the person did not touch.
+So add, move and take out refuse and name the link that mends it; `stack dissolve`, which
+changes no link, always works; and a Delete of a broken stack's member removes it plainly
+rather than bridging, because a Delete is never refused. Insert Wait Before is the one
+insertion that never refuses: it is a splice — the wait takes over everything the step
+waited on, and the step waits on it — which leaves any stack no more broken than it was, and
+a lone step is just a line of one, so the root's hand-wiring became `create_step(before=)`.
+
+**What moves with the ends.** When the first or last member changes, the stack's outside
+inputs or dependents follow, in the place in each list where the old end stood, so a list
+whose neighbour did not change is not rewritten. A step joining is disconnected first — both
+kinds, as Isolate takes them — and a step leaving goes with no links at all, which is how
+the developer asked for a drag in and a drag out to behave. A moved link arrives plain,
+without an auto-progress flag, the way a redirected one does. A link that no longer resolves
+stays where it is, since moving a ghost is a write the graph's own refusals turn down, and a
+kind this build does not know is carried untouched. The seat is the first member's, so it is
+handed on whenever the first changes — and only when one was stored.
 
 ### Regions were retired
 

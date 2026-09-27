@@ -1,18 +1,19 @@
 """A stack is one tall card to everything that reads positions — ``stacks.py`` and every
 reader it folds into, with no Qt.
 
-Membership is written directly, the way S17's verbs will write it: ``"stack"`` on every
-member's entry and a seat on the first member alone. What is pinned is the promise the rest
-of the editor leans on: the members are always a column under the first member's seat, and
-no sort, tidy, shift, contract, free spot or named layout can split one.
+Membership is written directly, the way the stack verbs write it (``stack_helpers.py``):
+``"stack"`` on every member's entry and a seat on the first member alone. What is pinned is
+the promise the rest of the editor leans on: the members are always a column under the
+first member's seat, and no sort, tidy, shift, contract, free spot or named layout can
+split one.
 """
 
 import math
 
 import pytest
+from tests.modules.stack_helpers import link, plan, stack, stacked
 
 from dplanner.core.module_data import migrated
-from dplanner.domain.model import Library, Project, Step
 from dplanner.modules.project_editor.geometry import contract, shift
 from dplanner.modules.project_editor.named_layouts import (
     apply_layout_commands,
@@ -54,42 +55,6 @@ from dplanner.modules.project_editor.stacks import (
 # How far down the column each next default member sits: its card and the gap, rounded up
 # onto the grid.
 STEP = 96.0
-
-
-def plan(*titles):
-    library = Library()
-    project = Project(title="Discovery")
-    library.add_child(library.id, project)
-    steps = {}
-    for title in titles:
-        steps[title] = Step(title=title)
-        library.add_child(project.id, steps[title])
-    return library, project, steps
-
-
-def link(library, steps, waiter, *sources):
-    library.set_edges(steps[waiter].id, "requires", [steps[s].id for s in sources])
-
-
-def stack(library, steps, *titles, seat=None, stack_id="s1"):
-    """Membership as S17's verbs will write it: the key on every member, a seat on the first."""
-    first, *rest = titles
-    head = write_position(*seat, stack=stack_id) if seat else write_member(stack_id)
-    library.set_module_data(steps[first].id, MODULE_ID, head)
-    for title in rest:
-        library.set_module_data(steps[title].id, MODULE_ID, write_member(stack_id))
-
-
-def stacked():
-    """start → a → b → c → after, with a, b and c stacked, and a loose step beside start."""
-    library, project, steps = plan("start", "a", "b", "c", "after", "beside")
-    link(library, steps, "a", "start")
-    link(library, steps, "b", "a")
-    link(library, steps, "c", "b")
-    link(library, steps, "after", "c")
-    link(library, steps, "beside", "start")
-    stack(library, steps, "a", "b", "c")
-    return library, project, steps
 
 
 def assert_column(placed, steps, *titles):

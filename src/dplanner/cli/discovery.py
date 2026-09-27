@@ -32,7 +32,7 @@ from dplanner.core.storage.locations import (
 from dplanner.core.storage.pointer import POINTER_FILE, resolve_index
 from dplanner.domain.library_file import LIBRARY_ENV, resolve_library_path
 from dplanner.domain.locations import CODE, Location, of_role
-from dplanner.domain.model import Library, Project
+from dplanner.domain.model import Library, LinkRule, Project
 from dplanner.domain.shelf import migrate_shelved
 from dplanner.domain.store import PROJECT_META, LibraryStore, StaleWorkspaceError
 
@@ -239,14 +239,19 @@ def open_library(
     *,
     as_json: bool = False,
     clock: Clock | None = None,
+    link_rules: Sequence[LinkRule] = (),
 ) -> Iterator[CliContext]:
     """Open the library, hand it to a verb, and write back exactly what changed.
 
     Nothing is written if the verb raises: a run that failed halfway is worse than a run that
     did nothing, and version control cannot tell the difference after the fact.
+
+    ``link_rules`` are what the composition root adds to what may link to what — the same
+    ones the window's library asks, so ``step link`` refuses what a drop on the canvas does.
     """
     store = LibraryStore(path)
     library = store.load()
+    library.link_rules = tuple(link_rules)
 
     context = CliContext(
         out=out,
