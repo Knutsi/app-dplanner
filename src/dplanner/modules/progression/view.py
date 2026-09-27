@@ -120,7 +120,6 @@ class StatusTable(Table):
         # Each glyph painted once per fill, in that fill's ink: a board is hundreds of rows
         # wearing three pictures, and an SVG rendered per row was a third of the fill.
         self._glyphs: dict[str, QIcon] = {}
-        self.setColumnHidden(PROJECT_COLUMN, True)
 
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
         """The glyphs again, in the new theme's ink.

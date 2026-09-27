@@ -482,8 +482,7 @@ class DesignExampleActivity(ActivityBase):
         """What one row can be told: the row picked alone first, so the menu and the strip
         agree about what it is about, then glyph and words, greyed with the reason where a
         verb cannot run — never dropped, or the menu changes shape from row to row."""
-        self.table.clearSelection()
-        self.table.toggle_row(row)
+        self.table.pick_row(row)
         (key,) = self.picked_keys()
         sample = next(one for _heading, rows in self._groups for one in rows if one.key == key)
         ink = ink_of(self.widget)

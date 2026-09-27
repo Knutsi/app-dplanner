@@ -502,6 +502,14 @@ class Table(QTableWidget):
             return None
         return None if self.is_heading(index.row()) else index.row()
 
+    def pick_row(self, row: int) -> None:
+        """This row alone picked, whatever keys are held: ``selectRow`` asks an extended
+        table's held modifiers how to pick, so under a Ctrl it adds to the pick."""
+        flags = QItemSelectionModel.SelectionFlag
+        self.selectionModel().setCurrentIndex(
+            self.model().index(row, 0), flags.ClearAndSelect | flags.Rows
+        )
+
     def toggle_row(self, row: int) -> None:
         """Tick or untick one row: its selection toggled, every other row's left alone."""
         flags = QItemSelectionModel.SelectionFlag

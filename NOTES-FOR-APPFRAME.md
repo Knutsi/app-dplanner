@@ -4688,7 +4688,9 @@ ink until the pointer is on it; the whole cell is the target (`menu_under`, mirr
 `menu_requested(row, global point)` — the cell's bottom-left, where the menu drops — and picks
 nothing; a double click on it is swallowed. It never takes the table's slack: when no column
 is declared `stretch` and the last one is a menu, the column before it stretches instead of
-`setStretchLastSection`.
+`setStretchLastSection`. `pick_row(row)` picks one row alone whatever keys are held — the
+host's first move before the menu renders — because `selectRow` asks an extended table's
+held modifiers how to pick, and under a Ctrl it adds to the pick.
 
 **Why.** The Step statuses tab and the Control Centre wanted each row's verbs — Show Agent
 Terminal, Open Pull Request, a shell in the worktree — one click from the row, and DESIGN.md

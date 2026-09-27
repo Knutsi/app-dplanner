@@ -56,6 +56,7 @@ from PySide6.QtWidgets import QHBoxLayout, QMenu, QVBoxLayout, QWidget
 from dplanner.core.clock import Clock
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.progression import Progression, merge, progression
+from dplanner.domain.short_titles import UNTITLED
 from dplanner.framework.action_menu import Band, build_menu, fill_bands
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -102,7 +103,6 @@ FILTERS = (
 )
 NO_STEPS = "No steps yet."
 NOTHING_NEEDED = "Nothing needs you right now."
-UNTITLED_PROJECT = "Untitled project"
 
 # What a row's ⋮ drops: the Step menu's bands about the step itself that a person reaches for
 # from a board — its agent and what follows one, then where it is seen. Rendered, never
@@ -215,7 +215,7 @@ class StatusBoard(EntityActivity):
             key_of=deps.key_of,
             glyph_of=deps.glyph_of,
             milestone_badge=deps.milestone_badge,
-            project_of=lambda step: library.project_of(step.id).title or UNTITLED_PROJECT,
+            project_of=lambda step: library.project_of(step.id).title or UNTITLED,
             parent=page,
         )
         self.table.itemSelectionChanged.connect(self._on_selection)
@@ -340,7 +340,7 @@ class StatusBoard(EntityActivity):
         """
         if self.table.step_at(row) is None:
             return None
-        self.table.selectRow(row)
+        self.table.pick_row(row)
         deps = self._deps
         return fill_bands(QMenu(self.table), ROW_MENU, deps.actions, deps.context)
 
@@ -453,7 +453,7 @@ class ControlCentreActivity(StatusBoard):
         projects = self._deps.library.projects
         here = {project.id for project in projects}
         for project in projects:
-            words = project.title or UNTITLED_PROJECT
+            words = project.title or UNTITLED
             offered = self._offered.get(project.id)
             if offered is None:
                 self._offered[project.id] = self.projects.add_filter(project.id, words)

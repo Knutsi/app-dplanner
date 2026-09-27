@@ -881,3 +881,12 @@ def test_the_menu_is_drawn_and_never_takes_the_slack(menued):
     assert drawn - {ground.name()}  # Something was painted over the row's ground.
     assert menued.columnWidth(2) < 3 * rect.width()
     assert menued.columnWidth(1) > menued.columnWidth(2) * 4
+
+
+def test_picking_a_row_picks_it_alone(menued):
+    """What a row's ⋮ does before its menu renders: the other ticks go, and no held key
+    turns the pick into an addition."""
+    for row in (1, 2):
+        menued.toggle_row(row)
+    menued.pick_row(3)
+    assert _picked(menued) == [3]

@@ -97,7 +97,8 @@ paths:
   paints `MENU_GLYPH` on every row and hit-tests the whole cell, like the box; a press
   announces `Table.menu_requested(row, where)` and picks nothing, and the host builds the
   menu — **rendered from the registry** (`fill_bands`), never written, as the Step statuses
-  tabs' `ROW_MENU` is. **The ⋮ picks its row alone before it renders**, where a right-click
+  tabs' `ROW_MENU` is. **The ⋮ picks its row alone before it renders** (`Table.pick_row`,
+  never `selectRow`, which adds to the pick under a held Ctrl), where a right-click
   keeps a pick the row is in: the verbs about one step read the first picked, so a ⋮ on the
   third of three ticked rows would otherwise show the first one's terminal. A menu column
   never takes the table's slack. `ARCHITECTURE.md`'s *A roster has three shapes* has why

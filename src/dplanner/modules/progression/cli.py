@@ -27,6 +27,7 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.progression import Progression, across, estimated_progress
+from dplanner.domain.short_titles import UNTITLED
 
 NO_PROJECT = "name a project, or pass --all for every project"
 SEVERAL = "one project at a time — pass --all to read several as one board"
@@ -179,7 +180,7 @@ def _report(
         """A row: its project where the board spans several, its title, and in brackets
         whether an agent works it and whatever else the section says about it."""
         said = ", ".join(("agent", *facts) if is_agent(step) else facts)
-        where = f"{library.project_of(step.id).title or 'Untitled project'} · " if spans else ""
+        where = f"{library.project_of(step.id).title or UNTITLED} · " if spans else ""
         return f"{where}{title(step)}  ({said})" if said else f"{where}{title(step)}"
 
     def unblocking(step: Step) -> str:
