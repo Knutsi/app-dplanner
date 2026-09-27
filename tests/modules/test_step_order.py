@@ -300,9 +300,10 @@ def test_the_action_opens_it_for_the_focused_project(services, project):
 
 def test_the_verb_sits_in_the_step_menu_only(services):
     """The Project side is the index tree's Order row, so the verb's one menu seat is
-    the Step menu — a card's right-click and the canvas's toolbar reach the same id."""
+    the Step menu's surfaces — a table's right-click and the canvas's toolbar reach it,
+    and a card's leaves it to that row."""
     spec = services.actions.spec("order.open")
-    assert (spec.menu, spec.group, spec.palette) == ("Step", "open", True)
+    assert (spec.menu, spec.group, spec.palette) == ("Step", "surfaces", True)
 
 
 # -- the export ------------------------------------------------------------------------------

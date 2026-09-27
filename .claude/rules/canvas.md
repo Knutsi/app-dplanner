@@ -63,10 +63,15 @@ paths:
 - **A right-click is composed by what is under it.** The click makes its subject current —
   a card or an arrow outside the pick *becomes* the pick, one inside keeps it, empty canvas
   clears it and notes the point — and the menu is then a function of the selection alone:
-  `canvas_menus.py`'s `BANDS` row for a **card** (the Step menu, whole), an **arrow**
-  (Graph ▸ `links`), a **mixed** pick (Graph ▸ `narrow`, Edit ▸ `clipboard`, then `Step` and
-  `Links` children) or the **background** (Graph ▸ `new` and `select`, Edit ▸ `selection`,
-  Project ▸ `open`), rendered by `fill_bands`. A new target — a stack's frame — is a row
+  `canvas_menus.py`'s `BANDS` row for a **card** (the Step menu's bands about the step
+  itself, `STEP_ITSELF`), an **arrow** (Graph ▸ `links`), a **mixed** pick (Graph ▸
+  `narrow`, Edit ▸ `clipboard`, then `Step` and `Links` children) or the **background**
+  (Graph ▸ `new` and `select`, Edit ▸ `selection`, Project ▸ `survey`), rendered by
+  `fill_bands`. **A card is the step, not a table's Step menu**: its type and tests are set
+  in Step Details, compiling is the Docs tab's, and a view the index lists as a row under
+  the project is left to that row — on the card and on the background alike; what a table
+  adds is filed in groups of its own (`classify`, `compile`, `surfaces`) so the card can
+  leave them out. A new target — a stack's frame — is a row
   and a branch in `target_of`; a new verb for arrows registers into Graph ▸ `links` and
   appears wherever that band is rendered. **`IdleMode` claims every right press**: handed
   to Qt, a right press on an arrow (selectable, not movable) clears the whole selection

@@ -1584,7 +1584,8 @@ def test_a_verb_is_filed_by_where_its_subject_is_picked(services):
     assert where["steps.redirect_to"] == ("Graph", "links", "Redirect")
     assert where["steps.link"] == ("Step", "link", None)
     assert where["steps.unlink"] == ("Step", "link", None)
-    assert where["steps.reveal"] == ("Step", "open", None)
+    assert where["steps.reveal"] == ("Step", "surfaces", None)
+    assert where["estimate.open"] == ("Project", "survey", None)
     strays = [
         spec.id
         for spec in services.actions.all_specs()
@@ -1844,27 +1845,67 @@ def test_a_right_click_outside_the_pick_makes_the_card_the_pick(services, projec
     assert scene(tab).selection().steps == (second.id,)
 
 
-def test_a_cards_menu_is_the_step_menu_and_nothing_about_the_canvas(services, project, tab):
-    """A card gets the step's verbs — edit, link, classify, agent, open — whole, and none of
-    the canvas's: no finding, going, lassoing, making or moving an arrow's end."""
+def test_a_cards_menu_holds_only_what_is_about_the_step(services, project, tab):
+    """A card gets what acts on the step itself — edit, link, where it stands, its agent,
+    its details and its place in coverage — and nothing a table's Step menu adds: its type
+    and tests are set in Step Details, compiling is the Docs tab's, the project's views are
+    rows in the index beside the canvas, and none of the canvas's own verbs."""
+    first, _second = project.steps
+    # By name: a greyed entry carries its reason after one.
+    found = {
+        label.split(" — ")[0]
+        for label in labels(offered(tab, centre_of(scene(tab).node(first.id))))
+    }
+
+    for about_the_step in (
+        "Rename Step…",
+        "Connect Steps",
+        "Status",
+        "Estimate",
+        "Run Agent",
+        "Step Details…",
+        "Show in Coverage",
+    ):
+        assert about_the_step in found
+    for elsewhere in (
+        "Type",
+        "Test",
+        "Test Category",
+        "Test Sort Key",
+        "Compile with Agent",
+        "Show Order",
+        "Show Step Statuses",
+        "Show Tests",
+        "Test Details",
+        "Estimate Steps",
+        "Reveal in Graph",
+        "Redirect",
+        "Find Step…",
+        "Go",
+        "Lasso Select",
+        "New Step",
+    ):
+        assert elsewhere not in found
+
+
+def test_a_table_still_renders_the_whole_step_menu(services, project, tab):
+    """What a card leaves out is filed, not dropped: the menu bar and every table that
+    lists steps still offer it."""
     from PySide6.QtWidgets import QMenu
 
     from dplanner.framework.action_menu import fill_menu
 
-    first, _second = project.steps
-    rendered = offered(tab, centre_of(scene(tab).node(first.id)))
-
     step_menu = fill_menu(QMenu(), services.actions, services.context, "Step")
-    assert rendered == entries(step_menu)
+    found = labels(entries(step_menu))
     step_menu.deleteLater()
-    for canvas_verb in ("Redirect", "Find Step…", "Go", "Lasso Select", "New Step"):
-        assert canvas_verb not in labels(rendered)
-    assert {"Rename Step…", "Connect Steps", "Status", "Step Details…"} <= set(labels(rendered))
+    for verb in ("Type", "Test", "Compile with Agent", "Show Order", "Reveal in Graph"):
+        assert verb in found
 
 
-def test_empty_canvas_offers_making_selecting_and_views(services, project, tab, monkeypatch):
+def test_empty_canvas_offers_making_selecting_and_the_plan(services, project, tab, monkeypatch):
     """Nothing about a step: what to make where the click was, how to pick what is there,
-    and where to go — and the click lets go of the pick, so nothing acts on it unseen."""
+    and the looks over the whole plan the index has no row for — and the click lets go of
+    the pick, so nothing acts on it unseen."""
     first, _second = project.steps
     scene(tab).select_step(first.id)
     nowhere = QPointF(3000.0, 3000.0)
@@ -1872,11 +1913,15 @@ def test_empty_canvas_offers_making_selecting_and_views(services, project, tab, 
     rendered = offered(tab, nowhere)
     assert scene(tab).selection().steps == ()
     assert rendered[:2] == ["New Step", "Paste"]
-    found = labels(rendered)
-    for verb in ("Find Step…", "Lasso Select", "Go", "Select All Steps", "Show Steps"):
+    found = {label.split(" — ")[0] for label in labels(rendered)}
+    for verb in ("Find Step…", "Lasso Select", "Go", "Select All Steps", "Estimate Steps"):
         assert verb in found
+    assert "Preview Report" in found
     for step_verb in ("Status", "Run Agent", "Rename Step…", "Delete Step", "Remove Link"):
         assert step_verb not in found
+    # A row under the project in the index already opens each of these.
+    for listed in ("Open Specs", "Open Assets", "Show Steps", "Show Coverage", "Show Tests"):
+        assert listed not in found
 
     silence_details(monkeypatch)
     services.actions.run("steps.new", services.context.current())
@@ -1929,7 +1974,8 @@ def test_every_band_the_canvas_renders_names_a_live_group():
     for bands in BANDS.values():
         for band in bands:
             assert band.menu in MENU_STRUCTURE
-            assert band.group is None or band.group in MENU_STRUCTURE[band.menu]
+            named = (band.group,) if isinstance(band.group, str) else band.group or ()
+            assert set(named) <= set(MENU_STRUCTURE[band.menu])
 
 
 # -- the layout picker --------------------------------------------------------------------------

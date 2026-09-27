@@ -446,7 +446,7 @@ def test_the_step_menu_mirror_opens_the_same_tab(services, project):
     ]
 
     mirror = services.actions.spec("progression.open_step")
-    assert (mirror.menu, mirror.group, mirror.palette) == ("Step", "open", False)
+    assert (mirror.menu, mirror.group, mirror.palette) == ("Step", "surfaces", False)
 
 
 # -- the CLI, with no window at all ----------------------------------------------------------

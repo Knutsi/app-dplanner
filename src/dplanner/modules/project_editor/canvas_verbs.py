@@ -182,11 +182,12 @@ class CanvasVerbs:
             ),
             ActionSpec(
                 id="steps.reveal",
-                # After Step Details: the other way to open a step — at its card, from any view.
+                # The way from a table's row to its card. A card's own right-click leaves it
+                # out: on the canvas it would only centre what was just clicked.
                 label="Re&veal in Graph",  # &v: R is Rename's.
                 menu="Step",
-                group="open",
-                order=15,
+                group="surfaces",
+                order=10,
                 tip="Show this step on its project's canvas",
                 state=self._can_reveal,
                 run=self._reveal,

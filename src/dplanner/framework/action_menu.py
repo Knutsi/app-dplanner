@@ -88,7 +88,7 @@ def fill_menu(
     context_service: ContextService,
     menu: str,
     submenu: str | None = None,
-    group: str | None = None,
+    group: str | tuple[str, ...] | None = None,
 ) -> QMenu:
     """One menu's visible actions into an existing pop-up; a disabled one is greyed, not
     omitted.
@@ -114,7 +114,9 @@ def fill_menu(
 
     Naming a ``group`` renders just that band of the menu, child menus and all — for a
     toolbar face that stands for one band rather than for one verb (the graph strip's
-    *Options* is *Graph*'s ``look``). Named **with** a ``submenu`` it means that child
+    *Options* is *Graph*'s ``look``); naming several renders those bands in the menu's own
+    order, ruled as the menu rules them (a card on the graph is *Step*'s bands about the
+    step, and not the ones a table adds). Named **with** a ``submenu`` it means that child
     menu's band instead, still flat: two groups may feed one child menu — what a test *is*
     and what it *did* — and a surface whose subject is one of them offers that one
     (the Tests tab's right-click leads with *Step ▸ Test*'s ``test_result``). A band is
@@ -127,6 +129,7 @@ def fill_menu(
     ``submenu`` render leaves it out.
     """
     context = context_service.current()
+    groups = (group,) if isinstance(group, str) else group
     previous_group: str | None = None
     submenus: dict[str, QMenu] = {}  # Child path → its menu.
     submenu_group: dict[str, str] = {}  # Child path → the group its last entry came from.
@@ -171,7 +174,7 @@ def fill_menu(
     for spec in sorted(placed, key=actions.menus.sort_key):
         if spec.menu != menu:
             continue
-        if group is not None and spec.group != group:
+        if groups is not None and spec.group not in groups:
             continue
         if isinstance(spec, DataMenuSpec):
             if submenu is not None:
@@ -224,12 +227,13 @@ def build_menu(
 class Band:
     """One render of the registry inside a composed pop-up — :func:`fill_menu`'s arguments.
 
-    ``menu`` alone is the whole menu; ``group`` one band of it, and with ``submenu`` that
-    child menu's band. ``child`` renders it into a child menu of that title rather than flat.
+    ``menu`` alone is the whole menu; ``group`` one band of it or several, and with
+    ``submenu`` that child menu's band. ``child`` renders it into a child menu of that title
+    rather than flat.
     """
 
     menu: str
-    group: str | None = None
+    group: str | tuple[str, ...] | None = None
     submenu: str | None = None
     child: str | None = None
 

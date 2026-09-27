@@ -334,7 +334,7 @@ class ProgressionModule:
                 id="progression.open_step",
                 label="Show Step Stat&uses",
                 menu="Step",
-                group="open",
+                group="surfaces",
                 order=30,
                 tip="What needs a person right now: blocked, to merge, to review, to start",
                 palette=False,

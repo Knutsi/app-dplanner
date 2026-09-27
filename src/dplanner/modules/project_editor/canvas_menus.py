@@ -24,9 +24,13 @@ ARROW = "arrow"
 MIXED = "mixed"
 BACKGROUND = "background"
 
+# The Step menu's bands about the step itself. What a table adds — its type and tests, set
+# in Step Details; compiling, the Docs tab's; the project's views, rows in the index beside
+# the canvas — a card leaves out.
+STEP_ITSELF: Final = ("edit", "link", "track", "agent", "open")
+
 BANDS: Final[dict[str, tuple[Band, ...]]] = {
-    # The step's own menu, whole: everything about a step and nothing about the canvas.
-    CARD: (Band("Step"),),
+    CARD: (Band("Step", STEP_ITSELF),),
     # What an arrow is: removed, or one of its ends moved.
     ARROW: (Band("Graph", "links"),),
     # Nothing is about both, so it leads with narrowing the pick and what acts on any of it,
@@ -34,15 +38,16 @@ BANDS: Final[dict[str, tuple[Band, ...]]] = {
     MIXED: (
         Band("Graph", "narrow"),
         Band("Edit", "clipboard"),
-        Band("Step", child="Step"),
+        Band("Step", STEP_ITSELF, child="Step"),
         Band("Graph", "links", child="Links"),
     ),
-    # Making something where the click was, picking what is there, and going to a view.
+    # Making something where the click was, picking what is there, and the looks over the
+    # whole plan the index has no row for — the rest of the project's views are rows there.
     BACKGROUND: (
         Band("Graph", "new"),
         Band("Graph", "select"),
         Band("Edit", "selection"),
-        Band("Project", "open"),
+        Band("Project", "survey"),
     ),
 }
 

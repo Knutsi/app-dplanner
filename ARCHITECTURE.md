@@ -721,8 +721,8 @@ verb act on, and where is that picked*:
 - the drawing itself — `arrange`, `look`, `panels` as before;
 - picked **steps** — Step: Rename, Delete, Connect, Link, Unlink (the link between two
   picked steps, which a table can offer with no arrow in sight), Isolate, and Reveal in
-  Graph, which moved from the retired `navigate` group to `open` because it is the way from
-  any view to a step's card.
+  Graph, which moved from the retired `navigate` group to `surfaces` because it is the way
+  from a table's row to a step's card.
 
 The test is still not "which surface does this run on" — nearly every one of these runs on
 the canvas — but "what is its subject": a step, or something only the canvas can point at.
@@ -736,10 +736,10 @@ handful applied to the thing clicked. It now renders a row of bands chosen by th
 
 | Under the cursor | Bands |
 |---|---|
-| a card | the Step menu, whole |
+| a card | Step's bands about the step itself: `edit`, `link`, `track`, `agent`, `open` |
 | an arrow | Graph ▸ `links` |
-| steps and arrows | Graph ▸ `narrow`, Edit ▸ `clipboard`, then `Step` and `Links` as child menus |
-| empty canvas | Graph ▸ `new`, Graph ▸ `select`, Edit ▸ `selection`, Project ▸ `open` |
+| steps and arrows | Graph ▸ `narrow`, Edit ▸ `clipboard`, then the card's bands and `links` as `Step` and `Links` child menus |
+| empty canvas | Graph ▸ `new`, Graph ▸ `select`, Edit ▸ `selection`, Project ▸ `survey` |
 
 **The click makes its subject current, and the menu is a function of the selection.** A card
 or an arrow outside the pick becomes the pick, one inside keeps it — the rule the card had
@@ -748,6 +748,23 @@ the point, so New and Paste land there. Choosing the row from the *selection* ra
 the item under the cursor means the verbs offered and the pick they act on are one fact: a
 mixed pick right-clicked on one of its cards is still a mixed pick. A mixed pick leads with
 narrowing it because nothing else is about steps and arrows at once.
+
+**A card is the step, not a table's Step menu.** The first cut rendered the Step menu whole
+on a card, which took the canvas's verbs off it and left a table's: Type, Test and the test
+filing menus (a step's kind is set in Step Details, where the aspect bar is, and a test is
+picked only in a Tests tab), Compile with Agent (the Docs tab's strip carries it with the
+profiles), Show Order, Show Step Statuses and Show Tests (each a row under the project in the
+index, standing beside the canvas), Test Details, Estimate Steps and Reveal in Graph (which
+on the graph would only centre what was just clicked). A table still wants all of those —
+from a row, the index is not beside you and the graph is a tab away — so they are **filed,
+not dropped**: `track` (Status, Estimate) came out of `classify`, `compile` out of `agent`,
+and `surfaces` out of `open`, and the card renders `edit`, `link`, `track`, `agent` and
+`open` while every table and the menu bar render the whole menu. Empty canvas follows the
+same rule for the project: Project ▸ `open` is the views the index already lists, so the
+background renders `survey` — Estimate Steps and Preview Report, the two looks over the
+whole plan with no row there — instead. `fill_menu` takes several groups for this, in the
+menu's order and ruled as the menu rules them, so the card is one band and the mixed pick's
+`Step` child is the same band.
 
 **It is `fill_bands`, not an entry in `MENU_STRUCTURE`** — for the reason *A right-click on a
 test leads with the result* gives: an entry there is a place verbs are registered into, and

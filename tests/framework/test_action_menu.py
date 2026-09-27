@@ -288,6 +288,15 @@ def test_two_child_menus_in_a_row_get_no_rule_between_them(app):
     ) == ["rename", "|", ("Step", ["rename", "|", "details"]), ("Links", ["remove link"])]
 
 
+def test_a_band_may_name_several_groups_and_keeps_the_menus_rules(app):
+    """Some of a menu's bands, in the menu's order and ruled as the menu rules them — a card
+    on the graph is the Step menu's bands about the step, not the ones a table adds."""
+    registry = nested_registry()
+    popup = fill_bands(QMenu(), (Band("Step", ("open", "edit")),), registry, ContextService())
+    assert entries(popup) == ["rename", "|", "details"]
+    popup.deleteLater()
+
+
 def test_a_child_menu_that_came_out_empty_is_taken_away(app):
     assert composed(Band("Step", "edit"), Band("Graph", "absent", child="Nothing")) == ["rename"]
 

@@ -91,9 +91,9 @@ class StepStatusModule:
                     id=f"status.{status}",
                     label=label(status),
                     menu="Step",
-                    group="classify",
+                    group="track",
                     submenu="Status",
-                    # The 200s: Status is the second child menu of the classify band, and a
+                    # The 200s: Status leads the track band, before Estimate's 400s, and a
                     # child menu sits at its first entry's order. See dplanner/menus.py.
                     order=200 + order * 10,
                     tip=f"Mark this step {phrase(status)}",

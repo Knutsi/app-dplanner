@@ -381,7 +381,7 @@ class TestsModule:
                 id="tests.open_step",
                 label="Show &Tests",
                 menu="Step",
-                group="open",
+                group="surfaces",
                 order=40,
                 palette=False,  # The same verb's second seat, on the Step menu.
                 state=self._on_a_project,
@@ -391,7 +391,7 @@ class TestsModule:
                 id="test.details",
                 label="Test &Details",
                 menu="Step",
-                group="open",
+                group="surfaces",
                 order=45,  # Beside Show Tests, which opens the list this came from.
                 tip="Show the picked test in the Test panel beside the roster — what it "
                 "checks, and the verbs to run it",

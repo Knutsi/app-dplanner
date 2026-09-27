@@ -141,10 +141,12 @@ class EstimationModule:
             ActionSpec(
                 id="estimate.open",
                 label="&Estimate Steps",
-                menu="Step",
-                group="open",
-                # After the Show verbs: the step's own panel leads the group it shares.
-                order=60,
+                # The project's, beside Preview Report: a list of every step to size, which
+                # the index has no row for — so empty canvas offers it. With steps picked it
+                # still sizes just those.
+                menu="Project",
+                group="survey",
+                order=10,
                 tip="Size the selected steps — or the whole project — in one list",
                 state=self._can_estimate,
                 run=self._open_for_context,
@@ -191,8 +193,8 @@ class EstimationModule:
     def _size_specs(self) -> list[ActionSpec]:
         """Step ▸ Estimate: the sizes a step usually is, then *no time*, then none at all —
         acting on every picked step as one undo entry. The Estimates tab drops this child menu
-        from its strip, the canvas's right-click renders it, and the step panel keeps its
-        chips for the one step it shows."""
+        from its strip, a card's right-click renders it, and the step panel keeps its chips
+        for the one step it shows."""
         sizes: list[tuple[str, float | None, str, str]] = [
             (
                 f"estimate.size_{round(days * 4)}",
@@ -213,8 +215,8 @@ class EstimationModule:
                 id=action_id,
                 label=words,
                 menu="Step",
-                group="classify",
-                # The 400s: Estimate is the classify band's fourth child menu. See menus.py.
+                group="track",
+                # The 400s: Estimate follows Status's 200s in the track band. See menus.py.
                 submenu="Estimate",
                 order=400 + 10 * index,
                 tip=tip,
