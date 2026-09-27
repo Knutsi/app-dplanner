@@ -284,7 +284,7 @@ def _key_block(node: Node, wash: str | None, colors: Colors) -> str:
         out = f'<path class="key-block quiet" d="{path}" fill="{colors.ink}" fill-opacity="0.06"/>'
     top = y + (h - KEY_GLYPH - KEY_GAP - KEY_LINE) / 2
     middle = x + KEY_BLOCK_W / 2
-    if node.glyph:
+    if node.glyph_markup:
         toned = node.glyph_tone == "warn"
         stroke = colors.attention if toned else colors.ink
         scale = f"{KEY_GLYPH / GLYPH_BOX:.4g}"  # Not _n: two decimals would round two thirds.
@@ -293,7 +293,7 @@ def _key_block(node: Node, wash: str | None, colors: Colors) -> str:
             f'transform="translate({_n(middle - KEY_GLYPH / 2)} {_n(top)}) scale({scale})" '
             f'fill="none" stroke="{stroke}" stroke-opacity="{"1" if toned else "0.85"}" '
             f'stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'
-            f"{node.glyph.replace('currentColor', stroke)}</g>"
+            f"{node.glyph_markup.replace('currentColor', stroke)}</g>"
         )
     baseline = top + KEY_GLYPH + KEY_GAP + KEY_FONT
     return out + (

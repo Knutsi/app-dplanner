@@ -257,7 +257,7 @@ class Node:
     # Who works the step, over its key: the glyph's drawing — the shapes inside a 24-unit
     # SVG, stroked and unfilled — and its tone, "" for the key's ink or "warn" for the
     # attention amber a wait's clock wears. "" draws the key alone.
-    glyph: str = ""
+    glyph_markup: str = ""
     glyph_tone: str = ""
 
 

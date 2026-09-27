@@ -90,8 +90,8 @@ LANE_PAD = float(SECTION_GAP)
 CARD_GAP = float(SECTION_GAP)
 GUTTER = 56.0  # Room for a curve to read as a curve…
 GUTTER_NARROW = 32.0  # …and what it gives up on a narrow viewport before the lanes do.
-# Two words of title beside a medallion and past a step's key block; narrower is unreadable.
-# It grew from 168 with the key block, by the block's growth over the spine it replaced.
+# Two words of title beside a medallion and past a step's key block (``KEY_BLOCK_W``);
+# narrower is unreadable.
 LANE_MIN_W = 198.0
 NARROW_VIEWPORT = 1100.0
 CAPTION_H = 28.0

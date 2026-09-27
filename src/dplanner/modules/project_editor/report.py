@@ -70,7 +70,7 @@ def report_source(
                     stat=stats.get(step.id, ""),
                     badge=badge_of(step),
                     color=colors.get(step.id, ""),
-                    glyph=glyph_markup(glyph) if glyph else "",
+                    glyph_markup=glyph_markup(glyph) if glyph else "",
                     glyph_tone=glyph_tone,
                 )
             )

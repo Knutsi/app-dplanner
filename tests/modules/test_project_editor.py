@@ -2670,8 +2670,18 @@ def test_the_paper_draws_the_glyph(qapp):
     from dplanner.theme.glyph_source import glyph_markup
 
     nodes = (
-        Node("a", "S1", "Interview", 0, 0, 220, 76, glyph=glyph_markup("person")),
-        Node("b", "W2", "Hold", 0, 120, 220, 76, glyph=glyph_markup("clock"), glyph_tone="warn"),
+        Node("a", "S1", "Interview", 0, 0, 220, 76, glyph_markup=glyph_markup("person")),
+        Node(
+            "b",
+            "W2",
+            "Hold",
+            0,
+            120,
+            220,
+            76,
+            glyph_markup=glyph_markup("clock"),
+            glyph_tone="warn",
+        ),
     )
     renderer = QSvgRenderer(graph_svg(Graph(nodes, ()), LIGHT).encode())
     size = renderer.defaultSize()

@@ -2147,8 +2147,8 @@ key's ink: a wait is nobody's work, and it wears the attention amber — the chi
 `STATUS_TONES["warn"]` at full strength, since a stroked glyph at a wash's alpha reads as a
 smudge — whatever its date. The rule is written once, `_primary_glyph` in the composition
 root, and read by every surface that shows a key: the canvas (`NodeAccent.key_glyph`), the
-coverage lanes (`Readers.glyph`) and the report's graph (`Node.glyph`); Find's rows wear it
-too. **The top edge's medallions stopped carrying the spark and the clock** when the block
+coverage lanes (`Readers.glyph`) and the report's graph (`Node.glyph_markup`); Find's rows
+wear it too. **The top edge's medallions stopped carrying the spark and the clock** when the block
 took them: they say what a step *is* — milestone, feature, tests, check — and a card that
 said who works it twice would be teaching the eye to read two places for one fact.
 

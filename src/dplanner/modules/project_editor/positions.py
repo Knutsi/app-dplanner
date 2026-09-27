@@ -69,8 +69,8 @@ NODE_W = 220.0
 NODE_H = 76.0
 # No card smaller than this on either side: room for a row of medallions across the top
 # and for one line of title over the detail line. Both on the grid, so a card resized down
-# to its minimum still sits on it. The width rose from 144 with the key block, by what the
-# block took over the spine it replaced, so the narrowest title kept the room it had.
+# to its minimum still sits on it. The width also leaves the narrowest title its room past
+# the key block (``KEY_BLOCK_W``), rounded up to the grid.
 MIN_NODE_W = 176.0
 MIN_NODE_H = 64.0
 

@@ -122,7 +122,7 @@ class StepOrderDeps:
     # The label of the milestone a step is, "" otherwise. Wired by the composition root;
     # this module never learns who owns milestones.
     milestone_label: Callable[[StepId], str] = field(default=_no_milestone)
-    # What kind of thing a step is, in the canvas medallions' vocabulary ("tag", "spark"),
+    # What kind of thing a step is, in the canvas medallions' vocabulary ("tag", "layers"),
     # so the title column wears the same marks the graph does. Wired by the composition
     # root; this module never learns which aspects the kinds stand for.
     step_icons: Callable[[StepId], tuple[str, ...]] = field(default=_no_icons)
