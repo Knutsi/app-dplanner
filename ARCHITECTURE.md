@@ -3957,6 +3957,82 @@ takes a handful of branches and lands them. The aspect's readers say `sources` a
 `collectors`, the briefing says *Work you collect*, and the scope code never meets either.
 The rule is in `.claude/rules/graph-model.md`.
 
+## A review is a conversation kept on the step that asks
+
+The spec asked for a step whose agent reviews another's work before it lands. The person
+picks the agent and the lenses and sets a cap on the rounds, and the two agents talk back
+and forth through `dplanner`. Four questions shaped the answer.
+
+**What a review is.** A review is a step, as *Status is an aspect, and step types are
+emergent* rules. It is an agent step carrying `step_review`, keyed `R`. Its entry holds only
+how the review is run: the agent (a harness id, absent for the default profile), the lenses
+(absent for architecture and security) and the cap (absent for three). Absence encodes each
+default, so a later change of default reaches every review that never chose.
+
+**What it reviews is read off the graph.** Its *subject* is the step it `requires`, never an
+id stored in the entry. Relinking a review re-aims it, and no verb that rewrites edges
+learns that reviews exist. The price is that a review can be linked to nothing or to
+several steps, and lint's `review.subject` says so rather than a verb refusing, because a
+plan reshaped in several calls passes through both.
+
+**Every link into a review auto-progresses, by rule rather than by flag.** A review must
+start while its subject reads ready for review, and its subject becomes done only when the
+review approves it — the collector's deadlock again. The rule is ORed into the root's one
+`_auto_progresses`, so the frontier, Run Agent's gate, the doubled edge on the canvas and
+`project graph` agree without a word each. Nothing is written onto the review. The Edge
+menu's *Auto-progress* shows such a link checked and greyed, with its reason (*Hidden
+means absent; disabled means not now*).
+
+**The conversation lives on the step that asks.** Three homes were weighed:
+
+| Where | Cost |
+|---|---|
+| **On the reviewed step** | One step can be answering two askers at once, a review and a collector. Each would need its own list keyed by asker, and the cap would sit on the step that does not own it. |
+| **In the notes log** | Notes are the project's record, indexed into every later briefing. A round is a turn in a protocol with a state; a log full of them would bury every decision. |
+| **On the asker** (`review_rounds`, chosen) | The asker owns the questions and the cap. Each round names its party. A collector's conversations with three sources are three rounds lists in one entry. |
+
+Both sides write that one entry, through verbs in separate runs, and the stale-workspace
+check serialises them. **A round holds only texts and stamps**: opened, posted, taken,
+replied, then approved or escalated. Its state and whose turn it is are **derived from
+which stamps are there**, never stored. A stored state could disagree with its stamps, and
+the verbs, `review wait` and the Review tab would each need to keep it true.
+
+**Each verb moves the statuses the way the person would.**
+- `post` puts the subject back in progress.
+- `reply` makes it ready for review again.
+- `approve` sets the subject done and the review ready to merge. It also copies the
+  subject's branch and PR onto the review, so the review carries the PR into the merge.
+- `escalate` blocks the review. What the person must decide becomes a handoff note, which
+  is where the house already says why a step is blocked.
+
+Every one of these goes through `status_command`, the writer `status set` uses. So a
+stopped status ends an at-work claim the same way whichever verb stopped the work.
+
+**A collector talks the same way.** Who a step may talk to is whoever it takes work from
+review on — `_auto_progresses` again: a review's subject, or a collector's flagged sources.
+So `start`, `post`, `take`, `reply` and `wait` serve a collector sending work back upstream,
+with `--to` naming the source. `approve` and `escalate` are a review's verdicts: a collector
+refuses them and names its own way out, `status set`.
+
+**`review wait` polls, and holds nothing while it does.** The other side is another
+process, often in another terminal, possibly on another machine once the plan syncs. The
+CLI has no process to be told anything, so the waiting side reads.
+- Each poll opens a fresh `LibraryStore` and closes it. The run's own library would be
+  stale by the second poll, and there is no lock to hold: the stale-workspace check is the
+  whole of the coordination.
+- A whole library loads in tens of milliseconds, so it polls every two seconds.
+- The default timeout is nine minutes, under the ten minutes an agent CLI allows one tool
+  call.
+- On a timeout it exits **3**, which is neither a refusal (1) nor an arrival (0). An
+  agent's loop can tell *nothing yet* from *wrong*.
+
+The loop is one pure function, `await_turn(load, ready, timeout, sleep, clock)`. A test
+drives it with a sleep that writes the other side's turn between polls, and no thread.
+
+The window has no verb that posts a finding, because only an agent writes one. The Review
+tab shows the conversation read-only, following the ledger as the verbs write it. The rule
+is in `.claude/rules/agents.md`, and the edge rule in `.claude/rules/graph-model.md`.
+
 ## Running an agent launches a peer, not a task
 
 *Run Agent* writes the briefing to a per-run temp directory — never the project, which

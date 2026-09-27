@@ -74,6 +74,7 @@ HEADLESS_FILES = (
     "collect.py",
     "runs.py",
     "usage.py",
+    "rounds.py",
     "terminal.py",
     "harness.py",
     "documents.py",

@@ -17,7 +17,6 @@ from dataclasses import dataclass, field
 from PySide6.QtGui import QColor, QIcon
 
 from dplanner.core.clock import Clock
-from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Step
 from dplanner.domain.progression import (
     BLOCKED,
@@ -44,7 +43,7 @@ from dplanner.modules.step_status.aspect import (
     STATUSES,
     label,
     read,
-    write,
+    status_command,
 )
 from dplanner.theme.icons import (
     check_icon,
@@ -128,9 +127,8 @@ class StepStatusModule:
                 for step in steps:
                     if read(step) == status:
                         continue
-                    entry = write(status, today=today, previous=step.module_data.get(MODULE_ID))
                     self._deps.undo.push(
-                        SetModuleDataCommand(step.id, MODULE_ID, entry, label="Set Status")
+                        status_command(step, status, today=today, label="Set Status")
                     )
 
         return run

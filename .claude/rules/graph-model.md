@@ -48,7 +48,9 @@ paths:
   (`remap_for_paste`). **Whether a link frees its waiter from review on** is the root's one
   `_auto_progresses`, handed as `auto_progresses(waiter, source)` to the progression walk,
   Run Agent's gate, `project graph`/`step show` and the canvas's `edge_accents`, so every
-  surface agrees with the frontier when another rule (a review link) joins it. **Whether a
+  surface agrees with the frontier — **and a link into a review always auto-progresses**, by
+  the review's rule ORed in there rather than by a flag written onto it; the Edge menu shows
+  such a link checked and greyed with that reason (`AutoProgressDeps.always`). **Whether a
   step must land its sources' work** is the flag alone — the aspect's `sources` and
   `collectors`, read by *Work you collect*, the source's epilogue, `auto-progress list` and
   lint — because that duty is only ever given by flagging. Only an agent step collects: the

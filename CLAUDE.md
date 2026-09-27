@@ -284,7 +284,7 @@ reasoning.
 | `canvas.md` | the graph editor's modes, gestures, cards and marks |
 | `shell-ui.md` | seams, panes, primitives, menus, toolbars, glyphs and themes |
 | `step-panel.md` | aspect toggles, the shelf, Details blocks, prose editors and assets |
-| `agents.md` | Run Agent, worktrees, run directories, usage, harnesses and profiles |
+| `agents.md` | Run Agent, worktrees, run directories, usage, harnesses, profiles and reviews |
 | `specs.md` | the spec editor and its document sources |
 | `schedule.md` | order, progression, time estimates, progress and milestone colour |
 | `collectors.md` | scopes, features, citations, tests, documentation and notes |

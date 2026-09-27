@@ -219,6 +219,12 @@ launch for nothing. A collector is an agent step: nobody else reads the briefing
 what to collect, and `project lint` names one that is not (`auto-progress.waiter`). `project
 graph` draws its links `==>`.
 
+**A review step** is the same idea for one step: an agent that reviews the step it waits on,
+with a cap on the rounds before a person decides. `dplanner step add <project> 'Review the
+parser' --after S7 --agent --review` puts it between S7 and whatever follows. Every link into
+a review auto-progresses by rule, so it needs no flag. Link what comes next after the review,
+never after S7 directly: `project lint` names a step that goes round it (`review.bypassed`).
+
 ## Leave the graph readable
 
 The graph is what the user reviews, so when a plan settles, make its shape carry meaning

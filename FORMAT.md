@@ -590,6 +590,28 @@ an entry left naming nothing is removed. Absence is every link plain. It needs n
 bump for the rule above: an older build carries the entry untouched and reads every link
 as plain.
 
+**`step_review` makes a step an automatic review of the step it `requires`**:
+`{"on": true, "agent": "codex", "lenses": ["architecture", "my-skill"], "max_rounds": 2}`,
+format 1. `on` is the marker. Every other key is written only when it differs from its
+default, and absence reads as that default:
+- `agent` absent is the default launch profile; present, it is a harness id.
+- `lenses` absent is `["architecture", "security"]`; an empty list is none. A lens this build
+  does not name is a skill of the person's own, kept as written.
+- `max_rounds` absent is 3.
+
+What it reviews is never stored: it is the step the review requires.
+
+**`review_rounds` is the conversation, kept on the step that asks** — a review, or a
+collector — and a ledger of rounds, never a state: `{"rounds": [{"with": "<step id>",
+"opened": "<stamp>", "findings": "…", "posted": "<stamp>", "taken": "<stamp>", "reply":
+"…", "replied": "<stamp>", "approved": "<stamp>", "escalated": "<stamp>", "note": "…"}]}`,
+format 1.
+- `with` names the party answering, and a round's number counts that party's rounds.
+- Every key after `opened` is written when it is said.
+- A round's state and whose turn it is are read off which stamps are present.
+- A key this build does not know is kept when a round is stamped again.
+- A paste forgets the ledger: a conversation belongs to the original.
+
 **Absence encodes the default, and the default is not always "off".** Every aspect above is
 one most steps do not have, so the marker records the *claim*. Two go the other way:
 `estimation` and `step_description` are things most steps do have, so absence means **on**

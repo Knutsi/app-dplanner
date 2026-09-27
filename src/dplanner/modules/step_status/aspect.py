@@ -121,6 +121,16 @@ def write(status: str, *, today: date, previous: dict[str, Any] | None = None) -
     return stamped(entry, DATA_FORMAT.version) if entry else {}
 
 
+def status_command(
+    step: Step, status: str, *, today: date, view_origin: object = None, label: str = ""
+) -> SetModuleDataCommand:
+    """The command that sets ``step``'s status, its days stamped from the entry it replaces
+    — what the Status verbs, ``status set``, the launch's claim and the review verbs all
+    write through."""
+    entry = write(status, today=today, previous=step.module_data.get(MODULE_ID))
+    return SetModuleDataCommand(step.id, MODULE_ID, entry, view_origin=view_origin, label=label)
+
+
 def record_started(library: Library, step_id: StepId, today: date) -> bool:
     """Work on the step just began: claim ``in-progress`` — directly, off the undo stack.
 
@@ -132,9 +142,8 @@ def record_started(library: Library, step_id: StepId, today: date) -> bool:
     """
     if not library.has(step_id) or read(library.step(step_id)) == IN_PROGRESS:
         return False
-    previous = library.step(step_id).module_data.get(MODULE_ID)
-    entry = write(IN_PROGRESS, today=today, previous=previous)
-    SetModuleDataCommand(step_id, MODULE_ID, entry, view_origin=STARTED_ORIGIN).redo(library)
+    step = library.step(step_id)
+    status_command(step, IN_PROGRESS, today=today, view_origin=STARTED_ORIGIN).redo(library)
     return True
 
 

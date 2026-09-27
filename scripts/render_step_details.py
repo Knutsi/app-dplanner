@@ -2,6 +2,8 @@
 
     uv run python scripts/render_step_details.py --out docs/screenshots/s6-step-details
     uv run python scripts/render_step_details.py --start --out docs/screenshots/f2-start-marker
+    uv run python scripts/render_step_details.py --review \
+        --out docs/screenshots/f12-automatic-review
 
 The surfaces S6 reworked: the aspect bar's toggles on the left and the template it amounts
 to on the right, the Details tab stacking from the top whatever is turned off, and the
@@ -9,7 +11,8 @@ dialog on ``DialogFrame`` with one Close in its footer. The panel has one host �
 ``steps.details`` opens — so every image here is of that, reached through the verb rather
 than hand-wired, over a whole application built on a throwaway library and torn down per
 theme. ``--start`` renders F2's instead: the same dialog on a plan's start, and the
-Step ▸ Type menu that marks it.
+Step ▸ Type menu that marks it. ``--review`` renders F12's: the Review tab of a review two
+rounds into its conversation, and the templates with Review ticked.
 """
 
 import argparse
@@ -22,13 +25,13 @@ from tempfile import TemporaryDirectory
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["QT_QPA_PLATFORMTHEME"] = ""
 
-from PySide6.QtCore import QCoreApplication, QEvent
+from PySide6.QtCore import QCoreApplication, QEvent, QSettings
 from PySide6.QtWidgets import QApplication, QWidget
 
 from dplanner.app import new_session
 from dplanner.core.storage.locations import init_repo
-from dplanner.domain.commands import AddNodeCommand
-from dplanner.domain.model import Step
+from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
+from dplanner.domain.model import Library, Step
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.context import (
@@ -36,13 +39,49 @@ from dplanner.framework.context import (
     ContextNode,
     selection_uri,
 )
+from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
+from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
+from dplanner.modules.step_review.aspect import MODULE_ID as REVIEW_ID
+from dplanner.modules.step_review.aspect import ReviewSettings
+from dplanner.modules.step_review.aspect import write as review_write
+from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
+from dplanner.modules.step_review.rounds import opened, said
 from dplanner.modules.step_start.aspect import MODULE_ID as START_ID
 from dplanner.modules.step_start.aspect import write as start_write
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
 DIALOG_SIZE = (900, 760)
+
+# F12: what a reviewer and the reviewed agent said, two rounds in — the second still open
+# with the reviewed step, so the tab says whose turn it is.
+CONVERSATION = (
+    (
+        "2026-09-27T09:12:00+00:00",
+        "The parser drops trailing whitespace inside quoted fields.\nNo test covers empty input.",
+        "2026-09-27T10:40:00+00:00",
+        "Whitespace is kept inside quotes now, and empty input has a test of its own.",
+    ),
+    (
+        "2026-09-27T11:05:00+00:00",
+        "The error for an unclosed quote names no line number.",
+        "",
+        "",
+    ),
+)
+
+
+def converse(library: Library, review: Step, subject: Step) -> None:
+    """Write the conversation the way the verbs would, round by round."""
+    for posted, findings, replied, reply in CONVERSATION:
+        entry = opened(review, subject.id, posted)
+        SetModuleDataCommand(review.id, ROUNDS_ID, entry).redo(library)
+        entry = said(review, subject.id, findings=findings, posted=posted)
+        SetModuleDataCommand(review.id, ROUNDS_ID, entry).redo(library)
+        if replied:
+            entry = said(review, subject.id, reply=reply, replied=replied)
+            SetModuleDataCommand(review.id, ROUNDS_ID, entry).redo(library)
 
 
 def settle(app: QApplication) -> None:
@@ -62,7 +101,9 @@ def discard(widget: QWidget) -> None:
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
-def render(app: QApplication, theme: Theme, out: Path, workspace: Path, *, start: bool) -> None:
+def render(
+    app: QApplication, theme: Theme, out: Path, workspace: Path, *, start: bool, review: bool
+) -> None:
     apply_theme(app, theme)
     library_file = workspace / f"library-{theme.name}.json"
     create_library(library_file)
@@ -81,6 +122,17 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path, *, start
     if start:
         step.module_data[START_ID] = start_write(True)
     AddNodeCommand(project.id, step).redo(services.document)
+    if review:
+        # The step above is the subject; the dialog opens on its review.
+        subject, step = step, Step(title="Review the quick-reg modal")
+        AddNodeCommand(project.id, step).redo(services.document)
+        for each in (subject, step):
+            SetModuleDataCommand(each.id, AGENT_ID, agent_write(True)).redo(services.document)
+        SetModuleDataCommand(step.id, REVIEW_ID, review_write(ReviewSettings())).redo(
+            services.document
+        )
+        SetEdgesCommand(step.id, "requires", [subject.id]).redo(services.document)
+        converse(services.document, step, subject)
     services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
     settle(app)
 
@@ -99,6 +151,20 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path, *, start
     dialog.resize(*DIALOG_SIZE)
     dialog.show()
     settle(app)
+    if review:
+        panel = dialog.panel
+        labels = [panel.tab_bar.tabText(i) for i in range(panel.tab_bar.count())]
+        panel.tab_bar.setCurrentIndex(labels.index("Review"))
+        save(dialog, out, "review-tab", theme, app)
+        bar = panel.bar
+        bar.face.menu().popup(dialog.mapToGlobal(bar.face.pos()))
+        settle(app)
+        save(bar.face.menu(), out, "review-templates", theme, app)
+        bar.face.menu().hide()
+        real_dispose(dialog)
+        discard(dialog)
+        session.close()
+        return
     if start:
         save(dialog, out, "start-dialog", theme, app)
         # The Type submenu the bar renders: Start ticked among the kinds, after Wait.
@@ -140,14 +206,21 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--start", action="store_true", help="render a plan's start step instead (F2)"
     )
+    parser.add_argument(
+        "--review", action="store_true", help="render a review step's Review tab instead (F12)"
+    )
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
     assert isinstance(app, QApplication)
     # The throwaway library lives outside the output directory: what lands there is images.
     with TemporaryDirectory(prefix="dplanner-render-") as tmp:
+        # The per-user settings go to the same throwaway place: a render reads none of this
+        # machine's (the Review tab names the default launch profile) and writes none.
+        QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+        QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, tmp)
         for theme in (DARK, LIGHT):
-            render(app, theme, args.out, Path(tmp), start=args.start)
+            render(app, theme, args.out, Path(tmp), start=args.start, review=args.review)
     return 0
 
 
