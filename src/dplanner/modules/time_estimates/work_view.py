@@ -4,7 +4,7 @@ is the same amount of work as the same height in the other.
 - **Scope** — how much work the plan held on each recorded day, against what the plan
   compared with held, the area between them warm where it holds more and cool where it
   holds less. Each day the scope changed carries one ▲ or ▼ under the line, by the day's sum.
-- **Work done** — what is done, dotted across a day on which no step changed status; the
+- **Work done** — what is done, dotted and paler across a day no step changed status; the
   plan's own schedule from the day shown on, dashed; and each milestone where it sits: a
   check on the done line the day it was done, or a dot on the schedule the day the plan
   lands it. Milestones landing on one day share the mark, a wedge each, and the name.
@@ -66,6 +66,7 @@ BOTTOM = 26
 MARK = 8.0
 MILESTONE_DOT = 5.0
 DONE_ALPHA = 26
+IDLE_ALPHA = 128  # A day no step changed status: the done line at half its ink.
 WAIT_ALPHA = 70  # A wait's hatching: seen through, over the weekend bands.
 SCOPE_WIDTH = 2.5
 HIT = 8.0  # How near a mark the pointer must be to read the mark's words.
@@ -246,7 +247,7 @@ class WorkView(QWidget):
         elif sample == "schedule":
             painter.setPen(QPen(inks.secondary, 1.5, Qt.PenStyle.DashLine))
         elif sample == "idle":
-            painter.setPen(QPen(inks.ink, 2.0, Qt.PenStyle.DotLine))
+            painter.setPen(QPen(faded(inks.ink, IDLE_ALPHA), 2.0, Qt.PenStyle.DotLine))
         elif sample == "done":
             painter.fillRect(box, faded(inks.ink, DONE_ALPHA))
             painter.setPen(QPen(inks.ink, 2.0))
@@ -393,7 +394,7 @@ class WorkView(QWidget):
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setPen(QPen(inks.ink, 2.0))
         painter.drawPath(solid)
-        painter.setPen(QPen(inks.ink, 2.0, Qt.PenStyle.DotLine))
+        painter.setPen(QPen(faded(inks.ink, IDLE_ALPHA), 2.0, Qt.PenStyle.DotLine))
         painter.drawPath(dotted)
 
     def _paint_milestone_marks(self, painter: QPainter, axis: Axis, inks: Inks) -> None:
