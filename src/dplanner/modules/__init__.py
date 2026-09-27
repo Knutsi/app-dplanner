@@ -145,7 +145,11 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.notes.module import NotesDeps, NotesModule
     from dplanner.modules.openai.module import LlmOpenAIDeps, LlmOpenAIModule
     from dplanner.modules.problems.module import ProblemsDeps, ProblemsModule
-    from dplanner.modules.progression.module import ProgressionDeps, ProgressionModule
+    from dplanner.modules.progression.module import (
+        ProgressionDeps,
+        ProgressionModule,
+        StripVerb,
+    )
     from dplanner.modules.project_assets.module import (
         ProjectAssetsDeps,
         ProjectAssetsModule,
@@ -1000,9 +1004,10 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             open_coverage=coverage.show_passage,
         )
     )
-    # Constructed before the list because the projects index opens the board through it.
-    # Run Agent arrives as the real action's state and verb, resolved lazily so the agent
-    # module's registration order does not matter; neither module knows the other's name.
+    # Constructed before the list because the projects index opens the tab through it.
+    # Its strip seats verbs other modules own, named here by id — Run Agent with the Step
+    # menu's own profiles under its arrow, then the status verbs a person moves finished
+    # work on with — so neither module knows the other's name.
     progression = ProgressionModule(
         ProgressionDeps(
             library=library,
@@ -1010,18 +1015,22 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
-            # The statuses through the status aspect's Qt-free reader — the board never
+            # The statuses through the status aspect's Qt-free reader — the tab never
             # learns what one is stored as — with a wait done once it is over.
             status_for=_wait_aware(library, services.clock.today),
             counts_as_work=_counts_as_work,
-            agent_state=lambda ctx: services.actions.spec("agent.run").state(ctx),
-            # The Run Agents button drops the Step menu's own Run Agent child down — the
-            # profiles, then Manage Agent Profiles… — filled as it opens, never a copy.
-            agent_menu=lambda menu: services.actions.data_menu(RUN_MENU_ID).fill(menu),
-            # A milestone on the board leads with its key in its own shade: a lane already
-            # says where the work stands, so the one colour that is not a status says what
-            # the work is leading to.
+            verbs=(
+                StripVerb("agent.run", data_menu=RUN_MENU_ID),
+                StripVerb("status.ready-to-merge"),
+                StripVerb("status.done"),
+            ),
+            # A milestone's row leads with its key in its own shade: the group already says
+            # where the work stands, so the one colour that is not a status says what the
+            # work is leading to.
             milestone_badge=milestone_badge,
+            key_of=_step_key,
+            # Who works the step, as its key block and Find's rows say it.
+            glyph_of=lambda step: _primary_glyph(step)[0],
         )
     )
     estimation = EstimationModule(
@@ -1387,7 +1396,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             usage_words=lambda step_id: usage_words(library.step(step_id)),
             pick_assets=pick_assets,
             # Run Agent asks before launching on a step whose prerequisites are not
-            # done — the same status reader the progression board's frontier uses.
+            # done — the same status reader the Step statuses tab's frontier uses.
             status_for=_wait_aware(library, services.clock.today),
             # And says so on the step when the shell opens: the status aspect's own
             # writer, applied off the undo stack the way the launch stamp is. The
@@ -1655,7 +1664,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                     ),
                     ProjectEntry(
                         id="progression",
-                        label="Ready to start",
+                        label="Step statuses",
                         open=progression.open,
                         open_preview=lambda pid: progression.open(pid, preview=True),
                         icon=gauge_icon,
@@ -2299,7 +2308,18 @@ def _time_readers() -> "TimeReaders":
     """What the time module reads of other modules' aspects, for its verbs and its report:
     estimates, agent-ness, status and the days it changed and began, the start date, milestones, the
     estimate history and the key a row prints — the owners' Qt-free readers, handed over
-    here so no module imports another's."""
+    here so no module imports another's.
+
+    **Time reads review and merge as work in flight.** A step under review or waiting on
+    its merge is not landed — the percent, Step statuses and ``requires`` all say so — so the
+    Time tab, the recorder, the matrix, the report and the simulator read it as in
+    progress, *since the day it started*: its ``since`` moved when it went to review, and
+    the model credits in-flight work from ``since``, so the raw day would re-cost the step
+    at its whole estimate the moment an agent finished it. ``changed_on`` keeps the raw
+    day for what a recorded day counts as a change. ARCHITECTURE.md's *An agent finishes
+    at Ready for review* has the reasoning.
+    """
+    from dplanner.domain.progression import IN_PROGRESS, READY_FOR_REVIEW, READY_TO_MERGE
     from dplanner.modules.estimation.aspect import enabled as estimate_enabled
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.aspect import read_history as estimate_history
@@ -2312,12 +2332,24 @@ def _time_readers() -> "TimeReaders":
     from dplanner.modules.step_wait.aspect import read as wait_read
     from dplanner.modules.time_estimates.cli import Readers
 
+    in_flight = (READY_FOR_REVIEW, READY_TO_MERGE)
+
+    def status_for(step: "Step") -> str:
+        status = step_status(step)
+        return IN_PROGRESS if status in in_flight else status
+
+    def since_for(step: "Step") -> "date | None":
+        if step_status(step) in in_flight:
+            return status_started(step) or status_since(step)
+        return status_since(step)
+
     return Readers(
         days_for=estimated_days,
         is_agent=agent_enabled,
-        status_for=step_status,
-        since_for=status_since,
+        status_for=status_for,
+        since_for=since_for,
         started_for=status_started,
+        changed_on=status_since,
         is_marker=lambda step: not estimate_enabled(step),
         wait_of=wait_read,
         start_of=start_of,
@@ -2328,10 +2360,10 @@ def _time_readers() -> "TimeReaders":
 
 
 def _status_in(library: "Library", today: "date") -> "Callable[[Step], str]":
-    """A step's status as the board, its report and the Run Agent gate read it on ``today``:
-    a wait done once it is over and waiting until then (``schedule.wait_status``), so what
-    follows a wait is ready on the day it may start; every other step as its status aspect
-    says."""
+    """A step's status as the Step statuses tab, its report and the Run Agent gate read it on
+    ``today``: a wait done once it is over and waiting until then (``schedule.wait_status``),
+    so what follows a wait is ready on the day it may start; every other step as its status
+    aspect says."""
     from dplanner.domain.schedule import wait_status
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_status.aspect import read_since as status_since
@@ -2350,6 +2382,44 @@ def _is_wait(step: "Step") -> bool:
     from dplanner.modules.step_wait.aspect import is_wait
 
     return is_wait(step)
+
+
+def _is_agent_step(step: "Step") -> bool:
+    """Whether an agent executes the step — the agent aspect's answer, for the status verb."""
+    from dplanner.modules.step_agent_instruction.aspect import enabled
+
+    return enabled(step)
+
+
+def _in_agent_shell() -> bool:
+    """Whether this process runs inside an agent CLI's shell — the reading the entry point's
+    window guard makes, over the same harnesses, asked when a verb runs."""
+    import os
+
+    from dplanner.domain.agents import shell_marker
+
+    return bool(shell_marker(agent_harnesses(), os.environ))
+
+
+def _note_reason(context: "CliContext", step: "Step", reason: str) -> str:
+    """Keep why a step went to done without review as a decision note on it, in the same
+    run as the status — the notes module's record, written through its own log."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
+    from dplanner.modules.notes.log import Note, check_label, next_note_id, read_log, write_log
+
+    project = context.library.project_of(step.id)
+    records = read_log(project)
+    note = Note(
+        id=next_note_id(records),
+        label=check_label("decision"),
+        title="Done without review",
+        body=reason,
+        made=context.clock.today().isoformat(),
+        step=step.id,
+    )
+    context.apply(SetModuleDataCommand(project.id, NOTES_ID, write_log([*records, note])))
+    return note.id
 
 
 def _counts_as_work(step: "Step") -> bool:
@@ -2693,7 +2763,12 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
         f"- `dplanner note add {project} later '<what>' --step {ref}` for work you"
         " noticed and did not do\n"
         "When the work is finished, record it in DPlanner:\n"
-        f"- `dplanner status set {ref} done` and `dplanner agent-state clear {ref}`\n"
+        f"- `dplanner status set {ref} ready-for-review` and `dplanner agent-state clear"
+        f" {ref}` — ready for review, never done: a person or a reviewing agent looks next"
+        " and sets it done. That is the step's work finished, not the mid-run"
+        " `plan-for-review` above, which is your plan waiting for a look. If nothing needs"
+        f" reviewing, `dplanner status set {ref} done --because '<why>'` keeps the reason"
+        " as a decision note.\n"
         f"- `dplanner note add {project} handoff '<one line the next worker needs>'"
         f" --step {ref} --file -` with what whoever picks up after you must know —"
         " where things are, what is half done, what bit you. Title it as the fact it"
@@ -3265,7 +3340,15 @@ def default_cli_commands(
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
         *at_work_cli.commands(board=board, key_of=_step_key),
-        *status_cli.commands(is_wait=_is_wait),
+        # An agent's done waits for review: the verb reads who is reporting (an agent's
+        # shell, the entry point's reading) and what the step is (an agent step), and a
+        # `--because` lands as a decision note in the same run.
+        *status_cli.commands(
+            is_wait=_is_wait,
+            is_agent=_is_agent_step,
+            in_agent_shell=_in_agent_shell,
+            note_reason=_note_reason,
+        ),
         *milestone_cli.commands(),
         *wait_cli.commands(),
         # A feature's passages are anchored in the spec documents by the spec module's

@@ -23,7 +23,9 @@ The status tones — good, busy, bad, warn — are the key block's shades on a c
 a ``StatusLine`` wears in a dialog's footer: one word for "this is where the work stands"
 wherever it is said, which is why they live here and not with the canvas painters. Warn is
 the amber the chips already use: a caution rather than a failure, the tone a standing
-notice washes its whole band in, and a wait's clock in its key block.
+notice washes its whole band in, a wait's clock in its key block, and the wash of a step
+ready for review. The two ambers on a card are told apart by shape: a clock is a stroke over
+a quiet block, a review is the block itself.
 """
 
 from PySide6.QtGui import QColor
@@ -67,7 +69,16 @@ STATUS_TONES: dict[str, QColor] = {
 }
 # A step's status as one of those tones: the key block's wash on every card that is a step. A
 # status with nothing to say — pending — is absent, and the block stays a quiet shade.
-STEP_STATUS_TONES: dict[str, str] = {"in-progress": "busy", "blocked": "bad", "done": "good"}
+# Ready for review wears warn — the amber the agent chip says *plan ready* in: a person
+# looks next — and ready to merge the good green, accepted; only done also greens and
+# mutes the body, so the two greens are told apart by the card.
+STEP_STATUS_TONES: dict[str, str] = {
+    "in-progress": "busy",
+    "ready-for-review": "warn",
+    "ready-to-merge": "good",
+    "blocked": "bad",
+    "done": "good",
+}
 
 
 def toned(name: str, color: str = "") -> tuple[QColor, QColor] | None:

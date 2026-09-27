@@ -189,13 +189,20 @@ def _arrow_head(x: float, y: float, angle: float, color: str) -> str:
     return f'<polygon points="{points}" fill="{color}" fill-opacity="0.6"/>'
 
 
-# The statuses a card names in a pill on its bottom edge, beside the wash its key block wears.
-PILLED_STATUSES = ("in-progress", "blocked")
+# The statuses a card names in a pill on its bottom edge, beside the wash its key block wears:
+# work somebody has in hand. Done says it with a tick and a faded title; pending says nothing.
+PILLED_STATUSES = ("in-progress", "ready-for-review", "ready-to-merge", "blocked")
 
 
 def _status_fill(status: str, colors: Colors) -> str | None:
     """The key block's wash for a status, or None for one with nothing to say."""
-    return {"in-progress": colors.busy, "blocked": colors.bad, "done": colors.good}.get(status)
+    return {
+        "in-progress": colors.busy,
+        "ready-for-review": colors.attention,
+        "ready-to-merge": colors.good,
+        "blocked": colors.bad,
+        "done": colors.good,
+    }.get(status)
 
 
 def _card(node: Node, colors: Colors) -> str:

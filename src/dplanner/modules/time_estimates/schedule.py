@@ -438,7 +438,7 @@ def milestone_colors(
     """Every milestone's hex, by step id: the colour somebody chose for it, else its shade
     of the project's map dealt by place in the sequence.
 
-    **The one deal.** The canvas, the order table, the progression board, the Tests tab, the
+    **The one deal.** The canvas, the order table, the Step statuses tab, the Tests tab, the
     coverage lane, the step panel, the calendar and the report all read this, so a milestone
     cannot wear two colours in one window. The sequence is ``ordering.placed``'s — the order
     ``dplanner milestone list`` prints and the order the stretches run in, which

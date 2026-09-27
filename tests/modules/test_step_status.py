@@ -12,6 +12,7 @@ from dplanner.modules.step_status.aspect import (
     MODULE_ID,
     STATUSES,
     forget_days_for_paste,
+    label,
     read,
     read_since,
     read_started,
@@ -138,6 +139,39 @@ def test_record_started_on_a_step_that_is_gone_answers_false():
     assert record_started(library, "nobody", date(2026, 9, 21)) is False
 
 
+def test_review_and_merge_sit_between_in_progress_and_done():
+    assert STATUSES == (
+        "pending",
+        "in-progress",
+        "ready-for-review",
+        "ready-to-merge",
+        "done",
+        "blocked",
+    )
+
+
+def test_any_worked_status_stamps_started_the_first_time():
+    """A step an agent was never claimed on still began the day it came back for review;
+    done straight from pending says nothing of when it began."""
+    for word in ("in-progress", "ready-for-review", "ready-to-merge"):
+        entry = write(word, today=MONDAY)
+        assert entry["started"] == MONDAY.isoformat(), word
+        later = write("done", today=FRIDAY, previous=entry)
+        assert later["started"] == MONDAY.isoformat() and later["since"] == FRIDAY.isoformat()
+    assert "started" not in write("done", today=MONDAY)
+
+
+def test_the_menu_words_keep_the_small_words_small():
+    assert [label(word) for word in STATUSES] == [
+        "Pending",
+        "In Progress",
+        "Ready for Review",
+        "Ready to Merge",
+        "Done",
+        "Blocked",
+    ]
+
+
 # -- the CLI -----------------------------------------------------------------------------------
 
 
@@ -202,6 +236,59 @@ def test_list_groups_by_status_in_working_order(cli):
     assert "done (1):" in text and "pending (1):" in text
 
 
+# -- an agent's done waits for review ----------------------------------------------------------
+
+
+@pytest.fixture
+def agent_step(cli):
+    cli("step", "add", "Discovery", "Build the modal", "--agent")
+    return "Build the modal"
+
+
+def _decisions(cli):
+    notes = json.loads(cli("note", "list", "Discovery", "--label", "decision", "--json"))
+    return notes if isinstance(notes, list) else notes["notes"]
+
+
+def test_inside_an_agents_shell_done_on_an_agent_step_is_refused(cli, agent_step, monkeypatch):
+    """The spec's rule: agents set Ready for review instead of done. The refusal names the
+    word to use and the way out, and nothing is written."""
+    monkeypatch.setenv("CLAUDECODE", "1")
+    said = cli("status", "set", agent_step, "done", expect=1)
+    assert "ready-for-review" in said and "--because" in said
+    assert "pending" in cli("status", "show", agent_step)
+
+
+def test_from_review_an_agent_may_finish_it(cli, agent_step, monkeypatch):
+    """A reviewing agent takes a reviewed step on: ready-to-merge, then done."""
+    monkeypatch.setenv("CLAUDECODE", "1")
+    cli("status", "set", agent_step, "ready-for-review")
+    cli("status", "set", agent_step, "done")
+    assert "done" in cli("status", "show", agent_step)
+
+
+def test_because_sets_done_and_keeps_the_reason_as_one_decision_note(cli, agent_step, monkeypatch):
+    monkeypatch.setenv("CODEX_THREAD_ID", "t1")  # Every agent CLI's shell, not only Claude's.
+    said = cli("status", "set", agent_step, "done", "--because", "docs only, nothing to review")
+    assert "done" in cli("status", "show", agent_step)
+    (note,) = _decisions(cli)
+    assert note["title"] == "Done without review"
+    assert note["body"] == "docs only, nothing to review" and note["key"] == "S2"
+    assert note["note"] in said
+
+
+def test_a_person_and_a_plain_step_are_never_asked(cli, agent_step, monkeypatch):
+    cli("status", "set", agent_step, "done")  # No marker: a person in their own terminal.
+    monkeypatch.setenv("CLAUDECODE", "1")
+    cli("status", "set", "Read the spec", "done")  # Not an agent step.
+    assert _decisions(cli) == []
+
+
+def test_because_goes_with_done_only(cli, agent_step):
+    said = cli("status", "set", agent_step, "blocked", "--because", "why not", expect=1)
+    assert "--because" in said
+
+
 # -- the Status submenu ------------------------------------------------------------------------
 
 
@@ -239,6 +326,50 @@ def test_running_the_action_sets_the_status_undoably(services, step):
     assert (read(step), read_since(step), read_started(step)) == ("done", TUESDAY, MONDAY)
     services.undo.undo()  # the days come back with the status
     assert (read(step), read_since(step), read_started(step)) == ("in-progress", MONDAY, MONDAY)
+
+
+def test_a_status_verb_moves_every_chosen_step_as_one_undo_step(services, step, make_project):
+    """A lasso on the canvas, or the ticked rows of Step statuses: all of them at once."""
+    other = Step(title="Draft the model")
+    AddNodeCommand(services.document.project_of(step.id).id, other).redo(services.document)
+    services.context.set_scope(
+        SCOPE_SELECTION,
+        (ContextNode(selection_uri("step", step.id)), ContextNode(selection_uri("step", other.id))),
+    )
+    context = services.context.current()
+    services.actions.run("status.ready-for-review", context)
+    services.actions.run("status.ready-to-merge", context)
+    assert read(step) == read(other) == "ready-to-merge"
+    assert services.actions.spec("status.ready-to-merge").state(context).checked is True
+    services.undo.undo()
+    assert read(step) == read(other) == "ready-for-review"
+
+
+def test_checked_only_when_every_chosen_step_stands_there(services, step):
+    other = Step(title="Draft the model")
+    AddNodeCommand(services.document.project_of(step.id).id, other).redo(services.document)
+    services.actions.run("status.done", _chosen(services, step))
+    context = _chosen(services, step, other)
+    assert services.actions.spec("status.done").state(context).checked is False
+
+
+def test_a_wait_among_the_chosen_greys_the_verb(services, step):
+    wait = Step(title="Hold a day")
+    AddNodeCommand(services.document.project_of(step.id).id, wait).redo(services.document)
+    from dplanner.domain.schedule import Wait
+    from dplanner.modules.step_wait.aspect import write as write_wait
+
+    services.document.set_module_data(wait.id, "step_wait", write_wait(Wait(days=1.0)))
+    state = services.actions.spec("status.done").state(_chosen(services, step, wait))
+    assert not state.enabled and "a wait has no status" in state.label
+
+
+def _chosen(services, *steps):
+    from dplanner.framework.context import Context
+
+    return Context(
+        {SCOPE_SELECTION: tuple(ContextNode(selection_uri("step", s.id)) for s in steps)}
+    )
 
 
 def test_with_no_step_selected_the_actions_are_disabled(services):

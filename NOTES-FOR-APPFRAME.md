@@ -4404,3 +4404,28 @@ repository lists it, the older colocated shape when nothing does — and the dom
 repository facts ask this to tell them apart. It lives beside the index's other readers
 because `domain/` and `cli/` both need it and only `core/` sits below both. **Upstream?**
 No: the index is DPlanner's.
+
+## 58. From the review-statuses pass: a table whose rows are ticked
+
+### `framework/table.py` — `Column(check=True)`, `Table.check_under`, `Table.toggle_row`
+
+**What we changed.** A column may be a check column. Its cell holds nothing but a box. The
+delegate paints the box from the row's selection state: a quiet box on the hairline, or the
+accent with a tick in its own ink. The table hit-tests the whole cell, and a click there
+toggles that row's selection, leaving the other rows as they were. A double click on the box
+is a second tick and never an activation, so `cellActivated` does not fire from it. The box
+sits where a glyph would: past the padding and a group's indent, on the first line of a rich
+row.
+
+**Why.** The Step statuses tab is a roster whose rows are ticked for a verb (Run Agent, Ready
+to Merge, Done), and there was no way to draw a box. Planting a `QCheckBox` in a cell breaks
+the row-as-unit rule, and a second *ticked* state beside the selection would give the strip
+and the Step menu two answers to one question. So the box *is* the selection. Qt's own
+indicator (`PE_IndicatorItemViewItemCheck`) was tried first. It is drawn from colours no
+theme sets, and on a dark theme the unticked box all but vanished into the row. It is now
+painted the way chips are, from the palette.
+
+**Upstream?** Yes: nothing in it knows DPlanner, and "tick rows, then act on them" is a
+roster shape the template's table cannot express today. It also amends one rule: *a picked
+row is one ground, and nothing else marks it*. The one exception is a check column, because
+its box is the selection's own target.

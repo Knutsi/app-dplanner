@@ -56,7 +56,7 @@ def test_with_nothing_done_the_frontier_is_the_first_wave():
     """The graph-only answer and this one agree exactly when no status is stored."""
     library, project = diamond()
     found = progression(library, project, status_of({}))
-    assert titles(row.step for row in found.ready) == titles(ready(library, project))
+    assert titles(found.ready) == titles(ready(library, project))
     assert titles(c.step for c in found.upcoming) == ["B", "C"]
     assert titles(found.waiting) == ["D"]
 
@@ -65,7 +65,7 @@ def test_a_finished_prerequisite_frees_its_dependents():
     library, project = diamond()
     found = progression(library, project, status_of({"A": "done"}))
     assert titles(found.done) == ["A"]
-    assert titles(row.step for row in found.ready) == ["B", "C"]
+    assert titles(found.ready) == ["B", "C"]
     assert titles(c.step for c in found.upcoming) == ["D"]
     assert found.waiting == ()
 
@@ -73,7 +73,7 @@ def test_a_finished_prerequisite_frees_its_dependents():
 def test_the_join_waits_for_both_arms():
     library, project = diamond()
     found = progression(library, project, status_of({"A": "done", "B": "done"}))
-    assert titles(row.step for row in found.ready) == ["C"]
+    assert titles(found.ready) == ["C"]
     assert titles(c.step for c in found.upcoming) == ["D"]
     assert [titles(c.after) for c in found.upcoming] == [["C"]]
 
@@ -101,14 +101,14 @@ def test_out_of_order_completion_is_honoured_not_refused():
     library, project = diamond()
     found = progression(library, project, status_of({"D": "done"}))
     assert titles(found.done) == ["D"]
-    assert titles(row.step for row in found.ready) == ["A"]
+    assert titles(found.ready) == ["A"]
     assert found.percent == 25.0
 
 
 def test_an_unknown_status_word_reads_as_pending():
     library, project = build("A")
     found = progression(library, project, status_of({"A": "on-fire"}))
-    assert titles(row.step for row in found.ready) == ["A"]
+    assert titles(found.ready) == ["A"]
 
 
 def test_the_frontier_ranks_by_what_finishing_unlocks():
@@ -118,7 +118,11 @@ def test_the_frontier_ranks_by_what_finishing_unlocks():
     link(library, project, "C", "B")
     link(library, project, "E", "D")
     found = progression(library, project, status_of({}))
-    assert [(row.step.title, row.unlocks) for row in found.ready] == [("A", 2), ("D", 1), ("F", 0)]
+    assert [(step.title, found.unlocks[step.id]) for step in found.ready] == [
+        ("A", 2),
+        ("D", 1),
+        ("F", 0),
+    ]
 
 
 def test_a_done_dependent_is_walked_through_but_not_counted():
@@ -126,8 +130,8 @@ def test_a_done_dependent_is_walked_through_but_not_counted():
     link(library, project, "B", "A")
     link(library, project, "C", "B")
     found = progression(library, project, status_of({"B": "done"}))
-    launchable = next(row for row in found.ready if row.step.title == "A")
-    assert launchable.unlocks == 1  # C still waits on A through done B; B itself does not count.
+    a = by_title(project, "A")
+    assert found.unlocks[a.id] == 1  # C still waits on A through done B; B itself does not count.
 
 
 def test_unlock_ties_keep_the_project_order():
@@ -135,7 +139,7 @@ def test_unlock_ties_keep_the_project_order():
     link(library, project, "C", "A")
     link(library, project, "C", "B")
     found = progression(library, project, status_of({}))
-    assert titles(row.step for row in found.ready) == ["A", "B"]
+    assert titles(found.ready) == ["A", "B"]
 
 
 def test_every_step_lands_in_exactly_one_partition():
@@ -151,6 +155,63 @@ def test_every_step_lands_in_exactly_one_partition():
     assert found.ready == () and found.waiting == ()
 
 
+def test_review_and_merge_have_partitions_of_their_own():
+    """Finished work a person looks at next: on the board, out of the percent."""
+    library, project = build("A", "B", "C", "D", "E", "F")
+    found = progression(
+        library,
+        project,
+        status_of(
+            {
+                "A": "done",
+                "B": "in-progress",
+                "C": "ready-for-review",
+                "D": "ready-to-merge",
+                "E": "blocked",
+            }
+        ),
+    )
+    assert found.total == 6
+    assert titles(found.done) == ["A"] and titles(found.running) == ["B"]
+    assert titles(found.review) == ["C"] and titles(found.merge) == ["D"]
+    assert titles(found.attention) == ["E"] and titles(found.ready) == ["F"]
+    assert found.upcoming == () and found.waiting == ()
+    assert round(found.percent, 1) == 16.7  # A alone: review and merge are not done
+
+
+def test_a_plain_requires_waits_for_done_not_for_review_or_merge():
+    """A step waiting on reviewed work is one move away, never ready: nothing starts on
+    work nobody has accepted — and nothing on work not merged yet either."""
+    for word in ("ready-for-review", "ready-to-merge"):
+        library, project = diamond()
+        found = progression(library, project, status_of({"A": word}))
+        assert found.ready == ()
+        assert titles(c.step for c in found.upcoming) == ["B", "C"]
+        assert [titles(c.after) for c in found.upcoming] == [["A"], ["A"]]
+        assert titles(found.waiting) == ["D"]
+
+
+def test_every_group_a_person_acts_on_is_ranked_by_what_it_unlocks():
+    """Blocked, review and merge rank like the frontier does; ties keep project order."""
+    library, project = build("A", "B", "C", "X", "Y")
+    link(library, project, "X", "B")
+    link(library, project, "Y", "X")
+    for word in ("ready-for-review", "ready-to-merge", "blocked"):
+        found = progression(library, project, status_of({"A": word, "B": word, "C": word}))
+        by_word = {"ready-for-review": found.review, "ready-to-merge": found.merge}
+        ranked = by_word.get(word, found.attention)
+        assert titles(ranked) == ["B", "A", "C"]
+        assert [found.unlocks[step.id] for step in ranked] == [2, 0, 0]
+
+
+def test_estimated_progress_counts_review_and_merge_as_not_done():
+    library, project = build("A", "B", "C")
+    found = progression(
+        library, project, status_of({"A": "done", "B": "ready-for-review", "C": "ready-to-merge"})
+    )
+    assert estimated_progress(found, lambda _step: 1.0) == (1.0, 3.0)
+
+
 def test_percent_counts_done_against_everything():
     library, project = diamond()
     found = progression(library, project, status_of({"A": "done", "B": "done"}))
@@ -163,7 +224,7 @@ def test_an_empty_project_is_zero_percent_and_empty_everywhere():
     assert found.total == 0
     assert found.percent == 0.0
     assert found.done == found.running == found.attention == found.waiting == ()
-    assert found.ready == () and found.upcoming == ()
+    assert found.review == found.merge == found.ready == () and found.upcoming == ()
 
 
 def test_estimated_progress_weighs_the_done_work():
@@ -216,7 +277,7 @@ def test_a_wait_is_no_work_and_holds_what_follows_it_until_its_day():
     assert titles(found.waiting) == ["B"] and found.ready == ()
     found, wait = held_by_a_wait(Wait(until=wednesday), {"A": "done"}, today=wednesday)
     assert wait == DONE
-    assert [launchable.step.title for launchable in found.ready] == ["B"]
+    assert titles(found.ready) == ["B"]
     assert found.percent == 50.0  # of the work: A of A and B
 
 
@@ -225,8 +286,8 @@ def test_a_wait_holds_while_what_it_waits_on_is_not_done():
     from dplanner.domain.schedule import Wait
 
     found, wait = held_by_a_wait(Wait(until=MONDAY), {}, today=MONDAY + timedelta(days=7))
-    assert wait == WAITING and [one.step.title for one in found.ready] == ["A"]
-    assert found.ready[0].unlocks == 1  # B, and not the wait: it is no work
+    assert wait == WAITING and titles(found.ready) == ["A"]
+    assert found.unlocks[found.ready[0].id] == 1  # B, and not the wait: it is no work
 
 
 def test_a_days_wait_is_over_once_its_days_are_waited():

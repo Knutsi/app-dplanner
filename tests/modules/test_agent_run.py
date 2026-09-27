@@ -1171,6 +1171,32 @@ def test_done_prerequisites_launch_without_asking(services, step, prerequisite, 
     assert calls == [["fake-term"]]
 
 
+def test_a_prerequisite_under_review_still_asks(services, step, prerequisite, monkeypatch):
+    """Ready for review and ready to merge are not done: the gate asks exactly as the Step
+    statuses tab keeps the waiting step out of Ready to start — one question, two readers —
+    and the box says the status as words."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as write_status
+
+    for word, said in (
+        ("ready-for-review", "ready for review"),
+        ("ready-to-merge", "ready to merge"),
+    ):
+        services.undo.push(
+            SetModuleDataCommand(
+                prerequisite.id, STATUS_ID, write_status(word, today=date(2026, 9, 21))
+            )
+        )
+        calls = _fake_terminal(monkeypatch)
+        boxes = _record_boxes(monkeypatch, click=None)
+        select(services, step)
+        services.actions.run("agent.run", services.context.current())
+        assert calls == []
+        ((_title, _text, detail),) = boxes
+        assert f"Prepare — {said}" in detail
+
+
 def test_running_spawns_a_terminal_in_the_projects_repo_root(
     services, step, library_repo, monkeypatch
 ):
@@ -1717,7 +1743,9 @@ def test_agent_prompt_carries_the_note_index_and_the_epilogue(cli_stdin, workspa
     assert "dplanner note add Discovery handoff" in shown["prompt"]
     assert "dplanner note add Discovery decision" in shown["prompt"]
     # Every verb names the step by its key: unambiguous where a title may not be.
-    assert "dplanner status set S2 done" in shown["prompt"]
+    # An agent's run ends at ready for review, never at done — and says how to skip it.
+    assert "dplanner status set S2 ready-for-review" in shown["prompt"]
+    assert "dplanner status set S2 done --because" in shown["prompt"]
     assert "dplanner agent-state set S2 plan-for-review" in shown["prompt"]
     assert "dplanner agent-state clear S2" in shown["prompt"]
     assert "dplanner github set S2 --branch" in shown["prompt"]

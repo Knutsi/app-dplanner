@@ -185,10 +185,10 @@ def test_the_next_click_replaces_the_preview(services, project):
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
     panel.tree.expandAll()
     click(panel, entry_row(panel, "Steps"))
-    click(panel, entry_row(panel, "Ready to start"))
+    click(panel, entry_row(panel, "Step statuses"))
 
     (tab,) = services.tabs.activities()
-    assert "Ready to start" in tab.title
+    assert "Step statuses" in tab.title
     assert services.tabs.is_preview(tab)
 
 

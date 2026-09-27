@@ -12,8 +12,9 @@ from the same files the planning tool works with.
 - **Plan** is the work as a graph. A card is a step; an arrow means the step at its head
   waits for the one at its tail; a dashed line is a plain relation. The block on a card's left
   carries its key under who does the work — sparkles for an agent, a person otherwise, an amber
-  clock for a wait — and is washed by status: blue in progress, red blocked, green done. Click
-  a card, a row or a milestone anywhere on the page to open it.
+  clock for a wait — and is washed by status: blue in progress, amber ready for review, green
+  ready to merge or done (a done card is green all over), red blocked. Click a card, a row or a
+  milestone anywhere on the page to open it.
 - **Timeline** is the milestones in sequence, each bar from its start to where the plan lands
   it, filled as far as its work has landed; a small triangle marks a date somebody set. The
   staffing table says when the same work would land with a different team.

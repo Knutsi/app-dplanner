@@ -107,9 +107,16 @@ class Readers:
 
     days_for: Callable[[Step], float | None]
     is_agent: Callable[[Step], bool]
+    # A step's status as the model reads it, and the day it last changed — for a step in
+    # progress, the day its work began, which is what in-flight work is credited from.
     status_for: Callable[[Step], str]
-    since_for: Callable[[Step], date | None]  # The day a step's status last changed.
-    started_for: Callable[[Step], date | None]  # The day a step first went in progress.
+    since_for: Callable[[Step], date | None]
+    started_for: Callable[[Step], date | None]  # The day a step first went into a worked status.
+    # The day a step's status last changed, whatever it changed to: what a recorded day
+    # counts as a change. It differs from ``since_for`` where the root folds a status the
+    # model reads as in progress — a step under review changed today, but its work began
+    # when it started.
+    changed_on: Callable[[Step], date | None]
     # A step that carries no work by design — estimate off: a milestone's, a feature, a check.
     is_marker: Callable[[Step], bool]
     # What a wait step waits for; None for every other step. A wait is no work at all.
@@ -185,7 +192,7 @@ class Readers:
             self.days_for,
             self.is_agent,
             self.status_for,
-            self.since_for,
+            self.changed_on,
             humans=humans,
             agents=agents,
             start=self.start_of(project, today),

@@ -169,6 +169,22 @@ def test_blocked_gets_a_bad_bar(services, project, tab):
     assert node(tab, step)._accent.key_tone == "bad"
 
 
+def test_review_wears_the_warn_key_block_and_merge_the_good_one(services, project, tab):
+    """Review is amber — a person looks next — and merge is green, accepted; neither is
+    done, so neither mutes the card or greens its body. The glyph over the key stays in ink:
+    amber in the block's glyph is a wait's alone."""
+    step = project.steps[0]
+    for word, tone in (("ready-for-review", "warn"), ("ready-to-merge", "good")):
+        services.undo.push(
+            SetModuleDataCommand(
+                step.id, status.MODULE_ID, status.write(word, today=date(2026, 9, 21))
+            )
+        )
+        accent = node(tab, step)._accent
+        assert (accent.key_tone, accent.muted, accent.body_tone) == (tone, False, "")
+        assert accent.key_glyph_tone == ""
+
+
 def test_an_instructed_step_wears_the_spark_in_its_key_block(services, project, tab):
     step = project.steps[0]
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")

@@ -66,7 +66,7 @@ def test_the_specs_entry_opens_the_specs_tab(services, project):
         "Assets",
         "Steps",
         "Order",
-        "Ready to start",
+        "Step statuses",
         "Time Estimates",
         "Coverage",
     ]

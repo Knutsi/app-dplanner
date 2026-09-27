@@ -222,8 +222,8 @@ session markers (`CLAUDECODE`, and the variables that name a session's parent), 
 `claude` started under them makes itself a *child* session of the one that set them: no
 transcript on disk, ended when the parent's turn ends. When one agent's `pkill` (below)
 killed the first agent, its background window died with it, and every child session went
-too. So `entry.py` checks `AGENT_SHELL_MARKERS` before it opens a window and refuses with
-the reason. This *is* the vendor-variable check the list above declined — but for a
+too. So `entry.py` checks the shell's markers (`domain/agents.py`'s `shell_marker`, each
+harness's first) before it opens a window and refuses with the reason. This *is* the vendor-variable check the list above declined — but for a
 different question. Dispatch asks *what runs*, and there a missed vendor is a wrong
 answer; this asks *who owns the window*, and a missed vendor is a missing guard, which is
 the same as today. One row per agent CLI known to mark its shell, and the launcher scrubs
@@ -846,7 +846,7 @@ wants. One field on the row, and the rule is the same both ways.
 **Landing is centring.** `steps.reveal` opened the project's tab and called `setSelected`,
 which selects a step that may be a screen away — a reveal that reveals nothing. The canvas
 grew `GraphView.centre_on_step`, and `ProjectActivity.select_step` calls it, so every view
-that reaches a step through the registry — the order table, the progression board, the
+that reaches a step through the registry — the order table, the Step statuses tab, the
 Agents browser, `feature.reveal` — now lands on it. The zoom is untouched: Frame is the
 verb that changes how much of the graph is in view, and a jump that also zoomed would lose
 the scale somebody had chosen to work at.
@@ -2151,8 +2151,12 @@ took them: they say what a step *is* — milestone, feature, tests, check — an
 said who works it twice would be teaching the eye to read two places for one fact.
 
 The block is also where the card says where the step *stands*: its wash is the status —
-busy blue for in-progress, the bad red for blocked, the good green for done, and a quiet
-shade of ink otherwise, so the strip is always there and the key always has a ground. It
+busy blue for in-progress, the warn amber for ready-for-review (a person looks next), the
+good green for ready-to-merge and done, the bad red for blocked, and a quiet shade of ink
+otherwise, so the strip is always there and the key always has a ground. Only done also
+greens and mutes the body, which is how the two greens are told apart; and a review's amber
+is the block itself where a wait's is a clock stroked on a quiet block, which is how the two
+ambers are. It
 replaced the 3 px status bar that once sat in the same edge: one strip carrying the key,
 who works it and the status is the same idea as the bar with something to say written on
 it. The done wash sits on the done body's green — the body says the work receded, the block
@@ -3169,8 +3173,9 @@ derivation — the graph can say what is *ready*, but only a person or an agent 
 is *finished* or *stuck* — yet storing it does not make it a field: `VALUE_FIELDS["step"]`
 is still `("title",)`, and that is the central design decision of the model holding. As an
 aspect it costs no project-format migration, absence encodes `pending`, both surfaces got
-the verb from one declaration (`dplanner status set '<step>' done` is how an agent reports
-back), and the derivation that wants it — the progression board's status-aware frontier —
+the verb from one declaration (`dplanner status set '<step>' ready-for-review` is how an
+agent reports back), and the derivation that wants it — the status-aware frontier the Step
+statuses tab reads —
 is handed a `status_for(step)` function, exactly as `schedule()` is handed `days_for`.
 
 The one enum also shows where an aspect's GUI does not have to be a tab: status registers a
@@ -3178,6 +3183,22 @@ The one enum also shows where an aspect's GUI does not have to be a tab: status 
 table, the menu bar and the palette all grew it from that single registration. The canvas
 never learned the vocabulary either — it renders a neutral `NodeAccent(muted, badge)`, and
 the composition root translates "done" into muted and a milestone label into the badge.
+
+**Six words, and one of them is where an agent stops.** *pending, in-progress,
+ready-for-review, ready-to-merge, done, blocked*, in the order work moves through them. The
+two in the middle came with agents doing the work: *ready-for-review* is the agent's work
+finished with somebody — a person or a reviewing agent — to look next, and
+*ready-to-merge* is accepted and waiting on its merge (*An agent finishes at Ready for
+review*, below, has why an agent stops there). The words are the progression walk's
+(`domain/progression.py`), and the aspect imports them rather than keeping a copy that a
+test had to pin. They cost **no format bump**: an older build reads a word it does not know
+as pending and leaves the entry on disk, which is what `read` has always done. `started` is
+stamped the first time a step enters any *worked* status — in progress, under review or
+waiting on its merge — because a step an agent ran without the claim still began when it
+came back. And **a status verb acts on every chosen step as one undo step** (`chosen_steps`,
+the same definition Delete and Run Agent read), is checked only when all of them already
+stand there, and greys with its reason when a wait is among them — which is what lets the
+Step statuses tab tick three reviews and accept them with one press.
 
 The *Type* submenu is the same idea one step further: one checkable toggle per type-ish
 aspect (Milestone, Feature, Agent, Ticket), each independent, because a Type radio group
@@ -3507,6 +3528,48 @@ the whole point of that pane. `note index --all` drops it, because *does this no
 this step?* is a question the narrower reach makes somebody ask, and no other verb answers
 it: `note list` is the log, not what reaches a step.
 
+## An agent finishes at Ready for review
+
+The spec was plain: agents must stop at *Ready for review*, never at done, because a person
+or a reviewing agent looks next. **Done means somebody accepted the work**, and an agent
+saying so about its own work is the one claim the plan cannot check. So three places say
+it, and one holds it:
+
+- **What agents read.** The briefing's epilogue (`_agent_epilogue`) ends at `status set
+  <key> ready-for-review`, and the skill's *Running as an agent step* says the same, both
+  naming the way out. Both word it apart from the agent-run state `plan-for-review`, which
+  is the agent's *plan* waiting for a look mid-run, not the step's work finished.
+- **What the CLI holds.** `status set <agent step> done` from inside an agent's shell, on a
+  step not already under review or waiting on its merge, exits 1, naming
+  `ready-for-review`. A reviewing agent is not stopped: from review or merge it may finish
+  the step. It is a guard on *who is reporting*, not on the word, so it reads the same fact
+  the window word refuses on — an agent CLI's marker in the environment, through
+  `domain/agents.py`'s `shell_marker` (moved there from `entry.py` because the composition
+  root, which wires the verb, may not import the entry point). **A person's own terminal and
+  the window are never asked**: the developer marking a step done is the acceptance.
+- **The way out is a reason, and the reason is kept.** Some steps have nothing to review — a
+  docs-only change, a step that only reports. `--because '<reason>'` sets done and writes a
+  `decision` note on the step in the same run (*Done without review*, the reason as its
+  body), so skipping review is a recorded choice that reaches every later step's briefing,
+  never a silent one. A flag rather than a second word keeps the vocabulary to what a step
+  *is*, and a note rather than a field keeps the model to what it already stores.
+
+`tests/conftest.py` scrubs every harness's markers from the suite's environment, because the
+suite is routinely run *by* an agent, and a test that wants an agent's shell sets the marker
+itself.
+
+**Time reads review and merge as work in flight, and dates it from when it started.** Not
+landed — the percent, the Step statuses tab and `requires` all say so — so the Time tab, the
+recorder, the matrix, the report and the simulator read both words as *in progress*, through
+one fold in the root's `_time_readers()`, which every time surface reads through. The fold
+covers the day as well as the word. Moving a step to review stamps its `since` today, and the
+model credits in-flight work from `since`. Read raw, the day an agent finished would re-cost
+its step at the whole estimate from tomorrow and call the plan broken — a forecast that
+jumps late exactly when work lands. So `since_for` answers `started` for the two words, and
+`Readers.changed_on` keeps the raw day for the one question that wants it: *did a status
+change today?*, which the Work page draws a day solid by. The simulator plays only the
+prototype's four words, so a folded reading never reaches a real plan (a test pins both).
+
 ## Running an agent launches a peer, not a task
 
 *Run Agent* writes the briefing to a per-run temp directory — never the project, which
@@ -3593,7 +3656,7 @@ in the act.
 
 ### A launch says the work has started
 
-The graph gates launching by *reading* status (`status_for`, the progression board's
+The graph gates launching by *reading* status (`status_for`, the Step statuses tab's
 seam); a launch also *writes* one. When a shell opens, the step is claimed `in-progress`
 through `mark_started` — the writer half of the same seam, wired by the composition root
 to `step_status`'s own `record_started`, so the agent module never learns the vocabulary
@@ -4461,30 +4524,50 @@ ordering trap is worth naming: `TaskRunner` emits `busy_changed(False)` *before*
 ## Progression is the status-aware frontier
 
 **The surface is named for the question; the derivation keeps the answer's name.** A person
-opens this tab to find out what to start next, so it is called *Ready to start* — in the tab
-title, the two menu entries and the index row. Everything underneath stays `progression`:
-the walk, the module id, the activity kind, the action ids and `dplanner progression show`.
-That split is deliberate three ways. The derivation puts every step into one of six
-partitions and the frontier is only one of them, so *Ready to start* would be the wrong name
-for the function. The kind and the ids are the contract the per-user store remembers tabs by
-and the registry resolves verbs by, and renaming them would silently drop somebody's open
-tabs. And the verb is in every agent's generated skill, so renaming it moves the ground under
-an agent mid-plan for a word — a `later` note carries the question rather than this step.
+opens this tab to find out what needs them, so it is called *Step statuses* — in the tab
+title, the two menu entries and the index row — and the title counts the rows that need a
+person, the one number worth reading from across the window. Everything underneath stays
+`progression`: the walk, the module id, the activity kind, the action ids and `dplanner
+progression show`. That split is deliberate three ways. The derivation puts every step into
+one of eight partitions and the table shows only some of them, so *Step statuses* would be
+the wrong name for the function. The kind and the ids are the contract the per-user store
+remembers tabs by and the registry resolves verbs by, and renaming them would silently drop
+somebody's open tabs. And the verb is in every agent's generated skill, so renaming it moves
+the ground under an agent mid-plan for a word. (The tab was *Ready to start* until review
+and merge arrived; that name now belongs to one of its groups.)
 
-The board's header is the percent and the bar. It carried two more lines under the bar — the
-same counts in words (*12 done · 2 running · 5 ready*), then the same progress again in
-estimated days — and a bar drawn to scale already says both, in the one place the eye
-goes first. The terminal keeps them, because `dplanner progression show` has no bar and a
-line there costs nothing.
+**The tab is a table of what needs a person, not a board of lanes.** It was three lanes
+of cards under a percent and a bar — Running, Ready, Up next — and review and merge would
+have made five, each a column too narrow for its titles, with the eye walking across all of
+them to answer one question: *what needs me now?* The table answers it top to bottom, in
+the order the work is closest to done — **Blocked, Ready to merge, Ready for review, Ready
+to start** — then **Waiting**, what cannot start yet (temporary: a tab of what is going on
+will take it). **Work in progress is not listed**: an agent at work needs nobody, and a
+list of it is a report, not a queue. The percent and the bar went with the lanes; how far
+along a project is lives in the Time tab and the report, and the terminal still prints it.
+One `Segmented` over the table picks a group — one click, every group named at once, which
+is the primitive for exclusive choices shown together; a group on its own drops its heading
+because the lit segment already says it.
+
+**The rows are ticked, and the tick is the selection.** A check column (`Column(check=True)`)
+leads the table, and its box is drawn from the row's selection and toggles it — there is no
+second *ticked* state. That is what lets the strip seat real registry verbs rather than a
+host's copies: `agent.run` with its profiles under the arrow, `status.ready-to-merge` and
+`status.done` (`StripVerb`, named by the composition root, so this module never learns the
+agent or status modules exist), each restated on every context change from the published
+selection and greyed with its own reason. The Step menu on a right-click reads the same
+selection, so every presenter acts on exactly the ticked rows. The status verbs act on every
+chosen step for the same reason (*Status is an aspect*, above).
 
 `ordering.ready()` answers what the *graph* allows — wave one, nothing waited on. During
 execution that is the wrong question: a step deep in the graph whose prerequisites have all
 been finished is launchable today, and no wave number says so. `domain/progression.py`
-answers the execution question — every step in exactly one of *done / running / attention /
-ready / upcoming / waiting* — and it is deliberately a **new derivation beside the old one,
-not a refactor of it**: the frontier is a per-step check ("every `requires` target reads
-done"), not wave membership, and the two only coincide in a project where nothing has been
-finished yet. A test pins that equivalence; shared code would have pinned a coincidence.
+answers the execution question — every step in exactly one of *done / running / review /
+merge / attention / ready / upcoming / waiting* — and it is deliberately a **new derivation
+beside the old one, not a refactor of it**: the frontier is a per-step check ("every
+`requires` target reads done"), not wave membership, and the two only coincide in a project
+where nothing has been finished yet. A test pins that equivalence; shared code would have
+pinned a coincidence.
 
 The rules worth writing down, because each was a decision:
 
@@ -4493,17 +4576,24 @@ The rules worth writing down, because each was a decision:
   *launching*, not *recording* — an agent reporting `status set … done` out of order is
   reporting a fact, and a derivation that refused it would be arguing with reality.
 - **Blocked is attention, not waiting.** A blocked step is stuck on a person, so it leads
-  the running column wearing a warning rather than disappearing into the waited-on mass —
-  it is the row that needs eyes, and the board exists to route eyes.
-- **A blocked prerequisite still counts as "on the board"** for the one-move lookahead:
-  its dependents stay in *upcoming*, pointing at it. The alternative — demoting them to
-  waiting — would make the queue churn every time a prerequisite flips between in-progress
-  and blocked, and would hide exactly the lane that stalled.
+  the table rather than disappearing into the waited-on mass — it is the row that needs
+  eyes, and the tab exists to route eyes.
+- **Review and merge are on the board, and not done.** A step an agent finished is claimed
+  out of the graph like a running one — it is one move away for the lookahead and in no
+  percent — and **a plain `requires` is fulfilled by done alone**: nothing starts on work
+  nobody has accepted, or on work not merged yet. The Run Agent gate asks the same
+  question and so agrees, which a test pins.
+- **A blocked or reviewed prerequisite still counts as "on the board"** for the one-move
+  lookahead: its dependents stay in *upcoming*, pointing at it. The alternative — demoting
+  them to waiting — would make the queue churn every time a prerequisite flips between
+  in-progress, review and blocked, and would hide exactly the work that stalled.
 - **The lookahead is one move, not a forecast.** A step whose prerequisite is merely
   *upcoming* stays in waiting. Anything deeper is the order table's job.
-- **The frontier ranks by unlocks** — the count of transitive not-done dependents — because
-  all of the frontier is valid and the ranking is what makes some of it urgent. A done
-  dependent is walked through but not counted: its own dependents still wait through it.
+- **Every group a person acts on ranks by unlocks** — the count of transitive not-done
+  dependents, which the walk keeps for every step of work not done — because all of a group
+  is valid and the ranking is what makes some of it urgent: the review that frees three
+  steps before the one that frees none. A done dependent is walked through but not counted:
+  its own dependents still wait through it.
 
 The seam is the one the schedule made: `status_for(step)` and `days_for(step)` are handed
 in by the composition root from the aspects' Qt-free readers, so the domain never learns
@@ -4511,23 +4601,16 @@ what either is stored as, and the derivation is tested with a dict-backed functi
 is persisted, for the ordering's reason — `dplanner status set` changes the answer with no
 window running to notice. The tab (`modules/progression/`), `dplanner progression show` and
 `--json` are three readers of the one function, so no surface can recommend a launch
-another surface would dispute. The Ready lane's *Run N Agents* button is the same rule at
-the module layer: each ready card carries a tick, and the button renders the real
-`agent.run` action's state — evaluated against a context synthesised for exactly the ticked
-steps — so the gate's reason appears verbatim and no second copy of "what launching needs"
-exists. What it drops down is the Step menu's own Run Agent child (`agent_menu`, the data
-menu's fill handed over by the root), never a copy: the board offers exactly what the
-right-click offers. Opening the menu publishes the ticked steps first, because a menu
-entry — like every presenter — acts on the context the user has now, and the face counts
-what is ticked whatever the window's selection was.
+another surface would dispute.
 
-**A launch from that lane never raises the prerequisite confirmation, and that is the two
-rules agreeing rather than a gap.** `agent.run` asks before launching a step whose `requires`
-do not all read done; a step is in the Ready lane precisely because they do. The board and
-the gate are asking one question — "is anything this waits on unfinished?" — so the box can
-only appear where the question can still be answered yes: the canvas, the order table, the
-palette. A test pins the silence, because a confirmation that never fires in the place people
-launch from is the kind of thing a later change removes by accident.
+**A launch of ready-to-start rows never raises the prerequisite confirmation, and that is
+the two rules agreeing rather than a gap.** `agent.run` asks before launching a step whose
+`requires` do not all read done; a step is in *Ready to start* precisely because they do.
+The group and the gate are asking one question — "is anything this waits on unfinished?" —
+so the box can only appear where the question can still be answered yes: a ticked row in
+another group, the canvas, the order table, the palette. A test pins the silence, because a
+confirmation that never fires in the place people launch from is the kind of thing a later
+change removes by accident.
 
 ## The order says what order, and how much — never when
 
@@ -4556,7 +4639,8 @@ Three consequences worth writing down:
   dates that matter are chosen. A protocol with no implementor and a widget with no host
   are entropy, so both went.
 - **Wave 1 is called *Wave 1*.** It was *Ready to start*, on the argument that "wave 1" makes
-  the reader work out what it means. But the execution board now carries those words, and
+  the reader work out what it means. But the execution board then carried those words (a
+  group of the Step statuses tab does now), and
   they would name two different things: the graph's first wave (nothing before it) and the
   status-aware frontier (nothing it waits on is left undone). Those coincide only in a
   project where nothing has been finished — the very coincidence this document warns against
@@ -6605,7 +6689,8 @@ on every signal; and no tab asked which project the signal was about. One keystr
 description therefore ran the canvas's full automatic layout (even with every node placed),
 a topological sort and a schedule walk *per milestone step*, twenty-four schedule
 simulations for the Time tab, a fresh `QTableWidget` for the order, every card of the
-progression board, the docs and tests tables, and a directory listing for the Agent tab's
+progression board (now the Step statuses tab), the docs and tests tables, and a directory
+listing for the Agent tab's
 inherited context — for every open project, not only the one being edited — and then
 re-evaluated all ninety-nine action states. Measured headless over an eighty-step project
 with seven tabs open, that was **67 ms of synchronous work per keystroke**.

@@ -91,6 +91,8 @@ COLUMNS = (
     Column("Days", numeric=True),
     Column("Status"),
 )
+# The table tab's roster is ticked for its verbs: a check column is the selection, drawn.
+TICKED_COLUMNS = (Column("", check=True), *COLUMNS)
 FILTERS = (("agent", "Agent steps"), ("milestone", "Milestones"), ("done", "Done"))
 GROUPINGS = ("Grouped by milestone", "Folding groups", "Flat")
 
@@ -215,8 +217,12 @@ def fill_sample(
     *,
     grouped: bool = True,
     folding: bool = False,
+    ticked: bool = False,
 ) -> None:
     """The sample rows, narrowed by the active ``FILTERS`` keys, under their headings or flat.
+
+    ``ticked`` fills a table whose first column is a check column (``TICKED_COLUMNS``): it
+    holds nothing but the box, which the table draws from the row's selection.
 
     ``folding`` gives each heading a ``key``, which is what makes it collapsible: a chevron,
     the whole row as the target, and what is shut remembered by key across this very
@@ -233,7 +239,10 @@ def fill_sample(
             tint = (
                 recoloured(HIGHLIGHT_FILL, sample_shade(row)) if row.kind == "milestone" else None
             )
-            table.add_row(sample_cells(row, ink), tint=tint, data={KEY_ROLE: row.key})
+            cells = sample_cells(row, ink)
+            table.add_row(
+                [Cell(), *cells] if ticked else cells, tint=tint, data={KEY_ROLE: row.key}
+            )
     table.fit_columns()
 
 
@@ -418,7 +427,7 @@ class DesignExampleActivity(ActivityBase):
         self.updating = UpdatingIndicator(self.widget)
         strip.addWidget(self.updating)  # Outside the bar: the » overflow never swallows it.
 
-        self.table = Table(COLUMNS, selection="extended", parent=self.widget)
+        self.table = Table(TICKED_COLUMNS, selection="extended", parent=self.widget)
         layout.addWidget(self.table, 1)
         self.empty = EmptyState(
             parent=self.widget, action=("Add Rows", self._add_rows), stands_in_for=self.table
@@ -494,6 +503,7 @@ class DesignExampleActivity(ActivityBase):
             self._groups,
             grouped=self.group.currentIndex() < 2,
             folding=self.group.currentIndex() == 1,
+            ticked=True,
         )
         self._reword_verbs()
 

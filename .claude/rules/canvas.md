@@ -118,18 +118,21 @@ paths:
 - **The key block is the card's left edge, and it says who and where.** `paint_key_block`
   (`theme/cards.py`, shared with the coverage lanes' step cards and copied by the report's
   `drawings.py`, which a test holds to it) draws a 56 px strip inside the left edge,
-  clipped to the body and washed by status — busy blue for in-progress, bad red for
-  blocked, the good green for done, a quiet shade otherwise (`NodeAccent.key_tone`, read
-  from `theme/tones.py`'s `STEP_STATUS_TONES`) — carrying the key set level and bold, and
-  over it **who works the step**: the sparkle for an agent step, a person otherwise
-  (milestones, features and checks included), and a wait's clock in the attention amber,
-  always (`key_glyph`, `key_glyph_tone`). **One rule, three surfaces**: `_primary_glyph`
-  in the composition root answers for the canvas, the coverage lanes and the report's
-  graph, and Find's rows wear the same glyph. The top edge's medallions say what a step
-  *is* and never who works it — no spark and no clock among them — because a card says a
-  thing once. The title and the left-edge decorations start past the block (`LEFT_INSET`),
-  and `MIN_NODE_W` grew with it. `ARCHITECTURE.md`'s *The key block names the card and says
-  who works it* has the reasoning.
+  clipped to the body and washed by status — busy blue for in-progress, warn amber for
+  ready-for-review (a person looks next), the good green for ready-to-merge and done (only
+  done also greens and mutes the body), bad red for blocked, a quiet shade otherwise
+  (`NodeAccent.key_tone`, read from `theme/tones.py`'s `STEP_STATUS_TONES`) — carrying the
+  key set level and bold, and over it **who works the step**: the sparkle for an agent
+  step, a person otherwise (milestones, features and checks included), and a wait's clock
+  in the attention amber, always (`key_glyph`, `key_glyph_tone`). The two ambers are told
+  apart by shape: a clock is a stroke on a quiet block, a review is the block's own wash.
+  **One rule, three surfaces**: `_primary_glyph` in the composition root answers for the
+  canvas, the coverage lanes and the report's graph, and Find's rows wear the same glyph.
+  The top edge's medallions say what a step *is* and never who works it — no spark and no
+  clock among them — because a card says a thing once. The title and the left-edge
+  decorations start past the block (`LEFT_INSET`), and `MIN_NODE_W` grew with it.
+  `ARCHITECTURE.md`'s *The key block names the card and says who works it* has the
+  reasoning.
 - **A picked node is lifted, not recoloured — and every card rests on a shadow.** Selection
   thickens the border to the accent, *gains* whatever fill the node already had (so a picked
   milestone is still purple), lifts the card two pixels over a deeper shadow than the faint

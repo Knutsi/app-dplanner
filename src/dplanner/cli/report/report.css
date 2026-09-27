@@ -17,6 +17,7 @@
   --good: #78c88c;
   --busy: #6ea0dc;
   --bad: #dc6e6e;
+  --attention: #dcaa5a;
   --milestone: #9682dc;
   --feature: #50b4af;
   --plan: #5f87d7;
@@ -167,6 +168,8 @@ figure.graph-frame .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; padd
 .swatch.kind-feature::before { background: var(--feature); }
 .swatch.status-done::before { background: var(--good); }
 .swatch.status-in-progress::before { background: var(--busy); }
+.swatch.status-ready-for-review::before { background: var(--attention); }
+.swatch.status-ready-to-merge::before { background: var(--good); }
 .swatch.status-blocked::before { background: var(--bad); }
 .swatch.edge-requires::before, .swatch.edge-relates::before { height: 2px; width: 16px; border-radius: 0; background: var(--ink); vertical-align: 3px; }
 .swatch.edge-relates::before { background: repeating-linear-gradient(90deg, var(--ink) 0 4px, transparent 4px 7px); }
@@ -194,6 +197,8 @@ table.data tr.hidden { display: none; }
 .status::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: var(--disabled); }
 .status-done::before { background: var(--good); }
 .status-in-progress::before { background: var(--busy); }
+.status-ready-for-review::before { background: var(--attention); }
+.status-ready-to-merge::before { background: var(--good); }
 .status-blocked::before { background: var(--bad); }
 .status-ok::before { background: var(--good); }
 .status-failed::before { background: var(--bad); }

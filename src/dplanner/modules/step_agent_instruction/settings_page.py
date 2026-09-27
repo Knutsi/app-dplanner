@@ -165,9 +165,10 @@ LIMIT_HINT = (
     " filling the desk."
 )
 LAUNCH_HINT = (
-    "Run Agent sets the step's status to in progress as the terminal opens, so the board"
+    "Run Agent sets the step's status to in progress as the terminal opens, so the plan"
     " shows the work has started without waiting for the agent to say so. It is not undone"
-    " when the agent stops: finishing is the agent's own claim, or yours from Step ▸ Status."
+    " when the agent stops: the agent says it is ready for review, and done is yours, from"
+    " Step ▸ Status."
 )
 
 

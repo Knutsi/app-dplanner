@@ -181,7 +181,7 @@ class NodeAccent:
     pill_tone: str = ""  # "" neutral | "good" | "bad".
     branch: bool = False  # Paint the branch glyph.
     key_text: str = ""  # The step's key ("F7"), in the key block; "" → a bare block.
-    key_tone: str = ""  # "" quiet | "good" | "busy" | "bad": the status, as a shade.
+    key_tone: str = ""  # "" quiet | "good" | "busy" | "warn" | "bad": the status.
     # The glyph over the key: who works the step ("spark" an agent, "person" a person,
     # "clock" nobody — it is a wait). "" → the key alone.
     key_glyph: str = ""
