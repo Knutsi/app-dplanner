@@ -573,11 +573,12 @@ root's `start_window` after the build, and it opens Home only when reopen_tabs b
 no tab. It lives there rather than in a module because only the entry point knows a start
 from a rebuild — a reload builds through the same modules and must bring back the window the
 person had, blank included — and because the test session is built the same way minus the
-entry point, so the suite's windows start as empty as they always did. The Home row in the
-index is a folder, so a surface that spans the whole library — the Control Centre is the
-first — hangs a row under it through `HomeDeps.rows`, a `LeadingRow` the composition root
-hands over: the Tests folder's *All Projects* row, one folder up, and no module edits Home to
-get there.
+entry point, so the suite's windows start as empty as they always did. A surface that
+spans the whole library — the Control Centre is the first — is a folder of its own right
+after Home, not a row under it: both are a `SurfaceSegment`, a folder that is one row and a
+way in. It hung under Home first, through a `HomeDeps.rows` seam; the developer asked for it
+as its own row after Home, and the seam went with it, since nothing else hung there — Home
+is one folder row again, and no module has a reason to know it.
 
 **The guide is data, and its buttons are the verbs.** `modules/home/guide.py` is a tuple of
 steps, each a title, a sentence from the README and an **action id**. The page restates each

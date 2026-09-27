@@ -93,20 +93,23 @@ def test_it_is_one_tab_for_the_library_opened_from_go(services, projects):
     assert services.tabs.tab_title(tab) == "Control Centre (4)"  # Four ready to start.
 
 
-def test_it_is_a_row_under_home_in_the_index(services, projects):
-    """A click glances at it, as at every index row: it opens as the preview."""
+def test_it_is_the_index_row_after_home(services, projects):
+    """A folder of its own, as Home is: a click glances at it, activation keeps it."""
     from tests.index_helpers import click, folder
 
     from dplanner.framework.builder import INDEX_PANEL_ID
 
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
-    home = folder(panel, "home")
-    home.setExpanded(True)
-    rows = [home.child(index) for index in range(home.childCount())]
-    (row,) = [row for row in rows if row is not None and row.text(0) == "Control Centre"]
+    row = panel.tree.topLevelItem(1)
+    assert row is folder(panel, CONTROL_CENTRE_KIND) and row.text(0) == "Control Centre"
+    assert row.childCount() == 0
     click(panel, row)
-    current = services.tabs.current_activity()
-    assert current is not None and current.uri == activity_uri(CONTROL_CENTRE_KIND)
+    tab = services.tabs.current_activity()
+    assert tab is not None and tab.uri == activity_uri(CONTROL_CENTRE_KIND)
+    assert services.tabs.is_preview(tab)
+    panel.tree.itemActivated.emit(row, 0)
+    assert not services.tabs.is_preview(tab)
+    assert panel.context_menu(row) is None
 
 
 def test_the_projects_filter_narrows_the_board_and_its_face_names_the_pick(services, projects):

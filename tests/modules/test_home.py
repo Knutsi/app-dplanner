@@ -7,19 +7,16 @@ only while it is on screen. The garden's rules are plain state, tested without a
 """
 
 import pytest
-from PySide6.QtWidgets import QCheckBox, QTreeWidget, QTreeWidgetItem
+from PySide6.QtWidgets import QCheckBox
 from tests.index_helpers import click, folder
 
 from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, activity_uri, selection_uri
-from dplanner.framework.project_list_segment import LeadingRow
 from dplanner.modules import start_window
 from dplanner.modules.home.garden import Garden
 from dplanner.modules.home.guide import GUIDE
-from dplanner.modules.home.module import HomeSegment
 from dplanner.modules.home.page import HOME_KIND, GuideRow, HomePage
 from dplanner.modules.project_editor.module import PROJECT_KIND
-from dplanner.theme.icons import list_icon
 
 
 @pytest.fixture
@@ -90,29 +87,6 @@ def test_home_is_the_top_of_the_index_and_a_click_previews_it(services):
 def test_go_seats_home(services):
     services.actions.run("home.open", services.context.current())
     assert [activity.uri for activity in services.tabs.activities()] == [activity_uri(HOME_KIND)]
-
-
-def test_a_row_hung_under_home_opens_its_surface(services):
-    """What another module hangs under Home through ``HomeDeps.rows`` — F10's Control
-    Centre — opens like every index row: a click to glance, activation to keep."""
-    opened: list[bool] = []
-    tree = QTreeWidget()
-    root = QTreeWidgetItem(["Home"])
-    tree.addTopLevelItem(root)
-    homes: list[bool] = []
-    row = LeadingRow("Control Centre", list_icon, opened.append)
-    segment = HomeSegment(root, homes.append, (row,), services.theme)
-    child = root.child(0)
-    assert child is not None
-    assert child.text(0) == "Control Centre" and not child.icon(0).isNull()
-    segment.clicked(child)
-    segment.activated(child)
-    segment.clicked(root)
-    assert opened == [True, False]
-    assert homes == [True]
-    assert segment.context_menu(child) is None and segment.selection_nodes([child]) == []
-    segment.dispose()
-    tree.deleteLater()
 
 
 # -- the index's folders -----------------------------------------------------------------------

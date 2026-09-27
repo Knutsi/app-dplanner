@@ -4776,3 +4776,19 @@ that took a frame from 19 ms to 6.
 **Upstream?** Yes, the clock and the Qt-free half; nothing in them knows DPlanner. `draw.py`
 too, less its petal, which is only there because a garden has flowers.
 
+
+## 69. Out of plan: the Control Centre is its own index row, after Home
+
+### `framework/index_panel.py` — `SurfaceSegment`, a folder that is one row and a way in
+
+**What.** A small `IndexSegmentView` for a folder with nothing under it: a click on its row
+opens its surface as a preview, activation keeps it, and it offers no menu and no selection.
+It takes one callable, `open(preview)`. Home and the Control Centre both use it.
+
+**Why.** The Control Centre used to be a row under Home, which meant Home's segment held a
+list of rows that other modules gave it. The developer asked for the Control Centre as its
+own row after Home. With nothing else under Home, its segment was just a way in, the same as
+the Control Centre's, so both use this one class instead of each module keeping a copy.
+
+**Upstream?** Yes. The template's index has the same folders that are really buttons, and
+this is the smallest segment that answers all five hooks.
