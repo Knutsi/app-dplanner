@@ -1,4 +1,4 @@
-"""What a step gathers: the cone behind it, truncated at the collectors it hands off to.
+"""What a step gathers: the cone behind it, truncated at the boundaries it stops at.
 
 `ordering.py` answers *in what order*; this answers *what belongs to what*. A **collector**
 is a step that stands for everything behind it — a check, a feature, a milestone. What it
@@ -31,10 +31,12 @@ StepPredicate = Callable[[Step], bool]
 class ScopeKind:
     """One kind of collector, described where every surface can read it.
 
-    ``carried_by`` says whether a step declares a scope of this kind; ``stops_at`` says which
-    collectors it hands off to — itself and anything above it, so a feature stops at features
-    and milestones while a milestone stops only at milestones. A check stops at nothing: it
-    stands for *everything* verified behind it, which is the point of declaring one.
+    ``carried_by`` says whether a step declares a scope of this kind; ``stops_at`` says where
+    its walk stops — the collectors it hands off to, itself and anything above it, so a
+    feature stops at features and milestones while a milestone stops only at milestones, and
+    the plan's start, which is nobody's (:func:`handoffs` keeps the collectors apart from it).
+    A check stops at nothing: it stands for *everything* verified behind it, which is the
+    point of declaring one.
 
     ``gathers`` names the kind whose carriers become headings **inside** this one's contents:
     a milestone is read as a list of features. It is not the same question as ``stops_at`` and
@@ -71,7 +73,7 @@ def cone(
     *,
     stops_at: StepPredicate | None = None,
 ) -> Cone:
-    """The cone behind ``step_id``, truncated at the collectors it hands off to.
+    """The cone behind ``step_id``, truncated at the boundaries ``stops_at`` names.
 
     A step is in ``steps`` exactly when some path of ``requires`` edges reaches it from the
     origin without crossing a boundary — so a step behind an earlier feature *and* reachable

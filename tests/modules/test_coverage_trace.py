@@ -124,10 +124,10 @@ def readers(project) -> Readers:
             Document("spec", "markdown", SPEC_TEXT),
             Document("empty", "markdown", ""),
         ],
-        feature=ScopeKind(
+        feature_kind=ScopeKind(
             "feature", "Feature", is_feature, lambda step: is_feature(step) or is_milestone(step)
         ),
-        milestone=ScopeKind("step_milestone", "Milestone", is_milestone, is_milestone),
+        milestone_kind=ScopeKind("step_milestone", "Milestone", is_milestone, is_milestone),
         milestone_label=lambda step: "M1" if step.id == m1.id else "",
         step_key=lambda step: f"key-{step.title}",
         status=lambda step: "done" if step.id == export.id else "",
@@ -368,10 +368,10 @@ def test_a_feature_holds_what_its_kind_says_and_no_more():
             Feature(export.id, "Export", export.id, ()),
         ],
         documents=lambda _p, _f: [],
-        feature=ScopeKind(
+        feature_kind=ScopeKind(
             "feature", "Feature", is_feature, lambda step: is_feature(step) or step is start
         ),
-        milestone=ScopeKind("step_milestone", "Milestone", lambda _s: False, lambda _s: False),
+        milestone_kind=ScopeKind("step_milestone", "Milestone", lambda _s: False, lambda _s: False),
         milestone_label=lambda _step: "",
         step_key=lambda step: step.title,
         status=lambda _step: "",

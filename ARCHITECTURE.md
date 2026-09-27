@@ -5890,6 +5890,13 @@ the origin, since every arrow leaves it. The noun is `start` (`dplanner start se
 `step add --start`), not to be confused with `schedule start`, which dates the plan's first
 day.
 
+**The schedule still dates the start.** `domain/schedule.py`'s `stretches()` stops at
+milestones only, so `progress show`, the Time tab and milestone colours count the start in the
+first milestone while `scope show` and the coverage trace give it to none. That is on purpose:
+a stretch is the first milestone's whole cone and every later one's cone past the milestones
+before it, so the start — which the first cone reaches — is dated where it is worked, first.
+Ownership and dating are different questions, and only ownership was wrong.
+
 ### Who owns which half
 
 `step_check` is a bare `{"on": true}` marker in its own package with a Type toggle and nothing

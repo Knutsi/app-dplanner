@@ -103,8 +103,8 @@ class Readers:
     # The collectors as the composition root wires them: who carries each, and where its
     # walk stops — the same two answers every other scope reader gets, so a feature here
     # holds exactly the work `scope show` says it does.
-    feature: ScopeKind
-    milestone: ScopeKind
+    feature_kind: ScopeKind
+    milestone_kind: ScopeKind
     milestone_label: Callable[[Step], str]
     step_key: Callable[[Step], str]  # How every surface names a step: "S7".
     status: Callable[[Step], str]  # Where a step's work stands: "done", "blocked", …
@@ -257,12 +257,12 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     features = list(readers.features(library, project, files))
     documents = list(readers.documents(project, files))
     order = {step.id: index for index, step in enumerate(project.steps)}
-    milestones = [step for step in project.steps if readers.milestone.carried_by(step)]
+    milestones = [step for step in project.steps if readers.milestone_kind.carried_by(step)]
     owners = gatherers(
         library,
         project,
-        carried_by=readers.milestone.carried_by,
-        stops_at=readers.milestone.stops_at,
+        carried_by=readers.milestone_kind.carried_by,
+        stops_at=readers.milestone_kind.stops_at,
     )
     known = {milestone.id for milestone in milestones}
 
@@ -508,7 +508,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     for feature in ordered:
         tokens = frozenset({feature.id})
         sources = spec_hubs(tokens)
-        stops = readers.feature.stops_at
+        stops = readers.feature_kind.stops_at
         add_steps(held_by(feature.step, stops), tokens, sources)
         add_tests(readers.tests(library, project, feature.step, stops), tokens, sources)
         add_docs(feature.step, feature.title, tokens, [*sources, *step_hubs(tokens)])
@@ -517,11 +517,13 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
         # Work a milestone holds directly was read from no passage: it stands under the
         # milestone's own pick, with nothing in the spec lane to come from.
         own = frozenset({token})
-        work = held_by(milestone.id, readers.milestone.stops_at)
+        work = held_by(milestone.id, readers.milestone_kind.stops_at)
         add_steps([step for step in work if step.id not in placed_steps], own, ())
         direct = [
             row
-            for row in readers.tests(library, project, milestone.id, readers.milestone.stops_at)
+            for row in readers.tests(
+                library, project, milestone.id, readers.milestone_kind.stops_at
+            )
             if row.id not in placed_tests
         ]
         add_tests(direct, own, ())

@@ -2936,8 +2936,8 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
         Readers(
             features=features,
             documents=documents,
-            feature=kinds["feature"],
-            milestone=kinds["step_milestone"],
+            feature_kind=kinds["feature"],
+            milestone_kind=kinds["step_milestone"],
             milestone_label=milestone_read,
             step_key=_step_key,
             status=step_status,
