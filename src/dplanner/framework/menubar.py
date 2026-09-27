@@ -32,6 +32,22 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import Context, ContextService
 
 
+def marked_titles(names: tuple[str, ...]) -> list[str]:
+    """Each top-level title with a mnemonic: its first letter no earlier menu took.
+
+    Go before Graph leaves Graph its r. Two menus on one letter would make Alt+G only move
+    between them, never open one — so the letter is dealt here rather than written into
+    ``MENU_STRUCTURE``, whose names are what every spec's ``menu`` spells.
+    """
+    taken: set[str] = set()
+    titles = []
+    for name in names:
+        index = next((i for i, c in enumerate(name) if c.isalpha() and c.lower() not in taken), 0)
+        taken.add(name[index].lower())
+        titles.append(f"{name[:index]}&{name[index:]}")
+    return titles
+
+
 class DynamicMenuBar:
     """Owns the QMenus and QActions. Keep this object referenced for the app's lifetime:
     menu wrappers handed to Python by addMenu() are invalidated once the last Python
@@ -62,8 +78,9 @@ class DynamicMenuBar:
         # QApplication exists): the in-window menu bar is what the stylesheet can reach.
         bar.setNativeMenuBar(False)
         bar.setObjectName("MainMenuBar")
-        for name in registry.menus.menus():
-            menu = bar.addMenu(f"&{name}")
+        names = registry.menus.menus()
+        for name, title in zip(names, marked_titles(names), strict=True):
+            menu = bar.addMenu(title)
             menu.menuAction().setVisible(False)  # Hidden until something visible lands in it.
             self._menus[name] = menu
             self._add_separators((name, None), menu)

@@ -1,9 +1,9 @@
 """The coverage module's Qt half: the Coverage tab and the verbs that reach it.
 
-*Show Coverage* opens the tab on a project; *Show in Coverage* opens it standing on a
-step — its feature, its milestone, or its first test; *Show Spec Passage* opens the
-Specs tab washed at the passages a step reaches. Each is disabled with its reason when the step has
-none, never hidden, so the canvas's right-click carries all three.
+*Go ▸ Coverage* opens the tab on a project; *Step ▸ Show in ▸ Coverage* opens it standing
+on a step — its feature, its milestone, or its first test; *Show in ▸ Spec Passage* opens
+the Specs tab washed at the passages a step reaches. Each is disabled with its reason when
+the step has none, never hidden, so a card's right-click carries both.
 """
 
 from dplanner.domain.model import NodeId, StepId
@@ -16,8 +16,8 @@ from dplanner.theme.icons import coverage_icon
 
 MODULE_ID = "coverage"
 
-NOT_TRACED_REASON = "Show in Coverage — not a feature, a milestone or a step carrying tests"
-NO_PASSAGE_REASON = "Show Spec Passage — this step reaches no spec passage"
+NOT_TRACED_REASON = "Coverage — not a feature, a milestone or a step carrying tests"
+NO_PASSAGE_REASON = "Spec Passage — this step reaches no spec passage"
 
 
 class CoverageModule:
@@ -63,10 +63,9 @@ class CoverageModule:
         deps.actions.register(
             ActionSpec(
                 id="coverage.open",
-                label="Show &Coverage",
-                menu="Project",
-                group="open",
-                in_menus=False,  # Its seat is the project's row in the index — menus.py.
+                label="&Coverage",
+                menu="Go",
+                group="views",
                 order=45,
                 icon=coverage_icon,
                 tip="The milestones, the features under them, the spec passages they "
@@ -78,9 +77,10 @@ class CoverageModule:
         deps.actions.register(
             ActionSpec(
                 id="coverage.show_step",
-                label="Show in &Coverage",
+                label="&Coverage",
                 menu="Step",
                 group="open",
+                submenu="Show in",
                 order=50,
                 icon=coverage_icon,
                 tip="Stand this step up in the coverage picture",
@@ -91,9 +91,10 @@ class CoverageModule:
         deps.actions.register(
             ActionSpec(
                 id="coverage.show_passage",
-                label="Show Spec &Passage",
+                label="Spec &Passage",
                 menu="Step",
                 group="open",
+                submenu="Show in",
                 order=70,
                 tip="Open the spec washed at the passages this step reaches",
                 state=self._has_passage,

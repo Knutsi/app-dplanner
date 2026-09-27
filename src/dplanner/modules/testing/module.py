@@ -358,7 +358,7 @@ class TestsModule:
             ),
             ActionSpec(
                 id="tests.close_run",
-                label="Close Test Run",
+                label="C&lose Test Run",
                 menu="Project",
                 group="tests",
                 order=20,
@@ -369,10 +369,9 @@ class TestsModule:
             ),
             ActionSpec(
                 id="tests.open",
-                label="Show &Tests",
-                menu="Project",
-                group="open",
-                in_menus=False,  # Its seat is the project's row in the index — menus.py.
+                label="&Tests",
+                menu="Go",
+                group="views",
                 order=50,
                 tip="Every test this project keeps, and how each one last did",
                 state=self._on_a_project,
@@ -380,20 +379,21 @@ class TestsModule:
             ),
             ActionSpec(
                 id="tests.open_step",
-                label="Show &Tests",
+                label="&Tests",
                 menu="Step",
                 group="surfaces",
+                submenu="Show in",
                 order=40,
-                palette=False,  # The same verb's second seat, on the Step menu.
+                palette=False,  # The same verb's second seat, in Step ▸ Show in.
                 state=self._on_a_project,
                 run=self._open_tests,
             ),
             ActionSpec(
                 id="test.details",
-                label="Test &Details",
+                label="Te&st Details",
                 menu="Step",
                 group="surfaces",
-                order=45,  # Beside Show Tests, which opens the list this came from.
+                order=45,  # After Show in, whose Tests opens the list this came from.
                 tip="Show the picked test in the Test panel beside the roster — what it "
                 "checks, and the verbs to run it",
                 icon=beaker_icon,

@@ -183,7 +183,6 @@ def test_the_tab_publishes_its_pick_only_while_current(services, project):
             "Archive Project",
             "Restore Project",
             "Remove from Library…",
-            "Show Archive",
         ]
     finally:
         menu.deleteLater()

@@ -20,7 +20,7 @@ from dplanner.framework.action_registry import (
     MenuStructure,
 )
 from dplanner.framework.context import ContextService
-from dplanner.framework.menubar import DynamicMenuBar
+from dplanner.framework.menubar import DynamicMenuBar, marked_titles
 
 MENUS = MenuStructure({"Step": ("edit", "classify", "result", "open")})
 HIDDEN = ActionState(visible=False, enabled=False)
@@ -83,6 +83,11 @@ def entries(menu):
 
 def step_menu(bar: Bar):
     return next(a.menu() for a in bar.window.menuBar().actions() if a.text() == "&Step")
+
+
+def test_each_menu_title_takes_the_first_letter_no_earlier_one_took():
+    """Two titles on one letter make Alt+ that letter only move between them."""
+    assert marked_titles(("File", "Go", "Graph", "Gr")) == ["&File", "&Go", "G&raph", "&Gr"]
 
 
 def test_two_groups_feeding_one_submenu_share_it_with_a_rule_inside(app):

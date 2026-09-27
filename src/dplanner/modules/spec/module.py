@@ -45,6 +45,7 @@ from dplanner.modules.spec.activity import (
     DOCUMENT_ENTITY,
     SOURCE_ENTITY,
     SPECS_KIND,
+    SPECS_SUBMENU,
     Cite,
     OpenCoverage,
     PassagesOf,
@@ -307,10 +308,11 @@ class SpecModule:
         deps.actions.register(
             ActionSpec(
                 id="spec.remove",
-                label="&Remove Spec Document",
+                label="Re&move Document",
                 icon=trash_icon,
                 menu="Project",
                 group="documents",
+                submenu=SPECS_SUBMENU,
                 order=40,
                 tip="Remove the selected document from the index; the file stays on disk",
                 state=self._on_a_removable_document,
@@ -323,7 +325,8 @@ class SpecModule:
                 label="Re&fresh Source",
                 icon=refresh_icon,
                 menu="Project",
-                group="documents",
+                group="sources",
+                submenu=SPECS_SUBMENU,
                 order=60,
                 tip="Fetch the selected source again; changed documents are replaced, "
                 "the previous version kept",
@@ -337,7 +340,8 @@ class SpecModule:
                 label="Refresh &All Sources",
                 icon=refresh_icon,
                 menu="Project",
-                group="documents",
+                group="sources",
+                submenu=SPECS_SUBMENU,
                 order=65,
                 tip="Fetch every source of this project again, as one undo entry",
                 state=self._refresh_all_state,
@@ -347,10 +351,11 @@ class SpecModule:
         deps.actions.register(
             ActionSpec(
                 id="spec.remove_source",
-                label="Remove Sou&rce",
+                label="Remove &Source",
                 icon=trash_icon,
                 menu="Project",
-                group="documents",
+                group="sources",
+                submenu=SPECS_SUBMENU,
                 order=70,
                 tip="Remove the selected source and every page it fetched; the files stay",
                 state=self._on_a_source,
@@ -363,7 +368,8 @@ class SpecModule:
                 label="Open Source in &Browser",
                 icon=external_icon,
                 menu="Project",
-                group="documents",
+                group="sources",
+                submenu=SPECS_SUBMENU,
                 order=80,
                 tip="Open the selected source where it lives",
                 state=self._on_a_source,
@@ -373,9 +379,10 @@ class SpecModule:
         deps.actions.register(
             ActionSpec(
                 id="spec.rename",
-                label="Re&name Spec Document…",
+                label="&Rename Document…",
                 menu="Project",
                 group="documents",
+                submenu=SPECS_SUBMENU,
                 order=35,
                 icon=edit_icon,
                 tip="Rename the selected document — the name every command uses, and "
@@ -387,10 +394,11 @@ class SpecModule:
         deps.actions.register(
             ActionSpec(
                 id="spec.open_external",
-                label="Open Document E&xternally",
+                label="Open &Externally",
                 icon=external_icon,
                 menu="Project",
                 group="documents",
+                submenu=SPECS_SUBMENU,
                 order=50,
                 tip="Open the selected spec document in the system viewer",
                 state=self._on_a_document,
@@ -400,10 +408,9 @@ class SpecModule:
         deps.actions.register(
             ActionSpec(
                 id="spec.open",
-                label="Open &Specs",
-                menu="Project",
-                group="open",
-                in_menus=False,  # Its seat is the project's row in the index — menus.py.
+                label="&Specs",
+                menu="Go",
+                group="views",
                 order=10,
                 tip="The documents this project answers to",
                 state=self._on_a_project,
@@ -468,10 +475,10 @@ class SpecModule:
         return [row for row in of_role(project.locations, SPECS_ROLE.id) if row.id not in taken]
 
     def _on_a_removable_document(self, context: Context) -> ActionState:
-        return self._editable(context, "Remove Spec Document")
+        return self._editable(context, "Remove Document")
 
     def _on_a_renamable_document(self, context: Context) -> ActionState:
-        return self._editable(context, "Rename Spec Document")
+        return self._editable(context, "Rename Document")
 
     def _editable(self, context: Context, verb: str) -> ActionState:
         """Whether the selected document is this project's own. Remove and Rename ask the

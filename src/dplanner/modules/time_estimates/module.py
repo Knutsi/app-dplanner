@@ -1,7 +1,7 @@
 """When the plan lands, as a tab beside the graph it dates — and the day's progress recorded.
 
 The tab is ``activity.py``; this is the module that installs it: the Time tab's factory,
-*Show Time Estimates* and *Export ▸ Milestones (CSV)*, the progress recorder that writes the
+*Go ▸ Time Estimates* and *Export ▸ Milestones (CSV)*, the progress recorder that writes the
 day's row into the project's history whenever the plan settles (``recorder.py``), and a
 milestone's Schedule block on its Details tab (``section.py``) — its own start date and
 colour.
@@ -147,10 +147,9 @@ class TimeEstimatesModule:
         deps.actions.register(
             ActionSpec(
                 id="time.open",
-                label="Show &Time Estimates",
-                menu="Project",
-                group="open",
-                in_menus=False,  # Its seat is the project's row in the index — menus.py.
+                label="T&ime Estimates",
+                menu="Go",
+                group="views",
                 order=40,
                 tip="When the plan lands with its team, how that moved, and the work behind it",
                 state=self._on_a_project,

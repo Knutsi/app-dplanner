@@ -3,7 +3,7 @@
 Two registrations and one offer. The first registration is the Estimate block on the step
 detail panel's Details tab: which host shows it, and what else is beside it, is not this
 module's business. The second is the bulk Estimates activity — one tab per project for sizing many
-steps in a sitting — and the ``Step ▸ Estimate Steps`` verb that opens it scoped to the
+steps in a sitting — and the ``Go ▸ Estimate Steps`` verb that opens it scoped to the
 selection. The offer is the start-date bar — a widget somebody else hosts, exposed as a
 ``create_…`` the way ``step_properties`` exposes its panel, because a control that belongs
 to *one* surface has no business in a registry.
@@ -140,11 +140,11 @@ class EstimationModule:
         deps.actions.register(
             ActionSpec(
                 id="estimate.open",
-                label="&Estimate Steps",
-                # The project's, beside Preview Report: a list of every step to size, which
-                # the index has no row for — so empty canvas offers it. With steps picked it
+                label="Esti&mate Steps",
+                # A surface, beside Preview Report: a list of every step to size, which the
+                # index has no row for — so empty canvas offers it. With steps picked it
                 # still sizes just those.
-                menu="Project",
+                menu="Go",
                 group="survey",
                 order=10,
                 tip="Size the selected steps — or the whole project — in one list",

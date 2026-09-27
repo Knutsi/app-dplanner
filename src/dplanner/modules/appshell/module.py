@@ -216,7 +216,7 @@ class AppShellModule:
         deps.actions.register(
             ActionSpec(
                 id="appshell.close_tabs_right",
-                label="Close Tabs to the &Right",
+                label="Close Tabs to the Ri&ght",
                 menu="View",
                 group="tabs",
                 submenu="Tabs",
@@ -266,7 +266,7 @@ class AppShellModule:
         deps.actions.register(
             ActionSpec(
                 id="appshell.text_larger",
-                label="Larger &Text",
+                label="&Larger Text",
                 menu="View",
                 group="zoom",
                 order=10,

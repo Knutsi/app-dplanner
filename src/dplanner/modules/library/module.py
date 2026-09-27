@@ -65,7 +65,7 @@ class LibraryModule:
         deps.actions.register(
             ActionSpec(
                 id="library.new_library",
-                label="New Project Library…",
+                label="New Project Lib&rary…",
                 menu="File",
                 group="library",
                 order=10,
@@ -76,7 +76,7 @@ class LibraryModule:
         deps.actions.register(
             ActionSpec(
                 id="library.open_library",
-                label="Open Project Library…",
+                label="O&pen Project Library…",
                 menu="File",
                 group="library",
                 order=20,

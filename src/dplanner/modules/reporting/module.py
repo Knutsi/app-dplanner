@@ -120,7 +120,7 @@ class ReportingModule:
         exports = (
             ("html", "Plan &Report (HTML)…", 20, "Write the plan as one HTML page"),
             ("pdf", "Plan Report (&PDF)…", 30, "Write the plan as a PDF"),
-            ("xlsx", "Plan &Tables (Excel)…", 40, "Every table of the plan as a workbook"),
+            ("xlsx", "Plan T&ables (Excel)…", 40, "Every table of the plan as a workbook"),
         )
         for kind, label, order, tip in exports:
             deps.actions.register(
@@ -139,8 +139,8 @@ class ReportingModule:
         deps.actions.register(
             ActionSpec(
                 id="report.preview",
-                label="Preview &Report",
-                menu="Project",
+                label="&Preview Report",
+                menu="Go",
                 group="survey",
                 order=20,
                 tip="Open the plan's report in the browser",
