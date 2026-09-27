@@ -225,6 +225,23 @@ parser' --after S7 --agent --review` puts it between S7 and whatever follows. Ev
 a review auto-progresses by rule, so it needs no flag. Link what comes next after the review,
 never after S7 directly: `project lint` names a step that goes round it (`review.bypassed`).
 
+## A line that keeps growing: stack it
+
+Iterating on one surface grows a line — task, then task, then task, each waiting on the one
+before — that spreads across the canvas and makes every step put in the middle an unlink and
+two links. **Stack it**: `dplanner stack make S4 S5 S6` draws the line as one tall card and
+changes nothing about the plan, because the order, the waves and the schedule are the same
+chain's. A stack takes its links in at its first step and sends them out from its last, so
+`step link` refuses a link into its middle and names the step to link instead.
+`dplanner stack add <any member> --new '<title>'` puts a new step at the end, and the old
+last's dependents move to it; `--at N` puts it elsewhere, and an existing step named instead
+of `--new` arrives with no links of its own. `stack move <step> --to N` reorders,
+`stack take-out <step>` lifts one out with no links and closes the chain round it, and
+`stack dissolve <step>` lays the line out as a row again. Stack a line that is *one*
+surface worked in order; a line whose steps each have dependents or inputs of their own is
+a chain, and `stack make` refuses it. `stack list` names each stack, and `project lint` names
+one another writer broke (`stack.broken`).
+
 ## Leave the graph readable
 
 The graph is what the user reviews, so when a plan settles, make its shape carry meaning

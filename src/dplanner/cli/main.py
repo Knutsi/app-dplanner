@@ -26,6 +26,7 @@ from dplanner.core.module_data import ModuleDataFormat
 from dplanner.core.telemetry import current
 from dplanner.domain.at_work import AtWorkBoard
 from dplanner.domain.library_file import LIBRARY_ENV
+from dplanner.domain.model import LinkRule
 from dplanner.identity import APP_NAME, APP_VERSION
 
 PROG = "dplanner"
@@ -145,6 +146,7 @@ def run(
     err: TextIO | None = None,
     board: "AtWorkBoard | None" = None,
     clock: Clock | None = None,
+    link_rules: Sequence[LinkRule] = (),
 ) -> int:
     """Parse, open the library if the verb needs one, and run it.
 
@@ -169,6 +171,8 @@ def run(
     read and write claims hold their own board and work either way.
 
     ``clock`` is the day the run dates things by; the machine's unless a test pins one.
+    ``link_rules`` are the composition root's additions to what may link to what, installed
+    on the library the run opens as the window installs them on its own.
     """
     out = out if out is not None else sys.stdout
     err = err if err is not None else sys.stderr
@@ -195,7 +199,12 @@ def run(
         else:
             path = find_library(args.library)
             with open_library(
-                path, formats, out, as_json=args.as_json, clock=clock or Clock()
+                path,
+                formats,
+                out,
+                as_json=args.as_json,
+                clock=clock or Clock(),
+                link_rules=link_rules,
             ) as context:
                 context.current = find_current_project(
                     context.library, context.store, args.project_scope

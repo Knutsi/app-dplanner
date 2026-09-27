@@ -465,7 +465,9 @@ src/dplanner/
 │   │                        draws it, `layout shift` is Divide as a verb, `layout contract` Contract,
 │   │                        `layout tidy` the sixth sort)
 │   │                        (stacks.py is a stack: a chain drawn as one tall card, the fold every
-│   │                        arrangement reads it through, and `dplanner stack list`)
+│   │                        arrangement reads it through, and the rule for what may link to one;
+│   │                        stack_edits.py every edit of one — new, make, add, move, take out,
+│   │                        dissolve, and the removal Delete runs — shared with `dplanner stack …`)
 │   ├── step_properties/     THE step editor — `steps.details`, a modal and nothing anchored
 │   │                        (its first tab, details.py, stacks whatever registered a Details
 │   │                        block, name.py leading it; every view's double-click on a step

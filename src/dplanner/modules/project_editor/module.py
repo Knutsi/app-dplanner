@@ -727,11 +727,15 @@ class ProjectEditorModule:
         at: tuple[float, float] | None = None,
         carrying: Callable[[Step], Sequence[Command]] | None = None,
         label: str = "New Step",
+        before: StepId | None = None,
     ) -> Step:
         """Give birth to a step the way New does — the seam the composition root places
         through, so a feature step born from the Specs tab is one undo step with its
-        marker and its position like any other placed step."""
-        return self._verbs.create(project_id, title, at=at, carrying=carrying, label=label)
+        marker and its position like any other placed step, and a wait inserted in front
+        of a step (``before``) joins that step's stack when it stands in one."""
+        return self._verbs.create(
+            project_id, title, at=at, carrying=carrying, label=label, before=before
+        )
 
     def reveal(self, step_id: StepId) -> None:
         """Show the step's project and select it there.

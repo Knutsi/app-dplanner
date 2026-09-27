@@ -117,3 +117,30 @@ def test_insert_wait_before_puts_a_wait_in_front_of_a_step_as_one_undo(services,
     assert services.undo.undo_text() == "Insert Wait"
     services.undo.undo()
     assert len(plan.steps) == 2 and install.edges["requires"] == [order.id]
+
+
+def test_insert_wait_before_a_stacked_step_joins_its_stack_in_its_slot(services, make_project):
+    """A wait in front of a member stands in the line, not beside it: a link from outside
+    into the stack's middle is what the stack rule refuses."""
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+    from dplanner.modules.project_editor.positions import MODULE_ID, write_member
+    from dplanner.modules.project_editor.stacks import read_stacks
+
+    library = services.document
+    plan = make_project("Delivery")
+    for title in ("Order the hardware", "Install it", "Test it"):
+        AddNodeCommand(plan.id, Step(title=title)).redo(library)
+    order, install, check = plan.steps
+    library.set_edges(install.id, "requires", [order.id])
+    library.set_edges(check.id, "requires", [install.id])
+    for step in (order, install, check):
+        library.set_module_data(step.id, MODULE_ID, write_member("s1"))
+    context = Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", install.id)),)})
+    services.actions.run("wait.insert_before", context)
+    (wait,) = [step for step in plan.steps if read(step) is not None]
+    assert [s.members for s in read_stacks(plan.steps)] == [
+        (order.id, wait.id, install.id, check.id)
+    ]
+    assert wait.edges["requires"] == [order.id] and install.edges["requires"] == [wait.id]
+    services.undo.undo()
+    assert [s.members for s in read_stacks(plan.steps)] == [(order.id, install.id, check.id)]

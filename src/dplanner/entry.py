@@ -41,6 +41,7 @@ from dplanner.modules import (
     agent_shell_marker,
     at_work_board,
     default_cli_commands,
+    default_link_rules,
     default_module_formats,
 )
 
@@ -132,7 +133,13 @@ def main(argv: list[str] | None = None) -> int:
     board = at_work_board()
     registry.register_all(default_cli_commands(board=board))
     signing = board if agent_shell_marker() else None
-    return run(registry, default_module_formats(), arguments, board=signing)
+    return run(
+        registry,
+        default_module_formats(),
+        arguments,
+        board=signing,
+        link_rules=default_link_rules(),
+    )
 
 
 def window_main(argv: list[str] | None = None) -> int:

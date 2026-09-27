@@ -971,7 +971,9 @@ class LibraryStore:
                             live.edges.pop(kind, None)
                         continue
                     try:
-                        library.set_edges(live.id, kind, list(targets), OUTSIDE_ORIGIN)
+                        # Another writer's list is carried, not judged by a module's rules: a
+                        # stack it broke arrives broken and lint names it.
+                        library.set_edges(live.id, kind, list(targets), OUTSIDE_ORIGIN, rules=False)
                     except ValueError as error:
                         raise _ClashError from error
             return 1

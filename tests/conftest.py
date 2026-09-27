@@ -367,7 +367,7 @@ def cli(registry, workspace, cli_library, at_work_board, clock):
     from io import StringIO
 
     from dplanner.cli.main import run
-    from dplanner.modules import default_module_formats
+    from dplanner.modules import default_link_rules, default_module_formats
 
     def invoke(*argv, expect=0):
         out, err = StringIO(), StringIO()
@@ -380,6 +380,7 @@ def cli(registry, workspace, cli_library, at_work_board, clock):
             err,
             board=at_work_board,
             clock=clock,
+            link_rules=default_link_rules(),
         )
         assert code == expect, f"exit {code}: {err.getvalue()}{out.getvalue()}"
         return out.getvalue() + err.getvalue()
@@ -393,7 +394,7 @@ def cli_stdin(registry, workspace, cli_library, at_work_board, clock):
     from io import StringIO
 
     from dplanner.cli.main import run
-    from dplanner.modules import default_module_formats
+    from dplanner.modules import default_link_rules, default_module_formats
 
     def invoke(*argv, expect=0, stdin=""):
         out, err = StringIO(), StringIO()
@@ -409,6 +410,7 @@ def cli_stdin(registry, workspace, cli_library, at_work_board, clock):
                 err,
                 board=at_work_board,
                 clock=clock,
+                link_rules=default_link_rules(),
             )
         finally:
             sys.stdin = real

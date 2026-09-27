@@ -46,7 +46,6 @@ from dplanner.domain.commands import (
     SetFieldCommand,
     SetModuleDataCommand,
     remove_edges_command,
-    remove_steps_command,
 )
 from dplanner.domain.model import Library, NodeId, Step, StepId
 from dplanner.framework.action_registry import (
@@ -62,6 +61,7 @@ from dplanner.framework.undo import UndoService
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.positions import write_position
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef, parse_edge_id
+from dplanner.modules.project_editor.stack_edits import bridged_removal, insert_before_command
 from dplanner.theme.icons import (
     edit_icon,
     isolate_icon,
@@ -383,6 +383,7 @@ class StepVerbs:
         at: tuple[float, float] | None = None,
         carrying: Callable[[Step], Sequence[Command]] | None = None,
         label: str = "New Step",
+        before: StepId | None = None,
     ) -> Step:
         """Add a step, placed where it was asked for, as **one** undo step.
 
@@ -392,18 +393,28 @@ class StepVerbs:
         and so does whatever the step is ``carrying``: the marker a dropped feature arrives
         with, handed in as commands over the not-yet-added step.
 
+        ``before`` puts the step in front of another: it takes over what that step waited
+        on, and that step waits on it — joining its stack in its slot when it stands in one,
+        where the column seats it and ``at`` means nothing (``stack_edits``).
+
         A placed step earns a *stored* position, unlike the ambient layout, for the same
         reason a dragged one does: somebody chose where it goes. A step that arrives
         carrying something arrives *named* — a feature has its title — so it is placed but
         not ``created``: the dialog that names a new step has nothing to ask it.
         """
         step = Step(title=title)
-        commands: list[Command] = [AddNodeCommand(project_id, step)]
-        if carrying is not None:
-            commands += carrying(step)
-        if at is not None:
-            commands.append(SetModuleDataCommand(step.id, POSITION_KEY, write_position(*at)))
-        self.undo.push(commands[0] if len(commands) == 1 else CompositeCommand(label, commands))
+        carried = [] if carrying is None else list(carrying(step))
+        command: Command
+        if before is not None:
+            command = insert_before_command(
+                self.library, step, before, label, carrying=carried, seat=at
+            )
+        else:
+            commands: list[Command] = [AddNodeCommand(project_id, step), *carried]
+            if at is not None:
+                commands.append(SetModuleDataCommand(step.id, POSITION_KEY, write_position(*at)))
+            command = commands[0] if len(commands) == 1 else CompositeCommand(label, commands)
+        self.undo.push(command)
         self.placed([step.id])
         if carrying is None:
             self.created(step.id)
@@ -436,4 +447,4 @@ class StepVerbs:
         doomed = chosen_steps(context, self.library)
         if doomed:
             links = [ref.as_edge() for ref in picked_edges(self.library, context)]
-            self.undo.push(remove_steps_command(self.library, doomed, "Delete", links=links))
+            self.undo.push(bridged_removal(self.library, doomed, "Delete", links=links))

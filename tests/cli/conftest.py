@@ -18,7 +18,7 @@ def gated_cli(workspace, cli_library, tmp_path):
     from dplanner.cli.command import CliRegistry
     from dplanner.cli.gate import ReadRecord
     from dplanner.cli.main import run
-    from dplanner.modules import default_cli_commands, default_module_formats
+    from dplanner.modules import default_cli_commands, default_link_rules, default_module_formats
 
     registry = CliRegistry()
     registry.register_all(default_cli_commands(reads=ReadRecord(tmp_path / "gate" / "reads.json")))
@@ -36,6 +36,7 @@ def gated_cli(workspace, cli_library, tmp_path):
                 ["--library", str(cli_library), *argv],
                 out,
                 err,
+                link_rules=default_link_rules(),
             )
         finally:
             sys.stdin = real

@@ -4,7 +4,9 @@ paths:
   - "src/dplanner/modules/problems/**"
   - "src/dplanner/theme/{cards,tones}.py"
   - "tests/modules/test_{project_editor,canvas,graph_layout,marks,problems}*.py"
-  - "tests/cli/test_{layout_cli,step_duplicate}.py"
+  - "tests/modules/test_stack*.py"
+  - "tests/modules/stack_helpers.py"
+  - "tests/cli/test_{layout_cli,step_duplicate,stack_cli}.py"
   - "scripts/render_graph_editor.py"
 ---
 
@@ -243,6 +245,24 @@ paths:
   from part of one. Add a reader of positions through the fold, never beside it — a second
   copy of the column is one that can split a stack. `ARCHITECTURE.md`'s *A stack is
   presentation over a chain* has the reasoning.
+- **Every stack edit is one command from `stack_edits.py`, and the stack rule is the
+  domain's to ask.** New, make, add, move, take out and dissolve each build one composite
+  the canvas and `dplanner stack …` push alike; `bridged_removal` is what Delete, Cut,
+  `step remove` and `project clear-steps` run, so a member that goes closes the chain; and
+  `insert_before_command` is Insert Wait Before (`create_step(before=)`) — a stacked step's
+  wait joins its stack in its slot. One relink rebuilds a line in its new order: the chain,
+  the first member's outside inputs on whoever is first now, the last's dependents on
+  whoever is last, a step joining disconnected first and a step leaving left with no links;
+  **the seat is handed on whenever the first member changes**. A builder refuses a stack
+  that is no longer one line (`line_refusal`, `make_refusal`, `join_refusal` — a greyed
+  state reads them over the synced `step_stacks` or settles once, never walks a project per
+  announce); dissolve and the removal never refuse, and dissolve lays a placed stack out as
+  a row and pushes the far side by Divide's rule, never contracting. What may link to a
+  stack is `stacks.link_rule`, asked through `Library.link_refusal` (`graph-model.md`):
+  links arrive at the first member and leave from the last. What another writer brought in
+  anyway is `stray_links`, named beside the gaps by `stack list` and lint's `stack.broken`,
+  never repaired. `ARCHITECTURE.md`'s *One in, one out is a rule the domain asks* has the
+  reasoning.
 - **The canvas's spatial gestures exist as verbs, and geometry is derived on every read.**
   `dplanner layout show` (`--map`) measures the graph from the stored positions and
   `positions.node_size` through `project_editor/geometry.py` and stores nothing — the waves,

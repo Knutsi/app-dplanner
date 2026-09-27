@@ -12,6 +12,11 @@ and back again — what a cut drag and ``layout shift`` hold. :func:`fold` adds 
 scratch project with each stack one block under its first member's id, which every sort and
 the geometry report run over unchanged.
 
+**What may link to a stack is a rule the domain asks** (:func:`link_rule`, installed on the
+library by the composition root): links arrive at the first member and leave from the last,
+and the chain between is nobody else's. What another writer or a hand edit brings in anyway
+is read, drawn and named (:func:`stray_links`, lint's ``stack.broken``), never repaired.
+
 **Qt-free** — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
@@ -21,7 +26,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from itertools import pairwise
 
-from dplanner.domain.model import Project, Step, StepId
+from dplanner.domain.model import Edge, Library, Project, Step, StepId
 from dplanner.modules.project_editor.positions import GRID, Size, node_size, read_stack
 
 type Point = tuple[float, float]
@@ -114,11 +119,107 @@ def read_stacks(steps: Sequence[Step]) -> list[Stack]:
     return sorted(found, key=lambda stack: at[stack.head])
 
 
-def broken_reason(stack: Stack, name: Callable[[StepId], str]) -> str | None:
-    """What breaks a stack, in words — None for one that is a single line."""
-    if not stack.gaps:
+def stack_of(steps: Sequence[Step], step_id: StepId) -> Stack | None:
+    """The stack a step stands in, read with its order and its gaps — None for a loose step."""
+    return next((stack for stack in read_stacks(steps) if step_id in stack.members), None)
+
+
+def stray_links(stack: Stack, steps: Sequence[Step]) -> tuple[Edge, ...]:
+    """Every ``requires`` link that makes a stack more than one line besides its gaps: into a
+    member below the first from anywhere but the member before it, and out of a member above
+    the last to anywhere but the member after it. The first member's inputs and the last's
+    dependents are the stack's own; a ``relates`` link is nobody's business here, and an id
+    that no longer resolves is a ghost lint names elsewhere."""
+    members = stack.members
+    after = dict(pairwise(members))
+    before = {then: first for first, then in after.items()}
+    ids = {step.id for step in steps}
+    found: dict[Edge, None] = {}
+    for step in steps:
+        for source in step.edges.get("requires", []):
+            if source not in ids:
+                continue
+            into = step.id in before and source != before[step.id]
+            out_of = source in after and step.id != after[source]
+            if into or out_of:
+                found[(step.id, "requires", source)] = None
+    return tuple(found)
+
+
+def broken_reason(
+    stack: Stack, name: Callable[[StepId], str], strays: Sequence[Edge] = ()
+) -> str | None:
+    """What breaks a stack, in words — None for one that is a single line. ``strays`` are
+    :func:`stray_links`' answer, for a reader that asked it."""
+    words = [f"{name(then)} does not wait on {name(before)}" for before, then in stack.gaps]
+    for waiter, _kind, source in strays:
+        into = waiter in stack.members[1:]
+        end = "first step takes links in" if into else "last step sends links out"
+        words.append(f"{name(waiter)} waits on {name(source)}, though only the stack's {end}")
+    return "; ".join(words) or None
+
+
+def link_rule(library: Library, waiter: StepId, kind: str, source: StepId) -> str | None:
+    """One in, one out: why ``waiter`` may not wait on ``source`` because of a stack, or None.
+
+    A stack takes its links in at its first member and sends them out from its last, and
+    the chain between is its own. Refused:
+
+    - a link into a member that already waits on one of its own stack — it is below the
+      first;
+    - a link out of a member one of its own stack already waits on — it is above the last;
+    - a link between two members of one stack while the waiter waits on anything or the
+      source has any dependent — a chain link joins two free ends.
+
+    Only ``requires`` counts, and only links that resolve. It reads membership and link
+    counts, never positions, and every condition says *some other link exists* — so a link
+    legal in a graph is legal in every part of it, which is why one gesture at a time can
+    never break a stack that is one line (``ARCHITECTURE.md``'s *One in, one out is a rule
+    the domain asks*). A run head in a stack somebody broke counts as a first member.
+    Each refusal names what fixes it.
+    """
+    if kind != "requires":
         return None
-    return "; ".join(f"{name(then)} does not wait on {name(first)}" for first, then in stack.gaps)
+    here, there = library.step(waiter), library.step(source)
+    own, theirs = read_stack(here), read_stack(there)
+    if not own and not theirs:
+        return None
+    if own:
+        waits_on = library.requires(waiter)
+        if any(read_stack(step) == own for step in waits_on):
+            first = _end_title(library, waiter, own, last=False)
+            return (
+                f"{here.title!r} is inside a stack: a link into it arrives at its first step, "
+                f"{first!r} — or take {here.title!r} out of the stack first"
+            )
+        if theirs == own and waits_on:
+            return (
+                f"{here.title!r} also waits on steps outside its stack, and only a stack's "
+                "first step may — unlink them first"
+            )
+    if theirs:
+        waited_by = library.dependents(source)
+        if any(read_stack(step) == theirs for step in waited_by):
+            last = _end_title(library, source, theirs, last=True)
+            return (
+                f"{there.title!r} is inside a stack: a link out of it leaves from its last "
+                f"step, {last!r} — or take {there.title!r} out of the stack first"
+            )
+        if own == theirs and waited_by:
+            return (
+                f"{there.title!r} also has steps outside its stack waiting on it, and only a "
+                "stack's last step may — unlink them first"
+            )
+    return None
+
+
+def _end_title(library: Library, member: StepId, stack_id: str, *, last: bool) -> str:
+    """The title of the first or last member of the stack ``member`` stands in — read only
+    when a refusal has to name it."""
+    steps = library.project_of(member).steps
+    found = next(stack for stack in read_stacks(steps) if stack.id == stack_id)
+    end = found.members[-1] if last else found.head
+    return library.step(end).title
 
 
 def member_seats(

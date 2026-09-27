@@ -368,6 +368,87 @@ def test_removing_steps_takes_picked_links_along_in_the_same_list_rewrite(librar
     assert second.edges["requires"] == [first.id]
 
 
+# -- link rules --------------------------------------------------------------------------------
+
+
+def refuse_all(_library, _waiter, _kind, _source):
+    return "refused by a rule"
+
+
+def test_a_library_starts_with_no_link_rules():
+    assert Library().link_rules == ()
+
+
+def test_a_link_rule_is_asked_after_the_graphs_own_refusals(library):
+    first, second = find(library, "Read the spec"), find(library, "Draft the model")
+    library.link_rules = (refuse_all,)
+    assert library.link_refusal(first.id, "requires", first.id) == "a step cannot depend on itself"
+    assert library.link_refusal(second.id, "requires", first.id) == "refused by a rule"
+    with pytest.raises(ValueError, match="refused by a rule"):
+        library.set_edges(second.id, "requires", [first.id])
+
+
+def test_a_write_without_rules_is_judged_by_the_graphs_own_refusals_alone(library):
+    first, second = find(library, "Read the spec"), find(library, "Draft the model")
+    library.link_rules = (refuse_all,)
+    library.set_edges(second.id, "requires", [first.id], rules=False)
+    assert second.edges["requires"] == [first.id]
+    with pytest.raises(ValueError, match="cycle"):
+        library.set_edges(first.id, "requires", [second.id], rules=False)
+
+
+def test_an_undo_puts_back_a_link_a_rule_would_refuse_now(library):
+    """A rule judges the link a person makes; an undo puts back what was there."""
+    from dplanner.domain.commands import SetEdgesCommand
+
+    first, second = find(library, "Read the spec"), find(library, "Draft the model")
+    library.set_edges(second.id, "requires", [first.id])
+    library.link_rules = (refuse_all,)
+    command = SetEdgesCommand(second.id, "requires", [])
+    command.redo(library)
+    command.undo(library)
+    assert second.edges["requires"] == [first.id]
+
+
+def test_a_rewire_removes_first_runs_between_and_adds_last(library):
+    """Swapping a link's direction adds an edge that would close a cycle while the old one
+    stood; removing first is what lets it through, and every graph on the way is a part of
+    the one before or the one after."""
+    from dplanner.domain.commands import AddNodeCommand, rewire_command
+
+    first, second = find(library, "Read the spec"), find(library, "Draft the model")
+    library.set_edges(second.id, "requires", [first.id])
+    born = Step(title="Born in between")
+    lists = {
+        (second.id, "requires"): [],
+        (first.id, "requires"): [second.id],
+        (born.id, "requires"): [first.id],
+    }
+    project = find(library, "Discovery")
+    command = rewire_command(library, lists, "Swap", [AddNodeCommand(project.id, born)])
+    assert [type(part).__name__ for part in command.commands] == [
+        "SetEdgesCommand",
+        "AddNodeCommand",
+        "SetEdgesCommand",
+        "SetEdgesCommand",
+    ]
+    command.redo(library)
+    assert first.edges["requires"] == [second.id] and "requires" not in second.edges
+    assert born.edges["requires"] == [first.id]
+    command.undo(library)
+    assert second.edges["requires"] == [first.id] and "requires" not in first.edges
+    assert not library.has(born.id)
+
+
+def test_a_rewire_carries_a_kind_this_build_does_not_know(library):
+    from dplanner.domain.commands import rewire_command
+
+    first, second = find(library, "Read the spec"), find(library, "Draft the model")
+    second.edges["blocks"] = [first.id]
+    command = rewire_command(library, {(second.id, "blocks"): []}, "Nothing")
+    assert command.commands == []
+
+
 # -- redirecting -------------------------------------------------------------------------------
 
 

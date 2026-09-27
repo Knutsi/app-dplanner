@@ -308,7 +308,9 @@ def paste(
                 continue  # A kind this build does not know cannot be validated; skip it.
             wanted = [remapped[t] for t in targets if t in remapped]
             if wanted:
-                commands.append(SetEdgesCommand(clone.id, kind, wanted))
+                # A clone carries the links its originals have, as they are: a copy chooses
+                # no link, so no rule judges one (``Library.set_edges`` on ``rules``).
+                commands.append(SetEdgesCommand(clone.id, kind, wanted, rules=False))
     label = f"{verb} Step" if len(clones) == 1 else f"{verb} {len(clones)} Steps"
     return CompositeCommand(label, commands), clones
 

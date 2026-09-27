@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from dplanner.domain.commands import Command
     from dplanner.domain.dictation import DictationProvider
     from dplanner.domain.locations import Location, LocationRole, ManagedFor
-    from dplanner.domain.model import Edge, Library, Project, ProjectId, Step, StepId
+    from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
     from dplanner.domain.ordering import Placed
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.schedule import Scheduled
@@ -97,7 +97,6 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         Command,
         CompositeCommand,
         EditTextCommand,
-        SetEdgesCommand,
         SetModuleDataCommand,
     )
     from dplanner.domain.locations import Placement, roles_by_id
@@ -250,6 +249,10 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.theme.tones import STEP_STATUS_TONES
 
     library: Library = services.document
+    # What may link to what, beyond the graph's own four refusals — the same rules the CLI's
+    # library asks (`default_link_rules`), so a drop and `step link` refuse alike. A reload
+    # builds a new library and comes back through here; a refresh keeps this one.
+    library.link_rules = default_link_rules()
     # The composition root knows the concrete store, exactly as it knows the concrete
     # document — modules reach a file area only through the typed callback on their Deps.
     store = services.repo
@@ -812,8 +815,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     def insert_wait_before(step_id: str) -> None:
         """Step ▸ Insert Wait Before: a wait of a working day in front of the step — it takes
         over what the step waited on, and the step waits on it — as the *Wait* template makes
-        one (no estimate, no description), placed a column to the step's left where the step
-        was placed, and one undo entry like every other placed step."""
+        one (no estimate, no description), and one undo entry like every other placed step.
+        A loose step's wait lands a column to its left where the step was placed; a stacked
+        step's joins its stack in its slot, where the column seats it."""
         from dplanner.modules.project_editor.positions import read_position
         from dplanner.modules.project_editor.sorts import H_PITCH
         from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
@@ -821,9 +825,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
         from dplanner.modules.step_wait.aspect import write as write_wait
 
-        step = library.step(step_id)
-        waited_on = list(step.edges.get("requires", []))
-        where = read_position(step)
+        where = read_position(library.step(step_id))
         project_editor.create_step(
             library.project_of(step_id).id,
             "Wait",
@@ -832,10 +834,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 SetModuleDataCommand(wait.id, WAIT_ID, write_wait(Wait(days=1.0))),
                 SetModuleDataCommand(wait.id, ESTIMATION_ID, estimate_write(None, on=False)),
                 SetModuleDataCommand(wait.id, DESCRIPTION_ID, description_state(False)),
-                SetEdgesCommand(wait.id, "requires", waited_on),
-                SetEdgesCommand(step_id, "requires", [wait.id]),
             ],
             label="Insert Wait",
+            before=step_id,
         )
 
     # Constructed before the list because the Specs tab cites a selection into it — the
@@ -3356,6 +3357,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.feature import cli as feature_cli
+    from dplanner.modules.project_editor import cli as layout_cli
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
@@ -3384,6 +3386,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
         *estimation_cli.lint_checks(counts_as_work=_counts_as_work),
         *spec_cli.lint_checks(),
         *feature_cli.lint_checks(anchor=spec_cli.anchor_sources, key_of=_step_key),
+        *layout_cli.lint_checks(key_of=_step_key),
         *testing_cli.lint_checks(),
         # A step's *own* tests are a different question from what it gathers; testing's
         # Qt-free reader answers it, handed over rather than imported.
@@ -3529,6 +3532,7 @@ def default_cli_commands(
     from dplanner.modules.project_assets import cli as assets_cli
     from dplanner.modules.project_assets.cli import read_titles
     from dplanner.modules.project_editor import cli as layout_cli
+    from dplanner.modules.project_editor.stack_edits import bridged_removal
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.spec.aspect import read_topology
@@ -3602,6 +3606,8 @@ def default_cli_commands(
             roles=roles,
             managed=managed_for(roles),
             kept_root=config_dir(),
+            # A step removed from a stack closes the chain round it, as Delete does.
+            remove_steps=bridged_removal,
         ),
         # `topology show` tells the gate what it printed; the gate is built here, so the
         # spec module never learns where the record lives.
@@ -3979,6 +3985,19 @@ def managed_for(roles: "Mapping[str, LocationRole]") -> "ManagedFor":
         return sparse_dir(cache_root, location.repository, location.ref or "HEAD", location.path)
 
     return managed
+
+
+def default_link_rules() -> tuple["LinkRule", ...]:
+    """What modules add to what may link to what — asked by ``Library.link_refusal`` after
+    the graph's own four refusals, on the window's library and the CLI's alike.
+
+    One today: a stack takes links in at its first step and out from its last
+    (``ARCHITECTURE.md``'s *One in, one out is a rule the domain asks*). Qt-free, because
+    ``entry.py`` hands it to every CLI run.
+    """
+    from dplanner.modules.project_editor.stacks import link_rule
+
+    return (link_rule,)
 
 
 def default_module_formats() -> list[ModuleDataFormat]:

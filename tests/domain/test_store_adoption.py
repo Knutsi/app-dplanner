@@ -317,6 +317,21 @@ def test_an_edge_that_would_cycle_with_a_local_link_is_a_conflict(store, library
     assert library.step(spec.id).edges == {}
 
 
+def test_an_outside_link_a_rule_would_refuse_is_adopted_all_the_same(store, library):
+    """A rule judges what a person links here; what another writer linked is theirs, carried
+    in and left for lint to name — a stack somebody broke arrives broken."""
+    spec, draft = find(library, "Read the spec"), find(library, "Draft the model")
+    library.link_rules = (lambda _library, _waiter, _kind, _source: "refused by a rule",)
+    other, theirs = other_writer(store)
+    theirs.set_edges(draft.id, "requires", [spec.id])
+    other.flush({(draft.id, "meta")})
+
+    adoption = store.adopt_outside_changes()
+
+    assert not adoption.conflicts
+    assert library.step(draft.id).edges == {"requires": [spec.id]}
+
+
 # -- what cannot be adopted --------------------------------------------------------------------
 
 

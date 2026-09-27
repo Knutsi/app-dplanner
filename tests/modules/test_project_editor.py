@@ -2378,7 +2378,7 @@ def test_the_band_beside_the_cut_is_the_room_being_made(app, services, project, 
 
 
 def stack_steps(services, *steps):
-    """Membership as S17's verbs will write it, with no seat: the stack stands where the
+    """Membership as the stack verbs write it, with no seat: the stack stands where the
     ambient layout puts it."""
     for step in steps:
         services.undo.push(SetModuleDataCommand(step.id, "project_editor", write_member("s1")))
@@ -2396,6 +2396,23 @@ def test_a_stack_is_drawn_as_a_column_and_moves_through_any_member(services, pro
     assert (head["x"], head["y"], head["stack"]) == (600.0, 400.0 - 96.0, "s1")
     assert "x" not in placement_of(services, third.id)
     assert body_of(tab, third.id).topLeft() == QPointF(600.0, 400.0)
+
+
+def test_deleting_a_stacks_middle_step_closes_the_chain_as_one_undo(services, project, tab):
+    """Delete, Cut and `step remove` are one removal, and in a stack it closes the chain
+    round the gap — the window's install of the stack rule is what would refuse the bridge
+    were it judged, so this also proves the removal carries it rather than judging."""
+    first, second, third = chain(services, project)
+    stack_steps(services, first, second, third)
+    assert services.document.link_refusal(third.id, "requires", project.steps[0].id)
+    scene(tab).select_step(second.id)
+    services.actions.run("steps.delete", services.context.current())
+
+    assert services.document.step(third.id).edges["requires"] == [first.id]
+    assert services.undo.undo_text() == "Delete Step"
+    services.undo.undo()
+    assert services.document.step(third.id).edges["requires"] == [second.id]
+    assert services.document.step(second.id).edges["requires"] == [first.id]
 
 
 def test_a_divide_through_a_stack_carries_it_whole(app, services, project, tab):

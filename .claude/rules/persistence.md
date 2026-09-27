@@ -46,8 +46,10 @@ paths:
   record says *which* files changed, and each plan file is one entry of one node, so
   `LibraryStore.adopt_outside_changes` reads the change into the live model through the
   mutators with `OUTSIDE_ORIGIN` — prose as `diff_hunks`, so an open editor keeps its
-  caret — and re-stamps exactly what it read. Every view repaints as for any foreign edit;
-  the window, its tabs, selection and undo history stay. **An entry this window changed and
+  caret — and re-stamps exactly what it read; an edge list is adopted with `rules=False`,
+  since a module's link rule judges what a person here links, never another writer's, and
+  a stack they broke arrives broken for lint to name. Every view repaints as for any
+  foreign edit; the window, its tabs, selection and undo history stay. **An entry this window changed and
   has not flushed is a conflict**, reported and not adopted: that project's flush stays
   refused, autosave stays paused, and `modules/library_watch/` asks in a modal — hand both
   versions to the configured agent (Run Agent's launcher; the window yields to disk and the

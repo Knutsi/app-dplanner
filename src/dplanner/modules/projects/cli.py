@@ -37,6 +37,7 @@ from dplanner.core.storage.locations import find_repo_root, init_repo
 from dplanner.core.storage.pointer import remove_from_index
 from dplanner.domain.commands import (
     AddNodeCommand,
+    Command,
     EditTextCommand,
     SetEdgesCommand,
     SetFieldCommand,
@@ -96,6 +97,11 @@ def _plain(_waiter: Step, _source: Step) -> bool:
     return False
 
 
+# How a verb here removes steps: the domain's plain removal unless the root hands over one
+# that knows more — a stack closing its chain round a member that goes.
+type RemoveSteps = Callable[[Library, Sequence[StepId], str], Command]
+
+
 def _no_key(_step: Step) -> str:
     return ""
 
@@ -152,6 +158,7 @@ def commands(
     roles: Mapping[str, LocationRole] | None = None,
     managed: ManagedFor | None = None,
     kept_root: Path | None = None,
+    remove_steps: RemoveSteps = remove_steps_command,
 ) -> list[CliCommand]:
     """``key_of`` is the step's readable key (``S7``, ``F3``) — the letter is a fact
     about aspects this file never reads, so the root hands the rule in and every row,
@@ -160,7 +167,9 @@ def commands(
     on — another module's flag, read through the root. ``roles`` is the
     location role registry the root gathers (the domain's ``code`` alone without it),
     ``managed`` says where a read-only location's clone stands, and ``kept_root`` is the
-    configuration directory a clone DPlanner keeps lives under."""
+    configuration directory a clone DPlanner keeps lives under. ``remove_steps`` is how
+    ``step remove`` and ``project clear-steps`` build their removal — the graph editor's,
+    which closes a stack round a member that goes, handed in by the root."""
     roles = roles if roles is not None else roles_by_id([CODE])
 
     def _configure_step_add(parser: ArgumentParser) -> None:
@@ -350,7 +359,7 @@ def commands(
             path=("project", "clear-steps"),
             summary="Remove every step, keeping the project and its documents — the re-plan verb.",
             configure=project_arg,
-            run=_project_clear_steps,
+            run=partial(_project_clear_steps, remove_steps=remove_steps),
             examples=("dplanner project clear-steps discovery",),
             edits_graph=project_of,
         ),
@@ -417,7 +426,7 @@ def commands(
             path=("step", "remove"),
             summary="Delete a step. The links into it go with it, as one undoable change.",
             configure=step_arg,
-            run=_step_remove,
+            run=partial(_step_remove, remove_steps=remove_steps),
             examples=("dplanner step remove read-the-spec",),
             edits_graph=project_of_step,
         ),
@@ -1101,14 +1110,16 @@ def _project_graph(
     return 0
 
 
-def _project_clear_steps(context: CliContext, args: Namespace) -> int:
+def _project_clear_steps(
+    context: CliContext, args: Namespace, remove_steps: RemoveSteps = remove_steps_command
+) -> int:
     """The same composite the canvas's delete-N-steps gesture builds — one undoable
     object in a window, one transaction here. No confirmation, matching `project
     delete`: a run is a transaction and version control is the undo."""
     project = find_project(context.library, args.project)
     doomed = list(project.steps)
     if doomed:
-        context.apply(remove_steps_command(context.library, [step.id for step in doomed], "Clear"))
+        context.apply(remove_steps(context.library, [step.id for step in doomed], "Clear"))
     context.report(
         {"project": project.id, "removed": [step.id for step in doomed]},
         f"Removed all {len(doomed)} steps from {project.title!r} — "
@@ -1207,7 +1218,9 @@ def _project_import(context: CliContext, args: Namespace, locating: Locating) ->
                 continue  # A kind this build does not know cannot be validated; skip it.
             wanted = [remapped[str(i)] for i in ids if str(i) in remapped]
             if wanted:
-                context.apply(SetEdgesCommand(target, kind, wanted))
+                # Carried as the document has them: a stack it holds broken comes in broken,
+                # and lint names it (``Library.set_edges`` on ``rules``).
+                context.apply(SetEdgesCommand(target, kind, wanted, rules=False))
 
     context.report(
         _project_row(context, project, locating),
@@ -1480,10 +1493,12 @@ def _step_rename(context: CliContext, args: Namespace) -> int:
     return 0
 
 
-def _step_remove(context: CliContext, args: Namespace) -> int:
+def _step_remove(
+    context: CliContext, args: Namespace, remove_steps: RemoveSteps = remove_steps_command
+) -> int:
     step = find_step(context.library, args.step, context.current)
     title = step.title
-    context.apply(remove_steps_command(context.library, [step.id], "Remove"))
+    context.apply(remove_steps(context.library, [step.id], "Remove"))
     context.report({"deleted": step.id}, f"Removed {title!r}")
     return 0
 
