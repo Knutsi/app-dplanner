@@ -1,16 +1,22 @@
 """Render Home — where a window starts — in the dark and the light theme, to PNG.
 
     uv run python scripts/render_home.py --out docs/screenshots/f9-home
+    uv run python scripts/render_home.py --out docs/screenshots/f9-home --video /tmp/garden
 
 Three pictures of a whole application over a throwaway library: the program's start, the
 Home tab ``start_window`` opens, with the guide centred over the garden part-way through a
-season; the garden alone at five moments of one season, top to bottom, since a page cannot
+season; the garden alone at six moments of one season, top to bottom, since a page cannot
 show motion; and the Projects folder's right-click, which renders the File menu's project
-group. The garden's clock is set by hand, so every run draws the same moments.
+group. ``--video DIR`` also films one season at sixty frames a second into an MP4 per theme
+— it needs ``ffmpeg`` on the path, and the films are for looking at, not for committing.
+
+The garden's clock is stopped and stepped by hand, so every run draws the same moments.
 """
 
 import argparse
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -37,24 +43,24 @@ from dplanner.framework.services import AppServices
 from dplanner.framework.session import AppSession
 from dplanner.modules import start_window
 from dplanner.modules.home.garden import Garden
+from dplanner.modules.home.garden_view import GardenView
 from dplanner.modules.home.page import HomePage
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
 WINDOW_SIZE = (1180, 800)
-# Kept in this order, so Recent lists them newest first: the graph at the top.
-# The moments of one season the garden strip shows, in seconds: seeds, the rain at work,
-# half in bloom, all in bloom, and gone back to seed for the next.
-MOMENTS = (0.0, 9.0, 20.0, 40.0, 58.0)
-STEP_S = 0.1
+# The moments of one season the garden strip shows, in seconds: the first sprout, both
+# agents at work, a pulse running down the roots, most in bloom, the milestone opening, and
+# the petals let go.
+MOMENTS = (1.2, 7.5, 11.2, 22.0, 30.4, 38.3)
+FRAME_S = 1 / 60
+SEASON_S = 42.0
 
 
-def season_at(seconds: float, reach: float) -> Garden:
-    """The garden after ``seconds`` of the ordinary clock, in the steps a tick takes."""
-    garden = Garden()
-    while garden.t < seconds:
-        garden.advance(STEP_S, reach)
-    return garden
+def step_to(garden: GardenView, seconds: float) -> None:
+    """Move the garden on by hand, a frame at a time, to ``seconds`` into its life."""
+    while garden.state.t < seconds - 1e-9:
+        garden.advance(FRAME_S)
 
 
 def open_library(
@@ -88,19 +94,20 @@ def index_panel(services: AppServices) -> IndexPanel:
     return panel
 
 
-def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+def render(app: QApplication, theme: Theme, out: Path, workspace: Path, video: Path | None) -> None:
     session, services = open_library(app, theme, workspace, "first")
     start_window(services)  # What app.open_at_startup does once the build is up.
     home = services.tabs.current_activity()
     assert home is not None and isinstance(home.widget, HomePage)
     garden = home.widget.garden
-    garden.state = season_at(20.0, garden.reach())
+    garden.clock.stop()  # The render keeps the time, not the event loop.
+    step_to(garden, 22.0)
     save(services.window, out, "home", theme, app)
 
+    fresh(garden)
     frames = []
     for moment in MOMENTS:
-        garden.state = season_at(moment, garden.reach())
-        settle(app)
+        step_to(garden, moment)
         frames.append(garden.grab().toImage())
     strip = QImage(frames[0].width(), sum(f.height() for f in frames), frames[0].format())
     painter = QPainter(strip)
@@ -112,6 +119,8 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     path = out / f"garden-{theme.name}.png"
     strip.save(str(path), "PNG")
     print(path)
+    if video is not None:
+        film(garden, video / f"garden-{theme.name}.mp4")
 
     panel = index_panel(services)
     tree = panel.tree
@@ -130,10 +139,55 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     session.close()
 
 
+def fresh(garden: GardenView) -> None:
+    """Back to the first moment of the first season, particles and all."""
+    garden.state = Garden()
+    for system in (garden.sparks, garden.motes, garden.petals):
+        system.clear()
+
+
+def film(garden: GardenView, path: Path) -> None:
+    """One season, every frame, through ffmpeg into an MP4."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory() as frames:
+        fresh(garden)
+        number = 0
+        while garden.state.t < SEASON_S:
+            garden.advance(FRAME_S)
+            garden.grab().save(str(Path(frames) / f"{number:05d}.png"))
+            number += 1
+        subprocess.run(
+            [
+                "ffmpeg",
+                "-loglevel",
+                "error",
+                "-y",
+                "-framerate",
+                "60",
+                "-i",
+                str(Path(frames) / "%05d.png"),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                "-crf",
+                "18",
+                "-movflags",
+                "+faststart",
+                str(path),
+            ],
+            check=True,
+        )
+    print(path)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory for the PNGs")
+    parser.add_argument("--video", type=Path, help="also film a season into this directory")
     args = parser.parse_args(argv)
+    if args.video is not None and shutil.which("ffmpeg") is None:
+        parser.error("--video needs ffmpeg on the path")
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
     assert isinstance(app, QApplication)
@@ -143,7 +197,7 @@ def main(argv: list[str]) -> int:
         QSettings.setDefaultFormat(QSettings.Format.IniFormat)
         QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, tmp)
         for theme in (DARK, LIGHT):
-            render(app, theme, args.out, Path(tmp))
+            render(app, theme, args.out, Path(tmp), args.video)
     return 0
 
 

@@ -12,8 +12,8 @@ to it:
   there through ``HomeDeps.rows``;
 - *Go ▸ Home*, because Go seats the index's rows.
 
-Its one preference — whether the garden shows — is *Settings ▸ Home*, and the garden's own
-close button writes the same key; ``garden_changed`` is how an open Home tab hears either.
+Its one preference — whether the garden shows — is *Settings ▸ Home*; ``garden_changed`` is
+how an open Home tab hears it change.
 """
 
 from collections.abc import Callable, Sequence

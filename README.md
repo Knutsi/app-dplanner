@@ -135,8 +135,8 @@ say so rather than shadowing it — and `install remove` takes out the launcher 
 but never the program that is running (`uv tool uninstall dplanner` does that).
 
 With no tabs to reopen, the program starts on **Home**, the top of the index: a short
-getting-started guide whose buttons are the verbs it teaches, over a small garden where an
-agent's rain makes the plan bloom — *Settings ▸ Home* puts it away.
+getting-started guide whose buttons are the verbs it teaches, over a small garden that is
+a plan: agents fly to what is ready, and it blooms — *Settings ▸ Home* puts it away.
 
 The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` also names
 one). A plan lives in a **plan repository** — a git repository holding several projects,
@@ -335,7 +335,7 @@ src/dplanner/
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 ├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
 ├── scripts/render_design_example.py  Debug ▸ Design Examples — the modal, the table, the toolbars and the rows — both themes, to PNG
-├── scripts/render_home.py         Home at the program's start, its garden through a season, the Projects folder's menu — docs/screenshots/f9-home/
+├── scripts/render_home.py         Home at the program's start, its garden through a season (and, with --video, a film of one), the Projects folder's menu — docs/screenshots/f9-home/
 ├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/ — and the cards — f5-key-block/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 ├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
@@ -408,6 +408,8 @@ src/dplanner/
 │   ├── side_panel.py        a panel a tab hosts beside its own surface: the frame, the strip
 │   │                        button with its reading, and the splitter between them
 │   ├── index_panel.py       the index tree: folders from whoever registered them
+│   ├── motion/              what moves: a frame clock at the display's rate that runs only while its
+│   │                        surface is seen, Qt-free curves, springs and particles, and batched drawing
 │   ├── inspector.py         what a module registers to appear in a detail panel
 │   ├── aspect_bar.py        one submenu's toggles as a bar — templates worded left, every toggle glyphed right, » overflow
 │   ├── aspect_toggle.py     the Type toggle an aspect module registers, declared once: shelve off, restore on
@@ -580,8 +582,9 @@ src/dplanner/
 │   │                        window half — click a row and the graph lands on its step, or
 │   │                        hand the lot to an agent
 │   ├── home/                where a window starts: the getting-started guide (guide.py, data naming
-│   │                        action ids) over the garden (garden.py, its Qt-free seasons) — a tab, the
-│   │                        index's top row, and what the program opens when there is nothing to reopen
+│   │                        action ids) over the garden — garden.py its Qt-free seasons, garden_view.py
+│   │                        the painting — a tab, the index's top row, and what the program opens
+│   │                        when there is nothing to reopen
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
 │   ├── appearance/          View ▸ Theme (System theme, then what every provider offers) and Settings ▸ Appearance
 │   ├── theme_omarchy/       ── one module per theme provider, each a Qt-free `themes.py`: Omarchy's

@@ -1,9 +1,8 @@
 """The "Home" settings page: whether Home shows its garden.
 
 A preference, so GLOBAL scope — somebody who does not want a moving garden does not want it
-in any library. The garden's own close button writes the same key, and this page is the way
-back. Both announce through the module's ``garden_changed`` so an open Home tab follows at
-once rather than on its next showing.
+in any library. A change announces through the module's ``garden_changed``, so an open Home
+tab follows at once rather than on its next showing.
 """
 
 from PySide6.QtWidgets import QCheckBox, QWidget
@@ -17,8 +16,8 @@ MODULE_ID = "home"
 GARDEN_KEY = "garden"
 
 GARDEN_HINT = (
-    "The strip at the foot of Home, where an agent's rain makes the plan bloom. It moves"
-    " only while Home is on screen."
+    "The strip at the foot of Home, where agents make the plan bloom. It moves only while"
+    " Home is on screen, and rests after two seasons until the pointer passes over it."
 )
 
 
@@ -40,9 +39,6 @@ def build_page(parent: QWidget | None, changed: Signal[()]) -> QWidget:
     garden_box.setObjectName("GardenBox")
     garden_box.setChecked(garden_wanted())
     garden_box.toggled.connect(lambda on: want_garden(bool(on), changed))
-    # The ✕ on the garden writes the same key while this page may be open.
-    unsubscribe = changed.connect(lambda: garden_box.setChecked(garden_wanted()))
-    page.destroyed.connect(lambda: unsubscribe())
     block(layout, captioned("Garden", page, GARDEN_HINT), garden_box)
     layout.addStretch(1)
     return page

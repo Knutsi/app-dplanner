@@ -72,11 +72,11 @@ flows, and what each surface on the way must make unmistakable:
 - **A first window → a first project.** A program with no tabs to reopen starts on the Home
   tab (`docs/screenshots/f9-home/`): a short guide, centred, whose every button is the verb
   it teaches — *New Project…*, *Open Project…*, *Open Agent in Code…* greyed with *no
-  project is open* until one is picked in the index — over a garden where a cloud wearing
-  the robot glyph rains on seedlings until they bloom. Closing the last tab leaves the
-  window blank; the index's top row and *Go ▸ Home* bring Home back. Never ambiguous:
-  **which verb each step is** (its own name, on its own button), and **why one cannot run
-  yet**.
+  project is open* until one is picked in the index — over a garden where agents, wearing
+  the sparkle their cards wear, rain on what is ready until it blooms. Closing the last
+  tab leaves the window blank; the index's top row and *Go ▸ Home* bring Home back. Never
+  ambiguous: **which verb each step is** (its own name, on its own button), and **why one
+  cannot run yet**.
 - **New step → details → run agent.** *New* drops a card and opens Step Details on it with
   the name selected, so typing is naming; the aspect bar says what the step is. *Run
   Agent* is a plain button on the Agent tab. When the graph says the step's prerequisites
@@ -808,9 +808,10 @@ and one stylesheet rule for the progress bar:
   moves its chevrons on the ring's clock, because the fact is the same one — somebody is at
   work, and that work will move along this link on its own. The one ornament that moves is
   **Home's garden** (`f9-home/garden-*`): the page nobody works in, where the motion *is* the
-  message — an agent's rain makes the plan bloom — slow, in the plan's own tones, still
-  while off screen and put away by its ✕ or *Settings ▸ Home*. It is not a precedent: a
-  surface where people work stays still.
+  message — agents make the plan bloom — in the plan's own tones, still while off screen or
+  after two seasons, and turned off in *Settings ▸ Home*. It is not a precedent: a
+  surface where people work stays still, and what the canvas might do with
+  `framework/motion/` is ARCHITECTURE.md's *Motion is a library*, not yet a rule.
 - **Selection follows the keyboard**: arrows move the row edge and whatever follows the
   selection follows it, as a click would.
 

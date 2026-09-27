@@ -4752,3 +4752,27 @@ tick scaled into the chip is a 1 px stroke whose diagonal washes out at 1×, so 
 
 **Upstream?** Only if the template grows a table of work; the lesson that a small mark on a
 filled chip wants a heavier stroke than the icon set's is general.
+
+## 68. From Home's garden: a motion library
+
+### `framework/motion/` — a frame clock, Qt-free curves and particles, batched drawing
+
+**What.** A new package. `clock.py`'s `FrameClock` runs on Qt's animation driver (a
+`QAbstractAnimation` with no end) and hands its listeners the seconds since the last tick,
+clamped to a tenth of a second. `follow(widget)` starts it on a show and stops it on a hide,
+and `step(dt)` ticks it by hand. `curves.py` holds the easings, `Tween`, a sub-stepped
+`Spring` (critically damped by default), a coherent `breeze` and a cubic Bézier, with no Qt.
+`particles.py` is a bounded particle system, also without Qt. `draw.py` holds a
+radial-gradient `glow`, the four-pointed `star`, a `petal`, a `tapered` stroke, and
+`paint_particles`, which fills one path per tone, shape and step of fade.
+
+**Why.** Home's garden needed smooth motion, and the application had only hand-rolled
+`QTimer`s counting ticks: the canvas's ring at 80 ms, and the spinner. A library keeps the
+next user from writing a fourth. It is built for the canvas, where arranging, finding and
+finishing would glide, as ARCHITECTURE.md's *Motion is a library* describes, though none of
+that is built yet. The drawing half is batched because Python pays per call. On the garden,
+that took a frame from 19 ms to 6.
+
+**Upstream?** Yes, the clock and the Qt-free half; nothing in them knows DPlanner. `draw.py`
+too, less its petal, which is only there because a garden has flowers.
+

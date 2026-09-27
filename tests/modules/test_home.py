@@ -14,7 +14,7 @@ from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, activity_uri, selection_uri
 from dplanner.framework.project_list_segment import LeadingRow
 from dplanner.modules import start_window
-from dplanner.modules.home.garden import CLOUD_LEFT, CLOUD_RIGHT, PLACES, SEEDS, Garden
+from dplanner.modules.home.garden import Garden
 from dplanner.modules.home.guide import GUIDE
 from dplanner.modules.home.module import HomeSegment
 from dplanner.modules.home.page import HOME_KIND, GuideRow, HomePage
@@ -150,27 +150,51 @@ def test_a_guide_verb_greys_with_its_reason_until_a_project_is_picked(services, 
 # -- the garden --------------------------------------------------------------------------------
 
 
-def test_what_the_rain_falls_on_grows_and_nothing_else():
-    garden = Garden()
-    wet = [index for index in range(len(PLACES)) if garden.rained_on(index)]
-    before = list(garden.growth)
-    garden.advance(0.5)
-    grew = [index for index, grown in enumerate(garden.growth) if grown > before[index]]
-    assert wet and grew == wet
+def run(garden: Garden, seconds: float, step: float = 1 / 30) -> list[tuple[float, str, int]]:
+    """Move a garden on, noting when each thing happened."""
+    happened = []
+    end = garden.t + seconds
+    while garden.t < end:
+        happened += [(garden.t, kind, index) for kind, index in garden.advance(step)]
+    return happened
 
 
-def test_a_season_blooms_rests_and_goes_back_to_seed():
+def test_a_seed_sprouts_only_once_everything_it_waits_on_has_bloomed():
     garden = Garden()
-    seasons: list[str] = []
-    while len(seasons) < 4 and garden.t < 600:
-        garden.advance(0.1)
-        if not seasons or seasons[-1] != garden.season:
-            seasons.append(garden.season)
-        if garden.season == "resting":
-            assert all(grown == 1.0 for grown in garden.growth)
-        assert CLOUD_LEFT - 1e-9 <= garden.cloud_x() <= CLOUD_RIGHT + 1e-9
-    assert seasons == ["growing", "resting", "wilting", "growing"]
-    assert garden.growth == list(SEEDS)  # Back to seed, never below it.
+    happened = run(garden, 45)
+    bloomed_at = {index: t for t, kind, index in happened if kind == "bloom"}
+    ready_at = {index: t for t, kind, index in happened if kind == "ready"}
+    assert set(bloomed_at) == set(range(len(garden.plan)))
+    for index, seed in enumerate(garden.plan):
+        for source in seed.waits:
+            assert ready_at[index] > bloomed_at[source]
+
+
+def test_two_agents_work_side_by_side_and_never_on_one_seed():
+    garden = Garden()
+    together = False
+    while garden.t < 30:
+        garden.advance(1 / 30)
+        working = [agent.target for agent in garden.agents if agent.state == "working"]
+        assert len(working) == len(set(working))
+        together = together or len(working) == 2
+    assert together
+
+
+def test_a_season_blooms_rests_lets_go_and_is_sown_again():
+    garden = Garden()
+    kinds = [kind for _t, kind, _index in run(garden, 90) if kind in ("rest", "let go", "sow")]
+    assert kinds[:4] == ["rest", "let go", "sow", "rest"]
+    assert garden.round >= 1
+
+
+def test_the_garden_rests_after_two_seasons_and_a_hover_wakes_it(services):
+    garden = home(services).garden
+    while not garden.asleep and garden.state.t < 200:
+        garden.advance(1 / 30)
+    assert garden.asleep and garden.state.season == "resting" and garden.state.round == 1
+    garden.wake()
+    assert not garden.asleep
 
 
 def test_the_garden_moves_only_while_it_is_on_screen(services, project):
@@ -184,24 +208,29 @@ def test_the_garden_moves_only_while_it_is_on_screen(services, project):
     window.hide()
 
 
-def test_the_garden_paints_every_season(services):
+def test_the_garden_paints_every_season_in_both_themes(services, themed):
+    from dplanner.theme import apply_theme
+    from dplanner.theme.themes import DARK, LIGHT
+
     garden = home(services).garden
     garden.resize(900, garden.height())
-    for _ in range(40):
-        garden.state.advance(5.0, garden.reach())
-        assert not garden.grab().isNull()
+    for theme in (DARK, LIGHT):
+        apply_theme(themed, theme)
+        for _ in range(12):
+            for _step in range(90):
+                garden.advance(1 / 30)
+            assert not garden.grab().isNull()
 
 
-def test_the_garden_can_be_put_away_and_brought_back(services):
+def test_settings_puts_the_garden_away_and_brings_it_back(services):
     page = home(services)
     assert page.garden.isVisibleTo(page)
-    page.garden.close_button.click()
-    assert not page.garden.isVisibleTo(page)
-
     (section,) = [s for s in services.settings_sections.sections() if s.id == "home.page"]
     settings = section.factory(None)
     box = settings.findChild(QCheckBox, "GardenBox")
-    assert box is not None and not box.isChecked()  # It heard the close.
+    assert box is not None and box.isChecked()
+    box.setChecked(False)
+    assert not page.garden.isVisibleTo(page)
     box.setChecked(True)
     assert page.garden.isVisibleTo(page)
     settings.deleteLater()

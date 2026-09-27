@@ -590,19 +590,65 @@ registry.
 
 **The garden is the one ornament that moves, and it earns it by saying what DPlanner is.**
 A first version listed the tabs a person kept lately; the developer's call was that a
-newcomer's first page should say what the application is for instead, and without a word:
-a row of seedlings is the plan, a cloud wearing the robot glyph is an agent, it rains on
-what it passes over, and what it rains on blooms. Everywhere else a still surface is the
-rule (DESIGN.md's *Focus and motion*) because every change on it is a change of fact; this
-strip is the stated exception, and it keeps the exception cheap. Its state is plain
-arithmetic in `garden.py` — positions as fractions, time in seconds — so the rules are
-tested without a window and a render sets the clock by hand; `GardenView` paints it in the
-plan's own tones (a milestone's violet, a feature's teal, a review's amber, an agent's blue
-as the rain) and ticks only between a show and a hide, so a Home tab in the background costs
-nothing and a test that never shows a window never starts a timer. A tick takes the time
-since the last one, and a long gap is one short step rather than a leap across a season.
-Somebody who would rather not have it closes it, and *Settings ▸ Home* — a global
-preference, since it is about the person and not the library — brings it back.
+newcomer's first page should say what the application is for instead, and without a word.
+So the garden is a plan: seeds are steps, the roots between them are links, and a seed
+sprouts only once everything it waits on has bloomed — which is the whole of what *ready*
+means. Agents, wearing the sparkle every agent step wears on its card, fly to what is ready
+and sprinkle it; it grows, opens petal by petal and blooms, and a pulse runs down its roots
+to what it unblocks. Two agents work side by side when two things are ready, the milestone
+blooms last and keeps its halo, and when everything is in bloom the garden rests, lets its
+petals go and is sown again. Everywhere else a still surface is the rule (DESIGN.md's
+*Focus and motion*) because every change on it is a change of fact; this strip is the stated
+exception, and it keeps the exception cheap: a frame costs about four milliseconds at a
+thousand pixels, it ticks only while shown, and after two seasons it rests, still, in full
+bloom until the pointer passes over it or Home is shown again — a page left open is not a
+reason to spend a core. Somebody who would rather not have it turns it off in *Settings ▸
+Home* — a global preference, since it is about the person and not the library. It has no
+close button of its own: a ✕ in the corner was one more control on a page that is otherwise
+only the guide, and the developer's call was to leave the garden clean. `garden.py` is what
+happens and `garden_view.py` how it looks; the first version,
+a cloud over nine identical stems, taught that the look is most of the message.
+
+## Motion is a library
+
+The canvas already moved in two places, each on a hand-rolled `QTimer` — the agent ring
+and the auto-progress chevrons step every 80 ms, twelve frames a second, and the spinner
+has its own — and Home's garden would have been a third. `framework/motion/` is what they
+share instead, shaped for the canvas though Home is its first user:
+
+- **One clock per surface, at the display's rate, only while seen.** `FrameClock` runs on
+  Qt's own animation driver — the one `QPropertyAnimation` uses, about sixty ticks a second,
+  paused by Qt when nothing animates — and hands its listeners the *seconds* since the last
+  tick, so motion is measured in time and never in ticks; a long gap is one short step.
+  `follow(widget)` starts it on a show and stops it on a hide, so a background tab costs
+  nothing, and `step(dt)` is how a test or a render sets the time rather than waiting for it
+  — the same promise the debounce service's immediate mode makes.
+- **What moves is plain state.** `curves` (easings, a tween, a spring, a coherent breeze, a
+  Bézier) and `particles` import no Qt, so a model like the garden's is tested as arithmetic
+  and a render is deterministic. A spring is the right tool for anything *moved* — it glides
+  and settles from wherever it is, however often its target changes; a tween for anything
+  *shown*, which has a start and an end.
+- **Drawing is batched, because Python pays per call.** A glow is one radial gradient, never
+  a blur; a tapering stroke one filled outline; a particle system one path per tone and step
+  of fade, filled once. Measured on the garden, those three moved a frame from nineteen
+  milliseconds to six, and caching the layers that change slowly — grass, stars, roots,
+  redrawn twenty times a second — to four.
+
+**What the canvas would use it for** is written down here so the next step starts from it,
+and none of it is built: motion that *explains a change of fact* rather than decorates one,
+never longer than a quarter second and never holding input back — the model changes at once
+and only the view catches up. Sort, Layout, Divide and a paste would glide each card on a
+spring from where it was to where it went, so a person sees where a step moved rather than
+hunting for it; Find, *Show in ▸ Graph* and Frame would pan and zoom along an eased path
+instead of cutting; a new step would grow from the point clicked and a deleted one leave a
+brief fading ghost; a new link would draw itself from source to waiter; and a step that
+turns done while it is watched would bloom — a soft green glow and a few sparks from its
+key block, the garden's own gesture, so *an agent makes the plan bloom* means the same
+thing on both surfaces. The ring and the chevrons would move to the frame clock, smoother
+and silent in a background tab. It needs two things first: DESIGN.md's *Focus and motion*
+amended from "only these move" to "motion explains a change", and one *Reduce motion*
+preference that completes every tween at once — which the suite would run under, as it runs
+the debounce service immediate.
 
 **A well can be as tall as its rows.** The guide is a `RowWell`, which is a scroll area, and
 `QScrollArea` stops its size hint at twenty-four lines of text whatever its adjust policy —
