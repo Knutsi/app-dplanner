@@ -61,6 +61,11 @@ BUSY_TINT = QColor(110, 160, 220, 180)
 # The chip's attention amber at the status tones' weight, so one hue means "careful"
 # whether it is a chip on a node or a notice over the whole window.
 WARN_TINT = QColor(220, 170, 90, 180)
+# A finished step's mark in a table: a white tick on this green. Opaque, the one tone that
+# is, because a mark carries its own contrast and so reads the same on every theme — the
+# good green at the tint's alpha is a pale smudge on a light ground. Its hue is the good
+# green's, a shade deeper so the white tick stands on it.
+DONE_MARK = QColor(50, 150, 75)
 STATUS_TONES: dict[str, QColor] = {
     "good": VALID_TINT,
     "busy": BUSY_TINT,

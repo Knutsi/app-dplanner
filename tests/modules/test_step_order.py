@@ -4,12 +4,11 @@ import json
 from datetime import date
 
 import pytest
-from PySide6.QtGui import QColor
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION
-from dplanner.framework.list_rows import EMPHASIS_ROLE, STRUCK_ROLE, TINT_ROLE
+from dplanner.framework.list_rows import EMPHASIS_ROLE, FINISHED_ROLE, TINT_ROLE
 from dplanner.framework.table import row_height
 from dplanner.modules.step_order.view import (
     ASPECTS_COLUMN,
@@ -17,7 +16,6 @@ from dplanner.modules.step_order.view import (
     MILESTONE_ROLE,
     TITLE_COLUMN,
 )
-from dplanner.theme.tokens import SECONDARY_ALPHA
 
 
 @pytest.fixture
@@ -201,36 +199,34 @@ def done(services, step):
     )
 
 
-def test_a_finished_step_wears_a_check_and_its_title_struck_through(services, mixed, tab):
-    """The work step and the feature trade their glyph for the check; the milestone keeps
-    its key badge and its title whole, finished or not."""
-    from dplanner.theme.icons import check_icon
+def test_a_finished_step_wears_the_done_mark_and_its_title_in_italic(services, mixed, tab):
+    """The work step and the feature trade their glyph for the done mark; the milestone
+    keeps its key badge and its title upright, finished or not."""
+    from dplanner.theme.icons import done_icon
 
     table = tab.table
     before = [table.item(row, TITLE_COLUMN).icon().pixmap(16).toImage() for row in range(4)]
     for step in mixed.steps:
         done(services, step)
 
-    ink = QColor(table.palette().text().color())
-    ink.setAlpha(SECONDARY_ALPHA)
-    check = check_icon(ink).pixmap(16).toImage()
+    mark = done_icon().pixmap(16).toImage()
     after = [table.item(row, TITLE_COLUMN).icon().pixmap(16).toImage() for row in range(4)]
-    assert after[:3] == [check, check, check]
+    assert after[:3] == [mark, mark, mark]
     assert after[3] == before[3]
-    assert [table.item(row, TITLE_COLUMN).data(STRUCK_ROLE) for row in range(4)] == [
+    assert [table.item(row, TITLE_COLUMN).data(FINISHED_ROLE) for row in range(4)] == [
         True,
         True,
         True,
         False,
     ]
-    # Only the title: the check and the stroke say it once, and the row still reads.
-    assert not table.item(0, ASPECTS_COLUMN).data(STRUCK_ROLE)
+    # Only the title: the mark and the italic say it once, and the row still reads.
+    assert not table.item(0, ASPECTS_COLUMN).data(FINISHED_ROLE)
 
 
-def test_an_unfinished_step_is_not_struck(services, project, tab):
+def test_an_unfinished_step_is_upright(services, project, tab):
     done(services, project.steps[0])
-    struck = [tab.table.item(row, TITLE_COLUMN).data(STRUCK_ROLE) for row in range(4)]
-    assert struck == [True, False, False, False]
+    finished = [tab.table.item(row, TITLE_COLUMN).data(FINISHED_ROLE) for row in range(4)]
+    assert finished == [True, False, False, False]
 
 
 def test_the_switches_narrow_the_order_to_steps_or_features_and_keep_the_milestones(

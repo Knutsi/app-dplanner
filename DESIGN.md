@@ -553,11 +553,13 @@ once, its delegate painting what a row wears. Debug ▸ Design Examples ▸ Tabl
   rounded chip in that milestone's own shade (`key_badge_icon`), the key being what a
   milestone is known by across the graph. The second line then says what the row gathers,
   not the key again.
-- **A finished step trades its glyph for a check and strikes its title**
-  (`Cell(struck=True)`, `check_icon` in the glyph's own ink), so what is left stands out of
-  a list that still reads whole. Only the title is struck. **A milestone keeps its badge and
-  its title**, finished or not — the key is what it is known by. The Order tab is the
-  example.
+- **A finished step trades its glyph for the done mark and sets its title in italic**
+  (`done_icon`, a white tick on a green chip; `Cell(finished=True)`), so what is left stands
+  out of a list that still reads whole. The chip is opaque — the one tone that is — because
+  a mark carries its own contrast and reads the same on every theme, where a tick in the
+  row's faded ink was one more glyph in a column of them. Only the title is italic, and it
+  stays readable, which a strike through it was not. **A milestone keeps its badge and its
+  title**, finished or not — the key is what it is known by. The Order tab is the example.
 - **A group heading is a spanned row nobody can pick**: bold secondary words at a plain
   row's height, no hover, no edge (`add_heading`), with the group's own glyph before them
   where it has one. Nothing else separates the groups; the heading is the separator.

@@ -53,8 +53,8 @@ from dplanner.framework.widgets import EmptyState, caption, captioned, ink_of, n
 from dplanner.theme.icons import (
     ICON_SIZE,
     beaker_icon,
-    check_icon,
     connect_icon,
+    done_icon,
     edit_icon,
     find_icon,
     frame_icon,
@@ -185,15 +185,15 @@ def sample_cells(row: SampleRow, ink: QColor) -> list[Cell]:
     # A milestone is known by its key, so the key badge stands where the glyph would and
     # the second line says what the row gathers rather than the key again — in that
     # milestone's own shade of the project's colour map. Finished work trades its glyph for
-    # the check and strikes its title; a milestone keeps both.
-    struck = done and not milestone
+    # the done mark and sets its title in italic; a milestone keeps both.
+    finished = done and not milestone
     if milestone:
         glyph = key_badge_icon(row.key, sample_shade(row))
     else:
-        glyph = check_icon(ink) if struck else _GLYPHS[row.kind](ink)
+        glyph = done_icon() if finished else _GLYPHS[row.kind](ink)
     detail = "gathers every step above it" if milestone else row.key
     return [
-        Cell(row.title, detail=detail, glyph=glyph, emphasis=milestone, struck=struck),
+        Cell(row.title, detail=detail, glyph=glyph, emphasis=milestone, finished=finished),
         Cell(row.days, secondary=done),
         Cell(row.status, secondary=done),
     ]
