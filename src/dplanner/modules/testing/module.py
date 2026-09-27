@@ -31,7 +31,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import follow_entity_tabs
+from dplanner.framework.activity import follow_project_tabs
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.context import (
     Context,
@@ -169,13 +169,7 @@ class TestsModule:
         deps = self._deps
         deps.tabs.register_factory(TESTS_KIND, self._tests_factory)
         deps.tabs.register_factory(ALL_TESTS_KIND, self._all_factory)
-        follow_entity_tabs(
-            deps.tabs,
-            TestsActivity,
-            deps.library.has,
-            closes_on=deps.library.structure_changed,
-            retitles_on=deps.library.field_changed,
-        )
+        follow_project_tabs(deps.tabs, TestsActivity, deps.library)
         deps.segments.register(
             IndexSegment(
                 id="tests",

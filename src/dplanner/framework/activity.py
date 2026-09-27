@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QWidget
 
 from dplanner.core.signals import Signal as CoreSignal
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, TextEdit
+from dplanner.domain.short_titles import short_titles
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
     SCOPE_SELECTION,
@@ -120,52 +121,61 @@ class EntityActivity(ActivityBase):
         self._context.set_scope(SCOPE_SELECTION, nodes)
 
 
-def follow_entity_tabs(
+type ModelSignal = CoreSignal[*tuple[Any, ...]]
+
+
+def project_tab_title(library: Library, project_id: ProjectId, caption: str) -> str:
+    """A tab showing one side of a project: its short title — unique among the library's,
+    so a renamed sibling can change it (`domain/short_titles.py`) — then what the tab shows.
+    The canvas is the project itself and keeps the whole title. `ARCHITECTURE.md`'s *A
+    project tab says its project's short title* has the reasoning."""
+    return f"{short_titles(library.projects)[project_id]} — {caption}"
+
+
+def follow_project_tabs(
     tabs: "TabHost",
     activity_type: type[EntityActivity],
-    still_exists: Callable[[str], bool],
+    library: Library,
     *,
-    closes_on: "CoreSignal[*tuple[Any, ...]]",
-    retitles_on: "CoreSignal[*tuple[Any, ...]] | Sequence[CoreSignal[*tuple[Any, ...]]]",
+    retitles_on: Sequence[ModelSignal] = (),
 ) -> None:
-    """Keep a module's entity tabs honest against the model, from one place.
+    """Keep a module's project tabs honest against the model, from one place.
 
-    Connects two upkeep rules every entity-tab module was copying: when ``closes_on``
-    fires (a structure change), a tab whose entity ``still_exists`` denies is closed;
-    when ``retitles_on`` fires, the survivors' tab titles are re-read. The subscriptions
-    live as long as the tab host — module registration is once per build, so there is
-    nothing to unhook.
+    Connects two upkeep rules every project-tab module was copying: on a structure change a
+    tab whose project has left the library is closed, and the survivors' titles are re-read.
+    They are re-read on every project's field change too, not only their own project's: a
+    tab is labelled with a short title that is unique against the siblings' titles
+    (:func:`project_tab_title`), so renaming one project can relabel another's tabs. A
+    step's field change is nobody's title, so typing in one retitles nothing. The
+    subscriptions live as long as the tab host — module registration is once per build, so
+    there is nothing to unhook.
 
-    ``retitles_on`` is usually the model's field signal, and may be several: a title that
-    also says something the model does not hold — the Specs tab's mark while a source has
-    updates waiting — has a second thing to hear. A signal that names no node re-reads
-    every survivor, which is what such a signal wants.
+    ``retitles_on`` is for a title that also says something the model does not hold — the
+    Specs tab's mark while a source has updates waiting — and re-reads every survivor.
     """
 
     def activities() -> list[EntityActivity]:
         return [a for a in tabs.activities() if isinstance(a, activity_type)]
 
-    def close_orphans(*_args: object) -> None:
+    def retitle(*_args: object) -> None:
         for activity in activities():
-            if not still_exists(activity.entity_id):
-                tabs.close_activity(activity)
-
-    def retitle(*args: object) -> None:
-        # A field signal names the node it changed; only that entity's tab can be retitled
-        # by it. With no node named, every survivor is re-read.
-        changed = args[0] if args else None
-        for activity in activities():
-            if changed is not None and changed != activity.entity_id:
-                continue
-            if still_exists(activity.entity_id):
+            if library.has(activity.entity_id):
                 tabs.set_tab_title(activity, activity.title)
 
-    closes_on.connect(close_orphans)
-    for signal in [retitles_on] if isinstance(retitles_on, CoreSignal) else retitles_on:
+    def on_structure(*_args: object) -> None:
+        for activity in activities():
+            if not library.has(activity.entity_id):
+                tabs.close_activity(activity)
+        retitle()
+
+    def on_field(node_id: NodeId, *_rest: object) -> None:
+        if library.has(node_id) and isinstance(library.node(node_id), Project):
+            retitle()
+
+    library.structure_changed.connect(on_structure)
+    library.field_changed.connect(on_field)
+    for signal in retitles_on:
         signal.connect(retitle)
-
-
-type ModelSignal = CoreSignal[*tuple[Any, ...]]
 
 
 def follow_project(

@@ -35,7 +35,7 @@ from dplanner.domain.model import Library, NodeId, Project, Step, StepId
 from dplanner.domain.ordering import placed
 from dplanner.domain.schedule import volume, volume_words
 from dplanner.framework.action_menu import build_menu
-from dplanner.framework.activity import EntityActivity, follow_project
+from dplanner.framework.activity import EntityActivity, follow_project, project_tab_title
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -203,7 +203,7 @@ class BulkEstimateActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — Estimates"
+        return project_tab_title(self._product, self.project_id, "Estimates")
 
     @property
     def widget(self) -> QWidget:

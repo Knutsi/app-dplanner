@@ -49,7 +49,12 @@ from dplanner.domain.model import NodeId, Project, Step, StepId
 from dplanner.domain.scope import ScopeKind, gatherers, kind_of
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
-from dplanner.framework.activity import ActivityBase, EntityActivity, follow_project
+from dplanner.framework.activity import (
+    ActivityBase,
+    EntityActivity,
+    follow_project,
+    project_tab_title,
+)
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
     SCOPE_SELECTION,
@@ -425,7 +430,7 @@ class TestsActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — Tests"
+        return project_tab_title(self._library, self.project_id, "Tests")
 
     @property
     def widget(self) -> QWidget:

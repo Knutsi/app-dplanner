@@ -34,7 +34,7 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import follow_entity_tabs
+from dplanner.framework.activity import follow_project_tabs
 from dplanner.framework.context import Context, ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
@@ -171,13 +171,7 @@ class TimeEstimatesModule:
                 run=self._export,
             )
         )
-        follow_entity_tabs(
-            deps.tabs,
-            TimeEstimatesActivity,
-            deps.library.has,
-            closes_on=deps.library.structure_changed,
-            retitles_on=deps.library.field_changed,
-        )
+        follow_project_tabs(deps.tabs, TimeEstimatesActivity, deps.library)
 
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")

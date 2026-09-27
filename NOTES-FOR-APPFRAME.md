@@ -636,6 +636,8 @@ sixth entity tab gets it for free.
 **Belongs upstream?** Yes, both — the template's docs already state the rule; this is the
 rule as code.
 
+*Since §64, `follow_entity_tabs` is `follow_project_tabs`, which takes the library.*
+
 ### `append_action` in `framework/action_menu.py`
 
 **What.** The per-spec body factored out of `build_menu`: greyed when disabled, omitted
@@ -3437,6 +3439,8 @@ node re-reads every survivor, which `retitle` already did.
 
 **Upstream?** Yes; it is three lines and it costs existing callers nothing.
 
+*Since §64, `retitles_on` names only the extra signals; the field signal is built in.*
+
 ### `framework/widgets.py` — `EDITOR_MEASURE` moved here
 
 **What.** The 760 px reading measure lives beside `centered_column`,
@@ -4594,3 +4598,38 @@ menu and the filing menus went the same way in the testing module.
 **Upstream?** No — the template has no aspect bar. What carries back is the pattern: a verb
 whose seat is a panel reads its specs by path and is `in_menus=False`, so it is never shown
 twice.
+
+## 64. Out of plan: short project names on tabs, and a finished step struck through
+
+### `framework/activity.py` — `follow_project_tabs` replaces `follow_entity_tabs`; `project_tab_title`
+
+**What.** `follow_entity_tabs(tabs, activity_type, still_exists, closes_on=…, retitles_on=…)`
+is now `follow_project_tabs(tabs, activity_type, library, *, retitles_on=())`. A structure
+change closes a tab whose project is gone and then re-reads every survivor's title. A field
+change naming a *project*, any project, re-reads them all. A step's field change is ignored.
+`retitles_on` now carries only the extra signals (the Specs tab's `updates_changed`).
+`project_tab_title(library, project_id, caption)` composes `"<short title> — <caption>"`
+from `domain/short_titles.py`.
+
+**Why.** A tab's label is now the project's short title, and that title is unique against
+the other projects' titles. Renaming project B can therefore relabel project A's tabs, and
+the old per-entity filter never retitled them. All eleven callers passed the same
+`library.has`, `structure_changed` and `field_changed`, so taking the library is simpler
+than the three-part generic signature. Ten activities also stopped repeating
+`f"{title or 'Untitled project'} — X"`. `ARCHITECTURE.md`'s *A project tab says its
+project's short title* has the reasoning.
+
+**Upstream?** Only as far as the template has an entity kind for everyone to follow. The
+generic `follow_entity_tabs` is the right upstream shape. What carries back is the lesson:
+a label derived from the siblings needs a retitle wider than its own entity.
+
+### `framework/table.py`, `framework/list_rows.py` — `Cell.struck`, `STRUCK_ROLE`
+
+**What.** A cell's first line can be struck through. `STRUCK_ROLE` (`UserRole + 14`) is set
+from `Cell.struck`, and `TableDelegate.font_for` applies `setStrikeOut`, so `sizeHint` and
+`paint` read one answer. The detail line is never struck.
+
+**Why.** The Order tab marks a finished step with a check in its glyph slot and its title
+struck through (DESIGN.md's *Tables*). A look belongs in the primitive, not in one view.
+
+**Upstream?** Yes. It is four lines, and any list of work has finished rows.

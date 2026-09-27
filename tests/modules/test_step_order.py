@@ -4,11 +4,12 @@ import json
 from datetime import date
 
 import pytest
+from PySide6.QtGui import QColor
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION
-from dplanner.framework.list_rows import EMPHASIS_ROLE, TINT_ROLE
+from dplanner.framework.list_rows import EMPHASIS_ROLE, STRUCK_ROLE, TINT_ROLE
 from dplanner.framework.table import row_height
 from dplanner.modules.step_order.view import (
     ASPECTS_COLUMN,
@@ -16,6 +17,7 @@ from dplanner.modules.step_order.view import (
     MILESTONE_ROLE,
     TITLE_COLUMN,
 )
+from dplanner.theme.tokens import SECONDARY_ALPHA
 
 
 @pytest.fixture
@@ -193,6 +195,44 @@ def test_every_row_wears_the_glyph_of_what_it_is(services, mixed, tab):
     assert images[0] != images[1] != images[3]
 
 
+def done(services, step):
+    services.undo.push(
+        SetModuleDataCommand(step.id, "step_status", {"status": "done", "format": 1})
+    )
+
+
+def test_a_finished_step_wears_a_check_and_its_title_struck_through(services, mixed, tab):
+    """The work step and the feature trade their glyph for the check; the milestone keeps
+    its key badge and its title whole, finished or not."""
+    from dplanner.theme.icons import check_icon
+
+    table = tab.table
+    before = [table.item(row, TITLE_COLUMN).icon().pixmap(16).toImage() for row in range(4)]
+    for step in mixed.steps:
+        done(services, step)
+
+    ink = QColor(table.palette().text().color())
+    ink.setAlpha(SECONDARY_ALPHA)
+    check = check_icon(ink).pixmap(16).toImage()
+    after = [table.item(row, TITLE_COLUMN).icon().pixmap(16).toImage() for row in range(4)]
+    assert after[:3] == [check, check, check]
+    assert after[3] == before[3]
+    assert [table.item(row, TITLE_COLUMN).data(STRUCK_ROLE) for row in range(4)] == [
+        True,
+        True,
+        True,
+        False,
+    ]
+    # Only the title: the check and the stroke say it once, and the row still reads.
+    assert not table.item(0, ASPECTS_COLUMN).data(STRUCK_ROLE)
+
+
+def test_an_unfinished_step_is_not_struck(services, project, tab):
+    done(services, project.steps[0])
+    struck = [tab.table.item(row, TITLE_COLUMN).data(STRUCK_ROLE) for row in range(4)]
+    assert struck == [True, False, False, False]
+
+
 def test_the_switches_narrow_the_order_to_steps_or_features_and_keep_the_milestones(
     services, mixed, tab
 ):
@@ -216,11 +256,27 @@ def test_the_switches_narrow_the_order_to_steps_or_features_and_keep_the_milesto
 
 
 def test_the_tab_is_titled_for_its_project_and_follows_a_rename(services, project, tab):
+    """A one-word title is said whole, a longer one by its initials."""
     from dplanner.domain.commands import SetFieldCommand
 
-    assert tab.title == "Discovery — Order"
+    assert services.tabs.tab_title(tab) == "Discovery — Order"
     services.undo.push(SetFieldCommand(project.id, "title", "Discovery Phase"))
-    assert "Discovery Phase — Order" in [a.title for a in services.tabs.activities()]
+    assert services.tabs.tab_title(tab) == "DP — Order"
+
+
+def test_a_sibling_renamed_to_the_same_initials_relabels_the_tab(
+    services, make_project, project, tab
+):
+    """The short title is unique among the library's, so another project's rename is this
+    tab's business too — and so is undoing it."""
+    from dplanner.domain.commands import SetFieldCommand
+
+    services.undo.push(SetFieldCommand(project.id, "title", "Discovery Phase"))
+    other = make_project("Other")
+    services.undo.push(SetFieldCommand(other.id, "title", "Delivery Plan"))
+    assert services.tabs.tab_title(tab) == "DiP — Order"
+    services.undo.undo()
+    assert services.tabs.tab_title(tab) == "DP — Order"
 
 
 def test_a_deleted_project_takes_its_order_tab_with_it(services, project, tab):

@@ -45,7 +45,12 @@ from dplanner.framework.action_registry import (
     ActionSpec,
     ActionState,
 )
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
+from dplanner.framework.activity import (
+    EntityActivity,
+    follow_project,
+    follow_project_tabs,
+    project_tab_title,
+)
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -211,9 +216,8 @@ class ProgressionActivity(EntityActivity):
     @property
     def title(self) -> str:
         """The project, and how many rows need a person — said only when some do."""
-        name = self._project().title or "Untitled project"
         count = f" ({self._needing})" if self._needing else ""
-        return f"{name} — Step statuses{count}"
+        return project_tab_title(self._product, self.project_id, f"Step statuses{count}")
 
     @property
     def widget(self) -> QWidget:
@@ -350,13 +354,7 @@ class ProgressionModule:
                 run=self._open,
             )
         )
-        follow_entity_tabs(
-            deps.tabs,
-            ProgressionActivity,
-            deps.library.has,
-            closes_on=deps.library.structure_changed,
-            retitles_on=deps.library.field_changed,
-        )
+        follow_project_tabs(deps.tabs, ProgressionActivity, deps.library)
 
     def _on_a_project(self, context: Context) -> ActionState:
         project_id = context.focus_entity("project")

@@ -53,7 +53,7 @@ from dplanner.domain.ordering import ports
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_menu import fill_bands
 from dplanner.framework.action_registry import ActionRegistry
-from dplanner.framework.activity import EntityActivity, follow_entity_tabs, follow_project
+from dplanner.framework.activity import EntityActivity, follow_project, follow_project_tabs
 from dplanner.framework.context import (
     SCOPE_ACTIVITY,
     SCOPE_SELECTION,
@@ -760,13 +760,7 @@ class ProjectEditorModule:
         self._canvas_verbs.register_into(deps.actions)
         self._layout_verbs.register_into(deps.actions)
         # A project that goes away takes its tab with it, and a rename reaches the tab.
-        follow_entity_tabs(
-            deps.tabs,
-            ProjectActivity,
-            deps.library.has,
-            closes_on=deps.library.structure_changed,
-            retitles_on=deps.library.field_changed,
-        )
+        follow_project_tabs(deps.tabs, ProjectActivity, deps.library)
 
     # -- tabs ------------------------------------------------------------------------------------
 

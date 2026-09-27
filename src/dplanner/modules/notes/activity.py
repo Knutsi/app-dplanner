@@ -10,8 +10,7 @@ from typing import TYPE_CHECKING
 
 from PySide6.QtWidgets import QVBoxLayout, QWidget
 
-from dplanner.domain.model import Project
-from dplanner.framework.activity import EntityActivity
+from dplanner.framework.activity import EntityActivity, project_tab_title
 from dplanner.framework.context import Uri, activity_uri
 from dplanner.framework.widgets import captioned
 from dplanner.modules.notes.view import NotesView
@@ -56,7 +55,7 @@ class NotesActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        return f"{self._project().title or 'Untitled project'} — {NOTES_CAPTION}"
+        return project_tab_title(self._library, self.project_id, NOTES_CAPTION)
 
     @property
     def widget(self) -> QWidget:
@@ -64,6 +63,3 @@ class NotesActivity(EntityActivity):
 
     def close(self) -> None:
         self.view.dispose()
-
-    def _project(self) -> Project:
-        return self._library.project(self.project_id)

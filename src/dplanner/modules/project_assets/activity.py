@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
 from dplanner.domain.assets import AssetEntry, AssetLocation, attach, catalog, prunable
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId
-from dplanner.framework.activity import EntityActivity, follow_project
+from dplanner.framework.activity import EntityActivity, follow_project, project_tab_title
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
@@ -243,8 +243,7 @@ class AssetsActivity(EntityActivity):
 
     @property
     def title(self) -> str:
-        project = self._deps.library.project(self.project_id)
-        return f"{project.title or 'Untitled project'} — Assets"
+        return project_tab_title(self._deps.library, self.project_id, "Assets")
 
     @property
     def widget(self) -> QWidget:
