@@ -37,13 +37,17 @@ honoured as done — the graph gates *launching*, not *recording* — so out-of-
 completion is never an error, and finishing a step frees its dependents no matter what
 the rest of the graph says.
 
+**Several projects are one board by merging theirs** (:func:`across`, :func:`merge`): edges
+never cross a project, so each walk is unchanged, and the merge ranks what a person acts on
+by unlocks again over the whole, ties going library order and then each project's own.
+
 **Nothing here is written to disk**, for ``ordering.py``'s reason: a stored answer can
 disagree with the statuses it came from the moment ``dplanner status set`` runs with no
-window open to notice. The tab, ``dplanner progression show`` and ``--json`` are three
-readers of the one function below.
+window open to notice. The Step statuses tab, the Control Centre, ``dplanner progression
+show`` and ``--json`` are readers of the functions below.
 """
 
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from dplanner.domain.model import Library, Project, Step, StepId
@@ -210,7 +214,7 @@ def progression(
     }
 
     def ranked(steps: list[Step]) -> tuple[Step, ...]:
-        return tuple(sorted(steps, key=lambda step: -unlocks[step.id]))  # Stable.
+        return _ranked(steps, unlocks)
 
     upcoming: list[Upcoming] = []
     waiting: list[Step] = []
@@ -233,6 +237,57 @@ def progression(
         upcoming=tuple(upcoming),
         waiting=tuple(waiting),
         unlocks=unlocks,
+    )
+
+
+def _ranked(steps: Iterable[Step], unlocks: Mapping[StepId, int]) -> tuple[Step, ...]:
+    """Most unlocked first; a stable sort, so ties keep the order they arrived in."""
+    return tuple(sorted(steps, key=lambda step: -unlocks[step.id]))
+
+
+def merge(found: Iterable[Progression]) -> Progression:
+    """Several projects' progressions as one board, in the order they are handed in.
+
+    Every partition a person acts on is ranked by unlocks again over the whole, and the sort
+    is stable — so handed in library order, ties go to the earlier project and then to that
+    project's own rank. The rest keep their order, project after project. Step ids are
+    unique across a library, so the unlock counts join without colliding, and one
+    progression merged is itself.
+    """
+    each = tuple(found)
+    unlocks = {step_id: count for one in each for step_id, count in one.unlocks.items()}
+
+    def joined[T](partition: Callable[[Progression], tuple[T, ...]]) -> tuple[T, ...]:
+        return tuple(item for one in each for item in partition(one))
+
+    return Progression(
+        done=joined(lambda one: one.done),
+        running=joined(lambda one: one.running),
+        review=_ranked(joined(lambda one: one.review), unlocks),
+        merge=_ranked(joined(lambda one: one.merge), unlocks),
+        attention=_ranked(joined(lambda one: one.attention), unlocks),
+        ready=_ranked(joined(lambda one: one.ready), unlocks),
+        upcoming=joined(lambda one: one.upcoming),
+        waiting=joined(lambda one: one.waiting),
+        unlocks=unlocks,
+    )
+
+
+def across(
+    library: Library,
+    projects: Sequence[Project],
+    status_for: Callable[[Step], str],
+    counts_as_work: Callable[[Step], bool] = _all_work,
+    auto_progresses: Callable[[Step, Step], bool] = _never,
+) -> Progression:
+    """Every project's progression merged into one board — what can start anywhere.
+
+    Hand ``projects`` in library order: that is the order ties are settled in. Edges never
+    cross a project, so each walk is the one-project walk unchanged.
+    """
+    return merge(
+        progression(library, project, status_for, counts_as_work, auto_progresses)
+        for project in projects
     )
 
 

@@ -10,7 +10,13 @@ from datetime import date, timedelta
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import ready
-from dplanner.domain.progression import estimated_progress, outstanding, progression
+from dplanner.domain.progression import (
+    across,
+    estimated_progress,
+    merge,
+    outstanding,
+    progression,
+)
 
 
 def build(*titles):
@@ -351,3 +357,52 @@ def test_a_days_wait_is_over_once_its_days_are_waited():
     wednesday, thursday = MONDAY + timedelta(days=2), MONDAY + timedelta(days=3)
     assert held_by_a_wait(Wait(days=3.0), done, since, wednesday)[1] == WAITING
     assert held_by_a_wait(Wait(days=3.0), done, since, thursday)[1] == DONE
+
+
+# -- several projects, one board ----------------------------------------------------------------
+
+
+def two_projects():
+    """Alpha: A3 waits on A2, A1 on nothing. Beta: B2 and B3 wait on B1, B4 on nothing — so
+    finishing B1 frees two, A2 one, and A1 and B4 none."""
+    library = Library()
+    for name, titles_ in (("Alpha", ("A1", "A2", "A3")), ("Beta", ("B1", "B2", "B3", "B4"))):
+        project = Project(title=name)
+        library.add_child(library.id, project)
+        for title in titles_:
+            library.add_child(project.id, Step(title=title))
+    alpha, beta = library.projects
+    link(library, alpha, "A3", "A2")
+    link(library, beta, "B2", "B1")
+    link(library, beta, "B3", "B1")
+    return library, alpha, beta
+
+
+def test_ready_across_projects_ranks_by_unlocks_and_ties_go_library_order():
+    """What can start anywhere, the step that frees most first — and between two that free
+    the same, the earlier project's, then that project's own order."""
+    library, alpha, beta = two_projects()
+    found = across(library, [alpha, beta], status_of({}))
+    assert titles(found.ready) == ["B1", "A2", "A1", "B4"]
+    assert titles(c.step for c in found.upcoming) == ["A3", "B2", "B3"]
+    assert found.unlocks[found.ready[0].id] == 2
+
+
+def test_the_board_is_every_step_of_every_project_once():
+    library, alpha, beta = two_projects()
+    found = across(library, [alpha, beta], status_of({"B1": "ready-for-review", "A1": "done"}))
+    assert found.total == len(alpha.steps) + len(beta.steps)
+    assert titles(found.done) == ["A1"]
+    assert titles(found.review) == ["B1"]
+
+
+def test_one_progression_merged_is_itself():
+    library, project = diamond()
+    found = progression(library, project, status_of({"A": "done"}))
+    assert merge([found]) == found
+
+
+def test_nothing_merged_is_an_empty_board():
+    found = merge([])
+    assert found.total == 0
+    assert found.percent == 0.0
