@@ -3,9 +3,9 @@ paths:
   - "src/dplanner/modules/{time_estimates,progression,step_order,estimation,step_wait}/**"
   - "src/dplanner/domain/{schedule,progression,ordering}.py"
   - "src/dplanner/theme/palettes.py"
-  - "tests/modules/test_{time_estimates,time_progress,time_present,time_pace,step_statuses_tab,step_order,milestone_colors,estimation_bulk}.py"
+  - "tests/modules/test_{time_estimates,time_progress,time_present,time_pace,step_statuses_tab,control_centre,step_order,milestone_colors,estimation_bulk}.py"
   - "tests/domain/test_{schedule,progression,ordering}.py"
-  - "tests/cli/test_time_matrix.py"
+  - "tests/cli/test_{time_matrix,progression_verbs}.py"
   - "scripts/render_boards.py"
 ---
 
@@ -13,7 +13,7 @@ paths:
 
 - **Progression is derived, never stored** — `domain/progression.py` is the graph's
   readiness with a `status_for(step)` handed in like `days_for`; the Step statuses tab,
-  `dplanner progression show` and `--json` are three readers of one function, and the
+  the Control Centre, `dplanner progression show` and `--json` read one function, and the
   frontier is a per-step check, not `ordering.ready()`'s wave one. **Ready for review and
   ready to merge are on the board and not done**: each is a partition of its own
   (`review`, `merge`), one move away for the lookahead, out of the percent — and a plain
@@ -33,8 +33,21 @@ paths:
   going on exists); running work is not listed, the header's percent and bar are gone, a
   `Segmented` picks one group, and the strip seats the registry verbs the root names
   (`StripVerb`: Run Agent with its profiles, Ready to Merge, Done) over the ticked rows —
-  a check column, whose box is the selection. `ARCHITECTURE.md`'s *Progression is the
-  status-aware frontier* has the partition rules and why each was a decision.
+  a check column, whose box is the selection — and every row ends in a ⋮ rendering the
+  Step menu's `agent`, `open` and `surfaces` bands (`ROW_MENU`), which picks its row
+  alone first. **The Control Centre is every project's Step statuses as one board**
+  (`ControlCentreActivity`, a singleton under Home and in Go ▸ `home`): each project is
+  walked on its own and the board is `progression.merge` of the walks — `across()` in the
+  terminal — re-ranked by `unlocks`, ties going library order then the project's own; rows
+  name their project (the Project column stands down on one project's tab) and a
+  *Projects* `FilterButton` narrows by re-merging, never re-walking. The two tabs are
+  siblings on `StatusBoard`, never one class with a scope, because `follow_project_tabs`
+  closes a project's tab with its project; both re-run on `clock.day_changed`, so a step
+  behind a dated wait joins Ready the morning it may start. `dplanner progression show
+  --all [PROJECT …]` is its terminal half — positionals, since `--project` is every verb's
+  own option — with each row's `project` and `agent` in the text and the JSON alike.
+  `ARCHITECTURE.md`'s *Progression is the status-aware frontier* has the partition rules
+  and why each was a decision.
 - **The order says what order, and how much — never when.** The Order tab is the index,
   the step, its wave and its estimate, under one line of volume (`domain/schedule.py`'s
   `volume_words`: *62 days over 24 steps, 2 unestimated*, the sentence `order show`,

@@ -154,7 +154,11 @@ paths:
   the refs stand — the PR's state and title now, whether the branch is still on the
   remote — writes fresh PR state into the step with the refresher's origin, and enables
   *Open PR* / *Open branch* (`aspect.py`'s `pr_url`/`branch_url`, the recorded URL over
-  one built from the number). `dplanner github show` is the terminal's copy.
+  one built from the number). `dplanner github show` is the terminal's copy. **The same
+  address is a Step verb**, `github.open_pr` — *Open Pull Request*, in Step ▸ `agent` beside
+  the agent's terminal, so a card, a table's right-click and a status row's ⋮ reach it —
+  greyed with *no pull request recorded* or *no GitHub repository to find PR #N in*, and
+  asking the repository only when the refs carry a number and no address.
 - **A project names its locations; the plan repository stays derived.** *Where does the
   plan live?* — the **plan repository** — is `find_repo_root(project dir)`, never stored.
   *Which places is it about?* — its **locations** (`domain/locations.py`: a role, a

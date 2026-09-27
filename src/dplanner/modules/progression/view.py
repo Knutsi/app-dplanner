@@ -117,6 +117,9 @@ class StatusTable(Table):
         self._milestone_badge = milestone_badge
         self._project_of = project_of
         self._shown: tuple[Progression, str, bool] | None = None
+        # Each glyph painted once per fill, in that fill's ink: a board is hundreds of rows
+        # wearing three pictures, and an SVG rendered per row was a third of the fill.
+        self._glyphs: dict[str, QIcon] = {}
         self.setColumnHidden(PROJECT_COLUMN, True)
 
     def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
@@ -141,6 +144,7 @@ class StatusTable(Table):
         self._shown = (progress, shown, spans)
         self.setColumnHidden(PROJECT_COLUMN, not spans)
         picked = self.picked()
+        self._glyphs.clear()
         self.blockSignals(True)
         try:
             self.clear_rows()
@@ -176,10 +180,12 @@ class StatusTable(Table):
         badge = self._milestone_badge(step.id)
         if badge is not None:
             return badge
-        ink = QColor(self.palette().text().color())
-        ink.setAlpha(SECONDARY_ALPHA)
-        painter = glyph_painter(self._glyph_of(step)) or step_icon
-        return painter(ink)
+        name = self._glyph_of(step)
+        if name not in self._glyphs:
+            ink = QColor(self.palette().text().color())
+            ink.setAlpha(SECONDARY_ALPHA)
+            self._glyphs[name] = (glyph_painter(name) or step_icon)(ink)
+        return self._glyphs[name]
 
     # -- reading it back ------------------------------------------------------------------
 

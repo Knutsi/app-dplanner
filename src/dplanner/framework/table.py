@@ -810,15 +810,11 @@ class TableDelegate(QStyledItemDelegate):
         return QRect(rect.left() + self._table.padding() + self.indent(index), top, side, side)
 
     def menu_rect(self, rect: QRect) -> QRect:
-        """Where a row's ⋮ sits: a glyph's square in the middle of its cell, on the first
-        line of a rich row as the box and the glyph are."""
+        """Where a row's ⋮ sits: a glyph's square in the middle of its cell — centred on the
+        row rather than on its first line, because it is the row's and not the name's, and
+        stands beside the row's other one-line facts."""
         side = ICON_SIZE
-        if self._table.rich():
-            line = QFontMetrics(self._table.font()).height()
-            top = rect.top() + ROW_PADDING_V + (line - side) // 2
-        else:
-            top = rect.top() + (rect.height() - side) // 2
-        return QRect(rect.center().x() - side // 2, top, side, side)
+        return QRect(rect.center().x() - side // 2, rect.center().y() - side // 2, side, side)
 
     def indent(self, index: QModelIndex | QPersistentModelIndex) -> int:
         """How far this cell hangs in: a grouped row's first column, and nothing else.
@@ -1141,6 +1137,9 @@ class TableDelegate(QStyledItemDelegate):
         painter.save()
         font = QFont(opt.font)
         font.setBold(True)
+        # A glyph's height rather than a letter's: at the text's own size the dots are a
+        # speck beside the row's words, and the target is the whole cell anyway.
+        font.setPixelSize(ICON_SIZE)
         painter.setFont(font)
         painter.setPen(ink)
         painter.drawText(self.menu_rect(opt.rect), Qt.AlignmentFlag.AlignCenter, MENU_GLYPH)
