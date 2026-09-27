@@ -1677,6 +1677,24 @@ def test_finding_a_step_puts_the_canvas_on_it(services, project, tab):
     assert abs(residue.x()) < 1.0 and abs(residue.y()) < 1.0
 
 
+def test_revealing_a_step_opens_its_canvas_on_it(app, services, project):
+    """From the Control Centre the canvas is usually not open yet. A new canvas frames the
+    whole graph a turn after it is first shown, and that frame used to land after the
+    reveal had centred — so Show in ▸ Graph opened on the middle of the plan instead."""
+    from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
+    from dplanner.modules.project_editor.positions import write_position
+
+    far = project.steps[1]
+    services.undo.push(SetModuleDataCommand(far.id, POSITION_KEY, write_position(4000.0, 3000.0)))
+
+    services.actions.run("steps.reveal", context_of(services, far.id))
+    app.processEvents()  # The canvas's first look is deferred to the turn after its show.
+
+    tab = next(a for a in services.tabs.activities() if a.uri.startswith("app://activity/project"))
+    residue = tab._view._looking_at().center() - scene(tab).node(far.id).body_scene_rect().center()
+    assert abs(residue.x()) < 1.0 and abs(residue.y()) < 1.0
+
+
 def test_find_is_ctrl_f_everywhere_and_slash_on_the_canvas(services):
     """Ctrl+F is what every application means by find, and a menu shortcut is how a Ctrl
     key is bound here — every text widget reclaims it, and the state gate keeps it off a
