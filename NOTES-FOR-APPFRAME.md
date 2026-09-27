@@ -4633,3 +4633,43 @@ from `Cell.struck`, and `TableDelegate.font_for` applies `setStrikeOut`, so `siz
 struck through (DESIGN.md's *Tables*). A look belongs in the primitive, not in one view.
 
 **Upstream?** Yes. It is four lines, and any list of work has finished rows.
+
+## 65. From F9: Home, where a window starts
+
+### `framework/index_panel.py` — a folder's own row reaches its segment; the menu is built apart
+
+**What.** `_on_clicked`, `_on_activated` and `_on_context_menu` no longer skip a folder's
+root item: a click, an activation and a right-click on it go to the segment like any row's.
+Selection still skips it (a folder row is not selectable). The right-click is split into a
+public `context_menu(item) -> QMenu | None` that builds the menu, and `_on_context_menu`
+that shows it. The tree also gets a `_RowDelegate` that strips `State_HasFocus`, as every row
+primitive already does.
+
+**Why.** Home is a folder row with nothing under it — the top of the index — and a
+right-click on the *Projects* folder offered nothing where a person reaches to add a project.
+Every existing segment already ignored its root, because a root carries none of the roles
+their rows are read by. The build/show split lets a test read the menu a row offers without
+the modal loop `exec` starts. The focus frame was Fusion's washed box round the current
+row's name, visible on every window that opened with the tree focused.
+
+**Upstream?** Yes, all three. The template's index has the same dead folder rows, and the
+same focus frame.
+
+### `framework/tabs.py` — a backdrop, `live_address`/`reopen`, `KeptTab`, and pinning is a change
+
+**What.** `TabHost.set_backdrop(widget)`: the host wraps its splitter in a `QStackedWidget`
+and shows the backdrop while it holds no tab, switched at the top of `_announce`. It is not
+an activity — `activities()` stays empty. `live_address(uri, exists)` and `reopen(uri,
+exists, *, preview=False)` are the stale-address checks that lived in `reopen_tabs` (parse,
+`can_open`, `exists`, and the deliberately broad `except` round the factory). `KeptTab` is
+the record a recent-tabs list is made of. `_pin` now emits `tabs_changed` when it pins.
+
+**Why.** A Home tab opened whenever the last one closed would be a phantom: Close All never
+greys, the session remembers it every time, and "is anything open?" is answered wrong
+everywhere. The checks moved because Home's recent list asks them of the same addresses the
+session reopen does. Pinning the preview you are on changed nothing `activity_changed`
+reports, so a listener keeping a list of *kept* tabs never heard it.
+
+**Upstream?** Yes for the backdrop and `reopen` — any tab host wants a page for "nothing
+open" and a safe way back to a remembered address — and for the pin signal. `KeptTab` only
+if the template grows a recent list.

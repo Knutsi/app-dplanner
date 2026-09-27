@@ -432,6 +432,18 @@ rebuilding on change is the normal case and that bookkeeping is what every segme
 otherwise copy — and survives a *restart* too, which is *Where the user left off is
 remembered by key* below.
 
+**A folder's own row is one of its segment's rows.** The panel used to swallow every gesture
+on a folder row, on the reasoning that a folder is furniture. Two requests broke that: Home
+wanted a row at the top of the index with nothing under it, and a right-click on *Projects*
+offered nothing where a person reaches to add one. Home as a row *inside* some other folder
+would have put it under a heading it does not belong to, so the panel now hands a click, an
+activation and a right-click on a folder row to its segment like any other row's, and a
+segment with nothing to say about its folder ignores it — every existing one already did,
+because a folder row carries none of the roles their rows are read by. Only selection still
+skips it: a folder row is not selectable, so it never stands for anything in the context.
+The Projects folder's right-click renders the File menu's `project` group through
+`build_menu`, so the index and the menu bar cannot disagree about how a project joins.
+
 ### A click is a glance: preview tabs
 
 A single click on an entry row opens its surface as a **preview tab** — VS Code's
@@ -503,10 +515,27 @@ rather than short.
 Reopening a tab has two more ways to be stale, and each is a question asked of somebody who
 knows the answer. The activity *kind* may be gone from this build, which the tab host
 answers (`can_open`); the *target* may be gone from the model, which the composition root
-answers by handing the module `Library.has` — so `modules/reopen_tabs/` never learns what a
-project is. A third guard catches whatever is left: a factory that raises costs the user one
-tab and never the launch, which is the one place in this codebase where a deliberately broad
-`except` is the honest answer.
+answers by handing over `Library.has` — so neither `modules/reopen_tabs/` nor Home learns
+what a project is. A third guard catches whatever is left: a factory that raises costs the
+user one tab and never the launch, which is the one place in this codebase where a
+deliberately broad `except` is the honest answer. All three live in `TabHost.reopen(uri,
+exists)` since Home arrived: a list of recent tabs asks the same questions of the same
+addresses, and two copies of them would be two answers to "does this still open?".
+
+### The recent tabs are kept beside the open ones
+
+Home lists the tabs a person *kept* lately — made current, and not as a preview, since a
+glance is not a choice — newest first, ten of them, each with what its tab last said and
+when it was last in front (a `KeptTab`). They are written per library beside the open-tab
+list, by `modules/reopen_tabs/` rather than by Home, and the reason is registration order.
+Home registers an activity factory, so it must come before reopen_tabs, which reopens a Home
+tab like any other; a recorder in Home would therefore hear every tab the startup reopen
+brings back as a person's choice, and reshuffle the list on every launch. reopen_tabs does
+that reopening behind its own `_restoring` guard, so it is the one module that can tell the
+two apart, and the composition root hands Home its `recent` and the signal that says the
+list moved. The title is the tab's own at the time, so a list read after a tab closed says
+what the tab last said — which includes a live mark such as the Step statuses count.
+
 
 ### Written on every change, not at close
 
@@ -543,6 +572,45 @@ Only the tabs have a switch (*Settings ▸ Startup*). Folders are cheap to close
 has ever wanted them shut on purpose; a window that reopens six tabs is a real opinion about
 how someone starts their day. The list is kept even while the switch is off, so turning it
 back on returns the session they last had rather than one from whenever they turned it off.
+
+## Home is where a window starts
+
+A window with no tab open used to show an empty tab bar over nothing, and since the
+Dashboard retired nothing stood in for it. Home does now: a short getting-started guide and
+this library's recent tabs, shown wherever the tabs would be while none is open, and kept as
+the top row of the index and *Go ▸ Home* for when it is wanted beside other tabs. The rules
+are `.claude/rules/shell-ui.md`'s *Home is where a window starts*.
+
+**A backdrop, not a tab.** The obvious build is a Home tab that opens whenever the last tab
+closes. It would be a phantom: `activities()` would never be empty, so Close All would never
+grey, reopen_tabs would remember it in every session, and every test and verb that asks
+"is anything open?" would get the wrong answer. `TabHost.set_backdrop` instead trades a page
+with the tab groups while the host holds no tab — a `QStackedWidget` over the splitter,
+switched in `_announce`, the one path everything learns through — and the page is the
+window's rather than any tab's. The Home *tab* is the same page class built a second time,
+so there is one page to keep right; each copy follows what it shows for as long as its
+widget lives and lets go on `destroyed`. The Home row in the index is a folder, so a
+surface that spans the whole library — the Control Centre is the first — hangs a row under
+it through `HomeDeps.rows`, a `LeadingRow` the composition root hands over: the Tests
+folder's *All Projects* row, one folder up, and no module edits Home to get there.
+
+**The guide is data, and its buttons are the verbs.** `modules/home/guide.py` is a tuple of
+steps, each a title, a sentence from the README and an **action id**. The page restates each
+button from that spec's `ActionState` on every context change and runs it through the
+registry, exactly as a menu entry does — so *Open Agent in Code* greys with its own *no
+project is open* until a project is picked in the index, and a verb refiled tomorrow is still
+the verb the guide means. A guide that described verbs in its own words would drift from
+them; one that called them directly would skip their gates. A test holds every id to the
+registry.
+
+**A page that swaps itself away owes the second click.** A recent row reopens its tab on one
+click, which takes Home off screen under the pointer — and Qt decides a double-click by time
+and distance alone, delivering it to whatever widget is there now. A habitual double-click on
+a row therefore landed on the graph that had just opened, where a double-click on empty
+canvas creates a step. `_SecondClickGuard` filters the window's `QWindow`, which sees an
+event before any widget does, for one double-click interval and drops the one double-click
+that arrives; the index needs no such thing, because it stays under the pointer while the
+tab it opens appears beside it.
 
 ## How a gesture becomes a change on screen
 
@@ -1657,8 +1725,9 @@ Dashboard as a preview: a tab for every glance at the index. Now the row only se
 project. Every Project verb, *Settings…* among them, acts on it from the menu bar and the
 row's right-click; the Steps row opens the graph; a double-click still folds the row (Qt's
 behaviour, not fought). What shows while no tab is open is the window's to decide, not any
-one project's. The rule is `.claude/rules/step-panel.md`'s project-level editor bullet and
-`CLAUDE.md`'s panel bullet.
+one project's — and the window decided on Home (*Home is where a window starts*). The rule
+is `.claude/rules/step-panel.md`'s project-level editor bullet and `CLAUDE.md`'s panel
+bullet.
 
 ## A markdown toolbar is verbs over a selection, and one splice each
 

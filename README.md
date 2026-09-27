@@ -131,6 +131,10 @@ this build is a git worktree, or when the `dplanner` on PATH was not installed b
 say so rather than shadowing it — and `install remove` takes out the launcher and the skill
 but never the program that is running (`uv tool uninstall dplanner` does that).
 
+A window opens on **Home**, the top of the index: a short getting-started guide whose
+buttons are the verbs it teaches, beside the tabs this library kept lately — one click
+reopens one. It stands wherever the tabs would be while none is open.
+
 The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` also names
 one). A plan lives in a **plan repository** — a git repository holding several projects,
 listed in its `.dplanner` index — and records the **code repository** it is about, so an
@@ -327,6 +331,7 @@ src/dplanner/
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 ├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
 ├── scripts/render_design_example.py  Debug ▸ Design Examples — the modal, the table, the toolbars and the rows — both themes, to PNG
+├── scripts/render_home.py         Home — a first window, one with recent tabs, the Projects folder's menu — docs/screenshots/f9-home/
 ├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/ — and the cards — f5-key-block/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 ├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
@@ -567,7 +572,10 @@ src/dplanner/
 │   ├── problems/            what is wrong with a plan, beside the canvas: the lint registry's
 │   │                        window half — click a row and the graph lands on its step, or
 │   │                        hand the lot to an agent
-│   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
+│   ├── home/                where a window starts: the getting-started guide (guide.py, data naming
+│   │                        action ids) and the recent tabs — the index's top row, a tab, and the
+│   │                        page behind the tabs while none is open
+│   ├── reopen_tabs/         the tabs this library had last time and the ones kept lately, and the switch
 │   ├── appearance/          View ▸ Theme (System theme, then what every provider offers) and Settings ▸ Appearance
 │   ├── theme_omarchy/       ── one module per theme provider, each a Qt-free `themes.py`: Omarchy's
 │   ├── theme_system/           staged theme and the person's own; the desktop's dark or light on macOS,
