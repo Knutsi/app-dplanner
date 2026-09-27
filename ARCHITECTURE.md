@@ -690,20 +690,19 @@ aspects it is not allowed to know.
 
 ### View is the window; Graph is the canvas
 
-The graph editor's own verbs — Sort, Layout, Divide, Region, Frame, the marks, Snap to Grid
-and the Background — used to be a `canvas` group inside **View**, and one inside **Project**
-for regions. That made View half a window menu (panels, tabs, theme, zoom) and half a
-drawing-surface menu, and it left the surface this application is mostly *about* with no
-heading of its own: the fastest way to a divide was the command palette, which then said
+The graph editor's own verbs — Sort, Layout, Divide, Frame, the marks, Snap to Grid and the
+Background — used to be a `canvas` group inside **View** (and regions, since retired, had
+one inside **Project**). That made View half a window menu (panels, tabs, theme, zoom) and
+half a drawing-surface menu, and it left the surface this application is mostly *about* with
+no heading of its own: the fastest way to a divide was the command palette, which then said
 only *Vertical*.
 
-They are a top-level **Graph** menu now, in four groups: `arrange` (the Sort, Layout and
-Divide child menus — moving cards, from the wholesale to one cut at a time), `regions`,
-`look` (what is drawn without moving anything) and `panels` (what stands *beside* the
-canvas inside the tab). View went back to being about the window — which is what decides
-where the Features panel's switch sits: the panel is inside one project's tab, so it is
-the graph's chrome and not the window's, and View ▸ Panels is about the areas around the
-tabs.
+They are a top-level **Graph** menu now, in three groups: `arrange` (the Sort, Layout and
+Divide child menus — moving cards, from the wholesale to one cut at a time), `look` (what is
+drawn without moving anything) and `panels` (what stands *beside* the canvas inside the
+tab). View went back to being about the window — which is what decides where the Features
+panel's switch sits: the panel is inside one project's tab, so it is the graph's chrome and
+not the window's, and View ▸ Panels is about the areas around the tabs.
 
 **What did *not* move is the point of the split.** Connect, Link, Unlink, Isolate and the
 Redirect pair stayed on **Step**, because a link is a fact about the steps it joins, and
@@ -987,10 +986,10 @@ menu because the canvas, four tables and the toolbar render that menu by name.
 
 **Deleting asks nothing any more.** A prompt in front of an undoable verb teaches the wrong
 lesson — that the gesture is dangerous, when Ctrl+Z is the safety net — and the CLI's `step
-remove` has said so since it existed. Steps and regions both lost their prompt in one pass,
-because the Delete key runs whichever of them the selection calls for and one gesture should
-not sometimes ask. The prompts that remain guard what undo cannot reach: removing a project
-from the library, a release, an outside edit.
+remove` has said so since it existed. Steps and regions (since retired) lost their prompt in
+one pass, because the Delete key ran whichever of them the selection called for and one
+gesture should not sometimes ask. The prompts that remain guard what undo cannot reach:
+removing a project from the library, a release, an outside edit.
 
 ### Copy and paste are a clone through the same command
 
@@ -1759,12 +1758,14 @@ canvas through a typed callback on their own `Deps`. Where a node *is* is still 
 model — `layout.positions()` answers it — so "the nearest node to the right" is a pure function
 and only the last step, telling the canvas what to select, needs a window.
 
-**A gesture that drags something the canvas draws is a `GestureMode`.** The region drag,
-the region resize and the card resize each hold what they move (so a sync from the model
-leaves that geometry alone until the release), put it back on Escape, and report on the
-release before popping — three modes, one skeleton. The base owns the hold, the cursor, the
-Escape and the pop; a subclass says what it holds, how to restore it, and what the release
-means. The third copy of the skeleton was the moment to write the base, not the first.
+**A gesture that drags something the canvas draws is a `GestureMode`.** The card resize and
+the divide's drag each hold what they move (so a sync from the model leaves that geometry
+alone until the release), put it back on Escape, and report on the release before popping —
+two modes, one skeleton. The base owns the hold, the cursor, the Escape and the pop; a
+subclass says what it holds, how to restore it, and what the release means. It was written
+at the third copy of the skeleton, when a region's drag and resize were two of them; the
+regions went (*Regions were retired*) and the base stayed, because the divide had become a
+copy of its own by then.
 
 The lasso is the mode that shows the stack paying for itself. A rubber band is a box and a
 cluster on a busy canvas rarely is, so `LassoMode` claims the press, grows a path under the
@@ -1773,7 +1774,7 @@ rect, not Qt's hit shape, which is the body inflated by the paint margin and wou
 back the edges. It then calls `select_steps` and pops, so one lasso ends the mode the way one
 link ends connect; Shift on the release folds the catch into what was already selected.
 Nothing in it is new machinery: the outline it draws is the same `OutlinePreviewItem` the
-region mode drags out, reached through one `aim_outline` on the `Canvas` protocol.
+divide draws its band with, reached through one `aim_outline` on the `Canvas` protocol.
 
 The divide is the stack used twice over. `DivideMode` is switchable like the lasso — Graph ▸
 Divide ▸ Vertical or Horizontal, `D` or `Shift+D` on the canvas — and does nothing but lay a
@@ -1861,12 +1862,6 @@ project: two people sharing a repository can be looking at different layouts of 
 graph. The picker's modified dot is a comparison against the snapshot, recomputed — never
 stored.
 
-**Regions** ride the same project-level entry: titled rectangles painted below the edges,
-annotation the model never learns about. Every region gesture is one command writing the
-whole list; a body drag also carries the steps whose centres lie inside, as one composite —
-undo restores frame and steps together. A named layout snapshots region rects along with
-step positions, and applying it moves regions it still finds — never creates or deletes one.
-
 **The canvas's spatial gestures exist as verbs, and geometry is derived on every read.**
 An agent plans through the CLI and cannot see the canvas, so the picture had to become
 words: `dplanner layout show` measures the graph — the stored positions with the ambient
@@ -1902,14 +1897,40 @@ floor let eight points of snap noise collapse a kept empty row). The same lanes 
 prints is the number a tidy acts on. One number to know: the column pitch, 300, is not a
 multiple of the grid, 8, so a tidy of a flow layout moves alternate columns by four
 points and nothing else — the fixed point of a sorted graph is the sorted graph snapped.
-Regions are neither carried by a tidy nor drawn on the map: they are annotation on the
-way out, and a rule written for them now would be one more thing to retire. **The generated
-skill no longer names their verbs either** — the five carry `in_skill=False`, and the
-preamble's three lines telling an agent not to draw one went with them, since a skill that
-does not offer something need not forbid it. That is not the same act as deleting the verbs:
-the canvas still draws what a plan already has, and removing a verb an older script calls is
-a decision somebody should make on purpose rather than as a side effect of tidying a
-document.
+
+### Regions were retired
+
+Regions were titled rectangles painted behind the graph — "Database setup", "Finalize
+release" — kept as a list on the project's `project_editor` entry, snapshotted by every
+named layout beside the steps' seats, and drawn by the canvas, the minimap and the report.
+They are gone, for two reasons that are one. **A stack is the canvas's container** now —
+canvas data over a real `requires` chain — and two containers would be two answers to "what
+belongs together". And **annotation nothing structures drifts**: the model never learned a
+region existed, so every sort, tidy, divide and hand-drag left the rectangles where they
+were and the steps somewhere else — `region fit` existed only to re-wrap one after the fact,
+and tidy and the map had already stopped carrying them. A stack is read from the chain it
+stands on, so it cannot drift from the graph that way.
+
+**An old project opens exactly as it was, minus the rectangles.** `project_editor`'s data
+format went to 2, and its one migration drops the project entry's `regions` and every
+layout's region rects on read — the migration pass runs at every open, window and CLI, and
+persists what it changed, so the first open by this build cleans a plan once. The stamp
+moving from 1 to 2 rewrites every positioned step's entry too, once: a pass-through, the
+price every format bump pays (`estimation` and `step_status` paid it before). One door
+needed the same care: `positions.entry_with`, the composer every project-level write goes
+through, carries the keys it does not own untouched, and an entry *adopted* since the open
+— an import the CLI wrote while a window was up, a pull — has not met the migration pass.
+Stamping that format 2 as it stood would have kept its `regions` forever, so the composer
+brings what it carries current first. `tests/old_canvas.py` is the old project the proof
+opens: in a window, through `layout show --map` and `apply`, in a report, and as an export
+imported.
+
+**The verbs were deleted, not hidden.** When the skill stopped naming them they were kept
+runnable behind `in_skill=False`, on the grounds that removing a verb an older script calls
+is a decision to make on purpose. This is that decision, and the flag went with them —
+it existed for nothing else. What stayed is what the other gestures share: `GestureMode`
+(the card resize and the divide), `OutlinePreviewItem` and `aim_outline` (the lasso and the
+divide), and the `region` glyph, which a test category may wear.
 
 ### The canvas is a plane, and why that is one decision rather than three
 
@@ -2071,7 +2092,7 @@ fades a card's fill, border, title, medallions and the shadow under it together,
 what receding is, and `renderers.py` never learns that a spotlight exists. The coverage
 trace already dimmed its cards that way to light a path through its lanes, so the constant
 moved to `theme/cards.py` — the same argument that put the card primitives there. The ground
-and its regions stay as they are: they are the table, not the graph.
+stays as it is: it is the table, not the graph.
 
 ### The palette a painter is handed is a snapshot
 
@@ -2195,16 +2216,16 @@ aspects' phrases that once filled it as a subtitle were saying what the medallio
 badge, the bar and the pill already wear, and a card that repeats itself is a card that is
 harder to read.
 
-**The gesture is a mode, and the hit shape is the card.** `NodeResizeMode` is
-`RegionResizeMode`'s shape with eight grips instead of one: a band `GRAB_IN` inside the
-border and `EDGE_REACH` outside it, both bands at once being a corner, and the link handle
-winning its corner of the right edge as it does on the press. The edge under the pointer
-moves, the far edge is the limit (never below `MIN_NODE_W` by `MIN_NODE_H`), and the card is
-held for the gesture so a sync from the model leaves it alone. One `Resize Step` command
-writes seat and size together, because dragging the left edge moves both and undo must take
-both back. The pointer's resize arrows are the gesture's only announcement, shown by
-`IdleMode` on mouse moves with no button down — the one mode that can start a resize is the
-one that says where.
+**The gesture is a mode, and the hit shape is the card.** `NodeResizeMode` is a
+`GestureMode` with eight grips (the retired region resize had one): a band `GRAB_IN` inside
+the border and `EDGE_REACH` outside it, both bands at once being a corner, and the link
+handle winning its corner of the right edge as it does on the press. The edge under the
+pointer moves, the far edge is the limit (never below `MIN_NODE_W` by `MIN_NODE_H`), and the
+card is held for the gesture so a sync from the model leaves it alone. One `Resize Step`
+command writes seat and size together, because dragging the left edge moves both and undo
+must take both back. The pointer's resize arrows are the gesture's only announcement, shown
+by `IdleMode` on mouse moves with no button down — the one mode that can start a resize is
+the one that says where.
 
 ### The ground is a preference; snapping belongs to the gesture
 
@@ -2219,9 +2240,8 @@ coordinate was rounded to it on its way to disk, which would have made a snap *t
 nothing: a drag with snapping off would still have landed on the grid the moment the store
 wrote it. So `positions.snapped(value)` rounds to a whole unit — short JSON, and still the
 float every number on disk owes — and only the canvas passes `GRID`, only while snapping is
-on, through the scene's one `snap()`: a node or region drag (`itemChange`), a resize, a
-region being dragged out, and the seat of a placed step (a double-click, New, a paste, a
-drop). A CLI verb has no gesture and stores what it was given; a sort's output is what the
+on, through the scene's one `snap()`: a node drag (`itemChange`), a resize, a divide's
+distance, and the seat of a placed step (a double-click, New, a paste, a drop). A CLI verb has no gesture and stores what it was given; a sort's output is what the
 algorithm computed, and the layered ones land on round pitches by construction.
 
 **What is drawn is a coarsening of what snaps.** The ground shows every `pitch_for(zoom)`-th
@@ -2696,14 +2716,6 @@ in milliseconds, prints the arguments *and* the examples, and cannot be stale �
 parser the skill was generated from. An index's job is to tell you a verb **exists** and how
 it is spelled; `--help` tells you what it does; reference.md is for reading every flag of
 everything at once. Each of the three is now used for what it is good at.
-
-**A verb the skill must not teach carries `in_skill=False`.** It is the CLI twin of
-`ActionSpec.in_menus=False`, and for the same reason: a thing can be legitimately available
-and legitimately not offered. The region verbs are what it exists for — registered, runnable,
-in `--help`, in neither generated file. The alternative was a noun denylist in the generator,
-which puts knowledge of one module's retirement into `cli/skill.py`; the flag keeps it on the
-command, where the module that owns it says so. A noun whose every verb is kept out is not a
-noun in the index at all, so `region` simply does not appear.
 
 ## Lint belongs to no feature
 
@@ -6032,7 +6044,7 @@ recognises the moment. None needs action today.
   that shows on every selection, or listens to the whole library, is the one to hold
   to those rules.
 - **`project_editor` accretes by construction.** *Modules never import each other* means a
-  feature that lives *on* the canvas — regions, named layouts, sorts, the minimap — cannot
+  feature that lives *on* the canvas — named layouts, sorts, the minimap — cannot
   become its own package, so the surface-owning module grows instead (a quarter of all
   module code). The answer today is internal seams: Qt-free files per concern, split item
   and mode files, the keymap as a table. If a canvas feature ever needs its *own* Deps and

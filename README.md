@@ -437,7 +437,7 @@ src/dplanner/
 │   ├── project_dashboard/   the project's home tab: its name and summary, and a card per module with
 │   │                        something to say about the project (Repositories, Agent, Compilation
 │   │                        instructions) — what a click on the project's row in the index opens
-│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, regions, resize) and renderers,
+│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, resize) and renderers,
 │   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid,
 │   │                        the side panel; ground.py paints the background)
 │   │                        (canvas_toolbar.py is the strip in named bands; find.py the rows Find offers;

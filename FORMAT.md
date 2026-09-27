@@ -418,9 +418,13 @@ cannot change meaning when the graph does, and a **missing result reads as pendi
 absence rule again, so a run over two hundred tests writes two hundred ids and no statuses.
 `project_editor` is another instance: a position
 beside each step — `{"x": 40.0, "y": 160.0}`, plus `"w"` and `"h"` only for a card somebody
-resized — and the named layouts and regions beside the project (`{"layouts": {...},
-"regions": [...]}`, coordinates as whole-unit floats: a canvas gesture snaps to the grid, a
-write never does). `feature` is
+resized — and the named layouts beside the project (`{"layouts": {"<name>": {"steps":
+{"<step id>": [x, y]}}}}`, coordinates as whole-unit floats: a canvas gesture snaps to the
+grid, a write never does). It is format 2: format 1 also kept titled rectangles beside the
+project (`"regions": [...]`) and each layout's rects for them (`"regions": {"<id>": [x, y,
+w, h]}`), and regions were retired, so the one migration drops both on read — a project
+saved with them opens as it was, minus the rectangles (`ARCHITECTURE.md`'s *Regions were
+retired*). A step's entry went to 2 unchanged. `feature` is
 the fifth: beside a step, `{"on": true, "cites": [{"document": "auth-spec", "quote": "…",
 "page": 4, "digest": "<sha16>"}]}` (format 3; formats 1 and 2 kept a catalogue beside the
 *project* and only the record's id beside the step, collapsed onto the steps at open —

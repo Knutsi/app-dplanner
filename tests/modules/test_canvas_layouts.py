@@ -4,6 +4,9 @@ No ``qapp`` fixture: ``layouts.py`` is Qt-free by rule — the CLI's ``layout`` 
 built from the same functions — and exercising it without one is part of the proof.
 """
 
+from tests.old_canvas import PLAN, SEATS, project_entry, step_entry
+
+from dplanner.core.module_data import migrated
 from dplanner.domain.model import Library, Project, Step
 from dplanner.modules.project_editor.named_layouts import (
     LayoutSnapshot,
@@ -16,7 +19,12 @@ from dplanner.modules.project_editor.named_layouts import (
     snapshot,
     write_layouts,
 )
-from dplanner.modules.project_editor.positions import MODULE_ID, read_position, write_position
+from dplanner.modules.project_editor.positions import (
+    DATA_FORMAT,
+    MODULE_ID,
+    read_position,
+    write_position,
+)
 
 
 def build():
@@ -136,22 +144,31 @@ def test_is_current_tracks_drift():
     assert not is_current(library, project, "Plan")
 
 
-def test_region_rects_ride_along_with_a_layout():
+def test_format_2_drops_the_regions_and_every_layouts_region_rects():
+    """Regions were retired: a project entry keeps its layouts' step seats and nothing else
+    it had about them — including a layout's rects for a region deleted long before."""
+    ids = ["a", "b", "c"]
+    assert migrated(project_entry(ids), DATA_FORMAT) == {
+        "format": 2,
+        "layouts": {
+            "Plan": {"steps": {i: list(seat) for i, seat in zip(ids, PLAN, strict=True)}},
+            "Earlier": {"steps": {i: list(seat[:2]) for i, seat in zip(ids, SEATS, strict=True)}},
+        },
+    }
+
+
+def test_a_steps_entry_passes_through_format_2_as_it_was():
+    for index in range(len(SEATS)):
+        assert migrated(step_entry(index), DATA_FORMAT) == {**step_entry(index), "format": 2}
+
+
+def test_a_layout_saved_over_an_entry_nobody_migrated_drops_its_regions():
+    """An entry adopted from another writer since the open — a CLI import, a pull — has not
+    met the migration pass; stamping it current as it stood would keep its regions forever."""
     library, project = build()
-    region = {"id": "r1", "title": "Database setup", "x": 8.0, "y": 8.0, "w": 320.0, "h": 240.0}
-    library.set_module_data(project.id, MODULE_ID, {"regions": [region], "format": 1})
-
-    save(library, project, "Plan")
+    library.set_module_data(project.id, MODULE_ID, project_entry([s.id for s in project.steps]))
+    save(library, project, "New")
     entry = project.module_data[MODULE_ID]
-    assert entry["regions"] == [region]  # write_layouts carried the other key untouched
-    assert read_layouts(project)["Plan"].regions == {"r1": (8.0, 8.0, 320.0, 240.0)}
-
-    shifted = {**region, "x": 400.0, "y": 400.0}
-    library.set_module_data(
-        project.id, MODULE_ID, {**project.module_data[MODULE_ID], "regions": [shifted]}
-    )
-    for command in apply_layout_commands(library, project, "Plan"):
-        command.redo(library)
-    stored = project.module_data[MODULE_ID]["regions"][0]
-    assert (stored["x"], stored["y"]) == (8.0, 8.0)
-    assert stored["title"] == "Database setup"  # a layout moves a region, never rewrites it
+    assert entry["format"] == 2 and "regions" not in entry
+    assert set(entry["layouts"]) == {"Plan", "Earlier", "New"}
+    assert all("regions" not in body for body in entry["layouts"].values())

@@ -86,20 +86,12 @@ class Geometry:
 # -- measuring ----------------------------------------------------------------------------------
 
 
-def measure(
-    library: Library,
-    project: Project,
-    *,
-    key_of: Callable[[Step], str],
-    placed: dict[StepId, Point] | None = None,
-) -> Geometry:
-    """The geometry as it stands. ``placed`` lets a caller that already read the positions
-    hand them over rather than derive them twice."""
+def measure(library: Library, project: Project, *, key_of: Callable[[Step], str]) -> Geometry:
+    """The geometry as it stands."""
     steps = project.steps
     if not steps:
         return Geometry((), None, (), (), (), ())
-    if placed is None:
-        placed = positions(library, project)
+    placed = positions(library, project)
     by_depth = depths(library, project)
     cards = tuple(
         Card(

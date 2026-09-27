@@ -62,8 +62,6 @@ from dplanner.modules.project_editor.modes import (
     PanMode,
 )
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped
-from dplanner.modules.project_editor.region_items import RegionItem
-from dplanner.modules.project_editor.regions import Region
 from dplanner.modules.project_editor.renderers import RING_STEP, NodeAccent, RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef, neighbourhood
 
@@ -117,15 +115,11 @@ class GraphScene(QGraphicsScene):
         self._spotlight_held = False
         self._nodes: dict[StepId, StepNodeItem] = {}
         self._edges: dict[EdgeRef, EdgeItem] = {}
-        self._regions: dict[str, RegionItem] = {}
         # Both the drag record and the "this node owns its own position" guard: one dict,
         # so the two can never disagree.
         self._press_at: dict[StepId, QPointF] = {}
-        # The same pair for regions: Qt-driven frame drags are recorded here, and a mode
-        # holding a gesture (a body drag, a resize) registers what it owns so sync leaves
-        # the geometry alone until the gesture ends.
-        self._region_press: dict[str, QPointF] = {}
-        self._held_region: str | None = None
+        # What a mode holding a gesture (a resize, a divide) owns, so sync leaves that
+        # geometry alone until the gesture ends.
         self._held_steps: set[StepId] = set()
         # Click order, which QGraphicsScene.selectedItems() does not preserve. It is what
         # makes `Context.selected_entities("step")` mean "the first, then the second".
@@ -147,13 +141,6 @@ class GraphScene(QGraphicsScene):
         self.create_requested: Signal[float, float] = Signal()
         # Everything picked, in pick order: a link verb makes the last one wait on the rest.
         self.selection_changed: Signal[CanvasSelection] = Signal()
-        self.region_create_requested: Signal[float, float, float, float] = Signal()
-        # Regions that finished moving, with the steps a body drag carried — one gesture,
-        # one emission, so the activity can make it one undo step.
-        self.regions_moved: Signal[
-            list[tuple[str, float, float]], list[tuple[StepId, float, float]]
-        ] = Signal()
-        self.region_resized: Signal[str, float, float, float, float] = Signal()
         # A card that finished resizing: seat and size together, since an edge may have
         # moved the seat — one gesture, one command.
         self.node_resized: Signal[StepId, float, float, float, float] = Signal()
@@ -163,7 +150,7 @@ class GraphScene(QGraphicsScene):
         self.redirect_requested: Signal[StepId, EdgeEnd] = Signal()
 
         self.selectionChanged.connect(self._on_selection)
-        # True while select_steps/select_region reconcile Qt's selection item by item, so
+        # True while select_steps reconciles Qt's selection item by item, so
         # the per-item selectionChanged is not announced — one gesture, one announcement.
         self._reselecting = False
 
@@ -176,9 +163,7 @@ class GraphScene(QGraphicsScene):
 
     # -- what the activity puts in ---------------------------------------------------------
 
-    def sync(
-        self, nodes: list[NodeSpec], edges: list[EdgeRef], regions: Sequence[Region] = ()
-    ) -> None:
+    def sync(self, nodes: list[NodeSpec], edges: list[EdgeRef]) -> None:
         wanted = {spec.step_id for spec in nodes}
         for spec in nodes:
             item = self._nodes.get(spec.step_id)
@@ -198,20 +183,6 @@ class GraphScene(QGraphicsScene):
         for gone_node in set(self._nodes) - wanted:
             self.removeItem(self._nodes.pop(gone_node))
         self._settle_ring_timer()
-
-        wanted_regions = {region.id for region in regions}
-        for region in regions:
-            frame = self._regions.get(region.id)
-            if frame is None:
-                frame = self._regions[region.id] = RegionItem(region.id)
-                self.addItem(frame)
-            frame.set_title(region.title)
-            # Same guard as a node's: a region mid-gesture owns its own geometry.
-            if region.id not in self._region_press and region.id != self._held_region:
-                frame.setPos(region.x, region.y)
-                frame.set_rect(region.w, region.h)
-        for gone_region in set(self._regions) - wanted_regions:
-            self.removeItem(self._regions.pop(gone_region))
 
         drawable = {ref for ref in edges if ref.source in self._nodes and ref.waiter in self._nodes}
         for gone_edge in set(self._edges) - drawable:
@@ -251,14 +222,10 @@ class GraphScene(QGraphicsScene):
         for shadow and stat — for anything that draws or frames the graph."""
         return [item.body_scene_rect() for item in self._nodes.values()]
 
-    def region_rects(self) -> list[QRectF]:
-        """Where every region sits — the faint outlines behind the minimap's dots."""
-        return [item.sceneBoundingRect() for item in self._regions.values()]
-
     def content_rect(self) -> QRectF:
-        """What the graph actually occupies — regions included, so framing shows them."""
+        """What the graph actually occupies — what framing fits the view to."""
         rect = QRectF()
-        for item in self.node_rects() + self.region_rects():
+        for item in self.node_rects():
             rect = rect.united(item)
         return rect
 
@@ -283,25 +250,7 @@ class GraphScene(QGraphicsScene):
         self.selection_changed.emit(self.selection())
 
     def selection(self) -> CanvasSelection:
-        return CanvasSelection(
-            steps=tuple(self._selection_order),
-            edges=self._selected_edges(),
-            regions=self._selected_regions(),
-        )
-
-    def select_region(self, region_id: str) -> None:
-        """Make one region the whole selection — a body click, or a rename about to ask."""
-        self._reselecting = True
-        try:
-            self.clearSelection()
-            item = self._regions.get(region_id)
-            if item is not None:
-                item.setSelected(True)
-        finally:
-            self._reselecting = False
-        self._selection_order = []
-        self._light_selection()
-        self.selection_changed.emit(self.selection())
+        return CanvasSelection(steps=tuple(self._selection_order), edges=self._selected_edges())
 
     def selected_step(self) -> StepId | None:
         """The one selected step, or None when it is none or several."""
@@ -386,24 +335,6 @@ class GraphScene(QGraphicsScene):
         """
         return [node for node in self._nodes.values() if path.intersects(node.body_scene_rect())]
 
-    def region_at(self, scene_pos: QPointF) -> RegionItem | None:
-        """The region under this point — by the full rect, not Qt's hit shape, because a
-        body press is exactly what the hit shape hides from Qt. Later-created wins, matching
-        what is painted on top."""
-        for item in reversed(list(self._regions.values())):
-            if item.contains_point(scene_pos):
-                return item
-        return None
-
-    def nodes_inside(self, region: RegionItem) -> list[StepNodeItem]:
-        """The steps whose centres lie inside — what a body drag carries."""
-        origin = region.pos()
-        w, h = region.size()
-        rect = QRectF(origin.x(), origin.y(), w, h)
-        return [
-            node for node in self._nodes.values() if rect.contains(node.body_scene_rect().center())
-        ]
-
     def aim_outline(self, path: QPainterPath) -> None:
         self._outline.aim(path)
         self._outline.show()
@@ -411,13 +342,11 @@ class GraphScene(QGraphicsScene):
     def hide_outline(self) -> None:
         self._outline.hide()
 
-    def hold(self, region_id: str | None, step_ids: set[StepId]) -> None:
-        """A mode owns this region's geometry — and these steps' — until it releases."""
-        self._held_region = region_id
+    def hold(self, step_ids: set[StepId]) -> None:
+        """A mode owns these steps' geometry until it releases."""
         self._held_steps = step_ids
 
     def release(self) -> None:
-        self._held_region = None
         self._held_steps = set()
 
     # -- what Qt's own dragging did --------------------------------------------------------------
@@ -433,11 +362,6 @@ class GraphScene(QGraphicsScene):
             for item in self.selectedItems()
             if isinstance(item, StepNodeItem)
         }
-        self._region_press = {
-            item.region_id: item.pos()
-            for item in self.selectedItems()
-            if isinstance(item, RegionItem)
-        }
 
     def mouseReleaseEvent(self, event: QGraphicsSceneMouseEvent) -> None:  # noqa: N802
         super().mouseReleaseEvent(event)
@@ -447,17 +371,8 @@ class GraphScene(QGraphicsScene):
             if step_id in self._nodes and self._nodes[step_id].pos() != was
         ]
         self._press_at = {}
-        region_moves = [
-            (region_id, self._regions[region_id].pos().x(), self._regions[region_id].pos().y())
-            for region_id, was in self._region_press.items()
-            if region_id in self._regions and self._regions[region_id].pos() != was
-        ]
-        self._region_press = {}
         if moved:
             self.nodes_moved.emit(moved)
-        if region_moves:
-            # A Qt-driven drag grabbed the strip or border, so the frame moved alone.
-            self.regions_moved.emit(region_moves, [])
 
     # -- internals ---------------------------------------------------------------------------
 
@@ -481,11 +396,6 @@ class GraphScene(QGraphicsScene):
     def _selected_edges(self) -> tuple[EdgeRef, ...]:
         return tuple(
             sorted(item.ref for item in self.selectedItems() if isinstance(item, EdgeItem))
-        )
-
-    def _selected_regions(self) -> tuple[str, ...]:
-        return tuple(
-            sorted(item.region_id for item in self.selectedItems() if isinstance(item, RegionItem))
         )
 
     def _on_selection(self) -> None:
@@ -688,7 +598,7 @@ class GraphView(QGraphicsView):
         super().scrollContentsBy(dx, dy)
         self._refresh_minimap()
 
-    def _on_scene_changed(self, _regions: list[QRectF]) -> None:
+    def _on_scene_changed(self, _rects: list[QRectF]) -> None:
         self._refresh_minimap()
 
     def _refresh_minimap(self) -> None:
@@ -701,7 +611,7 @@ class GraphView(QGraphicsView):
         """
         scene = self.scene()
         if isinstance(scene, GraphScene):
-            self.minimap.show_graph(scene.node_rects(), self._looking_at(), scene.region_rects())
+            self.minimap.show_graph(scene.node_rects(), self._looking_at())
 
     def _looking_at(self) -> QRectF:
         return self.mapToScene(self.viewport().rect()).boundingRect()

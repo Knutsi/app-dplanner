@@ -110,10 +110,10 @@ def over(ground: QColor, ink: QColor) -> QColor:
     """``ink`` composited over ``ground`` — the opaque colour a translucent tint lands as.
 
     A card's fill is *designed* as ink over the ground (``FILL_ALPHA``, a kind's tone), but
-    it is painted opaque: the ground under a card is a grid, a region's wash or a
-    neighbour's shadow, and a card that lets any of those show through reads as a stain
-    rather than a card. Blending here gives exactly the colour the tint would have had
-    over bare ground, on any theme, with nothing underneath able to change it.
+    it is painted opaque: the ground under a card is a grid or a neighbour's shadow, and a
+    card that lets either show through reads as a stain rather than a card. Blending here
+    gives exactly the colour the tint would have had over bare ground, on any theme, with
+    nothing underneath able to change it.
     """
     share = ink.alphaF()
     return QColor(

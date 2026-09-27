@@ -147,11 +147,8 @@ paths:
   that read the topology first, a `‡` on the ones that read a house format first, and a
   legend line per mark — all three projected from the registry — because a summary per verb
   was a third of a file loaded every session and said what `reference.md` and `--help` both
-  already say.
-  A verb the skill must not teach carries **`in_skill=False`**, the CLI twin of
-  `ActionSpec.in_menus`: registered, runnable, described by `--help` like any other, named
-  by no generated file. The region verbs are what it exists for. `ARCHITECTURE.md`'s *The
-  skill's command list is an index, not a manual* has the reasoning and the measurement.
+  already say. `ARCHITECTURE.md`'s *The skill's command list is an index, not a manual* has
+  the reasoning and the measurement.
 - **The skill is written to every home an agent reads, and the one that installs DPlanner
   is hand-written.** `SKILL.md` is an open format, so one generated skill serves Claude
   Code, Codex and OpenCode; `cli/skill.py`'s `SKILL_HOMES` names the directories they read

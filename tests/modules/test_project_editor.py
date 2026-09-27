@@ -33,7 +33,6 @@ from dplanner.modules.project_editor.modes import (
     PAN,
     REDIRECT_FROM,
     REDIRECT_TO,
-    REGION_CREATE,
 )
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped
 from dplanner.modules.project_editor.renderers import (
@@ -1511,8 +1510,6 @@ def test_the_strip_is_named_bands_of_glyphs(services, project, tab):
     assert named == ["Problems", "Go", "Step", "Link", "Arrange", "History", "Options"]
     seated = {verb for _name, verbs in bands(tab) for verb in verbs}
     assert {"Find Step…", "New Step", "Undo", "Look"} <= seated
-    # Regions are on their way out, and the strip is where that shows first.
-    assert not any("Region" in verb for verb in seated)
 
 
 def test_every_verb_on_the_strip_is_a_glyph_with_its_words_in_the_tooltip(services, project, tab):
@@ -1533,13 +1530,12 @@ def test_the_graph_verbs_live_on_the_graph_menu_and_the_link_verbs_on_step(servi
     assert where["canvas.sort_flow"] == ("Graph", "Sort")
     assert where["canvas.divide_vertical"] == ("Graph", "Divide")
     assert where["canvas.snap"] == ("Graph", None)
-    assert where["regions.new"] == ("Graph", "Region")
     assert where["steps.redirect_to"] == ("Step", "Redirect")
     assert where["steps.link"] == ("Step", None)
     strays = [
         spec.id
         for spec in services.actions.all_specs()
-        if spec.id.startswith(("canvas.", "regions.")) and spec.menu != "Graph"
+        if spec.id.startswith("canvas.") and spec.menu != "Graph"
     ]
     assert strays == []
 
@@ -1800,131 +1796,46 @@ def test_applying_a_layout_is_one_undo_step_that_restores_every_position(service
     assert snapshot(services.document, project).steps == scattered.steps
 
 
-# -- regions ------------------------------------------------------------------------------------
+# -- a project saved with regions ----------------------------------------------------------------
 
 
-def add_region(services, project, x, y, w, h, title="Region"):
-    from dplanner.modules.project_editor.regions import (
-        new_region,
-        read_regions,
-        set_regions_command,
-    )
+@pytest.fixture
+def reopened(app, cli, cli_library, at_work_board):
+    """A window opened over Discovery as a build with regions left it: three steps, their
+    ids in order, and the running application — built the way ``main`` builds it, so the
+    migration pass runs before the canvas reads anything."""
+    from tests.old_canvas import plant
 
-    region = new_region(title, x, y, w, h)
-    services.undo.push(set_regions_command(project, [*read_regions(project), region], "Add Region"))
-    return region
+    from dplanner.app import new_session
 
-
-def regions_of(services, project):
-    from dplanner.modules.project_editor.regions import read_regions
-
-    return read_regions(services.document.project(project.id))
-
-
-def test_dragging_out_a_region_is_one_undo_step(app, services, project, tab):
-    tab.set_mode(REGION_CREATE, True)
-    drag(app, tab, QPointF(400.0, 296.0), QPointF(720.0, 536.0))
-
-    found = regions_of(services, project)
-    assert len(found) == 1
-    assert (found[0].x, found[0].y, found[0].w, found[0].h) == (400.0, 296.0, 320.0, 240.0)
-    assert services.undo.undo_text() == "Add Region"
-    # One region ends the mode, the way one link ends connect.
-    assert view(tab).modes.current().name == IDLE
-    services.undo.undo()
-    assert regions_of(services, project) == []
+    cli("project", "create", "Discovery")
+    for title in ("Read the spec", "Draft the model", "Ship it"):
+        cli("step", "add", "Discovery", title)
+    step_ids = plant(cli_library, "Discovery")
+    session = new_session(at_work=at_work_board)
+    assert session.open_initial(cli_library)
+    assert session.services is not None
+    session.services.debounce.set_immediate(True)
+    yield session.services, step_ids
+    session.close()
 
 
-def test_a_body_drag_carries_the_steps_whose_centres_lie_inside(app, services, project, tab):
-    first, second = project.steps  # at (40, 40) and (40, 200) in the automatic layout
-    region = add_region(services, project, 0.0, 0.0, 300.0, 120.0)  # first inside, second out
+def test_a_project_saved_with_regions_opens_on_the_canvas_without_them(reopened):
+    """Regions were retired, and a plan that had them opens exactly as it was, minus the
+    rectangles."""
+    from tests.old_canvas import SEATS
 
-    drag(app, tab, QPointF(280.0, 80.0), QPointF(440.0, 240.0))  # body: off node, off strip
+    services, step_ids = reopened
+    project = services.document.projects[0]
+    tab = services.tabs.open("project", project.id)
 
-    found = regions_of(services, project)[0]
-    assert (found.x, found.y) == (160.0, 160.0)
-    from dplanner.modules.project_editor.positions import read_position
-
-    assert read_position(services.document.step(first.id)) == (200.0, 200.0)
-    assert read_position(services.document.step(second.id)) is None
-    assert services.undo.undo_text() == "Move Region"
-
-    services.undo.undo()  # One step back restores the frame and the carried step together.
-    assert (regions_of(services, project)[0].x, regions_of(services, project)[0].y) == (
-        region.x,
-        region.y,
-    )
-    assert "project_editor" not in services.document.step(first.id).module_data
-
-
-def test_a_title_drag_moves_the_frame_alone(app, services, project, tab):
-    first, _second = project.steps
-    add_region(services, project, 0.0, 0.0, 300.0, 120.0)
-
-    drag(app, tab, QPointF(260.0, 12.0), QPointF(340.0, 92.0))  # the title strip
-
-    found = regions_of(services, project)[0]
-    assert (found.x, found.y) == (80.0, 80.0)
-    assert "project_editor" not in services.document.step(first.id).module_data
-
-
-def test_the_corner_grip_resizes(app, services, project, tab):
-    add_region(services, project, 400.0, 296.0, 200.0, 120.0)
-
-    drag(app, tab, QPointF(592.0, 408.0), QPointF(840.0, 656.0))  # the bottom-right grip
-
-    found = regions_of(services, project)[0]
-    # The drag runs through the view's pixel grid, so allow one grid cell of rounding.
-    assert abs(found.w - 440.0) <= 8.0 and abs(found.h - 360.0) <= 8.0
-    assert found.w % 8 == 0 and found.h % 8 == 0
-    assert (found.x, found.y) == (400.0, 296.0)
-    assert services.undo.undo_text() == "Resize Region"
-
-
-def test_double_clicking_the_title_renames(app, services, project, tab, monkeypatch):
-    add_region(services, project, 400.0, 300.0, 200.0, 120.0)
-    monkeypatch.setattr(
-        "dplanner.modules.project_editor.region_verbs.QInputDialog.getText",
-        lambda *_args, **_kwargs: ("Database setup", True),
-    )
-
-    send(app, tab, QEvent.Type.MouseButtonDblClick, QPointF(500.0, 312.0))
-
-    assert regions_of(services, project)[0].title == "Database setup"
-    assert services.undo.undo_text() == "Rename Region"
-
-
-def test_the_delete_key_reaches_a_selected_region(app, services, project, tab):
-    region = add_region(services, project, 400.0, 300.0, 200.0, 120.0)
-    scene(tab).select_region(region.id)
-    press_key(app, tab, Qt.Key.Key_Delete)
-
-    assert regions_of(services, project) == []
-    assert services.undo.undo_text() == "Delete Region"
-
-
-def test_a_selected_region_reaches_the_context(services, project, tab):
-    region = add_region(services, project, 400.0, 300.0, 200.0, 120.0)
-    scene(tab).select_region(region.id)
-    uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
-    assert uris == [f"app://selection/region/{region.id}"]
-
-
-def test_a_node_over_a_region_still_drags_as_a_node(app, services, project, tab):
-    first, _second = project.steps
-    add_region(services, project, 0.0, 0.0, 300.0, 120.0)
-    node = scene(tab)._nodes[first.id]
-
-    start = centre_of(node)
-    send(app, tab, QEvent.Type.MouseButtonPress, start)
-    node.setPos(node.pos() + QPointF(240.0, 0.0))
-    send(app, tab, QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
-
-    assert services.undo.undo_text() == "Move Step"
-    assert (regions_of(services, project)[0].x, regions_of(services, project)[0].y) == (
-        0.0,
-        0.0,
-    )
+    drawn = {type(item).__name__ for item in scene(tab).items() if item.parentItem() is None}
+    assert drawn == {"StepNodeItem", "LinkPreviewItem", "OutlinePreviewItem"}
+    for step_id, (x, y, size) in zip(step_ids, SEATS, strict=True):
+        node = scene(tab)._nodes[step_id]
+        assert (node.pos().x(), node.pos().y()) == (x, y)
+        assert node.size() == (size or (NODE_W, NODE_H))
+    assert "regions" not in project.module_data["project_editor"]
 
 
 # -- the lasso -------------------------------------------------------------------------------------

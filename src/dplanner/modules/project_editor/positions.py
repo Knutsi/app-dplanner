@@ -28,11 +28,34 @@ migration list — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 
 from typing import Any, TypeGuard
 
-from dplanner.core.module_data import ModuleDataFormat, stamped
+from dplanner.core.module_data import ModuleDataFormat, migrated, stamped
 from dplanner.domain.model import Project, Step
 
 MODULE_ID = "project_editor"
-DATA_FORMAT = ModuleDataFormat(MODULE_ID)
+
+
+def _drop_regions(data: dict[str, Any]) -> dict[str, Any]:
+    """Format 1 → 2: regions are retired.
+
+    Format 1 kept titled rectangles beside the project, ``"regions": [...]``, and every
+    named layout snapshotted their rects beside the steps' seats. Stacks are the canvas's
+    one container now, and a rectangle the graph knew nothing about went stale with every
+    sort, tidy and move, so both go — and a project saved with them opens exactly as it
+    was, minus the rectangles. A step's entry never carried either key and passes through.
+    """
+    kept = {key: value for key, value in data.items() if key != "regions"}
+    layouts = kept.get("layouts")
+    if isinstance(layouts, dict):
+        kept["layouts"] = {
+            name: {k: v for k, v in body.items() if k != "regions"}
+            if isinstance(body, dict)
+            else body
+            for name, body in layouts.items()
+        }
+    return kept
+
+
+DATA_FORMAT = ModuleDataFormat(MODULE_ID, version=2, migrations=(_drop_regions,))
 
 # The canvas's snap pitch: a drag, a resize or a placement lands on it while Snap to Grid is
 # on, which keeps a hand-arranged graph tidy. The ground's dots and lines are drawn on a
@@ -119,15 +142,16 @@ def write_position(x: float, y: float, size: Size | None = None) -> dict[str, An
 def entry_with(project: Project, key: str, value: Any) -> dict[str, Any]:
     """The project-level entry with one key replaced, the other keys carried untouched.
 
-    The named layouts and the regions share ``projects/<p>/modules/project_editor.json``,
-    and this is what lets each be written without knowing the other's shape. An empty value
-    drops its key, and ``stamped`` turns a bare entry into ``{}``, which deletes the file.
+    Every key on ``projects/<p>/modules/project_editor.json`` is written through here, so
+    each can be written without knowing another's shape. What it carries is brought to the
+    current format first: an entry adopted from another writer since the open — a CLI
+    import, a pull — has not been through the migration pass, and stamping it current as
+    it stood would keep whatever that pass drops forever. An empty value drops its key, and
+    ``stamped`` turns a bare entry into ``{}``, which deletes the file.
     """
-    entry = {
-        k: v
-        for k, v in (project.module_data.get(MODULE_ID) or {}).items()
-        if k not in (key, "format")
-    }
+    current = project.module_data.get(MODULE_ID) or {}
+    current = migrated(current, DATA_FORMAT) or current
+    entry = {k: v for k, v in current.items() if k not in (key, "format")}
     if value:
         entry[key] = value
     return stamped(entry, DATA_FORMAT.version)
