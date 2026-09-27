@@ -117,6 +117,9 @@ def create(monkeypatch):
         def spec(self):
             return answers.get("spec")
 
+        def dispose(self):
+            pass
+
         def deleteLater(self):  # noqa: N802 - Qt's name
             pass
 

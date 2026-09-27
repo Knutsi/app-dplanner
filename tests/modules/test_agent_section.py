@@ -1,15 +1,16 @@
-"""The stacked Agent tab and the project panel's Agent card.
+"""The stacked Agent tab, and the Agent tab of *Project ▸ Settings…*.
 
 Three parts over one briefing: the project's standing instruction (one field, two editors,
 one undo stack), the inherited context (derived, read-only, rendered by the prompt's own
-``section_lines``), and the step's instruction. The card is the same project field again.
+``section_lines``), and the step's instruction. The Settings tab is the same project field
+again.
 """
 
 import pytest
 
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
-from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
 
 # -- fixtures ----------------------------------------------------------------------------------
@@ -38,13 +39,13 @@ def section(services, step):
 
 
 @pytest.fixture
-def card(services):
+def project_tab(services):
     spec = next(
-        s for s in services.project_cards.sections() if s.id == "step_agent_instruction.card"
+        s for s in services.project_settings.sections() if s.id == "step_agent_instruction.project"
     )
-    card = spec.factory()
-    yield card
-    card.dispose()
+    tab = spec.factory()
+    yield tab
+    tab.dispose()
 
 
 # -- the three parts ---------------------------------------------------------------------------
@@ -239,58 +240,89 @@ def test_the_summaries_follow_the_text(services, step, section):
 # -- one field, two editors --------------------------------------------------------------------
 
 
-def test_the_card_and_the_tab_edit_one_field_over_one_undo_stack(services, step, section, card):
+def test_the_settings_tab_and_the_step_tab_edit_one_field_over_one_undo_stack(
+    services, step, section, project_tab
+):
     project = services.document.project_of(step.id)
     section.show_target(step.id)
-    card.show_target(project.id)
+    project_tab.show_target(project.id)
 
-    card.edit.setPlainText("House rules.")
+    project_tab.edit.setPlainText("House rules.")
     assert section.project_edit.toPlainText() == "House rules."
 
     services.undo.break_coalescing()  # Two bursts, two commands — the undo test needs both.
     cursor = section.project_edit.textCursor()
     cursor.movePosition(cursor.MoveOperation.End)
     cursor.insertText(" Amended.")
-    assert card.edit.toPlainText() == "House rules. Amended."
+    assert project_tab.edit.toPlainText() == "House rules. Amended."
 
     services.undo.undo()
     assert project.module_text[MODULE_ID] == "House rules."
-    assert card.edit.toPlainText() == "House rules."
+    assert project_tab.edit.toPlainText() == "House rules."
 
 
-def test_the_card_registers_into_project_cards(services):
-    assert any(s.id == "step_agent_instruction.card" for s in services.project_cards.sections())
+def test_the_project_tab_registers_into_project_settings(services):
+    sections = services.project_settings.sections()
+    assert any(s.id == "step_agent_instruction.project" for s in sections)
 
 
-def test_typing_in_the_dashboards_card_survives_context_republishes(services, step):
-    """A model edit can republish the context mid-typing; the page is opened about one
-    project and never re-targeted, so a rebind that would reset the editor's cursor cannot
-    happen — by construction now, where the dock panel had to guard for it."""
+def settings_for(services, project):
+    """*Project ▸ Settings…* on ``project``, the application's way: the module's one dialog."""
+    module = next(m for m in services.modules if m.id == "projects")
+    on = Context({SCOPE_SELECTION: (ContextNode(selection_uri("project", project.id)),)})
+    services.actions.run("projects.settings", on)
+    return module._dialog
+
+
+def instruction_tab(dialog):
+    from dplanner.modules.step_agent_instruction.section import ProjectInstructionSection
+
+    return next(e for e in dialog.extensions if isinstance(e, ProjectInstructionSection))
+
+
+def test_the_standing_instruction_typed_in_settings_is_one_undo_and_reaches_the_agent_tab(
+    services, step, section
+):
     from PySide6.QtTest import QTest
 
-    from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND
-    from dplanner.modules.step_agent_instruction.section import ProjectInstructionCard
+    from dplanner.modules.step_agent_instruction.aspect import write_state
+
+    services.document.set_module_data(step.id, MODULE_ID, write_state(True))
+    project = services.document.project_of(step.id)
+    dialog = settings_for(services, project)
+    tab = instruction_tab(dialog)
+    QTest.keyClicks(tab.edit, "House rules.")
+    assert project.module_text[MODULE_ID] == "House rules."
+    section.show_target(step.id)
+    assert section.project_edit.toPlainText() == "House rules."
+
+    dialog.hide()  # Leaving the dialog seals the step the typing grew…
+    dialog.show()
+    QTest.keyClicks(tab.edit, " Amended.")  # …so the next visit's typing is a step of its own.
+    services.undo.undo()
+    assert section.project_edit.toPlainText() == "House rules."
+    services.undo.undo()
+    assert project.module_text.get(MODULE_ID, "") == ""
+    assert section.project_edit.toPlainText() == ""
+
+
+def test_typing_in_the_settings_agent_tab_survives_republishes_and_settings_again(services, step):
+    """A model edit can republish the context mid-typing, and *Settings…* can be asked for
+    again; neither re-aims the tab at the project it already shows, so the cursor stays."""
+    from PySide6.QtTest import QTest
 
     project = services.document.project_of(step.id)
-    page = services.tabs.open(DASHBOARD_KIND, project.id).page
-    card = next(e for e in page.extensions if isinstance(e, ProjectInstructionCard))
+    tab = instruction_tab(settings_for(services, project))
 
-    QTest.keyClicks(card.edit, "hello world")
+    QTest.keyClicks(tab.edit, "hello world")
     services.context.set_scope(
         SCOPE_SELECTION, (ContextNode(selection_uri("project", project.id)),)
     )
     services.context.refresh()
-    assert card.edit.toPlainText() == "hello world"
+    settings_for(services, project)
+    assert tab.edit.toPlainText() == "hello world"
     assert project.module_text[MODULE_ID] == "hello world"
-    assert card.edit.textCursor().position() == len("hello world")
-
-
-def test_the_dashboard_shows_the_agent_card(services, step):
-    from dplanner.modules.project_dashboard.activity import DASHBOARD_KIND
-
-    project = services.document.project_of(step.id)
-    page = services.tabs.open(DASHBOARD_KIND, project.id).page
-    assert "Agent" in [c.title.text() for c in page.cards]
+    assert tab.edit.textCursor().position() == len("hello world")
 
 
 # -- the preview -------------------------------------------------------------------------------
@@ -372,12 +404,12 @@ def test_each_editor_pastes_into_its_own_level(services, step, section):
     assert len(section.project_assets._names) == 1
 
 
-def test_the_project_card_pastes_into_the_project(services, step, card):
+def test_the_settings_tab_pastes_into_the_project(services, step, project_tab):
     from dplanner.domain.assets import assets
 
     project_id = services.document.project_of(step.id).id
-    card.show_target(project_id)
-    paste_image(card.edit)
+    project_tab.show_target(project_id)
+    paste_image(project_tab.edit)
     names = assets(services.repo.files(project_id, "step_agent_instruction"))
     assert len(names) == 1
-    assert card.gallery is not None and card.gallery._names == names
+    assert project_tab.gallery is not None and project_tab.gallery._names == names

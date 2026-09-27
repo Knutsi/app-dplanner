@@ -231,9 +231,9 @@ paths:
   hand-editing a document — or rewording the compilation instructions — does not.
   **There is no Compile button.** *Compile with Agent…* launches the chosen profile on a
   briefing of the fragments, the project's **compilation instructions** (`modules/docs.md`
-  beside the project; the panel card, a tab in the view, and `docs set/show --for-project`
-  are three presenters of one field) and the verb that finishes it — `dplanner compiled set
-  <key> --file -`. Two typed callbacks on `DocsDeps`, the `hand_to_agent` shape, so nothing
+  beside the project; a *Project ▸ Settings…* tab, a tab in the view, and `docs set/show
+  --for-project` are three presenters of one field) and the verb that finishes it —
+  `dplanner compiled set <key> --file -`. Two typed callbacks on `DocsDeps`, the `hand_to_agent` shape, so nothing
   imports the agent module; the run is tracked on the collector like any other, and
   **claims nothing about the step's status**. What the agent writes arrives from another
   process, so **it is not undoable** and replacing a document that has text asks once.

@@ -84,7 +84,7 @@ class ProseSection(QWidget):
         self.expand_button.clicked.connect(self._open_expanded)
         self.expand_button.setEnabled(False)
 
-        # ``margin`` is 0 when a host (a card, the Details tab) already owns the spacing.
+        # ``margin`` is 0 when a host (a dialog page, the Details tab) already owns the spacing.
         layout = QVBoxLayout(self)
         layout.setContentsMargins(margin, margin, margin, margin)
         layout.setSpacing(FIELD_GAP)

@@ -77,7 +77,8 @@ class AppServices:
     index_segments: IndexSegmentRegistry
     panels: PanelRegistry
     inspector_sections: InspectorSectionRegistry
-    project_cards: InspectorSectionRegistry  # The same registry type, a different host.
+    # The Project dialog's tabs after Repositories — the same contract, a modal host.
+    project_settings: InspectorSectionRegistry
     # Blocks composed into the step panel's first tab ("Details") — a third host of the
     # same contract, for the editors a step should show before any aspect tab is opened.
     step_details: InspectorSectionRegistry
