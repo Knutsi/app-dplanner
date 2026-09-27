@@ -29,9 +29,36 @@ AGENT_KEY: Final = "agent"
 LENSES_KEY: Final = "lenses"
 MAX_ROUNDS_KEY: Final = "max_rounds"
 
-# The lenses a review is offered as checkboxes, by id and as the tab says them. A lens this
-# build does not name is a skill of the person's own, passed on to the agent as written.
-LENSES: Final = (("architecture", "Architecture"), ("security", "Security"))
+
+@dataclass(frozen=True)
+class Lens:
+    """A way of looking at a change: its id as stored, its name on the tab, and what the
+    reviewing agent is asked through it."""
+
+    id: str
+    label: str
+    asks: str
+
+
+# The lenses a review is offered as checkboxes. A lens this build does not name is a skill of
+# the person's own, passed on to the agent as written.
+LENSES: Final = (
+    Lens(
+        "architecture",
+        "Architecture",
+        "Does the change fit the codebase it lands in — dependencies pointing the way the"
+        " layers do, a general path generalised rather than a parallel one added beside it,"
+        " names that say what each thing is, and nothing left behind (a near-duplicate, a"
+        " dead branch, a stale comment) for the next change to trip on?",
+    ),
+    Lens(
+        "security",
+        "Security",
+        "Could anything the change reads be turned against it — input reaching a shell"
+        " string, a query or a path unescaped, a secret logged or committed, a permission or"
+        " an exposed surface widened, a check a caller can skip?",
+    ),
+)
 DEFAULT_LENSES: Final = ("architecture", "security")
 DEFAULT_MAX_ROUNDS: Final = 3
 # "" is the default launch profile — whatever *Run Agent* itself runs on this machine.
@@ -40,6 +67,8 @@ DEFAULT_AGENT: Final = ""
 NO_REVIEW_ON_A_WAIT: Final = "a wait reviews nothing: it holds, and no agent works it"
 # Why a link into a review auto-progresses whatever its flag says, as the Edge menu greys it.
 TAKES_FROM_REVIEW: Final = "is a review: it takes its subject from review on"
+# Why a review's run gets no worktree whatever its agent aspect says: it reads the subject's.
+NO_WORKTREE_FOR_A_REVIEW: Final = "a review reads the work it reviews and commits none of its own"
 
 
 @dataclass(frozen=True)
@@ -99,6 +128,11 @@ def subjects(library: Library, review: Step) -> list[Step]:
     """What a review reviews: the steps it requires. One, when the plan is well made —
     lint's ``review.subject`` names a review with none or several."""
     return library.requires(review.id)
+
+
+def lens(lens_id: str) -> Lens | None:
+    """The lens this build names ``lens_id``, or None for a skill of the person's own."""
+    return next((known for known in LENSES if known.id == lens_id), None)
 
 
 def lens_words(lenses: Sequence[str]) -> str:

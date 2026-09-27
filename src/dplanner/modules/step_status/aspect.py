@@ -68,6 +68,8 @@ DATA_FORMAT = ModuleDataFormat(MODULE_ID, 2, (_to_format_2,))
 # The origin the window's own "work started here" claim carries: no view claims it, so
 # every surface treats the write as foreign and repaints — the launch stamp's pattern.
 STARTED_ORIGIN: Final[object] = object()
+# The origin a merge's "done" carries — the same pattern, for the fact GitHub reports.
+MERGED_ORIGIN: Final[object] = object()
 
 
 def read(step: Step) -> str:
@@ -144,6 +146,20 @@ def record_started(library: Library, step_id: StepId, today: date) -> bool:
         return False
     step = library.step(step_id)
     status_command(step, IN_PROGRESS, today=today, view_origin=STARTED_ORIGIN).redo(library)
+    return True
+
+
+def record_merged(library: Library, step_id: StepId, today: date) -> bool:
+    """The step's PR reads merged: a step waiting on its merge is ``done`` — directly, off
+    the undo stack, like the PR state it follows (``ARCHITECTURE.md``'s *Syncing an
+    external fact*): Ctrl+Z must not file a merged step as still waiting on its merge. False,
+    and no write, when the step is gone or is not waiting on its merge — a merged PR says
+    nothing about a step nobody has accepted.
+    """
+    if not library.has(step_id) or read(library.step(step_id)) != READY_TO_MERGE:
+        return False
+    step = library.step(step_id)
+    status_command(step, DONE, today=today, view_origin=MERGED_ORIGIN).redo(library)
     return True
 
 

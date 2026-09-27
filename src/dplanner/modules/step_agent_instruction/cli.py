@@ -148,7 +148,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             sections=briefing.sections(context.library, step, context.store.files, facts),
             project_sections=briefing.project_sections(context.library, step, context.store.files),
             epilogue=briefing.epilogue(context.library, step),
-            preamble=briefing.preamble(step, uses_worktree(step), facts),
+            preamble=briefing.preamble(step, briefing.worktree(step), facts),
             project_instruction=project_instruction,
             project_files=asset_paths(context.store.files, project.id),
             instruction_files=instruction.files,
@@ -222,7 +222,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             " own branch (on by default); off only for a step that must work in the checkout"
             " the window shows.",
             configure=_configure_worktree,
-            run=_worktree,
+            run=lambda context, args: _worktree(context, args, briefing.no_worktree),
             examples=("dplanner agent worktree 'Cut the release' off",),
         ),
         CliCommand(
@@ -267,13 +267,16 @@ def _configure_worktree(parser: ArgumentParser) -> None:
     parser.add_argument("worktree", choices=("on", "off"), help="fresh worktree, or the checkout")
 
 
-def _worktree(context: CliContext, args: Namespace) -> int:
+def _worktree(context: CliContext, args: Namespace, no_worktree: Callable[[Step], str]) -> int:
     step = find_step(context.library, args.step, context.current)
     wanted = args.worktree == "on"
     if not enabled(step):
         raise CliError(
             f"{step.title!r} is not an agent step — mark it with `dplanner agent on {step.title!r}`"
         )
+    withheld = no_worktree(step)
+    if wanted and withheld:
+        raise CliError(f"{step.title!r} runs in no worktree: {withheld}")
     where = "a fresh worktree" if wanted else "the checkout itself"
     if uses_worktree(step) == wanted:
         context.report({"step": step.id, "worktree": wanted}, f"{step.title}: already {where}")

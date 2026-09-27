@@ -10,6 +10,10 @@ from dplanner.modules.github import refresh as refresh_mod
 from dplanner.modules.github.aspect import MODULE_ID, GithubRefs, read, write
 from dplanner.modules.github.gh import PrInfo
 from dplanner.modules.github.refresh import PrRefresher
+from dplanner.modules.step_status.aspect import MERGED_ORIGIN, record_merged
+from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+from dplanner.modules.step_status.aspect import read as status_read
+from dplanner.modules.step_status.aspect import write as status_write
 
 MERGED = PrInfo(number=12, title="Add login flow", state="merged", url="u12", head_ref="feat/login")
 
@@ -44,6 +48,17 @@ def refresher(services, monkeypatch):
         services.tasks,
         repository_for=lambda _step_id: "https://github.com/acme/widget",
         parent=services.window,
+        # As the composition root wires it.
+        finish_merged=lambda step_id: record_merged(
+            services.document, step_id, services.clock.today()
+        ),
+    )
+
+
+def set_status(services, step, status):
+    today = services.clock.today()
+    SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=today)).redo(
+        services.document
     )
 
 
@@ -112,3 +127,36 @@ def test_the_refresh_write_carries_the_refreshers_origin(services, step, refresh
     )
     refresher._apply([(step.id, MERGED)])
     assert origins == [refresh_mod.REFRESH_ORIGIN]
+
+
+def test_a_merged_pr_finishes_a_step_waiting_on_its_merge(services, step, refresher):
+    set_status(services, step, "ready-to-merge")
+    written = []
+    services.document.module_data_changed.connect(
+        lambda _node, module, origin: written.append((module, origin))
+    )
+    refresher._apply([(step.id, MERGED)])
+    assert status_read(services.document.step(step.id)) == "done"
+    assert (STATUS_ID, MERGED_ORIGIN) in written
+    # Undo is for decisions: GitHub merged it, and Ctrl+Z cannot take that back.
+    assert not services.undo.can_undo()
+
+
+def test_a_merged_pr_leaves_work_nobody_accepted_alone(services, step, refresher):
+    set_status(services, step, "in-progress")
+    refresher._apply([(step.id, MERGED)])
+    assert status_read(services.document.step(step.id)) == "in-progress"
+
+
+def test_a_tick_finishes_a_step_whose_pr_read_merged_before_it_was_accepted(
+    services, step, refresher, monkeypatch
+):
+    """A review approved after the developer merged by hand carries a merged state that
+    is never fetched again: the tick finishes it from what is stored."""
+    SetModuleDataCommand(
+        step.id, MODULE_ID, write(GithubRefs(pr_number=12, pr_state="merged"))
+    ).redo(services.document)
+    set_status(services, step, "ready-to-merge")
+    monkeypatch.setattr(refresh_mod, "view_pr", lambda _repo, _number: pytest.fail("fetched"))
+    refresher._tick()
+    assert status_read(services.document.step(step.id)) == "done"

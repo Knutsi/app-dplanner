@@ -79,7 +79,8 @@ paths:
   `_briefing_sections` adds *Work you collect* for a step with auto-progress links: each
   source's key, title, status, branch, PR and worktree — `launcher.workdir(facts, source)`
   under the source's run name, said as a path only when the directory is on this machine —
-  then the duty to land that work and the right to `status set <source> done`. That is why
+  then the duty to land that work, the right to `status set <source> done`, and the way to
+  send unready work back (`review start|post|wait <collector> --to <source>`). That is why
   `Briefing.sections` is handed the repository facts, as the preamble is. Each source's
   `_agent_epilogue` names who collects it and leaves its done to them. The status guard
   needed nothing: an agent may already finish a step under review.
@@ -132,8 +133,12 @@ paths:
   and tells the agent to **stop if it is not in it**; the epilogue addresses every verb by
   the step's key. Inside a worktree the CLI resolves the branch's copy of the plan to the
   library project of the same id (`cli/discovery.py`), so `dplanner status set` reaches
-  the plan the window shows. `ARCHITECTURE.md`'s *A worktree is the step's decision* has
-  the reasoning.
+  the plan the window shows. **What a step is can rule a worktree out**: `Briefing.no_worktree`
+  (the root's `_no_worktree`) says why — a review reads the work it reviews — and every
+  surface asks `Briefing.worktree(step)`, never the aspect: Run Agent, `agent prompt`,
+  *Open Terminal in Worktree|Checkout*, the Agent tab (its box unticked and greyed with the
+  reason) and `agent worktree … on` (refused). `ARCHITECTURE.md`'s *A worktree is the
+  step's decision* has the reasoning.
 - **The peer reports its end through its run directory, and the window clears the chip.**
   The wrapper script is the one process that knows when the agent exits, so it writes the
   shell's facts (`shell`: tty, pid, tmux pane, terminal program, window title) beside the
@@ -262,6 +267,15 @@ paths:
     `status set` uses, handed in as the root's `set_status`. A stopped status ends a claim
     exactly as `status set` does.
   - **The window posts nothing**: the Review tab is the settings and a read-only list.
+  - **Each side is briefed with the conversation.** A review's `## Instructions` is
+    generated (`_review_instruction`) from its aspect and its subject — whom, each lens's
+    `Lens.asks` (an id this build does not name is a skill to use), the round protocol and
+    the cap — and its own prose rides inside as what to look for. *Work you review* says
+    where the subject's work is (`_source_line`, *Work you collect*'s line), and the run
+    gets no worktree. A step a review `reviews()` is told to set `pending-approval`, `review
+    wait`, take and reply, and when to stop waiting; a review's epilogue is its verdicts.
+    A conversation still going is a *Review rounds with …* section on both sides, so a
+    relaunch resumes it.
   - **`review wait` reads a fresh `LibraryStore` each poll and holds nothing between.** It
     exits 0 on an arrival and 3 on a timeout, under an agent tool's ten minutes. Its loop is
     `await_turn`, tested with an injected sleep and never a thread.

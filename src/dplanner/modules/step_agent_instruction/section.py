@@ -67,6 +67,11 @@ FIELD_GAP = 6
 LEAD_WIDTH = 22  # The chevron column, fixed so part titles align (the task-centre idiom).
 
 PROJECT_PLACEHOLDER = "Standing instructions for every step in this project."
+WORKTREE_TIP = (
+    "Run Agent puts the agent in its own worktree on an agent/<step> branch, so parallel"
+    " agents never share a checkout. Off only for a step that must work in the checkout"
+    " this window shows."
+)
 
 
 class PartRow(QWidget):
@@ -167,6 +172,7 @@ class AgentSection(QWidget):
         debounce: DebounceService | None = None,
         worktree: Callable[[StepId], bool] = lambda _sid: True,
         set_worktree: Callable[[StepId, bool], None] = lambda _sid, _on: None,
+        no_worktree: Callable[[StepId], str] = lambda _sid: "",
         usage: Callable[[StepId], str] = lambda _sid: "",
         dictation: DictationService | None = None,
     ) -> None:
@@ -177,6 +183,7 @@ class AgentSection(QWidget):
         self._pick_assets = pick_assets
         self._worktree = worktree
         self._set_worktree = set_worktree
+        self._no_worktree = no_worktree
         self._usage = usage
 
         self._prompt_parts = prompt_parts
@@ -316,11 +323,7 @@ class AgentSection(QWidget):
         # switch sits with the verb that reads it, not on a settings page.
         self.worktree_box = QCheckBox("Fresh git worktree", self)
         self.worktree_box.setObjectName("AgentWorktreeBox")
-        self.worktree_box.setToolTip(
-            "Run Agent puts the agent in its own worktree on an agent/<step> branch, so"
-            " parallel agents never share a checkout. Off only for a step that must work"
-            " in the checkout this window shows."
-        )
+        self.worktree_box.setToolTip(WORKTREE_TIP)
         self.worktree_box.toggled.connect(self._worktree_toggled)
         # What the step's runs have consumed so far — the run tracker's ledger, worded
         # by the composition root; blank until an agent has run here.
@@ -622,7 +625,11 @@ class AgentSection(QWidget):
         state = self._run_state()
         self.run_button.setEnabled(state.enabled)
         self.usage_note.setText(self._usage(self._step_id) if self._step_id is not None else "")
-        self.worktree_box.setEnabled(self._step_id is not None)
+        # A step whose kind rules a worktree out shows the box as the run will be, greyed
+        # with why — ticking it would change nothing a run does.
+        withheld = self._no_worktree(self._step_id) if self._step_id is not None else ""
+        self.worktree_box.setEnabled(self._step_id is not None and not withheld)
+        self.worktree_box.setToolTip(f"No worktree: {withheld}" if withheld else WORKTREE_TIP)
         self.worktree_box.blockSignals(True)
         self.worktree_box.setChecked(self._step_id is not None and self._worktree(self._step_id))
         self.worktree_box.blockSignals(False)

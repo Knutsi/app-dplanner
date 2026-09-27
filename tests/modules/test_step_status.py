@@ -9,6 +9,7 @@ from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.step_status.aspect import (
+    MERGED_ORIGIN,
     MODULE_ID,
     STATUSES,
     forget_days_for_paste,
@@ -16,6 +17,7 @@ from dplanner.modules.step_status.aspect import (
     read,
     read_since,
     read_started,
+    record_merged,
     record_started,
     write,
 )
@@ -123,6 +125,23 @@ def test_record_started_writes_nothing_twice():
     library, step = _one_step()
     record_started(library, step.id, date(2026, 9, 21))
     assert record_started(library, step.id, date(2026, 9, 21)) is False
+
+
+def test_record_merged_finishes_only_a_step_waiting_on_its_merge():
+    """A merged PR finishes a step ready to merge, with the merge's own origin — and says
+    nothing about a step nobody has accepted, which keeps its status."""
+    library, step = _one_step()
+    origins = []
+    library.module_data_changed.connect(lambda _node, _module, origin: origins.append(origin))
+    step.module_data[MODULE_ID] = write("ready-for-review", today=MONDAY)
+    assert record_merged(library, step.id, TUESDAY) is False
+    assert read(step) == "ready-for-review"
+
+    step.module_data[MODULE_ID] = write("ready-to-merge", today=MONDAY)
+    assert record_merged(library, step.id, TUESDAY) is True
+    assert read(step) == "done"
+    assert origins == [MERGED_ORIGIN]
+    assert record_merged(library, step.id, TUESDAY) is False  # Done already: nothing twice.
 
 
 def test_record_started_overrides_a_finished_claim():
