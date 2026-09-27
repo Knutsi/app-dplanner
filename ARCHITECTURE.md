@@ -5630,8 +5630,11 @@ records it as a *boundary* and stops there:
 | Asked of | `stops_at` | Because |
 |---|---|---|
 | a check | nothing | it stands for everything behind it having passed |
-| a milestone | milestones | it holds what is new since the last one |
-| a feature | features and milestones | it holds its own work, up to the previous feature |
+| a milestone | milestones, and the start | it holds what is new since the last one |
+| a feature | features, milestones, and the start | it holds its own work, up to the previous feature |
+
+The start is the one row that is not a collector; *The origin is nobody's* below says why it
+is there at all.
 
 `ordering.upstream()` is that same function with nothing to stop it, which is why there is one
 walk here and not two.
@@ -5670,10 +5673,59 @@ milestone) and `scope.gathers-nothing`, which generalised the old `check.covers-
 
 A milestone honestly wants two answers: *what does it add* (the truncated walk) and *what must
 pass for it to ship* (the whole cone, regressions included). The Covers tab offers both — and
-shows the switch **exactly when the truncated walk found a boundary**. That is a pure function
-of the data rather than a property of the kind, which makes it right in two places at once: a
-check never has a boundary, and neither does the first milestone in a project, and in both
-cases the two readings are the same answer. A control with one outcome is noise.
+shows the switch **exactly when the truncated walk handed off to an earlier collector** (a
+boundary some kind carries — `handoffs()`). That is a pure function of the data rather than a
+property of the kind, which makes it right in two places at once: a check never has a
+boundary, and neither does the first milestone in a project, and in both cases the two
+readings are the same answer. A control with one outcome is noise.
+
+### The origin is nobody's
+
+The default topology (`cli/shaping.md`) asks for one step at the origin with work fanning out
+of it in parallel. Every branch traces back to that step, so every feature's cone reached it,
+`gatherers()` returned all of them, and `scope.shared` reported the recommended shape as an
+ambiguity. The remedy the finding offers — link one feature behind the other — would have
+serialised the very parallelism the shape exists for. The finding was right about the walk
+and wrong about the plan: the origin is not work any feature did.
+
+So a **Start** aspect (`modules/step_start/`, a bare `{"on": true}`) marks it, and the two
+kinds that *own* work — a milestone and a feature — stop at it. Four decisions shaped it:
+
+- **A marker, not an inference.** "The step nothing precedes" is several steps while a plan is
+  being built, and one of them is usually work somebody forgot to link. Inferring the origin
+  would make that step quietly nobody's too, where today the canvas rings it and
+  `graph.orphan` names it. The marker is the plan saying where it begins — the distinction
+  shaping.md already drew between *the plan begins here* and *somebody forgot a link*.
+- **Only the owners stop at it.** A check owns nothing; it stands for everything behind it
+  having passed, and the start's own tests are part of that. So a check still stops at
+  nothing — which also keeps *a check never has a boundary* true. `scope.shared` and
+  `scope.crosses-milestones` only ever ask the owning kinds, so the finding goes away all the
+  same.
+- **Carrying is untouched.** A start marked as a milestone is a milestone with an empty cone
+  (a start waits on nothing), and `scope.gathers-nothing` already says so with its own verb.
+  Excluding it from `carried_by` was considered, and it makes a half-scope: `scope show`
+  would refuse it while its key, `feature list` and the coverage trace still called it one.
+- **A boundary is not always a hand-off.** Stopping at the start makes it a boundary of every
+  feature right after it, and a boundary is what `scope show` names as *after* and what makes
+  the Covers tab offer a second reading. The start is neither — it is where the graph ends, not
+  an earlier collector that took something — so both ask `domain/scope.py`'s `handoffs()`,
+  the boundaries some kind carries, and `scope.ungathered` skips a step the feature kind stops
+  at without carrying (no link could hand it to one). Nothing new in `ScopeKind`: a third
+  field would have been read by exactly those two surfaces.
+
+What else it touched, and why it was allowed to: the start's documentation fragment and tests
+drop out of every feature's and milestone's reading, so a collector compiled *with* the
+start's fragment reads `docs.compiled-stale` once — true, since it no longer reads it — and
+the Tests and Documentation views group the start's own under *Not in any feature*, which is
+also true. Two walks wrote the feature stopping rule by hand (the briefing's *Flows into*, the
+coverage trace); both now read the wired kinds, which is how the Steps lane stopped drawing
+the origin under every feature. The start's shape has its own lint, **`graph.start`** — a
+start that waits on something, a plan with two — naming `step unlink` or `start clear`; the
+verbs refuse nothing, like `feature set`. It wears **no card mark**: the primary icon (F5)
+gives it the person glyph like any step, its key stays `S`, and the origin already reads as
+the origin, since every arrow leaves it. The noun is `start` (`dplanner start set|clear`,
+`step add --start`), not to be confused with `schedule start`, which dates the plan's first
+day.
 
 ### Who owns which half
 

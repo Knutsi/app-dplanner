@@ -104,7 +104,6 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.domain.relocate import move_project
     from dplanner.domain.repositories import RepositoryFacts, repository_facts
     from dplanner.domain.schedule import Wait, format_days, schedule
-    from dplanner.domain.scope import gatherers
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
     from dplanner.framework.context import (
@@ -194,7 +193,6 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
     from dplanner.modules.step_agent_run.usage import summary as usage_words
-    from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.module import (
@@ -209,6 +207,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         StepPropertiesDeps,
         StepPropertiesModule,
     )
+    from dplanner.modules.step_start.module import StepStartDeps, StepStartModule
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_status.aspect import record_started
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
@@ -884,6 +883,10 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         )
     )
 
+    # The collectors, wired once: the docs and tests modules group by them, and every walk
+    # either module makes stops where these say.
+    scopes = _scope_kinds()
+
     # Constructed before the list because the projects index opens it and the Specs tab
     # jumps into it. Its picture is every module's Qt-free half read once (_coverage_trace);
     # the surfaces a double-click reaches arrive as callables, and the Specs tab's is
@@ -894,15 +897,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             return []
         step = library.step(step_id)
         project = library.project_of(step_id)
-        holders = [step] if is_feature(step) else []
-        if not holders:
-            owners = gatherers(
-                library,
-                project,
-                carried_by=is_feature,
-                stops_at=lambda other: is_feature(other) or bool(milestone_read(other)),
-            ).get(step_id, ())
-            holders = [owned for owner in owners if (owned := project.step(owner)) is not None]
+        holders = [step] if is_feature(step) else _flows_into(library, project, step_id)
         return [
             (source.document, source.quote)
             for holder in holders
@@ -1744,7 +1739,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 # Read, never added to: grouping the Documentation view by feature or
                 # milestone is the same walk the Tests tab makes. A fourth ScopeKind of its
                 # own would teach four tests surfaces about documentation to serve none of it.
-                scopes=_scope_kinds(check_read, is_feature, milestone_read),
+                scopes=scopes,
                 files=store.files,
                 # Its project-level card: the compilation instructions every document
                 # compiled in this project follows.
@@ -1815,6 +1810,11 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         StepCheckModule(
             StepCheckDeps(library=library, undo=services.undo, actions=services.actions)
         ),
+        # No tab either: the start is a marker, and what it means is the walks' business,
+        # wired in _scope_kinds().
+        StepStartModule(
+            StepStartDeps(library=library, undo=services.undo, actions=services.actions)
+        ),
         # A feature is a step: one a person would name and demo, gathering the work behind
         # it and stopping at the previous feature. The Covers tab that shows what it
         # gathers is still the tests module's.
@@ -1839,7 +1839,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 # A check declares a scope; a feature and a milestone already were ones, and
                 # all three are the same walk with a different stopping rule. Named here,
                 # the one place that may know every aspect, so none learns the others.
-                scopes=_scope_kinds(check_read, is_feature, milestone_read),
+                scopes=scopes,
                 pick_assets=pick_assets,
                 # Grouping by milestone writes each heading in that milestone's own shade,
                 # so the Tests tab reads as the same sequence the calendar does.
@@ -1989,7 +1989,6 @@ def _briefing_sections(
     every module's vocabulary — the agent module renders the blocks without learning what
     a description, a requirement or a PR is. An empty fact contributes no section.
     """
-    from dplanner.domain.scope import gatherers
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.feature.aspect import read as feature_read
     from dplanner.modules.github.aspect import pr_label
@@ -1999,7 +1998,6 @@ def _briefing_sections(
     from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
     from dplanner.modules.step_description.aspect import read as description_read
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
 
     sections: list[PromptPart] = []
     # Without a separate instruction the description IS the ## Instructions block (see
@@ -2035,13 +2033,7 @@ def _briefing_sections(
     else:
         # A work step reaches the spec through the feature it flows into: the graph's
         # answer, the same walk the Covers tab and `scope show` read.
-        owners = gatherers(
-            library,
-            project,
-            carried_by=is_feature,
-            stops_at=lambda other: is_feature(other) or bool(milestone_read(other)),
-        ).get(step.id, ())
-        holders = [owned for owner in owners if (owned := project.step(owner)) is not None]
+        holders = _flows_into(library, project, step.id)
         lines = [line for holder in holders for line in passage_lines(holder)]
         if lines:
             sections.append(PromptPart(heading="Flows into", body="\n".join(lines)))
@@ -2691,11 +2683,7 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
     )
 
 
-def _scope_kinds(
-    is_check: Callable[["Step"], bool],
-    is_feature: Callable[["Step"], bool],
-    milestone_label: Callable[["Step"], str],
-) -> tuple["ScopeKind", ...]:
+def _scope_kinds() -> tuple["ScopeKind", ...]:
     """The collectors this build knows, and where each one's cone stops.
 
     Read most specific first: a step marked as both a milestone and a feature is a milestone,
@@ -2707,6 +2695,11 @@ def _scope_kinds(
     to the previous feature — and at a milestone too, since a milestone is a boundary anything
     below it also respects.
 
+    The two that *own* work — a milestone and a feature — also stop at the plan's **start**:
+    every parallel branch traces back to the origin, so without that every feature fanning
+    out of it would gather it, and lint would call the recommended shape ambiguous. A check
+    owns nothing and still stands for everything, the start included.
+
     A milestone and a check are then *read* as lists of features; a feature is the finest
     grain and is read flat. That is a different question from where the walk stops, and
     saying both here is what keeps a surface from having to guess either.
@@ -2715,6 +2708,10 @@ def _scope_kinds(
     check by eye beat an ordering abstraction over exactly three things.
     """
     from dplanner.domain.scope import ScopeKind
+    from dplanner.modules.feature.aspect import is_feature
+    from dplanner.modules.step_check.aspect import read as is_check
+    from dplanner.modules.step_milestone.aspect import read as milestone_label
+    from dplanner.modules.step_start.aspect import read as is_start
 
     # A milestone declares itself by carrying a label, so the aspect's reader is a string
     # one; the walk wants a predicate, and this is the one place that has to know both.
@@ -2722,15 +2719,34 @@ def _scope_kinds(
         return bool(milestone_label(step))
 
     return (
-        ScopeKind("step_milestone", "Milestone", is_milestone, is_milestone, gathers="feature"),
+        ScopeKind(
+            "step_milestone",
+            "Milestone",
+            is_milestone,
+            lambda step: is_milestone(step) or is_start(step),
+            gathers="feature",
+        ),
         ScopeKind(
             "feature",
             "Feature",
             is_feature,
-            lambda step: is_feature(step) or is_milestone(step),
+            lambda step: is_feature(step) or is_milestone(step) or is_start(step),
         ),
         ScopeKind("step_check", "Check", is_check, lambda _step: False, gathers="feature"),
     )
+
+
+def _flows_into(library: "Library", project: "Project", step_id: str) -> list["Step"]:
+    """The features that gather a step, in project order — what a work step's briefing
+    and its passages reach the spec through. The wired feature kind's own walk, so it holds
+    exactly what `scope show` says a feature holds, and the plan's start flows into none."""
+    from dplanner.domain.scope import gatherers
+
+    feature = next(kind for kind in _scope_kinds() if kind.id == "feature")
+    owners = gatherers(
+        library, project, carried_by=feature.carried_by, stops_at=feature.stops_at
+    ).get(step_id, ())
+    return [owned for owner in owners if (owned := project.step(owner)) is not None]
 
 
 def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -> "Trace":
@@ -2756,14 +2772,14 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
     from dplanner.modules.spec.cli import anchor_sources
     from dplanner.modules.spec.documents import document_text, read_index
-    from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.testing.aspect import covered
     from dplanner.modules.testing.runs import latest_results
     from dplanner.modules.testing.runs import read as read_runs
 
-    scopes = _scope_kinds(check_read, is_feature, milestone_read)
+    scopes = _scope_kinds()
+    kinds = {kind.id: kind for kind in scopes}
 
     def features(library: "Library", project: "Project", files: "FilesFor") -> list[Feature]:
         steps = [step for step in project.steps if is_feature(step)]
@@ -2820,8 +2836,8 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
         Readers(
             features=features,
             documents=documents,
-            is_feature=is_feature,
-            is_milestone=lambda step: bool(milestone_read(step)),
+            feature=kinds["feature"],
+            milestone=kinds["step_milestone"],
             milestone_label=milestone_read,
             step_key=_step_key,
             status=step_status,
@@ -3001,20 +3017,19 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.feature import cli as feature_cli
-    from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
-    from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_description.aspect import read as description_read
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.testing import cli as testing_cli
     from dplanner.modules.testing.aspect import enabled as test_enabled
 
-    scopes = _scope_kinds(check_read, is_feature, milestone_read)
+    scopes = _scope_kinds()
     return (
         *projects_cli.lint_checks(),
+        *start_cli.lint_checks(),
         *description_cli.lint_checks(),
         *docs_cli.lint_checks(kinds=scopes),
         # An agent step is briefed by its description unless it carries a separate
@@ -3144,7 +3159,6 @@ def default_cli_commands(
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.feature import cli as feature_cli
-    from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.library import cli as library_cli
     from dplanner.modules.notes import cli as note_cli
@@ -3158,11 +3172,10 @@ def default_cli_commands(
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_agent_run import cli as agent_state_cli
     from dplanner.modules.step_check import cli as check_cli
-    from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_milestone import cli as milestone_cli
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_order import cli as order_cli
+    from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_ticket import cli as ticket_cli
@@ -3174,7 +3187,7 @@ def default_cli_commands(
 
     specs = aspect_specs()
     time_readers = _time_readers()
-    scopes = _scope_kinds(check_read, is_feature, milestone_read)
+    scopes = _scope_kinds()
     sources = _asset_sources()
     roles = roles_by_id(default_location_roles())
     if reads is None:
@@ -3193,6 +3206,7 @@ def default_cli_commands(
         # order is the report order — the same order the skill teaches authoring in.
         *projects_cli.commands(
             step_authors=[
+                start_cli.step_author(),
                 description_cli.step_author(),
                 agent_cli.step_author(),
                 estimation_cli.step_author(),
@@ -3239,6 +3253,7 @@ def default_cli_commands(
             status_for=step_status, notes_for=_unsettling_notes, note_read=format_gate.record
         ),
         *check_cli.commands(),
+        *start_cli.commands(),
         # What any collector gathers is one derivation asked three ways, so it is one verb
         # rather than one per aspect. The kinds and the coverage walk arrive as arguments,
         # so cli/scopes.py imports no module and no module imports it.
@@ -3417,6 +3432,7 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.step_check import aspect as check
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_milestone import aspect as milestone
+    from dplanner.modules.step_start import aspect as start
     from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
     from dplanner.modules.step_wait import aspect as wait
@@ -3435,6 +3451,7 @@ def aspect_specs() -> list["AspectSpec"]:
         github.SPEC,
         milestone.SPEC,
         spec.SPEC,
+        start.SPEC,
         status.SPEC,
         testing.SPEC,
         ticket.SPEC,
@@ -3449,6 +3466,7 @@ _PHRASE_ORDER = (
     "step_status",
     "step_agent_run",
     "step_milestone",
+    "step_start",
     "step_wait",
     "feature",
     "estimation",

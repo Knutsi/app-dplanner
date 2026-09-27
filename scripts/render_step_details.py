@@ -1,13 +1,15 @@
 """Render the step detail dialog in the dark and the light theme, to PNG.
 
     uv run python scripts/render_step_details.py --out docs/screenshots/s6-step-details
+    uv run python scripts/render_step_details.py --start --out docs/screenshots/f2-start-marker
 
 The surfaces S6 reworked: the aspect bar's toggles on the left and the template it amounts
 to on the right, the Details tab stacking from the top whatever is turned off, and the
 dialog on ``DialogFrame`` with one Close in its footer. The panel has one host — the dialog
 ``steps.details`` opens — so every image here is of that, reached through the verb rather
 than hand-wired, over a whole application built on a throwaway library and torn down per
-theme.
+theme. ``--start`` renders F2's instead: the same dialog on a plan's start, and the
+Step ▸ Type menu that marks it.
 """
 
 import argparse
@@ -28,12 +30,15 @@ from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
 from dplanner.domain.seed import create_library, seed_project
+from dplanner.framework.action_menu import build_menu
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     ContextNode,
     selection_uri,
 )
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
+from dplanner.modules.step_start.aspect import MODULE_ID as START_ID
+from dplanner.modules.step_start.aspect import write as start_write
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
@@ -57,7 +62,7 @@ def discard(widget: QWidget) -> None:
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
-def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+def render(app: QApplication, theme: Theme, out: Path, workspace: Path, *, start: bool) -> None:
     apply_theme(app, theme)
     library_file = workspace / f"library-{theme.name}.json"
     create_library(library_file)
@@ -72,7 +77,9 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     directory = seed_project(workspace / f"discovery-{theme.name}", "Discovery")
     project = services.repo.attach(directory)
     services.document.add_child(services.document.id, project)
-    step = Step(title="Build the quick-reg modal")
+    step = Step(title="Project start" if start else "Build the quick-reg modal")
+    if start:
+        step.module_data[START_ID] = start_write(True)
     AddNodeCommand(project.id, step).redo(services.document)
     services.context.set_scope(SCOPE_SELECTION, (ContextNode(selection_uri("step", step.id)),))
     settle(app)
@@ -92,6 +99,18 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     dialog.resize(*DIALOG_SIZE)
     dialog.show()
     settle(app)
+    if start:
+        save(dialog, out, "start-dialog", theme, app)
+        # The Type submenu the bar renders: Start ticked among the kinds, after Wait.
+        menu = build_menu(services.actions, services.context, "Step", dialog, submenu="Type")
+        menu.popup(dialog.mapToGlobal(dialog.rect().topLeft()))
+        save(menu, out, "start-type", theme, app)
+        menu.hide()
+        discard(menu)
+        real_dispose(dialog)
+        discard(dialog)
+        session.close()
+        return
     save(dialog, out, "dialog", theme, app)
 
     # The bar's own dropdown: what the step could be, with what it is ticked.
@@ -118,6 +137,9 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory for the PNGs")
+    parser.add_argument(
+        "--start", action="store_true", help="render a plan's start step instead (F2)"
+    )
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
@@ -125,7 +147,7 @@ def main(argv: list[str]) -> int:
     # The throwaway library lives outside the output directory: what lands there is images.
     with TemporaryDirectory(prefix="dplanner-render-") as tmp:
         for theme in (DARK, LIGHT):
-            render(app, theme, args.out, Path(tmp))
+            render(app, theme, args.out, Path(tmp), start=args.start)
     return 0
 
 

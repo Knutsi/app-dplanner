@@ -40,8 +40,9 @@ def test_the_guide_draws_the_shape_a_graph_should_take():
     assert "Milestones in a chain" in prose
     assert "branches out and collects back" in prose
     assert "Sequential milestones, parallel steps" in prose
-    # A marker node is still a step, and lint asks a step for these two.
-    assert "'Project start' --days 0" in prose and "--describe-file -" in prose
+    # The origin is marked, so the features fanning out of it do not all claim it; and a
+    # marker node is still a step, which lint asks for an estimate and a description.
+    assert "'Project start' --start --days 0" in prose and "--describe-file -" in prose
 
 
 def test_the_guide_asks_for_the_release_scope_rather_than_inventing_it():

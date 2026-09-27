@@ -74,9 +74,10 @@ you work. So:
 - **Make small, named changes — and author them whole.** One `step add` per step, carrying
   everything the step needs in the same call: `--describe-file F`, `--agent` if an agent
   will execute it, `--days N`, `--attach a1`, `--test 'what must keep being true'`,
-  `--after` for its dependencies, and `--feature` on a step that *is* a feature (with
-  `--document`/`--quote` where it was read out of a spec). One authored step is one line in
-  the diff and one thing the user can disagree with; five half-steps are noise.
+  `--after` for its dependencies, `--feature` on a step that *is* a feature (with
+  `--document`/`--quote` where it was read out of a spec), and `--start` on the one step
+  the plan begins from. One authored step is one line in the diff and one thing the user
+  can disagree with; five half-steps are noise.
 - **The description is the briefing.** Write one good description per step — what it is,
   what done means (see *Writing descriptions*) — and mark agent-executed steps with
   `--agent` (or `dplanner agent on` later). The executing agent receives the description
@@ -233,7 +234,9 @@ Three shapes are worth knowing:
   the previous feature; a **milestone**
   (`dplanner milestone set`) gathers the features it adds since the previous milestone.
   None of them stores what it holds — it is read off the graph, so linking more work behind
-  one widens it automatically, and `--scope` takes any of the three.
+  one widens it automatically, and `--scope` takes any of the three. A feature's and a
+  milestone's walk stop at the plan's **start** (`dplanner start set`), so work fanning out
+  of the origin in parallel does not make the origin every feature's at once.
 - **`dplanner scope show <step>`** prints what one gathers: its features as headings, their
   tests under them. `--cumulative` gives everything behind it instead of only what it adds —
   what must pass to ship, rather than what is new.
