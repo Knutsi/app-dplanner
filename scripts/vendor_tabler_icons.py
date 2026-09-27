@@ -46,7 +46,7 @@ GLYPHS: dict[str, str] = {
     "divide-vertical": "separator-vertical",  # A cut, with room being made either side.
     "divide-horizontal": "separator-horizontal",
     "sort": "hierarchy-2",  # Laying the graph out by what feeds what.
-    "region": "rectangle",
+    "region": "rectangle",  # No canvas verb since regions went; a test category wears it.
     "grid": "grid-dots",
     "undo": "arrow-back-up",
     "redo": "arrow-forward-up",

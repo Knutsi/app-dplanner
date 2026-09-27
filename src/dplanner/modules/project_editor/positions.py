@@ -38,10 +38,10 @@ def _drop_regions(data: dict[str, Any]) -> dict[str, Any]:
     """Format 1 → 2: regions are retired.
 
     Format 1 kept titled rectangles beside the project, ``"regions": [...]``, and every
-    named layout snapshotted their rects beside the steps' seats. Stacks are the canvas's
-    one container now, and a rectangle the graph knew nothing about went stale with every
-    sort, tidy and move, so both go — and a project saved with them opens exactly as it
-    was, minus the rectangles. A step's entry never carried either key and passes through.
+    named layout snapshotted their rects beside the steps' seats. A rectangle the graph
+    knew nothing about went stale with every sort, tidy and move, so both go — and a
+    project saved with them opens exactly as it was, minus the rectangles. A step's entry
+    never carried either key and passes through.
     """
     kept = {key: value for key, value in data.items() if key != "regions"}
     layouts = kept.get("layouts")
@@ -151,7 +151,8 @@ def entry_with(project: Project, key: str, value: Any) -> dict[str, Any]:
     ``stamped`` turns a bare entry into ``{}``, which deletes the file.
     """
     current = project.module_data.get(MODULE_ID) or {}
-    current = migrated(current, DATA_FORMAT) or current
+    if (brought := migrated(current, DATA_FORMAT)) is not None:
+        current = brought
     entry = {k: v for k, v in current.items() if k not in (key, "format")}
     if value:
         entry[key] = value

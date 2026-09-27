@@ -174,32 +174,30 @@ paths:
   project-level entry under the same `project_editor` id — `ARCHITECTURE.md`'s *An
   explicit sort persists; the ambient layout never does* has the reasoning.
 - **There are no regions; a project saved with them opens without them.** Titled rectangles
-  behind the graph were retired — stacks are the canvas's one container, and annotation the
-  graph knows nothing about goes stale with every sort, tidy and move. `positions.DATA_FORMAT`
-  is format 2, whose one migration drops the project entry's `regions` and every named
-  layout's region rects on read; that migration is the only code that knows they existed.
-  **The project entry's one composer brings what it carries current first** (`entry_with`
-  runs `migrated()`): an entry adopted from another writer since the open has not met the
-  migration pass, and stamping it format 2 as it stood would keep what the pass drops. A
-  frame round steps is a stack's to draw, never a second container. `tests/old_canvas.py`
-  is the old project every proof of this opens. `ARCHITECTURE.md`'s *Regions were retired*
-  has the reasoning.
+  behind the graph were retired — annotation the graph knows nothing about goes stale with
+  every sort, tidy and move. `positions.DATA_FORMAT` is format 2, whose one migration drops
+  the project entry's `regions` and every named layout's region rects on read; that
+  migration is the only code that knows they existed. **The project entry's one composer
+  brings what it carries current first** (`entry_with` runs `migrated()`): an entry adopted
+  from another writer since the open has not met the migration pass, and stamping it format
+  2 as it stood would keep what the pass drops. `tests/old_canvas.py` is the old project
+  every proof of this opens. `ARCHITECTURE.md`'s *Regions were retired* has the reasoning.
 - **The canvas's spatial gestures exist as verbs, and geometry is derived on every read.**
   `dplanner layout show` (`--map`) measures the graph from the stored positions and
-  `positions.node_size` through `project_editor/geometry.py` and stores nothing — the
-  waves, the bounds, every overlap and the gaps between neighbouring columns and rows in
-  the sorts' pitches, read through the same **lanes** (`sorts.lanes`, `measured`) that
-  `layout tidy` acts on and the map is drawn on. `layout shift` is Divide as a verb:
-  `geometry.shift` is the side rule (the body's centre against the cut; a negative
-  distance brings the near side back; the distance snaps to `GRID` as the drag does) and
-  `geometry.divide_command` is the one `Divide Graph` composite both `_on_graph_divided`
-  and the verb push. `layout tidy` / `canvas.sort_tidy` (Graph ▸ Sort) is `sorts.tidy`, a
-  sort in kind — pure, deterministic, size-aware, idempotent — so it persists like one:
-  it keeps every cluster and its order, reads the cards into lanes on *edges* with an
-  inclusive half-pitch join, gives an overlap a sub-row, measures a hole against the
-  reach and rounds it, and closes one past `--gap` (`DEFAULT_AIR`, 2) to one gap. None
-  of the three reshapes the graph, so none declares `edits_graph`. `ARCHITECTURE.md`'s *An explicit sort persists; the ambient layout never does* has the
-  reasoning.
+  `positions.node_size` through `project_editor/geometry.py` and stores nothing — the waves,
+  the bounds, every overlap and the gaps between neighbouring columns and rows in the sorts'
+  pitches, read through the same **lanes** (`sorts.lanes`, `measured`) that `layout tidy`
+  acts on and the map is drawn on. `layout shift` is Divide as a verb: `geometry.shift` is
+  the side rule (the body's centre against the cut; a negative distance brings the near side
+  back; the distance snaps to `GRID` as the drag does) and `geometry.divide_command` is the
+  one `Divide Graph` composite both `_on_graph_divided` and the verb push. `layout tidy` /
+  `canvas.sort_tidy` (Graph ▸ Sort) is `sorts.tidy`, a sort in kind — pure, deterministic,
+  size-aware, idempotent — so it persists like one: it keeps every cluster and its order,
+  reads the cards into lanes on *edges* with an inclusive half-pitch join, gives an overlap
+  a sub-row, measures a hole against the reach and rounds it, and closes one past `--gap`
+  (`DEFAULT_AIR`, 2) to one gap. None of the three reshapes the graph, so none declares
+  `edits_graph`. `ARCHITECTURE.md`'s *An explicit sort persists; the ambient layout never
+  does* has the reasoning.
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". One `QTimer` on the scene advances every ring and runs only while a node

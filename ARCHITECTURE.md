@@ -1903,13 +1903,14 @@ points and nothing else — the fixed point of a sorted graph is the sorted grap
 Regions were titled rectangles painted behind the graph — "Database setup", "Finalize
 release" — kept as a list on the project's `project_editor` entry, snapshotted by every
 named layout beside the steps' seats, and drawn by the canvas, the minimap and the report.
-They are gone, for two reasons that are one. **A stack is the canvas's container** now —
-canvas data over a real `requires` chain — and two containers would be two answers to "what
-belongs together". And **annotation nothing structures drifts**: the model never learned a
+They are gone, for two reasons that are one. **A stack is to be the canvas's container** —
+canvas data over a real `requires` chain, planned in *DPlanner changes 2* and not built yet —
+and two containers would be two answers to "what belongs together". And **annotation
+nothing structures drifts**: the model never learned a
 region existed, so every sort, tidy, divide and hand-drag left the rectangles where they
 were and the steps somewhere else — `region fit` existed only to re-wrap one after the fact,
-and tidy and the map had already stopped carrying them. A stack is read from the chain it
-stands on, so it cannot drift from the graph that way.
+and tidy and the map had already stopped carrying them. A stack will be read from the
+chain it stands on, so it cannot drift from the graph that way.
 
 **An old project opens exactly as it was, minus the rectangles.** `project_editor`'s data
 format went to 2, and its one migration drops the project entry's `regions` and every
@@ -1921,7 +1922,8 @@ needed the same care: `positions.entry_with`, the composer every project-level w
 through, carries the keys it does not own untouched, and an entry *adopted* since the open
 — an import the CLI wrote while a window was up, a pull — has not met the migration pass.
 Stamping that format 2 as it stood would have kept its `regions` forever, so the composer
-brings what it carries current first. `tests/old_canvas.py` is the old project the proof
+brings what it carries current first — and an entry that held nothing but regions migrates
+to nothing, which must still replace it rather than read as "nothing to migrate". `tests/old_canvas.py` is the old project the proof
 opens: in a window, through `layout show --map` and `apply`, in a report, and as an export
 imported.
 

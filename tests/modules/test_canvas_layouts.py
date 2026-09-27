@@ -4,7 +4,7 @@ No ``qapp`` fixture: ``layouts.py`` is Qt-free by rule — the CLI's ``layout`` 
 built from the same functions — and exercising it without one is part of the proof.
 """
 
-from tests.old_canvas import PLAN, SEATS, project_entry, step_entry
+from tests.old_canvas import PLAN, REGIONS, SEATS, project_entry, step_entry
 
 from dplanner.core.module_data import migrated
 from dplanner.domain.model import Library, Project, Step
@@ -172,3 +172,14 @@ def test_a_layout_saved_over_an_entry_nobody_migrated_drops_its_regions():
     assert entry["format"] == 2 and "regions" not in entry
     assert set(entry["layouts"]) == {"Plan", "Earlier", "New"}
     assert all("regions" not in body for body in entry["layouts"].values())
+
+
+def test_a_layout_saved_over_an_entry_that_held_only_regions_drops_them():
+    """Migrated, such an entry is nothing at all — which must still replace what was there,
+    not read as "nothing to migrate" and carry the regions into the current format."""
+    library, project = build()
+    library.set_module_data(project.id, MODULE_ID, {"format": 1, "regions": REGIONS})
+    save(library, project, "New")
+    entry = project.module_data[MODULE_ID]
+    assert entry["format"] == 2 and "regions" not in entry
+    assert set(entry["layouts"]) == {"New"}

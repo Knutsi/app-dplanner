@@ -410,7 +410,7 @@ into a child `QMenu` keyed `(group, submenu)`, created at the first *visible* sp
 position — the same placement rule as `DynamicMenuBar._submenu`. A child menu whose entries
 are all hidden is simply never created; a popup is rebuilt on every show, so absence is the
 static equivalent of the menu bar's dynamic hide. The `submenu="X"` filter path is unchanged
-(the tab bar's and the region popup's flat renders depend on it), and one local `add_entry`
+(the tab bar's flat render depends on it; the region popup's did until regions were retired), and one local `add_entry`
 helper builds flat and nested entries alike so the two can never drift.
 
 **Why.** The docstring literally admitted the flattening. Once a menu holds three submenus
@@ -2261,7 +2261,7 @@ lines; this is the only spot on them that was unspoken for. **Upstream?** Yes, w
 
 **What.** A shared painter for "a line with a chevron at the end", plus `link_icon`,
 `connect_icon`, `redirect_to_icon`, `redirect_from_icon`, `divide_vertical_icon` /
-`divide_horizontal_icon` (one `_divide_icon` rotated), `sort_icon`, `region_icon` and
+`divide_horizontal_icon` (one `_divide_icon` rotated), `sort_icon`, `region_icon` (since removed, with regions) and
 `grid_icon`. `trash_icon` and `frame_icon` widened from `str` to `str | QColor` like their
 neighbours, because an `ActionSpec.icon` is handed a `QColor`.
 
