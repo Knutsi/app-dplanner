@@ -2,6 +2,7 @@
 
     uv run python scripts/render_graph_editor.py --out docs/screenshots/s7-graph-editor
     uv run python scripts/render_graph_editor.py --menus --out docs/screenshots/f7-canvas-menus
+    uv run python scripts/render_graph_editor.py --contract --out docs/screenshots/f15-contract
 
 What S7 reworked: the strip of verbs over the canvas as glyphs in named bands, folding
 whole bands into its ``…`` menu; the *Find* picker, which opens on the plan's landmarks
@@ -9,7 +10,8 @@ and searches every step; and the panel beside the canvas — the Problems list �
 project tab rather than across the window. Since F5, the cards themselves (``cards``):
 each kind of step, who works it in the key block, the status washes, and a card at the
 minimum size. Since F7, with ``--menus`` and nothing else, what a right-click offers by what
-is under it. A whole application is built over a throwaway library — the tab is the tab
+is under it; since F15, with ``--contract``, Divide's dropdown offering Contract and a
+contract held mid-drag. A whole application is built over a throwaway library — the tab is the tab
 host's, so nothing here hand-wires a surface the window would build differently — and torn
 down per theme.
 """
@@ -25,8 +27,9 @@ from tempfile import TemporaryDirectory
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["QT_QPA_PLATFORMTHEME"] = ""
 
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, QSettings
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, QSettings, Qt
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtWidgets import QApplication, QGraphicsView, QWidget
 
 from dplanner.app import new_session
 from dplanner.core.storage.locations import init_repo
@@ -107,6 +110,10 @@ CARDS = (
     ),
 )
 CARDS_SIZE = (1400, 520)
+WINDOW_SIZE = (1400, 720)
+# How far right the contract shot pushes the feature and the milestone, opening the hole the
+# gesture then closes: two empty columns.
+HOLE = 600.0
 
 
 def settle(app: QApplication) -> None:
@@ -257,6 +264,75 @@ def render_menus(app: QApplication, theme: Theme, out: Path, workspace: Path) ->
     session.close()
 
 
+def press(view: QGraphicsView, kind: QEvent.Type, scene_pos: QPointF, held: bool = True) -> None:
+    """A mouse event at a point on the plane, sent where a real one arrives: the viewport,
+    with a real global position — the scene picks what is under the *screen* point."""
+    viewport = view.viewport()
+    local = QPointF(view.mapFromScene(scene_pos))
+    left = Qt.MouseButton.LeftButton
+    QApplication.sendEvent(
+        viewport,
+        QMouseEvent(
+            kind,
+            local,
+            QPointF(viewport.mapToGlobal(local.toPoint())),
+            left,
+            left if held else Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+        ),
+    )
+
+
+def render_contract(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """Contract (F15): the Divide button's arrow offering it beside Divide, and the whole
+    window mid-drag — the side pulled back, the band it has closed, and the status line
+    naming the pair that stopped it."""
+    session, services, made, tab = open_importer(app, theme, workspace, "contract")
+    # The parser in the feature's row, so the row reads as a chain with a hole in it; then
+    # the feature and the milestone two columns further out than they belong.
+    seats = {index: seat for index, (_title, seat, _kind) in enumerate(STEPS)}
+    seats[1] = (seats[1][0], seats[0][1])
+    seats[3] = (seats[3][0] + HOLE, seats[3][1])
+    seats[4] = (seats[4][0] + HOLE, seats[4][1])
+    for index in (1, 3, 4):
+        services.undo.push(
+            SetModuleDataCommand(made[index], POSITION_KEY, write_position(*seats[index]))
+        )
+    window = services.window
+    window.resize(*WINDOW_SIZE)
+    window.show()
+    settle(app)
+    tab.frame()
+    settle(app)
+
+    button = tab._toolbar.button("canvas.divide_vertical")
+    popup = tab._toolbar.menu_for("canvas.divide_vertical")
+    assert button is not None and popup is not None
+    popup.popup(button.mapToGlobal(QPoint(0, button.height())))
+    save(popup, out, "dropdown", theme, app)
+    popup.hide()
+
+    services.actions.run("canvas.contract_vertical", services.context.current())
+    view, scene = tab._view, tab._scene
+    parser = scene.node(made[1])
+    assert parser is not None
+    body = parser.body_scene_rect()
+    cut = QPointF(body.right() + HOLE / 2, body.bottom() + 60.0)
+    held = cut + QPointF(-2 * HOLE, 0.0)
+    press(view, QEvent.Type.MouseButtonPress, cut)
+    press(view, QEvent.Type.MouseMove, held)
+    # Framed on the graph as the pull has it, then the same point again, so the band is
+    # re-aimed edge to edge of what the new frame shows.
+    tab.frame()
+    settle(app)
+    press(view, QEvent.Type.MouseMove, held)
+    save(window, out, "closing", theme, app)
+
+    press(view, QEvent.Type.MouseButtonRelease, cut, held=False)
+    window.hide()
+    session.close()
+
+
 def render_cards(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     """The cards on their own, with nothing beside the canvas: what each one says at a
     glance, in the key block down its left edge and on its top edge."""
@@ -320,6 +396,9 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--menus", action="store_true", help="only the right-click menus (F7), nothing else"
     )
+    parser.add_argument(
+        "--contract", action="store_true", help="only the Contract gesture (F15), nothing else"
+    )
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
@@ -334,6 +413,9 @@ def main(argv: list[str]) -> int:
         for theme in (DARK, LIGHT):
             if args.menus:
                 render_menus(app, theme, args.out, Path(tmp))
+                continue
+            if args.contract:
+                render_contract(app, theme, args.out, Path(tmp))
                 continue
             render(app, theme, args.out, Path(tmp))
             render_cards(app, theme, args.out, Path(tmp))

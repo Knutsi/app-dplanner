@@ -51,6 +51,9 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     # The divide pair: D cuts upright, and Shift turns the line on its side.
     (Qt.Key.Key_D, _NONE): ("canvas.divide_vertical",),
     (Qt.Key.Key_D, _SHIFT): ("canvas.divide_horizontal",),
+    # The contract pair beside it, the same way round: X closes up across an upright cut.
+    (Qt.Key.Key_X, _NONE): ("canvas.contract_vertical",),
+    (Qt.Key.Key_X, _SHIFT): ("canvas.contract_horizontal",),
     (Qt.Key.Key_F, _NONE): ("canvas.frame",),
     # "/" is what every list and every editor means by "find", and a graph is a list of
     # steps you cannot see all of at once.

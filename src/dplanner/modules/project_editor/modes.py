@@ -31,9 +31,9 @@ what each one claims is what the next one therefore never sees. Split it when a 
 outgrows a screen, not when the file does.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import ClassVar, Protocol
 
 from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import QPainterPath
@@ -41,7 +41,9 @@ from PySide6.QtWidgets import QGraphicsView
 
 from dplanner.core.signals import Signal
 from dplanner.domain.model import SOURCE, WAITER, EdgeEnd, Redirection, StepId
+from dplanner.modules.project_editor.geometry import Axis, contract, direction, shift
 from dplanner.modules.project_editor.items import HANDLE_GRAB, StepNodeItem
+from dplanner.modules.project_editor.named_layouts import Point
 from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W, centred_on
 from dplanner.modules.project_editor.renderers import RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef
@@ -58,6 +60,8 @@ NODE_RESIZE = "node-resize"
 LASSO = "lasso"
 DIVIDE_VERTICAL = "divide-vertical"
 DIVIDE_HORIZONTAL = "divide-horizontal"
+CONTRACT_VERTICAL = "contract-vertical"
+CONTRACT_HORIZONTAL = "contract-horizontal"
 REDIRECT_TO = "redirect-to"
 REDIRECT_FROM = "redirect-from"
 
@@ -66,11 +70,15 @@ REDIRECT_FROM = "redirect-from"
 # moving the source end makes them come *from* one.
 REDIRECT_NAMES: dict[EdgeEnd, str] = {WAITER: REDIRECT_TO, SOURCE: REDIRECT_FROM}
 
-# The divide modes by the line they cut with: a vertical line parts left from right and
-# pushes along x; a horizontal one parts top from bottom and pushes along y.
+# The divide and contract modes by the line they cut with: a vertical line parts left from
+# right and moves a side along x; a horizontal one parts top from bottom and moves along y.
 DIVIDE_NAMES: dict[Qt.Orientation, str] = {
     Qt.Orientation.Vertical: DIVIDE_VERTICAL,
     Qt.Orientation.Horizontal: DIVIDE_HORIZONTAL,
+}
+CONTRACT_NAMES: dict[Qt.Orientation, str] = {
+    Qt.Orientation.Vertical: CONTRACT_VERTICAL,
+    Qt.Orientation.Horizontal: CONTRACT_HORIZONTAL,
 }
 
 
@@ -80,8 +88,9 @@ def mode_uri(name: str) -> str:
 
 # What each mode wants every node to show, fanned out by the scene when the stack changes.
 # Kept beside the mode names so a new mode decides its look in the same breath. Connect
-# shows every handle — each is a target; pan, resize, lasso, divide and redirect hide them —
-# their presses do not link. Anything unlisted gets the default (idle's hover-only handle).
+# shows every handle — each is a target; pan, resize, lasso, divide, contract and redirect
+# hide them — their presses do not link. Anything unlisted gets the default (idle's
+# hover-only handle).
 HINTS_BY_MODE = {
     CONNECT: RenderHints(handles="always"),
     PAN: RenderHints(handles="hidden"),
@@ -89,6 +98,8 @@ HINTS_BY_MODE = {
     LASSO: RenderHints(handles="hidden"),
     DIVIDE_VERTICAL: RenderHints(handles="hidden"),
     DIVIDE_HORIZONTAL: RenderHints(handles="hidden"),
+    CONTRACT_VERTICAL: RenderHints(handles="hidden"),
+    CONTRACT_HORIZONTAL: RenderHints(handles="hidden"),
     REDIRECT_TO: RenderHints(handles="hidden"),
     REDIRECT_FROM: RenderHints(handles="hidden"),
 }
@@ -120,9 +131,9 @@ RESIZE_CURSORS = {
     "bottom-left": Qt.CursorShape.SizeBDiagCursor,
 }
 
-# The cursor over a divide line: the splitter's, since that is the gesture — a vertical
-# line is pushed left or right, a horizontal one up or down.
-DIVIDE_CURSORS = {
+# The cursor over a cut: the splitter's, since that is the gesture — a side of a vertical
+# line moves left or right, of a horizontal one up or down.
+CUT_CURSORS = {
     Qt.Orientation.Vertical: Qt.CursorShape.SplitHCursor,
     Qt.Orientation.Horizontal: Qt.CursorShape.SplitVCursor,
 }
@@ -164,6 +175,8 @@ class Canvas(Protocol):
     node_resized: Signal[StepId, float, float, float, float]
     # The cards a divide pushed, at their new seats — one gesture, one emission.
     graph_divided: Signal[list[tuple[StepId, float, float]]]
+    # The cards a contract pulled up, the same way.
+    graph_contracted: Signal[list[tuple[StepId, float, float]]]
     # The step the picked links are to hang off, and which end of them moves.
     redirect_requested: Signal[StepId, EdgeEnd]
 
@@ -632,7 +645,7 @@ class GestureMode(ModeBase):
     that geometry alone until the release; Escape puts everything back where the press
     found it; and the release reports what happened and pops. A subclass says what it
     holds, how to put it back, what the pointer looks like meanwhile, and what the release
-    means — the card resize and the divide's drag are the two.
+    means — the card resize and the drag of one side of a cut (a divide, a contract).
     """
 
     # The viewport's cursor while the gesture lasts; None leaves it alone.
@@ -783,18 +796,19 @@ class LassoMode(ModeBase):
 
 
 def _along(orientation: Qt.Orientation, point: QPointF) -> float:
-    """The coordinate a divide works in: x across a vertical line, y across a horizontal."""
+    """The coordinate a cut works in: x across a vertical line, y across a horizontal."""
     return point.x() if orientation == Qt.Orientation.Vertical else point.y()
 
 
-def divide_band(
+def cut_band(
     orientation: Qt.Orientation, cut: float, delta: float, visible: QRectF
 ) -> QPainterPath:
-    """The outline a divide shows: the cut, and the room opened beside it.
+    """The outline a cut shows: the line, and the room opened or closed beside it.
 
-    A rectangle from the cut to where the drag has reached, spanning the visible canvas the
-    other way — edge to edge — so before a press it is a line under the cursor, and during
-    the drag it is the band of new space, the width the far side has been pushed.
+    A rectangle from the cut to where the side has travelled, spanning the visible canvas
+    the other way — edge to edge — so before a press it is a line under the cursor, and
+    during the drag it is the band the moving side has crossed: the room a divide makes,
+    the gap a contract closes.
     """
     low, high = min(cut, cut + delta), max(cut, cut + delta)
     path = QPainterPath()
@@ -805,27 +819,33 @@ def divide_band(
     return path
 
 
-class DivideMode(ModeBase):
-    """Cut the graph along a line and push one side away, to make room in the middle.
-
-    A line lies under the cursor from edge to edge — vertical or horizontal, the mode's
-    choice — and a press fixes it there and hands over to :class:`DivideDragMode`, which
-    takes this mode's place: one divide ends the mode, like one lasso ends that one, and
-    Escape mid-drag leaves the way it leaves a resize. Before the press Escape leaves too;
-    the canvas pops the mode, since nothing here is pending.
+class _CutMode(ModeBase):
+    """Lay a cut under the cursor from edge to edge — vertical or horizontal, the mode's
+    choice — and on a press fix it there and hand over to the drag, which takes this mode's
+    place: one cut ends the mode, like one lasso ends that one, and Escape mid-drag leaves
+    the way it leaves a resize. Before the press Escape leaves too; the canvas pops the
+    mode, since nothing here is pending. A subclass says what it is called, what the status
+    line asks for, and which drag the press starts.
     """
+
+    # The mode's name by the line it cuts with — the drag it starts carries the same one, so
+    # the verb that entered the mode stays checked until the gesture ends.
+    names: ClassVar[Mapping[Qt.Orientation, str]]
 
     def __init__(self, deps: CanvasDeps, orientation: Qt.Orientation) -> None:
         super().__init__(deps)
         self._orientation = orientation
-        self.name = DIVIDE_NAMES[orientation]
+        self.name = self.names[orientation]
+
+    def prompt(self) -> str:
+        raise NotImplementedError
+
+    def drag(self, cut: float) -> GestureMode:
+        raise NotImplementedError
 
     def enter(self) -> None:
-        self.deps.view.viewport().setCursor(DIVIDE_CURSORS[self._orientation])
-        way = "left or right" if self._orientation == Qt.Orientation.Vertical else "up or down"
-        self.deps.status(
-            f"Divide: press to place the cut, drag {way} to push that side. Esc leaves."
-        )
+        self.deps.view.viewport().setCursor(CUT_CURSORS[self._orientation])
+        self.deps.status(self.prompt())
 
     def exit(self) -> None:
         self.deps.view.viewport().unsetCursor()
@@ -836,13 +856,13 @@ class DivideMode(ModeBase):
             cut = _along(self._orientation, event.scene_pos)
             stack = self.stack
             stack.pop()  # This mode is done; the drag is the rest of the gesture.
-            stack.push(DivideDragMode(self.deps, self._orientation, cut))
+            stack.push(self.drag(cut))
         return True
 
     def mouse_move(self, event: CanvasEvent) -> bool:
         cut = _along(self._orientation, event.scene_pos)
         self.deps.canvas.aim_outline(
-            divide_band(self._orientation, cut, 0.0, visible_scene_rect(self.deps.view))
+            cut_band(self._orientation, cut, 0.0, visible_scene_rect(self.deps.view))
         )
         return True
 
@@ -852,37 +872,54 @@ class DivideMode(ModeBase):
     def double_click(self, event: CanvasEvent) -> bool:
         return True  # No step-creating double clicks while placing a cut.
 
+    def _ways(self) -> str:
+        return "left or right" if self._orientation == Qt.Orientation.Vertical else "up or down"
 
-class DivideDragMode(GestureMode):
-    """The drag half of a divide: every card on the side dragged towards moves with the
-    pointer, by the distance dragged along the cut's axis.
 
-    Which side a card is on is decided **at the press** by its centre and held for the
-    gesture, so a drag that comes back past the cut flips cleanly: the far side returns
-    and the near side goes. Every card is held, both sides, since either may move before
-    the release. The band drawn beside the cut is the room being made, and it snaps as a
-    drag does, so cards on the grid stay on it.
+class _CutDragMode(GestureMode):
+    """The drag half of a cut: one side of it moves along the cut's axis as the pointer
+    does, by the rule a subclass names — a Qt-free function of the seats at the press, the
+    cut and the snapped distance, so the ``layout`` verb that runs the same rule cannot
+    disagree with the drag.
+
+    Every card is held, both sides, since either may move before the release, and each
+    card's seat and size are taken at the press: which side a card is on is its centre
+    then, so a drag back past the cut flips cleanly with no state to clear. The band drawn
+    beside the cut is how far the side has travelled.
     """
+
+    names: ClassVar[Mapping[Qt.Orientation, str]]
 
     def __init__(self, deps: CanvasDeps, orientation: Qt.Orientation, cut: float) -> None:
         super().__init__(deps)
         self._orientation = orientation
-        self.name = DIVIDE_NAMES[orientation]
-        self.cursor = DIVIDE_CURSORS[orientation]
+        self.name = self.names[orientation]
+        # The geometry's word for the same thing: a vertical line moves a side along x.
+        self._axis: Axis = "x" if orientation == Qt.Orientation.Vertical else "y"
+        self.cursor = CUT_CURSORS[orientation]
         self._cut = cut
-        self._delta = 0.0
-        self._was = {node.step_id: node.pos() for node in deps.canvas.nodes()}
-        self._beyond = {
-            node.step_id
-            for node in deps.canvas.nodes()
-            if _along(orientation, node.body_scene_rect().center()) > cut
+        nodes = deps.canvas.nodes()
+        self._placed: dict[StepId, Point] = {
+            node.step_id: (node.pos().x(), node.pos().y()) for node in nodes
         }
+        self._sizes = {node.step_id: node.size() for node in nodes}
+        self._moved: dict[StepId, Point] = {}
+        self._travel = 0.0
+
+    def follow(self, delta: float) -> tuple[dict[StepId, Point], float]:
+        """The seats that move for a drag this far, and how far the side travels."""
+        raise NotImplementedError
+
+    def report(self, moved: list[tuple[StepId, float, float]]) -> None:
+        """What the release means: which of the canvas's signals carries the moved seats."""
+        raise NotImplementedError
 
     def held(self) -> set[StepId]:
-        return set(self._was)
+        return set(self._placed)
 
     def restore(self) -> None:
-        self._place(0.0)
+        self._moved, self._travel = {}, 0.0
+        self._place()
 
     def enter(self) -> None:
         super().enter()
@@ -893,49 +930,98 @@ class DivideDragMode(GestureMode):
         self.deps.canvas.hide_outline()
 
     def mouse_move(self, event: CanvasEvent) -> bool:
-        self._delta = self.deps.canvas.snap(_along(self._orientation, event.scene_pos) - self._cut)
-        self._place(self._delta)
+        delta = self.deps.canvas.snap(_along(self._orientation, event.scene_pos) - self._cut)
+        self._moved, self._travel = self.follow(delta)
+        self._place()
         self._aim()
         return True
 
     def mouse_release(self, event: CanvasEvent) -> bool:
-        moved: list[tuple[StepId, float, float]] = []
-        for step_id in self._pushed(self._delta):
-            node = self.deps.canvas.node(step_id)
-            if node is not None:
-                moved.append((step_id, node.pos().x(), node.pos().y()))
-        if moved:
-            self.deps.canvas.graph_divided.emit(moved)
+        if self._moved:
+            self.report([(step_id, x, y) for step_id, (x, y) in self._moved.items()])
         self.pop()
         return True
 
-    def _pushed(self, delta: float) -> set[StepId]:
-        """The side the drag has reached towards: beyond the cut for a positive delta,
-        before it for a negative one, neither while the pointer sits on the cut."""
-        if delta > 0:
-            return self._beyond
-        if delta < 0:
-            return set(self._was) - self._beyond
-        return set()
-
-    def _place(self, delta: float) -> None:
-        pushed = self._pushed(delta)
-        shift = (
-            QPointF(delta, 0.0)
-            if self._orientation == Qt.Orientation.Vertical
-            else QPointF(0.0, delta)
-        )
-        for step_id, was in self._was.items():
+    def _place(self) -> None:
+        for step_id, seat in self._placed.items():
             node = self.deps.canvas.node(step_id)
             if node is not None:
-                node.setPos(was + shift if step_id in pushed else was)
+                node.setPos(QPointF(*self._moved.get(step_id, seat)))
 
     def _aim(self) -> None:
         self.deps.canvas.aim_outline(
-            divide_band(
-                self._orientation, self._cut, self._delta, visible_scene_rect(self.deps.view)
-            )
+            cut_band(self._orientation, self._cut, self._travel, visible_scene_rect(self.deps.view))
         )
+
+
+class DivideMode(_CutMode):
+    """Cut the graph along a line and push one side away, to make room in the middle."""
+
+    names = DIVIDE_NAMES
+
+    def prompt(self) -> str:
+        return f"Divide: press to place the cut, drag {self._ways()} to push that side. Esc leaves."
+
+    def drag(self, cut: float) -> GestureMode:
+        return DivideDragMode(self.deps, self._orientation, cut)
+
+
+class DivideDragMode(_CutDragMode):
+    """The drag half of a divide: every card on the side dragged towards moves with the
+    pointer — ``geometry.shift``, which ``dplanner layout shift`` runs too."""
+
+    names = DIVIDE_NAMES
+
+    def follow(self, delta: float) -> tuple[dict[StepId, Point], float]:
+        return shift(self._placed, self._sizes, self._axis, self._cut, delta), delta
+
+    def report(self, moved: list[tuple[StepId, float, float]]) -> None:
+        self.deps.canvas.graph_divided.emit(moved)
+
+
+class ContractMode(_CutMode):
+    """Cut the graph along a line and pull one side up to the other, to close a hole —
+    Divide's other half."""
+
+    names = CONTRACT_NAMES
+
+    def prompt(self) -> str:
+        return (
+            f"Contract: press to place the cut, drag {self._ways()} to close up that way."
+            " Esc leaves."
+        )
+
+    def drag(self, cut: float) -> GestureMode:
+        return ContractDragMode(self.deps, self._orientation, cut)
+
+
+class ContractDragMode(_CutDragMode):
+    """The drag half of a contract: the side behind the pointer is pulled after it, and
+    stops the sorts' gap short of the first card ahead of it in its band — clamped live by
+    ``geometry.contract``, which ``dplanner layout contract`` runs too. The status line
+    names the pair that stopped it, since a drag that will not go further says why."""
+
+    names = CONTRACT_NAMES
+
+    def follow(self, delta: float) -> tuple[dict[StepId, Point], float]:
+        done = contract(self._placed, self._sizes, self._axis, self._cut, delta)
+        if done.stopped is not None:
+            mover, met = (self._name(step_id) for step_id in done.stopped)
+            self.deps.status(f"Contract: {mover} stops one gap from {met}.")
+        elif done.moved:
+            count = len(done.moved)
+            self.deps.status(
+                f"Contract: pulling {count} step{'s' if count != 1 else ''}"
+                f" {direction(self._axis, done.by)}."
+            )
+        return done.moved, done.by
+
+    def report(self, moved: list[tuple[StepId, float, float]]) -> None:
+        self.deps.canvas.graph_contracted.emit(moved)
+
+    def _name(self, step_id: StepId) -> str:
+        node = self.deps.canvas.node(step_id)
+        return node.name() if node is not None else ""
 
 
 def visible_scene_rect(view: QGraphicsView) -> QRectF:

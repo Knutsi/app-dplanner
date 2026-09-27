@@ -6,11 +6,15 @@ and is tested in ``tests/domain/test_ordering.py``; what is tested here is where
 ends up on screen.
 """
 
+import math
+
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import depths
 from dplanner.modules.project_editor.geometry import (
+    Contraction,
     as_json,
+    contract,
     map_text,
     measure,
     pitches,
@@ -584,9 +588,10 @@ def three_in_a_row():
     return (a, b, c), placed, sizes
 
 
-def test_shift_pushes_the_side_past_the_cut_and_snaps_the_distance():
+def test_shift_pushes_the_side_past_the_cut_by_the_distance_given():
     (_a, _b, c), placed, sizes = three_in_a_row()
-    assert shift(placed, sizes, "x", 500.0, 300.0) == {c.id: (944.0, 40.0)}  # 300 → 304
+    # Taken as given: the drag snaps through the scene and the verb onto the grid.
+    assert shift(placed, sizes, "x", 500.0, 300.0) == {c.id: (940.0, 40.0)}
 
 
 def test_shift_brings_the_near_side_back_for_a_negative_distance():
@@ -605,7 +610,87 @@ def test_shift_moves_only_the_named_steps_and_along_y():
     assert shift(placed, sizes, "x", 9999.0, 80.0, only={a.id}) == {a.id: (120.0, 40.0)}
     down = shift(placed, sizes, "y", 50.0, 120.0)
     assert down == {i: (x, y + 120.0) for i, (x, y) in placed.items()}
-    assert shift(placed, sizes, "x", 0.0, 3.0) == {}  # snaps to nothing
+    assert shift(placed, sizes, "x", 0.0, 0.0) == {}
+
+
+# -- contract: Divide's other half, as a function -----------------------------------------------
+
+
+def apart():
+    """A and B in one row with two empty columns between them — three pitches apart."""
+    _library, project = build()
+    a, b, c = project.steps
+    placed = {a.id: (40.0, 40.0), b.id: (40.0 + 3 * H_PITCH, 40.0)}
+    sizes = {step.id: (NODE_W, NODE_H) for step in project.steps}
+    return (a, b, c), placed, sizes
+
+
+def test_contract_closes_a_far_side_three_pitches_away_to_one_gap_and_no_further():
+    (a, b, _c), placed, sizes = apart()
+    closed = contract(placed, sizes, "x", 600.0, -math.inf)
+    assert closed == Contraction({b.id: (40.0 + H_PITCH, 40.0)}, -2 * H_PITCH, (b.id, a.id))
+    assert closed.moved[b.id][0] - (40.0 + NODE_W) == H_GAP
+    assert contract(placed, sizes, "x", 600.0, -5000.0) == closed  # asked for more: stops
+
+    # Closed already: B has crossed that cut, and from one it still lies past, B stays put.
+    closed_up = placed | closed.moved
+    assert contract(closed_up, sizes, "x", 600.0, -math.inf) == Contraction({}, 0.0, None)
+    assert contract(closed_up, sizes, "x", 400.0, -math.inf) == Contraction({}, 0.0, (b.id, a.id))
+
+
+def test_contract_goes_only_as_far_as_asked_when_that_is_shorter():
+    (_a, b, _c), placed, sizes = apart()
+    assert contract(placed, sizes, "x", 600.0, -120.0) == Contraction(
+        {b.id: (40.0 + 3 * H_PITCH - 120.0, 40.0)}, -120.0, None
+    )
+
+
+def test_a_card_in_another_band_does_not_stop_a_contract():
+    (a, b, c), placed, sizes = apart()
+    # C stands on the near side, one row down, right where B will pass over it.
+    below = placed | {c.id: (400.0, 40.0 + V_PITCH)}
+    closed = contract(below, sizes, "x", 600.0, -math.inf)
+    assert closed.moved == {b.id: (40.0 + H_PITCH, 40.0)} and closed.stopped == (b.id, a.id)
+
+    # Reaching into B's band from the row below is enough to be met, lane or no lane.
+    reaching = placed | {c.id: (400.0, 40.0 + NODE_H - 10.0)}
+    stopped = contract(reaching, sizes, "x", 600.0, -math.inf)
+    assert stopped.moved == {b.id: (400.0 + NODE_W + H_GAP, 40.0)}
+    assert stopped.stopped == (b.id, c.id)
+
+
+def test_contract_ignores_a_pair_that_already_overlaps():
+    (a, b, c), placed, sizes = apart()
+    # C's centre is left of the cut, but its body already lies over B's.
+    overlapping = placed | {c.id: (760.0, 60.0)}
+    closed = contract(overlapping, sizes, "x", 900.0, -math.inf)
+    assert closed.moved == {b.id: (40.0 + H_PITCH, 40.0)} and closed.stopped == (b.id, a.id)
+
+
+def test_contract_with_a_positive_distance_pulls_the_near_side_along():
+    (a, b, _c), placed, sizes = apart()
+    closed = contract(placed, sizes, "x", 600.0, 5000.0)
+    assert closed == Contraction({a.id: (40.0 + 2 * H_PITCH, 40.0)}, 2 * H_PITCH, (a.id, b.id))
+
+
+def test_contract_across_a_level_cut_rounds_the_room_onto_the_grid():
+    (a, b, _c), _placed, sizes = apart()
+    column = {a.id: (40.0, 40.0), b.id: (40.0, 40.0 + 3 * V_PITCH)}
+    closed = contract(column, sizes, "y", 200.0, -math.inf)
+    assert closed.moved == {b.id: (40.0, 40.0 + V_PITCH)} and closed.stopped == (b.id, a.id)
+
+    # A taller card above: exactly V_GAP would leave B off the grid, so it stops short.
+    tall = sizes | {a.id: (NODE_W, 80.0)}
+    closed = contract(column, tall, "y", 200.0, -math.inf)
+    seat = closed.moved[b.id][1]
+    assert seat % GRID == 0 and 0 <= seat - (40.0 + 80.0) - V_GAP < GRID
+
+
+def test_contract_moves_nothing_with_nothing_ahead_to_close_up_to():
+    (_a, b, _c), placed, sizes = apart()
+    alone = {b.id: placed[b.id]}
+    assert contract(alone, sizes, "x", 600.0, -math.inf) == Contraction({}, 0.0, None)
+    assert contract(alone, sizes, "x", 600.0, -120.0).moved == {b.id: (820.0, 40.0)}
 
 
 # -- measuring, and the map ---------------------------------------------------------------------

@@ -6,9 +6,10 @@ ambient layout filling the gaps (``placement.positions``), the card sizes
 (``positions.node_size``), the waves (``ordering.depths``) — measured into a report an
 agent can read (:func:`measure`, :func:`text`, :func:`as_json`) and a map it can look at
 (:func:`map_text`), **derived on every read and never stored**: a second copy of where
-things are is one that can disagree with the first. The hand: :func:`shift`, the canvas's
-Divide as a function — the same side rule, the same snapped distance, the same
-``Divide Graph`` command (:func:`divide_command`) both surfaces push.
+things are is one that can disagree with the first. The hands: :func:`shift`, the canvas's
+Divide as a function, and :func:`contract`, its Contract — each the one rule both the
+gesture and the ``layout`` verb run, building the one command (:func:`divide_command`)
+both surfaces push.
 
 The columns and rows it reports are the sorts' lanes (``sorts.lanes``), so a gap the report
 calls two pitches is a gap ``layout tidy`` keeps, and the map is drawn on the same lanes
@@ -17,6 +18,7 @@ rather than on pixels — a graph at an odd pitch still reads as the columns it 
 **Qt-free** — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
+import math
 from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -26,7 +28,7 @@ from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import depths
 from dplanner.modules.project_editor.named_layouts import Point, position_commands
 from dplanner.modules.project_editor.placement import positions
-from dplanner.modules.project_editor.positions import GRID, Size, node_size, snapped
+from dplanner.modules.project_editor.positions import GRID, Size, node_size
 from dplanner.modules.project_editor.sorts import (
     DEFAULT_AIR,
     H_GAP,
@@ -43,8 +45,10 @@ from dplanner.modules.project_editor.sorts import (
 type Rect = tuple[float, float, float, float]
 type Axis = Literal["x", "y"]
 
-# The label both surfaces give the command: the undo menu's word for one pushed side.
+# The labels both surfaces give the command: the undo menu's word for one side pushed away
+# from a cut, and for one side pulled up to it.
 DIVIDE_LABEL = "Divide Graph"
+CONTRACT_LABEL = "Contract Graph"
 # One map cell — a column pitch wide, a row pitch tall — is this many characters across.
 CELL_W = 8
 
@@ -330,7 +334,7 @@ def _span(extent: float, gap: float, pitch: float) -> int:
     return max(1, round((extent + gap) / pitch))
 
 
-# -- shifting -----------------------------------------------------------------------------------
+# -- shifting and contracting ------------------------------------------------------------------
 
 
 def shift(
@@ -342,39 +346,115 @@ def shift(
     only: Collection[StepId] | None = None,
 ) -> dict[StepId, Point]:
     """The Divide gesture's rule as a function: which side a card is on is its body's
-    centre against the cut, a positive distance pushes the far side, a negative one
-    brings the near side back, and the distance snaps to the grid as the drag does. Only
-    the seats that move are returned. ``only`` names the movers outright — the cut then
-    says nothing but the axis."""
-    delta = snapped(by, GRID)
-    along = 0 if axis == "x" else 1
-
-    def beyond(step_id: StepId) -> bool:
-        x, y = placed[step_id]
-        w, h = sizes[step_id]
-        return (x + w / 2, y + h / 2)[along] > cut
-
+    centre against the cut, a positive distance pushes the far side and a negative one
+    brings the near side back. Only the seats that move are returned. ``only`` names the
+    movers outright — the cut then says nothing but the axis. The distance is taken as
+    given: the drag snaps it through the scene, the verb onto the grid."""
     if only is not None:
         moving = [step_id for step_id in placed if step_id in only]
-    elif delta > 0:
-        moving = [step_id for step_id in placed if beyond(step_id)]
-    elif delta < 0:
-        moving = [step_id for step_id in placed if not beyond(step_id)]
-    else:
+    elif by == 0:
         moving = []
+    else:
+        moving = [s for s in placed if _beyond(placed, sizes, axis, cut, s) == (by > 0)]
+    return _moved(placed, moving, axis, by)
+
+
+@dataclass(frozen=True)
+class Contraction:
+    """What a contract did: the seats that moved, how far the side travelled (signed,
+    along the axis), and the pair that stopped it — the card that moved and the card it
+    stopped a gap short of — or None when the distance asked for ran out first."""
+
+    moved: dict[StepId, Point]
+    by: float
+    stopped: tuple[StepId, StepId] | None
+
+
+def contract(
+    placed: dict[StepId, Point],
+    sizes: dict[StepId, Size],
+    axis: Axis,
+    cut: float,
+    by: float,
+) -> Contraction:
+    """The Contract gesture's rule as a function — Divide's other half. The side *behind*
+    the travel is pulled along it as one block, closing the gap at the cut: the far side
+    for a negative distance, the near side for a positive one, each card's side decided by
+    its centre as :func:`shift` decides it.
+
+    It stops the sorts' gap (``H_GAP`` across an upright cut, ``V_GAP`` across a level one)
+    short of the first card ahead of it that shares its band — whose extent across the
+    travel overlaps a mover's — so it never makes an overlap; a card in another band can
+    never meet it, and a pair that already overlaps is ignored. The room is rounded towards
+    the cut onto the grid, so a side on the grid stays on it. An infinite distance closes
+    as far as that allows, and moves nothing when no card ahead shares a band."""
+    if by == 0:
+        return Contraction({}, 0.0, None)
+    along = 0 if axis == "x" else 1
+    gap = H_GAP if axis == "x" else V_GAP
+    pulled = [s for s in placed if _beyond(placed, sizes, axis, cut, s) == (by < 0)]
+    block = set(pulled)
+
+    def extent(step_id: StepId, index: int) -> tuple[float, float]:
+        low = placed[step_id][index]
+        return low, low + sizes[step_id][index]
+
+    room, stopped = math.inf, None
+    for mover in pulled:
+        (low, high), (side_low, side_high) = extent(mover, along), extent(mover, 1 - along)
+        for other in placed:
+            other_low, other_high = extent(other, 1 - along)
+            if other in block or other_high <= side_low or side_high <= other_low:
+                continue  # Moving with it, or in another band: it can never be met.
+            ahead_low, ahead_high = extent(other, along)
+            distance = low - ahead_high if by < 0 else ahead_low - high
+            if distance < 0:
+                continue  # Behind the mover, or already overlapping it.
+            free = max(0.0, math.floor((distance - gap) / GRID) * GRID)
+            if free < room:
+                room, stopped = free, (mover, other)
+    travel = min(abs(by), room)
+    if abs(by) < room:
+        stopped = None
+    if travel == 0 or math.isinf(travel):
+        return Contraction({}, 0.0, stopped)
+    signed = math.copysign(travel, by)
+    return Contraction(_moved(placed, pulled, axis, signed), signed, stopped)
+
+
+def direction(axis: Axis, by: float) -> str:
+    """Which way a signed distance along an axis goes, in the words both surfaces say."""
+    return ("right" if by > 0 else "left") if axis == "x" else ("down" if by > 0 else "up")
+
+
+def _beyond(
+    placed: dict[StepId, Point], sizes: dict[StepId, Size], axis: Axis, cut: float, step_id: StepId
+) -> bool:
+    """Whether a card's body centre lies past the cut — the side rule both hands share."""
+    along = 0 if axis == "x" else 1
+    return placed[step_id][along] + sizes[step_id][along] / 2 > cut
+
+
+def _moved(
+    placed: dict[StepId, Point], moving: Sequence[StepId], axis: Axis, by: float
+) -> dict[StepId, Point]:
     return {
-        step_id: (placed[step_id][0] + delta, placed[step_id][1])
-        if along == 0
-        else (placed[step_id][0], placed[step_id][1] + delta)
+        step_id: (placed[step_id][0] + by, placed[step_id][1])
+        if axis == "x"
+        else (placed[step_id][0], placed[step_id][1] + by)
         for step_id in moving
     }
 
 
 def divide_command(
-    project: Project, moved: dict[StepId, Point], view_origin: object = None
+    project: Project,
+    moved: dict[StepId, Point],
+    view_origin: object = None,
+    *,
+    label: str = DIVIDE_LABEL,
 ) -> CompositeCommand:
-    """One pushed side as one undo step — what the canvas's Divide pushes and what
-    ``dplanner layout shift`` applies."""
+    """One moved side as one undo step — what the canvas's Divide and Contract push and
+    what ``dplanner layout shift`` and ``layout contract`` apply."""
     return CompositeCommand(
-        DIVIDE_LABEL, position_commands(project, moved, DIVIDE_LABEL, view_origin=view_origin)
+        label, position_commands(project, moved, label, view_origin=view_origin)
     )

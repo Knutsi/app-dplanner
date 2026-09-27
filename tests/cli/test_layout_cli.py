@@ -73,7 +73,7 @@ def test_delete_forgets_the_layout(cli):
     assert "no layout named" in cli("layout", "delete", "Discovery", "plan", expect=1)
 
 
-# -- the agent's eyes and hands: show, shift, tidy ----------------------------------------------
+# -- the agent's eyes and hands: show, shift, contract, tidy ------------------------------------
 
 
 def test_show_measures_the_graph(cli):
@@ -127,6 +127,43 @@ def test_shift_refuses_what_moves_nothing(cli):
         "layout", "shift", "Discovery", "--x", "0", "--by", "80", "--steps", "ghost", expect=1
     )
     assert "ghost" in said
+
+
+def test_contract_closes_a_hole_to_one_gap_and_names_what_stopped_it(cli, cli_library):
+    cli("layout", "shift", "Discovery", "--y", "100", "--by", "240")  # S2 three pitches down
+    said = cli("layout", "contract", "Discovery", "--y", "300")
+    assert "Contracted 1 step up by 240: S2; S2 stops one gap from S1" in said
+    assert "gap 44 (1.0 pitch)" in said
+    first, second = reload(cli_library).projects[0].steps
+    assert read_position(second) == (40.0, 160.0)
+    assert read_position(first) is None  # the side it closed up to is untouched
+
+    said = cli("layout", "contract", "Discovery", "--y", "190")  # S2 still lies past it
+    assert "Nothing to close: S2 already sits within one gap of S1" in said
+    assert read_position(reload(cli_library).projects[0].steps[1]) == (40.0, 160.0)
+
+
+def test_contract_goes_only_as_far_as_asked(cli, cli_library):
+    cli("layout", "shift", "Discovery", "--y", "100", "--by", "240")
+    data = json.loads(
+        cli("layout", "contract", "Discovery", "--y", "300", "--by", "-120", "--json")
+    )
+    assert data["by"] == -120.0 and data["moved_by"] == -120.0 and data["stopped"] is None
+    assert [(row["key"], row["y"]) for row in data["moved"]] == [("S2", 280.0)]
+
+    data = json.loads(cli("layout", "contract", "Discovery", "--y", "300", "--json"))
+    first, second = reload(cli_library).projects[0].steps
+    assert data["by"] is None and data["moved_by"] == -120.0
+    assert data["stopped"] == [second.id, first.id]
+
+
+def test_contract_refuses_what_closes_nothing(cli):
+    said = cli("layout", "contract", "Discovery", "--y", "9999", expect=1)
+    assert "nothing past y=9999 has a step ahead of it in its column" in said
+    said = cli("layout", "contract", "Discovery", "--y", "9999", "--by", "-80", expect=1)
+    assert "no step's centre lies past y=9999" in said
+    said = cli("layout", "contract", "Discovery", "--x", "0", "--by", "3", expect=1)
+    assert "snaps to the grid" in said
 
 
 def test_tidy_resolves_an_overlap_and_is_idempotent(cli, cli_library):

@@ -79,13 +79,15 @@ from dplanner.modules.project_editor.canvas_verbs import CanvasVerbs
 from dplanner.modules.project_editor.clipboard import PastePolicy
 from dplanner.modules.project_editor.clipboard_verbs import ClipboardVerbs, ClipboardWatch
 from dplanner.modules.project_editor.find import find_rows
-from dplanner.modules.project_editor.geometry import divide_command
+from dplanner.modules.project_editor.geometry import CONTRACT_LABEL, DIVIDE_LABEL, divide_command
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.layout_button import LayoutButton
 from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
 from dplanner.modules.project_editor.look import Look
 from dplanner.modules.project_editor.modes import (
     CONNECT,
+    CONTRACT_HORIZONTAL,
+    CONTRACT_VERTICAL,
     DIVIDE_HORIZONTAL,
     DIVIDE_VERTICAL,
     LASSO,
@@ -93,6 +95,7 @@ from dplanner.modules.project_editor.modes import (
     REDIRECT_TO,
     CanvasDeps,
     ConnectMode,
+    ContractMode,
     DivideMode,
     IdleMode,
     LassoMode,
@@ -126,6 +129,8 @@ SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
     LASSO: LassoMode,
     DIVIDE_VERTICAL: lambda deps: DivideMode(deps, Qt.Orientation.Vertical),
     DIVIDE_HORIZONTAL: lambda deps: DivideMode(deps, Qt.Orientation.Horizontal),
+    CONTRACT_VERTICAL: lambda deps: ContractMode(deps, Qt.Orientation.Vertical),
+    CONTRACT_HORIZONTAL: lambda deps: ContractMode(deps, Qt.Orientation.Horizontal),
     REDIRECT_TO: lambda deps: RedirectMode(deps, WAITER),
     REDIRECT_FROM: lambda deps: RedirectMode(deps, SOURCE),
 }
@@ -216,7 +221,10 @@ class ProjectActivity(EntityActivity):
         self._scene.link_requested.connect(self._on_link_requested)
         self._scene.create_requested.connect(self._on_create)
         self._scene.node_resized.connect(self._on_node_resized)
-        self._scene.graph_divided.connect(self._on_graph_divided)
+        self._scene.graph_divided.connect(lambda moved: self._on_side_moved(DIVIDE_LABEL, moved))
+        self._scene.graph_contracted.connect(
+            lambda moved: self._on_side_moved(CONTRACT_LABEL, moved)
+        )
         self._scene.redirect_requested.connect(self._on_redirect_requested)
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
@@ -520,12 +528,13 @@ class ProjectActivity(EntityActivity):
         # would jump back past a move made minutes ago.
         self._deps.undo.break_coalescing()
 
-    def _on_graph_divided(self, moved: list[tuple[StepId, float, float]]) -> None:
-        """One side of a cut was pushed aside: one undo step, however many cards went, and
-        named for the gesture rather than the moves it is made of — the very command
-        ``dplanner layout shift`` applies, so the two surfaces cannot drift."""
+    def _on_side_moved(self, label: str, moved: list[tuple[StepId, float, float]]) -> None:
+        """One side of a cut was pushed aside or pulled up: one undo step, however many
+        cards went, and named for the gesture rather than the moves it is made of — the very
+        command ``dplanner layout shift`` or ``layout contract`` applies, so the two
+        surfaces cannot drift."""
         seats = {step_id: (x, y) for step_id, x, y in moved}
-        self._deps.undo.push(divide_command(self._project(), seats, view_origin=self))
+        self._deps.undo.push(divide_command(self._project(), seats, view_origin=self, label=label))
         self._deps.undo.break_coalescing()
 
     def _on_redirect_requested(self, anchor: StepId, end: EdgeEnd) -> None:
