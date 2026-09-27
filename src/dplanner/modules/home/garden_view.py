@@ -519,6 +519,13 @@ class GardenView(QWidget):
             glow(
                 painter, QPointF(width * 0.1, -height * 0.25), 230, rgba(CHIP_ATTENTION_BORDER, 30)
             )
+        # The sky melts into the page above it: no edge where the garden begins.
+        melt = QLinearGradient(0, 0, 0, height * 0.4)
+        melt.setColorAt(0.0, QColor(0, 0, 0, 0))
+        melt.setColorAt(1.0, QColor(0, 0, 0, 255))
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+        painter.fillRect(QRectF(0, 0, width, height * 0.4), melt)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
         # Two ranges of hills, the far one fainter.
         for far, (rise, alpha) in enumerate(((0.3, 9), (0.18, 13))):
             hills = QPainterPath(QPointF(0, ground))
