@@ -195,7 +195,7 @@ def _workdir_refusal(facts: RepositoryFacts, step: Step | None = None) -> str:
     if facts.plan_root is None:
         return "the project's folder is not in a git repository"
     if facts.state == UNSET:
-        return "no code repository is recorded — record the code repository: Project ▸ Settings…"
+        return "no code repository is recorded — Project ▸ Settings…"
     return ""
 
 

@@ -35,6 +35,11 @@ class LintFinding:
 LintCheck = Callable[[Library, Project, FilesFor], Sequence[LintFinding]]
 
 
+def record_code_hint(title: str) -> str:
+    """The verb that records a project's code repository, as every surface names it."""
+    return f"`dplanner location add '{title}' --role code --repository URL`"
+
+
 def repository_finding(project: Project, facts: RepositoryFacts) -> LintFinding | None:
     """The plan's own repository question, asked before any module's: a plan kept inside
     the code it plans is what drifts, and the finding names the way out — or the way to
@@ -49,13 +54,13 @@ def repository_finding(project: Project, facts: RepositoryFacts) -> LintFinding 
             subject=title,
             message=(
                 "no code repository is recorded yet, so no agent has anywhere to work — "
-                f"`dplanner location add '{title}' --role code --repository URL`"
+                + record_code_hint(title)
             ),
         )
     if not facts.warns:
         return None
     if facts.state == LEGACY:
-        check = "repo.unset"
+        check = "repo.legacy"
         what = (
             "no code repository is recorded, so the plan reads as living inside the code it plans"
         )

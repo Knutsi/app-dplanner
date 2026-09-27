@@ -37,7 +37,7 @@ from dplanner.core.storage.locations import (
 )
 from dplanner.core.storage.pointer import POINTER_FILE, add_to_index, remove_from_index
 from dplanner.core.storage.provider import StorageError, VersionedStorage
-from dplanner.domain.locations import CODE, Location, primary_code, write_locations
+from dplanner.domain.locations import CODE, Location, write_locations
 from dplanner.domain.model import ProjectId
 from dplanner.domain.repositories import LEGACY, repository_facts
 from dplanner.domain.store import PLAN_ENTRIES, PROJECT_META, LibraryStore
@@ -91,19 +91,13 @@ def move_project(
         raise RelocateError(
             "the project has unsaved edits in this window — let them reach disk, then try again"
         )
-    primary = primary_code(project.locations)
     # A legacy plan names the code it came out of as its first code row; a table that
     # already has one is left exactly as it stands, and an unset plan — one a plan
     # repository holds, whose code nobody has named — moves on still unset: the repository
     # it leaves was never its code.
-    legacy = repository_facts(project, source, {}).state == LEGACY
-    code = (
-        primary.repository
-        if primary is not None
-        else (origin_url(source) or str(main_checkout(source_root)))
-        if legacy
-        else ""
-    )
+    facts = repository_facts(project, source, {})
+    legacy = facts.state == LEGACY
+    code = facts.code_remote or (str(main_checkout(source_root)) if legacy else "")
     locations = (Location("l1", CODE.id, code), *project.locations) if legacy else project.locations
     recorded = store.checkout_for(code) if code else None
     # A plan leaving the repository that also held its code leaves *from* the checkout, so

@@ -51,9 +51,9 @@ def test_a_plan_with_no_code_repository_or_inside_it_is_a_finding_until_accepted
 
     cli("project", "create", "Discovery", "--dir", str(workspace))
     report = data(cli("project", "lint", "Discovery", "--json", expect=1))
-    assert "repo.unset" in checks_in(report)
+    assert "repo.legacy" in checks_in(report)
     assert "project move" in next(
-        r["message"] for r in report["findings"] if r["check"] == "repo.unset"
+        r["message"] for r in report["findings"] if r["check"] == "repo.legacy"
     )
 
     subprocess.run(
@@ -70,7 +70,7 @@ def test_a_plan_with_no_code_repository_or_inside_it_is_a_finding_until_accepted
         "git@github.com:acme/widget.git",
     )
     checks = checks_in(data(cli("project", "lint", "Discovery", "--json", expect=1)))
-    assert "repo.colocated" in checks and "repo.unset" not in checks
+    assert "repo.colocated" in checks and "repo.legacy" not in checks
 
     cli("project", "set", "Discovery", "--accept-colocation")
     assert "Clean." in cli("project", "lint", "Discovery")

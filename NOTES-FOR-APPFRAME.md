@@ -4395,10 +4395,12 @@ a glyph is a line in the vendoring script, and which ones an application needs i
 
 ## 57. From F22: whether a plan repository names a project
 
-### `core/storage/pointer.py` — `indexed(path)` (new)
+### `core/storage/pointer.py` — `indexed(path, repo_root)` (new)
 
-**What.** Whether the `.dplanner` index at `path`'s repository root lists a directory that
-is, or holds, `path`; `add_to_index` asks it instead of repeating the check inline.
+**What.** Whether the `.dplanner` index at `repo_root` — `path`'s repository root, which both
+callers have already found — lists a directory that is, or holds, `path`; `add_to_index`
+asks it instead of repeating the check inline. It takes the root rather than walking for it
+again because repository facts are read on every Run Agent state evaluation.
 **Why.** A project with no code row is read two ways — code not named yet when a plan
 repository lists it, the older colocated shape when nothing does — and the domain's
 repository facts ask this to tell them apart. It lives beside the index's other readers

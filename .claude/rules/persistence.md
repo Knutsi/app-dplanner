@@ -179,12 +179,12 @@ paths:
   the one derivation (`RepositoryFacts` over placements, with `code`/`repository`/
   `checkout` as the primary row's; separated, colocated, legacy, unset; `warns` while
   `plan_in_code` unless `colocation == "accepted"`), and every reader asks it — lint's
-  `repo.unset`/`repo.colocated` and `location.invalid`/`unknown_role`/`duplicate`, the
+  `repo.unset`/`repo.legacy`/`repo.colocated` and `location.invalid`/`unknown_role`/`duplicate`, the
   briefing's preamble and its locations paragraph, the Project dialog, the Repositories
   card, the opening status line. **No code row is two states, and the plan repository's
   `.dplanner` index tells them apart** (`indexed`): listed, the project is **unset** and
-  nothing reads the plan repository as its code — Run Agent greys with *record the code
-  repository*, refs read nothing, `repo.unset` names `location add`, Move Plan leaves it
+  nothing reads the plan repository as its code — Run Agent greys with *no code repository is
+  recorded*, refs read nothing, `repo.unset` names `location add`, Move Plan leaves it
   unset; not listed (a repository root, a plan from before the index), it is **legacy**,
   read as colocated. `code_root` and `code_remote` are that fallback, and a reader asks
   them rather than falling back to the plan's root or origin itself. The root hands the

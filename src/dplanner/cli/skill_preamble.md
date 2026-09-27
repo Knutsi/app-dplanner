@@ -34,7 +34,7 @@ site` writes it too): never write there yourself. Three rules follow:
   files by hand, and never in the code repository — a plan file on a code branch is what
   drifts.
 - **A plan kept inside its code repository is a warning, not a shape to build on.** The
-  window, `project lint` (`repo.unset`, `repo.colocated`) and every briefing say so. The
+  window, `project lint` (`repo.legacy`, `repo.colocated`) and every briefing say so. The
   way to keep it there on purpose is `project set <project> --accept-colocation`. While it
   stays there, do not touch anything under the plan's directory on your branch, and merge
   or rebase `main` before opening a PR — planning commits land on `main` while you work.

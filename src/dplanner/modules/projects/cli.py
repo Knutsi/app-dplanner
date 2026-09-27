@@ -22,7 +22,7 @@ from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.authoring import StepAuthor
-from dplanner.cli.lint import LintCheck, LintFinding, project_findings
+from dplanner.cli.lint import LintCheck, LintFinding, project_findings, record_code_hint
 from dplanner.cli.lookup import (
     find_project,
     find_step,
@@ -586,9 +586,7 @@ def _repository_lines(context: CliContext, project: Project, locating: Locating)
         # Said once: the finding below names the verb that records it.
         lines.append("  code: not set yet — the plan repository is not the code")
     elif facts.code is None:
-        lines.append(
-            f"  code: not set — `dplanner location add '{title}' --role code --repository URL`"
-        )
+        lines.append(f"  code: not set — {record_code_hint(title)}")
     lines += [
         f"  ! {finding.message}" for finding in project_findings(project, facts, locating.roles)
     ]
@@ -1301,8 +1299,7 @@ def _location_list(context: CliContext, args: Namespace, locating: Locating) -> 
     facts = _facts(context, project, locating)
     rows = [_location_row(found, locating) for found in facts.placements]
     lines = [_location_line(found, locating) for found in facts.placements] or [
-        f"  {project.title} names no locations yet — `dplanner location add "
-        f"'{project.title}' --role code --repository URL`"
+        f"  {project.title} names no locations yet — {record_code_hint(project.title)}"
     ]
     context.report({"project": project.id, "locations": rows}, "\n".join(lines))
     return 0

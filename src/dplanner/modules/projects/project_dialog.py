@@ -973,7 +973,8 @@ class ProjectDialog(DialogFrame):
         project_id = project.id
         services = self._services
         steps = services.pr_steps(project_id)
-        # The older shape keeps plan and code in one repository: its log is the code's.
+        # The older shape keeps plan and code in one repository: its log and its PRs are
+        # the code's.
         code_root = facts.code_root
         plan_root = None if facts.plan_in_code else facts.plan_root
         plan_scope = ""
@@ -981,7 +982,7 @@ class ProjectDialog(DialogFrame):
             directory = services.project_dir(project_id).resolve()
             relative = directory.relative_to(plan_root.resolve())
             plan_scope = relative.as_posix() if relative.parts else ""
-        repository = facts.repository
+        repository = facts.code_remote
 
         def body() -> None:  # Worker thread: the captured paths and strings, never the model.
             code = plan = None

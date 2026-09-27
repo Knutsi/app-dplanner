@@ -896,11 +896,11 @@ def test_a_project_whose_code_is_not_set_greys_run_agent_and_says_what_to_record
     select(services, unset)
     state = services.actions.spec("agent.run").state(services.context.current())
     assert state.visible and not state.enabled
-    assert state.label is not None and "record the code repository" in state.label
+    assert state.label is not None and "no code repository is recorded" in state.label
     services.tabs.open("project", project.id)
     state = services.actions.spec("agent.open").state(services.context.current())
     assert not state.enabled
-    assert state.label is not None and "record the code repository" in state.label
+    assert state.label is not None and "no code repository is recorded" in state.label
 
 
 def test_each_projects_own_repository_root_is_the_workdir(

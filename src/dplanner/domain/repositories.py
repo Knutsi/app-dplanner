@@ -192,5 +192,5 @@ def repository_facts(
             for location in project.locations
         ),
         colocation=project.colocation,
-        indexed=plan_root is not None and indexed(project_dir),
+        indexed=plan_root is not None and indexed(project_dir, plan_root),
     )

@@ -4288,7 +4288,7 @@ repository's root, or one from before the index — read as colocated so nothing
 the day the build updates; and **unset**, no code location in a plan repository that lists
 the project, whose code is simply not recorded yet (below). *Warns* is one predicate — the
 plan is in its code (`plan_in_code`: legacy or colocated) and not accepted — asked by lint
-(`repo.unset`, `repo.colocated`, exit 1; and the table's own `location.invalid`,
+(`repo.legacy`, `repo.colocated`, exit 1; and the table's own `location.invalid`,
 `location.unknown_role`, `location.duplicate`), by the briefing's preamble (WARNING: leave
 the plan files alone), by the Project dialog and the Repositories card, and by the opening
 status line; `colocation: "accepted"` silences all of them at once, because it is the
@@ -4305,8 +4305,8 @@ fact existed and wrong for every plan made in a plan repository since, and the t
 told apart by a fact already on disk: a plan repository names its projects in its
 `.dplanner` index, while a plan from before it had none (and a project that *is* its
 repository's root is never listed). So a listed project with no code row is **unset** —
-no derivation reads it as anything: Run Agent and Open Agent in Code grey with *record the
-code repository*, refs read nothing, `repo.unset` names `location add`, the briefing says
+no derivation reads it as anything: Run Agent and Open Agent in Code grey with *no code
+repository is recorded*, refs read nothing, `repo.unset` names `location add`, the briefing says
 the code is not recorded, the dialog shows the plan's own history with no set-up offer,
 and Move Plan moves it on still unset, because the repository it leaves was never its
 code. Accepting colocation does not quiet it, since there is no colocation to accept.
@@ -4326,7 +4326,7 @@ repositories in a project means some steps are in one and some in the other, and
 a fact about the step exactly as its worktree choice is — else `code_root`, the plan's own
 repository for the legacy shape and nowhere for an unset one, greyed with the reason
 ("acme/ui is not checked out on this machine — Project ▸ Settings…", "no code repository
-is recorded — record the code repository") until the fact is there — and
+is recorded — Project ▸ Settings…") until the fact is there — and
 `store.checkout_changed` refreshes the context, since nothing in the context graph
 changed. A conflict handed to an agent is about plan files and opens in the plan
 repository whatever the code is. The github module's `repository_for`, `dplanner github`
