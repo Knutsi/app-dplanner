@@ -23,7 +23,7 @@ from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
-from dplanner.domain.progression import DONE, HANDED_OFF
+from dplanner.domain.progression import DONE, REVIEW_AND_MERGE
 from dplanner.modules.step_status.aspect import (
     MODULE_ID,
     NO_STATUS_ON_A_WAIT,
@@ -39,12 +39,13 @@ def commands(
     is_wait: Callable[[Step], bool],
     is_agent: Callable[[Step], bool],
     in_agent_shell: Callable[[], bool],
-    note_reason: Callable[[CliContext, Step, str], str],
+    note_reason: Callable[[CliContext, Step, str], tuple[str, bool]],
 ) -> list[CliCommand]:
     """``is_wait`` says a step is a wait, which has no status to set; ``is_agent`` that an
     agent executes it, and ``in_agent_shell`` that this command runs inside an agent CLI's
     shell — together, a done that skips review. ``note_reason`` keeps a ``--because`` as a
-    decision note on the step and answers the note's id."""
+    decision note on the step and answers the note's id, and whether it was added — False
+    when the step already carried that note, which then stands as it was."""
 
     def set_status(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
@@ -56,12 +57,13 @@ def commands(
         if (
             args.state == DONE
             and not because
-            and read(step) not in HANDED_OFF  # Handed off, a reviewing agent may finish it.
+            and read(step) not in REVIEW_AND_MERGE  # Under review, a reviewing agent may finish it.
             and is_agent(step)
             and in_agent_shell()
         ):
             raise CliError(_review_first(step, args.step))
-        _say(context, step, args.state, note_reason(context, step, because) if because else "")
+        note, added = note_reason(context, step, because) if because else ("", True)
+        _say(context, step, args.state, note, added)
         return 0
 
     return [
@@ -119,13 +121,18 @@ def _review_first(step: Step, needle: str) -> str:
     )
 
 
-def _say(context: CliContext, step: Step, status: str, note: str = "") -> None:
-    """Write ``status``, and say so — naming the note a ``--because`` was kept as."""
+def _say(context: CliContext, step: Step, status: str, note: str = "", added: bool = True) -> None:
+    """Write ``status``, and say so — naming the note a ``--because`` was kept as, or the one
+    already there that it did not replace."""
     previous = step.module_data.get(MODULE_ID)
     entry = write(status, today=context.clock.today(), previous=previous)
     context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
     data = {"step": step.id, "status": status} | ({"note": note} if note else {})
-    kept = f" — the reason kept as {note}" if note else ""
+    kept = (
+        (f" — the reason kept as {note}" if added else f" — a reason is already recorded as {note}")
+        if note
+        else ""
+    )
     context.report(data, f"{step.title}: {status}{kept}")
 
 

@@ -52,7 +52,7 @@ def report_source(
                 "overview",
                 16,
                 Figure(
-                    "Ready now",
+                    "Ready to start",
                     str(len(found.ready)),
                     note=f"{len(found.running)} running",
                     tone="busy" if found.running else "",
@@ -62,9 +62,9 @@ def report_source(
                 "overview",
                 18,
                 Figure(
-                    "Needs attention",
+                    "Blocked",
                     str(len(found.attention)),
-                    note="blocked steps",
+                    note="stuck on a person",
                     tone="bad" if found.attention else "",
                 ),
             ),

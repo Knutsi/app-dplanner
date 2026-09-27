@@ -33,10 +33,10 @@ from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.progression import (
     BLOCKED,
     DONE,
-    HANDED_OFF,
     IN_PROGRESS,
     READY_FOR_REVIEW,
     READY_TO_MERGE,
+    REVIEW_AND_MERGE,
     phrase,
 )
 
@@ -47,7 +47,7 @@ PENDING: Final = "pending"
 # In the order work moves through them. "pending" first because it is the default.
 STATUSES: Final = (PENDING, IN_PROGRESS, READY_FOR_REVIEW, READY_TO_MERGE, DONE, BLOCKED)
 # Somebody has worked on the step: the first write of any of these stamps ``started``.
-WORKED: Final = (IN_PROGRESS, *HANDED_OFF)
+WORKED: Final = (IN_PROGRESS, *REVIEW_AND_MERGE)
 # A wait (``step_wait``) has none: what it holds is released by the calendar, not by a claim.
 NO_STATUS_ON_A_WAIT: Final = "a wait has no status: it is over when its day comes"
 

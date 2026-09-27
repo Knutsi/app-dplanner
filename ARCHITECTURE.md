@@ -2158,7 +2158,8 @@ good green for ready-to-merge and done, the bad red for blocked, and a quiet sha
 otherwise, so the strip is always there and the key always has a ground. Only done also
 greens and mutes the body, which is how the two greens are told apart; and a review's amber
 is the block itself where a wait's is a clock stroked on a quiet block, which is how the two
-ambers are. It
+ambers are. A wait has no status, so its block is quiet whatever it stored before it became
+one (`_card_status`, the status every card surface reads). It
 replaced the 3 px status bar that once sat in the same edge: one strip carrying the key,
 who works it and the status is the same idea as the bar with something to say written on
 it. The done wash sits on the done body's green — the body says the work receded, the block
@@ -3545,9 +3546,10 @@ it, and one holds it:
   step not already under review or waiting on its merge, exits 1, naming
   `ready-for-review`. A reviewing agent is not stopped: from review or merge it may finish
   the step. It is a guard on *who is reporting*, not on the word, so it reads the same fact
-  the window word refuses on — an agent CLI's marker in the environment, through
-  `domain/agents.py`'s `shell_marker` (moved there from `entry.py` because the composition
-  root, which wires the verb, may not import the entry point). **A person's own terminal and
+  the window word refuses on — an agent CLI's marker in the environment, read by the
+  composition root's `agent_shell_marker` over `domain/agents.py`'s `shell_marker`, which
+  the entry point imports (the root, which wires the verb, may not import the entry
+  point, so the reading lives there rather than in `entry.py`). **A person's own terminal and
   the window are never asked**: the developer marking a step done is the acceptance.
 - **The way out is a reason, and the reason is kept.** Some steps have nothing to review — a
   docs-only change, a step that only reports. `--because '<reason>'` sets done and writes a

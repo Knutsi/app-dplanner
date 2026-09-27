@@ -36,7 +36,7 @@ LintCheck = Callable[[Library, Project, FilesFor], Sequence[LintFinding]]
 
 
 def record_code_hint(title: str) -> str:
-    """The verb that records a project's code repository, as every surface names it."""
+    """The verb that records a project's code repository, as lint and ``project show`` say it."""
     return f"`dplanner location add '{title}' --role code --repository URL`"
 
 

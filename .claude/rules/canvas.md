@@ -121,7 +121,8 @@ paths:
   clipped to the body and washed by status — busy blue for in-progress, warn amber for
   ready-for-review (a person looks next), the good green for ready-to-merge and done (only
   done also greens and mutes the body), bad red for blocked, a quiet shade otherwise
-  (`NodeAccent.key_tone`, read from `theme/tones.py`'s `STEP_STATUS_TONES`) — carrying the
+  (`NodeAccent.key_tone`, read from `theme/tones.py`'s `STEP_STATUS_TONES`; a wait wears
+  none, whatever it stored — `_card_status`) — carrying the
   key set level and bold, and over it **who works the step**: the sparkle for an agent
   step, a person otherwise (milestones, features and checks included), and a wait's clock
   in the attention amber, always (`key_glyph`, `key_glyph_tone`). The two ambers are told

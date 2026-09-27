@@ -37,10 +37,10 @@ from dplanner.cli.report.parts import (
 from dplanner.domain.progression import (
     BLOCKED,
     DONE,
-    HANDED_OFF,
     IN_PROGRESS,
     READY_FOR_REVIEW,
     READY_TO_MERGE,
+    REVIEW_AND_MERGE,
     phrase,
 )
 from dplanner.domain.schedule import (
@@ -200,7 +200,7 @@ def _arrow_head(x: float, y: float, angle: float, color: str) -> str:
 
 # The statuses a card names in a pill on its bottom edge, beside the wash its key block wears:
 # work somebody has in hand. Done says it with a tick and a faded title; pending says nothing.
-PILLED_STATUSES = (IN_PROGRESS, *HANDED_OFF, BLOCKED)
+PILLED_STATUSES = (IN_PROGRESS, *REVIEW_AND_MERGE, BLOCKED)
 
 
 def _status_fill(status: str, colors: Colors) -> str | None:

@@ -37,7 +37,7 @@ from dplanner.domain.store import FilesFor
 # What a scope covers, as the module that owns tests answers it: (id, title, step title).
 type CoveredTest = tuple[str, str, str]
 # The same question the Covers tab asks: everything at and behind a step, optionally
-# truncated at the collectors it hands off to.
+# truncated at the boundaries it stops at.
 type CoveredBy = Callable[[Library, Project, StepId, StepPredicate | None], Sequence[CoveredTest]]
 
 

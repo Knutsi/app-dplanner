@@ -611,7 +611,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         A done step is muted with a green body — finished work recedes into a colour the
         eye can skip; the key block down the card's left carries the step's key under who
         works it (:func:`_primary_glyph`) and is shaded by status — busy for in-progress,
-        bad for blocked, good for done, quiet otherwise; a milestone is a
+        warn for ready-for-review, good for ready-to-merge and done, bad for blocked, quiet
+        otherwise, and quiet for a wait, which has none (:func:`_card_status`); a milestone is a
         purple-highlighted node wearing its label as a badge, a tag medallion and the
         schedule's accumulated days and date as its stat (done outranks it on the body — a
         shipped milestone reads finished, and the tag still says what it was); a PR is a
@@ -2304,9 +2305,10 @@ def _primary_glyph(step: "Step") -> tuple[str, str]:
     sparkle, a person otherwise — a milestone, a feature and a check included, since a
     person closes those — and for a wait nobody at all, so an amber clock, always.
 
-    The one rule, read by every card that shows a key: the canvas, the coverage lanes and
-    the report's graph. The tone is a status tone's word — "warn" is the attention amber —
-    so each surface resolves it the way it resolves its status washes."""
+    The one rule, read by every card that shows a key — the canvas, the coverage lanes and
+    the report's graph — and by Find's rows and the Step statuses tab's. The tone is a
+    status tone's word — "warn" is the attention amber — so each surface resolves it the way
+    it resolves its status washes."""
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_wait.aspect import is_wait
 
@@ -2330,7 +2332,7 @@ def _time_readers() -> "TimeReaders":
     day for what a recorded day counts as a change. ARCHITECTURE.md's *An agent finishes
     at Ready for review* has the reasoning.
     """
-    from dplanner.domain.progression import HANDED_OFF, IN_PROGRESS
+    from dplanner.domain.progression import IN_PROGRESS, REVIEW_AND_MERGE
     from dplanner.modules.estimation.aspect import enabled as estimate_enabled
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.aspect import read_history as estimate_history
@@ -2345,10 +2347,10 @@ def _time_readers() -> "TimeReaders":
 
     def status_for(step: "Step") -> str:
         status = step_status(step)
-        return IN_PROGRESS if status in HANDED_OFF else status
+        return IN_PROGRESS if status in REVIEW_AND_MERGE else status
 
     def since_for(step: "Step") -> "date | None":
-        if step_status(step) in HANDED_OFF:
+        if step_status(step) in REVIEW_AND_MERGE:
             return status_started(step) or status_since(step)
         return status_since(step)
 
@@ -2400,7 +2402,7 @@ def _is_agent_step(step: "Step") -> bool:
     return enabled(step)
 
 
-def _note_reason(context: "CliContext", step: "Step", reason: str) -> str:
+def _note_reason(context: "CliContext", step: "Step", reason: str) -> tuple[str, bool]:
     """Keep why a step went to done without review as a decision note on it, in the same
     run as the status — added the way `note add` adds one, so a retried verb is one note."""
     from dplanner.modules.notes.log import Note, adding, check_label
@@ -2418,7 +2420,7 @@ def _note_reason(context: "CliContext", step: "Step", reason: str) -> str:
     )
     if command is not None:
         context.apply(command)
-    return note.id
+    return note.id, command is not None
 
 
 def _counts_as_work(step: "Step") -> bool:

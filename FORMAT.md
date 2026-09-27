@@ -529,20 +529,21 @@ records what two would have.
 
 **An aspect toggled on with nothing to say yet is a marker entry.** A step's "on/off" for a
 toggleable aspect is the presence of its `module_data` entry, and several aspects need a
-shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type toggle enables it
-before any field is filled (a filled ticket's entry replaces the marker), `step_check`
+shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type toggle enables
+it before any field is filled (a filled ticket's entry replaces the marker), `step_check`
 writes `{"on": true}` and never anything else — what it *gathers* is the graph's answer, not
 a stored list — `step_start` writes `{"on": true}` on the one step the plan begins from and
 never anything else, since what it changes is where the walks stop, not anything the step
 holds — and `step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when
 the step opts into an instruction distinct from its description, and `"worktree": false`
 when its agent is to work in the checkout itself rather than a fresh worktree (absence is
-on: the opt-outs are the only keys ever added) — beside the step whose prose file may not
-exist at all. Each is format 1 of its own `ModuleDataFormat`; a step carrying only the old
-prose file still reads as agent-on, so no migration ships with them.
-A feature is one of them: `{"on": true}` with no `cites` is a feature that was read from
-no specification, which is the whole answer — and it is what the retired `step_feature`
-module wrote, so that marker needs nothing done to it beyond its stamp.
+on), and `"workplace"` naming a code location other than the primary — beside the step whose
+prose file may not exist at all. Those four are format 1 of their own `ModuleDataFormat`s; a
+step carrying only the old prose file still reads as agent-on, so no migration ships with
+them. A feature's marker is one more, in its own format: `{"on": true}` with no `cites` is a
+feature that was read from no specification, which is the whole answer — and it is what the
+retired `step_feature` module wrote, so that marker needs nothing done to it beyond its
+stamp.
 
 **What a step's agent runs consumed is a ledger of rows, never a total.** `agent_usage`
 (a second aspect id in `step_agent_run/`) writes `{"runs": [{"harness": "claude",

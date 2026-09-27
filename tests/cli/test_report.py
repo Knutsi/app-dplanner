@@ -119,8 +119,8 @@ def test_review_and_merge_wash_the_key_block_and_say_their_word():
         "b", "S2", "Indexer", 300, 0, 220, 76, status="ready-to-merge", glyph_markup=person
     )
     svg = graph_svg(Graph((review, merge), ()), LIGHT)
-    assert f'fill="{LIGHT.attention}" fill-opacity="0.38"' in svg
-    assert f'fill="{LIGHT.good}" fill-opacity="0.38"' in svg
+    washes = re.findall(r'class="key-block" d="[^"]*" fill="([^"]*)"', svg)
+    assert washes == [LIGHT.attention, LIGHT.good]
     assert ">ready for review</text>" in svg and ">ready to merge</text>" in svg
     assert svg.count('class="glyph"') == 2 and "glyph-toned" not in svg
 

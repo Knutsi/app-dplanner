@@ -4,7 +4,7 @@ Pure rendering — the domain's :class:`~dplanner.domain.progression.Progression
 computed and the table is rebuilt wholesale, so nothing here can disagree with the model.
 The groups are the partitions a person acts on, in the order they are closest to done —
 Blocked, Ready to merge, Ready for review, Ready to start — and then Waiting, what cannot
-start yet. Work in progress is not listed: an agent at work needs nobody, and the board is
+start yet. Work in progress is not listed: an agent at work needs nobody, and the tab is
 for the rows that do.
 
 **The box is the selection.** The first column is a check column (``Column(check=True)``):
