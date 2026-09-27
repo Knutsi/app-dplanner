@@ -1033,6 +1033,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             actions=services.actions,
             context=services.context,
             tabs=services.tabs,
+            segments=services.index_segments,
             # The statuses through the status aspect's Qt-free reader — the tab never
             # learns what one is stored as — with a wait done once it is over, on the
             # clock's day, which the tabs re-run on when it turns.
@@ -1995,10 +1996,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 actions=services.actions,
                 context=services.context,
                 segments=services.index_segments,
-                theme=services.theme,
                 settings_sections=services.settings_sections,
-                # Under Home, the places that are the library's rather than one project's.
-                rows=(progression.control_centre_row(),),
             )
         ),
         # After every module that registers an activity factory: it reopens the tabs the

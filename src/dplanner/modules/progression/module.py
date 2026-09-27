@@ -81,7 +81,7 @@ from dplanner.framework.context import (
     selection_uri,
 )
 from dplanner.framework.debounce import Debounced, DebounceService
-from dplanner.framework.project_list_segment import LeadingRow
+from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry, SurfaceSegment
 from dplanner.framework.segmented import Segmented
 from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.step_selection import focused_project
@@ -136,6 +136,7 @@ class ProgressionDeps:
     context: ContextService
     tabs: TabHost
     debounce: DebounceService
+    segments: IndexSegmentRegistry
     # The status claims, as answers — a wait read done once it is over. Wired by the
     # composition root from the status aspect's Qt-free reader; the honest default is a
     # build where nothing is claimed.
@@ -479,14 +480,6 @@ class ProgressionModule:
     def open_control_centre(self, *, preview: bool = False) -> None:
         self._deps.tabs.open(CONTROL_CENTRE_KIND, preview=preview)
 
-    def control_centre_row(self) -> LeadingRow:
-        """The Control Centre's row in the index, for the folder the root hangs it under."""
-        return LeadingRow(
-            CONTROL_CENTRE,
-            gauge_icon,
-            lambda preview: self.open_control_centre(preview=preview),
-        )
-
     def register(self) -> None:
         deps = self._deps
 
@@ -525,7 +518,19 @@ class ProgressionModule:
                 run=self._open,
             )
         )
-        # Beside Home: a place of the library's rather than one project's.
+        # Beside Home, in the index and in Go: a place of the library's rather than one
+        # project's.
+        deps.segments.register(
+            IndexSegment(
+                id=CONTROL_CENTRE_KIND,
+                label=CONTROL_CENTRE,
+                factory=lambda _root: SurfaceSegment(
+                    lambda preview: self.open_control_centre(preview=preview)
+                ),
+                order=5,  # Between Home (0) and Projects (10).
+                icon=gauge_icon,
+            )
+        )
         deps.actions.register(
             ActionSpec(
                 id="progression.control_centre",

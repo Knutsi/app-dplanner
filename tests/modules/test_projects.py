@@ -38,10 +38,11 @@ def state(services, action_id, context):
 
 
 def test_the_module_contributes_the_folder_under_home(services):
-    """Projects is the top folder under Home and the Archive the last; Tests and Docs
-    register between. Order is (order, id)."""
+    """Projects is the top folder under Home and the Control Centre, and the Archive the
+    last; Tests and Docs register between. Order is (order, id)."""
     assert [segment.id for segment in services.index_segments.segments()] == [
         "home",
+        "control_centre",
         "projects",
         "tests",
         "docs",

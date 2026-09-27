@@ -113,6 +113,30 @@ class IndexSegment:
     icon: Callable[[str], QIcon] | None = None
 
 
+class SurfaceSegment:
+    """A folder that is one row and a way in: a click previews its surface, activation keeps
+    it. Nothing on it is something a verb could act on, so it offers no menu and no
+    selection — Home is one, and the Control Centre below it another."""
+
+    def __init__(self, open_surface: Callable[[bool], None]) -> None:
+        self._open = open_surface  # The flag is `preview`.
+
+    def selection_nodes(self, items: Sequence[QTreeWidgetItem]) -> Sequence[ContextNode]:
+        return []
+
+    def clicked(self, item: QTreeWidgetItem) -> None:
+        self._open(True)
+
+    def activated(self, item: QTreeWidgetItem) -> None:
+        self._open(False)
+
+    def context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
+        return None
+
+    def dispose(self) -> None:
+        """Nothing to disconnect: the row never changes."""
+
+
 class IndexSegmentRegistry:
     def __init__(self) -> None:
         self._segments: dict[str, IndexSegment] = {}

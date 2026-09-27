@@ -36,8 +36,8 @@ paths:
   a check column, whose box is the selection — and every row ends in a ⋮ rendering the
   Step menu's `agent`, `open` and `surfaces` bands (`ROW_MENU`), which picks its row
   alone first. **The Control Centre is every project's Step statuses as one board**
-  (`ControlCentreActivity`, a singleton under Home and in Go ▸ `home`): each project is
-  walked on its own and the board is `progression.merge` of the walks — `across()` in the
+  (`ControlCentreActivity`, a singleton: the index's row after Home, and Go ▸ `home`):
+  each project is walked on its own and the board is `progression.merge` of the walks — `across()` in the
   terminal — re-ranked by `unlocks`, ties going library order then the project's own; rows
   name their project (the Project column stands down on one project's tab) and a
   *Projects* `FilterButton` narrows by re-merging, never re-walking. The two tabs are

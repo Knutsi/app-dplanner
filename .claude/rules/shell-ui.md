@@ -175,9 +175,9 @@ paths:
   `start_window` opens it when the startup reopen left no tab open, and only
   `app.open_at_startup` calls that — never a reload, and never because the last tab closed:
   **a blank window is allowed**, and nothing reopens Home behind the person's back. A
-  surface that spans the library hangs a row under Home through `HomeDeps.rows` (a
-  `LeadingRow`, wired in the root), never by editing `modules/home/`. Its
-  guide is data naming action ids (`guide.py`), each a verb's own button restated from its
+  surface that spans the library is a folder of its own beside Home, as the Control
+  Centre is: an `IndexSegment` whose view is a `SurfaceSegment`, never a row under Home.
+  Home's guide is data naming action ids (`guide.py`), each a verb's own button restated from its
   `ActionState` — greyed in the verb's words, never a second button that calls it — in a
   `RowWell` asked to `AdjustToContents`, which the primitive honours with its rows' height
   for its width. **Home's garden is the one ornament that moves**: the plan told as a

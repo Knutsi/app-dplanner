@@ -409,6 +409,7 @@ def test_a_build_without_the_verbs_seats_none(services, project):
             context=services.context,
             tabs=services.tabs,
             debounce=services.debounce,
+            segments=services.index_segments,
         ),
         project.id,
     )

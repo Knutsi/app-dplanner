@@ -73,7 +73,7 @@ spec figures, tests, checks and the two documentation ones — each with verbs i
 work goes in and how much of it there is, and `dplanner schedule show` dates it. *Step
 statuses* reads the same graph with the statuses in hand: a table of what needs a person
 right now — blocked, ready to merge, ready for review, ready to start — and `dplanner
-progression show` beside it. The *Control Centre*, under Home, is the same table across
+progression show` beside it. The *Control Centre*, right after Home, is the same table across
 every project, each row naming its own and a *Projects* filter to narrow it (`dplanner
 progression show --all`), and every row's ⋮ reaches its agent's terminal, a shell in its
 worktree and its pull request. An agent's work ends at *ready for review*, never at done:
