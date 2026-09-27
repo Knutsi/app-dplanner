@@ -2,12 +2,14 @@
 paths:
   - "src/dplanner/menus.py"
   - "src/dplanner/framework/{action_registry,action_menu,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,main_window,window,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service,user_config,zoom}.py"
+  - "src/dplanner/framework/motion/**"
   - "src/dplanner/theme/**"
   - "src/dplanner/modules/{appshell,appearance,theme_omarchy,theme_system,reopen_tabs,home,settings,debug}/**"
   - "src/dplanner/modules/project_editor/canvas_{toolbar,menus}.py"
   - "tests/test_theme.py"
   - "tests/framework/test_{action_menu,actions,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service}.py"
   - "tests/modules/test_{appshell,appearance,theme_providers,reopen_tabs,home,debug}.py"
+  - "tests/framework/test_motion.py"
   - "tests/index_helpers.py"
   - "scripts/{vendor_tabler_icons,import_omarchy_themes,render_design_example,render_about,render_icon,render_signalling,render_home}.py"
 ---
@@ -178,11 +180,23 @@ paths:
   guide is data naming action ids (`guide.py`), each a verb's own button restated from its
   `ActionState` — greyed in the verb's words, never a second button that calls it — in a
   `RowWell` asked to `AdjustToContents`, which the primitive honours with its rows' height
-  for its width. **Home's garden is the one ornament that moves**: a cloud wearing the
-  robot glyph rains on seedlings until they bloom, painted from `garden.py`'s Qt-free state
-  in the plan's own tones, ticking only between a show and a hide, and put away by its ✕ or
-  *Settings ▸ Home* (a global preference). Nothing else earns motion by being pleasant.
-  `ARCHITECTURE.md`'s *Home is where a window starts* has the reasoning.
+  for its width. **Home's garden is the one ornament that moves**: the plan told as a
+  garden — seeds that sprout when what they wait on has bloomed, agents wearing the
+  sparkle their cards wear rain on what is ready — painted from `garden.py`'s Qt-free state
+  in the plan's own tones, ticking only while shown and resting still after two seasons
+  until hovered, put away by its ✕ or *Settings ▸ Home* (a global preference). Nothing
+  else earns motion by being pleasant. `ARCHITECTURE.md`'s *Home is where a window starts*
+  has the reasoning.
+- **Anything that moves moves through `framework/motion/`.** A `FrameClock` per surface —
+  Qt's own animation driver, sixty ticks a second, handing listeners seconds since the last
+  tick — `follow(widget)`s its surface so it runs only while shown, and a test or a render
+  `step()`s it by hand; never a `QTimer` for animation, and never motion counted in ticks.
+  What moves is Qt-free state (`curves` for easings, tweens, springs and the breeze;
+  `particles`) so it is tested without a window, and it is drawn with `draw`'s batched
+  shapes — a glow is a gradient never a blur, a particle system one fill per tone. Layers
+  that change slowly are cached pictures redrawn a few times a second (`garden_view.py`'s
+  `_slow_layers`). `ARCHITECTURE.md`'s *Motion is a library* has the reasoning, and what
+  the canvas would use it for.
 - **A panel inside a tab is a `SidePanel`, hosted through `HostedSidePanel`**
   (`framework/side_panel.py`). A dock panel follows the *window* — one instance, retargeted
   by the context; a panel inside a tab follows *that tab* — one per tab, handed a

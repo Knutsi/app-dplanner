@@ -17,8 +17,8 @@ MODULE_ID = "home"
 GARDEN_KEY = "garden"
 
 GARDEN_HINT = (
-    "The strip at the foot of Home, where an agent's rain makes the plan bloom. It moves"
-    " only while Home is on screen."
+    "The strip at the foot of Home, where agents make the plan bloom. It moves only while"
+    " Home is on screen, and rests after two seasons until the pointer passes over it."
 )
 
 
