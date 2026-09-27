@@ -45,39 +45,50 @@ ALL = "all"
 @dataclass(frozen=True)
 class Group:
     """One kind of row: its key (the filter's value and the heading's fold), the heading's
-    words, the filter's word, and what the table says when it is the only one and empty."""
+    words, the filter's word, what the table says when it is the only one and empty, its
+    steps in the order the derivation ranked them, and whether they wait on a person —
+    everything but Waiting does, which is the rest of the plan."""
 
     key: str
     heading: str
     label: str
     empty: str
+    rows: Callable[[Progression], tuple[Step, ...]]
+    needs_person: bool = True
 
 
 GROUPS = (
-    Group("blocked", "Blocked", "Blocked", "Nothing is blocked."),
-    Group("merge", "Ready to merge", "Merge", "Nothing is waiting on a merge."),
-    Group("review", "Ready for review", "Review", "Nothing is ready for review."),
-    Group("start", "Ready to start", "Start", "Nothing is ready to start."),
-    Group("waiting", "Waiting", "Waiting", "Nothing is waiting."),
+    Group("blocked", "Blocked", "Blocked", "Nothing is blocked.", lambda found: found.attention),
+    Group(
+        "merge",
+        "Ready to merge",
+        "Merge",
+        "Nothing is waiting on a merge.",
+        lambda found: found.merge,
+    ),
+    Group(
+        "review",
+        "Ready for review",
+        "Review",
+        "Nothing is ready for review.",
+        lambda found: found.review,
+    ),
+    Group(
+        "start", "Ready to start", "Start", "Nothing is ready to start.", lambda found: found.ready
+    ),
+    Group(
+        "waiting",
+        "Waiting",
+        "Waiting",
+        "Nothing is waiting.",
+        lambda found: (*(coming.step for coming in found.upcoming), *found.waiting),
+        needs_person=False,
+    ),
 )
-# What needs a person: everything but Waiting, which is the rest of the plan.
-ATTENTION = ("blocked", "merge", "review", "start")
 
 
-def grouped(progress: Progression) -> dict[str, tuple[Step, ...]]:
-    """Each group's steps, in the order the derivation ranked them."""
-    return {
-        "blocked": progress.attention,
-        "merge": progress.merge,
-        "review": progress.review,
-        "start": progress.ready,
-        "waiting": (*(coming.step for coming in progress.upcoming), *progress.waiting),
-    }
-
-
-def needing_attention(progress: Progression) -> int:
-    rows = grouped(progress)
-    return sum(len(rows[key]) for key in ATTENTION)
+def needing_a_person(progress: Progression) -> int:
+    return sum(len(group.rows(progress)) for group in GROUPS if group.needs_person)
 
 
 class StatusTable(Table):
@@ -116,12 +127,11 @@ class StatusTable(Table):
         """
         self._shown = (progress, shown)
         picked = self.picked()
-        rows = grouped(progress)
         self.blockSignals(True)
         try:
             self.clear_rows()
             for group in GROUPS:
-                steps = rows[group.key]
+                steps = group.rows(progress)
                 if shown not in (ALL, group.key) or not steps:
                     continue
                 if shown == ALL:  # One group on its own needs no heading: the filter says it.

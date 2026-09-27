@@ -3,7 +3,7 @@ paths:
   - "src/dplanner/modules/{time_estimates,progression,step_order,estimation,step_wait}/**"
   - "src/dplanner/domain/{schedule,progression,ordering}.py"
   - "src/dplanner/theme/palettes.py"
-  - "tests/modules/test_{time_estimates,time_progress,time_present,time_pace,progression_board,step_order,milestone_colors,estimation_bulk}.py"
+  - "tests/modules/test_{time_estimates,time_progress,time_present,time_pace,step_statuses,step_order,milestone_colors,estimation_bulk}.py"
   - "tests/domain/test_{schedule,progression,ordering}.py"
   - "tests/cli/test_time_matrix.py"
   - "scripts/render_boards.py"

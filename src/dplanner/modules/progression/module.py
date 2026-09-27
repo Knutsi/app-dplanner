@@ -61,7 +61,7 @@ from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import EmptyState
-from dplanner.modules.progression.view import ALL, GROUPS, StatusTable, needing_attention
+from dplanner.modules.progression.view import ALL, GROUPS, StatusTable, needing_a_person
 from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 MODULE_ID = "progression"
@@ -131,7 +131,7 @@ class ProgressionActivity(EntityActivity):
         self.project_id = project_id
         self._filter = ALL
         self._found: Progression | None = None
-        self._attention = 0
+        self._needing = 0
 
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -203,7 +203,7 @@ class ProgressionActivity(EntityActivity):
     def title(self) -> str:
         """The project, and how many rows need a person — said only when some do."""
         name = self._project().title or "Untitled project"
-        count = f" ({self._attention})" if self._attention else ""
+        count = f" ({self._needing})" if self._needing else ""
         return f"{name} — Step statuses{count}"
 
     @property
@@ -246,9 +246,9 @@ class ProgressionActivity(EntityActivity):
             self._product, self._project(), deps.status_for, deps.counts_as_work
         )
         self._show()
-        attention = needing_attention(self._found)
-        if attention != self._attention:
-            self._attention = attention
+        needing = needing_a_person(self._found)
+        if needing != self._needing:
+            self._needing = needing
             deps.tabs.set_tab_title(self, self.title)
 
     def _show(self) -> None:

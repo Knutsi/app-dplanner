@@ -257,8 +257,9 @@ def _no_agent_shell(monkeypatch):
     from dplanner.modules import agent_harnesses
 
     monkeypatch.delenv("DPLANNER_PROJECT", raising=False)
+    harnesses = agent_harnesses()
     for name in list(os.environ):
-        if any(harness.marks(name) for harness in agent_harnesses()):
+        if any(harness.marks(name) for harness in harnesses):
             monkeypatch.delenv(name, raising=False)
 
 

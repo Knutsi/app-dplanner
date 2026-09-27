@@ -129,11 +129,11 @@ def _report(found: Progression, weighted: tuple[float, float] | None) -> str:
         unlocks = found.unlocks.get(step.id, 0)
         return f"{title(step)}  (unblocks {unlocks})" if unlocks else title(step)
 
-    section("Needs attention", [title(step) for step in found.attention])
+    section("Blocked", [title(step) for step in found.attention])
     section("Ready to merge", [unblocking(step) for step in found.merge])
     section("Ready for review", [unblocking(step) for step in found.review])
     section("Running", [title(step) for step in found.running])
-    section("Ready to launch", [unblocking(step) for step in found.ready])
+    section("Ready to start", [unblocking(step) for step in found.ready])
     section(
         "Up next",
         [

@@ -632,7 +632,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             "pending-approval": ("needs approval", "attention"),
             "needs-input": ("needs input", "attention"),
         }.get(agent_run_state(step), ("", ""))
-        status = step_status(step)
+        status = _card_status(step)
         milestone = milestone_read(step)
         wait = wait_read(step)
         key_glyph, key_glyph_tone = _primary_glyph(step)
@@ -2288,6 +2288,17 @@ def _step_type_icons(step: "Step") -> tuple[str, ...]:
     )
 
 
+def _card_status(step: "Step") -> str:
+    """A step's status as its card wears it — the key block's wash, a done body — on the
+    canvas, the coverage lanes and the report: none for a wait, which has no status, whatever
+    it carried before it became one. Its clock is the block's one amber then."""
+    from dplanner.modules.step_status.aspect import PENDING
+    from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.modules.step_wait.aspect import is_wait
+
+    return PENDING if is_wait(step) else step_status(step)
+
+
 def _primary_glyph(step: "Step") -> tuple[str, str]:
     """Who works a step, as the glyph beside its key and that glyph's tone: an agent's
     sparkle, a person otherwise — a milestone, a feature and a check included, since a
@@ -2319,7 +2330,7 @@ def _time_readers() -> "TimeReaders":
     day for what a recorded day counts as a change. ARCHITECTURE.md's *An agent finishes
     at Ready for review* has the reasoning.
     """
-    from dplanner.domain.progression import IN_PROGRESS, READY_FOR_REVIEW, READY_TO_MERGE
+    from dplanner.domain.progression import HANDED_OFF, IN_PROGRESS
     from dplanner.modules.estimation.aspect import enabled as estimate_enabled
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.aspect import read_history as estimate_history
@@ -2332,14 +2343,12 @@ def _time_readers() -> "TimeReaders":
     from dplanner.modules.step_wait.aspect import read as wait_read
     from dplanner.modules.time_estimates.cli import Readers
 
-    in_flight = (READY_FOR_REVIEW, READY_TO_MERGE)
-
     def status_for(step: "Step") -> str:
         status = step_status(step)
-        return IN_PROGRESS if status in in_flight else status
+        return IN_PROGRESS if status in HANDED_OFF else status
 
     def since_for(step: "Step") -> "date | None":
-        if step_status(step) in in_flight:
+        if step_status(step) in HANDED_OFF:
             return status_started(step) or status_since(step)
         return status_since(step)
 
@@ -2391,34 +2400,24 @@ def _is_agent_step(step: "Step") -> bool:
     return enabled(step)
 
 
-def _in_agent_shell() -> bool:
-    """Whether this process runs inside an agent CLI's shell — the reading the entry point's
-    window guard makes, over the same harnesses, asked when a verb runs."""
-    import os
-
-    from dplanner.domain.agents import shell_marker
-
-    return bool(shell_marker(agent_harnesses(), os.environ))
-
-
 def _note_reason(context: "CliContext", step: "Step", reason: str) -> str:
     """Keep why a step went to done without review as a decision note on it, in the same
-    run as the status — the notes module's record, written through its own log."""
-    from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
-    from dplanner.modules.notes.log import Note, check_label, next_note_id, read_log, write_log
+    run as the status — added the way `note add` adds one, so a retried verb is one note."""
+    from dplanner.modules.notes.log import Note, adding, check_label
 
-    project = context.library.project_of(step.id)
-    records = read_log(project)
-    note = Note(
-        id=next_note_id(records),
-        label=check_label("decision"),
-        title="Done without review",
-        body=reason,
-        made=context.clock.today().isoformat(),
-        step=step.id,
+    note, command = adding(
+        context.library.project_of(step.id),
+        Note(
+            id="",
+            label=check_label("decision"),
+            title="Done without review",
+            body=reason,
+            made=context.clock.today().isoformat(),
+            step=step.id,
+        ),
     )
-    context.apply(SetModuleDataCommand(project.id, NOTES_ID, write_log([*records, note])))
+    if command is not None:
+        context.apply(command)
     return note.id
 
 
@@ -2517,7 +2516,6 @@ def _report_sources() -> tuple["ReportSource", ...]:
     from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_milestone.report import report_source as milestones
     from dplanner.modules.step_order.report import report_source as order
-    from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.step_ticket.report import report_source as tickets
     from dplanner.modules.testing.report import report_source as tests
     from dplanner.modules.time_estimates.report import report_source as time_estimates
@@ -2538,7 +2536,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
         graph(
             key_of=_step_key,
             kind_of=_step_kind,
-            status_for=step_status,
+            status_for=_card_status,
             stats_of=_step_stats,
             badge_of=milestone_read,
             # The report's picture of the graph wears the same shades the window does, and
@@ -2873,7 +2871,6 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
     from dplanner.modules.spec.cli import anchor_sources
     from dplanner.modules.spec.documents import document_text, read_index
     from dplanner.modules.step_milestone.aspect import read as milestone_read
-    from dplanner.modules.step_status.aspect import read as step_status
     from dplanner.modules.testing.aspect import covered
     from dplanner.modules.testing.runs import latest_results
     from dplanner.modules.testing.runs import read as read_runs
@@ -2940,7 +2937,7 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
             milestone_kind=kinds["step_milestone"],
             milestone_label=milestone_read,
             step_key=_step_key,
-            status=step_status,
+            status=_card_status,
             tests=tests,
             results=results,
             docs=docs,
@@ -3346,7 +3343,7 @@ def default_cli_commands(
         *status_cli.commands(
             is_wait=_is_wait,
             is_agent=_is_agent_step,
-            in_agent_shell=_in_agent_shell,
+            in_agent_shell=lambda: bool(agent_shell_marker()),
             note_reason=_note_reason,
         ),
         *milestone_cli.commands(),
@@ -3470,6 +3467,18 @@ def agent_harnesses() -> tuple["AgentHarness", ...]:
     from dplanner.modules.agent_opencode import harness as opencode
 
     return (claude.HARNESS, codex.HARNESS, opencode.HARNESS)
+
+
+def agent_shell_marker(env: "Mapping[str, str] | None" = None) -> str:
+    """The marker set in ``env`` (this process's environment by default), or "" when no
+    agent's shell is around us — ``domain/agents.py``'s reading over this build's
+    harnesses. Read by the entry point's window guard and by ``status set``, which holds an
+    agent's done at review."""
+    import os
+
+    from dplanner.domain.agents import shell_marker
+
+    return shell_marker(agent_harnesses(), os.environ if env is None else env)
 
 
 def dictation_providers() -> tuple["DictationProvider", ...]:

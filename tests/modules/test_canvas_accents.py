@@ -185,6 +185,19 @@ def test_review_wears_the_warn_key_block_and_merge_the_good_one(services, projec
         assert accent.key_glyph_tone == ""
 
 
+def test_a_wait_wears_no_status_it_carried_before_it_became_one(services, project, tab):
+    """A wait has no status, so one left from its life as a step washes nothing: the clock
+    stays the block's one amber, never a stroke on an amber review wash."""
+    step = project.steps[0]
+    for module_id, entry in (
+        (status.MODULE_ID, status.write("ready-for-review", today=date(2026, 9, 21))),
+        (wait.MODULE_ID, wait.write(Wait(days=2.0))),
+    ):
+        services.undo.push(SetModuleDataCommand(step.id, module_id, entry))
+    accent = node(tab, step)._accent
+    assert (accent.key_tone, accent.key_glyph, accent.key_glyph_tone) == ("", "clock", "warn")
+
+
 def test_an_instructed_step_wears_the_spark_in_its_key_block(services, project, tab):
     step = project.steps[0]
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")

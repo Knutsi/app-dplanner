@@ -146,8 +146,8 @@ def test_the_window_refuses_inside_an_agents_shell(monkeypatch, capsys):
     session of the first; one `pkill` later, four were gone. The word is explicit now,
     and even the word refuses where an agent's shell is around it."""
     from dplanner.domain.agents import shell_markers
-    from dplanner.entry import agent_shell_marker, main
-    from dplanner.modules import agent_harnesses
+    from dplanner.entry import main
+    from dplanner.modules import agent_harnesses, agent_shell_marker
 
     # One marker per harness — the one that names the CLI, never a session detail
     # (TRACEPARENT is set by half the tooling in the world).

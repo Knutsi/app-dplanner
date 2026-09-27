@@ -466,7 +466,7 @@ def test_the_cli_gives_the_same_answer(cli):
 
     text = cli("progression", "show", "Discovery")
     assert text.splitlines()[0] == "33% done — 1 of 3 steps"
-    assert "Ready to launch:" in text
+    assert "Ready to start:" in text
 
     cli("status", "set", "B", "ready-for-review")
     found = json.loads(cli("progression", "show", "Discovery", "--json"))

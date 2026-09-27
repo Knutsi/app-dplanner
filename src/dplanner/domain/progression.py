@@ -47,6 +47,8 @@ IN_PROGRESS = "in-progress"
 READY_FOR_REVIEW = "ready-for-review"
 # Accepted, and waiting on its merge.
 READY_TO_MERGE = "ready-to-merge"
+# Finished work handed to a person — its review, then its merge: past in progress, not done.
+HANDED_OFF = (READY_FOR_REVIEW, READY_TO_MERGE)
 BLOCKED = "blocked"
 # A wait that is not over yet — a derived reading (``schedule.wait_status``), never stored.
 WAITING = "waiting"

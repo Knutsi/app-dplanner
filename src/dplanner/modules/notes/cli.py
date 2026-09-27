@@ -35,9 +35,9 @@ from dplanner.modules.notes.log import (
     MODULE_ID,
     REACHES,
     Note,
+    adding,
     check_label,
     find_note,
-    next_note_id,
     read_log,
     same_note,
     standing,
@@ -90,29 +90,29 @@ def commands(*, key_of: Callable[[Step], str]) -> list[CliCommand]:
     def _add(context: CliContext, args: Namespace) -> int:
         project = find_project(context.library, args.project)
         records = read_log(project)
-        step_id = _step_id(context, project, args.step)
-        existing = same_note(records, args.title, step_id)
-        if existing is not None:
+        record, command = adding(
+            project,
+            Note(
+                id="",
+                label=check_label(args.label),
+                title=args.title.strip(),
+                body=_body(args),
+                made=(args.made or date.today().isoformat()),
+                step=_step_id(context, project, args.step),
+                supersedes=_superseded(records, args.supersedes) if args.supersedes else "",
+                reach=args.reach or "",
+                for_steps=_for_steps(context, project, args.for_steps),
+            ),
+        )
+        if command is None:
             context.report(
-                _row(project, existing, _by(records).get(existing.id, ""))
-                | {"outcome": "unchanged"},
-                f"{existing.id}: already recorded — `dplanner note set {project.title!r} "
-                f"{existing.id}` to revise it",
+                _row(project, record, _by(records).get(record.id, "")) | {"outcome": "unchanged"},
+                f"{record.id}: already recorded — `dplanner note set {project.title!r} "
+                f"{record.id}` to revise it",
             )
             return 0
-        record = Note(
-            id=next_note_id(records),
-            label=check_label(args.label),
-            title=args.title.strip(),
-            body=_body(args),
-            made=(args.made or date.today().isoformat()),
-            step=step_id,
-            supersedes=_superseded(records, args.supersedes) if args.supersedes else "",
-            reach=args.reach or "",
-            for_steps=_for_steps(context, project, args.for_steps),
-        )
         _check_day(record.made)
-        context.apply(SetModuleDataCommand(project.id, MODULE_ID, write_log([*records, record])))
+        context.apply(command)
         context.report(
             _row(project, record, "") | {"outcome": "added"},
             f"{record.id}: {record.label} — {record.title} — recorded",

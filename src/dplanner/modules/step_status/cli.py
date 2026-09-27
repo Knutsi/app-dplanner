@@ -23,7 +23,7 @@ from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
-from dplanner.domain.progression import DONE, READY_FOR_REVIEW, READY_TO_MERGE
+from dplanner.domain.progression import DONE, HANDED_OFF
 from dplanner.modules.step_status.aspect import (
     MODULE_ID,
     NO_STATUS_ON_A_WAIT,
@@ -32,9 +32,6 @@ from dplanner.modules.step_status.aspect import (
     read,
     write,
 )
-
-# Somebody has looked already: an agent may take a step on from here to done.
-REVIEWED = (READY_FOR_REVIEW, READY_TO_MERGE)
 
 
 def commands(
@@ -59,7 +56,7 @@ def commands(
         if (
             args.state == DONE
             and not because
-            and read(step) not in REVIEWED
+            and read(step) not in HANDED_OFF  # Handed off, a reviewing agent may finish it.
             and is_agent(step)
             and in_agent_shell()
         ):

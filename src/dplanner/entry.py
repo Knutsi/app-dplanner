@@ -31,17 +31,14 @@ shell is around it, and says why; the launcher scrubs the same markers for a win
 got them some other way. ``ARCHITECTURE.md``'s *The window is a word* has the reasoning.
 """
 
-import os
 import sys
-from collections.abc import Mapping
 
 from dplanner.cli.command import CliRegistry
 from dplanner.cli.main import WINDOW_WORD, run
 from dplanner.core import user_path
 from dplanner.core.telemetry import Telemetry, install, journal_path
-from dplanner.domain.agents import shell_marker
 from dplanner.modules import (
-    agent_harnesses,
+    agent_shell_marker,
     at_work_board,
     default_cli_commands,
     default_module_formats,
@@ -59,13 +56,6 @@ REFUSAL = (
     " turn does,\nand every agent launched from it goes with it. Open DPlanner from your"
     " own terminal."
 )
-
-
-def agent_shell_marker(env: Mapping[str, str] = os.environ) -> str:
-    """The marker set in this environment, or "" when no agent's shell is around us —
-    ``domain/agents.py``'s reading over this build's harnesses. Not a dispatch rule: the
-    word decides what runs, and this is a guard on who owns the window."""
-    return shell_marker(agent_harnesses(), env)
 
 
 def _word_indices(argv: list[str]) -> list[int]:

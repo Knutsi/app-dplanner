@@ -107,6 +107,24 @@ def test_a_card_draws_who_works_it_over_its_key():
     assert ">S3</text>" in svg
 
 
+def test_review_and_merge_wash_the_key_block_and_say_their_word():
+    """Ready for review washes the block in the attention amber and ready to merge in the
+    good green; both say their word in a pill, and the glyph over the key stays in ink —
+    amber in the glyph is a wait's alone."""
+    person = glyph_markup("person")
+    review = Node(
+        "a", "S1", "Parser", 0, 0, 220, 76, status="ready-for-review", glyph_markup=person
+    )
+    merge = Node(
+        "b", "S2", "Indexer", 300, 0, 220, 76, status="ready-to-merge", glyph_markup=person
+    )
+    svg = graph_svg(Graph((review, merge), ()), LIGHT)
+    assert f'fill="{LIGHT.attention}" fill-opacity="0.38"' in svg
+    assert f'fill="{LIGHT.good}" fill-opacity="0.38"' in svg
+    assert ">ready for review</text>" in svg and ">ready to merge</text>" in svg
+    assert svg.count('class="glyph"') == 2 and "glyph-toned" not in svg
+
+
 def test_every_source_speaks_plain_data(cli_library, plan):
     with open_library(cli_library, default_module_formats(), io.StringIO()) as context:
         project = context.library.project(plan)

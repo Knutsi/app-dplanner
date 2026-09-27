@@ -277,6 +277,15 @@ def test_because_sets_done_and_keeps_the_reason_as_one_decision_note(cli, agent_
     assert note["note"] in said
 
 
+def test_because_run_twice_is_still_one_note(cli, agent_step, monkeypatch):
+    """An agent re-runs a verb after a refusal; the note log's rule holds for this writer
+    too — adding twice is one note."""
+    monkeypatch.setenv("CLAUDECODE", "1")
+    for _ in range(2):
+        cli("status", "set", agent_step, "done", "--because", "docs only, nothing to review")
+    assert len(_decisions(cli)) == 1
+
+
 def test_a_person_and_a_plain_step_are_never_asked(cli, agent_step, monkeypatch):
     cli("status", "set", agent_step, "done")  # No marker: a person in their own terminal.
     monkeypatch.setenv("CLAUDECODE", "1")
