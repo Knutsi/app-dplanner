@@ -207,8 +207,8 @@ class RenderHints:
     Pushed by the scene when the mode stack changes — an item holds the hints as data and
     never asks which mode is current. ``handles``: "hover" shows the link handle on the
     hovered node only (idle), "always" fades one onto every node (connect mode, where
-    every handle is a target), "hidden" suppresses them (pan and the region modes, whose
-    presses do not link).
+    every handle is a target), "hidden" suppresses them (pan, resize, lasso, divide and
+    redirect, whose presses do not link).
     """
 
     handles: str = "hover"  # "hover" | "always" | "hidden"

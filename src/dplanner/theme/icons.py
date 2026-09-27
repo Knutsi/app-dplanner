@@ -242,11 +242,6 @@ def sort_icon(color: str | QColor) -> QIcon:
     return glyph_icon("sort", color)
 
 
-def region_icon(color: str | QColor) -> QIcon:
-    """A titled area drawn behind the graph."""
-    return glyph_icon("region", color)
-
-
 def grid_icon(color: str | QColor) -> QIcon:
     """Ruled dots: what a drag, a resize and a placed card land on."""
     return glyph_icon("grid", color)

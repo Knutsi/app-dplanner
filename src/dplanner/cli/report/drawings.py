@@ -120,13 +120,11 @@ HEAD = 8.0
 
 
 def graph_bounds(graph: Graph) -> tuple[float, float, float, float]:
-    """The drawing's viewBox — every card and region, with a margin — as x, y, width, height."""
-    xs = [node.x for node in graph.nodes] + [region.x for region in graph.regions]
-    ys = [node.y for node in graph.nodes] + [region.y for region in graph.regions]
-    rights = [node.x + node.w for node in graph.nodes] + [r.x + r.w for r in graph.regions]
-    bottoms = [node.y + node.h for node in graph.nodes] + [r.y + r.h for r in graph.regions]
-    x0, y0 = min(xs) - GRAPH_MARGIN, min(ys) - GRAPH_MARGIN
-    x1, y1 = max(rights) + GRAPH_MARGIN, max(bottoms) + GRAPH_MARGIN
+    """The drawing's viewBox — every card, with a margin — as x, y, width, height."""
+    x0 = min(node.x for node in graph.nodes) - GRAPH_MARGIN
+    y0 = min(node.y for node in graph.nodes) - GRAPH_MARGIN
+    x1 = max(node.x + node.w for node in graph.nodes) + GRAPH_MARGIN
+    y1 = max(node.y + node.h for node in graph.nodes) + GRAPH_MARGIN
     return x0, y0, x1 - x0, y1 - y0
 
 
@@ -142,15 +140,6 @@ def graph_svg(graph: Graph, colors: Colors) -> str:
         f'width="{_n(width)}" height="{_n(height)}" font-family="{FONT}" '
         f'font-size="{_n(NODE_FONT)}">'
     ]
-    for region in graph.regions:
-        out.append(
-            f'<g class="region"><rect x="{_n(region.x)}" y="{_n(region.y)}" '
-            f'width="{_n(region.w)}" height="{_n(region.h)}" rx="{_n(RADIUS)}" '
-            f'fill="{colors.ink}" fill-opacity="0.04" stroke="{colors.ink}" '
-            f'stroke-opacity="0.24" stroke-width="1"/>'
-            f'<text x="{_n(region.x + 10)}" y="{_n(region.y + 17)}" fill="{colors.secondary}" '
-            f'font-size="12" font-weight="600">{_t(region.title)}</text></g>'
-        )
     for edge in graph.edges:
         source, target = by_id.get(edge.source), by_id.get(edge.target)
         if source is None or target is None:

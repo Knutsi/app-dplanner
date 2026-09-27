@@ -30,16 +30,12 @@ def files(registry):
 
 def test_every_noun_is_one_line_naming_its_verbs(registry, files):
     """The point of generating it: the skill cannot describe a command that does not exist,
-    and cannot omit one it offers. A summary per verb was a third of the file and said what
-    `--help` says, so the index names the verbs and nothing else."""
+    and cannot omit one. A summary per verb was a third of the file and said what `--help`
+    says, so the index names the verbs and nothing else."""
     verbs = noun_verbs(files[SKILL_FILE])
     for noun, commands in registry.groups().items():
-        offered = {command.path[1] for command in commands if command.in_skill}
-        if not offered:
-            assert noun not in verbs  # A noun with nothing to offer is not a noun here.
-            continue
         # A set, not a containment check: a verb printed twice is as wrong as one missing.
-        assert {bare(verb) for verb in verbs[noun]} == offered
+        assert {bare(verb) for verb in verbs[noun]} == {command.path[1] for command in commands}
 
 
 def test_the_command_index_is_an_index(files):
@@ -50,29 +46,11 @@ def test_the_command_index_is_an_index(files):
     assert len(section) < 4_000, len(section)
 
 
-def test_every_offered_command_has_its_arguments_in_the_reference(registry, files):
+def test_every_command_has_its_arguments_in_the_reference(registry, files):
     reference = files[REFERENCE_FILE]
     for command in registry.commands():
-        if not command.in_skill:
-            assert f"## `dplanner {command.id}`" not in reference
-            continue
         assert f"## `dplanner {command.id}`" in reference
         assert f"usage: dplanner {command.id}" in reference
-
-
-def test_a_verb_kept_out_of_the_skill_is_still_a_verb(registry, files):
-    """`in_skill=False` is the CLI twin of `ActionSpec.in_menus`: registered and runnable,
-    named by no generated file. The region verbs are what it exists for."""
-    kept_out = [command.id for command in registry.commands() if not command.in_skill]
-    assert kept_out == [
-        "region add",
-        "region delete",
-        "region fit",
-        "region list",
-        "region rename",
-    ]
-    for name, text in files.items():
-        assert "region" not in text.lower(), name
 
 
 def test_every_aspect_is_described(files):
@@ -82,12 +60,6 @@ def test_every_aspect_is_described(files):
 
 def test_the_edge_vocabulary_is_described(files):
     assert "cycles are refused" in files[SKILL_FILE]
-
-
-def test_the_skill_never_mentions_regions(files):
-    """A skill that does not offer regions need not forbid them either — the prohibition
-    went with the verbs. The spatial loop itself is the shaping guide's (test_shaping)."""
-    assert "region" not in files[SKILL_FILE].lower()
 
 
 def test_the_skill_hands_shaping_over_and_keeps_what_executing_needs(files):

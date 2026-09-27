@@ -153,7 +153,7 @@ paths:
   screen keeps its content. `ARCHITECTURE.md`'s *A panel inside a tab follows the tab* has
   the reasoning.
 - **View is the window; Graph is the canvas.** The graph editor's own verbs are a
-  top-level **Graph** menu — `arrange` (Sort, Layout, Divide), `regions`, `look` (Frame,
+  top-level **Graph** menu — `arrange` (Sort, Layout, Divide), `look` (Frame,
   Mark, Snap to Grid, Background — the band the strip's *Options* face renders whole) and
   `panels` (what stands beside the canvas inside the tab) — not a group inside View, which
   is about panels *around the tabs*, tabs, theme and zoom; `Project ▸ tests` holds the

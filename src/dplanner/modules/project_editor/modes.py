@@ -17,11 +17,10 @@ Three rules keep it small:
 - **A mode asks the model.** Whether a link is legal is ``Library.link_refusal`` under the
   cursor, reached through :class:`Canvas`. There is no second reachability rule in here.
 
-A mode that drags something the canvas draws — a region by its body, a region or a card by
-its frame, every card on one side of a cut — is a :class:`GestureMode`: it holds what it
-moves so a sync leaves the geometry alone, Escape puts everything back, and the release
-reports and pops. A new one says what it holds, how to restore it, and what the release
-means, and inherits the rest.
+A mode that drags something the canvas draws — a card by its frame, every card on one side
+of a cut — is a :class:`GestureMode`: it holds what it moves so a sync leaves the geometry
+alone, Escape puts everything back, and the release reports and pops. A new one says what it
+holds, how to restore it, and what the release means, and inherits the rest.
 
 :class:`Canvas` is the whole of a mode's power over the canvas, which is why it is written
 out rather than inferred from passing the scene around: a mode can be driven in a test by
@@ -44,8 +43,6 @@ from dplanner.core.signals import Signal
 from dplanner.domain.model import SOURCE, WAITER, EdgeEnd, Redirection, StepId
 from dplanner.modules.project_editor.items import HANDLE_GRAB, StepNodeItem
 from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W, centred_on
-from dplanner.modules.project_editor.region_items import REGION_RADIUS, RegionItem
-from dplanner.modules.project_editor.regions import MIN_REGION
 from dplanner.modules.project_editor.renderers import RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef
 
@@ -57,9 +54,6 @@ IDLE = "idle"
 CONNECT = "connect"
 PAN = "pan"
 LINK_DRAG = "link-drag"
-REGION_CREATE = "region-create"
-REGION_DRAG = "region-drag"
-REGION_RESIZE = "region-resize"
 NODE_RESIZE = "node-resize"
 LASSO = "lasso"
 DIVIDE_VERTICAL = "divide-vertical"
@@ -86,14 +80,11 @@ def mode_uri(name: str) -> str:
 
 # What each mode wants every node to show, fanned out by the scene when the stack changes.
 # Kept beside the mode names so a new mode decides its look in the same breath. Connect
-# shows every handle — each is a target; pan, lasso, divide and the region modes hide them —
+# shows every handle — each is a target; pan, resize, lasso, divide and redirect hide them —
 # their presses do not link. Anything unlisted gets the default (idle's hover-only handle).
 HINTS_BY_MODE = {
     CONNECT: RenderHints(handles="always"),
     PAN: RenderHints(handles="hidden"),
-    REGION_CREATE: RenderHints(handles="hidden"),
-    REGION_DRAG: RenderHints(handles="hidden"),
-    REGION_RESIZE: RenderHints(handles="hidden"),
     NODE_RESIZE: RenderHints(handles="hidden"),
     LASSO: RenderHints(handles="hidden"),
     DIVIDE_VERTICAL: RenderHints(handles="hidden"),
@@ -169,10 +160,6 @@ class Canvas(Protocol):
     link_requested: Signal[tuple[StepId, ...], StepId]
     create_requested: Signal[float, float]
     selection_changed: Signal[CanvasSelection]
-    region_create_requested: Signal[float, float, float, float]
-    # Regions that finished moving, with the steps they carried — one gesture, one emission.
-    regions_moved: Signal[list[tuple[str, float, float]], list[tuple[StepId, float, float]]]
-    region_resized: Signal[str, float, float, float, float]
     # A card that finished resizing: its new seat and size, since an edge may have moved.
     node_resized: Signal[StepId, float, float, float, float]
     # The cards a divide pushed, at their new seats — one gesture, one emission.
@@ -212,13 +199,7 @@ class Canvas(Protocol):
 
     def set_link_states(self, valid: StepId | None, invalid: StepId | None) -> None: ...
 
-    def region_at(self, scene_pos: QPointF) -> RegionItem | None: ...
-
-    def select_region(self, region_id: str) -> None: ...
-
-    def nodes_inside(self, region: RegionItem) -> list[StepNodeItem]: ...
-
-    # The one outline a gesture drawing an area shows: a region's rectangle, a lasso's path.
+    # The one outline a gesture drawing an area shows: a lasso's path, a divide's band.
     def aim_outline(self, path: QPainterPath) -> None: ...
 
     def hide_outline(self) -> None: ...
@@ -227,9 +208,9 @@ class Canvas(Protocol):
     # that produces a position or a size runs its numbers through.
     def snap(self, value: float) -> float: ...
 
-    # A mode owns this region's geometry — and these steps' — until it releases: the
-    # scene's sync leaves them where the gesture has them.
-    def hold(self, region_id: str | None, step_ids: set[StepId]) -> None: ...
+    # A mode owns these steps' geometry until it releases: the scene's sync leaves them
+    # where the gesture has them.
+    def hold(self, step_ids: set[StepId]) -> None: ...
 
     def release(self) -> None: ...
 
@@ -644,60 +625,6 @@ class PanMode(ModeBase):
         return True
 
 
-class RegionCreateMode(ModeBase):
-    """Drag out the rectangle a new region covers. One region ends the mode; Esc leaves."""
-
-    name = REGION_CREATE
-
-    def __init__(self, deps: CanvasDeps) -> None:
-        super().__init__(deps)
-        self._anchor: QPointF | None = None
-
-    def enter(self) -> None:
-        self.deps.view.viewport().setCursor(Qt.CursorShape.CrossCursor)
-        self.deps.status("Region: drag out the area it covers. Esc leaves.")
-
-    def exit(self) -> None:
-        self.deps.view.viewport().unsetCursor()
-        self.deps.canvas.hide_outline()
-
-    def mouse_press(self, event: CanvasEvent) -> bool:
-        self._anchor = self._snapped(event.scene_pos)
-        return True
-
-    def mouse_move(self, event: CanvasEvent) -> bool:
-        if self._anchor is not None:
-            outline = QPainterPath()
-            outline.addRoundedRect(
-                QRectF(self._anchor, self._snapped(event.scene_pos)).normalized(),
-                REGION_RADIUS,
-                REGION_RADIUS,
-            )
-            self.deps.canvas.aim_outline(outline)
-        return True
-
-    def mouse_release(self, event: CanvasEvent) -> bool:
-        if self._anchor is None:
-            return True
-        rect = QRectF(self._anchor, self._snapped(event.scene_pos)).normalized()
-        self._anchor = None
-        self.deps.canvas.hide_outline()
-        if rect.width() >= MIN_REGION and rect.height() >= MIN_REGION:
-            self.deps.canvas.region_create_requested.emit(
-                rect.x(), rect.y(), rect.width(), rect.height()
-            )
-            if self.stack is not None:
-                self.stack.pop()
-        return True
-
-    def double_click(self, event: CanvasEvent) -> bool:
-        return True  # No step-creating double clicks while drawing regions.
-
-    def _snapped(self, point: QPointF) -> QPointF:
-        snap = self.deps.canvas.snap
-        return QPointF(snap(point.x()), snap(point.y()))
-
-
 class GestureMode(ModeBase):
     """A mode that lives for one drag of something the canvas draws.
 
@@ -705,22 +632,21 @@ class GestureMode(ModeBase):
     that geometry alone until the release; Escape puts everything back where the press
     found it; and the release reports what happened and pops. A subclass says what it
     holds, how to put it back, what the pointer looks like meanwhile, and what the release
-    means — the region drag, the region resize, the card resize and the divide's drag are
-    the four.
+    means — the card resize and the divide's drag are the two.
     """
 
     # The viewport's cursor while the gesture lasts; None leaves it alone.
     cursor: Qt.CursorShape | None = None
 
-    def held(self) -> tuple[str | None, set[StepId]]:
-        """The region and the steps whose geometry this gesture owns."""
-        return None, set()
+    def held(self) -> set[StepId]:
+        """The steps whose geometry this gesture owns."""
+        return set()
 
     def restore(self) -> None:
         """Put everything back where the press found it — Escape's half of the gesture."""
 
     def enter(self) -> None:
-        self.deps.canvas.hold(*self.held())
+        self.deps.canvas.hold(self.held())
         if self.cursor is not None:
             self.deps.view.viewport().setCursor(self.cursor)
 
@@ -739,89 +665,6 @@ class GestureMode(ModeBase):
     def pop(self) -> None:
         if self.stack is not None:
             self.stack.pop()
-
-
-class RegionDragMode(GestureMode):
-    """A region grabbed by its body: the frame moves, and so do the steps inside it.
-
-    Which steps ride along is decided **at the press** — centres inside the rect — and held
-    for the whole gesture, so a step half-carried out does not fall off mid-drag. Lives for
-    one drag; a press that never moves is a click, and a click on a region selects it.
-    """
-
-    name = REGION_DRAG
-
-    def __init__(self, deps: CanvasDeps, region: RegionItem, grab: QPointF) -> None:
-        super().__init__(deps)
-        self._region = region
-        self._offset = grab - region.pos()
-        self._start = region.pos()
-        self._carried = {node.step_id: node.pos() for node in deps.canvas.nodes_inside(region)}
-
-    def held(self) -> tuple[str | None, set[StepId]]:
-        return self._region.region_id, set(self._carried)
-
-    def restore(self) -> None:
-        self._region.setPos(self._start)
-        self._place_carried(QPointF(0.0, 0.0))
-
-    def mouse_move(self, event: CanvasEvent) -> bool:
-        self._region.setPos(event.scene_pos - self._offset)
-        self._place_carried(self._region.pos() - self._start)
-        return True
-
-    def mouse_release(self, event: CanvasEvent) -> bool:
-        canvas = self.deps.canvas
-        at = self._region.pos()
-        if at != self._start:
-            carried = []
-            for step_id in self._carried:
-                node = canvas.node(step_id)
-                if node is not None:
-                    carried.append((step_id, node.pos().x(), node.pos().y()))
-            canvas.regions_moved.emit([(self._region.region_id, at.x(), at.y())], carried)
-        else:
-            canvas.select_region(self._region.region_id)
-        self.pop()
-        return True
-
-    def _place_carried(self, delta: QPointF) -> None:
-        for step_id, was in self._carried.items():
-            node = self.deps.canvas.node(step_id)
-            if node is not None:
-                node.setPos(was + delta)
-
-
-class RegionResizeMode(GestureMode):
-    """A region grabbed by its corner grip. Lives for one resize; Esc puts it back."""
-
-    name = REGION_RESIZE
-    cursor = Qt.CursorShape.SizeFDiagCursor
-
-    def __init__(self, deps: CanvasDeps, region: RegionItem) -> None:
-        super().__init__(deps)
-        self._region = region
-        self._was = region.size()
-
-    def held(self) -> tuple[str | None, set[StepId]]:
-        return self._region.region_id, set()
-
-    def restore(self) -> None:
-        self._region.set_rect(*self._was)
-
-    def mouse_move(self, event: CanvasEvent) -> bool:
-        snap = self.deps.canvas.snap
-        local = event.scene_pos - self._region.pos()
-        self._region.set_rect(max(MIN_REGION, snap(local.x())), max(MIN_REGION, snap(local.y())))
-        return True
-
-    def mouse_release(self, event: CanvasEvent) -> bool:
-        w, h = self._region.size()
-        if (w, h) != self._was:
-            at = self._region.pos()
-            self.deps.canvas.region_resized.emit(self._region.region_id, at.x(), at.y(), w, h)
-        self.pop()
-        return True
 
 
 class NodeResizeMode(GestureMode):
@@ -844,8 +687,8 @@ class NodeResizeMode(GestureMode):
         self._was_size = node.size()
         self._seat = QRectF(node.pos(), QSizeF(*node.size()))
 
-    def held(self) -> tuple[str | None, set[StepId]]:
-        return None, {self._node.step_id}
+    def held(self) -> set[StepId]:
+        return {self._node.step_id}
 
     def restore(self) -> None:
         self._node.set_size(*self._was_size)
@@ -1035,8 +878,8 @@ class DivideDragMode(GestureMode):
             if _along(orientation, node.body_scene_rect().center()) > cut
         }
 
-    def held(self) -> tuple[str | None, set[StepId]]:
-        return None, set(self._was)
+    def held(self) -> set[StepId]:
+        return set(self._was)
 
     def restore(self) -> None:
         self._place(0.0)
@@ -1102,7 +945,7 @@ def visible_scene_rect(view: QGraphicsView) -> QRectF:
 
 class IdleMode(ModeBase):
     """The base. Qt does selection, rubber banding and node dragging; this catches the rest:
-    a press on a card's link handle, on its frame, or on a region's body or grip."""
+    a press on a card's link handle or on its frame."""
 
     name = IDLE
 
@@ -1117,18 +960,6 @@ class IdleMode(ModeBase):
             edge = node.edge_at(event.scene_pos)
             if edge and event.button == Qt.MouseButton.LeftButton and self.stack is not None:
                 self.stack.push(NodeResizeMode(self.deps, node, edge))
-                return True
-            return False
-        region = self.deps.canvas.region_at(event.scene_pos)
-        if region is not None and self.stack is not None:
-            # A region's body is invisible to Qt's hit-testing (see RegionItem.shape), so
-            # these two gestures are claimed here; the title strip and border fall through
-            # to Qt, which selects and moves the frame alone.
-            if region.is_over_grip(event.scene_pos):
-                self.stack.push(RegionResizeMode(self.deps, region))
-                return True
-            if region.is_over_body(event.scene_pos):
-                self.stack.push(RegionDragMode(self.deps, region, event.scene_pos))
                 return True
         return False
 
@@ -1155,11 +986,6 @@ class IdleMode(ModeBase):
             # A gesture is not a special case: select, then run the same verb the menu does.
             self.deps.canvas.select_step(node.step_id)
             self.deps.run_action("steps.details")
-            return True
-        region = self.deps.canvas.region_at(event.scene_pos)
-        if region is not None and region.is_over_title(event.scene_pos):
-            self.deps.canvas.select_region(region.region_id)
-            self.deps.run_action("regions.rename")
             return True
         point = event.scene_pos
         self.deps.canvas.create_requested.emit(*centred_on(point.x(), point.y()))

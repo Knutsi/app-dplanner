@@ -1,4 +1,4 @@
-"""``dplanner layout …``, ``region …`` and ``step duplicate`` — the graph editor's verbs.
+"""``dplanner layout …`` and ``step duplicate`` — the graph editor's verbs.
 
 The same command objects the window pushes, so an apply here is undoable in a tab open on
 the same library. ``layout save`` upserts rather than refusing a collision: an agent
@@ -9,13 +9,6 @@ canvas: the geometry measured on every read and never stored (``geometry.py``), 
 gesture as a verb building the very command the canvas pushes, and the sixth sort
 (``sorts.tidy``) applied like the other five. None reshapes the graph, so none reads the
 topology first.
-
-The ``region`` verbs stay for the window's sake and carry ``in_skill=False``: a region is
-a titled rectangle painted behind the steps, annotation on its way out, so the generated
-skill does not name them and nothing invites an agent to draw one. They still run —
-deleting a verb an older script calls is a separate decision — and ``region add --steps``
-still computes the rectangle that wraps those steps where they sit, with ``--rect`` for
-placing one by hand.
 """
 
 from argparse import ArgumentParser, Namespace
@@ -49,13 +42,6 @@ from dplanner.modules.project_editor.named_layouts import (
 )
 from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import GRID, node_size, snapped
-from dplanner.modules.project_editor.regions import (
-    TITLE_STRIP_H,
-    Region,
-    new_region,
-    read_regions,
-    set_regions_command,
-)
 from dplanner.modules.project_editor.sorts import (
     DEFAULT_AIR,
     H_GAP,
@@ -76,11 +62,6 @@ MAP_LEGEND = (
     f"one cell = one column pitch ({H_PITCH:g}) by one row pitch ({V_PITCH:g}); "
     "cells are the lanes, a hole is an empty cell, a wide card spans cells"
 )
-
-# The air a wrapped region leaves around its steps; the top adds the title strip's height
-# so the title never sits on a node.
-WRAP_PAD = 32.0
-WRAP_PAD_TOP = TITLE_STRIP_H + 24.0
 
 
 def _no_key(_step: Step) -> str:
@@ -169,22 +150,14 @@ def commands(
 
     def _show(context: CliContext, args: Namespace) -> int:
         project = find_project(context.library, args.project)
-        placed = positions(context.library, project)
-        geometry = measure(context.library, project, key_of=key_of, placed=placed)
-        regions = [_region_row(project, region, placed) for region in read_regions(project)]
-        data: dict[str, Any] = {"project": project.id, **as_json(geometry), "regions": regions}
+        geometry = measure(context.library, project, key_of=key_of)
+        data: dict[str, Any] = {"project": project.id, **as_json(geometry)}
         if args.map:
             picture = map_text(geometry)
             data["map"] = picture
             context.report(data, f"{picture}\n{MAP_LEGEND}" if picture else "no steps")
             return 0
-        lines = [geometry_text(geometry)]
-        if regions:
-            lines.append("regions:")
-            lines += [f"  {_region_line(row)}" for row in regions]
-        else:
-            lines.append("regions: none")
-        context.report(data, "\n".join(lines))
+        context.report(data, geometry_text(geometry))
         return 0
 
     def _shift(context: CliContext, args: Namespace) -> int:
@@ -374,49 +347,6 @@ def commands(
             ),
             edits_graph=_project_of_duplicate,
         ),
-        CliCommand(
-            path=("region", "list"),
-            summary="The titled areas drawn behind a project's graph.",
-            configure=project_arg,
-            run=_region_list,
-            examples=("dplanner region list discovery --json",),
-            in_skill=False,
-        ),
-        CliCommand(
-            path=("region", "add"),
-            summary="Draw a titled area behind the graph — around named steps, or at a rect.",
-            configure=_region_add_args,
-            run=_region_add,
-            examples=(
-                'dplanner region add discovery "Database setup" --steps schema migrate seed',
-                'dplanner region add discovery "Finalize release" --rect 40 40 480 320',
-            ),
-            in_skill=False,
-        ),
-        CliCommand(
-            path=("region", "fit"),
-            summary="Re-wrap a region around named steps — after a sort moved them.",
-            configure=_region_fit_args,
-            run=_region_fit,
-            examples=('dplanner region fit discovery "Database setup" --steps schema seed',),
-            in_skill=False,
-        ),
-        CliCommand(
-            path=("region", "rename"),
-            summary="Give a region a new title.",
-            configure=_region_rename_args,
-            run=_region_rename,
-            examples=('dplanner region rename discovery "Database setup" "Data layer"',),
-            in_skill=False,
-        ),
-        CliCommand(
-            path=("region", "delete"),
-            summary="Remove a region. The steps inside stay where they are.",
-            configure=_region_args,
-            run=_region_delete,
-            examples=('dplanner region delete discovery "Database setup"',),
-            in_skill=False,
-        ),
     ]
 
 
@@ -506,8 +436,7 @@ def _list(context: CliContext, args: Namespace) -> int:
     data = {
         "project": project.id,
         "layouts": [
-            {"name": name, "steps": len(snap.steps), "regions": len(snap.regions)}
-            for name, snap in sorted(layouts.items())
+            {"name": name, "steps": len(snap.steps)} for name, snap in sorted(layouts.items())
         ],
     }
     if not layouts:
@@ -560,195 +489,4 @@ def _delete(context: CliContext, args: Namespace) -> int:
     _named(project, args.name)
     context.apply(delete_layout_command(project, args.name))
     context.report({"project": project.id, "name": args.name}, f"{args.name}: deleted")
-    return 0
-
-
-# -- regions -----------------------------------------------------------------------------------
-
-
-def _region_add_args(parser: ArgumentParser) -> None:
-    project_arg(parser)
-    parser.add_argument("title", help="what the area is about")
-    parser.add_argument(
-        "--steps",
-        nargs="+",
-        metavar="STEP",
-        help="wrap these steps where they sit (ids, folder names, or unique title parts)",
-    )
-    parser.add_argument(
-        "--rect",
-        nargs=4,
-        type=float,
-        metavar=("X", "Y", "W", "H"),
-        help="place it by hand instead, as canvas coordinates",
-    )
-
-
-def _region_args(parser: ArgumentParser) -> None:
-    project_arg(parser)
-    parser.add_argument("region", help="region id, id prefix, or part of its title")
-
-
-def _region_rename_args(parser: ArgumentParser) -> None:
-    _region_args(parser)
-    parser.add_argument("new", help="the new title")
-
-
-def _region_fit_args(parser: ArgumentParser) -> None:
-    _region_args(parser)
-    parser.add_argument(
-        "--steps",
-        nargs="+",
-        required=True,
-        metavar="STEP",
-        help="wrap these steps where they now sit",
-    )
-
-
-def _find_region(project: Project, needle: str) -> Region:
-    """Exact id first, then a unique id prefix, then a unique partial title."""
-    regions = read_regions(project)
-    for region in regions:
-        if region.id == needle:
-            return region
-    for candidates in (
-        [r for r in regions if r.id.startswith(needle)],
-        [r for r in regions if r.title == needle],
-        [r for r in regions if needle.lower() in r.title.lower()],
-    ):
-        if len(candidates) == 1:
-            return candidates[0]
-        if candidates:
-            listed = ", ".join(f"{r.id[:8]} ({r.title})" for r in candidates)
-            raise CliError(f"{needle!r} is ambiguous — matches: {listed}")
-    raise CliError(f"no region matches {needle!r}")
-
-
-def _region_row(
-    project: Project, region: Region, placed: dict[str, tuple[float, float]]
-) -> dict[str, Any]:
-    """One region with the steps it actually covers — the agent's verification loop.
-
-    Membership is listed by title, not just counted, so a wrap that caught a step nobody
-    named is visible in the report rather than a surprise on the canvas.
-    """
-    inside = [
-        {"id": step.id, "title": step.title}
-        for step in project.steps
-        if region.contains_centre(*placed[step.id], *node_size(step))
-    ]
-    return {
-        "id": region.id,
-        "title": region.title,
-        "x": region.x,
-        "y": region.y,
-        "w": region.w,
-        "h": region.h,
-        "steps_inside": len(inside),
-        "steps": inside,
-    }
-
-
-def _region_line(row: dict[str, Any]) -> str:
-    count = row["steps_inside"]
-    if not count:
-        held = "empty"
-    else:
-        titles = ", ".join(step["title"] or "Untitled step" for step in row["steps"])
-        held = f"{count} step{'s' if count != 1 else ''}: {titles}"
-    return f"{row['id'][:8]}  {row['title']}  ({held})"
-
-
-def _region_list(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.library, args.project)
-    placed = positions(context.library, project)
-    rows = [_region_row(project, region, placed) for region in read_regions(project)]
-    data = {"project": project.id, "regions": rows}
-    if not rows:
-        context.report(data, "no regions")
-        return 0
-    context.report(data, "\n".join(_region_line(row) for row in rows))
-    return 0
-
-
-def _region_add(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.library, args.project)
-    title = args.title.strip()
-    if not title:
-        raise CliError("a region needs a title")
-    if bool(args.steps) == bool(args.rect):
-        raise CliError("say where it goes — either --steps or --rect")
-    if args.steps:
-        x, y, w, h = _wrap_rect(context, project, args.steps)
-    else:
-        x, y, w, h = args.rect
-        if w <= 0 or h <= 0:
-            raise CliError("a region needs a positive width and height")
-    region = new_region(title, x, y, w, h)
-    context.apply(set_regions_command(project, [*read_regions(project), region], "Add Region"))
-    placed = positions(context.library, project)
-    row = _region_row(project, region, placed)
-    context.report(row | {"project": project.id}, _region_line(row))
-    return 0
-
-
-def _wrap_rect(
-    context: CliContext, project: Project, needles: list[str]
-) -> tuple[float, float, float, float]:
-    """The rectangle that wraps these steps where they sit, with air around them."""
-    placed = positions(context.library, project)
-    chosen = []
-    for needle in needles:
-        step = find_step(context.library, needle)
-        if step.id not in placed:
-            raise CliError(f"step {step.title!r} is not in this project")
-        chosen.append(step)
-    xs = [placed[step.id][0] for step in chosen]
-    ys = [placed[step.id][1] for step in chosen]
-    left = min(xs) - WRAP_PAD
-    top = min(ys) - WRAP_PAD_TOP
-    right = max(placed[step.id][0] + node_size(step)[0] for step in chosen) + WRAP_PAD
-    bottom = max(placed[step.id][1] + node_size(step)[1] for step in chosen) + WRAP_PAD
-    return left, top, right - left, bottom - top
-
-
-def _region_fit(context: CliContext, args: Namespace) -> int:
-    """Recompute the wrap, keeping the region's id — a delete-and-re-add would mint a new
-    one and orphan the region's rect entries in every saved layout."""
-    project = find_project(context.library, args.project)
-    region = _find_region(project, args.region)
-    x, y, w, h = _wrap_rect(context, project, args.steps)
-    refitted = [
-        r.moved_to(x, y).sized(w, h) if r.id == region.id else r for r in read_regions(project)
-    ]
-    context.apply(set_regions_command(project, refitted, "Fit Region"))
-    placed = positions(context.library, project)
-    row = _region_row(project, region.moved_to(x, y).sized(w, h), placed)
-    context.report(row | {"project": project.id}, _region_line(row))
-    return 0
-
-
-def _region_rename(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.library, args.project)
-    region = _find_region(project, args.region)
-    new = args.new.strip()
-    if not new:
-        raise CliError("a region needs a title")
-    renamed = [r.named(new) if r.id == region.id else r for r in read_regions(project)]
-    context.apply(set_regions_command(project, renamed, "Rename Region"))
-    context.report(
-        {"project": project.id, "id": region.id, "title": new},
-        f"{region.title} → {new}",
-    )
-    return 0
-
-
-def _region_delete(context: CliContext, args: Namespace) -> int:
-    project = find_project(context.library, args.project)
-    region = _find_region(project, args.region)
-    kept = [r for r in read_regions(project) if r.id != region.id]
-    context.apply(set_regions_command(project, kept, "Delete Region"))
-    context.report(
-        {"project": project.id, "id": region.id}, f"{region.title or region.id}: deleted"
-    )
     return 0

@@ -264,19 +264,9 @@ class Edge:
 
 
 @dataclass(frozen=True)
-class Region:
-    title: str
-    x: float
-    y: float
-    w: float
-    h: float
-
-
-@dataclass(frozen=True)
 class Graph:
     nodes: tuple[Node, ...]
     edges: tuple[Edge, ...]
-    regions: tuple[Region, ...] = ()
 
 
 Part = Figure | Table | Chart | Timeline | Prose | Graph
