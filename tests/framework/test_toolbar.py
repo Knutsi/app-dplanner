@@ -5,10 +5,16 @@ and, for a strip that is a tool palette, named bands that fold whole."""
 from itertools import pairwise
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPalette
 from PySide6.QtWidgets import QComboBox, QWidget
 
-from dplanner.framework.action_registry import ActionRegistry, ActionSpec, MenuStructure
+from dplanner.framework.action_registry import (
+    ActionRegistry,
+    ActionSpec,
+    ActionState,
+    MenuStructure,
+)
 from dplanner.framework.context import ContextService
 from dplanner.framework.toolbar import MORE, Toolbar, _Group
 from dplanner.theme import apply_theme
@@ -248,6 +254,27 @@ def test_a_registry_fed_verb_wears_the_specs_glyph_and_follows_its_state(host, a
     assert len(context.changed._slots) < before
 
 
+def test_a_registry_fed_verb_with_a_face_keeps_its_words_while_its_state_rewords_it(host, app):
+    registry = registry_with(
+        ActionSpec(
+            id="steps.new",
+            label="&New Step",
+            menu="Step",
+            group="edit",
+            icon=plus_icon,
+            state=lambda _context: ActionState(enabled=False, label="New Step — pick a project"),
+            run=lambda _context: None,
+        )
+    )
+    bar = Toolbar(host)
+    bar.add_action(registry, ContextService(), "steps.new", face="New")
+    button = bar.button_for("steps.new")
+    assert button is not None and button.text() == "New"
+    assert button.toolButtonStyle() == Qt.ToolButtonStyle.ToolButtonTextBesideIcon
+    assert button.toolTip().startswith("New Step — pick a project")
+    bar.dispose()
+
+
 def test_a_checked_verbs_glyph_changes_ink_with_its_fill(host, app):
     """A checked button is filled with the accent; a glyph left in the quiet tone
     disappears into it, which is why the switches used to be words."""
@@ -307,8 +334,6 @@ def test_a_widget_the_host_takes_off_stays_off_through_every_reflow(host, app):
 
 
 def test_a_verb_a_state_hides_stays_hidden_through_a_reflow(host, app):
-    from dplanner.framework.action_registry import ActionState
-
     registry = registry_with(
         ActionSpec(
             id="steps.new",

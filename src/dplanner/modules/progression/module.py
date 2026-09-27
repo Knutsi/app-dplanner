@@ -85,11 +85,13 @@ def _no_badge(_step_id: StepId) -> QIcon | None:
 
 @dataclass(frozen=True)
 class StripVerb:
-    """A registry verb the strip seats over the ticked rows, and the data child menu its
-    arrow drops down, if it has one — Run Agent's profiles."""
+    """A registry verb the strip seats over the ticked rows, the data child menu its arrow
+    drops down, if it has one — Run Agent's profiles — and the words it wears beside its
+    glyph, if any."""
 
     action_id: str
     data_menu: str | None = None
+    face: str = ""
 
 
 @dataclass(frozen=True)
@@ -145,7 +147,11 @@ class ProgressionActivity(EntityActivity):
         self.controls = Toolbar(page)
         for verb in deps.verbs:
             self.controls.add_action(
-                deps.actions, deps.context, verb.action_id, data_menu=verb.data_menu
+                deps.actions,
+                deps.context,
+                verb.action_id,
+                data_menu=verb.data_menu,
+                face=verb.face,
             )
         if deps.verbs:
             self.controls.add_divider()

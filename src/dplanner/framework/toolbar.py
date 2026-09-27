@@ -415,6 +415,7 @@ class Toolbar(QWidget):
         *,
         menu: tuple[str, str] | None = None,
         data_menu: str | None = None,
+        face: str = "",
     ) -> QAction:
         """A verb the registry owns, restated on every context change.
 
@@ -427,6 +428,9 @@ class Toolbar(QWidget):
         the table: the launch profiles under *Compile with Agent*, which `fill_menu` leaves
         out of a named-submenu render precisely because a data child menu belongs to its
         menu rather than to one of its submenus.
+
+        ``face`` puts fixed words beside the glyph — the action's ``iconText``, so the
+        state's words (a count, a refusal) still name it in the tooltip and the … menu.
         """
         self._bind(registry, context)
         spec = registry.spec(action_id)
@@ -442,6 +446,9 @@ class Toolbar(QWidget):
             lambda _checked=False, a=action_id: registry.run(a, context.current())
         )
         button = self._glyph(action)
+        if face:
+            action.setIconText(face)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         if menu is not None:
             self._arrow(button, action, self._table_fill(menu[0], menu[1]))
         elif data_menu is not None:

@@ -260,6 +260,8 @@ def test_the_strip_seats_run_agent_and_the_status_verbs_greyed_until_a_row_is_ti
     for action_id in ("agent.run", "status.ready-to-merge", "status.done"):
         button = tab.controls.button_for(action_id)
         assert button is not None and not button.isEnabled(), action_id
+    # The verb the tab leads with wears its words; the status verbs are glyphs.
+    assert tab.controls.button_for("agent.run").text() == "Run Agents"
 
 
 def test_accepting_reviews_moves_them_to_merge_and_done_takes_them_away(services, project, tab):
