@@ -47,6 +47,7 @@ from dplanner.modules.project_editor.named_layouts import Point
 from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W, centred_on
 from dplanner.modules.project_editor.renderers import RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef
+from dplanner.modules.project_editor.stacks import Packing, Stack
 
 # How the current mode reaches the context, so an action's ``state`` can read it as a pure
 # function — which is what makes the Connect toolbar button check itself for free.
@@ -238,6 +239,9 @@ class CanvasDeps:
     # Run an action id against the current context; False when the state gate refused it.
     # A mode never holds the registry, so it cannot run anything the menus could not.
     run_action: Callable[[str], bool]
+    # The stacks among the steps on the canvas — chains drawn as one tall card — read from
+    # the model when a gesture asks, so a cut drag carries each one whole.
+    step_stacks: Callable[[], Sequence[Stack]] = field(default=lambda: ())
 
 
 # -- the stack ---------------------------------------------------------------------------------
@@ -885,7 +889,9 @@ class _CutDragMode(GestureMode):
     Every card is held, both sides, since either may move before the release, and each
     card's seat and size are taken at the press: which side a card is on is its centre
     then, so a drag back past the cut flips cleanly with no state to clear. The band drawn
-    beside the cut is how far the side has travelled.
+    beside the cut is how far the side has travelled. The rule moves blocks, not cards: a
+    stack is packed into its frame, so it goes to the side its frame's centre is on and
+    travels whole.
     """
 
     names: ClassVar[Mapping[Qt.Orientation, str]]
@@ -899,10 +905,12 @@ class _CutDragMode(GestureMode):
         self.cursor = CUT_CURSORS[orientation]
         self._cut = cut
         nodes = deps.canvas.nodes()
-        self._placed: dict[StepId, Point] = {
+        self._cards: dict[StepId, Point] = {
             node.step_id: (node.pos().x(), node.pos().y()) for node in nodes
         }
-        self._sizes = {node.step_id: node.size() for node in nodes}
+        self._packing = Packing(deps.step_stacks(), {node.step_id: node.size() for node in nodes})
+        self._placed = self._packing.blocks(self._cards)
+        self._sizes = self._packing.sizes
         self._moved: dict[StepId, Point] = {}
         self._travel = 0.0
 
@@ -915,7 +923,7 @@ class _CutDragMode(GestureMode):
         raise NotImplementedError
 
     def held(self) -> set[StepId]:
-        return set(self._placed)
+        return set(self._cards)
 
     def restore(self) -> None:
         self._moved, self._travel = {}, 0.0
@@ -938,15 +946,17 @@ class _CutDragMode(GestureMode):
 
     def mouse_release(self, event: CanvasEvent) -> bool:
         if self._moved:
-            self.report([(step_id, x, y) for step_id, (x, y) in self._moved.items()])
+            moved = self._packing.unfold(self._moved)
+            self.report([(step_id, x, y) for step_id, (x, y) in moved.items()])
         self.pop()
         return True
 
     def _place(self) -> None:
-        for step_id, seat in self._placed.items():
+        moved = self._packing.unfold(self._moved)
+        for step_id, seat in self._cards.items():
             node = self.deps.canvas.node(step_id)
             if node is not None:
-                node.setPos(QPointF(*self._moved.get(step_id, seat)))
+                node.setPos(QPointF(*moved.get(step_id, seat)))
 
     def _aim(self) -> None:
         self.deps.canvas.aim_outline(

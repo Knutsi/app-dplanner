@@ -7,11 +7,14 @@ from tests.old_canvas import PLAN, SEATS, old_export, plant
 
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.project_editor.positions import (
+    DATA_FORMAT,
     MODULE_ID,
     NODE_H,
     NODE_W,
     node_size,
     read_position,
+    write_member,
+    write_position,
 )
 
 
@@ -182,6 +185,111 @@ def test_tidy_resolves_an_overlap_and_is_idempotent(cli, cli_library):
     )
 
 
+# -- a stack --------------------------------------------------------------------------------------
+
+
+def stack_on_disk(library_path, project_title, titles, stack_id="s1", seat=None):
+    """Membership written the way S17's verbs will: the key on each member, the seat (if
+    any) on the first."""
+    store = LibraryStore(library_path)
+    project = next(p for p in store.load().projects if p.title == project_title)
+    ids = [next(step.id for step in project.steps if step.title == t) for t in titles]
+    first = write_position(*seat, stack=stack_id) if seat else write_member(stack_id)
+    store.set_module_data(ids[0], MODULE_ID, first)
+    for step_id in ids[1:]:
+        store.set_module_data(step_id, MODULE_ID, write_member(stack_id))
+    store.flush({(step_id, "module_data") for step_id in ids})
+    store.close()
+    return ids
+
+
+@pytest.fixture
+def stacked(cli, cli_library):
+    """Kick-off → One → Two → Three → Wrap-up (S1…S5) in a project of their own, with One,
+    Two and Three stacked and nothing placed by hand."""
+    cli("project", "create", "Stacks")
+    for title in ("Kick-off", "One", "Two", "Three", "Wrap-up"):
+        cli("step", "add", "Stacks", title)
+    for waiter, on in (("One", "Kick-off"), ("Two", "One"), ("Three", "Two"), ("Wrap-up", "Three")):
+        cli("step", "link", waiter, on)
+    return stack_on_disk(cli_library, "Stacks", ["One", "Two", "Three"])
+
+
+def column_of(picture, *keys):
+    """The line and column each key starts at on the map."""
+    lines = picture.splitlines()
+    return [
+        next((row, line.index(key)) for row, line in enumerate(lines) if key in line.split())
+        for key in keys
+    ]
+
+
+def test_show_names_a_stack_and_counts_it_as_one_card(cli, stacked):
+    said = cli("layout", "show", "Stacks")
+    assert "5 steps in 3 columns x 2 rows" in said
+    assert "  2  x 340..592  [S2 S3 S4]" in said
+    assert said.rstrip().endswith("stacks:\n  s1  frame 340,40 to 592,340  S2 S3 S4")
+
+    data = json.loads(cli("layout", "show", "Stacks", "--json"))
+    assert data["stacks"][0]["id"] == "s1" and data["stacks"][0]["steps"] == stacked
+    assert [row["stack"] for row in data["steps"]] == [None, "s1", "s1", "s1", None]
+    assert [row["wave"] for row in data["steps"]] == [1, 2, 2, 2, 3]
+    assert data["columns"]["lanes"][1]["steps"] == stacked
+    assert data["overlaps"] == []
+
+
+def test_the_map_draws_a_stack_as_a_column_a_row_per_member(cli, cli_library, stacked):
+    picture = cli("layout", "show", "Stacks", "--map")
+    (row, at), *rest = column_of(picture, "S2", "S3", "S4")
+    assert rest == [(row + 1, at), (row + 2, at)]
+    # The flow centres Kick-off and Wrap-up on the stack: drawn beside its middle, not under it.
+    assert [line for line, _at in column_of(picture, "S1", "S5")] == [row + 1, row + 1]
+
+    stack_on_disk(cli_library, "Stacks", ["Kick-off", "One", "Two", "Three", "Wrap-up"], "s2")
+    picture = cli("layout", "show", "Stacks", "--map")
+    assert [line.split() for line in picture.splitlines()[:5]] == [
+        ["S1"],
+        ["S2"],
+        ["S3"],
+        ["S4"],
+        ["S5"],
+    ]
+
+
+def test_shift_carries_a_stack_whole_by_its_frame(cli, cli_library, stacked):
+    # A cut through the stack's column, left of its frame's centre: the stack goes with the
+    # far side, first member and all.
+    said = cli("layout", "shift", "Stacks", "--x", "400", "--by", "120")
+    assert "Shifted 4 steps right by 120: S2 S3 S4 S5" in said
+    steps = {step.title: step for step in reload(cli_library).projects[-1].steps}
+    assert read_position(steps["One"]) == (476.0, 56.0)
+    assert read_position(steps["Two"]) is None and read_position(steps["Three"]) is None
+
+    said = cli("layout", "shift", "Stacks", "--x", "0", "--by", "80", "--steps", "S3")
+    assert "Shifted 3 steps right by 80: S2 S3 S4" in said
+
+
+def test_stack_list_names_each_stack_and_what_breaks_one(cli, stacked):
+    assert cli("stack", "list", "Stacks").strip() == "s1  S2 S3 S4"
+    data = json.loads(cli("stack", "list", "Stacks", "--json"))
+    assert data["stacks"] == [
+        {
+            "id": "s1",
+            "steps": [
+                {"id": step_id, "key": key, "title": title}
+                for step_id, key, title in zip(
+                    stacked, ("S2", "S3", "S4"), ("One", "Two", "Three"), strict=True
+                )
+            ],
+            "broken": None,
+        }
+    ]
+    cli("step", "unlink", "Two", "One")
+    said = cli("stack", "list", "Stacks").strip()
+    assert said == "s1  S2 S3 S4 — broken: S3 does not wait on S2"
+    assert cli("stack", "list", "Discovery").strip() == "no stacks"
+
+
 # -- a project saved with regions ----------------------------------------------------------------
 
 
@@ -201,9 +309,11 @@ def assert_seated(steps, seats):
 
 def assert_regionless(project, directory):
     entry = project.module_data[MODULE_ID]
-    assert entry["format"] == 2
+    assert entry["format"] == DATA_FORMAT.version
     assert set(entry["layouts"]) == {"Plan", "Earlier"}
-    assert all(step.module_data[MODULE_ID]["format"] == 2 for step in project.steps)
+    assert all(
+        step.module_data[MODULE_ID]["format"] == DATA_FORMAT.version for step in project.steps
+    )
     for written in directory.rglob(f"{MODULE_ID}.json"):
         assert "regions" not in written.read_text(), written
 
@@ -222,7 +332,16 @@ def test_an_old_project_is_measured_and_mapped(cli, old):
         (320.0, 48.0, 264.0),
         (640.0, 56.0, NODE_W),
     ]
-    assert set(data) == {"project", "steps", "bounds", "waves", "overlaps", "columns", "rows"}
+    assert set(data) == {
+        "project",
+        "steps",
+        "bounds",
+        "waves",
+        "overlaps",
+        "columns",
+        "rows",
+        "stacks",
+    }
     assert cli("layout", "show", "Discovery", "--map").splitlines()[0].split() == [
         "S1",
         "S2",

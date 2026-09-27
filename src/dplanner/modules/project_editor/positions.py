@@ -1,4 +1,4 @@
-"""Where a step's node sits on the canvas, and how big it is.
+"""Where a step's node sits on the canvas, how big it is, and which stack it stands in.
 
 This is the first module data in DPlanner that is **not an aspect**, and the distinction is
 worth keeping sharp. An aspect is a fact about the work — an estimate, a ticket — and it
@@ -14,6 +14,12 @@ dragged wider or taller keeps ``w`` and ``h`` beside its ``x`` and ``y``; every 
 is :data:`NODE_W` by :data:`NODE_H`, and nothing is written to say so. A size that comes
 back to the default drops its keys again, so a project of untouched cards never learns the
 keys exist (``FORMAT.md``'s absence rule).
+
+**A stack member says which stack it stands in, and only the first stores a seat.** A step
+in a stack keeps ``"stack": "<id>"`` in the same entry; the first member's ``x`` and ``y``
+are the stack's, and the others keep no seat of their own — the column derives theirs
+(``stacks.py``, and ``ARCHITECTURE.md``'s *A stack is presentation over a chain*). Every
+writer here carries the key, since a write rebuilds the whole entry.
 
 **Snapping is the gesture's, never the write's.** What reaches disk is rounded to a whole
 unit — short JSON, and a float — and lands on :data:`GRID` only because the canvas snapped
@@ -55,7 +61,16 @@ def _drop_regions(data: dict[str, Any]) -> dict[str, Any]:
     return kept
 
 
-DATA_FORMAT = ModuleDataFormat(MODULE_ID, version=2, migrations=(_drop_regions,))
+def _stack_key(data: dict[str, Any]) -> dict[str, Any]:
+    """Format 2 → 3: nothing changes. Format 3 is a stack member's ``"stack"`` key, which a
+    format-2 writer drops from any card it moves, because it rebuilds the entry from the
+    seat and the size — so the number changes to say so (``FORMAT.md``'s rule)."""
+    return data
+
+
+DATA_FORMAT = ModuleDataFormat(MODULE_ID, version=3, migrations=(_drop_regions, _stack_key))
+# The key a stack member's entry names its stack under.
+STACK_KEY = "stack"
 
 # The canvas's snap pitch: a drag, a resize or a placement lands on it while Snap to Grid is
 # on, which keeps a hand-arranged graph tidy. The ground's dots and lines are drawn on a
@@ -124,19 +139,40 @@ def node_size(step: Step) -> Size:
     return read_size(step) or (NODE_W, NODE_H)
 
 
-def write_position(x: float, y: float, size: Size | None = None) -> dict[str, Any]:
-    """The entry to store: the position, and the size when it is not the default.
+def read_stack(step: Step) -> str:
+    """The id of the stack this step stands in, or "" for none."""
+    entry = step.module_data.get(MODULE_ID)
+    stack = entry.get(STACK_KEY) if entry else None
+    return stack if isinstance(stack, str) else ""
+
+
+def write_position(
+    x: float, y: float, size: Size | None = None, *, stack: str = ""
+) -> dict[str, Any]:
+    """The entry to store: the position, the size when it is not the default, and the stack
+    the card stands first in, if any.
 
     Coerced to ``float`` like every number that reaches disk: an int would write as ``8``
     where a reloaded float writes as ``8.0``, making the file's bytes depend on whether the
     workspace had been reopened. ``FORMAT.md`` states the rule; ``estimation`` is the
-    other place that owes it. A caller moving a card hands its current size back in, so
-    a move never shrinks a card somebody made larger.
+    other place that owes it. A caller moving a card hands its current size and stack back
+    in, so a move never shrinks a card somebody made larger or takes it out of its stack.
     """
-    entry = {"x": snapped(x), "y": snapped(y)}
+    return _entry({"x": snapped(x), "y": snapped(y)}, size, stack)
+
+
+def write_member(stack: str, size: Size | None = None) -> dict[str, Any]:
+    """The entry of a stack member below the first: its stack and its size, and no seat —
+    the column derives it from the first member's."""
+    return _entry({}, size, stack)
+
+
+def _entry(entry: dict[str, Any], size: Size | None, stack: str) -> dict[str, Any]:
     if size is not None and size != (NODE_W, NODE_H):
         entry["w"] = max(MIN_NODE_W, snapped(size[0]))
         entry["h"] = max(MIN_NODE_H, snapped(size[1]))
+    if stack:
+        entry[STACK_KEY] = stack
     return stamped(entry, DATA_FORMAT.version)
 
 

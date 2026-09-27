@@ -35,7 +35,6 @@ from dplanner.core.signals import Signal as CoreSignal
 from dplanner.domain.commands import (
     Command,
     CompositeCommand,
-    SetModuleDataCommand,
     redirect_edges_command,
 )
 from dplanner.domain.model import (
@@ -104,17 +103,12 @@ from dplanner.modules.project_editor.modes import (
     RedirectMode,
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
+from dplanner.modules.project_editor.named_layouts import position_commands, resize_command
 from dplanner.modules.project_editor.placement import below, positions
-from dplanner.modules.project_editor.positions import (
-    DATA_FORMAT,
-    centred_on,
-    node_size,
-    read_size,
-    write_position,
-)
-from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
+from dplanner.modules.project_editor.positions import DATA_FORMAT, centred_on, node_size
 from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
 from dplanner.modules.project_editor.selection import EDGE_KIND, CanvasSelection, EdgeRef
+from dplanner.modules.project_editor.stacks import read_stacks
 from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
 
 MODULE_ID = "project_editor"
@@ -215,6 +209,7 @@ class ProjectActivity(EntityActivity):
             base_mode=IdleMode,
             status=lambda text: deps.status.show_status(text, 4000),
             run_action=self.run_action,
+            step_stacks=lambda: read_stacks(self._project().steps),
         )
         self._view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._view.customContextMenuRequested.connect(self._on_context_menu)
@@ -500,14 +495,6 @@ class ProjectActivity(EntityActivity):
         nodes = (*steps, *edges)
         self.publish_selection(nodes)
 
-    def _move_command(self, step_id: StepId, x: float, y: float) -> Command:
-        # The card's size rides along: a move rewrites the whole entry, and must not shrink
-        # a card somebody made larger.
-        size = read_size(self._product.step(step_id))
-        return SetModuleDataCommand(
-            step_id, POSITION_KEY, write_position(x, y, size), view_origin=self, label="Move Step"
-        )
-
     def _snapped(self, x: float, y: float) -> tuple[float, float]:
         """A seat as the user's Snap to Grid setting would land it — for the gestures that
         place a card at a point rather than dragging one: a double-click, New, a paste, a
@@ -516,18 +503,15 @@ class ProjectActivity(EntityActivity):
 
     def _on_node_resized(self, step_id: StepId, x: float, y: float, w: float, h: float) -> None:
         self._deps.undo.push(
-            SetModuleDataCommand(
-                step_id,
-                POSITION_KEY,
-                write_position(x, y, (w, h)),
-                view_origin=self,
-                label="Resize Step",
-            )
+            resize_command(self._project(), step_id, (x, y), (w, h), view_origin=self)
         )
         self._deps.undo.break_coalescing()
 
     def _on_nodes_moved(self, moved: list[tuple[StepId, float, float]]) -> None:
-        commands = [self._move_command(step_id, x, y) for step_id, x, y in moved]
+        # The writes carry each card's size and stack — a move rewrites the whole entry — and
+        # a stack member's seat moves its stack, whose seat is its first member's.
+        seats = {step_id: (x, y) for step_id, x, y in moved}
+        commands = position_commands(self._project(), seats, "Move Step", view_origin=self)
         if not commands:
             return
         if len(commands) == 1:

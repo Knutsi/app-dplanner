@@ -425,11 +425,22 @@ absence rule again, so a run over two hundred tests writes two hundred ids and n
 beside each step — `{"x": 40.0, "y": 160.0}`, plus `"w"` and `"h"` only for a card somebody
 resized — and the named layouts beside the project (`{"layouts": {"<name>": {"steps":
 {"<step id>": [x, y]}}}}`, coordinates as whole-unit floats: a canvas gesture snaps to the
-grid, a write never does). It is format 2: format 1 also kept titled rectangles beside the
-project (`"regions": [...]`) and each layout's rects for them (`"regions": {"<id>": [x, y,
-w, h]}`), and regions were retired, so the one migration drops both on read — a project
-saved with them opens as it was, minus the rectangles (`ARCHITECTURE.md`'s *Regions were
-retired*). A step's entry went to 2 unchanged. `feature` is
+grid, a write never does). **A step in a stack** — a chain the canvas draws as one tall
+card — adds `"stack": "<id>"`, an opaque id minted per stack and never a step id; the
+*first* member keeps the seat, which is the stack's, and every other member stores none
+(`{"stack": "<id>"}`, plus a size if its card was resized), because its seat is derived
+from the column. The order is never stored: it is read from the members' `requires` chain
+(`ARCHITECTURE.md`'s *A stack is presentation over a chain*). It is format 3. Format 1
+also kept titled rectangles beside the project (`"regions": [...]`) and each layout's rects
+for them (`"regions": {"<id>": [x, y, w, h]}`), and regions were retired, so the first
+migration drops both on read — a project saved with them opens as it was, minus the
+rectangles (`ARCHITECTURE.md`'s *Regions were retired*). Format 3 is the `stack` key, and
+its migration changes nothing: the number moved because a format-2 writer rebuilds the
+entry from the seat and the size and so drops the key from any card it moves — the rule
+below. As with the library's format 4, no reader checks the stamp, so an older build still
+does exactly that: it draws a stack's members where the ambient layout puts them, and a
+card it moves leaves its stack, which this build reads as a shorter stack or a broken one
+— never a lost step. A step's entry went to 2 and to 3 unchanged. `feature` is
 the fifth: beside a step, `{"on": true, "cites": [{"document": "auth-spec", "quote": "…",
 "page": 4, "digest": "<sha16>"}]}` (format 3; formats 1 and 2 kept a catalogue beside the
 *project* and only the record's id beside the step, collapsed onto the steps at open —

@@ -36,7 +36,7 @@ from dplanner.modules.project_editor.modes import (
     REDIRECT_FROM,
     REDIRECT_TO,
 )
-from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped
+from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped, write_member
 from dplanner.modules.project_editor.renderers import (
     BADGE_INSET,
     ICON_D,
@@ -2375,6 +2375,62 @@ def test_the_band_beside_the_cut_is_the_room_being_made(app, services, project, 
     shown = scene(tab)._outline.path().boundingRect()
     assert abs(shown.right() - cut.x()) <= 1.0 and abs(shown.width() - 80.0) <= 1.0
     press_key(app, tab, Qt.Key.Key_Escape)
+
+
+def stack_steps(services, *steps):
+    """Membership as S17's verbs will write it, with no seat: the stack stands where the
+    ambient layout puts it."""
+    for step in steps:
+        services.undo.push(SetModuleDataCommand(step.id, "project_editor", write_member("s1")))
+
+
+def test_a_stack_is_drawn_as_a_column_and_moves_through_any_member(services, project, tab):
+    _first, second, third = chain(services, project)
+    stack_steps(services, second, third)
+    top = body_of(tab, second.id).topLeft()
+    assert body_of(tab, third.id).topLeft() == top + QPointF(0.0, 96.0)
+
+    scene(tab).nodes_moved.emit([(third.id, 600.0, 400.0)])
+    assert services.undo.undo_text() == "Move Step"
+    head = placement_of(services, second.id)
+    assert (head["x"], head["y"], head["stack"]) == (600.0, 400.0 - 96.0, "s1")
+    assert "x" not in placement_of(services, third.id)
+    assert body_of(tab, third.id).topLeft() == QPointF(600.0, 400.0)
+
+
+def test_a_divide_through_a_stack_carries_it_whole(app, services, project, tab):
+    """A level cut through a stack: the stack goes to the side its frame's centre is on,
+    whole, in the preview and on release alike."""
+    first, second, third = chain(services, project)
+    stack_steps(services, first, second, third)
+    seats = seats_of(tab, first, second, third)
+    below_second = (body_of(tab, second.id).bottom() + body_of(tab, third.id).top()) / 2
+    above_second = (body_of(tab, first.id).bottom() + body_of(tab, second.id).top()) / 2
+
+    # Below the frame's centre: the stack is on the near side, and nothing lies past the cut.
+    services.actions.run("canvas.divide_horizontal", services.context.current())
+    cut = QPointF(1200.0, below_second)
+    send(app, tab, QEvent.Type.MouseButtonPress, cut)
+    send(app, tab, QEvent.Type.MouseMove, cut + QPointF(0.0, 80.0))
+    assert seats_of(tab, first, second, third) == seats
+    send(
+        app, tab, QEvent.Type.MouseButtonRelease, cut + QPointF(0.0, 80.0), Qt.MouseButton.NoButton
+    )
+    assert all("x" not in placement_of(services, s.id) for s in (first, second, third))
+
+    # Above it: the stack lies past the cut, and all of it goes.
+    services.actions.run("canvas.divide_horizontal", services.context.current())
+    cut = QPointF(1200.0, above_second)
+    send(app, tab, QEvent.Type.MouseButtonPress, cut)
+    send(app, tab, QEvent.Type.MouseMove, cut + QPointF(0.0, 80.0))
+    moved = {s: seat + QPointF(0.0, 80.0) for s, seat in seats.items()}
+    assert seats_of(tab, first, second, third) == moved
+    send(
+        app, tab, QEvent.Type.MouseButtonRelease, cut + QPointF(0.0, 80.0), Qt.MouseButton.NoButton
+    )
+    assert placement_of(services, first.id)["y"] == seats[first.id].y() + 80.0
+    assert "x" not in placement_of(services, second.id)
+    assert services.undo.undo_text() == "Divide Graph"
 
 
 def test_a_divide_entry_is_checked_only_while_its_own_mode_is_on(services, project, tab):

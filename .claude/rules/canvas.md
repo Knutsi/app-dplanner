@@ -56,7 +56,8 @@ paths:
   The release is `graph_contracted` and one `Contract Graph` command — `divide_command`
   under that label. **Both drags are one `_CutDragMode`** whose `follow` is the Qt-free rule
   the `layout` verb runs (`shift` for Divide, `contract` here), so the canvas never carries a
-  second copy of either. `ARCHITECTURE.md`'s *Contract closes a gap and stops one short* has
+  second copy of either; it runs them over `stacks.Packing`'s blocks, so a stack travels
+  whole. `ARCHITECTURE.md`'s *Contract closes a gap and stops one short* has
   the reasoning.
 - **Redirect is a mode, and it moves one end of a bundle.** Pick arrows, run *Graph ▸
   Redirect ▸ To Step* (`E`) or *From Step* (`Shift+E`), click a step: every picked link
@@ -222,6 +223,26 @@ paths:
   from another writer since the open has not met the migration pass, and stamping it format
   2 as it stood would keep what the pass drops. `tests/old_canvas.py` is the old project
   every proof of this opens. `ARCHITECTURE.md`'s *Regions were retired* has the reasoning.
+- **A stack is one tall card to everything that reads positions.** Canvas data over a real
+  `requires` chain, never a model object (`project_editor/stacks.py`, N3): every member's
+  entry says `"stack": "<id>"`, the **first member's seat is the stack's** and the others
+  store none, and the order is read from the chain. `positions()` derives the column — the
+  members left-aligned under the first, `MEMBER_GAP` apart rounded onto the grid, inside
+  `FRAME_PAD` of frame — and ignores a seat a member below the first stored. **Every
+  arrangement goes through one fold**: `fold(project)` is the graph with each stack one block
+  under its first member's id, sized to its frame, waiting on what the first member waits
+  on and waited on by whatever waited on any member; `Packing` is its geometry alone (card
+  seats → block seats → card seats). The five sorts and tidy fold inside themselves, so no
+  caller changes; `layout show` measures the folded picture (N39: a stack stands in its first
+  member's wave); `boxes()`, and so `free_spot`, see a frame; and `layout shift`/`contract`
+  and the canvas's cut drag hand `geometry.shift`/`contract` the packing's blocks — a cut
+  through a stack sends it to the side its frame's centre is on, whole. **Every write that
+  moves a card goes through `position_commands`**, where the first member wins and a
+  member's seat moves its stack; a resize is `resize_command`, and a member below the first
+  writes only its size. A paste mints a new stack for a stack copied whole and drops the key
+  from part of one. Add a reader of positions through the fold, never beside it — a second
+  copy of the column is one that can split a stack. `ARCHITECTURE.md`'s *A stack is
+  presentation over a chain* has the reasoning.
 - **The canvas's spatial gestures exist as verbs, and geometry is derived on every read.**
   `dplanner layout show` (`--map`) measures the graph from the stored positions and
   `positions.node_size` through `project_editor/geometry.py` and stores nothing — the waves,

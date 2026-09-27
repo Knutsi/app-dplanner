@@ -26,6 +26,7 @@ from math import cos, pi, sin
 from dplanner.cli.report.parts import (
     AMOUNT_PLOTS,
     Chart,
+    Frame,
     Graph,
     Node,
     Plot,
@@ -133,16 +134,21 @@ LINE_H = 17.0
 STAT_FONT = 11.0
 PILL_H = 14.0
 GRAPH_MARGIN = 48.0
+FRAME_RADIUS = 12.0
 EDGE_REACH_MIN = 40.0
 HEAD = 8.0
 
 
 def graph_bounds(graph: Graph) -> tuple[float, float, float, float]:
-    """The drawing's viewBox — every card, with a margin — as x, y, width, height."""
-    x0 = min(node.x for node in graph.nodes) - GRAPH_MARGIN
-    y0 = min(node.y for node in graph.nodes) - GRAPH_MARGIN
-    x1 = max(node.x + node.w for node in graph.nodes) + GRAPH_MARGIN
-    y1 = max(node.y + node.h for node in graph.nodes) + GRAPH_MARGIN
+    """The drawing's viewBox — every card and every stack's frame, with a margin — as x, y,
+    width, height."""
+    boxes = [(n.x, n.y, n.w, n.h) for n in graph.nodes] + [
+        (f.x, f.y, f.w, f.h) for f in graph.frames
+    ]
+    x0 = min(x for x, _y, _w, _h in boxes) - GRAPH_MARGIN
+    y0 = min(y for _x, y, _w, _h in boxes) - GRAPH_MARGIN
+    x1 = max(x + w for x, _y, w, _h in boxes) + GRAPH_MARGIN
+    y1 = max(y + h for _x, y, _w, h in boxes) + GRAPH_MARGIN
     return x0, y0, x1 - x0, y1 - y0
 
 
@@ -158,6 +164,8 @@ def graph_svg(graph: Graph, colors: Colors) -> str:
         f'width="{_n(width)}" height="{_n(height)}" font-family="{FONT}" '
         f'font-size="{_n(NODE_FONT)}">'
     ]
+    for frame in graph.frames:
+        out.append(_frame(frame, colors))
     for edge in graph.edges:
         source, target = by_id.get(edge.source), by_id.get(edge.target)
         if source is None or target is None:
@@ -167,6 +175,15 @@ def graph_svg(graph: Graph, colors: Colors) -> str:
         out.append(_card(node, colors))
     out.append("</svg>")
     return "".join(out)
+
+
+def _frame(frame: Frame, colors: Colors) -> str:
+    """A stack's frame: a quiet wash behind its column of cards, edged like a card."""
+    return (
+        f'<rect class="frame" x="{_n(frame.x)}" y="{_n(frame.y)}" width="{_n(frame.w)}" '
+        f'height="{_n(frame.h)}" rx="{_n(FRAME_RADIUS)}" fill="{colors.ink}" '
+        f'fill-opacity="0.05" stroke="{colors.border}" stroke-width="1"/>'
+    )
 
 
 def _edge(source: Node, target: Node, kind: str, colors: Colors) -> str:

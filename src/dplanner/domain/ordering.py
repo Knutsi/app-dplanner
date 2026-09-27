@@ -30,19 +30,22 @@ from dplanner.domain.scope import cone
 def depths(library: Library, project: Project) -> dict[StepId, int]:
     """How many ``requires`` edges deep each step is — the length of its longest chain.
 
-    Cycles cannot occur: the model refuses to create one, so the walk always terminates.
-    An edge pointing at a step outside this project cannot occur either, for the same reason.
+    The edges are read off the steps this project holds, never looked up in the library, so
+    a project built as a view of another — the graph editor folding a stack into one block —
+    is measured as itself. The model refuses to create a cycle, but a hand-edited file or
+    such a view can hold one, so the walk guards against it and places the step it closes
+    at depth zero. An edge to a step outside the project is skipped.
     """
     known: dict[StepId, int] = {}
-    ids = {step.id for step in project.steps}  # Once per walk: Project.step() is a scan.
+    by_id = {step.id: step for step in project.steps}  # Once per walk: Project.step() is a scan.
 
     def depth_of(step_id: StepId, seen: frozenset[StepId]) -> int:
         if step_id in known:
             return known[step_id]
-        if step_id in seen:  # Defensive: a hand-edited file could still contain one.
+        if step_id in seen:
             return 0
-        waiting = library.step(step_id).edges.get("requires", [])
-        resolved = [t for t in waiting if t in ids]
+        waiting = by_id[step_id].edges.get("requires", [])
+        resolved = [t for t in waiting if t in by_id]
 
         found = 0 if not resolved else 1 + max(depth_of(t, seen | {step_id}) for t in resolved)
         known[step_id] = found

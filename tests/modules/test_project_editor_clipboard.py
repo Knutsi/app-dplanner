@@ -17,8 +17,17 @@ from dplanner.modules.project_editor.clipboard import (
     titles,
     to_json,
 )
-from dplanner.modules.project_editor.placement import below
-from dplanner.modules.project_editor.positions import read_position, write_position
+from dplanner.modules.project_editor.placement import below, positions
+from dplanner.modules.project_editor.positions import (
+    NODE_H,
+    NODE_W,
+    read_position,
+    read_stack,
+    write_member,
+    write_position,
+)
+from dplanner.modules.project_editor.sorts import H_GAP, V_GAP
+from dplanner.modules.project_editor.stacks import frame, read_stacks
 
 
 def no_files(node_id, _module_id):
@@ -202,6 +211,58 @@ def test_a_policy_sees_the_clones_and_the_target_project_before_anything_exists(
 def test_pasting_nothing_is_refused(library):
     with pytest.raises(ValueError):
         paste(library, library.projects[0].id, [], anchor=None)
+
+
+# -- a stack ---------------------------------------------------------------------------------
+
+
+def stack_all(library):
+    """The three steps as one stack, seated at 40,40 — membership written directly."""
+    first, second, third = steps_of(library)
+    library.set_module_data(first.id, "project_editor", write_position(40.0, 40.0, stack="s1"))
+    library.set_module_data(second.id, "project_editor", write_member("s1"))
+    library.set_module_data(third.id, "project_editor", write_member("s1"))
+    [found] = read_stacks(steps_of(library))
+    return frame(found, (40.0, 40.0), lambda _m: (NODE_W, NODE_H))
+
+
+def test_a_whole_stack_pastes_as_a_new_stack_below_its_frame(library):
+    box = stack_all(library)
+    project = library.projects[0]
+    held = clip(library, no_files, (), [s.id for s in reversed(steps_of(library))])
+    command, clones = paste(library, project.id, held, anchor=None)
+    command.redo(library)
+
+    old, new = read_stacks(project.steps)
+    assert old.id == "s1" and new.id != "s1"
+    assert set(new.members) == {clone.id for clone in clones} and not new.broken
+    head = library.step(new.head)
+    assert read_position(head) == (40.0, 40.0 + box[3] + V_GAP)
+    assert all(read_position(library.step(m)) is None for m in new.members[1:])
+    placed = positions(library, project)
+    assert placed[new.members[2]] == (40.0, placed[new.head][1] + 2 * 96.0)
+
+
+def test_part_of_a_stack_pastes_as_plain_steps_beside_its_frame(library):
+    box = stack_all(library)
+    project = library.projects[0]
+    second = steps_of(library)[1]
+    held = clip(library, no_files, (), [second.id])
+    assert held[0].frame == box
+    command, [copy] = paste(library, project.id, held, anchor=None)
+    command.redo(library)
+
+    assert read_stack(copy) == ""
+    assert read_position(copy) == (box[0] + box[2] + H_GAP, 40.0 + 96.0)
+    assert [found.id for found in read_stacks(project.steps)] == ["s1"]
+
+
+def test_a_clips_frame_round_trips_and_an_older_payload_has_none(library):
+    stack_all(library)
+    held = clip(library, no_files, (), [steps_of(library)[0].id])
+    assert from_json(to_json(held))[0].frame == held[0].frame
+    [older] = from_json(b'{"steps": [{"id": "a", "title": "A", "x": 1, "y": 2}]}')
+    assert older.frame is None
 
 
 # -- the two policies the composition root wires ----------------------------------------------

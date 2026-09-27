@@ -2097,19 +2097,78 @@ prints is the number a tidy acts on. One number to know: the column pitch, 300, 
 multiple of the grid, 8, so a tidy of a flow layout moves alternate columns by four
 points and nothing else — the fixed point of a sorted graph is the sorted graph snapped.
 
+### A stack is presentation over a chain
+
+A stack is the answer to a line of steps that keeps growing while somebody iterates —
+task → task → task, spreading right across the canvas, and a link to break and remake for
+every step put in the middle. The canvas draws such a line as one tall card: its members in
+a column inside a frame. **What it is in storage was the decision**, and two shapes were
+weighed (N3 in *DPlanner changes 2*).
+
+**The one declined was a stack in the model**: a node of its own beside steps, holding its
+members, carrying the links in and out. It reads naturally, and it would have taught every
+derivation a second kind of node. `ordering`, the schedule, Ready, progression, scope,
+lint, the report, the order view and every CLI verb walk steps and their `requires`; each
+would have had to learn that an edge can end on a stack and what that means for a wave, a
+finish date or a frontier — and a stack says nothing about the work that the chain under it
+does not already say. **The one chosen is canvas data over a real chain.** Each member's
+`project_editor` entry carries `"stack": "<id>"`, the order is the members' own `requires`,
+and nothing below the graph editor learns stacks exist: the schedule of a stacked plan is
+the schedule of the same plan unstacked, because it is the same graph. The price is that
+"one in, one out" is a rule someone has to keep rather than a shape the model has, and a
+stack broken from outside — a merge, a hand edit — is possible; it is read with its gaps
+(`Stack.gaps`), drawn with them, and named rather than repaired.
+
+**The order is derived, never stored.** A list of members would be a second copy of the
+chain, and the CLI is what catches a second copy out: `dplanner step link` changes a graph
+with no window running to notice. `stacks.chain` reads the direct links among the members —
+runs from each member nothing among them precedes, then from whatever is left — so every
+member lands somewhere, and a gap is where one run meets the next.
+
+**The seat is the first member's, and the others store none.** Moving a stack is then a
+one-file diff, as moving a card is, and there is no project-level map of stacks for two
+writers to merge. A member's seat is derived — the column under the first, `MEMBER_GAP`
+apart and rounded up onto the grid, since the canvas snaps every card it places and a
+default card's 76 plus 16 is not a multiple of 8 — so a member cannot drift out of its
+column, and a seat one of them stored (an older build moved it) is ignored.
+
+**Every reader of positions goes through one fold.** There are a dozen of them — the
+ambient layout, five sorts, tidy, `layout show` and its map, shift, contract, the canvas's
+cut drag, `free_spot`, a named layout, a paste, the report — and each could have learned the
+column for itself, which is a dozen chances to split one. Instead `stacks.fold` hands every
+arrangement a graph in which each stack *is* a card: one block under its first member's id,
+as big as its frame, and `Packing.unfold` turns the arranged blocks back into every card's
+seat. The algorithms did not change a line. A block waits on what the first member waits
+on, and whatever waited on any member waits on the block — so what follows a stack takes
+its depth from the stack as one node, which is what Wave view needs (N39). Only the first
+member's inputs count: a later member's input, which only a broken stack has, would often
+fold the block into a cycle with its own dependents. A broken stack can still fold into
+one, which is why every walk over a graph guards against a cycle.
+The fold needed one change below it: `ordering.depths` reads the edges off the project it is
+handed rather than looking steps up in the library, so a folded project is measured as
+itself. And every write that moves a card goes through `position_commands`, where the first
+member's seat wins and a member's seat moves its stack, because a member cannot be given a
+seat of its own.
+
+**The format moved to 3 for a key that only adds**, by `FORMAT.md`'s own rule: an older
+writer rebuilds the entry from the seat and the size and would destroy `stack`. No reader
+checks the stamp — the library's format 4 made the same trade — so an older build still
+drops it from a card it moves; the number is the record that it does. `canvas.md`'s *A stack
+is one tall card* has the rule.
+
 ### Regions were retired
 
 Regions were titled rectangles painted behind the graph — "Database setup", "Finalize
 release" — kept as a list on the project's `project_editor` entry, snapshotted by every
 named layout beside the steps' seats, and drawn by the canvas, the minimap and the report.
-They are gone, for two reasons that are one. **A stack is to be the canvas's container** —
-canvas data over a real `requires` chain, planned in *DPlanner changes 2* and not built yet —
-and two containers would be two answers to "what belongs together". And **annotation
+They are gone, for two reasons that are one. **A stack is the canvas's container** —
+canvas data over a real `requires` chain (*A stack is presentation over a chain*) — and two
+containers would be two answers to "what belongs together". And **annotation
 nothing structures drifts**: the model never learned a
 region existed, so every sort, tidy, divide and hand-drag left the rectangles where they
 were and the steps somewhere else — `region fit` existed only to re-wrap one after the fact,
-and tidy and the map had already stopped carrying them. A stack will be read from the
-chain it stands on, so it cannot drift from the graph that way.
+and tidy and the map had already stopped carrying them. A stack is read from the chain it
+stands on, so it cannot drift from the graph that way.
 
 **An old project opens exactly as it was, minus the rectangles.** `project_editor`'s data
 format went to 2, and its one migration drops the project entry's `regions` and every

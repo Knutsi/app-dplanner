@@ -6,7 +6,10 @@ the caller's gesture, pushed through the undo stack like any drag. Every sort is
 graph always lands the same way (the ``ordering.py`` convention). And every sort is
 **size-aware** through ``size_for``, which defaults to the card's stored size
 (``positions.node_size``) — so a card somebody dragged larger keeps its room in every
-arrangement without touching an algorithm.
+arrangement without touching an algorithm — and **stack-aware** the same way: it arranges
+the project folded (``stacks.fold``), each stack one tall block under its first member's id,
+and unfolds the result into every card's seat, so no sort can split a stack and none of the
+algorithms below knows one exists.
 
 The gaps are chosen so the default node lands on round pitches: ``NODE_W + H_GAP`` is the
 300-point column pitch, ``NODE_H + V_GAP`` the 120-point row.
@@ -29,6 +32,7 @@ from math import cos, sin, tau
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import depths
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, node_size, snapped
+from dplanner.modules.project_editor.stacks import fold
 
 type Point = tuple[float, float]
 type SizeFor = Callable[[Step], tuple[float, float]]
@@ -61,14 +65,16 @@ def layered_flow(
     library: Library, project: Project, size_for: SizeFor = node_size
 ) -> dict[StepId, Point]:
     """Dependency depth left to right, crossings reduced, columns centred."""
-    return _layered(library, project, size_for, vertical=False)
+    folded = fold(project, size_for)
+    return folded.packing.unfold(_layered(library, folded.project, folded.size_for, vertical=False))
 
 
 def layered_down(
     library: Library, project: Project, size_for: SizeFor = node_size
 ) -> dict[StepId, Point]:
     """The same layering flowing top to bottom."""
-    return _layered(library, project, size_for, vertical=True)
+    folded = fold(project, size_for)
+    return folded.packing.unfold(_layered(library, folded.project, folded.size_for, vertical=True))
 
 
 def _layered(
@@ -147,6 +153,11 @@ def _layered(
 def spine(library: Library, project: Project, size_for: SizeFor = node_size) -> dict[StepId, Point]:
     """The longest dependency chain on a central line, feeder chains branching back-left
     above and below it — the tree fallen on its side."""
+    folded = fold(project, size_for)
+    return folded.packing.unfold(_spine(library, folded.project, folded.size_for))
+
+
+def _spine(library: Library, project: Project, size_for: SizeFor) -> dict[StepId, Point]:
     steps = project.steps
     if not steps:
         return {}
@@ -237,7 +248,24 @@ def timeline(
     default_days: float = 1.0,
 ) -> dict[StepId, Point]:
     """X is when a step can start — after everything it waits on — so the graph reads as a
-    plan in time. Steps that would collide share the moment, not the lane."""
+    plan in time. Steps that would collide share the moment, not the lane. A stack lasts as
+    long as its members together, since its chain runs one after another."""
+    folded = fold(project, size_for)
+    real = {step.id: step for step in project.steps}
+
+    def days(step: Step) -> float:
+        found = days_for(step) if days_for is not None else None
+        return found if found is not None and found > 0 else default_days
+
+    def duration(block: Step) -> float:
+        return sum(days(real[member]) for member in folded.packing.members_of(block.id))
+
+    return folded.packing.unfold(_timeline(folded.project, folded.size_for, duration))
+
+
+def _timeline(
+    project: Project, size_for: SizeFor, duration: Callable[[Step], float]
+) -> dict[StepId, Point]:
     steps = project.steps
     if not steps:
         return {}
@@ -245,18 +273,18 @@ def timeline(
     by_id = {step.id: step for step in steps}
     sizes = {step.id: size_for(step) for step in steps}
     lane_height = max(h for _w, h in sizes.values()) + V_GAP
-
-    def duration(step: Step) -> float:
-        days = days_for(step) if days_for is not None else None
-        return days if days is not None and days > 0 else default_days
-
     earliest: dict[StepId, float] = {}
 
-    def start_of(step: Step) -> float:
+    def start_of(step: Step, seen: frozenset[StepId] = frozenset()) -> float:
         if step.id not in earliest:
-            sources = [by_id[s] for s in step.edges.get("requires", []) if s in by_id]
+            # A step already on the walk closes a cycle — a hand edit, or a broken stack
+            # folded into one — and counts as starting at once, as ``depths`` places it.
+            sources = [
+                by_id[s] for s in step.edges.get("requires", []) if s in by_id and s not in seen
+            ]
             earliest[step.id] = max(
-                (start_of(source) + duration(source) for source in sources), default=0.0
+                (start_of(source, seen | {step.id}) + duration(source) for source in sources),
+                default=0.0,
             )
         return earliest[step.id]
 
@@ -297,7 +325,16 @@ def radial(
     center: StepId | None = None,
 ) -> dict[StepId, Point]:
     """The chosen step at the middle, everything else fanned out on rings by how many
-    links away it is, each branch keeping an angular sector sized to what hangs off it."""
+    links away it is, each branch keeping an angular sector sized to what hangs off it. A
+    member of a stack chosen as the middle puts its whole stack there."""
+    folded = fold(project, size_for)
+    middle = None if center is None else folded.packing.block_of(center)
+    return folded.packing.unfold(_radial(library, folded.project, folded.size_for, middle))
+
+
+def _radial(
+    library: Library, project: Project, size_for: SizeFor, center: StepId | None
+) -> dict[StepId, Point]:
     steps = project.steps
     if not steps:
         return {}
@@ -468,8 +505,17 @@ def tidy(
     origin. Idempotent: a tidied graph tidies to itself, and a sorted one to itself snapped.
 
     ``placed`` is where every step sits now (``placement.positions``); this file cannot
-    import that one, so the caller hands the picture in.
+    import that one, so the caller hands the picture in. A stack is read and tidied as its
+    frame, one tall card, and its members follow.
     """
+    folded = fold(project, size_for)
+    blocks = folded.packing.blocks(placed)
+    return folded.packing.unfold(_tidy(folded.project, blocks, folded.size_for, air))
+
+
+def _tidy(
+    project: Project, placed: dict[StepId, Point], size_for: SizeFor, air: int
+) -> dict[StepId, Point]:
     steps = project.steps
     if not steps:
         return {}

@@ -269,9 +269,21 @@ class Edge:
 
 
 @dataclass(frozen=True)
+class Frame:
+    """A stack's frame behind its cards: a chain of steps the canvas draws as one tall
+    card."""
+
+    x: float
+    y: float
+    w: float
+    h: float
+
+
+@dataclass(frozen=True)
 class Graph:
     nodes: tuple[Node, ...]
     edges: tuple[Edge, ...]
+    frames: tuple[Frame, ...] = ()
 
 
 Part = Figure | Table | Chart | Timeline | Prose | Graph

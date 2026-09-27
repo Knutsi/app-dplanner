@@ -8,7 +8,8 @@ re-running a script should converge, and the window's Save-As prompt covers the 
 eyes and hands on the canvas: the geometry measured on every read and never stored
 (``geometry.py``), the Divide and Contract gestures as verbs building the very command the
 canvas pushes, and the sixth sort (``sorts.tidy``) applied like the other five. None
-reshapes the graph, so none reads the topology first.
+reshapes the graph, so none reads the topology first. ``stack list`` says which chains the
+canvas draws as one tall card (``stacks.py``).
 """
 
 import math
@@ -45,7 +46,7 @@ from dplanner.modules.project_editor.named_layouts import (
     snapshot,
 )
 from dplanner.modules.project_editor.placement import positions
-from dplanner.modules.project_editor.positions import GRID, node_size, snapped
+from dplanner.modules.project_editor.positions import GRID, snapped
 from dplanner.modules.project_editor.sorts import (
     DEFAULT_AIR,
     H_GAP,
@@ -59,6 +60,7 @@ from dplanner.modules.project_editor.sorts import (
     tidy,
     timeline,
 )
+from dplanner.modules.project_editor.stacks import broken_reason, pack, read_stacks
 
 SORT_NAMES = ("flow", "down", "spine", "timeline", "radial")
 TIDY_LABEL = "Tidy Layout"
@@ -167,17 +169,19 @@ def commands(
         project = _arrangeable(context, args)
         axis, cut = _cut(args)
         by = _distance(args.by)
-        placed = positions(context.library, project)
-        sizes = {step.id: node_size(step) for step in project.steps}
+        # The rule moves blocks: a stack goes whole, by its frame, and naming one of its
+        # members names the stack.
+        packing = pack(project)
+        placed = packing.blocks(positions(context.library, project))
         only: set[StepId] | None = None
         if args.steps:
             only = set()
             for needle in args.steps:
                 step = find_step(context.library, needle, context.current)
-                if step.id not in placed:
+                if project.step(step.id) is None:
                     raise CliError(f"step {step.title!r} is not in this project")
-                only.add(step.id)
-        moved = shift(placed, sizes, axis, cut, by, only=only)
+                only.add(packing.block_of(step.id))
+        moved = packing.unfold(shift(placed, packing.sizes, axis, cut, by, only=only))
         if not moved:
             side = "past" if by > 0 else "before"
             raise CliError(f"no step's centre lies {side} {axis}={cut:g}")
@@ -197,18 +201,19 @@ def commands(
         project = _arrangeable(context, args)
         axis, cut = _cut(args)
         by = -math.inf if args.by is None else _distance(args.by)
-        placed = positions(context.library, project)
-        sizes = {step.id: node_size(step) for step in project.steps}
-        done = contract(placed, sizes, axis, cut, by)
+        packing = pack(project)
+        placed = packing.blocks(positions(context.library, project))
+        done = contract(placed, packing.sizes, axis, cut, by)
+        moved = packing.unfold(done.moved)
         keys = _keys(project)
         pair = None if done.stopped is None else [keys[step_id] for step_id in done.stopped]
-        if done.moved:
-            context.apply(divide_command(project, done.moved, label=CONTRACT_LABEL))
-            count = len(done.moved)
+        if moved:
+            context.apply(divide_command(project, moved, label=CONTRACT_LABEL))
+            count = len(moved)
             headline = (
                 f"Contracted {count} step{'s' if count != 1 else ''} "
                 f"{direction(axis, done.by)} by {abs(done.by):g}: "
-                f"{' '.join(keys[step_id] for step_id in done.moved)}"
+                f"{' '.join(keys[step_id] for step_id in moved)}"
                 + (f"; {pair[0]} stops one gap from {pair[1]}" if pair else "")
             )
         elif pair:
@@ -227,7 +232,7 @@ def commands(
             "moved_by": done.by,
             "stopped": None if done.stopped is None else list(done.stopped),
         }
-        _report_moved(context, project, axis, cut, done.moved, headline, said)
+        _report_moved(context, project, axis, cut, moved, headline, said)
         return 0
 
     def _report_moved(
@@ -261,6 +266,28 @@ def commands(
 
     def _keys(project: Project) -> dict[StepId, str]:
         return {step.id: key_of(step) or step.title for step in project.steps}
+
+    def _stack_list(context: CliContext, args: Namespace) -> int:
+        project = find_project(context.library, args.project)
+        keys = _keys(project)
+        titles = {step.id: step.title for step in project.steps}
+        rows, lines = [], []
+        for stack in read_stacks(project.steps):
+            broken = broken_reason(stack, keys.__getitem__)
+            rows.append(
+                {
+                    "id": stack.id,
+                    "steps": [
+                        {"id": member, "key": keys[member], "title": titles[member]}
+                        for member in stack.members
+                    ],
+                    "broken": broken,
+                }
+            )
+            named = " ".join(keys[member] for member in stack.members)
+            lines.append(f"{stack.id[:8]}  {named}" + (f" — broken: {broken}" if broken else ""))
+        context.report({"project": project.id, "stacks": rows}, "\n".join(lines) or "no stacks")
+        return 0
 
     def _tidy(context: CliContext, args: Namespace) -> int:
         project = _arrangeable(context, args)
@@ -395,6 +422,14 @@ def commands(
             configure=_project_and_name,
             run=_delete,
             examples=('dplanner layout delete discovery "release plan"',),
+        ),
+        CliCommand(
+            path=("stack", "list"),
+            summary="The chains the canvas draws as one tall card: each stack's steps in "
+            "chain order, and what breaks one that is no longer a single line.",
+            configure=project_arg,
+            run=_stack_list,
+            examples=("dplanner stack list discovery", "dplanner stack list discovery --json"),
         ),
         CliCommand(
             path=("step", "duplicate"),

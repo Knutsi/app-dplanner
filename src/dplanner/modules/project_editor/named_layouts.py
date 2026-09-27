@@ -26,11 +26,16 @@ from dplanner.domain.model import Library, Project, StepId
 from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import (
     MODULE_ID,
+    Size,
     entry_with,
+    node_size,
     read_size,
+    read_stack,
     snapped,
+    write_member,
     write_position,
 )
+from dplanner.modules.project_editor.stacks import member_seats, read_stacks
 
 LAYOUTS_KEY = "layouts"
 
@@ -93,22 +98,51 @@ def is_current(library: Library, project: Project, name: str) -> bool:
 def position_commands(
     project: Project, placed: dict[StepId, Point], label: str, view_origin: object = None
 ) -> list[Command]:
-    """One position write per step — the shared tail of apply and every auto-sort.
+    """One seat write per card that moves — the shared tail of a drag, apply, every sort, a
+    divide and a contract.
 
-    Each write carries the card's own size: a layout says where a card sits, never how
-    big it is, so applying one — or sorting — leaves a card somebody enlarged as it was.
+    Each write carries the card's own size and its stack: a layout says where a card sits,
+    never how big it is or what it stands in, so applying one — or sorting — leaves a card
+    somebody enlarged as it was and a stack whole. **A stack's seat is its first member's**,
+    so any member's seat moves the stack: the first member's own wins when both are given,
+    and a member below it never gains a seat of its own.
     """
-    sizes = {step.id: read_size(step) for step in project.steps}
+    steps = {step.id: step for step in project.steps}
+    stacks = read_stacks(project.steps)
+    stack_of = {member: stack for stack in stacks for member in stack.members}
+    seats: dict[StepId, Point] = {}
+    for step_id, (x, y) in placed.items():
+        stack = stack_of.get(step_id)
+        if stack is None or step_id == stack.head:
+            seats[step_id] = (x, y)
+        elif stack.head not in seats:
+            _x, dy = member_seats(stack, (0.0, 0.0), lambda m: node_size(steps[m]))[step_id]
+            seats[stack.head] = (x, y - dy)
     return [
         SetModuleDataCommand(
             step_id,
             MODULE_ID,
-            write_position(x, y, sizes.get(step_id)),
+            write_position(x, y, read_size(steps[step_id]), stack=read_stack(steps[step_id])),
             view_origin=view_origin,
             label=label,
         )
-        for step_id, (x, y) in placed.items()
+        for step_id, (x, y) in seats.items()
     ]
+
+
+def resize_command(
+    project: Project, step_id: StepId, seat: Point, size: Size, view_origin: object = None
+) -> Command:
+    """A card made bigger or smaller, as one write. A member below a stack's first keeps no
+    seat — the column derives it — so only its size changes, and its column never shifts
+    under the resize."""
+    step = next(step for step in project.steps if step.id == step_id)
+    stack = read_stack(step)
+    below_first = any(step_id in found.members[1:] for found in read_stacks(project.steps))
+    entry = write_member(stack, size) if below_first else write_position(*seat, size, stack=stack)
+    return SetModuleDataCommand(
+        step_id, MODULE_ID, entry, view_origin=view_origin, label="Resize Step"
+    )
 
 
 def apply_layout_commands(
