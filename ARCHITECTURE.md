@@ -575,24 +575,26 @@ back on returns the session they last had rather than one from whenever they tur
 
 ## Home is where a window starts
 
-A window with no tab open used to show an empty tab bar over nothing, and since the
-Dashboard retired nothing stood in for it. Home does now: a short getting-started guide and
-this library's recent tabs, shown wherever the tabs would be while none is open, and kept as
-the top row of the index and *Go ▸ Home* for when it is wanted beside other tabs. The rules
-are `.claude/rules/shell-ui.md`'s *Home is where a window starts*.
+Since the Dashboard retired, a program that started with no tabs to reopen showed an empty
+tab bar over nothing. It starts on Home now: a short getting-started guide and this
+library's recent tabs, in the `home` tab — kept as the top row of the index and *Go ▸ Home*
+for whenever it is wanted. The rules are `.claude/rules/shell-ui.md`'s *Home is where a
+window starts*.
 
-**A backdrop, not a tab.** The obvious build is a Home tab that opens whenever the last tab
-closes. It would be a phantom: `activities()` would never be empty, so Close All would never
-grey, reopen_tabs would remember it in every session, and every test and verb that asks
-"is anything open?" would get the wrong answer. `TabHost.set_backdrop` instead trades a page
-with the tab groups while the host holds no tab — a `QStackedWidget` over the splitter,
-switched in `_announce`, the one path everything learns through — and the page is the
-window's rather than any tab's. The Home *tab* is the same page class built a second time,
-so there is one page to keep right; each copy follows what it shows for as long as its
-widget lives and lets go on `destroyed`. The Home row in the index is a folder, so a
-surface that spans the whole library — the Control Centre is the first — hangs a row under
-it through `HomeDeps.rows`, a `LeadingRow` the composition root hands over: the Tests
-folder's *All Projects* row, one folder up, and no module edits Home to get there.
+**A tab like any other, opened at the program's start and at no other time.** The first
+build stood Home behind the tabs as a backdrop whenever none was open. The developer's call
+was the simpler one: Home is an ordinary activity, and a blank window is allowed — closing
+the last tab leaves nothing, rather than a page the person just closed coming back. So the
+one automatic open is the program's start: `app.open_at_startup` calls the composition
+root's `start_window` after the build, and it opens Home only when reopen_tabs brought back
+no tab. It lives there rather than in a module because only the entry point knows a start
+from a rebuild — a reload builds through the same modules and must bring back the window the
+person had, blank included — and because the test session is built the same way minus the
+entry point, so the suite's windows start as empty as they always did. The Home row in the
+index is a folder, so a surface that spans the whole library — the Control Centre is the
+first — hangs a row under it through `HomeDeps.rows`, a `LeadingRow` the composition root
+hands over: the Tests folder's *All Projects* row, one folder up, and no module edits Home to
+get there.
 
 **The guide is data, and its buttons are the verbs.** `modules/home/guide.py` is a tuple of
 steps, each a title, a sentence from the README and an **action id**. The page restates each
@@ -604,7 +606,7 @@ them; one that called them directly would skip their gates. A test holds every i
 registry.
 
 **A page that swaps itself away owes the second click.** A recent row reopens its tab on one
-click, which takes Home off screen under the pointer — and Qt decides a double-click by time
+click, which takes the Home tab off screen under the pointer — and Qt decides a double-click by time
 and distance alone, delivering it to whatever widget is there now. A habitual double-click on
 a row therefore landed on the graph that had just opened, where a double-click on empty
 canvas creates a step. `_SecondClickGuard` filters the window's `QWindow`, which sees an
@@ -1725,7 +1727,8 @@ Dashboard as a preview: a tab for every glance at the index. Now the row only se
 project. Every Project verb, *Settings…* among them, acts on it from the menu bar and the
 row's right-click; the Steps row opens the graph; a double-click still folds the row (Qt's
 behaviour, not fought). What shows while no tab is open is the window's to decide, not any
-one project's — and the window decided on Home (*Home is where a window starts*). The rule
+one project's — a blank window, with Home opened only at the program's start (*Home is
+where a window starts*). The rule
 is `.claude/rules/step-panel.md`'s project-level editor bullet and `CLAUDE.md`'s panel
 bullet.
 

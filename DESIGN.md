@@ -68,12 +68,12 @@ styling one surface by name.
 The rules below are derived from what a person actually does here, not from taste. Six
 flows, and what each surface on the way must make unmistakable:
 
-- **A first window → a first project.** The window opens on Home, standing where the tabs
-  would be (`docs/screenshots/f9-home/`): a short guide whose every button is the verb it
-  teaches — *New Project…*, *Open Project…*, *Open Agent in Code…* greyed with *no project is
-  open* until one is picked in the index — beside the tabs this library kept lately, each
+- **A first window → a first project.** A program with no tabs to reopen starts on the Home
+  tab (`docs/screenshots/f9-home/`): a short guide whose every button is the verb it teaches
+  — *New Project…*, *Open Project…*, *Open Agent in Code…* greyed with *no project is open*
+  until one is picked in the index — beside the tabs this library kept lately, each
   reopening with one click, and an empty-state line until there are any. Closing the last
-  tab comes back here; the index's top row and *Go ▸ Home* open it as a tab. Never
+  tab leaves the window blank; the index's top row and *Go ▸ Home* bring Home back. Never
   ambiguous: **which verb each step is** (its own name, on its own button), **why one cannot
   run yet**, and **what a recent row reopens**.
 - **New step → details → run agent.** *New* drops a card and opens Step Details on it with

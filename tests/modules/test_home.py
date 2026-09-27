@@ -1,9 +1,9 @@
-"""Home: where a window starts — the page behind the tabs, the index's first row, the guide
-whose buttons are the verbs, and the tabs kept lately.
+"""Home: where a window starts — a tab the program opens when nothing else is, the index's
+first row, the guide whose buttons are the verbs, and the tabs kept lately.
 
-Driven through a whole session, because what Home promises is about the window around it: a
-fresh window lands on it, closing the last tab comes back to it, and a restart keeps what it
-lists. A reload is what a restart looks like from inside the process.
+Driven through a whole session, because what Home promises is about the window around it:
+the program starts on it, a closed last tab leaves the window blank, and a restart keeps what
+it lists. A reload is what a restart looks like from inside the process.
 """
 
 import pytest
@@ -16,6 +16,7 @@ from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, activity_uri, selection_uri
 from dplanner.framework.list_rows import DETAIL_ROLE
 from dplanner.framework.project_list_segment import LeadingRow
+from dplanner.modules import start_window
 from dplanner.modules.home.guide import GUIDE
 from dplanner.modules.home.module import HomeSegment
 from dplanner.modules.home.page import HOME_KIND, NOTHING_RECENT, GuideRow, HomePage
@@ -33,11 +34,10 @@ def project(services, make_project):
     return project
 
 
-def backdrop(services) -> HomePage:
-    """The page standing behind the tabs — the one Home page that is not a tab's."""
-    tab_pages = {activity.widget for activity in services.tabs.activities()}
-    pages: list[HomePage] = services.tabs.findChildren(HomePage)
-    (page,) = [page for page in pages if page not in tab_pages]
+def home(services) -> HomePage:
+    """The Home tab's page, opened (or focused) the way Go ▸ Home does."""
+    page = services.tabs.open(HOME_KIND).widget
+    assert isinstance(page, HomePage)
     return page
 
 
@@ -62,18 +62,25 @@ def menu_words(menu) -> list[str]:
 # -- where a window starts ---------------------------------------------------------------------
 
 
-def test_a_fresh_window_lands_on_home_and_no_tab_is_open(services):
-    page = backdrop(services)
-    assert page.isVisibleTo(services.tabs)
-    assert services.tabs.activities() == []
+def test_the_program_starts_on_home_when_nothing_else_is_open(services):
+    start_window(services)
+    (opened,) = services.tabs.activities()
+    assert opened.uri == activity_uri(HOME_KIND)
+    assert not services.tabs.is_preview(opened)
 
 
-def test_opening_a_tab_hides_home_and_closing_the_last_brings_it_back(services, project):
-    page = backdrop(services)
+def test_a_start_with_tabs_to_reopen_adds_no_home(services, project):
     graph = services.tabs.open(PROJECT_KIND, project.id)
-    assert not page.isVisibleTo(services.tabs)
-    services.tabs.close_activity(graph)
-    assert page.isVisibleTo(services.tabs)
+    start_window(services)
+    assert services.tabs.activities() == [graph]
+
+
+def test_closing_the_last_tab_leaves_the_window_blank(services):
+    """Home opens at the program's start, never because the tabs ran out."""
+    start_window(services)
+    for activity in services.tabs.activities():
+        services.tabs.close_activity(activity)
+    assert services.tabs.activities() == []
 
 
 def test_home_is_the_top_of_the_index_and_a_click_previews_it(services):
@@ -138,7 +145,7 @@ def test_every_verb_the_guide_names_is_registered(services):
 
 
 def test_a_guide_verb_greys_with_its_reason_until_a_project_is_picked(services, project):
-    page = backdrop(services)
+    page = home(services)
     (row,) = [row for row in page.guide.rows() if row.title.text() == "Talk the steps out"]
     assert isinstance(row, GuideRow)
     assert not row.button.isEnabled()
@@ -152,8 +159,8 @@ def test_a_guide_verb_greys_with_its_reason_until_a_project_is_picked(services, 
 
 
 def test_a_kept_tab_is_listed_newest_first_and_a_glance_is_not(services, project):
-    page = backdrop(services)
-    assert page.empty.text() == NOTHING_RECENT
+    page = home(services)
+    assert page.empty.text() == NOTHING_RECENT  # Home itself is never listed on Home.
     services.tabs.open(PROJECT_KIND, project.id)
     services.tabs.open(ORDER_KIND, project.id)
     services.tabs.open(SPECS_KIND, project.id, preview=True)
@@ -178,14 +185,14 @@ def test_what_was_kept_survives_a_restart(session, services, project):
     for activity in services.tabs.activities():
         services.tabs.close_activity(activity)
     assert session.reload()
-    assert listed(backdrop(session.services)) == ["Discovery", "Discovery — Order"]
+    assert listed(home(session.services)) == ["Discovery", "Discovery — Order"]
 
 
 def test_a_project_that_leaves_the_library_leaves_the_list(services, project, monkeypatch):
     from dplanner.modules.projects import verbs
 
     monkeypatch.setattr(verbs, "confirm", lambda *_args, **_kwargs: True)
-    page = backdrop(services)
+    page = home(services)
     services.tabs.open(PROJECT_KIND, project.id)
     services.actions.run("projects.remove", picked(services, project))
     assert listed(page) == []
@@ -194,11 +201,10 @@ def test_a_project_that_leaves_the_library_leaves_the_list(services, project, mo
 
 def test_a_recent_tab_reopens_with_one_click(services, project):
     services.tabs.close_activity(services.tabs.open(PROJECT_KIND, project.id))
-    page = backdrop(services)
+    page = home(services)
     page.recent.itemClicked.emit(page.recent.item(0))
-    assert [activity.uri for activity in services.tabs.activities()] == [
-        activity_uri(PROJECT_KIND, project.id)
-    ]
+    current = services.tabs.current_activity()
+    assert current is not None and current.uri == activity_uri(PROJECT_KIND, project.id)
 
 
 def test_the_second_click_of_a_double_click_does_not_land_on_what_opened(services, project):
@@ -209,10 +215,10 @@ def test_the_second_click_of_a_double_click_does_not_land_on_what_opened(service
     window.resize(1000, 700)
     window.show()
     services.tabs.close_activity(services.tabs.open(PROJECT_KIND, project.id))
-    page = backdrop(services)
+    page = home(services)
     page.recent.itemClicked.emit(page.recent.item(0))
     QApplication.processEvents()
-    (graph,) = services.tabs.activities()
+    graph = services.tabs.current_activity()
     canvas = graph._view.viewport()
     heard = _DoubleClicks()
     canvas.installEventFilter(heard)

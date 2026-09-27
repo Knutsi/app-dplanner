@@ -556,35 +556,6 @@ def test_the_mark_goes_when_the_split_does(host):
     assert [marked for _, marked in panes(host)] == [False]
 
 
-# -- the backdrop ----------------------------------------------------------------------------
-
-
-def test_the_backdrop_stands_in_while_no_tab_is_open(host):
-    """It trades places with the tabs, and is never one: ``activities()`` stays empty."""
-    backdrop = QLabel("nothing is open")
-    host.set_backdrop(backdrop)
-    assert backdrop.isVisibleTo(host)
-    assert host.activities() == []
-
-    opened = host.open("thing", "a")
-    assert not backdrop.isVisibleTo(host)
-
-    host.close_activity(opened)
-    assert backdrop.isVisibleTo(host)
-    assert host.activities() == []
-    assert host.current_activity() is None
-
-
-def test_the_backdrop_waits_for_the_last_tab_in_every_pane(host):
-    backdrop = QLabel("nothing is open")
-    host.set_backdrop(backdrop)
-    first = host.open("thing", "a")
-    host.open("thing", "b")
-    host.move_current_right()
-    host.close_activity(first)
-    assert not backdrop.isVisibleTo(host)
-
-
 # -- a remembered address --------------------------------------------------------------------
 
 

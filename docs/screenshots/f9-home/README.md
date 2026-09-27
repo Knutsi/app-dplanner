@@ -7,8 +7,8 @@ the result.
 
 | Image | What it shows |
 |---|---|
-| `home-first-*` | A first window: Home at the top of the index, and behind the tabs the guide — each step's button is the verb itself, *Open Agent in Code* greyed with its own reason until a project is picked — beside Recent's empty state. |
-| `home-*` | The same window once four views of Importer were kept and closed: Recent lists them newest first, each with when it was last in front, and one click reopens one. |
+| `home-first-*` | The program's start with no tabs to reopen: the Home tab, Home at the top of the index, the guide — each step's button is the verb itself, *Open Agent in Code* greyed with its own reason until a project is picked — beside Recent's empty state. |
+| `home-*` | Home opened from *Go ▸ Home* once four views of Importer were kept and closed: Recent lists them newest first, each with when it was last in front, and one click reopens one. |
 | `projects-menu-*` | A right-click on the Projects folder: the File menu's project group, *Share Project…* greyed because no project is picked. |
 
 Each is rendered in the dark and the light theme (`-dark`, `-light`).

@@ -1,11 +1,11 @@
 """Home: where a window starts — the guide, the tabs kept lately, and the index row to both.
 
-One page (``page.py``) and four ways to it:
+Home is the ``home`` tab, a singleton like any library-wide tab, and there are three ways
+to it:
 
-- the tab host's **backdrop** — the page stands wherever the tabs would be while none is open,
-  so a fresh window, and a window whose last tab closed, lands here rather than on an empty
-  tab bar;
-- the ``home`` tab, a singleton, for keeping Home open beside other tabs;
+- the program's start, when there were no tabs to reopen — the composition root's
+  ``start_window``, called by ``app.open_at_startup`` and never by a reload, so a window
+  whose last tab was closed stays blank;
 - the index's first row, a folder of its own whose segment answers its own row: a click
   previews Home, activation keeps it — and under it, whatever rows other modules hang
   there through ``HomeDeps.rows``;
@@ -29,7 +29,7 @@ from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry
 from dplanner.framework.project_list_segment import LeadingRow
 from dplanner.framework.tabs import KeptTab, TabHost
 from dplanner.framework.theme_service import ThemeService
-from dplanner.modules.home.page import HOME_KIND, HomeActivity, HomePage
+from dplanner.modules.home.page import HOME_KIND, HomeActivity
 from dplanner.theme.icons import home_icon
 
 MODULE_ID = "home"
@@ -117,7 +117,6 @@ class HomeModule:
     def register(self) -> None:
         deps = self._deps
         deps.tabs.register_factory(HOME_KIND, lambda _target: HomeActivity(deps))
-        deps.tabs.set_backdrop(HomePage(deps))
         deps.segments.register(
             IndexSegment(
                 id=MODULE_ID,

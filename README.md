@@ -131,9 +131,9 @@ this build is a git worktree, or when the `dplanner` on PATH was not installed b
 say so rather than shadowing it — and `install remove` takes out the launcher and the skill
 but never the program that is running (`uv tool uninstall dplanner` does that).
 
-A window opens on **Home**, the top of the index: a short getting-started guide whose
-buttons are the verbs it teaches, beside the tabs this library kept lately — one click
-reopens one. It stands wherever the tabs would be while none is open.
+With no tabs to reopen, the program starts on **Home**, the top of the index: a short
+getting-started guide whose buttons are the verbs it teaches, beside the tabs this library
+kept lately — one click reopens one.
 
 The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` also names
 one). A plan lives in a **plan repository** — a git repository holding several projects,
@@ -573,8 +573,8 @@ src/dplanner/
 │   │                        window half — click a row and the graph lands on its step, or
 │   │                        hand the lot to an agent
 │   ├── home/                where a window starts: the getting-started guide (guide.py, data naming
-│   │                        action ids) and the recent tabs — the index's top row, a tab, and the
-│   │                        page behind the tabs while none is open
+│   │                        action ids) and the recent tabs — a tab, the index's top row, and what
+│   │                        the program opens when there is nothing to reopen
 │   ├── reopen_tabs/         the tabs this library had last time and the ones kept lately, and the switch
 │   ├── appearance/          View ▸ Theme (System theme, then what every provider offers) and Settings ▸ Appearance
 │   ├── theme_omarchy/       ── one module per theme provider, each a Qt-free `themes.py`: Omarchy's

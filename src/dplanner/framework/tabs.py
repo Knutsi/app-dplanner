@@ -26,11 +26,6 @@ else's tab titles and puts an accent edge on the pane you are in — only while 
 than one, since one pane is the whole window. Both cues are set in that one place so they
 cannot disagree; the edge is drawn by :class:`_Pane`, which exists for that and nothing else.
 
-**What shows while nothing is open is a backdrop, never a tab.** :meth:`TabHost.set_backdrop`
-hands the host a page it trades places with while it holds no tab. It is not an activity:
-``activities()`` stays empty, so every verb and every test that asks "is anything open?" gets
-the true answer, and there is no phantom tab for Close All to close.
-
 **A remembered tab is reopened through here.** :meth:`TabHost.reopen` is the one way a tab
 address written down earlier — a session's open tabs, a list of recent ones — comes back,
 because every such address can have gone stale in the same three ways.
@@ -46,7 +41,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QSplitter,
-    QStackedWidget,
     QStyle,
     QStyleOptionTab,
     QStylePainter,
@@ -198,14 +192,10 @@ class TabHost(QWidget):
         self._groups: list[QTabWidget] = []
         self._watcher = _ActiveGroupWatcher(self)
         self._active = self._new_group(0)
-        # The groups, or the backdrop while there is nothing to put in them.
-        self._stack = QStackedWidget(self)
-        self._stack.addWidget(self._splitter)
-        self._backdrop: QWidget | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._stack)
+        layout.addWidget(self._splitter)
 
     # -- registration ------------------------------------------------------------------------
 
@@ -223,24 +213,6 @@ class TabHost(QWidget):
         asks without an exception for control flow.
         """
         return kind in self._factories
-
-    def set_backdrop(self, widget: QWidget) -> None:
-        """Show ``widget`` wherever the tabs would be, for as long as no tab is open.
-
-        The host takes it over and never closes it: it is the window's page, not a tab, so
-        it has no title, no preview state and no place in :meth:`activities`.
-        """
-        if self._backdrop is not None:
-            self._stack.removeWidget(self._backdrop)
-            self._backdrop.deleteLater()
-        self._backdrop = widget
-        self._stack.addWidget(widget)
-        self._show_backdrop()
-
-    def _show_backdrop(self) -> None:
-        backdrop = self._backdrop
-        showing = backdrop if backdrop is not None and not self._activities else self._splitter
-        self._stack.setCurrentWidget(showing)
 
     # -- opening ---------------------------------------------------------------------------
 
@@ -632,7 +604,6 @@ class TabHost(QWidget):
         """Say what the user is now doing. The one path everything else learns through."""
         if self._suspended:
             return
-        self._show_backdrop()
         widget = self._active.currentWidget()
         activity = self._activities.get(widget) if widget is not None else None
         # Qt reports a drag-reorder as currentChanged with the same page still current, and

@@ -1,9 +1,7 @@
 """Home's page: the getting-started guide beside the tabs this library kept lately.
 
-One class stands twice — as the Home tab, and behind the tabs as the tab host's backdrop
-while none is open — so a fresh window lands on the page the index's Home row opens, and
-there is one page to keep right. Each copy follows what it shows for as long as its widget
-lives and lets go when Qt destroys it, which is the one moment both copies share.
+The Home tab's widget. It follows what it shows for as long as it lives and lets go when Qt
+destroys it, which is when the tab host drops a closed tab's page.
 
 **The guide's buttons are the verbs themselves.** Each is restated from its ``ActionSpec`` on
 every context change and runs through the registry, as a menu entry does — so a verb that

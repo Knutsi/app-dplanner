@@ -157,17 +157,18 @@ paths:
 - **A single click in the index opens a preview tab** (`tabs.open(..., preview=True)`): at
   most one preview exists, the next preview replaces it, and a deliberate act — activation,
   or moving the tab — pins it. A preview-open of anything already open is a plain focus.
-  A project's own row only selects it — its forms are *Project ▸ Settings…*, and what
-  shows while no tab is open is Home; its entry rows preview their surfaces. **A folder's
+  A project's own row only selects it — its forms are *Project ▸ Settings…*, and a window
+  with no tab open is blank; its entry rows preview their surfaces. **A folder's
   own row is its segment's to answer** — a click, an activation and a right-click reach the
   segment like any row's: the Home row opens Home, and the Projects folder's right-click
   renders File's `project` group. `ARCHITECTURE.md`'s *A click is a glance* has the rules
   and why no timer is involved.
-- **Home is where a window starts, and it is a backdrop, never a tab.** `TabHost.set_backdrop`
-  trades a page with the tab groups while no tab is open, so `activities()` stays empty and
-  there is no phantom tab for Close All or any "is anything open?" to see. `modules/home/`
-  puts the same page there and in the `home` tab (the index's first row, *Go ▸ Home*); a
-  surface that spans the library hangs a row under it through `HomeDeps.rows` (a
+- **Home is a tab like any other, and the program starts on it.** `modules/home/` registers
+  the `home` tab (the index's first row, *Go ▸ Home*), reopened like any tab. The root's
+  `start_window` opens it when the startup reopen left no tab open, and only
+  `app.open_at_startup` calls that — never a reload, and never because the last tab closed:
+  **a blank window is allowed**, and nothing reopens Home behind the person's back. A
+  surface that spans the library hangs a row under Home through `HomeDeps.rows` (a
   `LeadingRow`, wired in the root), never by editing `modules/home/`. Its
   guide is data naming action ids (`guide.py`), each a verb's own button restated from its
   `ActionState` — greyed in the verb's words, never a second button that calls it. A page

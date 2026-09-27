@@ -2,10 +2,10 @@
 
     uv run python scripts/render_home.py --out docs/screenshots/f9-home
 
-Three shots of a whole application over a throwaway library: a first window, before
-anything was ever opened (the guide, and Recent's empty state); the same window once a few
-views were kept and closed again, so Home stands behind the tabs listing them; and the
-Projects folder's right-click, which renders the File menu's project group.
+Three shots of a whole application over a throwaway library: the program's start, before
+anything was ever opened — the Home tab ``start_window`` opens, with the guide and Recent's
+empty state; Home opened again from *Go ▸ Home* once a few views were kept and closed, listing
+them; and the Projects folder's right-click, which renders the File menu's project group.
 """
 
 import argparse
@@ -33,6 +33,7 @@ from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.index_panel import SEGMENT_ROLE, IndexPanel
 from dplanner.framework.services import AppServices
 from dplanner.framework.session import AppSession
+from dplanner.modules import start_window
 from dplanner.modules.progression.module import PROGRESSION_KIND
 from dplanner.modules.project_editor.module import PROJECT_KIND
 from dplanner.modules.spec.activity import SPECS_KIND
@@ -78,6 +79,7 @@ def index_panel(services: AppServices) -> IndexPanel:
 
 def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     session, services = open_library(app, theme, workspace, "first")
+    start_window(services)  # What app.open_at_startup does once the build is up.
     save(services.window, out, "home-first", theme, app)
     services.window.hide()
     session.close()
@@ -88,6 +90,7 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
         services.tabs.open(kind, importer.id)
     for activity in services.tabs.activities():
         services.tabs.close_activity(activity)
+    services.actions.run("home.open", services.context.current())
     save(services.window, out, "home", theme, app)
 
     panel = index_panel(services)
