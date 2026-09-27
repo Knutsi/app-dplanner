@@ -199,6 +199,26 @@ shape visible. If the waves are all singletons, revisit the links before adding 
 between two milestones that usually means the fan-out was never drawn, and a release's work
 starts from the milestone before it, in parallel, not in a queue.
 
+## Parallel, then collect
+
+Parallel agents each land a branch and a PR, and something has to put them together: merge
+them in one place, settle what the branches could not see of each other, and review the
+whole. When that is a step of its own — **a collector** — its links into the parallel steps
+should **auto-progress**: `dplanner step add <project> '<title>' --agent --after A --after B
+--auto-progress`, or `dplanner auto-progress set <collector> <source> on` for a link that
+exists. A plain link waits for its source to be done, but a source is done only once the
+collector has landed it, so without the flag the two wait on each other. With it, the
+collector is Ready to start as soon as its sources read ready for review; its briefing lists
+each one's branch, PR and worktree, and it sets them done once their work has landed.
+
+A collector earns its place when the parallel work shares files or a review nobody could
+give it in pieces — a round of steps that each touch the same few modules, landed and
+reconciled as one PR. Where each step can be reviewed and merged on its own, leave the links
+plain and let every step land by itself; a collector over independent work is one more
+launch for nothing. A collector is an agent step: nobody else reads the briefing that says
+what to collect, and `project lint` names one that is not (`auto-progress.waiter`). `project
+graph` draws its links `==>`.
+
 ## Leave the graph readable
 
 The graph is what the user reviews, so when a plan settles, make its shape carry meaning

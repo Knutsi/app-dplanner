@@ -181,8 +181,8 @@ class StepVerbs:
                 state=self._can_unlink,
                 run=self._unlink,
             ),
-            # The arrow's own verb, where a right-click on one finds it. F11's Auto-progress
-            # joins this band.
+            # The arrow's own verb, where a right-click on one finds it. Auto-progress joins
+            # this band from its own module.
             ActionSpec(
                 id="links.remove",
                 label="Remove &Link",

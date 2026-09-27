@@ -10,7 +10,7 @@ from datetime import date, timedelta
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import ready
-from dplanner.domain.progression import estimated_progress, progression
+from dplanner.domain.progression import estimated_progress, outstanding, progression
 
 
 def build(*titles):
@@ -189,6 +189,57 @@ def test_a_plain_requires_waits_for_done_not_for_review_or_merge():
         assert titles(c.step for c in found.upcoming) == ["B", "C"]
         assert [titles(c.after) for c in found.upcoming] == [["A"], ["A"]]
         assert titles(found.waiting) == ["D"]
+
+
+def collector():
+    """Three sources and a plain prerequisite P, all joining at C, which collects the three:
+    the milestone-2 round, where one agent step lands three agents' PRs."""
+    library, project = build("A1", "A2", "A3", "P", "C")
+    for source in ("A1", "A2", "A3", "P"):
+        link(library, project, "C", source)
+    collected = {by_title(project, title).id for title in ("A1", "A2", "A3")}
+
+    def auto_progresses(waiter, source):
+        return waiter.title == "C" and source.id in collected
+
+    return library, project, auto_progresses
+
+
+def test_a_collector_is_ready_once_its_sources_are_ready_for_review():
+    library, project, auto = collector()
+    reviewed = {"A1": "ready-for-review", "A2": "ready-to-merge", "P": "done"}
+    found = progression(library, project, status_of(reviewed), auto_progresses=auto)
+    assert "C" not in titles(found.ready)  # A3 is still pending.
+    found = progression(
+        library, project, status_of({**reviewed, "A3": "ready-for-review"}), auto_progresses=auto
+    )
+    assert titles(found.ready) == ["C"]
+
+
+def test_a_collector_still_waits_on_a_plain_source_until_it_is_done():
+    library, project, auto = collector()
+    reviewed = {"A1": "ready-for-review", "A2": "ready-for-review", "A3": "ready-for-review"}
+    found = progression(
+        library, project, status_of({**reviewed, "P": "ready-for-review"}), auto_progresses=auto
+    )
+    assert found.ready == ()
+    assert [(c.step.title, titles(c.after)) for c in found.upcoming] == [("C", ["P"])]
+
+
+def test_without_auto_progress_a_collector_waits_for_done():
+    """The default is the plain rule: every call that passes nothing is unchanged."""
+    library, project, _auto = collector()
+    reviewed = {"A1": "ready-for-review", "A2": "ready-for-review", "A3": "ready-for-review"}
+    found = progression(library, project, status_of({**reviewed, "P": "done"}))
+    assert [titles(c.after) for c in found.upcoming] == [["A1", "A2", "A3"]]
+
+
+def test_outstanding_is_the_one_answer_run_agent_reads():
+    library, project, auto = collector()
+    step = by_title(project, "C")
+    statuses = status_of({"A1": "ready-for-review", "A2": "in-progress", "P": "ready-to-merge"})
+    assert titles(outstanding(library, step, statuses, auto)) == ["A2", "A3", "P"]
+    assert titles(outstanding(library, step, statuses)) == ["A1", "A2", "A3", "P"]
 
 
 def test_every_group_a_person_acts_on_is_ranked_by_what_it_unlocks():

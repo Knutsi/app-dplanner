@@ -34,7 +34,19 @@ class PromptPart:
 PartsFor = Callable[[Library, Step, FilesFor], Sequence[PromptPart]]
 
 
+# (library, step, files, facts) -> the step's own facts as blocks. The project's repository
+# facts ride along — None when the caller has none — so a block can say where a step's
+# work stands on this machine, as the preamble does.
+SectionsFor = Callable[[Library, Step, FilesFor, RepositoryFacts | None], Sequence[PromptPart]]
+
+
 def _no_parts(_product: Library, _step: Step, _files: FilesFor) -> Sequence[PromptPart]:
+    return ()
+
+
+def _no_sections(
+    _product: Library, _step: Step, _files: FilesFor, _facts: RepositoryFacts | None
+) -> Sequence[PromptPart]:
     return ()
 
 
@@ -55,7 +67,8 @@ class Briefing:
 
     ``parts`` is what the project recorded for whoever works this step (the notes
     addressed to it, the index of the rest), rendered after the instructions;
-    ``sections`` the step's own facts (description, the feature it realises, the PR);
+    ``sections`` the step's own facts (description, the feature it realises, the PR, the
+    work it collects — handed the repository facts, to say where that work is here);
     ``project_sections`` the project's — its topology — rendered beside the standing
     instruction; ``instruction`` the block the ``## Instructions`` heading carries — the
     step's separate instruction when one exists, the description otherwise, decided by
@@ -69,7 +82,7 @@ class Briefing:
     """
 
     parts: PartsFor = _no_parts
-    sections: PartsFor = _no_parts
+    sections: SectionsFor = _no_sections
     project_sections: PartsFor = _no_parts
     epilogue: Callable[[Library, Step], str] = field(default=lambda _library, _step: "")
     preamble: Callable[[Step, bool, RepositoryFacts | None], str] = field(

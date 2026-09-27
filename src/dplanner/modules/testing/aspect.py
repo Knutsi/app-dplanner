@@ -36,7 +36,7 @@ same tolerance the audience shows; one with no sort key simply sorts last in its
 """
 
 import dataclasses
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Final
 
@@ -387,7 +387,9 @@ def mint_ids(project: Project, count: int) -> list[str]:
     return [f"{TEST_ID_PREFIX}{first + offset}" for offset in range(count)]
 
 
-def remint_for_paste(project: Project, steps: Sequence[Step]) -> None:
+def remint_for_paste(
+    project: Project, steps: Sequence[Step], _remapped: Mapping[StepId, StepId]
+) -> None:
     """A copied step's tests get fresh ids — the paste policy this module hands in.
 
     An id is minted per project, so a copy that kept ``T100`` would make "T100 failed" name

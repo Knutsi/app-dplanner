@@ -127,6 +127,10 @@ from dplanner.core.fsio import slugify
 # the plan repository scan has to know to skip it.
 from dplanner.core.storage.pointer import WORKTREES_DIR as WORKTREES_DIR
 from dplanner.domain.agents import AgentHarness, harness_for_command
+from dplanner.domain.locations import Placement
+from dplanner.domain.model import Step
+from dplanner.domain.repositories import RepositoryFacts
+from dplanner.modules.step_agent_instruction.aspect import workplace
 
 BRANCH_PREFIX = "agent/"
 
@@ -159,6 +163,26 @@ def run_name(step_key: str, ticket_key: str, title: str) -> str:
     """
     parts = [step_key.lower(), ref_safe(ticket_key), slugify(title, fallback="")]
     return ref_safe("-".join(part for part in parts if part)) or "step"
+
+
+def workdir(facts: RepositoryFacts, step: Step | None = None) -> Path | None:
+    """Where an agent on this project works — a step's, or one opened with nothing to do:
+    the checkout of the code location the step names (its ``workplace``, else the
+    project's primary code row) when the project records one, else where the facts read
+    the code as being — the plan's own repository for the older shape of a plan kept
+    beside its code, nowhere for a project whose code is not set. None when it is not
+    here."""
+    placement = code_placement(facts, step)
+    if placement is not None:
+        return placement.root if placement.here else None
+    return facts.code_root
+
+
+def code_placement(facts: RepositoryFacts, step: Step | None) -> Placement | None:
+    """The code location a step works in, placed: the row its workplace names, else the
+    primary. A named row that is gone falls back to the primary — lint says so."""
+    named = facts.placement(workplace(step)) if step is not None else None
+    return named if named is not None else facts.code
 
 
 def worktree_path(workdir: Path, name: str) -> Path:

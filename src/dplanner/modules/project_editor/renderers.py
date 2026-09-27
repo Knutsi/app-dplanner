@@ -162,6 +162,20 @@ CHIP_TONES = {
 
 
 @dataclass(frozen=True)
+class EdgeAccent:
+    """How an arrow should look beyond its kind, in the canvas's own vocabulary.
+
+    ``doubled`` draws the line as two rails with chevrons running between them towards
+    the step that waits — work that moves along on its own; ``flowing`` sets the
+    chevrons moving, on the marching ring's clock. The composition root decides which
+    arrow is which, the same seam as :class:`NodeAccent`.
+    """
+
+    doubled: bool = False
+    flowing: bool = False
+
+
+@dataclass(frozen=True)
 class NodeAccent:
     """How a node should look beyond its text, in the canvas's own vocabulary.
 

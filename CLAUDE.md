@@ -291,7 +291,7 @@ reasoning.
 | `persistence.md` | save, two writers, outside changes, reload and repositories |
 | `cli.md` | the entry word, install, the checklist, the topology gate, the skill and reports |
 | `runtime.md` | telemetry, diagnostics, discarding a build, LLM calls and dictation |
-| `graph-model.md` | edges, step numbers and isolation |
+| `graph-model.md` | edges, auto-progress links, step numbers and isolation |
 
 ## Mechanical facts worth knowing
 

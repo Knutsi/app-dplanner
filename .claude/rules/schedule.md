@@ -18,6 +18,10 @@ paths:
   ready to merge are on the board and not done**: each is a partition of its own
   (`review`, `merge`), one move away for the lookahead, out of the percent — and a plain
   `requires` is fulfilled by `done` alone, so nothing starts on work nobody accepted.
+  **An auto-progress link is fulfilled from review on** (`auto_progresses`, handed in beside
+  `status_for`): `progression.outstanding()` is the one answer the frontier, the lookahead
+  and Run Agent's gate read, so a step that collects its sources is Ready to start once they
+  are under review (`graph-model.md`).
   **Every partition a person acts on is ranked by `unlocks`** (the map covers every step
   of work not done), ties in project order. **The surface is named for the question and
   the derivation for the answer**: the tab, its menu entries and its index row say *Step

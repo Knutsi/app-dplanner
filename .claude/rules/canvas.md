@@ -244,8 +244,21 @@ paths:
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". One `QTimer` on the scene advances every ring and runs only while a node
-  wears one — `GraphScene._settle_ring_timer` after every sync. The ring is derived from the
-  chip (`NodeAccent.chip_text`), so one field says both.
+  wears one or an arrow flows — `GraphScene._settle_ring_timer` after every sync. The ring
+  is derived from the chip (`NodeAccent.chip_text`), so one field says both.
+- **An arrow says more than its kind only through an `EdgeAccent`, translated by the root.**
+  `requires` is solid with a head, `relates` dashed without one; beyond that the canvas
+  reads `ProjectEditorDeps.edge_accents(project_id)` once per sync, keyed (waiter, kind,
+  source), and `GraphScene.sync` pushes it onto new and existing arrows alike. A *doubled*
+  arrow — an auto-progress link — is two rails `RAIL_GAP` apart with a chevron every
+  `CHEVRON_PITCH` pointing at the step that waits, both cached in `EdgeItem.follow()` —
+  which does nothing while the arrow's ends stand, and places chevrons by walking the
+  flattened curve, never `percentAtLength` (~40 µs a call, on every sync); a
+  *flowing* one moves its chevrons on the ring clock's phase (`advance_rings`), which the
+  root sets while the source wears the live ring — one motion, carried along the link, and
+  still one timer. Every look stays inside `EDGE_GRAB`'s margin and keeps the lit, picked,
+  hovered and dimmed rules. `ARCHITECTURE.md`'s *An auto-progress link is an aspect on the
+  step that waits* has the reasoning.
 - **A step placed by pointing at a spot earns a stored position.** `StepVerbs.create()` is
   the one place a step is born on the canvas — New and the double-click on empty space both
   come through it — and it writes the position **in the same command** as the node,

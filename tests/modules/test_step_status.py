@@ -88,7 +88,7 @@ def test_a_copy_keeps_the_status_and_forgets_the_days():
     done.module_data[MODULE_ID] = write("done", today=FRIDAY)
     started = write("in-progress", today=MONDAY)
     pending.module_data[MODULE_ID] = write("pending", today=TUESDAY, previous=started)
-    forget_days_for_paste(None, [done, pending])  # type: ignore[arg-type]
+    forget_days_for_paste(None, [done, pending], {})  # type: ignore[arg-type]
     assert read(done) == "done" and read_since(done) is None
     assert MODULE_ID not in pending.module_data
 

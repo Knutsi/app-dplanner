@@ -16,7 +16,8 @@ paths:
   (`status set`, `agent-state set`, `note add`). **The graph gates launching**: a step
   whose `requires` do not all read done (through `status_for` on the module's Deps, the
   Step statuses tab's seam, where a wait reads done once it is over and a step under
-  review or waiting on its merge does not) gets a confirmation
+  review or waiting on its merge does not — unless the link into this step auto-progresses,
+  `progression.outstanding()` being the one answer) gets a confirmation
   naming them before a shell opens — the
   person may know the work landed unrecorded, so it asks rather than refuses, **once for
   the whole gesture** whichever of the chosen steps wait.
@@ -73,12 +74,21 @@ paths:
   reads the same), and `tests/conftest.py`'s `_no_agent_shell` scrubs the markers so the
   suite never depends on being run by an agent. `ARCHITECTURE.md`'s *An agent finishes at
   Ready for review* has the reasoning.
+- **A step that collects is briefed with what it collects, and its sources are told.**
+  `_briefing_sections` adds *Work you collect* for a step with auto-progress links: each
+  source's key, title, status, branch, PR and worktree — `launcher.workdir(facts, source)`
+  under the source's run name, said as a path only when the directory is on this machine —
+  then the duty to land that work and the right to `status set <source> done`. That is why
+  `Briefing.sections` is handed the repository facts, as the preamble is. Each source's
+  `_agent_epilogue` names who collects it and leaves its done to them. The status guard
+  needed nothing: an agent may already finish a step under review.
 - **A step names the code location it works in.** With several code rows in a project,
   the agent-instruction entry's `workplace` holds a location id (`aspect.workplace`,
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
   the primary — the project's first code row — because which repository a step's change
-  lands in is a fact about the step, exactly as its worktree choice is. `_workdir(facts,
-  step)` places that row; a named row that is gone falls back to the primary. A run
+  lands in is a fact about the step, exactly as its worktree choice is.
+  `launcher.workdir(facts, step)` places that row (Qt-free, so the briefing can place a
+  source's worktree); a named row that is gone falls back to the primary. A run
   across two repositories at once is two steps.
 - **An agent may be opened with nothing to do, and that is a second invocation.**
   *Project ▸ Open Agent in Code* is the same profiles in the same child menu, opening a

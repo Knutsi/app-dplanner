@@ -2,10 +2,13 @@
 paths:
   - "src/dplanner/domain/{model,commands,ids}.py"
   - "src/dplanner/cli/lookup.py"
+  - "src/dplanner/modules/auto_progress/**"
   - "tests/domain/test_{model,ids}.py"
+  - "tests/modules/test_auto_progress*.py"
+  - "tests/cli/test_auto_progress_verbs.py"
 ---
 
-# Graph model — edges, step numbers and isolation
+# Graph model — edges, auto-progress links, step numbers and isolation
 
 - **Isolate is one domain question and one domain command.** `Library.boundary_edges()`
   names every edge with exactly one end in a set (both kinds, skipping edges to a deleted
@@ -36,3 +39,20 @@ paths:
   CLI row and `find_step` (`S7`, `s7` and `7` all resolve; several projects' `7` is
   refused), the run name a worktree and branch carry, and the briefing's verbs. Never
   store the letter, and never mint a number anywhere but `add_child`.
+- **An auto-progress link is an aspect on the step that waits, read through the edge.**
+  `modules/auto_progress/` stores `{"from": [source ids]}` on the waiter, and an id counts
+  only while the waiter's own `requires` lists it (`flagged`) — so no verb that rewrites an
+  edge list learns the aspect exists, a redirected link arrives plain, and undoing a removal
+  restores the flag with the link. **Never repair the list from an edge verb**; the one
+  place ids change is a paste, which hands every `PastePolicy` the old→new map
+  (`remap_for_paste`). **Whether a link frees its waiter from review on** is the root's one
+  `_auto_progresses`, handed as `auto_progresses(waiter, source)` to the progression walk,
+  Run Agent's gate, `project graph`/`step show` and the canvas's `edge_accents`, so every
+  surface agrees with the frontier when another rule (a review link) joins it. **Whether a
+  step must land its sources' work** is the flag alone — the aspect's `sources` and
+  `collectors`, read by *Work you collect*, the source's epilogue, `auto-progress list` and
+  lint — because that duty is only ever given by flagging. Only an agent step collects: the
+  Edge menu's *Auto-progress* greys on any other waiter, and lint `auto-progress.waiter`
+  names one the CLI or a hand edit made.
+  `ARCHITECTURE.md`'s *An auto-progress link is an aspect on the step that waits* weighs
+  it against data on the edge and a new edge kind.

@@ -16,7 +16,7 @@ readers, for a run the window did not launch; ``usage show`` and ``usage list`` 
 them back. Absence is the default — no agent has run here.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
@@ -139,7 +139,9 @@ def summary(step: Step) -> str:
     return "" if total is None else f"tokens: {words(total)}"
 
 
-def forget_for_paste(_project: Project, steps: Sequence[Step]) -> None:
+def forget_for_paste(
+    _project: Project, steps: Sequence[Step], _remapped: Mapping[StepId, StepId]
+) -> None:
     """A copied step carries no usage: the tokens were spent on the original."""
     for step in steps:
         step.module_data.pop(MODULE_ID, None)

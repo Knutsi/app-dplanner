@@ -28,13 +28,15 @@ def commands(
     status_in: Callable[[Library, date], Callable[[Step], str]],
     counts_as_work: Callable[[Step], bool],
     days_for: Callable[[Step], float | None],
+    auto_progresses: Callable[[Step, Step], bool],
 ) -> list[CliCommand]:
     """``status_in`` reads a step's status in a library on a day — a wait is done once it is
-    over, which only the day can say."""
+    over, which only the day can say. ``auto_progresses`` says which links free their waiter
+    from review on."""
 
     def show(context: CliContext, args: Namespace) -> int:
         status_for = status_in(context.library, context.clock.today())
-        return _show(context, args, status_for, counts_as_work, days_for)
+        return _show(context, args, status_for, counts_as_work, days_for, auto_progresses)
 
     return [
         CliCommand(
@@ -60,10 +62,11 @@ def _show(
     status_for: Callable[[Step], str],
     counts_as_work: Callable[[Step], bool],
     days_for: Callable[[Step], float | None],
+    auto_progresses: Callable[[Step, Step], bool],
 ) -> int:
     library = context.library
     project = find_project(library, args.project)
-    found = progression(library, project, status_for, counts_as_work)
+    found = progression(library, project, status_for, counts_as_work, auto_progresses)
     weighted = estimated_progress(found, days_for)
 
     def named(steps: tuple[Step, ...]) -> list[dict[str, Any]]:

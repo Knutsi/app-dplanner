@@ -107,6 +107,9 @@ class ProgressionDeps:
     status_for: Callable[[Step], str] = field(default=_pending)
     # Whether a step is work at all: a wait is not, and is on no row and in no count.
     counts_as_work: Callable[[Step], bool] = field(default=lambda _step: True)
+    # Whether a waiter may start once a source it requires is ready for review — an
+    # auto-progress link, read through the owning aspect by the composition root.
+    auto_progresses: Callable[[Step, Step], bool] = field(default=lambda _waiter, _source: False)
     # The verbs a person runs over the ticked rows, named by the composition root: which
     # they are is a fact about other modules. None seated is a build without them.
     verbs: tuple[StripVerb, ...] = ()
@@ -249,7 +252,11 @@ class ProgressionActivity(EntityActivity):
             return  # The project was deleted; the tab is about to close.
         deps = self._deps
         self._found = progression(
-            self._product, self._project(), deps.status_for, deps.counts_as_work
+            self._product,
+            self._project(),
+            deps.status_for,
+            deps.counts_as_work,
+            deps.auto_progresses,
         )
         self._show()
         needing = needing_a_person(self._found)

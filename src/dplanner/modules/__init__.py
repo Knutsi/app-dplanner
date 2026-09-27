@@ -49,7 +49,7 @@ if TYPE_CHECKING:
     from dplanner.domain.commands import Command
     from dplanner.domain.dictation import DictationProvider
     from dplanner.domain.locations import Location, LocationRole, ManagedFor
-    from dplanner.domain.model import Library, Project, ProjectId, Step, StepId
+    from dplanner.domain.model import Edge, Library, Project, ProjectId, Step, StepId
     from dplanner.domain.ordering import Placed
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.schedule import Scheduled
@@ -120,6 +120,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.appearance.module import AppearanceDeps, AppearanceModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
+    from dplanner.modules.auto_progress.module import AutoProgressDeps, AutoProgressModule
     from dplanner.modules.checklist.module import ChecklistDeps, ChecklistModule
     from dplanner.modules.coverage.activity import CoverageDeps
     from dplanner.modules.coverage.module import CoverageModule
@@ -155,7 +156,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         ProjectAssetsModule,
     )
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
-    from dplanner.modules.project_editor.renderers import NodeAccent
+    from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
+    from dplanner.modules.project_editor.verbs import picked_edges
     from dplanner.modules.projects.checkouts import CheckoutService
     from dplanner.modules.projects.location_dialog import ask_location
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
@@ -594,6 +596,20 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             for step in project.steps
         }
 
+    def edge_accents(project_id: str) -> "dict[Edge, EdgeAccent]":
+        """How the arrows of a project look beyond their kind: an auto-progress link is
+        doubled — the frontier's own answer, so the canvas draws what progression does —
+        and its chevrons flow while its source wears the live ring: the motion the source's
+        agent run already has, carried to the step that will take its work."""
+        return {
+            (waiter.id, "requires", source.id): EdgeAccent(
+                doubled=True, flowing=bool(agent_run_state(source))
+            )
+            for waiter in library.project(project_id).steps
+            for source in library.requires(waiter.id)
+            if _auto_progresses(waiter, source)
+        }
+
     def step_accent(
         step: "Step",
         milestone_stat: str,
@@ -863,6 +879,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             paste_policies=_paste_policies(),
             step_accents=step_accents,
             accents_changed=problems.findings.flagged_changed,
+            edge_accents=edge_accents,
             # The timeline sort reads a step's length through this seam; estimation owns it.
             days_for=estimated_days,
             # What stands beside the canvas: what is wrong with this plan, where it is
@@ -1001,6 +1018,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             # learns what one is stored as — with a wait done once it is over.
             status_for=_wait_aware(library, services.clock.today),
             counts_as_work=_counts_as_work,
+            # A step that collects its sources' work is ready once they are under review.
+            auto_progresses=_auto_progresses,
             verbs=(
                 StripVerb("agent.run", data_menu=RUN_MENU_ID, face="Run Agents"),
                 StripVerb("status.ready-to-merge"),
@@ -1382,6 +1401,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             # Run Agent asks before launching on a step whose prerequisites are not
             # done — the same status reader the Step statuses tab's frontier uses.
             status_for=_wait_aware(library, services.clock.today),
+            # A source under review does not hold a step that collects it.
+            auto_progresses=_auto_progresses,
             # And says so on the step when the shell opens: the status aspect's own
             # writer, applied off the undo stack the way the launch stamp is. The
             # agent module holds the preference; the word is the status module's.
@@ -1809,6 +1830,20 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         StepStartModule(
             StepStartDeps(library=library, undo=services.undo, actions=services.actions)
         ),
+        # No tab either: one checkable verb among the arrow's, over the links the canvas
+        # has picked — its reading of the selection, handed across here.
+        AutoProgressModule(
+            AutoProgressDeps(
+                library=library,
+                undo=services.undo,
+                actions=services.actions,
+                picked_links=lambda context: [
+                    ref.as_edge() for ref in picked_edges(library, context)
+                ],
+                is_agent=_is_agent_step,
+                key_of=_step_key,
+            )
+        ),
         # A feature is a step: one a person would name and demo, gathering the work behind
         # it and stopping at the previous feature. The Covers tab that shows what it
         # gathers is still the tests module's.
@@ -1971,12 +2006,16 @@ def _passage_place(source: "FeatureSource") -> str:
 
 
 def _briefing_sections(
-    library: "Library", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
+    library: "Library",
+    step: "Step",
+    files: "Callable[[str, str], ModuleFileArea]",
+    facts: "RepositoryFacts | None",
 ) -> "list[PromptPart]":
     """The step's own facts as briefing sections: what it is, why it exists, where the
-    work lands. Cross-module prose, so it is worded here in the one file allowed to know
-    every module's vocabulary — the agent module renders the blocks without learning what
-    a description, a requirement or a PR is. An empty fact contributes no section.
+    work lands, and the work it collects. Cross-module prose, so it is worded here in the
+    one file allowed to know every module's vocabulary — the agent module renders the
+    blocks without learning what a description, a requirement or a PR is. An empty fact
+    contributes no section.
     """
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.feature.aspect import read as feature_read
@@ -2051,7 +2090,83 @@ def _briefing_sections(
             lines.append(pr)
         if lines:
             sections.append(PromptPart(heading="Where the work lands", body="\n".join(lines)))
+    collected = _collected_work(library, step, facts)
+    if collected:
+        sections.append(PromptPart(heading="Work you collect", body=collected))
     return sections
+
+
+def _collected_work(library: "Library", step: "Step", facts: "RepositoryFacts | None") -> str:
+    """What a step that collects other steps' work is handed: each source where it stands —
+    its status, its branch and PR, and its worktree on this machine — then the duty to land
+    that work and the right to finish the source. Empty for a step that collects nothing.
+
+    A source's worktree is named from the same rule the launcher prepared it by
+    (``_run_name``), under the checkout of the code location the source works in; whether
+    it is *here* is the one thing only this machine can say, so it is asked.
+    """
+    from dplanner.domain.progression import phrase
+    from dplanner.modules.auto_progress.aspect import sources
+    from dplanner.modules.github.aspect import pr_label
+    from dplanner.modules.github.aspect import read as github_read
+    from dplanner.modules.step_agent_instruction.aspect import uses_worktree
+    from dplanner.modules.step_agent_instruction.launcher import workdir, worktree_path
+    from dplanner.modules.step_status.aspect import read as step_status
+
+    collected = sources(library, step)
+    if not collected:
+        return ""
+
+    def where(source: "Step") -> str:
+        if not uses_worktree(source):
+            return "worked in the checkout itself, no worktree"
+        root = workdir(facts, source) if facts is not None else None
+        path = worktree_path(root, _run_name(source)) if root is not None else None
+        if path is None or not path.is_dir():
+            return "no worktree of it on this machine — take the branch or the PR"
+        return f"worktree `{path}`"
+
+    lines = []
+    for source in collected:
+        refs = github_read(source)
+        facts_of = [phrase(step_status(source))]
+        facts_of.append(
+            f"branch `{refs.branch}`" if refs is not None and refs.branch else "no branch recorded"
+        )
+        if refs is not None and refs.has_pr():
+            pr = pr_label(refs)
+            if refs.pr_url:
+                pr += f" {refs.pr_url}"
+            facts_of.append(pr)
+        facts_of.append(where(source))
+        lines.append(f"- **{_step_key(source)}** {source.title} — " + " · ".join(facts_of))
+    keys = [_step_key(source) or source.title for source in collected]
+    lines += [
+        "",
+        f"This step collects the work of {_listed(keys)}: it may start once"
+        f" {'that step reads' if len(keys) == 1 else 'each of them reads'} ready for review,"
+        " and landing that work is its job. Take each one's branch or PR into yours as a"
+        " merge commit of its own, reconcile what they could not see of each other, and"
+        " review the whole before you ask for a review of it. Once a source's work has"
+        " landed in your branch, set it done yourself — you are the step allowed to:"
+        + "".join(
+            f" `dplanner status set {_quoted(key)} done`{',' if i < len(keys) - 1 else '.'}"
+            for i, key in enumerate(keys)
+        ),
+    ]
+    return "\n".join(lines)
+
+
+def _listed(words: "Sequence[str]") -> str:
+    """``A``, ``A and B``, ``A, B and C`` — a list as a sentence says it."""
+    if len(words) < 2:
+        return "".join(words)
+    return ", ".join(words[:-1]) + f" and {words[-1]}"
+
+
+def _quoted(key: str) -> str:
+    """A step's key or title as a verb takes it: quoted only when it has a space."""
+    return f"'{key}'" if " " in key else key
 
 
 def _briefing_project_sections(
@@ -2371,6 +2486,14 @@ def _is_wait(step: "Step") -> bool:
     return is_wait(step)
 
 
+def _auto_progresses(waiter: "Step", source: "Step") -> bool:
+    """Whether ``waiter`` may start once ``source`` is ready for review — the one answer
+    the frontier, Run Agent's gate, the canvas and every CLI mark read."""
+    from dplanner.modules.auto_progress.aspect import progresses
+
+    return progresses(waiter, source)
+
+
 def _is_agent_step(step: "Step") -> bool:
     """Whether an agent executes the step — the agent aspect's answer, for the status verb."""
     from dplanner.modules.step_agent_instruction.aspect import enabled
@@ -2509,6 +2632,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
             counts_as_work=_counts_as_work,
             days_for=estimated_days,
             key_of=_step_key,
+            auto_progresses=_auto_progresses,
         ),
         time_estimates(_time_readers()),
         graph(
@@ -2581,7 +2705,7 @@ def _agent_preamble(step: "Step", in_worktree: bool, facts: "RepositoryFacts | N
         " (`dplanner skill install`)."
     ]
     key = _step_key(step) or step.title or "this step"
-    ref = f"'{key}'" if " " in key else key
+    ref = _quoted(key)
     lines.append(
         "Then say you are working, before you touch anything: `dplanner agent-work start"
         f" '<what you are about to do>' --step {ref}`. A developer may have a DPlanner"
@@ -2710,11 +2834,22 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
     PR are named after; the note verbs name the project too, since a note is the
     project's record.
     """
+    from dplanner.modules.auto_progress.aspect import collectors
     from dplanner.modules.notes.reach import project_ref
 
     key = _step_key(step) or step.title or "Untitled step"
-    ref = f"'{key}'" if " " in key else key
+    ref = _quoted(key)
     project = project_ref(library.project_of(step.id))
+    takers = [_step_key(other) or other.title for other in collectors(library, step)]
+    collected = (
+        f"- {_listed(takers)} {'collects' if len(takers) == 1 else 'collect'} this step's work:"
+        f" {'it' if len(takers) == 1 else 'each'} may start as soon as you set"
+        " ready-for-review, and takes your branch or PR from there — so push everything"
+        " and open the PR first. Leave this step's done to "
+        f"{'it' if len(takers) == 1 else 'them'}.\n"
+        if takers
+        else ""
+    )
     return (
         f"This step is {key}. Its branch and worktree carry that key; open the PR title"
         f" with it (`{key}: …`) and record the branch and the PR on the step as they"
@@ -2747,7 +2882,8 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
         " `plan-for-review` above, which is your plan waiting for a look. If nothing needs"
         f" reviewing, `dplanner status set {ref} done --because '<why>'` keeps the reason"
         " as a decision note.\n"
-        f"- `dplanner note add {project} handoff '<one line the next worker needs>'"
+        + collected
+        + f"- `dplanner note add {project} handoff '<one line the next worker needs>'"
         f" --step {ref} --file -` with what whoever picks up after you must know —"
         " where things are, what is half done, what bit you. Title it as the fact it"
         " is; the body carries the detail. Add `--for S12` for a step that must read it"
@@ -2960,12 +3096,14 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
 
     Assembled here because each policy lives in its owner's Qt-free half and no module may
     import another's; both the window's Paste/Duplicate and ``step duplicate`` read this
-    tuple. Five entries, on purpose: an id minted per project (a test's), the state of a
+    tuple. Six entries, on purpose: an id minted per project (a test's), the state of a
     shell somebody is running and what its runs consumed, and the days a status was said
-    on — all facts about the original — and a feature's passages, which were read into
-    *that* feature and are not a claim a copy may make. Everything else a step carries
-    copies as it is.
+    on — all facts about the original — a feature's passages, which were read into
+    *that* feature and are not a claim a copy may make, and the steps an auto-progress
+    entry names, which become their copies'. Everything else a step carries copies as it
+    is.
     """
+    from dplanner.modules.auto_progress.aspect import remap_for_paste
     from dplanner.modules.feature.aspect import drop_cites_for_paste
     from dplanner.modules.step_agent_run.aspect import forget_for_paste
     from dplanner.modules.step_agent_run.usage import forget_for_paste as forget_usage
@@ -2978,6 +3116,7 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
         forget_usage,
         forget_days_for_paste,
         drop_cites_for_paste,
+        remap_for_paste,
     )
 
 
@@ -3093,6 +3232,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     the spec.
     """
     from dplanner.cli.scopes import lint_checks as scope_lint
+    from dplanner.modules.auto_progress import cli as auto_progress_cli
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.feature import cli as feature_cli
@@ -3109,6 +3249,8 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     return (
         *projects_cli.lint_checks(),
         *start_cli.lint_checks(),
+        # Collecting is an agent's job: the agent aspect's reader, handed over.
+        *auto_progress_cli.lint_checks(is_agent=_is_agent_step, key_of=_step_key),
         *description_cli.lint_checks(),
         *docs_cli.lint_checks(kinds=scopes),
         # An agent step is briefed by its description unless it carries a separate
@@ -3233,6 +3375,7 @@ def default_cli_commands(
     from dplanner.core.telemetry import crash_log_path, journal_path
     from dplanner.domain.locations import roles_by_id
     from dplanner.modules.agent_at_work import cli as at_work_cli
+    from dplanner.modules.auto_progress import cli as auto_progress_cli
     from dplanner.modules.coverage import cli as coverage_cli
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
@@ -3288,6 +3431,8 @@ def default_cli_commands(
                 start_cli.step_author(),
                 description_cli.step_author(),
                 agent_cli.step_author(),
+                # After --after has made the links, and the agent aspect beside them.
+                auto_progress_cli.step_author(),
                 estimation_cli.step_author(),
                 # The feature author carries the spec-passage flags: creating a feature
                 # *is* creating its step, so there is no verb of its own to put them on.
@@ -3297,6 +3442,8 @@ def default_cli_commands(
             ],
             # The key a row prints is the one the canvas paints: one rule, here.
             key_of=_step_key,
+            # `project graph` and `step show` mark the links a step collects across.
+            auto_progresses=_auto_progresses,
             # The location roles every module declared, and where a read-only one's
             # managed clone stands — both cross-module facts, handed in here.
             roles=roles,
@@ -3332,6 +3479,11 @@ def default_cli_commands(
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),
+        # Who may collect (an agent step) and where each source stands, through the
+        # owners' Qt-free readers.
+        *auto_progress_cli.commands(
+            is_agent=_is_agent_step, status_for=step_status, key_of=_step_key
+        ),
         # A feature's passages are anchored in the spec documents by the spec module's
         # one derivation, handed across here — `cite`, `reanchor`, `step add --feature`
         # and lint all judge a quote the same way.
@@ -3361,7 +3513,10 @@ def default_cli_commands(
         # Progression reads statuses and estimates through the aspects' Qt-free readers —
         # handed over here so no cli.py imports another module's.
         *progression_cli.commands(
-            status_in=_status_in, counts_as_work=_counts_as_work, days_for=estimated_days
+            status_in=_status_in,
+            counts_as_work=_counts_as_work,
+            days_for=estimated_days,
+            auto_progresses=_auto_progresses,
         ),
         # The timeline sort reads a step's length through estimation's Qt-free reader —
         # handed over here so neither cli.py imports the other.
@@ -3524,6 +3679,7 @@ def aspect_specs() -> list["AspectSpec"]:
     an agent uses to find out what a step can carry. Each package declares its own ``SPEC``;
     this is only the list of packages, in the order a person would read them.
     """
+    from dplanner.modules.auto_progress import aspect as auto_progress
     from dplanner.modules.docs import aspect as docs
     from dplanner.modules.estimation import aspect as estimation
     from dplanner.modules.feature import aspect as feature
@@ -3545,6 +3701,7 @@ def aspect_specs() -> list["AspectSpec"]:
         agent.SPEC,
         agent_run.SPEC,
         agent_usage.SPEC,
+        auto_progress.SPEC,
         check.SPEC,
         description.SPEC,
         docs.SPEC,

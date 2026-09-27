@@ -24,7 +24,7 @@ once and pushed to every open canvas when it changes: a way of looking at graphs
 one project, so a tab opened later wears the same look and a second window would too.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPoint, QPointF, Qt
@@ -41,6 +41,7 @@ from dplanner.domain.commands import (
 from dplanner.domain.model import (
     SOURCE,
     WAITER,
+    Edge,
     EdgeEnd,
     Library,
     NodeId,
@@ -112,7 +113,7 @@ from dplanner.modules.project_editor.positions import (
     write_position,
 )
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
-from dplanner.modules.project_editor.renderers import NodeAccent
+from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
 from dplanner.modules.project_editor.selection import EDGE_KIND, CanvasSelection, EdgeRef
 from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
 
@@ -137,6 +138,10 @@ SWITCHABLE_MODES: dict[str, Callable[[CanvasDeps], ModeBase]] = {
 
 
 def _no_accents(_project_id: str) -> dict[StepId, NodeAccent]:
+    return {}
+
+
+def _no_edge_accents(_project_id: str) -> Mapping[Edge, EdgeAccent]:
     return {}
 
 
@@ -167,6 +172,9 @@ class ProjectEditorDeps:
     # holds; what is wrong with a plan is *derived* from it, on a settle of its own, so it
     # lands after the change that caused it and has to say so itself.
     accents_changed: "CoreSignal[str] | None" = None
+    # The same for the arrows, keyed (waiter, kind, source): which links auto-progress, and
+    # which of those carry work that is being done right now. Absent means a plain arrow.
+    edge_accents: Callable[[str], Mapping[Edge, EdgeAccent]] = field(default=_no_edge_accents)
 
     # How long a step takes, from whichever module owns estimates — the timeline sort reads
     # time through this, the same seam domain/schedule.py uses one level down.
@@ -447,7 +455,10 @@ class ProjectActivity(EntityActivity):
             for kind, targets in step.edges.items()
             for source in targets
         ]
-        self._scene.sync(nodes, edges)
+        edge_accents = {
+            EdgeRef(*edge): accent for edge, accent in self._deps.edge_accents(project.id).items()
+        }
+        self._scene.sync(nodes, edges, edge_accents)
 
     def _on_structure(self, parent_id: NodeId, _origin: object = None) -> None:
         if not self._product.belongs_to(parent_id, self.project_id):

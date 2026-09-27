@@ -70,7 +70,7 @@ def test_a_row_this_build_cannot_read_is_skipped():
 def test_a_pasted_step_carries_no_usage():
     step = Step(title="A")
     step.module_data[usage.MODULE_ID] = {"runs": [{"input": 3, "output": 4}]}
-    usage.forget_for_paste(Project(title="P"), [step])
+    usage.forget_for_paste(Project(title="P"), [step], {})
     assert usage.MODULE_ID not in step.module_data
 
 

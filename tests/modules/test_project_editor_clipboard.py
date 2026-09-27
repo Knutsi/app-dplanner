@@ -188,13 +188,13 @@ def test_a_policy_sees_the_clones_and_the_target_project_before_anything_exists(
     first.module_data["secret"] = {"x": 1}
     seen = []
 
-    def policy(target, clones):
-        seen.append((target.id, [s.title for s in clones], len(target.steps)))
+    def policy(target, clones, remapped):
+        seen.append((target.id, [s.title for s in clones], len(target.steps), dict(remapped)))
         clones[0].module_data.pop("secret")
 
     clips = clip(library, no_files, (), [first.id])
     command, [copy] = paste(library, project.id, clips, anchor=None, policies=(policy,))
-    assert seen == [(project.id, ["Read the spec"], 3)]
+    assert seen == [(project.id, ["Read the spec"], 3, {first.id: copy.id})]
     command.redo(library)
     assert "secret" not in copy.module_data and first.module_data["secret"] == {"x": 1}
 
@@ -218,7 +218,7 @@ def test_a_copied_test_gets_a_fresh_id_minted_across_the_batch(library):
     clones[0].module_data["testing"] = dict(first.module_data["testing"])
     clones[1].module_data["testing"] = dict(second.module_data["testing"])
 
-    remint_for_paste(project, clones)
+    remint_for_paste(project, clones, {})
 
     assert [t.id for t in read(clones[0])] == ["T103", "T104"]
     assert [t.id for t in read(clones[1])] == ["T105"]
@@ -232,6 +232,6 @@ def test_a_copied_agent_run_is_forgotten(library):
     clone = Step(title="a")
     clone.module_data[MODULE_ID] = write("working")
     clone.module_data["step_status"] = {"status": "done"}
-    forget_for_paste(library.projects[0], [clone])
+    forget_for_paste(library.projects[0], [clone], {})
     assert read(clone) == "" and MODULE_ID not in clone.module_data
     assert clone.module_data["step_status"] == {"status": "done"}

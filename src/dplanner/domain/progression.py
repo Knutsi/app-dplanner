@@ -21,6 +21,13 @@ of the graph like a running step, counts as one move away for the lookahead, and
 nothing — a plain ``requires`` is fulfilled by ``done`` alone, so nothing starts on work
 nobody has accepted.
 
+**Except across an auto-progress link.** A step that exists to take parallel work and land
+it — three agents' branches merged by a fourth — cannot wait for its sources to be done,
+because they are done only once it has landed them. ``auto_progresses(waiter, source)`` is
+handed in like ``status_for`` (the module owning the flag owns its shape), and a source it
+answers yes for is fulfilled from review on. :func:`outstanding` is that one answer, read by
+the frontier, the lookahead and Run Agent's gate alike.
+
 **A wait is no work, and it is done when it is over.** ``counts_as_work`` leaves a wait out
 of every partition and count, and ``status_for`` — ``schedule.wait_status`` in the window
 and the terminal — reads it done once its day has come, so what waits on it is ready then.
@@ -61,6 +68,32 @@ def phrase(status: str) -> str:
 
 def _all_work(_step: Step) -> bool:
     return True
+
+
+def _never(_waiter: Step, _source: Step) -> bool:
+    return False
+
+
+def outstanding(
+    library: Library,
+    waiter: Step,
+    status_for: Callable[[Step], str],
+    auto_progresses: Callable[[Step, Step], bool] = _never,
+) -> list[Step]:
+    """The resolved prerequisites ``waiter`` still waits on — dead ids skipped, as everywhere.
+
+    A prerequisite is fulfilled when it reads done, or when it reads ready for review or
+    ready to merge across a link that auto-progresses: the step waiting on it takes the
+    work from there.
+    """
+    waiting = []
+    for source in library.requires(waiter.id):
+        word = status_for(source)
+        # The link is asked about only when its source reads a word the answer can change:
+        # this runs for every link on every walk.
+        if word != DONE and not (word in REVIEW_AND_MERGE and auto_progresses(waiter, source)):
+            waiting.append(source)
+    return waiting
 
 
 @dataclass(frozen=True)
@@ -130,6 +163,7 @@ def progression(
     project: Project,
     status_for: Callable[[Step], str],
     counts_as_work: Callable[[Step], bool] = _all_work,
+    auto_progresses: Callable[[Step, Step], bool] = _never,
 ) -> Progression:
     """One walk in project order, so the answer is deterministic — ``ordering.py``'s rule.
 
@@ -140,7 +174,8 @@ def progression(
     its prerequisite flips between in-progress and blocked. A step that is no work
     (``counts_as_work``) lands in none of them, but what it reads still gates what waits
     on it. Each partition a person acts on is ranked by ``unlocks``; ties keep project
-    order.
+    order. ``auto_progresses`` says which links free their waiter from review on
+    (:func:`outstanding`).
     """
     status = {step.id: status_for(step) for step in project.steps}
     work = [step for step in project.steps if counts_as_work(step)]
@@ -152,11 +187,13 @@ def progression(
 
     pending = [step for step in work if status[step.id] not in {DONE, *on_board}]
 
-    def outstanding(step: Step) -> list[Step]:
-        """The resolved prerequisites not yet done — dead ids skipped, as everywhere."""
-        return [t for t in library.requires(step.id) if status.get(t.id) != DONE]
+    def status_of(step: Step) -> str:
+        return status.get(step.id, "")
 
-    frontier = [step for step in pending if not outstanding(step)]
+    def waits_on(step: Step) -> list[Step]:
+        return outstanding(library, step, status_of, auto_progresses)
+
+    frontier = [step for step in pending if not waits_on(step)]
     ready_ids = {step.id for step in frontier}
     # The reverse edges, built once: asking the library per visit would scan the project
     # for every step of every cone.
@@ -180,9 +217,9 @@ def progression(
     for step in pending:
         if step.id in ready_ids:
             continue
-        waits_on = outstanding(step)
-        if all(status[t.id] in on_board or t.id in ready_ids for t in waits_on):
-            upcoming.append(Upcoming(step, tuple(waits_on)))
+        after = waits_on(step)
+        if all(status[t.id] in on_board or t.id in ready_ids for t in after):
+            upcoming.append(Upcoming(step, tuple(after)))
         else:
             waiting.append(step)
 

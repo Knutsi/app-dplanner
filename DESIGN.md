@@ -781,7 +781,10 @@ and one stylesheet rule for the progress bar:
   person came for.
 - **The only things that move are the agent ring, the Updating indicator and the glyph of
   a button whose work is running.** No fades, no slides: on a still surface every change
-  is a change of fact, so the eye is drawn only by facts.
+  is a change of fact, so the eye is drawn only by facts. The one extension is the ring's
+  own motion carried along a link: an auto-progress arrow out of a step wearing the ring
+  moves its chevrons on the ring's clock, because the fact is the same one — somebody is at
+  work, and that work will move along this link on its own.
 - **Selection follows the keyboard**: arrows move the row edge and whatever follows the
   selection follows it, as a click would.
 
@@ -845,8 +848,9 @@ from the code or a screenshot, and Debug ▸ Design Examples is what *yes* looks
     rebuild's end?
 14. Is every busy, ok and error a `StatusLine` in place, and every rewritten `QLabel` gone?
 15. Is any progress bar 4 px, accent and determinate?
-16. Does nothing fade, slide or animate except the ring, the indicator and a working
-    button's glyph — and does that button carry a glyph, so nothing moves when it turns?
+16. Does nothing fade, slide or animate except the ring (and the chevrons it carries along
+    an auto-progress link), the indicator and a working button's glyph — and does that
+    button carry a glyph, so nothing moves when it turns?
 
 **The surfaces, as audited when the system was written (September 2026)** — what makes
 each read as Qt, and so what its pass has to change. A surface not named here was not

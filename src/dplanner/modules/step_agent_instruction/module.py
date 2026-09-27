@@ -39,9 +39,8 @@ from dplanner.core.storage.locations import remote_label
 from dplanner.core.telemetry import current
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.locations import Placement
 from dplanner.domain.model import Library, Node, NodeId, Step, StepId
-from dplanner.domain.progression import DONE, phrase
+from dplanner.domain.progression import DONE, outstanding, phrase
 from dplanner.domain.repositories import UNSET, RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
 from dplanner.framework.action_menu import append_action
@@ -150,30 +149,10 @@ def _all_done(_step: Step) -> str:
     return DONE
 
 
-def _workdir(facts: RepositoryFacts, step: Step | None = None) -> Path | None:
-    """Where an agent on this project works — a step's, or one opened with nothing to do:
-    the checkout of the code location the step names (its ``workplace``, else the
-    project's primary code row) when the project records one, else where the facts read
-    the code as being — the plan's own repository for the older shape of a plan kept
-    beside its code, nowhere for a project whose code is not set. None when it is not
-    here."""
-    placement = _code_placement(facts, step)
-    if placement is not None:
-        return placement.root if placement.here else None
-    return facts.code_root
-
-
-def _code_placement(facts: RepositoryFacts, step: Step | None) -> Placement | None:
-    """The code location a step works in, placed: the row its workplace names, else the
-    primary. A named row that is gone falls back to the primary — lint says so."""
-    named = facts.placement(workplace(step)) if step is not None else None
-    return named if named is not None else facts.code
-
-
 def _unplaced(facts: RepositoryFacts, step: Step | None = None) -> str:
     """The code repository this agent would work in that this machine has no checkout of
     — what Run Agent clones first — or "" when it is placed or there is none."""
-    placement = _code_placement(facts, step)
+    placement = launcher.code_placement(facts, step)
     if placement is not None and placement.root is None:
         return placement.location.repository
     return ""
@@ -183,7 +162,7 @@ def _workdir_refusal(facts: RepositoryFacts, step: Step | None = None) -> str:
     """Why no shell can open where this project's agent would work; "" when one can. A
     repository not checked out here is a refusal only for a verb that cannot clone — Run
     Agent asks :func:`_unplaced` first and clones."""
-    placement = _code_placement(facts, step)
+    placement = launcher.code_placement(facts, step)
     if placement is not None:
         label = placement.location.repository_label
         if not placement.here:
@@ -311,6 +290,9 @@ class StepAgentInstructionDeps:
     # status aspect owns the word and the fact that the write skips the undo stack — this
     # module only knows a run has started.
     mark_started: Callable[[StepId], bool] = field(default=_no_start)
+    # Whether a waiter may start once a source is ready for review — an auto-progress
+    # link, which the gate reads through the same domain answer the frontier does.
+    auto_progresses: Callable[[Step, Step], bool] = field(default=lambda _waiter, _source: False)
     # A wait is no work, so there is nothing on one for an agent to do: the Agent toggle
     # greys on a wait and Run Agent refuses one. The composition root knows what marks it.
     is_wait: Callable[[Step], bool] = field(default=lambda _step: False)
@@ -347,7 +329,8 @@ class StepAgentInstructionModule:
             return deps.briefing.parts(deps.library, deps.library.step(step_id), deps.files)
 
         def sections_for(step_id: StepId) -> Sequence[PromptPart]:
-            return deps.briefing.sections(deps.library, deps.library.step(step_id), deps.files)
+            step = deps.library.step(step_id)
+            return deps.briefing.sections(deps.library, step, deps.files, deps.facts_for(step_id))
 
         def make_section() -> AgentSection:
             # The tab's buttons are the same verbs the menus run — evaluated lazily, so
@@ -619,7 +602,9 @@ class StepAgentInstructionModule:
         ]
         sections = [
             PromptPart(heading=section.heading, body=section.body, files=place(section.files))
-            for section in deps.briefing.sections(deps.library, step, deps.files)
+            for section in deps.briefing.sections(
+                deps.library, step, deps.files, deps.facts_for(step.id)
+            )
         ]
         project_files = place(asset_paths(deps.files, project.id))
         # The ## Instructions block comes from the briefing — the separate instruction
@@ -695,13 +680,9 @@ class StepAgentInstructionModule:
             deps.status.show_status(f"{launched} agents launched{note}", 4000)
 
     def _unfinished(self, step: Step) -> list[Step]:
-        """The step's prerequisites that do not read done — what the graph gate asks about."""
+        """The step's prerequisites it still waits on — what the graph gate asks about."""
         deps = self._deps
-        return [
-            required
-            for required in deps.library.requires(step.id)
-            if deps.status_for(required) != DONE
-        ]
+        return outstanding(deps.library, step, deps.status_for, deps.auto_progresses)
 
     def _run_on(self, step: Step, profile: Profile, claim_started: bool) -> tuple[bool, bool]:
         """Launch the agent on one step: whether a shell opened (the fallback showed when
@@ -715,7 +696,7 @@ class StepAgentInstructionModule:
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
         worktree = self._run_name(step) if uses_worktree(step) else ""
-        workdir = _workdir(deps.facts_for(step.id), step)
+        workdir = launcher.workdir(deps.facts_for(step.id), step)
         spawned, prepared = self._launch(
             assembled.text,
             run_dir,
@@ -886,7 +867,7 @@ class StepAgentInstructionModule:
             "",
             launcher.new_run_dir(),
             "",
-            _workdir(deps.facts_for(project_id)),
+            launcher.workdir(deps.facts_for(project_id)),
             profile,
             project_id=project_id,
             subject=title,
@@ -1154,7 +1135,7 @@ class StepAgentInstructionModule:
                 text,
                 run_dir,
                 "",
-                _workdir(deps.facts_for(step_id)),
+                launcher.workdir(deps.facts_for(step_id)),
                 profile,
                 project_id=project.id,
                 subject=f"{deps.step_key(step)} {step.title}".strip(),

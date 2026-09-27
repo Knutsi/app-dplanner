@@ -22,7 +22,7 @@ entry. A step set back to pending keeps them — an entry with no ``status`` key
 as pending — so a reopened step still knows when it first began.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Any, Final
 
@@ -138,7 +138,9 @@ def record_started(library: Library, step_id: StepId, today: date) -> bool:
     return True
 
 
-def forget_days_for_paste(_project: Project, steps: Sequence[Step]) -> None:
+def forget_days_for_paste(
+    _project: Project, steps: Sequence[Step], _remapped: Mapping[StepId, StepId]
+) -> None:
     """A copied step keeps its status but not the days it was said on — the paste policy
     this module hands in. The copy did not start or change on the original's days; its days
     are unknown until somebody writes one, and an entry left with nothing goes."""

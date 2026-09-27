@@ -7,9 +7,10 @@ selection alone: steps are a **card**, arrows an **arrow**, both a **mixed** pic
 
 Each target is a row of bands, rendered in order by ``fill_bands``, never an entry
 written here: a verb registered into a band appears in every menu that renders it, which is
-how Auto-progress (F11) reaches the arrow and the mixed pick's *Links* by registering into
-Graph ▸ ``links``. It is a table rather than an entry of its own in ``MENU_STRUCTURE``
-because an entry there is a place verbs are *registered into*, and nothing registers here.
+how Auto-progress (``modules/auto_progress/``) reaches the arrow and the mixed pick's
+*Links* by registering into Graph ▸ ``links``. It is a table rather than an entry of its own
+in ``MENU_STRUCTURE`` because an entry there is a place verbs are *registered into*, and
+nothing registers here.
 A stack's frame (S18) is one more row and one more branch in :func:`target_of`.
 ``ARCHITECTURE.md``'s *A right-click is composed by what is under it* has the reasoning.
 """

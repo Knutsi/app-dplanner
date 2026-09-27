@@ -19,17 +19,18 @@ written after the command is applied — an attachment is not undoable, the trad
 step the caller runs once the clones exist.
 
 **A module with a say in what a copy carries hands in a policy.** Aspect data is opaque to
-this file and copied verbatim, but two facts cannot honestly travel: an id minted per
-project and the state of a shell somebody is running. Each owner exports a
-:data:`PastePolicy` from its Qt-free half, the composition root assembles the tuple, and the
-policies see the whole batch before any command exists — so ids minted for three pasted
-steps cannot collide with each other.
+this file and copied verbatim, but some facts cannot honestly travel: an id minted per
+project, the state of a shell somebody is running, and a step id an aspect names. Each owner
+exports a :data:`PastePolicy` from its Qt-free half, the composition root assembles the
+tuple, and the policies see the whole batch before any command exists — so ids minted for
+three pasted steps cannot collide with each other — together with the old→new id map the
+links are remapped by, for an aspect that names other steps.
 """
 
 import base64
 import copy
 import json
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -51,8 +52,9 @@ from dplanner.modules.project_editor.positions import node_size, read_size, writ
 MIME_TYPE = "application/x-dplanner-steps+json"
 
 # A module's hands on steps about to arrive in ``project``: called with the clones before
-# they exist anywhere, free to rewrite or drop its own entry on each.
-type PastePolicy = Callable[[Project, list[Step]], None]
+# they exist anywhere, free to rewrite or drop its own entry on each, and with each copied
+# step's id mapped to its clone's — the map the links between copies are remapped by.
+type PastePolicy = Callable[[Project, list[Step], Mapping[StepId, StepId]], None]
 
 
 @dataclass(frozen=True)
@@ -232,10 +234,10 @@ def paste(
         # The copy keeps the size its original was given, like every other stored fact.
         clone.module_data[POSITION_KEY] = write_position(x, y, read_size(clone))
         clones.append(clone)
-    for policy in policies:
-        policy(project, clones)
-
     remapped = {c.id: clone.id for c, clone in zip(clips, clones, strict=True)}
+    for policy in policies:
+        policy(project, clones, remapped)
+
     commands: list[Command] = [AddNodeCommand(project_id, clone) for clone in clones]
     for c, clone in zip(clips, clones, strict=True):
         for kind, targets in c.edges.items():

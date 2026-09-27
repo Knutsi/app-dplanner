@@ -5,6 +5,8 @@ painting is composed in ``renderers.py`` from pure helpers; interaction lives in
 ``modes.py``, one mode per behaviour, so no item and no scene grows a state machine.
 """
 
+from math import hypot
+
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
     QColor,
@@ -28,6 +30,7 @@ from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.renderers import (
     PAINT_MARGIN,
+    EdgeAccent,
     NodeAccent,
     NodeState,
     RenderHints,
@@ -60,6 +63,20 @@ LIT_ALPHA = 190
 # so its shape() is the stroked path at this width — comfortably a target, still narrow
 # enough that two edges through the same gap stay tellable apart.
 EDGE_GRAB = 14.0
+
+# A doubled arrow — work that moves along it on its own — is two rails this far apart,
+# centre to centre, with a chevron every CHEVRON_PITCH between them pointing at the step
+# that waits. The rails read from across the graph, where a medallion at the middle would
+# be a dot; the chevrons say which way, close up. Both stay inside EDGE_GRAB's margin.
+RAIL_GAP = 6.0
+CHEVRON_PITCH = 14.0
+CHEVRON_ARM = 2.2  # Half the chevron's height, clear of the rails' inner edges.
+# Clear of the tail where it leaves the card, and of the head where it arrives.
+CHEVRON_TAIL = 6.0
+CHEVRON_HEAD = 12.0
+# How far the chevrons travel per step of the scene's ring phase: the pace of the ring's
+# own dashes (RING_STEP of a dash measured in 1.5 px pens), so the two motions are one.
+FLOW_PER_PHASE = 1.5
 
 
 def snapped_point(scene: object, point: QPointF) -> QPointF:
@@ -289,8 +306,11 @@ class EdgeItem(QGraphicsPathItem):
     """An arrow from the step waited on to the step that waits.
 
     ``requires`` is solid with a head because it orders the graph; ``relates`` is dashed
-    without one because it does not. That is the whole visual vocabulary, and it matches
-    what ``EDGE_KINDS`` means.
+    without one because it does not — what ``EDGE_KINDS`` means. An :class:`EdgeAccent`
+    says the rest, translated by the composition root: a *doubled* arrow is two rails with
+    chevrons between them (the work moves along it on its own — an auto-progress link),
+    and a *flowing* one moves its chevrons on the scene's ring clock (that work is being
+    done right now).
     """
 
     def __init__(self, source: StepNodeItem, waiter: StepNodeItem, kind: str) -> None:
@@ -302,6 +322,16 @@ class EdgeItem(QGraphicsPathItem):
         self._head: QPolygonF | None = None
         self._hovered = False
         self._lit = False
+        self._accent = EdgeAccent()
+        self._phase = 0.0
+        # A doubled arrow's two drawings, kept with the path and redrawn only when it moves
+        # or its chevrons do.
+        self._rails = QPainterPath()
+        self._chevrons = QPainterPath()
+        # The curve flattened to a polyline, kept while the path stands: the chevrons are
+        # placed by walking it, since asking Qt for a point at a length costs ~40 µs a time.
+        self._track: list[QPointF] = []
+        self._ends: tuple[float, float, float, float] | None = None
         self.setZValue(-1)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setAcceptHoverEvents(True)
@@ -317,6 +347,27 @@ class EdgeItem(QGraphicsPathItem):
     def set_dimmed(self, dimmed: bool) -> None:
         """Fade the arrow: the spotlight is on and the selection does not touch it."""
         self.setOpacity(DIM_OPACITY if dimmed else 1.0)
+
+    def set_accent(self, accent: EdgeAccent) -> None:
+        """How the arrow looks beyond its kind — the scene hands it over on every sync."""
+        if accent != self._accent:
+            self._accent = accent
+            self._dress()
+            self.update()
+
+    def accent(self) -> EdgeAccent:
+        return self._accent
+
+    def flows(self) -> bool:
+        """Whether this arrow's chevrons move — what keeps the scene's ring clock running."""
+        return self._accent.doubled and self._accent.flowing
+
+    def set_flow_phase(self, phase: float) -> None:
+        """One tick of the scene's ring clock: a flowing arrow's chevrons move on."""
+        if self.flows():
+            self._phase = phase
+            self._chevrons = self._chevron_marks()
+            self.update()
 
     def shape(self) -> QPainterPath:
         stroker = QPainterPathStroker()
@@ -338,6 +389,12 @@ class EdgeItem(QGraphicsPathItem):
     def follow(self) -> None:
         start = self.source.anchor_toward(self.waiter.scenePos())
         end = self.waiter.anchor_toward(self.source.scenePos())
+        # Every sync asks every arrow to follow, and most have not moved: the curve is a
+        # function of its two ends, so an arrow whose ends stand keeps what it drew.
+        ends = (start.x(), start.y(), end.x(), end.y())
+        if ends == self._ends:
+            return
+        self._ends = ends
         path = QPainterPath(start)
         reach = max(40.0, abs(end.x() - start.x()) / 2)
         path.cubicTo(QPointF(start.x() + reach, start.y()), QPointF(end.x() - reach, end.y()), end)
@@ -347,6 +404,47 @@ class EdgeItem(QGraphicsPathItem):
         self._head = (
             _arrow_head(path.pointAtPercent(0.92), end) if self.kind == "requires" else None
         )
+        self._dress()
+
+    def _dress(self) -> None:
+        """The doubled arrow's rails and chevrons, over the current path — or nothing."""
+        if not self._accent.doubled:
+            self._rails = self._chevrons = QPainterPath()
+            self._track = []
+            return
+        stroker = QPainterPathStroker()
+        stroker.setWidth(RAIL_GAP)
+        stroker.setCapStyle(Qt.PenCapStyle.FlatCap)
+        self._rails = stroker.createStroke(self.path()).simplified()
+        polygons = self.path().toSubpathPolygons()
+        curve = polygons[0] if polygons else QPolygonF()
+        self._track = [curve.at(index) for index in range(curve.size())]
+        self._chevrons = self._chevron_marks()
+
+    def _chevron_marks(self) -> QPainterPath:
+        """A chevron every CHEVRON_PITCH along the track, pointing at the step that waits
+        and shifted along by the flow's phase — each one a short open polyline."""
+        marks = QPainterPath()
+        segments = []
+        for start, end in zip(self._track, self._track[1:], strict=False):
+            dx, dy = end.x() - start.x(), end.y() - start.y()
+            if length := hypot(dx, dy):
+                segments.append((start, dx, dy, length))
+        stop = sum(length for *_rest, length in segments) - CHEVRON_HEAD
+        at = CHEVRON_TAIL + ((self._phase * FLOW_PER_PHASE) % CHEVRON_PITCH if self.flows() else 0)
+        walked = 0.0
+        for start, dx, dy, length in segments:
+            while at < min(walked + length, stop):
+                share = (at - walked) / length
+                ahead = QPointF(dx / length, dy / length)
+                across = QPointF(-ahead.y(), ahead.x())
+                tip = start + QPointF(dx * share, dy * share) + ahead * CHEVRON_ARM * 0.6
+                marks.moveTo(tip - ahead * CHEVRON_ARM + across * CHEVRON_ARM)
+                marks.lineTo(tip)
+                marks.lineTo(tip - ahead * CHEVRON_ARM - across * CHEVRON_ARM)
+                at += CHEVRON_PITCH
+            walked += length
+        return marks
 
     def paint(
         self,
@@ -365,9 +463,19 @@ class EdgeItem(QGraphicsPathItem):
         style = Qt.PenStyle.SolidLine if self.kind == "requires" else Qt.PenStyle.DashLine
         stressed = self.isSelected() or self._hovered or self._lit
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(QPen(colour, 2.4 if stressed else 1.4, style))
         painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.drawPath(self.path())
+        if self._accent.doubled:
+            # Thinner than a single line, since there are two of them and the chevrons.
+            painter.setPen(QPen(colour, 1.6 if stressed else 1.0, style))
+            painter.drawPath(self._rails)
+            chevron = QPen(colour, 1.4 if stressed else 1.1)
+            chevron.setCapStyle(Qt.PenCapStyle.RoundCap)
+            chevron.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(chevron)
+            painter.drawPath(self._chevrons)
+        else:
+            painter.setPen(QPen(colour, 2.4 if stressed else 1.4, style))
+            painter.drawPath(self.path())
         if self._head is not None:
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(colour)

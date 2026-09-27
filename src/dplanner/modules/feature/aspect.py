@@ -17,13 +17,13 @@ Everything here is Qt-free and shared verbatim by ``cli.py`` and the editor, so 
 surfaces can disagree about what a feature is.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, Takeover, stamped
 from dplanner.domain.aspects import AspectSpec
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Project, Step, StepId
 from dplanner.modules.feature.migrate import absorb_catalogue
 
 MODULE_ID = "feature"
@@ -204,7 +204,9 @@ def cited_at(cites: Sequence[FeatureSource], document: str, quote: str) -> int |
     )
 
 
-def drop_cites_for_paste(_project: Project, steps: Sequence[Step]) -> None:
+def drop_cites_for_paste(
+    _project: Project, steps: Sequence[Step], _remapped: Mapping[StepId, StepId]
+) -> None:
     """A copied feature step is still a feature, and cites nothing — the paste policy.
 
     Two steps may both be features now, so a copy keeps the marker: what was copied was a
