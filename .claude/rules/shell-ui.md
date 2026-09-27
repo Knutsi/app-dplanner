@@ -233,15 +233,18 @@ paths:
   that file's right-hand column. Qt's SVG renderer knows no `currentColor`, so the ink is
   substituted into the source and the colour's **alpha becomes the painter's opacity** —
   get that wrong and every strip reads a shade too loud. `paint_glyph` is the one painter,
-  and the canvas's medallions go through it too, so a kind's glyph on a card and the same
-  kind's glyph in a menu cannot differ. Four glyphs are still painted by hand because each
+  and the canvas's medallions and key block go through it too, so a kind's glyph on a card
+  and the same kind's glyph in a menu cannot differ. **The files are read in one place**,
+  `theme/glyph_source.py`, which loads no Qt: the report draws a card's glyph from its
+  `glyph_markup`, handed to `cli/` as data by a module's `report.py`, since `cli/` may not
+  read `theme/` itself. Four glyphs are still painted by hand because each
   is a picture of *state*: the key badge (it draws text), the colour strip (a gradient),
   the spinner (a frame per angle) and the filter funnel (two states in one width).
 - **An `ActionSpec` may carry a glyph, and only the pop-ups paint it.** `icon` is a
   `(QColor) -> QIcon` painter, rendered by `build_menu`, `append_action` and a toolbar
   dropdown — all built fresh on every open. The menu bar's QActions outlive every theme
   change, so a colour baked into one goes stale; that is the same trap as `option.palette`.
-  Every Type toggle carries the glyph its node's medallion wears (`theme/icons.py`'s
+  Every Type toggle carries the glyph its node wears (`theme/icons.py`'s
   `GLYPH_ICONS` vocabulary), so the Type submenu, the aspect bar and the node agree.
 - **A theme is provided, never listed.** `theme/providers.py` is the contract — a
   `ThemeProvider` is an id, a label, `refusal()` (why not on this machine, None when it

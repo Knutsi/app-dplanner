@@ -683,7 +683,7 @@ button's dropdown. The menu bar deliberately does not, and the reason is the sam
 the application, so a colour baked into one at startup would still be there three themes
 later. A pop-up has no such problem — it is thrown away when it closes.
 
-It earns its place on the Type submenu, where each toggle wears the very medallion its node
+It earns its place on the Type submenu, where each toggle wears the very glyph its node
 will wear, and it is what lets the aspect bar paint the same glyphs (through the specs, so
 they are the registry's and not a copy) instead of the panel hand-building a list of
 aspects it is not allowed to know.
@@ -2098,29 +2098,58 @@ agent created through the CLI grew a position file the next time a window happen
 test asserts the project is unchanged after a tab is opened, because that is the kind of rule
 that decays silently.
 
-### The spine names the card
+### The key block names the card and says who works it
 
 A step's key — `S7`, `F3` — is what a person says, what its branch and PR are named after,
 and what the agent's `dplanner` verbs address, so it has to be found from across the
-graph. It is painted on a **spine**: a 26 px strip inside the card's left edge, clipped to
-the rounded body, with the key set bold and rotated a quarter turn so it reads up the
-strip the way a book's spine does. Vertical, because a horizontal label wide enough to
-read would take a line the title needs; a spine costs the title 26 px of width and no
-height at all.
+graph. And a graph that plans agents beside people has a second question every card must
+answer at a glance: *who does this one?* Both are painted in the **key block**: a 56 px strip
+inside the card's left edge, clipped to the rounded body, with one glyph for who works the
+step over the key set level and bold, the pair centred.
 
-The spine is also where the card says where the step *stands*: its wash is the status —
+It used to be a 26 px *spine*, the key rotated a quarter turn up it the way a book's spine
+reads — vertical because a level label wide enough to read would take a line the title
+needs. The spec asked for the primary icon "in the same place as the step id", and an icon
+cannot be read sideways the way a word can, so the strip widened to hold both level: 56 px
+is the widest key a plan realistically deals (`M1234`, 37 px bold at the chrome font's nine
+points) with air either side. It costs the title thirty pixels of width and no height; the
+minimum card (`MIN_NODE_W`, 176 from 144) and the coverage lanes' minimum (`LANE_MIN_W`, 198
+from 168) grew by exactly that, so the narrowest title kept the room it had.
+
+**Three glyphs and no more**: sparkles for an agent step, a person otherwise, and a clock
+for a wait. The person is on milestones, features and checks too — a person closes those,
+and a rule with exceptions is one nobody reads at a glance, which is the whole point of it.
+The clock is the one glyph not drawn in the
+key's ink: a wait is nobody's work, and it wears the attention amber — the chips' *careful*,
+`STATUS_TONES["warn"]` at full strength, since a stroked glyph at a wash's alpha reads as a
+smudge — whatever its date. The rule is written once, `_primary_glyph` in the composition
+root, and read by every surface that shows a key: the canvas (`NodeAccent.key_glyph`), the
+coverage lanes (`Readers.glyph`) and the report's graph (`Node.glyph`); Find's rows wear it
+too. **The top edge's medallions stopped carrying the spark and the clock** when the block
+took them: they say what a step *is* — milestone, feature, tests, check — and a card that
+said who works it twice would be teaching the eye to read two places for one fact.
+
+The block is also where the card says where the step *stands*: its wash is the status —
 busy blue for in-progress, the bad red for blocked, the good green for done, and a quiet
 shade of ink otherwise, so the strip is always there and the key always has a ground. It
-replaces the 3 px status bar that sat in the same edge: one strip that carries the key and
-the status is the same idea as the bar with something to say written on it, and two
-strips down one edge would have been noise. The done wash sits on the done body's green
-— the body says the work receded, the spine says why. Everything on the left edge starts
-past it (`LEFT_INSET`): the medallions, the chip, the title.
+replaced the 3 px status bar that once sat in the same edge: one strip carrying the key,
+who works it and the status is the same idea as the bar with something to say written on
+it. The done wash sits on the done body's green — the body says the work receded, the block
+says why. Everything on the left edge starts past it (`LEFT_INSET`): the medallions, the
+chip, the title.
 
-The painter is `theme/cards.py`'s, beside the other card primitives, and the status → shade
-table is `theme/tones.py`'s `STEP_STATUS_TONES`, because the canvas is not the only surface
-where a step is a card: the coverage lanes' milestones, features and steps wear the same
-spine, so a key reads the same up every card that is a step.
+The painter is `theme/cards.py`'s `paint_key_block`, beside the other card primitives, with
+the geometry as a pure `key_block_rects` a test and a card's height can ask without a
+painter; the status → shade table is `theme/tones.py`'s `STEP_STATUS_TONES`, because the
+canvas is not the only surface where a step is a card. The coverage lanes' milestones,
+features and steps wear the same block. **The report draws it too, from a copy**:
+`cli/report/drawings.py` may not read `theme/` (the CLI starts with no graphics stack, and
+`cli/` sits below `theme/` in the layers), so it keeps the block's numbers beside its other
+hex twins and a test holds them to `theme/cards.py`'s; the glyph itself travels as data —
+`theme/glyph_source.py`, the one Qt-free reader of the vendored files, hands its drawing to
+the module's `report.py`, which puts it on the `Node`. The drawing is placed as a group with
+its stroke named, never a nested `<svg>`, a `<use>` or `currentColor`, because the PDF goes
+through QtSvg, which honours none of the three.
 
 ### A picked node is lifted, not recoloured
 
@@ -3053,7 +3082,7 @@ them in — and sets the mark past the last.
 kind is a set of toggles (*A kind is what a node is*): a stored letter would go stale the
 moment a toggle flipped, and renumbering on a kind change would break the branch. The
 root's `_step_key` ranks the kinds the way the body tone does — milestone over feature
-over check over step — and every reader takes the answer from there: the spine, every
+over check over step — and every reader takes the answer from there: the key block, every
 CLI row, `find_step` (which accepts `S7`, `s7` and bare `7`, and refuses a bare number
 that names a step in several projects the way it refuses a shared title), the run name,
 and the briefing's verbs, which address the step by key because a key is unambiguous
@@ -3353,9 +3382,10 @@ which additionally *mutes* its node, so that pair is separated by weight as well
 The nearest claimed hue is the agent-run chip's teal, and that is a labelled pill on the
 bottom edge of a running step, never a body.
 
-Every Type toggle carries its **medallion glyph** — a painter from `theme/icons.py`'s
-`GLYPH_ICONS` vocabulary, the same one the canvas answers in — so one declaration puts the
-same glyph on the Type submenu entry, on the aspect bar and on the node itself.
+Every Type toggle carries **the glyph its node wears** — a medallion's, or for Agent and Wait
+the key block's — a painter from `theme/icons.py`'s `GLYPH_ICONS` vocabulary, the same one
+the canvas answers in, so one declaration puts the same glyph on the Type submenu entry, on
+the aspect bar and on the node itself.
 
 ### A step placed by pointing at a spot earns a stored position
 
@@ -4761,7 +4791,7 @@ the day:
   `waited`), and `WAITING` until then. Derived on every read, like the rest of progression,
   so a wait releases its steps the morning it may with nobody marking anything.
 - **A wait looks like one, and only as the plan dates it now.** Its key's letter is `W`,
-  its medallion the clock, its stat how long it holds. On the Time tab the days it holds are
+  its key block wears the clock in the attention amber, its stat is how long it holds. On the Time tab the days it holds are
   hatched through both work plots and named, hatched on the calendar and named in its
   milestone's words; the report draws them as pale named bands, since QtSvg honours no
   pattern. What the page draws them from is `Snapshot.waits`, a field the snapshot carries

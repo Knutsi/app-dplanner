@@ -116,7 +116,8 @@ paths:
   the board, the Estimates tab, `estimate rollup`, `schedule show`, `order show`, the Order
   tab) and lint; the Status verbs, the Agent and Test toggles and Run Agent refuse one,
   saying why (`aspect_toggle`'s `refusal`). **A wait looks like one**: `W` for its key's
-  letter, the clock for its medallion, how long it holds for its stat; the Work page hatches
+  letter, the clock in its key block in the attention amber — nobody works a wait, and it
+  says so whatever its date — and how long it holds for its stat; the Work page hatches
   its days through both plots and names it, the calendar hatches them, a milestone's words
   name the waits in its stretch, and the report draws them as pale bands — all from
   `Snapshot.waits`, the plan's waits as it dates them now, never recorded, so History shows

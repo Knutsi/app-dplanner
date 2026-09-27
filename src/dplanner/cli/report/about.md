@@ -10,9 +10,10 @@ from the same files the planning tool works with.
   draws the plan as it stands (solid), the plan as it was on the basis day (dashed) and what
   actually landed (ink). A milestone stands on it as a named hairline where the plan lands it.
 - **Plan** is the work as a graph. A card is a step; an arrow means the step at its head
-  waits for the one at its tail; a dashed line is a plain relation. The strip on a card's left
-  carries its key and is washed by status — blue in progress, red blocked, green done. Click a
-  card, a row or a milestone anywhere on the page to open it.
+  waits for the one at its tail; a dashed line is a plain relation. The block on a card's left
+  carries its key under who does the work — sparkles for an agent, a person otherwise, an amber
+  clock for a wait — and is washed by status: blue in progress, red blocked, green done. Click
+  a card, a row or a milestone anywhere on the page to open it.
 - **Timeline** is the milestones in sequence, each bar from its start to where the plan lands
   it, filled as far as its work has landed; a small triangle marks a date somebody set. The
   staffing table says when the same work would land with a different team.

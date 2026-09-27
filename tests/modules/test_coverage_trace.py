@@ -171,14 +171,36 @@ def test_the_columns_hold_documents_passages_features_milestones_steps_tests_and
     assert [item.id for item in trace.column(STEPS)] == [
         f"step:{step.id}" for step in (work, imp, other, export, dark, ghost, login, m1)
     ]
-    # A step's key rides on every item that is a step, for the card's spine.
+    # A step's key rides on every item that is a step, for the card's key block.
     assert item(trace, f"step:{work.id}").key == "key-work"
     assert item(trace, feature_of(project, "Import")).key == "key-Import"
     assert item(trace, milestone_token(m1.id)).key == "key-M1"
     assert item(trace, NO_MILESTONE).key == "" and item(trace, "test:T100").key == ""
+    # Nobody said who works the steps, so every block carries its key alone.
+    assert item(trace, f"step:{work.id}").glyph == ("", "")
     assert item(trace, f"step:{export.id}").tone == "good"
     assert item(trace, f"step:{export.id}").status == "done"
     assert item(trace, f"step:{login.id}").features == {milestone_token(m1.id)}
+
+
+def test_every_item_that_is_a_step_carries_who_works_it():
+    """The key block's glyph and its tone, as the canvas reads them: on a feature, a
+    milestone and a step alike, and on nothing that is not a step."""
+    from dataclasses import replace
+
+    library, project = graph()
+    work, _imp, m1, *_rest = project.steps
+    glyphs = {work.id: ("spark", ""), m1.id: ("clock", "warn")}
+    trace = build(
+        replace(readers(project), glyph=lambda step: glyphs.get(step.id, ("person", ""))),
+        library,
+        project,
+        no_files,
+    )
+    assert item(trace, f"step:{work.id}").glyph == ("spark", "")
+    assert item(trace, milestone_token(m1.id)).glyph == ("clock", "warn")
+    assert item(trace, feature_of(project, "Import")).glyph == ("person", "")
+    assert item(trace, NO_MILESTONE).glyph == ("", "") == item(trace, "test:T100").glyph
 
 
 def test_links_join_neighbouring_columns_only():

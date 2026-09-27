@@ -4357,3 +4357,38 @@ template applied over a refused toggle skips it, as it skips any disabled action
 **Upstream?** Yes: it is the template's own disabled-with-its-reason rule, given a seam on
 the one helper every aspect toggle goes through.
 
+
+## 56. From the primary-icons pass: the key block, and glyphs read without Qt
+
+### `theme/cards.py` — the spine became the key block
+
+**What we changed.** `SPINE_W`, `spine_fill` and `paint_spine` (a 26 px strip, the key rotated
+a quarter turn) became `KEY_BLOCK_W` (56 px), `key_fill`, `key_font`, `key_glyph_ink`,
+`key_block_height`, `key_block_rects` and `paint_key_block`: the same status-washed strip,
+now carrying a glyph over the key, set level. `key_block_rects` is the geometry as a pure
+function, so a test and a card that grows to fit its content ask it without a painter.
+
+**Why.** A card has to say who works a step — an agent or a person, or nobody for a wait — in
+the same place as its key, and an icon cannot be read sideways the way a word can.
+
+**Upstream?** The primitive, yes, as the template's card grammar: a strip that names a card
+and says what state it is in is not DPlanner's idea. The three glyphs and the rule choosing
+between them are DPlanner's and stay in its composition root.
+
+### `theme/glyph_source.py` — the vendored glyphs as text, with no Qt (new)
+
+**What we changed.** `GLYPH_DIR` moved here from `theme/icons.py`, with `glyph_source(name)`
+(the file as published) and `glyph_markup(name)` (the shapes inside its `<svg>` root).
+`icons.py`'s `_inked` reads through it, so the path is named once. Added to the no-Qt probe
+in `tests/test_architecture.py`.
+
+**Why.** The report draws a card's glyph too, and it is built by the CLI, which loads no Qt;
+a module's Qt-free `report.py` reads the drawing here and hands it to `cli/` as data.
+
+**Upstream?** Yes: any template application with a Qt-free report or export wants its icons
+without a graphics stack, and the split costs `icons.py` one import.
+
+### `theme/icons.py` — `person_icon`, and `"person"` in `GLYPH_ICONS`
+
+**What.** Tabler's `user`, vendored as `person`, for a step a person works. **Upstream?** No —
+a glyph is a line in the vendoring script, and which ones an application needs is its own.

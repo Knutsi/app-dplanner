@@ -13,7 +13,7 @@ from datetime import date
 
 import pytest
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSizeF, Qt
-from PySide6.QtGui import QColor, QImage, QKeyEvent, QMouseEvent, QPainter
+from PySide6.QtGui import QColor, QFont, QImage, QKeyEvent, QMouseEvent, QPainter
 
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -2309,7 +2309,7 @@ def test_a_step_something_is_wrong_about_wears_a_squiggle(services, project, tab
     assert flagged(step).red() <= flagged(step).green() + 20
 
 
-def test_the_squiggle_starts_past_the_spine_and_stops_inside_the_card():
+def test_the_squiggle_starts_past_the_key_block_and_stops_inside_the_card():
     """It underlines the card's content, not its key — and stays within the body's width,
     so two cards side by side do not appear joined."""
     from dplanner.modules.project_editor.renderers import (
@@ -2634,36 +2634,66 @@ def render_card(tab, step_id) -> QImage:
     return image
 
 
-def test_the_spine_carries_the_key_and_is_shaded_by_status(services, project, tab):
-    """The strip down the left edge: the key's ink lands inside it and nowhere in the
-    title's column, and a status changes its wash — busy blue for in-progress, the good
-    green for done — while the body keeps its own fill beside it."""
-    from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-    from dplanner.modules.step_status.aspect import write as status
-    from dplanner.theme.cards import SPINE_W
+def block_colours(image: QImage) -> set[str]:
+    """Every colour inside the key block, clear of the card's rounded corners."""
+    from dplanner.theme.cards import KEY_BLOCK_W
+
+    return {
+        image.pixelColor(x, y).name()
+        for x in range(4, int(KEY_BLOCK_W) - 3)
+        for y in range(12, image.height() - 12)
+    }
+
+
+def inked(image: QImage, rect: QRectF, ground: QColor) -> QRectF:
+    """The bounds of whatever inside ``rect`` departs from ``ground`` — where a glyph or a
+    word actually landed."""
+    found = [
+        (x, y)
+        for x in range(int(rect.left()), int(rect.right()))
+        for y in range(int(rect.top()), int(rect.bottom()))
+        if abs(image.pixelColor(x, y).lightness() - ground.lightness()) > 40
+    ]
+    if not found:
+        return QRectF()
+    xs, ys = [x for x, _ in found], [y for _, y in found]
+    return QRectF(min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1)
+
+
+def test_the_key_block_carries_who_works_the_step_over_its_key(project, tab):
+    """The block down the left edge: the glyph lands where ``key_block_rects`` puts it, and
+    under it the key, set level — its ink wider than it is tall, which a key read up a
+    spine never was."""
+    from dplanner.theme.cards import key_block_rects
 
     step = project.steps[0]
     image = render_card(tab, step.id)
-    height = image.height()
-    inside = image.pixelColor(int(SPINE_W) + 8, height // 2)  # The body, past the spine.
+    glyph, key = key_block_rects(QRectF(image.rect()), QFont())
+    ground = image.pixelColor(4, 12)  # The block's own wash, above the pair.
+    assert not inked(image, glyph, ground).isEmpty()
+    word = inked(image, key, ground)
+    assert word.width() > word.height()
+    assert word.top() >= glyph.bottom()
 
-    def spine_colours():
-        return {
-            image.pixelColor(x, y).name()
-            for x in range(4, int(SPINE_W) - 3)
-            for y in range(12, height - 12)
-        }
 
-    quiet = spine_colours()
-    assert inside.name() not in quiet  # The strip is a shade of its own, even at rest.
-    assert len(quiet) > 1  # The key's glyphs put a second colour inside it.
+def test_the_key_block_is_shaded_by_status(services, project, tab):
+    """A status changes the block's wash — busy blue for in-progress, the good green for
+    done — while the body keeps its own fill beside it."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as status
+    from dplanner.theme.cards import KEY_BLOCK_W
+
+    step = project.steps[0]
+    image = render_card(tab, step.id)
+    inside = image.pixelColor(int(KEY_BLOCK_W) + 8, image.height() // 2)  # Past the block.
+    quiet = block_colours(image)
+    assert inside.name() not in quiet  # The block is a shade of its own, even at rest.
 
     services.undo.push(
         SetModuleDataCommand(step.id, STATUS_ID, status("in-progress", today=date(2026, 9, 21)))
     )
-    image = render_card(tab, step.id)
-    busy = spine_colours()
+    busy = block_colours(render_card(tab, step.id))
     assert busy != quiet
     busiest = max(busy, key=lambda name: QColor(name).blue() - QColor(name).red())
     assert QColor(busiest).blue() > QColor(busiest).red()  # A blue wash.
@@ -2671,16 +2701,96 @@ def test_the_spine_carries_the_key_and_is_shaded_by_status(services, project, ta
     services.undo.push(
         SetModuleDataCommand(step.id, STATUS_ID, status("done", today=date(2026, 9, 21)))
     )
-    image = render_card(tab, step.id)
-    greenest = max(spine_colours(), key=lambda name: QColor(name).green() - QColor(name).red())
+    done = block_colours(render_card(tab, step.id))
+    greenest = max(done, key=lambda name: QColor(name).green() - QColor(name).red())
     assert QColor(greenest).green() > QColor(greenest).red()  # A green wash.
+
+
+def test_a_waits_clock_is_amber(services, project, tab):
+    """A wait is nobody's work, and says so in the attention amber whatever its date — the
+    one glyph in the block that is not the key's ink."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.domain.schedule import Wait
+    from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
+    from dplanner.modules.step_wait.aspect import write as wait
+    from dplanner.theme.cards import key_block_rects
+
+    def amber(image: QImage) -> bool:
+        glyph, _key = key_block_rects(QRectF(image.rect()), QFont())
+        return any(
+            (colour := image.pixelColor(x, y)).red() > colour.blue() + 60
+            and colour.green() > colour.blue() + 30
+            for x in range(int(glyph.left()), int(glyph.right()))
+            for y in range(int(glyph.top()), int(glyph.bottom()))
+        )
+
+    step = project.steps[0]
+    assert not amber(render_card(tab, step.id))  # A person, in the key's ink.
+    services.undo.push(SetModuleDataCommand(step.id, WAIT_ID, wait(Wait(days=2.0))))
+    assert amber(render_card(tab, step.id))
+
+
+def test_the_reports_key_block_is_the_canvas_one():
+    """``cli/`` may not read ``theme/``, so the report keeps a copy of the block's geometry;
+    this is what keeps the copy honest."""
+    from dplanner.cli.report import drawings
+    from dplanner.theme import cards
+
+    assert drawings.KEY_BLOCK_W == cards.KEY_BLOCK_W
+    assert drawings.KEY_GLYPH == cards.KEY_GLYPH
+    assert drawings.KEY_GAP == cards.KEY_GAP
+
+
+def test_the_paper_draws_the_glyph(qapp):
+    """The PDF renders the graph through QtSvg, which honours a narrower SVG than a browser:
+    the glyph must come out in ink on paper, and a wait's in amber."""
+    from PySide6.QtSvg import QSvgRenderer
+
+    from dplanner.cli.report.drawings import (
+        GRAPH_MARGIN,
+        KEY_BLOCK_W,
+        KEY_GAP,
+        KEY_GLYPH,
+        KEY_LINE,
+        LIGHT,
+        graph_svg,
+    )
+    from dplanner.cli.report.parts import Graph, Node
+    from dplanner.theme.glyph_source import glyph_markup
+
+    nodes = (
+        Node("a", "S1", "Interview", 0, 0, 220, 76, glyph=glyph_markup("person")),
+        Node("b", "W2", "Hold", 0, 120, 220, 76, glyph=glyph_markup("clock"), glyph_tone="warn"),
+    )
+    renderer = QSvgRenderer(graph_svg(Graph(nodes, ()), LIGHT).encode())
+    size = renderer.defaultSize()
+    image = QImage(size, QImage.Format.Format_ARGB32)
+    image.fill(QColor(LIGHT.surface))
+    painter = QPainter(image)
+    renderer.render(painter)
+    painter.end()
+
+    def glyph_pixels(node: Node) -> list[QColor]:
+        top = node.y + (node.h - KEY_GLYPH - KEY_GAP - KEY_LINE) / 2 + GRAPH_MARGIN
+        left = node.x + KEY_BLOCK_W / 2 - KEY_GLYPH / 2 + GRAPH_MARGIN
+        return [
+            image.pixelColor(int(left) + dx, int(top) + dy)
+            for dx in range(int(KEY_GLYPH))
+            for dy in range(int(KEY_GLYPH))
+        ]
+
+    assert any(colour.lightness() < 110 for colour in glyph_pixels(nodes[0]))
+    assert any(
+        colour.red() > colour.blue() + 60 and colour.green() > colour.blue() + 30
+        for colour in glyph_pixels(nodes[1])
+    )
 
 
 def ink_in_corner(tab, step_id) -> int:
     """How far the card's bottom-right corner departs from its own fill, rendered over the
     theme's base: the stat's text pulls a pixel far from it, an empty corner stays flat.
     The card is rendered over the theme's own ground, since its ink is the theme's."""
-    from dplanner.theme.cards import PAD_Y, PADDING, SPINE_W
+    from dplanner.theme.cards import KEY_BLOCK_W, PAD_Y, PADDING
 
     node = scene(tab)._nodes[step_id]
     body = node.body_scene_rect()
@@ -2690,8 +2800,8 @@ def ink_in_corner(tab, step_id) -> int:
     painter = QPainter(image)
     scene(tab).render(painter, QRectF(image.rect()), body)
     painter.end()
-    # The fill is sampled past the spine, whose key and wash are ink of their own.
-    fill = image.pixelColor(int(SPINE_W + PADDING) + 4, height // 2)
+    # The fill is sampled past the key block, whose key and wash are ink of their own.
+    fill = image.pixelColor(int(KEY_BLOCK_W + PADDING) + 4, height // 2)
     line = int(PAD_Y) + 18
     return int(
         max(

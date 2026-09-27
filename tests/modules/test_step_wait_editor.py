@@ -84,7 +84,7 @@ def test_a_wait_takes_no_status_no_agent_and_no_tests_and_says_why(services, pro
 
 def test_a_wait_wears_its_letter_its_clock_and_how_long_it_holds(services, project):
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules import _step_key, _step_kind, _step_stats, _step_type_icons
+    from dplanner.modules import _primary_glyph, _step_key, _step_kind, _step_stats
     from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
     from dplanner.modules.step_wait.aspect import write
 
@@ -92,7 +92,7 @@ def test_a_wait_wears_its_letter_its_clock_and_how_long_it_holds(services, proje
     until = Wait(until=date(2026, 11, 4))
     SetModuleDataCommand(step.id, WAIT_ID, write(until)).redo(services.document)
     assert _step_key(step).startswith("W") and _step_kind(step) == "wait"
-    assert "clock" in _step_type_icons(step)
+    assert _primary_glyph(step) == ("clock", "warn")  # The amber clock, in its key block.
     assert _step_stats(services.document, project)[step.id] == "until 4 Nov"
     SetModuleDataCommand(step.id, WAIT_ID, write(Wait(days=3.0))).redo(services.document)
     assert _step_stats(services.document, project)[step.id] == "3 wd"

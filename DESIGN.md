@@ -71,7 +71,7 @@ flows, and what each surface on the way must make unmistakable:
   Agent* is a plain button on the Agent tab. When the graph says the step's prerequisites
   are not done, a confirmation names them — the count in its window title (*Run 3 Agents*),
   the step and the steps it waits on in its body — with *Run Anyway* as the primary. The
-  status bar records the launch; the card's spine goes busy. Never ambiguous: **which
+  status bar records the launch; the card's key block goes busy. Never ambiguous: **which
   steps** the shells are about, and **whether a shell opened**.
 - **Import a spec → cite → plan.** The document lands in the tree and its strip says
   whether it is project-owned and editable or sourced and read-only. Selecting text and
@@ -184,12 +184,15 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
 - **Every card rests on a shadow**, faint, and a picked card lifts two pixels over a deeper
   one — the lift, not a colour, is what marks it (see *Colour* below). The fill is opaque:
   the ground never shows through a card.
-- **The spine names the card and says where it stands.** A 26 px strip inside the left
-  edge carries the step's key (`S7`, `F3`) set bold and read bottom-to-top, washed by
-  status: busy blue in progress, the bad red blocked, the good green done, a quiet shade of
-  ink otherwise. It is the one thing on a card meant to be found from across the graph, and
-  the 3 px status bar it replaced is gone — one strip, two facts. A coverage card that is a
-  step — a milestone, a feature, a step in the steps lane — wears the same spine.
+- **The key block names the card, says who works it and where it stands.** A 56 px strip
+  inside the left edge carries the step's key (`S7`, `F3`) set level and bold, and over it
+  one glyph for who does the work: sparkles for an agent, a person otherwise — a milestone,
+  a feature and a check included — and a clock in the attention amber for a wait, the one
+  glyph in the block that is not the key's ink. The strip is washed by status: busy blue in
+  progress, the bad red blocked, the good green done, a quiet shade of ink otherwise. It is
+  the one thing on a card meant to be found from across the graph — one strip, three facts
+  — and the top edge's medallions never repeat its glyph. A coverage card that is a step,
+  and every card in the report, wears the same block.
 - **The title is the card**: two points larger than the chrome, normal weight, wrapping onto
   as many lines as the card has room for above its bottom line. A card can be dragged larger
   by any edge or corner to show more of a long name; the default footprint fits two lines.
@@ -692,9 +695,9 @@ and one stylesheet rule for the progress bar:
   status bar carries the one-line record of a gesture (*3 agents launched*).
 - **A `StatusLine` is a glyph in a tone beside secondary words**: the glyph carries the
   mood, the words carry the fact, and a paragraph of red is shouting. Five tones — info
-  (the line's own ink), busy (the spine's blue), ok (the good green), warn (the chips'
+  (the line's own ink), busy (the key block's blue), ok (the good green), warn (the chips'
   attention amber), error (the bad red), `theme/tones.py`'s `STATUS_TONES`, the same shades
-  the canvas spine wears. **Warn is not a weaker error**: an error is this work failing and
+  a card's key block wears. **Warn is not a weaker error**: an error is this work failing and
   carries its remedy, where warn is something going on that the reader should not walk
   into — another writer at the same plan — which nobody can fix and everybody must see.
 - **A progress bar is 4 px, accent, no text, no frame** — one bare `QProgressBar` rule,

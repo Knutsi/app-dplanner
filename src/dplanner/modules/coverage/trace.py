@@ -89,6 +89,11 @@ def _no_colors(_library: Library, _project: Project) -> dict[StepId, str]:
     return {}
 
 
+def _no_glyph(_step: Step) -> tuple[str, str]:
+    """Nobody said who works a step; its key block carries the key alone."""
+    return "", ""
+
+
 @dataclass(frozen=True)
 class Readers:
     """Every fact the trace is built from, as the module owning it answers it."""
@@ -108,6 +113,9 @@ class Readers:
     # Every milestone's own shade of the project's colour map, by step id — one deal per
     # project, the same one the canvas and the calendar read.
     milestone_colors: Callable[[Library, Project], dict[StepId, str]] = _no_colors
+    # Who works a step, as the glyph over its key and that glyph's tone — the canvas's own
+    # answer, so a card that is a step wears the same key block in both places.
+    glyph: Callable[[Step], tuple[str, str]] = _no_glyph
 
 
 # -- the picture ------------------------------------------------------------------------------
@@ -132,9 +140,11 @@ class Item:
     token: str = ""
     target: tuple[str, str] = ("", "")  # What double-clicking opens: (kind, key).
     muted: bool = False
-    # An item that is a step carries its key and status up the card's spine; "" for the rest.
+    # An item that is a step carries its key, its status and who works it — (glyph, tone) —
+    # in the card's key block; "" for the rest.
     key: str = ""
     status: str = ""
+    glyph: tuple[str, str] = ("", "")
 
 
 @dataclass(frozen=True)
@@ -348,6 +358,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 target=("feature", feature.id),
                 key=readers.step_key(step) if step is not None else "",
                 status=status,
+                glyph=readers.glyph(step) if step is not None else ("", ""),
             )
         )
 
@@ -379,6 +390,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 target=("step", milestone.id),
                 key=readers.step_key(milestone),
                 status=readers.status(milestone),
+                glyph=readers.glyph(milestone),
             )
         )
     if loose:
@@ -439,6 +451,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                         target=("step", step.id),
                         key=readers.step_key(step),
                         status=status,
+                        glyph=readers.glyph(step),
                     )
                 )
             for source in sources:

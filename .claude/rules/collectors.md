@@ -306,7 +306,9 @@ paths:
   picks within its lane and clears the lanes to its right, Ctrl (or Shift) adds, the
   ground and Escape clear; every picked card's step is published; an empty lane says which
   pick would fill it. A card that is a step — a milestone, a feature, a step — wears the
-  canvas's spine, its key up the left edge washed by status. **A view whose extent is laid out to its viewport never reports that extent as
+  canvas's key block, who works it over its key, washed by status: the trace carries the
+  root's own answer (`Readers.glyph`, `Item.glyph`), and `LANE_MIN_W` grew with the block so
+  a narrow lane still reads two words of title. **A view whose extent is laid out to its viewport never reports that extent as
   its size hint** — `QGraphicsView.sizeHint()` *is* the scene rect, so honouring it widened
   the view, the scene and then the hint again, which is what pushed the index panel off the
   window and made the seam jump. Lane widths are whole numbers (a rounding error flickers

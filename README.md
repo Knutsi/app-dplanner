@@ -322,7 +322,7 @@ src/dplanner/
 ├── scripts/render_icon.py         the application icon at every size, from the theme's colours — committed under assets/
 ├── scripts/vendor_tabler_icons.py  the fifty-odd Tabler glyphs this application uses, into theme/glyphs/ (MIT)
 ├── scripts/render_design_example.py  Debug ▸ Design Examples — the modal, the table, the toolbars and the rows — both themes, to PNG
-├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/
+├── scripts/render_graph_editor.py  the graph editor's strip, its … menu, Find and the Problems panel — docs/screenshots/s7-graph-editor/ — and the cards — f5-key-block/
 ├── scripts/import_omarchy_themes.py   the built-in Omarchy themes, generated from an installation's colors.toml files
 ├── scripts/windows_check.py       the Windows check: the three checks, the frozen build and a real window, in a VM
 ├── scripts/render_windows_check.py  Debug ▸ Windows Check, live and greyed with its reason — docs/screenshots/s17-windows/
@@ -567,8 +567,10 @@ src/dplanner/
                            provider — every Omarchy default, generated from its colors.toml through one
                            mapping — the palette, a chrome-only stylesheet, the glyphs, tones.py (the
                            semantic colours a node body and a kind button share), palettes.py (the
-                           colour maps a project's milestones are shaded along, Qt-free) and cards.py,
-                           the card primitives the canvas and the coverage view both paint with
+                           colour maps a project's milestones are shaded along, Qt-free), cards.py,
+                           the card primitives the canvas and the coverage view both paint with — the
+                           key block among them — and glyph_source.py, the glyphs as text for the
+                           Qt-free report
 ```
 
 ## Where it came from
