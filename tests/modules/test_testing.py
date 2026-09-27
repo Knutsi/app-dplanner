@@ -753,11 +753,8 @@ def test_adding_a_test_selects_it_so_the_editor_is_ready(services, step, section
 def scopes():
     """The collectors, wired the way the composition root wires them."""
     from dplanner.modules import _scope_kinds
-    from dplanner.modules.feature.aspect import is_feature as feature_read
-    from dplanner.modules.step_check.aspect import read as check_read
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
 
-    return _scope_kinds(check_read, feature_read, milestone_read)
+    return _scope_kinds()
 
 
 def covers(services, target):
@@ -867,6 +864,25 @@ def test_the_first_feature_in_a_project_is_offered_no_switch(services, project):
 
     section = covers(services, importer.id)
     # Nothing behind it to hand off to, so both readings are the same answer.
+    assert section.mode_bar.isVisibleTo(section) is False
+    assert cards(section) == [("test", "T100")]
+    section.dispose()
+
+
+def test_a_feature_right_after_the_start_is_offered_no_switch(services, project):
+    """The start stops a feature's walk, but it is no earlier collector: the feature holds
+    only its own work, and there is no second reading worth a control."""
+    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
+    from dplanner.modules.feature.aspect import write as feature_write
+    from dplanner.modules.step_start.aspect import MODULE_ID as START_ID
+    from dplanner.modules.step_start.aspect import write as start_write
+
+    start, importer = chain(services, project, "Project start", "Import")
+    give(services, importer, "T100")
+    services.document.set_module_data(start.id, START_ID, start_write(True))
+    services.document.set_module_data(importer.id, FEATURE_ID, feature_write())
+
+    section = covers(services, importer.id)
     assert section.mode_bar.isVisibleTo(section) is False
     assert cards(section) == [("test", "T100")]
     section.dispose()

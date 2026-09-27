@@ -4,6 +4,7 @@ store, every fact handed in through fake readers."""
 from dplanner.core.anchors import Anchor
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
+from dplanner.domain.scope import ScopeKind
 from dplanner.modules.coverage.trace import (
     FEATURES,
     MILESTONES,
@@ -111,14 +112,22 @@ def readers(project) -> Readers:
             rows += tests.get(step.id, [])
         return rows
 
+    def is_feature(step):
+        return step.id in (imp.id, export.id, dark.id, ghost.id)
+
+    def is_milestone(step):
+        return step.id == m1.id
+
     return Readers(
         features=lambda _l, _p, _f: features,
         documents=lambda _p, _f: [
             Document("spec", "markdown", SPEC_TEXT),
             Document("empty", "markdown", ""),
         ],
-        is_feature=lambda step: step.id in (imp.id, export.id, dark.id, ghost.id),
-        is_milestone=lambda step: step.id == m1.id,
+        feature=ScopeKind(
+            "feature", "Feature", is_feature, lambda step: is_feature(step) or is_milestone(step)
+        ),
+        milestone=ScopeKind("step_milestone", "Milestone", is_milestone, is_milestone),
         milestone_label=lambda step: "M1" if step.id == m1.id else "",
         step_key=lambda step: f"key-{step.title}",
         status=lambda step: "done" if step.id == export.id else "",
@@ -314,3 +323,39 @@ def test_the_path_is_feature_membership():
     lit = trace.path("test:T102")
     assert lit == {m, f"step:{login.id}", f"step:{m1.id}", "test:T102", f"docs:{m1.id}"}
     assert trace.path("no:such") == frozenset()
+
+
+def test_a_feature_holds_what_its_kind_says_and_no_more():
+    """The steps lane is the wired feature kind's walk: where it stops — the plan's start,
+    say — is no step of the feature's, however many features fan out of it."""
+    library = Library()
+    project = Project(title="P")
+    library.add_child(library.id, project)
+    for title in ("Start", "Import", "Export"):
+        AddNodeCommand(project.id, Step(title=title)).redo(library)
+    start, imp, export = project.steps
+    for step in (imp, export):
+        SetEdgesCommand(step.id, "requires", [start.id]).redo(library)
+
+    def is_feature(step):
+        return step.id in (imp.id, export.id)
+
+    readers = Readers(
+        features=lambda _l, _p, _f: [
+            Feature(imp.id, "Import", imp.id, ()),
+            Feature(export.id, "Export", export.id, ()),
+        ],
+        documents=lambda _p, _f: [],
+        feature=ScopeKind(
+            "feature", "Feature", is_feature, lambda step: is_feature(step) or step is start
+        ),
+        milestone=ScopeKind("step_milestone", "Milestone", lambda _s: False, lambda _s: False),
+        milestone_label=lambda _step: "",
+        step_key=lambda step: step.title,
+        status=lambda _step: "",
+        tests=lambda _l, _p, _s, _stops: [],
+        results=lambda _p: {},
+        docs=lambda _l, _p, _s: "",
+    )
+    trace = build(readers, library, project, no_files)
+    assert f"step:{start.id}" not in [item.id for item in trace.column(STEPS)]

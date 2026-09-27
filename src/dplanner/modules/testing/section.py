@@ -45,7 +45,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.commands import Command, SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, Project, Step, StepId
-from dplanner.domain.scope import ScopeKind, cone, kind_of, leaders, stops_for
+from dplanner.domain.scope import ScopeKind, cone, handoffs, kind_of, leaders, stops_for
 from dplanner.domain.store import FilesFor
 from dplanner.framework.activity import follow_target
 from dplanner.framework.cards import CARD_PADDING, STACK_SPACING
@@ -898,12 +898,14 @@ class CoversSection(_TestListSection):
         kind = kind_of(self._scopes, self._library.step(self._target_id))
         stops_at = kind.stops_at if kind is not None else None
 
-        # The truncated walk is computed whichever mode is showing: its boundaries are what
-        # say whether there is a second reading to offer at all, and the cumulative walk has
-        # none by construction.
+        # The truncated walk is computed whichever mode is showing: the collectors it handed
+        # off to are what say whether there is a second reading to offer at all, and the
+        # cumulative walk has none by construction. The plan's start stops a feature's walk
+        # without being one, so it is not among them.
         own = cone(self._library, project, self._target_id, stops_at=stops_at)
-        self.mode_bar.setVisible(bool(own.boundaries))
-        cumulative = bool(own.boundaries) and self.mode.checkedId() == 1
+        second = bool(handoffs(self._scopes, own))
+        self.mode_bar.setVisible(second)
+        cumulative = second and self.mode.checkedId() == 1
         walked = own if not cumulative else cone(self._library, project, self._target_id)
 
         outcomes = runs.latest_results(runs.read(project))

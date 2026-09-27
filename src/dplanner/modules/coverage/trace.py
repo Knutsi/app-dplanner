@@ -37,7 +37,7 @@ from dataclasses import dataclass, replace
 
 from dplanner.core.anchors import Anchor, blocks, covered_by
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.scope import StepPredicate, cone, gatherers
+from dplanner.domain.scope import ScopeKind, StepPredicate, cone, gatherers
 from dplanner.domain.store import FilesFor
 
 MILESTONES, FEATURES, SPEC, STEPS, OUTCOMES = 0, 1, 2, 3, 4
@@ -95,8 +95,11 @@ class Readers:
 
     features: Callable[[Library, Project, FilesFor], Sequence[Feature]]
     documents: Callable[[Project, FilesFor], Sequence[Document]]
-    is_feature: StepPredicate
-    is_milestone: StepPredicate
+    # The collectors as the composition root wires them: who carries each, and where its
+    # walk stops — the same two answers every other scope reader gets, so a feature here
+    # holds exactly the work `scope show` says it does.
+    feature: ScopeKind
+    milestone: ScopeKind
     milestone_label: Callable[[Step], str]
     step_key: Callable[[Step], str]  # How every surface names a step: "S7".
     status: Callable[[Step], str]  # Where a step's work stands: "done", "blocked", …
@@ -244,9 +247,12 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     features = list(readers.features(library, project, files))
     documents = list(readers.documents(project, files))
     order = {step.id: index for index, step in enumerate(project.steps)}
-    milestones = [step for step in project.steps if readers.is_milestone(step)]
+    milestones = [step for step in project.steps if readers.milestone.carried_by(step)]
     owners = gatherers(
-        library, project, carried_by=readers.is_milestone, stops_at=readers.is_milestone
+        library,
+        project,
+        carried_by=readers.milestone.carried_by,
+        stops_at=readers.milestone.stops_at,
     )
     known = {milestone.id for milestone in milestones}
 
@@ -405,9 +411,6 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     placed_steps: dict[StepId, int] = {}  # step id → index in items, to union a shared one.
     placed_tests: dict[str, int] = {}  # test id → index in items, to union a shared one.
 
-    def feature_stop(step: Step) -> bool:
-        return readers.is_feature(step) or readers.is_milestone(step)
-
     def held_by(root: StepId, stops_at: StepPredicate) -> list[Step]:
         """The steps a collector holds: its cone, and its own step, where a test or a
         document of its own sits."""
@@ -492,19 +495,20 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
     for feature in ordered:
         tokens = frozenset({feature.id})
         sources = spec_hubs(tokens)
-        add_steps(held_by(feature.step, feature_stop), tokens, sources)
-        add_tests(readers.tests(library, project, feature.step, feature_stop), tokens, sources)
+        stops = readers.feature.stops_at
+        add_steps(held_by(feature.step, stops), tokens, sources)
+        add_tests(readers.tests(library, project, feature.step, stops), tokens, sources)
         add_docs(feature.step, feature.title, tokens, [*sources, *step_hubs(tokens)])
     for milestone in milestones:
         token = milestone_token(milestone.id)
         # Work a milestone holds directly was read from no passage: it stands under the
         # milestone's own pick, with nothing in the spec lane to come from.
         own = frozenset({token})
-        work = held_by(milestone.id, readers.is_milestone)
+        work = held_by(milestone.id, readers.milestone.stops_at)
         add_steps([step for step in work if step.id not in placed_steps], own, ())
         direct = [
             row
-            for row in readers.tests(library, project, milestone.id, readers.is_milestone)
+            for row in readers.tests(library, project, milestone.id, readers.milestone.stops_at)
             if row.id not in placed_tests
         ]
         add_tests(direct, own, ())

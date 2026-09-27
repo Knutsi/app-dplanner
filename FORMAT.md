@@ -529,7 +529,9 @@ a toggleable aspect is the presence of its `module_data` entry, and two aspects 
 shape for "on, but empty": `step_ticket` writes `{"on": true}` when the Type toggle
 enables it before any field is filled (a filled ticket's entry replaces the marker),
 `step_check` writes `{"on": true}` and never anything else — what it *gathers* is the
-graph's answer, not a stored list — and `step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when the step
+graph's answer, not a stored list — `step_start` (format 1) writes `{"on": true}` on the
+one step the plan begins from and never anything else, since what it changes is where the
+walks stop, not anything the step holds — and `step_agent_instruction` writes `{"on": true}` — plus `"separate": true` when the step
 opts into an instruction distinct from its description, and `"worktree": false` when its
 agent is to work in the checkout itself rather than a fresh worktree (absence is on: the
 opt-outs are the only keys ever added) — beside the step whose prose file

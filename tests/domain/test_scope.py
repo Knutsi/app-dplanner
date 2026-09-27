@@ -9,7 +9,7 @@ argument.
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import upstream
-from dplanner.domain.scope import cone, gatherers
+from dplanner.domain.scope import ScopeKind, cone, gatherers, handoffs
 
 
 def build(*titles):
@@ -184,6 +184,28 @@ def test_a_step_no_collector_reaches_is_absent_rather_than_empty():
     mark(project, "Import", "feature")
     owners = gatherers(library, project, carried_by=carries("feature"), stops_at=carries("feature"))
     assert by_title(project, "Orphan").id not in owners
+
+
+def test_a_boundary_no_kind_carries_is_no_handoff():
+    """A walk may stop at a step that collects nothing — the plan's start. That is where the
+    graph ends, not an earlier collector that already took something."""
+    library, project = build("Start", "Import", "Export")
+    link(library, project, "Import", "Start")
+    link(library, project, "Export", "Import")
+    mark(project, "Start", "start")
+    mark(project, "Import", "feature")
+    mark(project, "Export", "feature")
+    feature = ScopeKind(
+        "feature",
+        "Feature",
+        carries("feature"),
+        lambda step: carries("feature")(step) or carries("start")(step),
+    )
+    first = cone(library, project, by_title(project, "Import").id, stops_at=feature.stops_at)
+    assert titles(first.steps) == [] and titles(first.boundaries) == ["Start"]
+    assert handoffs([feature], first) == ()
+    second = cone(library, project, by_title(project, "Export").id, stops_at=feature.stops_at)
+    assert titles(handoffs([feature], second)) == ["Import"]
 
 
 # -- defensive -----------------------------------------------------------------
