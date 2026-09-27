@@ -4486,3 +4486,23 @@ module list went with the tab.
 
 `margin`'s comment names a dialog page instead of a card. `InspectorSection.stretch` now
 says only that a tab host ignores it, since the card host is gone.
+
+## 61. From F7: a right-click composed of bands
+
+### `framework/action_menu.py` — `Band`, `fill_bands`
+
+**What we changed.** A `Band` names one `fill_menu` render: a menu, one group of it, a child
+menu's band, and optionally a `child` title to render it into a child menu of its own.
+`fill_bands(target, bands, registry, context)` lays several into one pop-up in order. It
+draws a rule only between two bands that each drew something. It draws none between two
+child menus in a row, and it takes away a child menu that came out empty.
+
+**Why.** The Tests tab composed its right-click by hand: a band, a rule if the band drew,
+then the Step menu as a child. The graph canvas now composes one per thing under the cursor,
+with up to four bands each. Two hand-written copies of "a rule only under a band that drew"
+is how two pop-ups come to disagree about where a line goes. `TestsActivity._test_menu` is
+now one call over a two-band tuple.
+
+**Upstream?** Yes. Nothing in it knows DPlanner. The template already says a right-click
+renders a menu and never a copy of one, and this lets a surface honour that while offering
+more than one menu.

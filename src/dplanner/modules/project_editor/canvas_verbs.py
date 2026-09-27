@@ -53,6 +53,7 @@ from dplanner.modules.project_editor.modes import (
     mode_uri,
 )
 from dplanner.modules.project_editor.placement import positions
+from dplanner.modules.project_editor.selection import EdgeRef
 from dplanner.modules.project_editor.verbs import picked_edges
 from dplanner.theme.icons import (
     connect_icon,
@@ -90,6 +91,7 @@ class CanvasVerbs:
     # The window capabilities these steer. Each is a no-op when no canvas is current.
     select_step: Callable[[StepId], None]
     select_steps: Callable[[list[StepId]], None]
+    select_edges: Callable[[list[EdgeRef]], None]
     # Enter or leave a named canvas mode (modes.CONNECT, modes.LASSO, the divide pair).
     set_mode: Callable[[str, bool], None]
     frame: Callable[[], None]
@@ -123,15 +125,15 @@ class CanvasVerbs:
             ),
             # The other half of linking, and a submenu of two because an arrow has two ends
             # and which one travels cannot be guessed from a bundle that agrees on neither.
-            # Their seat is the link group, after Isolate, so the canvas's right-click — which
-            # renders the Step menu — offers them over a picked arrow.
+            # Their subject is a picked arrow, so their seat is Graph ▸ links, beside Remove
+            # Link — which is what a right-click on an arrow renders.
             ActionSpec(
                 id="steps.redirect_to",
                 label="&To Step",
-                menu="Step",
-                group="link",
+                menu="Graph",
+                group="links",
                 submenu="Redirect",
-                order=40,
+                order=20,
                 icon=redirect_to_icon,
                 tip="Move the picked links so they point to a step you click. Esc leaves",
                 state=self._can_redirect(WAITER),
@@ -140,10 +142,10 @@ class CanvasVerbs:
             ActionSpec(
                 id="steps.redirect_from",
                 label="&From Step",
-                menu="Step",
-                group="link",
+                menu="Graph",
+                group="links",
                 submenu="Redirect",
-                order=50,
+                order=21,
                 icon=redirect_from_icon,
                 tip="Move the picked links so they come from a step you click. Esc leaves",
                 state=self._can_redirect(SOURCE),
@@ -152,10 +154,10 @@ class CanvasVerbs:
             ActionSpec(
                 id="steps.lasso",
                 label="Lasso &Select",
-                menu="Step",
-                group="navigate",
-                # After the Go verbs and before Select All: it is the other way to pick many.
-                order=40,
+                menu="Graph",
+                group="select",
+                # After Find, before the Go submenu: the way to pick many at once.
+                order=20,
                 icon=lasso_icon,
                 tip="Draw round the steps to select them. Shift adds. Esc leaves",
                 state=self._mode_state(LASSO),
@@ -163,12 +165,11 @@ class CanvasVerbs:
             ),
             ActionSpec(
                 id="steps.find",
-                # Order 4: the first of this band. Reveal takes you to the step you have
-                # already named; Find is how you name one.
+                # The first of this band: the way to a step on a plane you cannot see all of.
                 label="&Find Step…",
-                menu="Step",
-                group="navigate",
-                order=4,
+                menu="Graph",
+                group="select",
+                order=10,
                 # A menu shortcut, not a canvas key: Ctrl+F is what every application means
                 # by "find", every text widget reclaims it through ShortcutOverride, and the
                 # state gate keeps it off a tab with no canvas. The bare "/" in keymap.py is
@@ -181,11 +182,11 @@ class CanvasVerbs:
             ),
             ActionSpec(
                 id="steps.reveal",
-                # Order 5: before the Go submenu — it is the "take me there" of this group.
+                # After Step Details: the other way to open a step — at its card, from any view.
                 label="Re&veal in Graph",  # &v: R is Rename's.
                 menu="Step",
-                group="navigate",
-                order=5,
+                group="open",
+                order=15,
                 tip="Show this step on its project's canvas",
                 state=self._can_reveal,
                 run=self._reveal,
@@ -194,16 +195,38 @@ class CanvasVerbs:
                 ActionSpec(
                     id=f"steps.go_{name}",
                     label=name.title(),
-                    menu="Step",
-                    group="navigate",
+                    menu="Graph",
+                    group="select",
                     submenu="Go",
-                    order=10 * (index + 1),
+                    order=30 + index,
                     tip=f"Select the nearest step to the {name}",
                     state=self._can_go(name),
                     run=self._go(name),
                 )
                 for index, name in enumerate(DIRECTIONS)
             ],
+            # A mixed pick narrowed to one kind — the lead of its right-click, since nothing
+            # else is about steps and arrows at once.
+            ActionSpec(
+                id="canvas.select_only_steps",
+                label="Select &Only Steps",
+                menu="Graph",
+                group="narrow",
+                order=10,
+                tip="Keep the picked steps and let go of the picked links",
+                state=self._is_mixed,
+                run=lambda context: self.select_steps(context.selected_entities("step")),
+            ),
+            ActionSpec(
+                id="canvas.select_only_links",
+                label="Select Only L&inks",
+                menu="Graph",
+                group="narrow",
+                order=20,
+                tip="Keep the picked links and let go of the picked steps",
+                state=self._is_mixed,
+                run=lambda context: self.select_edges(picked_edges(self.library, context)),
+            ),
             ActionSpec(
                 id="steps.select_all",
                 label="Select &All Steps",
@@ -363,6 +386,13 @@ class CanvasVerbs:
             self.set_mode(name, context.edge("mode") != mode_uri(name))
 
         return run
+
+    def _is_mixed(self, context: Context) -> ActionState:
+        """Steps and links picked at once — the one pick there is anything to narrow."""
+        mixed = bool(context.selected_entities("step")) and bool(
+            picked_edges(self.library, context)
+        )
+        return ENABLED if mixed else DISABLED
 
     def _can_redirect(self, end: EdgeEnd) -> Callable[[Context], ActionState]:
         """Available exactly while links are picked — that is what there is to redirect.

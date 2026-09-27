@@ -4,13 +4,18 @@ Right-clicking a thing should offer exactly what that thing's menu offers, never
 hand-maintained copy of it. One builder, reading the same registry through the same
 context, is what keeps four presentations of the same verbs from drifting apart.
 
-A pop-up may be **composed of more than one render** — :func:`fill_menu` fills a menu it is
-given, so a surface whose subject is narrower than any one menu can lead with the band that
-is about it and offer a whole menu beneath it as a child (the Tests tab's right-click: the
-result verbs, then *Step*). What that rules out is an entry written by hand, not a shape;
-every entry in such a pop-up still comes from the registry, so a verb added to the menu
-appears in the child without anybody editing the surface.
+A pop-up may be **composed of more than one render** — :func:`fill_bands` lays several
+bands into one menu, so a surface whose subject is narrower than any one menu can
+lead with the band that is about it and offer a whole menu beneath it as a child (the Tests
+tab's right-click: the result verbs, then *Step*), and a surface whose subject changes with
+the click can render a different set of bands for each (the canvas: a card, an arrow, a mixed
+pick, empty canvas). What that rules out is an entry written by hand, not a shape; every
+entry in such a pop-up still comes from the registry, so a verb added to the menu appears in
+the composition without anybody editing the surface.
 """
+
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import QMenu, QWidget
@@ -213,3 +218,48 @@ def build_menu(
 ) -> QMenu:
     """A fresh pop-up holding one menu's visible actions — see :func:`fill_menu`."""
     return fill_menu(QMenu(parent), actions, context_service, menu, submenu, group)
+
+
+@dataclass(frozen=True)
+class Band:
+    """One render of the registry inside a composed pop-up — :func:`fill_menu`'s arguments.
+
+    ``menu`` alone is the whole menu; ``group`` one band of it, and with ``submenu`` that
+    child menu's band. ``child`` renders it into a child menu of that title rather than flat.
+    """
+
+    menu: str
+    group: str | None = None
+    submenu: str | None = None
+    child: str | None = None
+
+
+def fill_bands(
+    target: QMenu,
+    bands: Sequence[Band],
+    actions: ActionRegistry,
+    context_service: ContextService,
+) -> QMenu:
+    """Several renders in one pop-up, in order, with the one rule policy for all of them.
+
+    A rule goes above a band only when something was drawn above it **and** the band drew
+    something — a rule under nothing is a line the reader has to account for, and what a
+    state hides is the registry's business, not the surface's to assume. Two child menus in
+    a row get none, for the reason Step's ``classify`` band has none: their names already
+    part them. A child menu that came out empty is taken away rather than left to open on
+    nothing.
+    """
+    after_child = False
+    for band in bands:
+        above = len(target.actions())
+        into = target if band.child is None else target.addMenu(band.child)
+        fill_menu(into, actions, context_service, band.menu, band.submenu, band.group)
+        if into is not target and into.isEmpty():
+            target.removeAction(into.menuAction())
+        drawn = target.actions()[above:]
+        if not drawn:
+            continue
+        if above and not (after_child and band.child is not None):
+            target.insertSeparator(drawn[0])
+        after_child = band.child is not None
+    return target

@@ -945,11 +945,15 @@ def visible_scene_rect(view: QGraphicsView) -> QRectF:
 
 class IdleMode(ModeBase):
     """The base. Qt does selection, rubber banding and node dragging; this catches the rest:
-    a press on a card's link handle or on its frame."""
+    a press on a card's link handle or on its frame, and every right press."""
 
     name = IDLE
 
     def mouse_press(self, event: CanvasEvent) -> bool:
+        if event.button == Qt.MouseButton.RightButton:
+            # The context menu decides what a right-click picks. Handed to Qt, a right press
+            # on an arrow — selectable, not movable — clears the whole selection first.
+            return True
         node = self.deps.canvas.node_at(event.scene_pos)
         if node is not None and node.is_over_handle(event.scene_pos):
             # Claimed before Qt sees it, so the press starts neither a move nor a rubber band.

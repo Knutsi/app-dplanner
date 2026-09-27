@@ -30,7 +30,7 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # the plan's report as HTML and PDF, its tables as a workbook.
     "File": ("project", "library", "save", "branch", "export", "window"),
     # "history" is the app shell's Undo/Redo. "clipboard" and "selection" are the graph's:
-    # Cut, Copy, Paste, Duplicate and Delete's second seat (its home is Step, which every
+    # Cut, Copy, Paste, Duplicate and Delete's second seat (its home is Step, which a card's
     # right-click renders), then Select All — registered by project_editor because the step
     # graph is the one surface with a clipboard representation. ARCHITECTURE.md's *Edit
     # verbs belong to the surface whose things they act on* has the reasoning.
@@ -64,7 +64,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
         "window",
     ),
     # The planner's own vocabulary. "Project" is what the index tree's right-click menu
-    # renders and "Step" is what the graph canvas's does — see framework/action_menu.py.
+    # renders and "Step" is what a card's does on the canvas, whose right-click is composed
+    # of bands by what it lands on — see project_editor/canvas_menus.py.
     # "link" holds the two-step verbs: the canvas publishes both ends into the selection
     # scope on a drop and runs the same action the menu does.
     # "documents" is the spec module's: what a project carries beside its steps;
@@ -83,21 +84,26 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # Remove from Library and Show Archive — and it is the whole of what an archived
     # project's right-click renders, through `fill_menu`'s `group` filter.
     "Project": ("edit", "membership", "documents", "agent", "docs", "features", "tests", "open"),
-    # The canvas the plan is drawn on: how it is arranged and how it is looked at. Every
-    # verb here steers the graph editor and nothing else, which is what makes it a menu
-    # rather than a group inside View — and what tells the next person where to add one.
+    # The canvas the plan is drawn on: every verb whose subject is picked *on the canvas*
+    # rather than being a step — a point, the plane's steps as a place, an arrow — and how
+    # the graph is arranged and looked at. That is what makes it a menu rather than a group
+    # inside View, and what tells the next person where to add one.
+    # "new" is what lands where the canvas was clicked: New Step, and Paste's second seat
+    # (its home is Edit, with Ctrl+V). "select" is the ways to a step on the plane — Find,
+    # Lasso, Go. "narrow" keeps one kind of a mixed pick: steps, or links. "links" is what
+    # a picked arrow is for: Remove Link and the Redirect pair. The canvas's right-click
+    # renders these bands by what it lands on, which is why each is a group of its own.
     # "arrange" is the Sort, Layout and Divide child menus: three ways of moving cards
     # about, from the wholesale to the one cut at a time. "look" is what is drawn without
     # moving anything: framing, the marks, the grid and the ground — the band the canvas
     # strip's Options face renders whole. "panels" is what stands *beside* the canvas
     # inside the tab: the graph's own chrome, where View ▸ Panels is about the areas around
     # the tabs.
-    "Graph": ("arrange", "look", "panels"),
-    # "edit" is New, Rename and Delete. New is one verb: a step is born plain and the
-    # details dialog opens on it, where the aspect bar says what it is.
+    "Graph": ("new", "select", "narrow", "links", "arrange", "look", "panels"),
+    # "edit" is Rename, Delete and Insert Wait Before — New is the Graph menu's, since what
+    # it needs is a place.
     # "open" is a surface about the selection — the Step-side mirror of Project's
-    # "Show Order". "navigate" is where the canvas's movement verbs live: they select
-    # rather than change, so they belong beside the step verbs but not among them.
+    # "Show Order" — and Reveal in Graph, which takes a step from any view to its card.
     # "classify" is the band of child menus that say what a step *is* and how it is doing:
     # Type (one independent checkable toggle per type-ish aspect — never a radio group, a
     # step can be several things at once, and each aspect's tab follows its toggle), then
@@ -118,7 +124,7 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # kind" — and it is a coding agent in a terminal now, tracked as a run on the step and
     # reachable through Show Agent Terminal, so the reason for the separate group went with
     # the mechanism.
-    "Step": ("edit", "link", "classify", "test_result", "agent", "open", "navigate"),
+    "Step": ("edit", "link", "classify", "test_result", "agent", "open"),
     # "runs" is the Agent List — the live shells this window launched, a data child menu
     # rebuilt on open — above "install", what this machine has of DPlanner itself.
     "Tools": ("runs", "install"),

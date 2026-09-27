@@ -50,7 +50,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMenu, QVBoxLayout
 
 from dplanner.domain.model import NodeId, Project, Step, StepId
 from dplanner.domain.scope import ScopeKind, gatherers, kind_of
-from dplanner.framework.action_menu import fill_menu
+from dplanner.framework.action_menu import Band, fill_bands
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import ActivityBase, EntityActivity, follow_project
 from dplanner.framework.context import (
@@ -102,6 +102,9 @@ ALL_TESTS_KIND = "all_tests"
 # without folding into `…`, which is the one thing a run must not have to do.
 SIDE_PANEL_ACTION = "tests.side_panel"
 TEST_PANEL_WIDTH = 360
+
+# A row's right-click: what a run recorded, then the whole Step menu one level down.
+TEST_MENU = (Band("Step", group="test_result", submenu="Test"), Band("Step", child="Step"))
 
 TAB_HINT = "Everything this project verifies, and how it last did."
 ALL_HINT = "Every test in every project in this library, and how it last did."
@@ -823,16 +826,7 @@ class TestsActivity(EntityActivity):
         an entry there is a place verbs are *registered into* and nothing registers here.
         ``ARCHITECTURE.md``'s *A right-click on a test leads with the result* has the rest.
         """
-        actions, context = self._deps.actions, self._deps.context
-        menu = QMenu(parent)
-        fill_menu(menu, actions, context, "Step", submenu="Test", group="test_result")
-        # Only when the band drew something: a rule under nothing is a line the reader has
-        # to account for, and what a state hides is the registry's business, not this
-        # view's to assume.
-        if not menu.isEmpty():
-            menu.addSeparator()
-        fill_menu(menu.addMenu("Step"), actions, context, "Step")
-        return menu
+        return fill_bands(QMenu(parent), TEST_MENU, self._deps.actions, self._deps.context)
 
 
 class AllTestsActivity(ActivityBase):

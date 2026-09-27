@@ -267,6 +267,22 @@ def test_reveal_in_graph_shows_the_step_on_the_canvas(services, project, tab):
     assert graph._scene.selected_step() == project.steps[0].id
 
 
+def test_a_rows_step_menu_offers_reveal_and_nothing_only_a_canvas_can_run(services, project, tab):
+    """The table renders the Step menu by name. What only a canvas can run is the Graph
+    menu's, so nothing here is greyed for want of one — and Reveal in Graph, the way from
+    this row to its card, is offered and live."""
+    from dplanner.framework.action_menu import build_menu
+
+    tab.table.selectRow(0)
+    menu = build_menu(services.actions, services.context, "Step", tab.table)
+    offered = {action.text(): action.isEnabled() for action in menu.actions()}
+    menu.deleteLater()
+
+    assert offered["Re&veal in Graph"]
+    for canvas_verb in ("&New Step", "&Find Step…", "Lasso &Select", "Go", "Redirect"):
+        assert canvas_verb not in offered
+
+
 def test_activating_a_row_that_is_not_there_does_nothing(services, project, tab):
     tab.table.cellActivated.emit(99, 1)
     assert [a.uri for a in services.tabs.activities()] == [tab.uri]
@@ -284,7 +300,7 @@ def test_the_action_opens_it_for_the_focused_project(services, project):
 
 def test_the_verb_sits_in_the_step_menu_only(services):
     """The Project side is the index tree's Order row, so the verb's one menu seat is
-    the Step menu — the canvas right-click and toolbar reach the same id."""
+    the Step menu — a card's right-click and the canvas's toolbar reach the same id."""
     spec = services.actions.spec("order.open")
     assert (spec.menu, spec.group, spec.palette) == ("Step", "open", True)
 

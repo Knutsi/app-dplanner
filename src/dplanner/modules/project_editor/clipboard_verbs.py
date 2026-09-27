@@ -7,12 +7,13 @@ menu-bar action's shortcut does not fire — so one registrant gets the "takes o
 active" behaviour for free. ``ARCHITECTURE.md``'s *Edit verbs belong to the surface whose
 things they act on* says when that stops being enough.
 
-**What they act on is what Delete acts on** —
+**What they act on is the steps Delete acts on** —
 :func:`~dplanner.framework.step_selection.chosen_steps`, so Cut and Copy work wherever
-Delete does, a table's right-click included. Only Paste needs a current canvas:
-it is the target. Its state never reads the clipboard; :class:`ClipboardWatch` counts what
-the clipboard holds when the clipboard changes, and re-emits the context so the label
-("Paste 3 Steps") follows — the app shell's undo-label idiom.
+Delete does, a table's right-click included. Only Paste needs a current canvas: it is the
+target, which is why it has a second seat beside New Step on the Graph menu. Its state never
+reads the clipboard; :class:`ClipboardWatch` counts what the clipboard holds when the
+clipboard changes, and re-emits the context so the label ("Paste 3 Steps") follows — the app
+shell's undo-label idiom.
 
 **Duplicate is a paste that never touches the clipboard.** A clip of the chosen steps pasted
 straight back into their project, one row below, so what the user had copied stays copied.
@@ -136,6 +137,20 @@ class ClipboardVerbs:
                 order=30,
                 shortcut=QKeySequence.StandardKey.Paste,
                 tip="Add copies of the clipboard's steps to the project in this tab",
+                state=self._can_paste,
+                run=self._paste,
+            ),
+            # The same verb's second seat, beside New Step: both land where the canvas was
+            # clicked, which is what a right-click on empty canvas offers. No shortcut — one
+            # enabled QAction may own Ctrl+V, and it is the Edit menu's.
+            ActionSpec(
+                id="steps.paste_graph",
+                label="&Paste",
+                menu="Graph",
+                group="new",
+                order=20,
+                palette=False,
+                tip="Add copies of the clipboard's steps where the canvas was clicked",
                 state=self._can_paste,
                 run=self._paste,
             ),

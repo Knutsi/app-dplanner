@@ -1437,7 +1437,7 @@ def test_a_right_click_on_a_test_leads_with_the_results_and_offers_the_step_menu
     assert shape[: len(band)] == band
     assert shape[len(band)] == "|"
     title, under = shape[len(band) + 1]
-    # And the child *is* the Step menu — the same render the canvas's right-click gets.
+    # And the child *is* the Step menu — the same render a card's right-click gets.
     assert title == "Step" and under == rendered()
     assert len(shape) == len(band) + 2  # Nothing else: this popup is those two things.
 
