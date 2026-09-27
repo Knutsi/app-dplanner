@@ -688,6 +688,46 @@ will wear, and it is what lets the aspect bar paint the same glyphs (through the
 they are the registry's and not a copy) instead of the panel hand-building a list of
 aspects it is not allowed to know.
 
+### The menu bar is sorted by subject
+
+The bar grew by accretion, a verb at a time into whichever menu its feature first touched.
+By F8 the Project menu held eleven spec-document verbs beside the project's own, Step held
+nine ways to show a step somewhere else, and the project's views — every tab a project has —
+were in no menu at all, since F7 took them out of Project rather than repeat the index rows
+beside it. The pass that sorted it kept **ids fixed** — keys, toolbars, the palette and the
+keymap name ids, so every move was a `menu`, `group` and `label` edit and nothing a person
+had learned stopped working — and settled on four principles, which `shell-ui.md` states:
+
+- **A top-level menu names a subject.** File is the library and what it writes; Edit history
+  and the clipboard; View the window; **Go the places** — a project's surfaces; Project the
+  verbs on a project; Graph the canvas; Step the picked steps; Tools this machine. A verb is
+  placed by asking what it is about, which is the question *View is the window; Graph is
+  the canvas* (below) first asked of the canvas.
+- **No menu is greyed whole where people spend their time** — a project's graph open,
+  nothing picked. A menu that opens onto a column of grey says nothing about why, and the
+  bar is where somebody new goes to learn what the application does.
+- **A family about one kind of thing is a child menu**, labelled for itself: Project ▸
+  Specs (adding a spec, then the picked document, then its source), Step ▸ Show in (*Graph*,
+  *Order*, *Coverage* — where a label that repeats "Show in" is noise). Eleven greyed spec
+  verbs among the project's own buried both; one child menu names the subject once.
+- **No two entries in one menu share a mnemonic.** Qt answers a letter two entries share by
+  moving between them rather than running either. The bar deals each top-level title the
+  first letter no earlier menu took (`marked_titles` — Go before Graph leaves Graph its *r*),
+  and `tests/modules/test_menu_bar.py` holds every menu and child menu to it, with the first
+  principle and every composed band beside it.
+
+**Go is the views' seat in the bar, and N50 still holds for right-clicks.** F7 took the
+views out of Project because the index's right-click renders Project whole, beside the very
+rows it would have repeated. That reason is about right-clicks, and Go keeps it: no
+right-click renders Go, so the index row stays the views' seat in the window, and Go gives
+the bar — and a window with the index hidden — a way to them. Estimate Steps and Preview
+Report went with them: they are places too, the two with no row, and empty canvas's
+right-click renders Go ▸ `survey` for them as it rendered Project's. **Show in keeps a
+table's reach.** A table still needs Order, Step Statuses and Tests from a row (F7's *A card
+is the step* has why), so they stand in Show in beside the entries that land on the step,
+as second seats with `palette=False` (`order.open_step` beside `progression.open_step`); a
+card renders only `open`'s half of the child, the entries about the step itself.
+
 ### View is the window; Graph is the canvas
 
 The graph editor's own verbs — Sort, Layout, Divide, Frame, the marks, Snap to Grid and the
@@ -715,14 +755,14 @@ verb act on, and where is that picked*:
 
 - a **point** on the canvas — `new`: New Step, and Paste's second seat (its home is Edit,
   where Ctrl+V lives; one enabled QAction may own a shortcut);
-- the **plane** as a place — `select`: Find, Lasso, Go;
+- the **plane** as a place — `select`: Find, Lasso, Select Nearest;
 - a **mixed** pick — `narrow`: Select Only Steps, Select Only Links;
 - a picked **arrow** — `links`: Remove Link and the Redirect pair (Auto-progress next);
 - the drawing itself — `arrange`, `look`, `panels` as before;
 - picked **steps** — Step: Rename, Delete, Connect, Link, Unlink (the link between two
   picked steps, which a table can offer with no arrow in sight), Isolate, and Reveal in
-  Graph, which moved from the retired `navigate` group to `surfaces` because it is the way
-  from a table's row to a step's card.
+  Graph (now *Show in ▸ Graph*), which moved from the retired `navigate` group to `surfaces`
+  because it is the way from a table's row to a step's card.
 
 The test is still not "which surface does this run on" — nearly every one of these runs on
 the canvas — but "what is its subject": a step, or something only the canvas can point at.
@@ -739,7 +779,7 @@ handful applied to the thing clicked. It now renders a row of bands chosen by th
 | a card | Step's bands about the step itself: `edit`, `link`, `track`, `agent`, `open` |
 | an arrow | Graph ▸ `links` |
 | steps and arrows | Graph ▸ `narrow`, Edit ▸ `clipboard`, then the card's bands and `links` as `Step` and `Links` child menus |
-| empty canvas | Graph ▸ `new`, Graph ▸ `select`, Edit ▸ `selection`, Project ▸ `survey` |
+| empty canvas | Graph ▸ `new`, Graph ▸ `select`, Edit ▸ `selection`, Go ▸ `survey` |
 
 **The click makes its subject current, and the menu is a function of the selection.** A card
 or an arrow outside the pick becomes the pick, one inside keeps it — the rule the card had
@@ -760,14 +800,15 @@ from a row, the index is not beside you and the graph is a tab away — so they 
 not dropped**: `track` (Status, Estimate) came out of `classify`, `compile` out of `agent`,
 and `surfaces` out of `open`, and the card renders `edit`, `link`, `track`, `agent` and
 `open` while every table and the menu bar render the whole menu. Empty canvas follows the
-same rule for the project: Project ▸ `open` is the views the index already lists, so the
-background renders `survey` — Estimate Steps and Preview Report, the two looks over the
-whole plan with no row there — instead. The Project menu followed the same way: those seven
-views (Specs, Assets, Steps, Step Statuses, Time Estimates, Coverage, Tests) repeated rows
-standing beside it, so they are `in_menus=False` — the index row is their seat, the palette
-and anything running them by id still reach them, and no menu lists them twice. `fill_menu` takes several groups for this, in the
-menu's order and ruled as the menu rules them, so the card is one band and the mixed pick's
-`Step` child is the same band.
+same rule for the project: Go ▸ `views` is the views the index already lists, so the
+background renders Go ▸ `survey` — Estimate Steps and Preview Report, the two looks over the
+whole plan with no row there — instead. The Project menu followed the same way: those views
+(Specs, Assets, Steps, Order, Step Statuses, Time Estimates, Coverage, Tests) repeated rows
+standing beside it, and the index's right-click renders it, so they left it — the index row
+is their seat in the window and Go their seat in the bar (*The menu bar is sorted by
+subject*, above), and no right-click lists them beside the rows. `fill_menu` takes several
+groups for this, in the menu's order and ruled as the menu rules them, so the card is one
+band and the mixed pick's `Step` child is the same band.
 
 **It is `fill_bands`, not an entry in `MENU_STRUCTURE`** — for the reason *A right-click on a
 test leads with the result* gives: an entry there is a place verbs are registered into, and
@@ -775,8 +816,8 @@ nothing registers here. `fill_bands` (`framework/action_menu.py`) is the one pol
 compositions use: a rule only between two bands that each drew something, none between two
 child menus (their names part them, as in Step's `classify`), and an empty child taken away.
 The cost of composing from groups is that a band naming a group nothing registers into
-renders nothing, silently — so a test holds the table to `MENU_STRUCTURE`, which is the check
-a refiling of the menu bar leans on. A new target (a stack's frame) is one more row and one
+renders nothing, silently — so a test holds every composition to what is registered
+(`tests/modules/test_menu_bar.py`), which is the check a refiling of the menu bar leans on. A new target (a stack's frame) is one more row and one
 more branch in `target_of`; a new arrow verb registers into Graph ▸ `links` and appears in
 the arrow's menu and the mixed pick's *Links* without an edit here.
 

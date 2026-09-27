@@ -168,19 +168,33 @@ paths:
   Tests tab), and `dispose()` with the tab. Feed the panel while it is hidden too: off
   screen keeps its content. `ARCHITECTURE.md`'s *A panel inside a tab follows the tab* has
   the reasoning.
+- **The menu bar is sorted by subject.** Each top-level menu names one: File the library and
+  what it writes, Edit history and the clipboard, View the window, **Go the places** (a
+  project's surfaces — `views`, the index's rows; `survey`, Estimate Steps and Preview Report;
+  `archive`), Project the verbs on a project, Graph the canvas, Step the picked steps, Tools
+  this machine. Four rules keep it that way. **No menu is greyed whole with a project's graph
+  open** — a menu that offers nothing where people spend their time teaches nothing. **A
+  family about one kind of thing is a child menu** (Project ▸ Specs, Step ▸ Show in), and its
+  labels are written for it (*Show in ▸ Graph*, not *Reveal in Graph*). **An id never moves
+  with its verb** — keys, toolbars and the palette name ids, so a refiling is a `menu`,
+  `group` and `label` edit; a second seat is a second id with `palette=False`
+  (`order.open_step`). **No two entries in one menu share a mnemonic**, and the bar deals each
+  title the first letter no earlier menu took (`marked_titles`). `tests/modules/
+  test_menu_bar.py` holds the first and the last, and every band a composition names to what
+  is registered. `ARCHITECTURE.md`'s *The menu bar is sorted by subject* has the reasoning.
 - **View is the window; Graph is the canvas — and a verb is filed by where its subject is
   picked.** The graph editor's own verbs are a top-level **Graph** menu, not a group inside
   View, which is about panels *around the tabs*, tabs, theme and zoom (`Project ▸ tests`
   holds the Tests tabs' own panel toggle for the same reason). A verb whose subject is picked
   *on the canvas* and is not a step is Graph's: `new` (New Step, Paste's second seat — a
-  point), `select` (Find, Lasso, Go — the plane as a place), `narrow` (Select Only Steps /
-  Only Links — a mixed pick), `links` (Remove Link, Redirect — a picked arrow), then
-  `arrange` (Sort, Layout, Divide), `look` (Frame, Mark, Snap to Grid, Background — the band
-  the strip's *Options* face renders whole) and `panels` (what stands beside the canvas
+  point), `select` (Find, Lasso, Select Nearest — the plane as a place), `narrow` (Select
+  Only Steps / Only Links — a mixed pick), `links` (Remove Link, Redirect — a picked arrow),
+  then `arrange` (Sort, Layout, Divide), `look` (Frame, Mark, Snap to Grid, Background — the
+  band the strip's *Options* face renders whole) and `panels` (what stands beside the canvas
   inside the tab). A verb about picked **steps** is Step's — Rename, Delete, Connect, Link,
-  Unlink (the pair), Isolate, Reveal in Graph — and so is offered by every table that renders
-  Step, where nothing canvas-only is left to be greyed. `ARCHITECTURE.md`'s *View is the
-  window; Graph is the canvas* has the reasoning.
+  Unlink (the pair), Isolate, Show in ▸ Graph — and so is offered by every table that
+  renders Step, where nothing canvas-only is left to be greyed. `ARCHITECTURE.md`'s *View is
+  the window; Graph is the canvas* has the reasoning.
 - **A palette row says where the verb lives.** The command palette renders the two-line
   row (`framework/list_rows.py`): the label, its **menu path** (`Graph ▸ Divide`) under it,
   the shortcut at the right and the spec's glyph at the left — because a submenu entry's

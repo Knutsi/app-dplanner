@@ -4561,3 +4561,21 @@ lease normally risks dropping a quiet peer's warning. That risk goes away when t
 next act of writing is also its next sign of life. Worth carrying upstream as the amended
 rule. Reporting is still the default. A lapse is the right answer when showing a stale
 fact costs more than a gap, and when the gap closes itself.
+
+## 63. From F8: the menu bar sorted by subject
+
+### `framework/menubar.py` — `marked_titles`: each top-level title takes a free letter
+
+**What.** The bar used to title every menu `&{name}`, so each one's mnemonic was its first
+letter. Now `marked_titles(names)` gives each title the first letter of its name that no
+earlier menu has taken: *Go* before *Graph* leaves Graph its *r*. The names in
+`MENU_STRUCTURE` stay plain, because they are what every spec's `menu` spells.
+
+**Why.** F8 added a Go menu beside Graph. Qt answers a letter two titles share by moving
+between them without opening either, so Alt+G would have opened nothing. Dealing the
+letters in the presenter means adding a menu can never create that clash, and nobody has
+to write `&` into a name that is also an identifier. The application's own test
+(`tests/modules/test_menu_bar.py`) holds each menu's entries to the same rule.
+
+**Upstream?** Yes. The template's `&{name}` has the same trap as soon as two menus start
+with one letter, and the fix knows nothing about DPlanner.
