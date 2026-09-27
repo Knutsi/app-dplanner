@@ -314,18 +314,33 @@ class StepOrderModule:
             return OrderActivity(deps, target)
 
         deps.tabs.register_factory(ORDER_KIND, factory)
-        # The Project side is the index tree's "Order" row now; the verb's menu seat is
-        # the Step menu's surfaces, which a table's right-click offers and a card's leaves
-        # to the index beside it — and the canvas toolbar reaches the same id.
+        # A surface of the project, so Go's — and the canvas strip's Go band runs the same
+        # id. Its second seat is Step ▸ Show in, which a table's right-click offers and a
+        # card's leaves to the index beside it. palette=False there: one palette entry.
         deps.actions.register(
             ActionSpec(
                 id="order.open",
-                label="Show &Order",
+                label="&Order",
+                menu="Go",
+                group="views",
+                order=25,
+                icon=list_icon,
+                tip="What can be started now, and what waits for what",
+                state=self._on_a_project,
+                run=self._open,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
+                id="order.open_step",
+                label="&Order",
                 menu="Step",
                 group="surfaces",
+                submenu="Show in",
                 order=20,
                 icon=list_icon,
                 tip="What can be started now, and what waits for what",
+                palette=False,
                 state=self._on_a_project,
                 run=self._open,
             )

@@ -78,11 +78,11 @@ COMPILE_MENU_TITLE = "Compile with Agent"
 STALE_ACTION = "docs.compile_stale"
 NOTHING_REASON = "Nothing to compile — no step behind this one carries a documentation fragment"
 NOT_COLLECTOR_REASON = "Compile with Agent — only a feature, milestone or check compiles one"
-NOTHING_STALE_REASON = "Compile Out of Date — every document in this project is up to date"
+NOTHING_STALE_REASON = "every document in this project is up to date"
 CHECKING_REASON = "Compile Out of Date — checking which documents are out of date…"
 WAITING_REASON = "waiting for a feature's document to be compiled first"
 OPEN_STEP_ACTION = "docs.open_step"
-NO_DOCS_REASON = "Show Documentation — this step has no documentation and gathers none"
+NO_DOCS_REASON = "Documentation — this step has no documentation and gathers none"
 # Which agent this module launched on a collector, per user and per machine: a fact about
 # one desk's runs, never the plan (*Attribution comes from the run*). Keyed by step id.
 LAUNCHES_KEY = "compiled_by"
@@ -353,9 +353,10 @@ class DocsModule:
             ),
             ActionSpec(
                 id=OPEN_STEP_ACTION,
-                label="Show &Documentation",
+                label="&Documentation",
                 menu="Step",
                 group="open",
+                submenu="Show in",
                 order=80,
                 tip="Open the Documentation tab on this step's document, or the one"
                 " gathering its fragment",

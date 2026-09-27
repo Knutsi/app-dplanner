@@ -236,7 +236,7 @@ chart, every step with everything the modules know about it, and a last section 
 what DPlanner is and how to open the plan — for a sponsor, a product owner or a tester who
 has no DPlanner. Click a card, a row or a milestone anywhere on it and every view answers.
 *Plan Report (PDF)…* prints the same report; *Plan Tables (Excel)…* writes its tables as a
-workbook, beside the Order and Time tabs' CSVs. *Project ▸ Preview Report* opens the page
+workbook, beside the Order and Time tabs' CSVs. *Go ▸ Preview Report* opens the page
 in the browser.
 
 Every Save also writes the plan repository's site under `reports/` — a page per project and
@@ -315,7 +315,7 @@ shape and why. `DESIGN.md` is the UI standard, `FORMAT.md` the on-disk one.
 ```
 src/dplanner/
 ├── identity.py            what this application calls itself
-├── menus.py               the menu bar's shape: File, Edit, View (the window), Project, Graph (the canvas), Step, Tools
+├── menus.py               the menu bar's shape, by subject: File, Edit, View (the window), Go (the places), Project, Graph (the canvas), Step, Tools
 ├── app.py                 bootstrap: QApplication, the session, the first open
 ├── entry.py               the one `dplanner` command: the CLI, or `dplanner window` (`dpw`)
 ├── assets/                what the application ships: the icon, one PNG per size, read by the window and the launcher alike
@@ -518,7 +518,7 @@ src/dplanner/
 │   │                        real aspect writers, the accuracy `scripts/time_accuracy.py` prints) and
 │   │                        debugger.py shows one in the real tab under Debug ▸ Time Simulation
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
-│   │                        Project ▸ Preview Report, the publisher that writes `reports/` on every Save,
+│   │                        Go ▸ Preview Report, the publisher that writes `reports/` on every Save,
 │   │                        Settings ▸ Reports; the `reporting` location role (roles.py)
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
 │   │                        deferrals — one labelled log (log.py), what reaches a step and the briefing's

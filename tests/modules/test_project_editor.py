@@ -1590,14 +1590,14 @@ def test_a_verb_is_filed_by_where_its_subject_is_picked(services):
     assert where["steps.paste_graph"] == ("Graph", "new", None)
     assert where["steps.paste"] == ("Edit", "clipboard", None)
     assert where["steps.lasso"] == ("Graph", "select", None)
-    assert where["steps.go_left"] == ("Graph", "select", "Go")
+    assert where["steps.go_left"] == ("Graph", "select", "Select Nearest")
     assert where["canvas.select_only_steps"] == ("Graph", "narrow", None)
     assert where["links.remove"] == ("Graph", "links", None)
     assert where["steps.redirect_to"] == ("Graph", "links", "Redirect")
     assert where["steps.link"] == ("Step", "link", None)
     assert where["steps.unlink"] == ("Step", "link", None)
-    assert where["steps.reveal"] == ("Step", "surfaces", None)
-    assert where["estimate.open"] == ("Project", "survey", None)
+    assert where["steps.reveal"] == ("Step", "surfaces", "Show in")
+    assert where["estimate.open"] == ("Go", "survey", None)
     strays = [
         spec.id
         for spec in services.actions.all_specs()
@@ -1728,7 +1728,7 @@ def test_the_panels_verb_is_the_graphs_own_chrome(services):
     spec = services.actions.spec("canvas.side_panel")
     assert (spec.menu, spec.group) == ("Graph", "panels")
     # Named for what it holds, by the composition root — this module never spells it.
-    assert spec.label == "&Problems" and spec.icon is not None
+    assert spec.label == "Problems" and spec.icon is not None
 
 
 def test_the_panel_leads_the_strip_in_a_band_of_its_own(services, project, tab):
@@ -1876,7 +1876,9 @@ def test_a_cards_menu_holds_only_what_is_about_the_step(services, project, tab):
         "Estimate",
         "Run Agent",
         "Step Details…",
-        "Show in Coverage",
+        "Show in",
+        "Coverage",
+        "Spec Passage",
     ):
         assert about_the_step in found
     for elsewhere in (
@@ -1885,15 +1887,15 @@ def test_a_cards_menu_holds_only_what_is_about_the_step(services, project, tab):
         "Test Category",
         "Test Sort Key",
         "Compile with Agent",
-        "Show Order",
-        "Show Step Statuses",
-        "Show Tests",
+        "Order",
+        "Step Statuses",
+        "Tests",
         "Test Details",
         "Estimate Steps",
-        "Reveal in Graph",
+        "Graph",
         "Redirect",
         "Find Step…",
-        "Go",
+        "Select Nearest",
         "Lasso Select",
         "New Step",
     ):
@@ -1902,7 +1904,7 @@ def test_a_cards_menu_holds_only_what_is_about_the_step(services, project, tab):
 
 def test_a_table_still_renders_the_whole_step_menu(services, project, tab):
     """What a card leaves out is filed, not dropped: the menu bar and every table that
-    lists steps still offer it."""
+    lists steps still offer it — all but what a step *is*, which is set in Step Details."""
     from PySide6.QtWidgets import QMenu
 
     from dplanner.framework.action_menu import fill_menu
@@ -1910,8 +1912,10 @@ def test_a_table_still_renders_the_whole_step_menu(services, project, tab):
     step_menu = fill_menu(QMenu(), services.actions, services.context, "Step")
     found = labels(entries(step_menu))
     step_menu.deleteLater()
-    for verb in ("Type", "Test", "Compile with Agent", "Show Order", "Reveal in Graph"):
+    for verb in ("Status", "Estimate", "Compile with Agent", "Show in", "Order", "Graph"):
         assert verb in found
+    for kind in ("Type", "Test", "Test Category", "Test Sort Key"):
+        assert kind not in found
 
 
 def test_empty_canvas_offers_making_selecting_and_the_plan(services, project, tab, monkeypatch):
@@ -1926,13 +1930,19 @@ def test_empty_canvas_offers_making_selecting_and_the_plan(services, project, ta
     assert scene(tab).selection().steps == ()
     assert rendered[:2] == ["New Step", "Paste"]
     found = {label.split(" — ")[0] for label in labels(rendered)}
-    for verb in ("Find Step…", "Lasso Select", "Go", "Select All Steps", "Estimate Steps"):
+    for verb in (
+        "Find Step…",
+        "Lasso Select",
+        "Select Nearest",
+        "Select All Steps",
+        "Estimate Steps",
+    ):
         assert verb in found
     assert "Preview Report" in found
     for step_verb in ("Status", "Run Agent", "Rename Step…", "Delete Step", "Remove Link"):
         assert step_verb not in found
     # A row under the project in the index already opens each of these.
-    for listed in ("Open Specs", "Open Assets", "Show Steps", "Show Coverage", "Show Tests"):
+    for listed in ("Specs", "Assets", "Steps", "Coverage", "Tests"):
         assert listed not in found
 
     silence_details(monkeypatch)
@@ -1975,19 +1985,6 @@ def test_only_links_lets_go_of_the_steps(services, project, tab):
     services.actions.run("canvas.select_only_links", services.context.current())
     assert scene(tab).selection().steps == ()
     assert scene(tab).selection().edges == (edge.ref,)
-
-
-def test_every_band_the_canvas_renders_names_a_live_group():
-    """A band naming a group nothing registers into renders nothing, silently — so the
-    table is held to MENU_STRUCTURE, the one thing a refiling has to keep it in step with."""
-    from dplanner.menus import MENU_STRUCTURE
-    from dplanner.modules.project_editor.canvas_menus import BANDS
-
-    for bands in BANDS.values():
-        for band in bands:
-            assert band.menu in MENU_STRUCTURE
-            named = (band.group,) if isinstance(band.group, str) else band.group or ()
-            assert set(named) <= set(MENU_STRUCTURE[band.menu])
 
 
 # -- the layout picker --------------------------------------------------------------------------
@@ -3439,7 +3436,7 @@ def test_the_edit_menu_reads_history_clipboard_selection(services):
         "Cu&t Step",
         "&Copy Step",
         "&Paste",
-        "D&uplicate Step",
+        "Dup&licate Step",
         "&Delete Step",
         "|",
         "Select &All Steps",

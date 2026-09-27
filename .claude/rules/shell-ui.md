@@ -108,11 +108,10 @@ paths:
 - **A right-click may render more than one menu, and still copies none.** `fill_bands`
   (`framework/action_menu.py`) lays `Band`s — a menu, a group of one, a child menu's band,
   optionally as a child of its own — into one pop-up, a rule only between two bands that
-  each drew something and none between two child menus. The Tests tab's right-click is
-  `Step ▸ Test`'s `test_result` band, then the Step menu as a `Step` child
-  (`TestsActivity._test_menu`); the canvas's is a row of bands per thing under the cursor
-  (`project_editor/canvas_menus.py`, *A right-click is composed by what is under it* in
-  `canvas.md`). Naming a `group` **with** a `submenu` means that child menu's band — two
+  each drew something and none between two child menus. The canvas's right-click is a row
+  of bands per thing under the cursor (`project_editor/canvas_menus.py`, *A right-click is
+  composed by what is under it* in `canvas.md`); a Tests tab's is its step's Step menu, as
+  every table's is. Naming a `group` **with** a `submenu` means that child menu's band — two
   groups may feed one child menu, and a surface about one of them offers that one. What the
   rule forbids is an entry written by hand, not a shape; a composition is not a
   `MENU_STRUCTURE` entry of its own, because an entry there is a place verbs are
@@ -168,19 +167,35 @@ paths:
   Tests tab), and `dispose()` with the tab. Feed the panel while it is hidden too: off
   screen keeps its content. `ARCHITECTURE.md`'s *A panel inside a tab follows the tab* has
   the reasoning.
+- **The menu bar is sorted by subject.** Each top-level menu names one: File the library and
+  what it writes, Edit history and the clipboard, View the window, **Go the places** (a
+  project's surfaces — `views`, the index's rows; `survey`, Estimate Steps and Preview Report;
+  `archive`), Project the verbs on a project, Graph the canvas, Step the picked steps, Tools
+  this machine. Four rules keep it that way. **No menu is greyed whole with a project's graph
+  open** — a menu that offers nothing where people spend their time teaches nothing. **What
+  a step *is* is set where its aspects are**: Type is the aspect bar in Step Details and Test
+  the step's Tests tab, so both are `in_menus=False` (`classify`), found by the palette. **A
+  family about one kind of thing is a child menu** (Project ▸ Specs, Step ▸ Show in), and its
+  labels are written for it (*Show in ▸ Graph*, not *Reveal in Graph*). **An id never moves
+  with its verb** — keys, toolbars and the palette name ids, so a refiling is a `menu`,
+  `group` and `label` edit; a second seat is a second id with `palette=False`
+  (`order.open_step`). **No two entries in one menu share a mnemonic**, and the bar deals each
+  title the first letter no earlier menu took (`marked_titles`). `tests/modules/
+  test_menu_bar.py` holds the first and the last, and every band a composition names to what
+  is registered. `ARCHITECTURE.md`'s *The menu bar is sorted by subject* has the reasoning.
 - **View is the window; Graph is the canvas — and a verb is filed by where its subject is
   picked.** The graph editor's own verbs are a top-level **Graph** menu, not a group inside
   View, which is about panels *around the tabs*, tabs, theme and zoom (`Project ▸ tests`
   holds the Tests tabs' own panel toggle for the same reason). A verb whose subject is picked
   *on the canvas* and is not a step is Graph's: `new` (New Step, Paste's second seat — a
-  point), `select` (Find, Lasso, Go — the plane as a place), `narrow` (Select Only Steps /
-  Only Links — a mixed pick), `links` (Remove Link, Redirect — a picked arrow), then
-  `arrange` (Sort, Layout, Divide), `look` (Frame, Mark, Snap to Grid, Background — the band
-  the strip's *Options* face renders whole) and `panels` (what stands beside the canvas
+  point), `select` (Find, Lasso, Select Nearest — the plane as a place), `narrow` (Select
+  Only Steps / Only Links — a mixed pick), `links` (Remove Link, Redirect — a picked arrow),
+  then `arrange` (Sort, Layout, Divide), `look` (Frame, Mark, Snap to Grid, Background — the
+  band the strip's *Options* face renders whole) and `panels` (what stands beside the canvas
   inside the tab). A verb about picked **steps** is Step's — Rename, Delete, Connect, Link,
-  Unlink (the pair), Isolate, Reveal in Graph — and so is offered by every table that renders
-  Step, where nothing canvas-only is left to be greyed. `ARCHITECTURE.md`'s *View is the
-  window; Graph is the canvas* has the reasoning.
+  Unlink (the pair), Isolate, Show in ▸ Graph — and so is offered by every table that
+  renders Step, where nothing canvas-only is left to be greyed. `ARCHITECTURE.md`'s *View is
+  the window; Graph is the canvas* has the reasoning.
 - **A palette row says where the verb lives.** The command palette renders the two-line
   row (`framework/list_rows.py`): the label, its **menu path** (`Graph ▸ Divide`) under it,
   the shortcut at the right and the spec's glyph at the left — because a submenu entry's
@@ -235,11 +250,12 @@ paths:
   is the verb that changes how much of the graph is in view.
 - **A submenu is one child menu per title, and a group change draws the rule *inside* it.**
   Both presenters agree (`framework/menubar.py`, `framework/action_menu.py`), so two groups
-  can feed one submenu — what a test *is* and what it *did* — and a group that only feeds an
-  existing child menu costs the menu itself no line. Several submenus therefore sit in one
-  group as a band (Step's `classify` holds Type, Status and Test), and since a child menu
-  sits at its first entry's `order`, siblings in one group claim bands of it — the one place
-  `order` says more than "rank inside this group", written down in `menus.py`.
+  can feed one submenu — Step ▸ Show in is fed by `open` and `surfaces` — and a group that
+  only feeds an existing child menu costs the menu itself no line. Several submenus
+  therefore sit in one group as a band (Step's `track` holds Status and Estimate), and since
+  a child menu sits at its first entry's `order`, siblings in one group claim bands of it —
+  the one place `order` says more than "rank inside this group", written down in
+  `menus.py`.
   `ARCHITECTURE.md`'s *A submenu is one child menu per title* has the reasoning. **A child
   menu whose entries are data carries a `fill` instead of specs** — `DataMenuSpec`, placed
   by the same table, cleared and refilled every time it opens (Tools ▸ Agent List is the
@@ -265,7 +281,7 @@ paths:
   dropdown — all built fresh on every open. The menu bar's QActions outlive every theme
   change, so a colour baked into one goes stale; that is the same trap as `option.palette`.
   Every Type toggle carries the glyph its node wears (`theme/icons.py`'s
-  `GLYPH_ICONS` vocabulary), so the Type submenu, the aspect bar and the node agree.
+  `GLYPH_ICONS` vocabulary), so the palette's row, the aspect bar and the node agree.
 - **A theme is provided, never listed.** `theme/providers.py` is the contract — a
   `ThemeProvider` is an id, a label, `refusal()` (why not on this machine, None when it
   applies, asked once per build), `groups()` (its themes, in the lists the Theme menu

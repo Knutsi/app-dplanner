@@ -26,12 +26,9 @@ only grouping that is the tests' own vocabulary rather than the graph's, and it 
 that makes a roster of two hundred readable. Its headings fold; the graph's do not, because
 a feature's tests are already few and the reader asked to see them beside each other.
 
-**A right-click on a row leads with the result, and the Step menu is one level down.**
-A row here is a test, so the *Test* child menu's result band is what a right-click renders
-first and the whole Step menu follows as a child — rendered, both of them, so the child *is*
-the Step menu and a verb added to it tomorrow is in this popup without anybody editing this
-file. Rendering the Step menu whole, as this used to, put four verbs about the thing under
-the cursor among twenty about something else.
+**A right-click on a row is its step's Step menu**, as every table's is: a result is
+recorded from the strip and the Test panel beside the roster, and a test is filed on its
+step's Tests tab, so no menu is about the test itself.
 
 **And inside a group, the sort key is what makes the list ergonomic.** *Ergonomic order* on
 the strip — on by default — orders each group by its tests' sort key, so the tests that
@@ -50,7 +47,7 @@ from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMenu, QVBoxLayout
 
 from dplanner.domain.model import NodeId, Project, Step, StepId
 from dplanner.domain.scope import ScopeKind, gatherers, kind_of
-from dplanner.framework.action_menu import Band, fill_bands
+from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import ActivityBase, EntityActivity, follow_project
 from dplanner.framework.context import (
@@ -102,9 +99,6 @@ ALL_TESTS_KIND = "all_tests"
 # without folding into `…`, which is the one thing a run must not have to do.
 SIDE_PANEL_ACTION = "tests.side_panel"
 TEST_PANEL_WIDTH = 360
-
-# A row's right-click: what a run recorded, then the whole Step menu one level down.
-TEST_MENU = (Band("Step", group="test_result", submenu="Test"), Band("Step", child="Step"))
 
 TAB_HINT = "Everything this project verifies, and how it last did."
 ALL_HINT = "Every test in every project in this library, and how it last did."
@@ -676,8 +670,8 @@ class TestsActivity(EntityActivity):
             return NO_MATCH  # The scope holds tests; the audience filter is what emptied it.
         if not project_tests(project, archived=True):
             return (
-                "No tests yet. Add one from a step's Tests tab — mark the step with "
-                "Step ▸ Type ▸ Test — or run `dplanner test add <step> '<title>'`."
+                "No tests yet. Add one from a step's Tests tab — turn on Test in its "
+                "Step Details — or run `dplanner test add <step> '<title>'`."
             )
         if self._current_run() is not None:
             return "This run holds no tests in the current scope."
@@ -813,20 +807,13 @@ class TestsActivity(EntityActivity):
         menu.exec(table.viewport().mapToGlobal(position))
 
     def _test_menu(self, parent: QWidget) -> QMenu:
-        """What a right-click on a row here renders: the results, then the step's menu.
+        """What a right-click on a row here renders: the Step menu, as every table's does.
 
-        Two renders, no copy: the *Test* child menu's ``test_result`` band flat, then the
-        Step menu itself as a child. So that child *is* the Step menu — its order, its own
-        child menus, its data menus and its greyed reasons, and a verb added to it
-        tomorrow is here without anybody editing this file. ``CLAUDE.md``'s *a right-click
-        renders a menu, never a copy of one* is a rule about entries and says nothing
-        against rendering **two** menus.
-
-        It is a composition rather than an entry of its own in ``MENU_STRUCTURE``, because
-        an entry there is a place verbs are *registered into* and nothing registers here.
-        ``ARCHITECTURE.md``'s *A right-click on a test leads with the result* has the rest.
+        A result is recorded from the strip and the Test panel beside the roster, and a
+        test is filed on its step's Tests tab, so the row offers what acts on its step.
+        ``ARCHITECTURE.md``'s *A right-click on a test is its step's* has the history.
         """
-        return fill_bands(QMenu(parent), TEST_MENU, self._deps.actions, self._deps.context)
+        return build_menu(self._deps.actions, self._deps.context, "Step", parent)
 
 
 class AllTestsActivity(ActivityBase):
@@ -936,7 +923,8 @@ class AllTestsActivity(ActivityBase):
         if rows:
             return NO_MATCH
         return (
-            "No tests in this library yet. Open a project and mark a step with Step ▸ Type ▸ Test."
+            "No tests in this library yet. Open a project and turn on Test in a step's "
+            "Step Details."
         )
 
     def _picked(self) -> tuple[ContextNode, ...]:

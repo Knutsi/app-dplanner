@@ -73,9 +73,9 @@ paths:
   undo entry and the freshness note. A fetched document is **bytes and a filename** —
   markdown, text or a PDF — and the spec module keeps its own minted name as the stem and
   takes only the suffix, so no kind can rename every row of an existing plan. The + button's
-  arrow renders the Project ▸ *Add Spec* child menu, so a kind contributes one `ActionSpec`
-  and nothing else; the root names the kinds in `_source_kinds`, which is also the test
-  seam and where the menu's order is decided. **Two kinds may be one module**:
+  arrow renders the *Add Spec* child menu inside Project ▸ Specs, so a kind contributes one
+  `ActionSpec` and nothing else; the root names the kinds in `_source_kinds`, which is also
+  the test seam and where the menu's order is decided. **Two kinds may be one module**:
   `spec_confluence` is one client, one credential and one Connect dialog under a
   `ContentType` record constructed twice — the walk stays one function, and `expected` on
   `parse_url`/`valid_locator` is what refuses a folder address pasted into the page kind.

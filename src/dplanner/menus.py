@@ -63,15 +63,27 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
         "tabs",
         "window",
     ),
-    # The planner's own vocabulary. "Project" is what the index tree's right-click menu
-    # renders and "Step" is what a card's does on the canvas, whose right-click is composed
-    # of bands by what it lands on — see project_editor/canvas_menus.py.
-    # "link" holds the two-step verbs: the canvas publishes both ends into the selection
-    # scope on a drop and runs the same action the menu does.
-    # "documents" is the spec module's: what a project carries beside its steps;
-    # "features" the feature module's: the catalogue of what it delivers, placed or not.
-    # "tests" is the test run's two verbs — a run belongs to a project, spans its
-    # steps, and there is at most one open at a time.
+    # **Go is the places**: every surface a project has, so the bar reaches each without the
+    # index beside it. "views" is the surfaces that stand as rows under a project in the
+    # index — Specs, Assets, Steps, Order, Step Statuses, Time Estimates, Coverage, Tests —
+    # in the index's order; "survey" the two looks over the whole plan that have no row
+    # there, Estimate Steps and Preview Report, which is also what empty canvas's right-click
+    # offers; "archive" the library's Archive tab. No right-click renders Go whole: a row's
+    # own right-click never repeats the rows beside it (the Project menu below), and a table's
+    # Step menu reaches the views about a step through Step ▸ Show in. ARCHITECTURE.md's *The
+    # menu bar is sorted by subject* has the reasoning.
+    "Go": ("views", "survey", "archive"),
+    # The planner's own vocabulary. "Project" is the verbs on a project — what the index
+    # tree's right-click renders — and "Step" the verbs on picked steps, which every table
+    # renders whole and a card renders in part (project_editor/canvas_menus.py).
+    # "edit" is the project's own form and where its plan lives: Settings, Move Plan.
+    # "membership" is whether a project is in this library at all — Archive, Restore and
+    # Remove from Library — and it is the whole of what an archived project's right-click
+    # renders, through `fill_menu`'s `group` filter.
+    # "documents" and "sources" are the spec module's, and both feed the Specs child menu:
+    # adding a spec (the Add Spec child inside it) and what acts on the document picked in
+    # the Specs tab, then what acts on the source it came from — the rule between them drawn
+    # inside the child, and "sources" adding none to Project itself.
     # "agent" is Open Agent in Code: the same launch profiles Run Agent offers, opening an
     # agent in the project's code with no briefing at all. It is the project's and not a
     # step's because it is what the planning *before* the steps needs — a spec has landed,
@@ -80,25 +92,16 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # have moved on. It is the project's because it is about all of them at once — the
     # per-collector launch is a Step verb, beside Run Agent. It is a band of its own below
     # the one above: bringing a set of documents up to date is not opening a terminal.
-    # "membership" is whether a project is in this library at all — Archive, Restore,
-    # Remove from Library and Show Archive — and it is the whole of what an archived
-    # project's right-click renders, through `fill_menu`'s `group` filter.
-    # "open" is the project's surfaces that stand as rows under it in the index — Specs,
-    # Assets, Steps, Step statuses, Time Estimates, Coverage, Tests. The row is their seat,
-    # so they are ``in_menus=False``: in the palette and runnable by id, in no menu, where
-    # they only repeated the index beside it. "survey" is the two looks over the whole plan
-    # that have no row there — Estimate Steps (every step in one list to size) and Preview
-    # Report — which is what empty canvas's right-click offers.
+    # "tests" is the test run's two verbs — a run belongs to a project, spans its
+    # steps, and there is at most one open at a time — the categories and the Test panel.
     "Project": (
         "edit",
         "membership",
         "documents",
+        "sources",
         "agent",
         "docs",
-        "features",
         "tests",
-        "open",
-        "survey",
     ),
     # The canvas the plan is drawn on: every verb whose subject is picked *on the canvas*
     # rather than being a step — a point, the plane's steps as a place, an arrow — and how
@@ -106,9 +109,10 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # inside View, and what tells the next person where to add one.
     # "new" is what lands where the canvas was clicked: New Step, and Paste's second seat
     # (its home is Edit, with Ctrl+V). "select" is the ways to a step on the plane — Find,
-    # Lasso, Go. "narrow" keeps one kind of a mixed pick: steps, or links. "links" is what
-    # a picked arrow is for: Remove Link and the Redirect pair. The canvas's right-click
-    # renders these bands by what it lands on, which is why each is a group of its own.
+    # Lasso, Select Nearest. "narrow" keeps one kind of a mixed pick: steps, or links.
+    # "links" is what a picked arrow is for: Remove Link and the Redirect pair. The canvas's
+    # right-click renders these bands by what it lands on, which is why each is a group of
+    # its own.
     # "arrange" is the Sort, Layout and Divide child menus: three ways of moving cards
     # about, from the wholesale to the one cut at a time. "contract" feeds that same Divide
     # child menu with the verbs that take room back, so the rule between opening a gap and
@@ -121,40 +125,32 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "Graph": ("new", "select", "narrow", "links", "arrange", "contract", "look", "panels"),
     # Every table that lists steps renders this menu whole; a card on the canvas renders
     # only the bands about the step itself — edit, link, track, agent, open — and leaves
-    # the rest to the step's details and the index beside it (canvas_menus.py's CARD).
+    # the rest to the index beside it (canvas_menus.py's CARD).
     # That split is why some neighbours below are separate groups.
     # "edit" is Rename, Delete and Insert Wait Before — New is the Graph menu's, since what
     # it needs is a place.
     # "track" is where a step stands and how long it takes: the Status and Estimate child
-    # menus, acting on every picked step.
-    # "classify" is the band of child menus that say what a step *is*: Type (one independent
-    # checkable toggle per type-ish aspect — never a radio group, a step can be several
-    # things at once, and each aspect's tab follows its toggle), then Test, Test Category and
-    # Test Sort Key. A card leaves them out: the aspect bar in Step Details is where a step's
-    # kind is set, and a test is picked only in a Tests tab. They are one group because a
-    # rule between two adjacent child menus separates nothing: the names already do. A child
-    # menu sits at its first entry's order, so the child menus claim bands of it — in
-    # "track" Status the 200s and Estimate the 400s; here Type the 10s, Test the 300s, Test
-    # Category the 500s, Test Sort Key the 600s — and ``order`` still only ranks inside one
-    # group. Test Category is a *data* child menu (the project's own categories, rebuilt on
-    # open) and so sits beside Test rather than inside it: a `DataMenuSpec` is placed at its
-    # menu's top level, never nested in a submenu.
-    # "test_result" feeds that same Test submenu with what a run *recorded*, so the rule
-    # between what a test is and what it did is drawn inside the child menu — and, holding
-    # no top-level entry of its own, the group adds no rule to the menu itself.
+    # menus, acting on every picked step. A child menu sits at its first entry's order, so
+    # the two claim bands of it — Status the 200s, Estimate the 400s — and ``order`` still
+    # only ranks inside one group.
+    # "classify" is what a step *is*, and it is in no menu: Type (one independent checkable
+    # toggle per type-ish aspect — never a radio group, a step can be several things at
+    # once) is the aspect bar across Step Details, and Test (add, archive, record a result)
+    # is the step's Tests tab there, the Tests strip and the Test panel. Its verbs are
+    # `in_menus=False`, so the palette finds them under *Step ▸ Type* and *Step ▸ Test*.
     # "agent" carries a step's work out: Run Agent and what follows one. "compile" is
     # Compile with Agent, which writes a collector's documentation from the fragments behind
     # it — a band of its own because a card does not offer it; the Docs tab does.
-    # "open" is a surface about this step: its details, and its place in Coverage, the spec
-    # and the documentation. "surfaces" is the rest a table offers from a step — Reveal in
-    # Graph, Show Order, Show Step Statuses, Show Tests, Test Details — which a card leaves
-    # to the index beside it, or has no use for on the graph it is already on.
+    # "open" is where this step is seen: Step Details, then the Show in child menu's
+    # Coverage, Spec Passage and Documentation. "surfaces" is what a table adds from a step —
+    # Show in's Graph, Order, Step Statuses and Tests, then Test Details — which a card
+    # leaves to the index beside it, or has no use for on the graph it is already on. The
+    # two groups feed one Show in, so a card's is the first three and a table's all seven.
     "Step": (
         "edit",
         "link",
         "track",
         "classify",
-        "test_result",
         "agent",
         "compile",
         "open",

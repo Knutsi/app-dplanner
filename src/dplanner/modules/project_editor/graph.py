@@ -673,7 +673,7 @@ class GraphView(QGraphicsView):
     def centre_on_step(self, step_id: StepId) -> None:
         """Put the viewport on one step, at the zoom the user left it.
 
-        What *Jump to* lands with, and what Reveal in Graph has done since: selecting a
+        What *Jump to* lands with, and what ``steps.reveal`` has done since: selecting a
         node that is off screen selects something nobody can see. The zoom is untouched —
         Frame is the verb that changes how much of the graph is in view, and a jump that
         also zoomed would lose the scale somebody had chosen to work at.

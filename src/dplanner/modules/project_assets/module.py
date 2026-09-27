@@ -61,10 +61,9 @@ class ProjectAssetsModule:
         deps.actions.register(
             ActionSpec(
                 id="assets.open",
-                label="Open &Assets",
-                menu="Project",
-                group="open",
-                in_menus=False,  # Its seat is the project's row in the index — menus.py.
+                label="&Assets",
+                menu="Go",
+                group="views",
                 order=15,
                 tip="Every image and file this project carries, and what uses each",
                 state=self._on_a_project,

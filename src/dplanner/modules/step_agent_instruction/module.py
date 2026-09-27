@@ -521,7 +521,7 @@ class StepAgentInstructionModule:
         if deps.is_wait(step):
             return NO_AGENT_ON_A_WAIT
         if not enabled(step):
-            return "mark the step as an agent step first (Step ▸ Type ▸ Agent)"
+            return "mark the step as an agent step first (Agent, in Step Details)"
         briefed = deps.briefing.instruction(deps.library, step, deps.files)
         if (
             not briefed.body

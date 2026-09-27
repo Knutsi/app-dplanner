@@ -97,7 +97,7 @@ class ProjectsDeps:
     # The Project dialog's tabs after Repositories, registered by other modules and read
     # when the dialog is first built — after every module has registered.
     project_settings: InspectorSectionRegistry
-    # Show a project's graph — the "Show Steps" verb's and the Steps row's callback, wired
+    # Show a project's graph — Go ▸ Steps's and the Steps row's callback, wired
     # by the composition root to the project editor, which this module never imports.
     open_steps: Callable[[NodeId], None]
     # Attach a directory and add the project to the library with the membership origin,
@@ -316,7 +316,7 @@ class ProjectsModule:
             )
             return
         deps.archive_project(project_id)
-        deps.status.show_status(f"“{title}” archived — Project ▸ Show Archive has it", 6000)
+        deps.status.show_status(f"“{title}” archived — Go ▸ Archive has it", 6000)
 
     def restore(self, directory: Path) -> None:
         """Back into the library: restoring is connecting, and the attach takes the

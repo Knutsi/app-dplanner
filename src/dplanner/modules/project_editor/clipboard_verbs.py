@@ -156,7 +156,7 @@ class ClipboardVerbs:
             ),
             ActionSpec(
                 id="steps.duplicate",
-                label="D&uplicate Step",
+                label="Dup&licate Step",
                 menu="Edit",
                 group="clipboard",
                 order=40,

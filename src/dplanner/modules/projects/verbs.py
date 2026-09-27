@@ -96,7 +96,7 @@ class ProjectVerbs:
             ),
             ActionSpec(
                 id="projects.share",
-                label="&Share Project…",
+                label="S&hare Project…",
                 menu="File",
                 group="project",
                 order=30,
@@ -131,7 +131,7 @@ class ProjectVerbs:
             ),
             ActionSpec(
                 id="projects.remove",
-                label="Re&move from Library…",
+                label="&Remove from Library…",
                 menu="Project",
                 group="membership",
                 order=30,
@@ -143,19 +143,18 @@ class ProjectVerbs:
             ),
             ActionSpec(
                 id="projects.show_archive",
-                label="Show Archi&ve",
-                menu="Project",
-                group="membership",
-                order=40,
+                label="A&rchive",
+                menu="Go",
+                group="archive",
+                order=10,
                 tip="The projects archived out of this library",
                 run=lambda _context: self.show_archive(),
             ),
             ActionSpec(
                 id="projects.open",
-                label="Show &Steps",
-                menu="Project",
-                group="open",
-                in_menus=False,  # Its seat is the project's row in the index — menus.py.
+                label="St&eps",
+                menu="Go",
+                group="views",
                 order=20,  # The index's order: Specs (10), Assets (15), then Steps.
                 tip="Show this project's graph",
                 state=self._on_a_project,

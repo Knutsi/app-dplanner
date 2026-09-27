@@ -54,7 +54,7 @@ PICKED_ALPHA = 26
 # Days of air either side of the dates the rows reach.
 BEFORE = timedelta(days=2)
 AFTER = timedelta(days=3)
-NO_MILESTONES = "No milestones yet · Step ▸ Type ▸ Milestone"
+NO_MILESTONES = "No milestones yet · turn on Milestone in a step's Step Details"
 
 
 class ShiftView(QWidget):

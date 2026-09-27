@@ -36,7 +36,7 @@ from dplanner.domain.document_source import Freshness, SourceStatus
 from dplanner.domain.fields import ModuleTextField
 from dplanner.domain.model import Library, NodeId, Project, TextEdit
 from dplanner.domain.store import ModuleFileArea
-from dplanner.framework.action_registry import ActionRegistry
+from dplanner.framework.action_registry import PATH_SEPARATOR, ActionRegistry
 from dplanner.framework.activity import EntityActivity
 from dplanner.framework.asset_gallery import AssetGallery
 from dplanner.framework.autosave import FLUSH_DELAY_MS
@@ -115,8 +115,10 @@ SPECS_KIND = "specs"
 DOCUMENT_ENTITY = "spec_document"
 SOURCE_ENTITY = "spec_source"
 
-# The child menu the + button drops down: every way to add a spec, built-ins and kinds.
-ADD_SUBMENU = "Add Spec"
+# Project ▸ Specs: every verb about the project's spec documents and their sources. The
+# + button drops down the Add Spec child inside it: every way to add one, built-ins and kinds.
+SPECS_SUBMENU = "Specs"
+ADD_SUBMENU = SPECS_SUBMENU + PATH_SEPARATOR + "Add Spec"
 
 # The verbs over the document tree. Every glyph is the spec's own — the module keeps no
 # icon table — and `spec.new`'s arrow drops the whole *Add Spec* child menu, which is where

@@ -269,17 +269,22 @@ def test_reveal_in_graph_shows_the_step_on_the_canvas(services, project, tab):
 
 def test_a_rows_step_menu_offers_reveal_and_nothing_only_a_canvas_can_run(services, project, tab):
     """The table renders the Step menu by name. What only a canvas can run is the Graph
-    menu's, so nothing here is greyed for want of one — and Reveal in Graph, the way from
+    menu's, so nothing here is greyed for want of one — and Show in ▸ Graph, the way from
     this row to its card, is offered and live."""
+    from PySide6.QtWidgets import QMenu
+
     from dplanner.framework.action_menu import build_menu
 
     tab.table.selectRow(0)
     menu = build_menu(services.actions, services.context, "Step", tab.table)
     offered = {action.text(): action.isEnabled() for action in menu.actions()}
+    show_in = next(action.menu() for action in menu.actions() if action.text() == "Show in")
+    assert isinstance(show_in, QMenu)
+    shown = {action.text(): action.isEnabled() for action in show_in.actions()}
     menu.deleteLater()
 
-    assert offered["Re&veal in Graph"]
-    for canvas_verb in ("&New Step", "&Find Step…", "Lasso &Select", "Go", "Redirect"):
+    assert shown["&Graph"]
+    for canvas_verb in ("&New Step", "&Find Step…", "Lasso &Select", "Select Nearest", "Redirect"):
         assert canvas_verb not in offered
 
 
@@ -298,12 +303,15 @@ def test_the_action_opens_it_for_the_focused_project(services, project):
     assert [a.uri for a in services.tabs.activities()] == [f"app://activity/order/{project.id}"]
 
 
-def test_the_verb_sits_in_the_step_menu_only(services):
-    """The Project side is the index tree's Order row, so the verb's one menu seat is
-    the Step menu's surfaces — a table's right-click and the canvas's toolbar reach it,
-    and a card's leaves it to that row."""
+def test_the_verb_is_a_place_with_a_second_seat_in_show_in(services):
+    """Order is one of the project's surfaces, so its seat in the bar is Go — the canvas
+    strip's Go band runs the same id. A table's right-click reaches it through Step ▸ Show
+    in, a second seat the palette leaves out; a card's leaves it to the index's row."""
     spec = services.actions.spec("order.open")
-    assert (spec.menu, spec.group, spec.palette) == ("Step", "surfaces", True)
+    assert (spec.menu, spec.group, spec.palette) == ("Go", "views", True)
+    mirror = services.actions.spec("order.open_step")
+    assert (mirror.menu, mirror.group, mirror.submenu) == ("Step", "surfaces", "Show in")
+    assert not mirror.palette and mirror.run == spec.run
 
 
 # -- the export ------------------------------------------------------------------------------

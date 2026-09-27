@@ -318,24 +318,24 @@ class ProgressionModule:
         deps.actions.register(
             ActionSpec(
                 id="progression.open",
-                label="Show Step Stat&uses",
-                menu="Project",
-                group="open",
-                in_menus=False,  # Its seat is the project's row in the index — menus.py.
+                label="Step Stat&uses",
+                menu="Go",
+                group="views",
                 order=30,
                 tip="What needs a person right now: blocked, to merge, to review, to start",
                 state=self._on_a_project,
                 run=self._open,
             )
         )
-        # The same verb placed in the Step menu, beside Show Order's mirror there.
-        # palette=False: one palette entry.
+        # The same verb's second seat, in Step ▸ Show in beside Order's, so a table's
+        # right-click reaches it. palette=False: one palette entry.
         deps.actions.register(
             ActionSpec(
                 id="progression.open_step",
-                label="Show Step Stat&uses",
+                label="Step Stat&uses",
                 menu="Step",
                 group="surfaces",
+                submenu="Show in",
                 order=30,
                 tip="What needs a person right now: blocked, to merge, to review, to start",
                 palette=False,

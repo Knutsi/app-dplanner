@@ -189,9 +189,10 @@ class CanvasVerbs:
                 id="steps.reveal",
                 # The way from a table's row to its card. A card's own right-click leaves it
                 # out: on the canvas it would only centre what was just clicked.
-                label="Re&veal in Graph",  # &v: R is Rename's.
+                label="&Graph",
                 menu="Step",
                 group="surfaces",
+                submenu="Show in",
                 order=10,
                 tip="Show this step on its project's canvas",
                 state=self._can_reveal,
@@ -203,7 +204,7 @@ class CanvasVerbs:
                     label=name.title(),
                     menu="Graph",
                     group="select",
-                    submenu="Go",
+                    submenu="Select Nearest",
                     order=30 + index,
                     tip=f"Select the nearest step to the {name}",
                     state=self._can_go(name),
@@ -249,7 +250,7 @@ class CanvasVerbs:
             ),
             ActionSpec(
                 id="canvas.frame",
-                label="&Frame Graph",
+                label="Fra&me Graph",
                 menu="Graph",
                 group="look",
                 order=10,
@@ -343,7 +344,7 @@ class CanvasVerbs:
             ],
             ActionSpec(
                 id="canvas.side_panel",
-                label=f"&{self.side_panel.title}" if self.side_panel else "&Side Panel",
+                label=self.side_panel.title if self.side_panel else "Side Panel",
                 menu="Graph",
                 group="panels",
                 order=10,
@@ -358,7 +359,7 @@ class CanvasVerbs:
             ),
             ActionSpec(
                 id="canvas.spotlight",
-                label="&Spotlight Selection",
+                label="Spo&tlight Selection",
                 menu="Graph",
                 group="look",
                 # After the Mark submenu, which claims the 20s to the 40s: both are ways of

@@ -568,13 +568,6 @@ def test_the_list_verbs_sit_where_a_reader_would_look_for_them(services):
     )
     editor_spec = services.actions.spec("tests.categories")
     assert (editor_spec.menu, editor_spec.group) == ("Project", "tests")
-    # And a data child menu of Step's classify band, so the categories are never a copy.
-    data_menu = next(spec for spec in services.actions.data_menus() if spec.id == "test.category")
-    assert (data_menu.menu, data_menu.group, data_menu.title) == (
-        "Step",
-        "classify",
-        "Test Category",
-    )
 
 
 def test_the_type_toggles_sit_beside_release_and_agent(services):
@@ -1376,32 +1369,6 @@ def test_a_category_heading_folds_and_stays_folded_across_a_rebuild(services, ma
     assert table.collapsed() == {"Import"} and table.isRowHidden(1)
 
 
-def test_a_category_is_set_from_the_step_menus_data_child(services, project, step):
-    from dplanner.modules.testing.filing import category_of
-
-    categorise(services, project, ("Import",))
-    step.module_data[MODULE_ID] = write([Test("T100", "One"), Test("T101", "Two")])
-    select(services, step, tests=("T100", "T101"))
-
-    menu = services.window.dynamic_menubar.data_menu("test.category")
-    entries = [action.text() for action in menu.actions() if action.text()]
-    assert entries[:2] == ["Import", "Uncategorised"]
-    menu.actions()[0].trigger()
-
-    filed_now = [category_of(test) for test in read(services.document.step(step.id))]
-    assert filed_now == ["Import", "Import"]
-    assert services.undo.can_undo()  # One step, both tests.
-
-
-def test_the_category_menu_says_so_when_nothing_is_picked(services, project, step):
-    categorise(services, project, ("Import",))
-    menu = services.window.dynamic_menubar.data_menu("test.category")
-    entries = [(action.text(), action.isEnabled()) for action in menu.actions() if action.text()]
-    assert ("Pick a test first", False) in entries
-    # The editor's verb is rendered, never copied.
-    assert any("Categories" in text for text, _on in entries)
-
-
 def menu_shape(popup):
     """The popup's shape: separators as "|", child menus as (title, [their entries])."""
     rendered: list[object] = []
@@ -1415,10 +1382,9 @@ def menu_shape(popup):
     return rendered
 
 
-def test_a_right_click_on_a_test_leads_with_the_results_and_offers_the_step_menu(
-    services, project, step
-):
-    """A row here is a test: the verbs about *it* lead, and the step's are one level down."""
+def test_a_right_click_on_a_test_renders_its_steps_menu(services, project, step):
+    """A row here is a test, recorded from the strip and the Test panel and filed on its
+    step's Tests tab — so its right-click is the Step menu, as every table's is."""
     from dplanner.framework.action_menu import build_menu
     from dplanner.modules.testing.activity import TESTS_KIND
 
@@ -1427,31 +1393,9 @@ def test_a_right_click_on_a_test_leads_with_the_results_and_offers_the_step_menu
     table = activity.page.table
     select(services, step, tests=("T100",))
 
-    def rendered(**where):
-        return menu_shape(build_menu(services.actions, services.context, "Step", table, **where))
-
-    band = rendered(submenu="Test", group="test_result")
-    assert band[0].startswith("Mark Ok")  # What a run records, in the strip's own order.
-
     shape = menu_shape(activity._test_menu(table))
-    assert shape[: len(band)] == band
-    assert shape[len(band)] == "|"
-    title, under = shape[len(band) + 1]
-    # And the child *is* the Step menu — the same render a card's right-click gets.
-    assert title == "Step" and under == rendered()
-    assert len(shape) == len(band) + 2  # Nothing else: this popup is those two things.
-
-
-def test_a_greyed_result_still_says_why_in_the_menu_a_right_click_renders(services, project, step):
-    """Disabled, never hidden, with the reason in the label — the one presenter policy."""
-    from dplanner.modules.testing.activity import TESTS_KIND
-
-    step.module_data[MODULE_ID] = write([Test("T100", "Signs in")])
-    activity = services.tabs.open(TESTS_KIND, project.id)
-    select(services, step, tests=("T100",))
-
-    first = activity._test_menu(activity.page.table).actions()[0]
-    assert not first.isEnabled() and "start a test run first" in first.text()
+    assert shape == menu_shape(build_menu(services.actions, services.context, "Step", table))
+    assert not any(isinstance(entry, tuple) and entry[0] == "Test" for entry in shape)
 
 
 def test_right_clicking_a_category_heading_picks_the_whole_group(services, make_project):
@@ -1534,22 +1478,6 @@ def test_the_sort_key_column_appears_the_day_a_project_uses_one(services, make_p
 
     table = services.tabs.open(TESTS_KIND, project.id).page.table
     assert table.isColumnHidden(SORT_KEY_COLUMN)
-
-
-def test_a_sort_key_is_set_from_the_step_menus_data_child(services, project, step):
-    categorise(services, project, ("Import",))
-    keyed(services, step, ("T100", "Import", "Customer list"), ("T101", "Import", ""))
-    select(services, step, tests=("T101",))
-
-    menu = services.window.dynamic_menubar.data_menu("test.sort_key")
-    entries = [action.text() for action in menu.actions() if action.text()]
-    # What is already in use, then the way to take it away, then the way to mint one.
-    assert entries == ["Customer list", "No sort key", "New Sort Key…"]
-    menu.actions()[0].trigger()
-    assert [test.sort_key for test in read(services.document.step(step.id))] == [
-        "Customer list",
-        "Customer list",
-    ]
 
 
 def test_the_step_panel_offers_the_keys_in_use_and_commits_a_typed_one(

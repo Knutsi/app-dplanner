@@ -42,12 +42,12 @@ BANDS: Final[dict[str, tuple[Band, ...]]] = {
         Band("Graph", "links", child="Links"),
     ),
     # Making something where the click was, picking what is there, and the looks over the
-    # whole plan the index has no row for — the rest of the project's views are rows there.
+    # whole plan the index has no row for — the rest of Go's views are rows there.
     BACKGROUND: (
         Band("Graph", "new"),
         Band("Graph", "select"),
         Band("Edit", "selection"),
-        Band("Project", "survey"),
+        Band("Go", "survey"),
     ),
 }
 

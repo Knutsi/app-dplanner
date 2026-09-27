@@ -143,7 +143,7 @@ class StepAgentRunModule:
         deps.actions.register(
             ActionSpec(
                 id="agent.show_terminal",
-                label="Show Agent &Terminal",
+                label="Show Agent Ter&minal",
                 menu="Step",
                 group="agent",
                 order=30,
@@ -155,7 +155,7 @@ class StepAgentRunModule:
         deps.actions.register(
             ActionSpec(
                 id="agent.clear_run",
-                label="Clear Agent &Run",
+                label="Cle&ar Agent Run",
                 menu="Step",
                 group="agent",
                 order=40,
