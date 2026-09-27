@@ -39,6 +39,8 @@ from dplanner.domain.seed import seed_project
 from dplanner.modules import _report_sources, _step_key, _step_kind, default_module_formats
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.notes.log import Note, write_log
+from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
+from dplanner.modules.project_editor.positions import write_member, write_position
 from dplanner.modules.step_milestone.aspect import write as milestone
 from dplanner.modules.step_status.aspect import read as status_for
 from dplanner.modules.step_status.aspect import write as status
@@ -151,6 +153,33 @@ def test_every_source_speaks_plain_data(cli_library, plan):
     assert {node.glyph_markup for node in graph.nodes} == {glyph_markup("person")}
     steps = next(t for t in report.tables() if t.id == "steps")
     assert [c.label for c in steps.columns][:5] == ["Key", "Step", "Kind", "Status", "Estimate"]
+
+
+def test_a_stack_is_drawn_as_its_frame_without_its_chains_arrows(cli_library, plan):
+    """The first two steps stacked: one frame behind them, the arrow between them left out
+    — the column says the order — and the arrow out of the stack still drawn."""
+    with open_library(cli_library, default_module_formats(), io.StringIO()) as context:
+        project = context.library.project(plan)
+        first, second, third = project.steps
+        entries = {first.id: write_position(40.0, 40.0, stack="s1"), second.id: write_member("s1")}
+        for step_id, entry in entries.items():
+            SetModuleDataCommand(step_id, POSITION_KEY, entry).redo(context.library)
+        report = build(
+            context.library,
+            project,
+            context.store.files,
+            _report_sources(),
+            key_of=_step_key,
+            kind_of=_step_kind,
+            status_for=status_for,
+            today=date(2026, 9, 6),
+        )
+    graph = next(p for p in report.sections["plan"] if isinstance(p, Graph))
+    [frame] = graph.frames
+    assert (frame.x, frame.y) == (24.0, 24.0)
+    assert [(edge.source, edge.target) for edge in graph.edges] == [(second.id, third.id)]
+    svg = graph_svg(graph, LIGHT)
+    assert svg.index('class="frame"') < svg.index('class="node')
 
 
 def test_the_progress_chart_is_the_tabs_pages_on_one_axis(cli_library, plan):

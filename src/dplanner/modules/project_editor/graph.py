@@ -69,6 +69,7 @@ from dplanner.modules.project_editor.renderers import (
     RenderHints,
 )
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef, neighbourhood
+from dplanner.modules.project_editor.stacks import Stack
 
 # How often a live ring's dashes move: quick enough to read as motion, slow enough that an
 # agent working for an hour costs the canvas nothing worth measuring.
@@ -477,6 +478,7 @@ class GraphView(QGraphicsView):
         base_mode: Callable[[CanvasDeps], ModeBase],
         status: Callable[[str], None],
         run_action: Callable[[str], bool],
+        step_stacks: Callable[[], Sequence[Stack]] = lambda: (),
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(scene, parent)
@@ -501,7 +503,13 @@ class GraphView(QGraphicsView):
         # is where the graph will be even before there is one to frame.
         self.centerOn(QPointF(0.0, 0.0))
 
-        self.deps = CanvasDeps(canvas=scene, view=self, status=status, run_action=run_action)
+        self.deps = CanvasDeps(
+            canvas=scene,
+            view=self,
+            status=status,
+            run_action=run_action,
+            step_stacks=step_stacks,
+        )
         self.modes = ModeStack(base_mode(self.deps))
         # The mode's look reaches the nodes here: one subscription on the stack, not
         # per-mode enter/exit — Space stacks Pan over Connect, and popping back must

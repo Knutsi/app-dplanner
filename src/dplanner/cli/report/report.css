@@ -44,6 +44,7 @@
   }
   /* The drawings carry light-theme colours as attributes; classes restyle them here. */
   svg .body { fill: var(--surface); stroke: var(--border); }
+  svg .frame { fill: var(--ink); stroke: var(--border); }
   svg .shadow { fill: var(--ink); }
   svg .title, svg .key, svg .stat, svg .label { fill: var(--ink); }
   svg .key-block.quiet { fill: var(--ink); }

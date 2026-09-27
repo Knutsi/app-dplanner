@@ -454,6 +454,8 @@ src/dplanner/
 │   │                        (geometry.py measures the graph for `dplanner layout show`, `--map`
 │   │                        draws it, `layout shift` is Divide as a verb, `layout contract` Contract,
 │   │                        `layout tidy` the sixth sort)
+│   │                        (stacks.py is a stack: a chain drawn as one tall card, the fold every
+│   │                        arrangement reads it through, and `dplanner stack list`)
 │   ├── step_properties/     THE step editor — `steps.details`, a modal and nothing anchored
 │   │                        (its first tab, details.py, stacks whatever registered a Details
 │   │                        block, name.py leading it; every view's double-click on a step

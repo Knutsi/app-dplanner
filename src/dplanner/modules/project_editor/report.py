@@ -3,23 +3,26 @@
 Positions are the stored ones with the ambient layout filling the gaps
 (``placement.positions``), sizes the stored ones or the default footprint; edges are the
 steps' ``requires`` and ``relates`` with an end that no longer resolves skipped, as the
-scene skips them. What a card *wears* — its key and the glyph over it, kind, status, the
-figure at its bottom right and a milestone's badge — arrives as readers from the composition
-root, the same answers the canvas's ``NodeAccent`` is built from, so the page and the window
-cannot dress a step differently. The glyph travels as its drawing, read from the vendored
-file by ``theme/glyph_source.py``: the report's renderer lives in ``cli/``, which may not read
-``theme/`` itself.
+scene skips them. A stack is drawn as its frame behind a column of its members, and the
+arrows of its chain are left out — the column says the order. What a card *wears* — its key
+and the glyph over it, kind, status, the figure at its bottom right and a milestone's badge
+— arrives as readers from the composition root, the same answers the canvas's
+``NodeAccent`` is built from, so the page and the window cannot dress a step differently.
+The glyph travels as its drawing, read from the vendored file by ``theme/glyph_source.py``:
+the report's renderer lives in ``cli/``, which may not read ``theme/`` itself.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 from collections.abc import Callable
 from datetime import date
+from itertools import pairwise
 
 from dplanner.cli.report.parts import (
     Contribution,
     Edge,
     EdgeKind,
+    Frame,
     Graph,
     Node,
     Placed,
@@ -29,6 +32,7 @@ from dplanner.domain.model import EDGE_KINDS, Library, Project, Step, StepId
 from dplanner.domain.store import FilesFor
 from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import node_size
+from dplanner.modules.project_editor.stacks import frame, read_stacks
 from dplanner.theme.glyph_source import glyph_markup
 
 
@@ -74,14 +78,21 @@ def report_source(
                     glyph_tone=glyph_tone,
                 )
             )
+        stacks = read_stacks(project.steps)
+        sizes = {step.id: node_size(step) for step in project.steps}
+        frames = tuple(
+            Frame(*frame(stack, placed_at[stack.head], sizes.__getitem__)) for stack in stacks
+        )
+        chained = {(one, two) for stack in stacks for one, two in pairwise(stack.members)}
         edges = [
             Edge(source_id, step.id, kind)
             for step in project.steps
             for kind in _edge_kinds()
             for source_id in step.edges.get(kind, ())
             if project.step(source_id) is not None
+            and not (kind == "requires" and (source_id, step.id) in chained)
         ]
-        graph = Graph(tuple(nodes), tuple(edges))
+        graph = Graph(tuple(nodes), tuple(edges), frames)
         return Contribution(placed=(Placed("plan", 10, graph),))
 
     return source

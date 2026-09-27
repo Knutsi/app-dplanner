@@ -3,6 +3,8 @@
     uv run python scripts/render_graph_editor.py --out docs/screenshots/s7-graph-editor
     uv run python scripts/render_graph_editor.py --menus --out docs/screenshots/f7-canvas-menus
     uv run python scripts/render_graph_editor.py --contract --out docs/screenshots/f15-contract
+    uv run python scripts/render_graph_editor.py --stacks \
+        --out docs/screenshots/s16-stack-one-tall-card
     uv run python scripts/render_graph_editor.py --auto-progress \
         --out docs/screenshots/f11-auto-progress
 
@@ -13,10 +15,12 @@ project tab rather than across the window. Since F5, the cards themselves (``car
 each kind of step, who works it in the key block, the status washes, and a card at the
 minimum size. Since F7, with ``--menus`` and nothing else, what a right-click offers by what
 is under it; since F15, with ``--contract``, Divide's dropdown offering Contract and a
-contract held mid-drag; since F11, with ``--auto-progress``, parallel work handed to a step
-that collects it: the doubled links, and the arrow's menu with the toggle on. A whole
-application is built over a throwaway library — the tab is the tab host's, so nothing here
-hand-wires a surface the window would build differently — and torn down per theme.
+contract held mid-drag; since S16, with ``--stacks``, a stacked chain drawn as a column on
+the canvas and as a frame in the report; since F11, with ``--auto-progress``, parallel work
+handed to a step that collects it: the doubled links, and the arrow's menu with the toggle
+on. A whole application is built over a throwaway library — the tab is the tab host's, so
+nothing here hand-wires a surface the window would build differently — and torn down per
+theme.
 """
 
 import argparse
@@ -31,10 +35,16 @@ os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["QT_QPA_PLATFORMTHEME"] = ""
 
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, QSettings, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QColor, QImage, QMouseEvent, QPainter
+from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QApplication, QGraphicsView, QWidget
 
 from dplanner.app import new_session
+from dplanner.cli.report.assemble import build as build_report
+from dplanner.cli.report.drawings import DARK as REPORT_DARK
+from dplanner.cli.report.drawings import LIGHT as REPORT_LIGHT
+from dplanner.cli.report.drawings import graph_svg
+from dplanner.cli.report.parts import Graph
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step, StepId
@@ -42,13 +52,19 @@ from dplanner.domain.schedule import Wait
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.framework.services import AppServices
 from dplanner.framework.session import AppSession
+from dplanner.modules import _report_sources, _step_key, _step_kind
 from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
 from dplanner.modules.auto_progress.aspect import write as auto_progress_write
 from dplanner.modules.estimation.aspect import write as estimate_write
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.project_editor.module import ProjectActivity, ProjectEditorModule
-from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W, write_position
+from dplanner.modules.project_editor.positions import (
+    MIN_NODE_H,
+    MIN_NODE_W,
+    write_member,
+    write_position,
+)
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.selection import EdgeRef
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
@@ -60,6 +76,7 @@ from dplanner.modules.step_check.aspect import write as check_write
 from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
 from dplanner.modules.step_milestone.aspect import write as milestone_write
 from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+from dplanner.modules.step_status.aspect import read as status_for
 from dplanner.modules.step_status.aspect import write as status_write
 from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
 from dplanner.modules.step_wait.aspect import write as wait_write
@@ -133,6 +150,12 @@ ROUND = (
     ("Merge the import round", (420.0, -5.0), ()),
 )
 ROUND_SIZE = (1100, 560)
+
+# A line of work that kept growing, stacked (S16): a chain in, three steps as one tall card,
+# and the milestone after it — placed by the ambient layout, which folds the stack like
+# every other arrangement.
+STACKED = ("Read the fixtures", "Write the parser", "Parse the dates", "Map the columns")
+STACK_SIZE = (1180, 560)
 
 
 def settle(app: QApplication) -> None:
@@ -475,6 +498,71 @@ def render_auto_progress(app: QApplication, theme: Theme, out: Path, workspace: 
     discard(page)
 
 
+def render_stacks(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """A stacked chain on the canvas — a column under its first member, nobody having placed
+    it — and the same plan's graph in the report, where the frame is drawn and the chain's
+    arrows are left out."""
+    QSettings().clear()
+    apply_theme(app, theme)
+    library_file = workspace / f"stacks-library-{theme.name}.json"
+    create_library(library_file)
+    init_repo(workspace)
+    session = new_session()
+    assert session.open_initial(library_file)
+    services = session.services
+    assert services is not None
+    services.debounce.set_immediate(True)
+    library = services.document
+
+    directory = seed_project(workspace / f"stacks-{theme.name}", "Importer")
+    project = services.repo.attach(directory)
+    library.add_child(library.id, project)
+    made = []
+    for title in (*STACKED, "Ship the importer"):
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(library)
+        SetModuleDataCommand(step.id, "estimation", estimate_write(0.25)).redo(library)
+        made.append(step.id)
+    SetModuleDataCommand(made[-1], MILESTONE_ID, milestone_write("Import")).redo(library)
+    for waiter, source in zip(made[1:], made, strict=False):
+        SetEdgesCommand(waiter, "requires", [source]).redo(library)
+    for step_id in made[1:4]:
+        SetModuleDataCommand(step_id, POSITION_KEY, write_member("demo")).redo(library)
+
+    tab = services.tabs.open("project", project.id)
+    assert isinstance(tab, ProjectActivity)
+    page = tab.widget
+    page.resize(*STACK_SIZE)
+    page.show()
+    tab.frame()
+    save(page, out, "canvas", theme, app)
+
+    report = build_report(
+        library,
+        project,
+        services.repo.files,
+        _report_sources(),
+        key_of=_step_key,
+        kind_of=_step_kind,
+        status_for=status_for,
+        today=DAY,
+    )
+    graph = next(part for part in report.sections["plan"] if isinstance(part, Graph))
+    colors = REPORT_DARK if theme is DARK else REPORT_LIGHT
+    renderer = QSvgRenderer(graph_svg(graph, colors).encode())
+    image = QImage(renderer.defaultSize() * 2, QImage.Format.Format_ARGB32)
+    image.fill(QColor(colors.surface))
+    painter = QPainter(image)
+    renderer.render(painter)
+    painter.end()
+    path = out / f"report-{theme.name}.png"
+    image.save(str(path), "PNG")
+    print(path)
+    page.setParent(None)
+    session.close()
+    discard(page)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory for the PNGs")
@@ -483,6 +571,11 @@ def main(argv: list[str]) -> int:
     )
     parser.add_argument(
         "--contract", action="store_true", help="only the Contract gesture (F15), nothing else"
+    )
+    parser.add_argument(
+        "--stacks",
+        action="store_true",
+        help="only a stacked chain on the canvas and in the report (S16)",
     )
     parser.add_argument(
         "--auto-progress",
@@ -506,6 +599,9 @@ def main(argv: list[str]) -> int:
                 continue
             if args.contract:
                 render_contract(app, theme, args.out, Path(tmp))
+                continue
+            if args.stacks:
+                render_stacks(app, theme, args.out, Path(tmp))
                 continue
             if args.auto_progress:
                 render_auto_progress(app, theme, args.out, Path(tmp))

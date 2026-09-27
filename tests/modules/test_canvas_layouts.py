@@ -149,7 +149,7 @@ def test_format_2_drops_the_regions_and_every_layouts_region_rects():
     it had about them — including a layout's rects for a region deleted long before."""
     ids = ["a", "b", "c"]
     assert migrated(project_entry(ids), DATA_FORMAT) == {
-        "format": 2,
+        "format": DATA_FORMAT.version,
         "layouts": {
             "Plan": {"steps": {i: list(seat) for i, seat in zip(ids, PLAN, strict=True)}},
             "Earlier": {"steps": {i: list(seat[:2]) for i, seat in zip(ids, SEATS, strict=True)}},
@@ -157,9 +157,12 @@ def test_format_2_drops_the_regions_and_every_layouts_region_rects():
     }
 
 
-def test_a_steps_entry_passes_through_format_2_as_it_was():
+def test_a_steps_entry_passes_through_every_migration_as_it_was():
     for index in range(len(SEATS)):
-        assert migrated(step_entry(index), DATA_FORMAT) == {**step_entry(index), "format": 2}
+        assert migrated(step_entry(index), DATA_FORMAT) == {
+            **step_entry(index),
+            "format": DATA_FORMAT.version,
+        }
 
 
 def test_a_layout_saved_over_an_entry_nobody_migrated_drops_its_regions():
@@ -169,7 +172,7 @@ def test_a_layout_saved_over_an_entry_nobody_migrated_drops_its_regions():
     library.set_module_data(project.id, MODULE_ID, project_entry([s.id for s in project.steps]))
     save(library, project, "New")
     entry = project.module_data[MODULE_ID]
-    assert entry["format"] == 2 and "regions" not in entry
+    assert entry["format"] == DATA_FORMAT.version and "regions" not in entry
     assert set(entry["layouts"]) == {"Plan", "Earlier", "New"}
     assert all("regions" not in body for body in entry["layouts"].values())
 
@@ -181,5 +184,5 @@ def test_a_layout_saved_over_an_entry_that_held_only_regions_drops_them():
     library.set_module_data(project.id, MODULE_ID, {"format": 1, "regions": REGIONS})
     save(library, project, "New")
     entry = project.module_data[MODULE_ID]
-    assert entry["format"] == 2 and "regions" not in entry
+    assert entry["format"] == DATA_FORMAT.version and "regions" not in entry
     assert set(entry["layouts"]) == {"New"}

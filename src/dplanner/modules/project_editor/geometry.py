@@ -15,6 +15,11 @@ The columns and rows it reports are the sorts' lanes (``sorts.lanes``), so a gap
 calls two pitches is a gap ``layout tidy`` keeps, and the map is drawn on the same lanes
 rather than on pixels — a graph at an odd pitch still reads as the columns it has.
 
+**It measures the picture, and in the picture a stack is one tall card**: the lanes, the
+overlaps, the bounds and the waves are taken over the graph folded (``stacks.fold``), each
+stack its frame — what tidy acts on, and what a stack is in Wave view (N39), so a wave here
+is not ``order show``'s. The cards are still every step at its own seat.
+
 **Qt-free** — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
@@ -35,14 +40,13 @@ from dplanner.modules.project_editor.sorts import (
     H_PITCH,
     V_GAP,
     V_PITCH,
-    Along,
     Lane,
     hole,
     lanes,
     measured,
 )
+from dplanner.modules.project_editor.stacks import Rect, Stack, broken_reason, fold
 
-type Rect = tuple[float, float, float, float]
 type Axis = Literal["x", "y"]
 
 # The labels both surfaces give the command: the undo menu's word for one side pushed away
@@ -55,7 +59,8 @@ CELL_W = 8
 
 @dataclass(frozen=True)
 class Card:
-    """One step's body on the canvas, and the wave the graph puts it in."""
+    """One step's body on the canvas, the wave the graph puts it in, and the stack it stands
+    in ("" for none)."""
 
     id: StepId
     key: str
@@ -65,6 +70,15 @@ class Card:
     w: float
     h: float
     wave: int
+    stack: str = ""
+
+
+@dataclass(frozen=True)
+class StackBox:
+    """One stack as measured: its members in chain order, and its frame."""
+
+    stack: Stack
+    frame: Rect
 
 
 @dataclass(frozen=True)
@@ -76,8 +90,9 @@ class Wave:
 
 @dataclass(frozen=True)
 class Geometry:
-    """The graph as measured: every card, the box round them, the waves' boxes, every
-    overlapping pair, and the lanes across each axis with the gaps between them."""
+    """The graph as measured: every card, and — a stack counting as its frame — the box
+    round them, the waves' boxes, every overlapping pair, and the lanes across each axis
+    with the gaps between them. A stack is named in a lane or a pair by its first member."""
 
     cards: tuple[Card, ...]
     bounds: Rect | None
@@ -85,6 +100,7 @@ class Geometry:
     overlaps: tuple[tuple[StepId, StepId], ...]
     columns: tuple[Lane, ...]
     rows: tuple[Lane, ...]
+    stacks: tuple[StackBox, ...] = ()
 
 
 # -- measuring ----------------------------------------------------------------------------------
@@ -96,7 +112,13 @@ def measure(library: Library, project: Project, *, key_of: Callable[[Step], str]
     if not steps:
         return Geometry((), None, (), (), (), ())
     placed = positions(library, project)
-    by_depth = depths(library, project)
+    folded = fold(project)
+    packing = folded.packing
+    rects = {
+        block: (*seat, *packing.sizes[block]) for block, seat in packing.blocks(placed).items()
+    }
+    by_depth = depths(library, folded.project)
+    stack_of = {member: stack.id for stack in packing.stacks.values() for member in stack.members}
     cards = tuple(
         Card(
             step.id,
@@ -104,16 +126,17 @@ def measure(library: Library, project: Project, *, key_of: Callable[[Step], str]
             step.title,
             *placed[step.id],
             *node_size(step),
-            by_depth.get(step.id, 0) + 1,
+            by_depth.get(packing.block_of(step.id), 0) + 1,
+            stack_of.get(step.id, ""),
         )
         for step in steps
     )
-    rects = {card.id: (card.x, card.y, card.w, card.h) for card in cards}
     waves = []
     for number in sorted({card.wave for card in cards}):
         members = tuple(card.id for card in cards if card.wave == number)
-        waves.append(Wave(number, members, _bounds([rects[i] for i in members])))
-    ids = [card.id for card in cards]
+        blocks = dict.fromkeys(packing.block_of(step_id) for step_id in members)
+        waves.append(Wave(number, members, _bounds([rects[block] for block in blocks])))
+    ids = list(rects)
 
     def left(step_id: StepId) -> float:
         return rects[step_id][0]
@@ -131,9 +154,10 @@ def measure(library: Library, project: Project, *, key_of: Callable[[Step], str]
         cards,
         _bounds(list(rects.values())),
         tuple(waves),
-        tuple(_overlaps(cards)),
+        tuple(_overlaps(rects)),
         tuple(measured(lanes(ids, left, H_PITCH / 2), left, width)),
         tuple(measured(lanes(ids, top, V_PITCH / 2), top, height)),
+        tuple(StackBox(stack, rects[stack.head]) for stack in packing.stacks.values()),
     )
 
 
@@ -153,19 +177,15 @@ def _bounds(rects: Sequence[Rect]) -> Rect:
     return left, top, right - left, bottom - top
 
 
-def _overlaps(cards: Sequence[Card]) -> list[tuple[StepId, StepId]]:
+def _overlaps(rects: dict[StepId, Rect]) -> list[tuple[StepId, StepId]]:
     """Every pair whose bodies share interior — touching edges are not an overlap."""
     found = []
-    for index, one in enumerate(cards):
-        for other in cards[index + 1 :]:
-            apart = (
-                one.x + one.w <= other.x
-                or other.x + other.w <= one.x
-                or one.y + one.h <= other.y
-                or other.y + other.h <= one.y
-            )
+    boxes = list(rects.items())
+    for index, (one, (x1, y1, w1, h1)) in enumerate(boxes):
+        for other, (x2, y2, w2, h2) in boxes[index + 1 :]:
+            apart = x1 + w1 <= x2 or x2 + w2 <= x1 or y1 + h1 <= y2 or y2 + h2 <= y1
             if not apart:
-                found.append((one.id, other.id))
+                found.append((one, other))
     return found
 
 
@@ -173,6 +193,9 @@ def _overlaps(cards: Sequence[Card]) -> list[tuple[StepId, StepId]]:
 
 
 def as_json(geometry: Geometry) -> dict[str, Any]:
+    """Every card by id; a lane lists a stack's members in order, and an overlap names a
+    stack by its first member, which ``stacks`` maps to the rest."""
+    members = _members(geometry)
     return {
         "steps": [
             {
@@ -184,6 +207,7 @@ def as_json(geometry: Geometry) -> dict[str, Any]:
                 "w": card.w,
                 "h": card.h,
                 "wave": card.wave,
+                "stack": card.stack or None,
             }
             for card in geometry.cards
         ],
@@ -193,17 +217,28 @@ def as_json(geometry: Geometry) -> dict[str, Any]:
             for wave in geometry.waves
         ],
         "overlaps": [list(pair) for pair in geometry.overlaps],
-        "columns": _lanes_json(geometry.columns, H_GAP, H_PITCH),
-        "rows": _lanes_json(geometry.rows, V_GAP, V_PITCH),
+        "columns": _lanes_json(geometry.columns, H_GAP, H_PITCH, members),
+        "rows": _lanes_json(geometry.rows, V_GAP, V_PITCH, members),
+        "stacks": [
+            {
+                "id": box.stack.id,
+                "steps": list(box.stack.members),
+                "frame": _rect_json(box.frame),
+                "gaps": [list(gap) for gap in box.stack.gaps],
+            }
+            for box in geometry.stacks
+        ],
     }
 
 
 def text(geometry: Geometry) -> str:
     """The report a person or an agent reads: the box, a table of cards, the overlaps, the
-    lanes with their gaps, and the waves."""
+    lanes with their gaps, the waves, and the stacks — a stack named ``[S5 S6 S7]`` wherever
+    it counts as one card."""
     if geometry.bounds is None:
         return "no steps"
     keys = _keys(geometry)
+    names = _names(geometry)
     x, y, w, h = geometry.bounds
     lines = [
         f"{len(geometry.cards)} steps in {len(geometry.columns)} columns x "
@@ -215,7 +250,7 @@ def text(geometry: Geometry) -> str:
             f"  {card.key:<5} {card.wave:>4} {card.x:>6g} {card.y:>6g} {card.w:>5g} "
             f"{card.h:>4g}  {card.title or 'Untitled step'}"
         )
-    pairs = ", ".join(f"{keys[a]} x {keys[b]}" for a, b in geometry.overlaps)
+    pairs = ", ".join(f"{names[a]} x {names[b]}" for a, b in geometry.overlaps)
     lines.append(f"overlaps: {pairs or 'none'}")
     lines += lane_lines(geometry, "x")
     lines += lane_lines(geometry, "y")
@@ -224,12 +259,22 @@ def text(geometry: Geometry) -> str:
         bx, by, bw, bh = wave.bounds
         named = " ".join(keys[i] for i in wave.steps)
         lines.append(f"  {wave.number:>2}  at {bx:g},{by:g} size {bw:g} x {bh:g}  {named}")
+    if geometry.stacks:
+        lines.append("stacks:")
+    for box in geometry.stacks:
+        fx, fy, fw, fh = box.frame
+        named = " ".join(keys[i] for i in box.stack.members)
+        broken = broken_reason(box.stack, keys.__getitem__)
+        lines.append(
+            f"  {box.stack.id[:8]}  frame {fx:g},{fy:g} to {fx + fw:g},{fy + fh:g}  {named}"
+            + (f" — broken: {broken}" if broken else "")
+        )
     return "\n".join(lines)
 
 
 def lane_lines(geometry: Geometry, axis: Axis) -> list[str]:
     """The lanes across one axis, each with the gap before it in units and in pitches."""
-    keys = _keys(geometry)
+    names = _names(geometry)
     bands, gap, pitch, name = (
         (geometry.columns, H_GAP, H_PITCH, "columns")
         if axis == "x"
@@ -239,7 +284,7 @@ def lane_lines(geometry: Geometry, axis: Axis) -> list[str]:
     for index, lane in enumerate(bands, 1):
         if lane.gap is not None:
             lines.append(f"      gap {lane.gap:g} ({_gap_words(lane, gap, pitch)})")
-        named = " ".join(keys[i] for i in lane.steps)
+        named = " ".join(names[i] for i in lane.steps)
         lines.append(f"  {index:>2}  {axis} {lane.near:g}..{lane.far:g}  {named}")
     return lines
 
@@ -257,6 +302,18 @@ def _keys(geometry: Geometry) -> dict[StepId, str]:
     return {card.id: card.key or card.title or "Untitled step" for card in geometry.cards}
 
 
+def _names(geometry: Geometry) -> dict[StepId, str]:
+    """A card's key, or a stack's members' keys in brackets where it counts as one card."""
+    keys = _keys(geometry)
+    for head, members in _members(geometry).items():
+        keys[head] = f"[{' '.join(keys[member] for member in members)}]"
+    return keys
+
+
+def _members(geometry: Geometry) -> dict[StepId, tuple[StepId, ...]]:
+    return {box.stack.head: box.stack.members for box in geometry.stacks}
+
+
 def _rect_json(rect: Rect | None) -> dict[str, float] | None:
     if rect is None:
         return None
@@ -264,13 +321,15 @@ def _rect_json(rect: Rect | None) -> dict[str, float] | None:
     return {"x": x, "y": y, "w": w, "h": h}
 
 
-def _lanes_json(bands: Sequence[Lane], gap: float, pitch: float) -> dict[str, Any]:
+def _lanes_json(
+    bands: Sequence[Lane], gap: float, pitch: float, members: dict[StepId, tuple[StepId, ...]]
+) -> dict[str, Any]:
     return {
         "pitch": pitch,
         "gap": gap,
         "lanes": [
             {
-                "steps": list(lane.steps),
+                "steps": [card for i in lane.steps for card in members.get(i, (i,))],
                 "from": lane.near,
                 "to": lane.far,
                 "gap": lane.gap,
@@ -291,42 +350,69 @@ def map_text(geometry: Geometry) -> str:
     """The graph as text: one line per row lane, one cell per column lane, a step's key in
     its cell. A card wider than a pitch spans cells and is filled with ``-``; a card taller
     than one drops a ``|`` through the rows below; two cards in one cell share it as
-    ``S2/S4``. Cells are the lanes, so a hole reads as an empty cell whatever its width in
-    units. Plain ASCII, so it pastes into any code fence."""
-    cards = {card.id: card for card in geometry.cards}
-    if not cards:
+    ``S2/S4``; a stack is its members' keys down its frame's column, a row each. Cells are
+    the lanes, so a hole reads as an empty cell whatever its width in units. Plain ASCII,
+    so it pastes into any code fence."""
+    if not geometry.cards:
         return ""
-    column_at = _cell_index(geometry.columns, lambda i: cards[i].w, H_GAP, H_PITCH)
-    row_at = _cell_index(geometry.rows, lambda i: cards[i].h, V_GAP, V_PITCH)
-    spans = {
-        i: (_span(card.w, H_GAP, H_PITCH), _span(card.h, V_GAP, V_PITCH))
-        for i, card in cards.items()
+    keys = {card.id: card.key for card in geometry.cards}
+    members = _members(geometry)
+    stacked = {member for column in members.values() for member in column}
+    rects: dict[StepId, Rect] = {
+        card.id: (card.x, card.y, card.w, card.h)
+        for card in geometry.cards
+        if card.id not in stacked
     }
-    width = max(column_at[i] + spans[i][0] for i in cards)
-    height = max(row_at[i] + spans[i][1] for i in cards)
+    rects.update((box.stack.head, box.frame) for box in geometry.stacks)
+    spans = {
+        block: (
+            _span(w, H_GAP, H_PITCH),
+            max(_span(h, V_GAP, V_PITCH), len(members.get(block, ()))),
+        )
+        for block, (_x, _y, w, h) in rects.items()
+    }
+    column_at = _cell_index(geometry.columns, lambda i: spans[i][0], H_GAP, H_PITCH)
+    row_at = _cell_index(geometry.rows, lambda i: spans[i][1], V_GAP, V_PITCH)
+    width = max(column_at[i] + spans[i][0] for i in rects)
+    height = max(row_at[i] + spans[i][1] for i in rects)
     grid = [[" "] * (width * CELL_W) for _ in range(height)]
-    for step_id, card in cards.items():
-        column, row = column_at[step_id], row_at[step_id]
-        across, down = spans[step_id]
+    for block in rects:
+        column, row = column_at[block], row_at[block]
+        across, down = spans[block]
         start, room = column * CELL_W, across * CELL_W - 1
-        held = "".join(grid[row][start : start + room]).strip(" -")
-        label = (f"{held}/{card.key}" if held else card.key)[:room]
-        grid[row][start : start + room] = list(label.ljust(room, "-" if across > 1 else " "))
-        for below in range(1, down):
+        labels = [keys[member] for member in members.get(block, (block,))]
+        for line, key in enumerate(labels):
+            held = "".join(grid[row + line][start : start + room]).strip(" -|")
+            label = (f"{held}/{key}" if held else key)[:room]
+            grid[row + line][start : start + room] = list(
+                label.ljust(room, "-" if across > 1 else " ")
+            )
+        for below in range(len(labels), down):
             grid[row + below][start] = "|"
     return "\n".join("".join(line).rstrip() for line in grid)
 
 
-def _cell_index(bands: Sequence[Lane], size: Along, gap: float, pitch: float) -> dict[StepId, int]:
+def _cell_index(
+    bands: Sequence[Lane], cells: Callable[[StepId], int], gap: float, pitch: float
+) -> dict[StepId, int]:
     """Each lane's first cell: the lanes in order, a hole kept as empty cells, a lane as
-    wide as its widest card."""
+    many cells deep as its deepest card. A lane that starts inside the reach of the ones
+    before it — beside a card taller than a pitch, or a stack — starts as many cells down
+    from the lane before it as it lies pitches below that lane, so what stands beside a tall
+    card is drawn beside it rather than under it."""
     found: dict[StepId, int] = {}
-    at = 0
+    reach = 0  # The first cell past every lane so far.
+    before: tuple[int, float] | None = None  # The last lane's first cell and near edge.
     for lane in bands:
-        at += hole(lane, gap, pitch)
+        if before is not None and lane.gap is not None and lane.gap < 0:
+            cell, near = before
+            at = min(reach, cell + max(1, round((lane.near - near) / pitch)))
+        else:
+            at = reach + hole(lane, gap, pitch)
         for step_id in lane.steps:
             found[step_id] = at
-        at += _span(max(size(step_id) for step_id in lane.steps), gap, pitch)
+        reach = max(reach, at + max(cells(step_id) for step_id in lane.steps))
+        before = (at, lane.near)
     return found
 
 

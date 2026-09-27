@@ -21,9 +21,11 @@ from dplanner.modules.project_editor.positions import (
     NODE_H,
     NODE_W,
     node_size,
+    read_position,
     snapped,
 )
 from dplanner.modules.project_editor.sorts import H_GAP, ORIGIN, V_GAP, V_PITCH, layered_flow
+from dplanner.modules.project_editor.stacks import member_seats, pack, read_stacks
 
 type Box = tuple[float, float, float, float]  # x, y, w, h — a card as it is drawn.
 type Size = tuple[float, float]
@@ -43,14 +45,26 @@ def positions(library: Library, project: Project) -> dict[StepId, tuple[float, f
     The layout is computed only when some step needs it. Every canvas sync asks this
     question, and a settled plan — every step dragged or sorted into place — used to pay a
     whole layered flow per keystroke for an answer it then discarded step by step.
-    """
-    from dplanner.modules.project_editor.positions import read_position
 
-    stored = {step.id: read_position(step) for step in project.steps}
+    A stack's members below the first are never asked: their seats are its column, under
+    the first member's seat wherever that came from, and a seat one of them stored is
+    ignored. So a stack whose first member was placed is as settled as a placed card.
+    """
+    stacks = read_stacks(project.steps)
+    derived = {member for stack in stacks for member in stack.members[1:]}
+    stored = {step.id: read_position(step) for step in project.steps if step.id not in derived}
     if all(stored.values()):
-        return {step_id: position for step_id, position in stored.items() if position is not None}
-    automatic = auto_positions(library, project)
-    return {step.id: stored[step.id] or automatic[step.id] for step in project.steps}
+        seats = {step_id: seat for step_id, seat in stored.items() if seat is not None}
+    else:
+        automatic = auto_positions(library, project)
+        seats = {step_id: seat or automatic[step_id] for step_id, seat in stored.items()}
+    if not stacks:
+        return seats
+    stacked = {member for stack in stacks for member in stack.members}
+    sizes = {step.id: node_size(step) for step in project.steps if step.id in stacked}
+    for stack in stacks:
+        seats.update(member_seats(stack, seats[stack.head], sizes.__getitem__))
+    return {step.id: seats[step.id] for step in project.steps}
 
 
 def below(x: float, y: float, height: float = NODE_H) -> tuple[float, float]:
@@ -64,9 +78,11 @@ def below(x: float, y: float, height: float = NODE_H) -> tuple[float, float]:
 
 
 def boxes(library: Library, project: Project) -> list[Box]:
-    """Every card as the canvas would draw it now: where it sits, at its own footprint."""
-    placed = positions(library, project)
-    return [(*placed[step.id], *node_size(step)) for step in project.steps if step.id in placed]
+    """Every card as the canvas would draw it now, at its own footprint — a stack as its
+    frame, the one tall card it is."""
+    packing = pack(project)
+    blocks = packing.blocks(positions(library, project))
+    return [(*seat, *packing.sizes[block]) for block, seat in blocks.items()]
 
 
 def free_spot(

@@ -12,6 +12,12 @@ pasted set keeps its internal arrangement and arrives disconnected from everythi
 it, whether it lands in the same project or another. Wiring it in is the user's next move,
 not something a paste guesses at.
 
+**A stack is copied whole or not at all.** A copy of every member of a stack pastes as a new
+stack — a fresh id, the chain carried by the links between copies, the seat on its first
+member — and a copy of some of them pastes as plain steps: a stack is a line of steps, and
+part of one is just steps. Each clip remembers the frame it stood in, so a Duplicate lands a
+whole stack below its frame and a part of one beside it, never on a member it left behind.
+
 **Files ride in the payload.** A cut removes the step and the next autosave deletes its
 directory, so a later paste has nowhere else to read an attachment from. The bytes are
 written after the command is applied — an attachment is not undoable, the trade
@@ -45,7 +51,15 @@ from dplanner.domain.model import EDGE_KINDS, Library, NodeId, Project, Step, St
 from dplanner.domain.store import FilesFor
 from dplanner.modules.project_editor.placement import below, positions
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
-from dplanner.modules.project_editor.positions import node_size, read_size, write_position
+from dplanner.modules.project_editor.positions import (
+    STACK_KEY,
+    node_size,
+    read_size,
+    write_member,
+    write_position,
+)
+from dplanner.modules.project_editor.sorts import H_GAP, V_GAP
+from dplanner.modules.project_editor.stacks import Rect, chain, frame, mint_id, read_stacks
 
 # The clipboard format. A vendor type, so nothing but this application ever mistakes the
 # payload for text — the titles travel beside it as ``text/plain`` for pasting elsewhere.
@@ -70,30 +84,46 @@ class StepClip:
     # Where it sat when copied — stored or ambient — so a block keeps its arrangement.
     x: float
     y: float
+    # The frame of the stack it stood in, if any: where a Duplicate lands clear of it.
+    frame: Rect | None = None
 
 
 def clip(
     library: Library, files: FilesFor, file_modules: Sequence[str], step_ids: Sequence[StepId]
 ) -> list[StepClip]:
-    """Read these steps into clips, in the given order."""
+    """Read these steps into clips, in the given order. A member keeps its stack only when
+    every member of that stack is copied with it."""
     placed: dict[NodeId, dict[StepId, tuple[float, float]]] = {}
+    frames: dict[StepId, Rect] = {}  # A member's stack's frame, by the member's id.
+    whole: set[StepId] = set()  # The members of every stack copied whole.
+    copied = set(step_ids)
     clips = []
     for step_id in step_ids:
         step = library.step(step_id)
         project = library.project_of(step_id)
         if project.id not in placed:
-            placed[project.id] = positions(library, project)
+            placed[project.id] = seats = positions(library, project)
+            sizes = {s.id: node_size(s) for s in project.steps}
+            for stack in read_stacks(project.steps):
+                box = frame(stack, seats[stack.head], sizes.__getitem__)
+                frames.update((member, box) for member in stack.members)
+                if copied.issuperset(stack.members):
+                    whole.update(stack.members)
         x, y = placed[project.id][step_id]
+        module_data = copy.deepcopy(step.module_data)
+        if step_id in frames and step_id not in whole:
+            module_data[POSITION_KEY].pop(STACK_KEY)
         clips.append(
             StepClip(
                 id=step.id,
                 title=step.title,
                 edges={kind: list(targets) for kind, targets in step.edges.items()},
-                module_data=copy.deepcopy(step.module_data),
+                module_data=module_data,
                 module_text=dict(step.module_text),
                 files=_files_of(files, step.id, file_modules),
                 x=x,
                 y=y,
+                frame=frames.get(step_id),
             )
         )
     return clips
@@ -134,6 +164,7 @@ def to_json(clips: Sequence[StepClip]) -> bytes:
                     },
                     "x": c.x,
                     "y": c.y,
+                    **({"frame": list(c.frame)} if c.frame is not None else {}),
                 }
                 for c in clips
             ]
@@ -183,6 +214,7 @@ def from_json(data: bytes) -> list[StepClip]:
                 },
                 x=_number(entry.get("x")),
                 y=_number(entry.get("y")),
+                frame=_rect(entry.get("frame")),
             )
         )
     return clips
@@ -198,6 +230,13 @@ def _number(value: object) -> float:
     return float(value)
 
 
+def _rect(value: object) -> Rect | None:
+    if not isinstance(value, list) or len(value) != 4:
+        return None
+    x, y, w, h = (_number(part) for part in value)
+    return x, y, w, h
+
+
 def paste(
     library: Library,
     project_id: NodeId,
@@ -211,7 +250,11 @@ def paste(
 
     ``anchor`` is where the block's top-left goes — the canvas's last click. None places
     every clone one row below where its original sat, which is what Duplicate means and what
-    a paste on a canvas nobody has clicked falls back to. ``verb`` names the undo entry.
+    a paste on a canvas nobody has clicked falls back to — a whole stack one row below its
+    frame, and a step copied out of a stack beside the frame. ``verb`` names the undo entry.
+
+    Each stack copied whole gets a fresh id, so the copy is a stack of its own and never
+    joins its original; the first in its chain takes the seat.
 
     The clones' aspects are set on the objects before the add — the node does not exist yet,
     so a command per entry would only lengthen the composite — but the links go through
@@ -222,17 +265,37 @@ def paste(
         raise ValueError("nothing to paste")
     project = library.project(project_id)
     left, top = min(c.x for c in clips), min(c.y for c in clips)
+    by_id = {c.id: c for c in clips}
+    stacked: dict[str, list[StepId]] = {}
+    for c in clips:
+        if old := _stack_of(c):
+            stacked.setdefault(old, []).append(c.id)
+    renamed = {old: mint_id() for old in stacked}
+    firsts = {
+        chain(members, lambda m: by_id[m].edges.get("requires", []))[0][0]
+        for members in stacked.values()
+    }
     clones: list[Step] = []
     for c in clips:
         clone = Step(title=c.title)
         clone.module_data = copy.deepcopy(c.module_data)
         clone.module_text = dict(c.module_text)
-        if anchor is None:
-            x, y = below(c.x, c.y, node_size(clone)[1])
-        else:
+        stack = renamed.get(_stack_of(c), "")
+        if anchor is not None:
             x, y = anchor[0] + c.x - left, anchor[1] + c.y - top
+        elif c.frame is None:
+            x, y = below(c.x, c.y, node_size(clone)[1])
+        elif stack:
+            x, y = c.x, c.y + c.frame[3] + V_GAP
+        else:
+            x, y = c.frame[0] + c.frame[2] + H_GAP, c.y
         # The copy keeps the size its original was given, like every other stored fact.
-        clone.module_data[POSITION_KEY] = write_position(x, y, read_size(clone))
+        size = read_size(clone)
+        clone.module_data[POSITION_KEY] = (
+            write_member(stack, size)
+            if stack and c.id not in firsts
+            else write_position(x, y, size, stack=stack)
+        )
         clones.append(clone)
     remapped = {c.id: clone.id for c, clone in zip(clips, clones, strict=True)}
     for policy in policies:
@@ -248,6 +311,11 @@ def paste(
                 commands.append(SetEdgesCommand(clone.id, kind, wanted))
     label = f"{verb} Step" if len(clones) == 1 else f"{verb} {len(clones)} Steps"
     return CompositeCommand(label, commands), clones
+
+
+def _stack_of(c: StepClip) -> str:
+    stack = c.module_data.get(POSITION_KEY, {}).get(STACK_KEY)
+    return stack if isinstance(stack, str) else ""
 
 
 def write_files(files: FilesFor, pasted: Sequence[tuple[Step, StepClip]]) -> None:
