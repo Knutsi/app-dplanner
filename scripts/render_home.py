@@ -104,7 +104,6 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path, video: P
     step_to(garden, 22.0)
     save(services.window, out, "home", theme, app)
 
-    garden.close_button.hide()
     fresh(garden)
     frames = []
     for moment in MOMENTS:
@@ -122,7 +121,6 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path, video: P
     print(path)
     if video is not None:
         film(garden, video / f"garden-{theme.name}.mp4")
-    garden.close_button.show()
 
     panel = index_panel(services)
     tree = panel.tree

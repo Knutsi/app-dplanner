@@ -222,16 +222,15 @@ def test_the_garden_paints_every_season_in_both_themes(services, themed):
             assert not garden.grab().isNull()
 
 
-def test_the_garden_can_be_put_away_and_brought_back(services):
+def test_settings_puts_the_garden_away_and_brings_it_back(services):
     page = home(services)
     assert page.garden.isVisibleTo(page)
-    page.garden.close_button.click()
-    assert not page.garden.isVisibleTo(page)
-
     (section,) = [s for s in services.settings_sections.sections() if s.id == "home.page"]
     settings = section.factory(None)
     box = settings.findChild(QCheckBox, "GardenBox")
-    assert box is not None and not box.isChecked()  # It heard the close.
+    assert box is not None and box.isChecked()
+    box.setChecked(False)
+    assert not page.garden.isVisibleTo(page)
     box.setChecked(True)
     assert page.garden.isVisibleTo(page)
     settings.deleteLater()

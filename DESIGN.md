@@ -809,7 +809,7 @@ and one stylesheet rule for the progress bar:
   work, and that work will move along this link on its own. The one ornament that moves is
   **Home's garden** (`f9-home/garden-*`): the page nobody works in, where the motion *is* the
   message — agents make the plan bloom — in the plan's own tones, still while off screen or
-  after two seasons, and put away by its ✕ or *Settings ▸ Home*. It is not a precedent: a
+  after two seasons, and turned off in *Settings ▸ Home*. It is not a precedent: a
   surface where people work stays still, and what the canvas might do with
   `framework/motion/` is ARCHITECTURE.md's *Motion is a library*, not yet a rule.
 - **Selection follows the keyboard**: arrows move the row edge and whatever follows the

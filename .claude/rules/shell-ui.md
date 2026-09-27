@@ -184,7 +184,7 @@ paths:
   garden — seeds that sprout when what they wait on has bloomed, agents wearing the
   sparkle their cards wear rain on what is ready — painted from `garden.py`'s Qt-free state
   in the plan's own tones, ticking only while shown and resting still after two seasons
-  until hovered, put away by its ✕ or *Settings ▸ Home* (a global preference). Nothing
+  until hovered, turned off in *Settings ▸ Home* (a global preference). Nothing
   else earns motion by being pleasant. `ARCHITECTURE.md`'s *Home is where a window starts*
   has the reasoning.
 - **Anything that moves moves through `framework/motion/`.** A `FrameClock` per surface —

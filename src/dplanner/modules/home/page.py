@@ -9,8 +9,8 @@ needs a project greys in its own words until one is picked in the index.
 
 **The garden is the one ornament in the application that moves** (DESIGN.md's *Focus and
 motion*): the plan told as a garden, where agents rain on what is ready and it blooms
-(``garden.py`` is what happens, ``garden_view.py`` how it looks). It goes when the person
-closes it, and *Settings ▸ Home* brings it back.
+(``garden.py`` is what happens, ``garden_view.py`` how it looks). *Settings ▸ Home* turns
+it off and on.
 """
 
 from typing import TYPE_CHECKING
@@ -26,7 +26,7 @@ from dplanner.framework.toolbar import action_words
 from dplanner.framework.widgets import EDITOR_MEASURE, caption, centered_column
 from dplanner.modules.home.garden_view import GardenView
 from dplanner.modules.home.guide import GUIDE, GuideStep
-from dplanner.modules.home.settings_page import garden_wanted, want_garden
+from dplanner.modules.home.settings_page import garden_wanted
 from dplanner.theme.tokens import CAPTION_GAP, PANEL_MARGIN
 
 if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
@@ -69,7 +69,7 @@ class HomePage(QWidget):
         column.addStretch(1)
         layout.addWidget(centered_column(body, EDITOR_MEASURE), 1)
 
-        self.garden = GardenView(self, hide=lambda: want_garden(False, garden_changed))
+        self.garden = GardenView(self)
         layout.addWidget(self.garden)
 
         unsubscribe = [

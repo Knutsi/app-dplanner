@@ -602,9 +602,11 @@ petals go and is sown again. Everywhere else a still surface is the rule (DESIGN
 exception, and it keeps the exception cheap: a frame costs about four milliseconds at a
 thousand pixels, it ticks only while shown, and after two seasons it rests, still, in full
 bloom until the pointer passes over it or Home is shown again — a page left open is not a
-reason to spend a core. Somebody who would rather not have it closes it, and *Settings ▸
-Home* — a global preference, since it is about the person and not the library — brings it
-back. `garden.py` is what happens and `garden_view.py` how it looks; the first version,
+reason to spend a core. Somebody who would rather not have it turns it off in *Settings ▸
+Home* — a global preference, since it is about the person and not the library. It has no
+close button of its own: a ✕ in the corner was one more control on a page that is otherwise
+only the guide, and the developer's call was to leave the garden clean. `garden.py` is what
+happens and `garden_view.py` how it looks; the first version,
 a cloud over nine identical stems, taught that the look is most of the message.
 
 ## Motion is a library

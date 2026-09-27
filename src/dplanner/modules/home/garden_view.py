@@ -37,7 +37,7 @@ from PySide6.QtGui import (
     QResizeEvent,
     QShowEvent,
 )
-from PySide6.QtWidgets import QHBoxLayout, QWidget
+from PySide6.QtWidgets import QWidget
 
 from dplanner.framework.motion.clock import FrameClock
 from dplanner.framework.motion.curves import (
@@ -50,10 +50,8 @@ from dplanner.framework.motion.curves import (
 )
 from dplanner.framework.motion.draw import glow, paint_particles, petal, star, tapered
 from dplanner.framework.motion.particles import Particle, Particles
-from dplanner.framework.widgets import GlyphButton
 from dplanner.modules.home.garden import GROUND_Y, Agent, Garden, Plant
-from dplanner.theme.icons import close_icon, paint_glyph
-from dplanner.theme.tokens import PANEL_MARGIN
+from dplanner.theme.icons import paint_glyph
 from dplanner.theme.tones import (
     BADGE_BORDER,
     CHIP_ATTENTION_BORDER,
@@ -63,7 +61,6 @@ from dplanner.theme.tones import (
 )
 
 GARDEN_H = 196
-HIDE_GARDEN = "Hide the garden — Settings ▸ Home brings it back"
 
 # Particle tones, beyond the flowers' own (FLOWER_TONE + a flower's colour).
 GLITTER, POLLEN, SPROUT, FLOWER_TONE = 0, 1, 2, 3
@@ -152,7 +149,7 @@ class Blade:
 
 
 class GardenView(QWidget):
-    def __init__(self, parent: QWidget | None = None, *, hide: Callable[[], None]) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("Garden")
         self.setFixedHeight(GARDEN_H)
@@ -173,13 +170,6 @@ class GardenView(QWidget):
         self.clock.follow(self)
         self.asleep = False
         self._rests_left = AWAKE_SEASONS
-
-        corner = QHBoxLayout(self)
-        corner.setContentsMargins(0, PANEL_MARGIN // 2, PANEL_MARGIN // 2, 0)
-        corner.addStretch(1)
-        self.close_button = GlyphButton("", close_icon, self, tip=HIDE_GARDEN)
-        self.close_button.clicked.connect(lambda _checked=False: hide())
-        corner.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignTop)
 
     def running(self) -> bool:
         return self.clock.running()
