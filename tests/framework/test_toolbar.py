@@ -159,6 +159,22 @@ def test_a_filter_button_says_what_is_chosen_and_the_glyph_says_that_it_is(host,
     assert all(a.isCheckable() for a in button.menu.actions())
 
 
+def test_a_renamed_filter_is_worded_anew_on_the_face_without_announcing(host, app):
+    """A project renamed while it is the pick: the face must not keep the old name, and the
+    pick has not changed, so nothing is announced."""
+    from dplanner.framework.toolbar import FilterButton
+
+    button = FilterButton(host, label="Projects")
+    button.add_filter("p1", "Alpha")
+    button.set_active({"p1"})
+    heard = []
+    button.changed.connect(lambda: heard.append(button.active()))
+    button.relabel("p1", "Alpha Two")
+    assert button.face.text() == "Alpha Two"
+    assert button.face.toolTip() == "Projects — Alpha Two"
+    assert heard == []
+
+
 # -- named bands ---------------------------------------------------------------------------
 
 

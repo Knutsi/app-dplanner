@@ -904,6 +904,12 @@ class FilterButton(QWidget):
         self._actions[key] = action
         return action
 
+    def relabel(self, key: str, text: str) -> None:
+        """New words for one entry — the thing it filters by was renamed — and for the face,
+        which may be wearing the old ones. Nothing is announced: the pick has not changed."""
+        self._actions[key].setText(text)
+        self._show_state()
+
     def active(self) -> list[str]:
         return [key for key, action in self._actions.items() if action.isChecked()]
 

@@ -38,6 +38,10 @@ from dplanner.theme.tokens import (
 
 ICON_GAP = 8  # Between a row's icon and its text.
 RULE_ALPHA = 60  # The hairline under an emphasised row: a whisper of the text tone.
+# What carries a row's own verbs, in a table's menu column or beside a list's row (DESIGN.md's
+# *Lists of rich items*). A character rather than a painted icon: it names no verb, and every
+# platform's font has it.
+MENU_GLYPH = "\u22ee"
 
 DETAIL_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 # A row drawn entirely in the secondary tone — something already dealt with.
