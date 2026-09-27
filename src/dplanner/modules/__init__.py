@@ -77,6 +77,7 @@ __all__ = [
     "default_module_formats",
     "default_modules",
     "dictation_providers",
+    "start_window",
     "theme_providers",
 ]
 
@@ -140,6 +141,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
+    from dplanner.modules.home.module import HomeDeps, HomeModule
     from dplanner.modules.install.module import InstallDeps, InstallModule
     from dplanner.modules.library.module import LibraryDeps, LibraryModule
     from dplanner.modules.library_watch.module import LibraryWatchDeps, LibraryWatchModule
@@ -1978,6 +1980,18 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 checks=lambda: _machine_checks(files=skill_files),
             )
         ),
+        # After every module whose verb the guide names — its page reads their specs as it
+        # is built — and before reopen_tabs, which reopens a Home tab like any other.
+        HomeModule(
+            HomeDeps(
+                tabs=services.tabs,
+                actions=services.actions,
+                context=services.context,
+                segments=services.index_segments,
+                theme=services.theme,
+                settings_sections=services.settings_sections,
+            )
+        ),
         # After every module that registers an activity factory: it reopens the tabs the
         # last session had, and a kind whose factory has not arrived yet is one it would
         # decide this build no longer has.
@@ -3445,6 +3459,22 @@ def at_work_board() -> "AtWorkBoard":
     from dplanner.domain.at_work import DIRECTORY, AtWorkBoard
 
     return AtWorkBoard(config_dir() / DIRECTORY)
+
+
+def start_window(services: "AppServices") -> None:
+    """What the program's first window shows once it is built: the tabs the last session
+    had, which reopen_tabs brought back during the build — or, when that left none open,
+    Home.
+
+    Called by ``app.open_at_startup`` and nowhere else, because it is the *program's*
+    start and nothing more: a reload rebuilds the window the person had, and a window
+    whose last tab they closed stays blank — ARCHITECTURE.md's *Home is where a window
+    starts*.
+    """
+    from dplanner.modules.home.page import HOME_KIND
+
+    if not services.tabs.activities():
+        services.tabs.open(HOME_KIND)
 
 
 def default_cli_commands(

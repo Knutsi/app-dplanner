@@ -3,12 +3,13 @@ paths:
   - "src/dplanner/menus.py"
   - "src/dplanner/framework/{action_registry,action_menu,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,main_window,window,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service,user_config,zoom}.py"
   - "src/dplanner/theme/**"
-  - "src/dplanner/modules/{appshell,appearance,theme_omarchy,theme_system,reopen_tabs,settings,debug}/**"
+  - "src/dplanner/modules/{appshell,appearance,theme_omarchy,theme_system,reopen_tabs,home,settings,debug}/**"
   - "src/dplanner/modules/project_editor/canvas_{toolbar,menus}.py"
   - "tests/test_theme.py"
   - "tests/framework/test_{action_menu,actions,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service}.py"
-  - "tests/modules/test_{appshell,appearance,theme_providers,reopen_tabs,debug}.py"
-  - "scripts/{vendor_tabler_icons,import_omarchy_themes,render_design_example,render_about,render_icon,render_signalling}.py"
+  - "tests/modules/test_{appshell,appearance,theme_providers,reopen_tabs,home,debug}.py"
+  - "tests/index_helpers.py"
+  - "scripts/{vendor_tabler_icons,import_omarchy_themes,render_design_example,render_about,render_icon,render_signalling,render_home}.py"
 ---
 
 # Shell — seams, panes, primitives, menus, toolbars, glyphs and themes
@@ -151,9 +152,27 @@ paths:
 - **A single click in the index opens a preview tab** (`tabs.open(..., preview=True)`): at
   most one preview exists, the next preview replaces it, and a deliberate act — activation,
   or moving the tab — pins it. A preview-open of anything already open is a plain focus.
-  A project's own row only selects it — its forms are *Project ▸ Settings…*, and what
-  shows while no tab is open is the window's; its entry rows preview their surfaces.
-  `ARCHITECTURE.md`'s *A click is a glance* has the rules and why no timer is involved.
+  A project's own row only selects it — its forms are *Project ▸ Settings…*, and a window
+  with no tab open is blank; its entry rows preview their surfaces. **A folder's
+  own row is its segment's to answer** — a click, an activation and a right-click reach the
+  segment like any row's: the Home row opens Home, and the Projects folder's right-click
+  renders File's `project` group. `ARCHITECTURE.md`'s *A click is a glance* has the rules
+  and why no timer is involved.
+- **Home is a tab like any other, and the program starts on it.** `modules/home/` registers
+  the `home` tab (the index's first row, *Go ▸ Home*), reopened like any tab. The root's
+  `start_window` opens it when the startup reopen left no tab open, and only
+  `app.open_at_startup` calls that — never a reload, and never because the last tab closed:
+  **a blank window is allowed**, and nothing reopens Home behind the person's back. A
+  surface that spans the library hangs a row under Home through `HomeDeps.rows` (a
+  `LeadingRow`, wired in the root), never by editing `modules/home/`. Its
+  guide is data naming action ids (`guide.py`), each a verb's own button restated from its
+  `ActionState` — greyed in the verb's words, never a second button that calls it — in a
+  `RowWell` asked to `AdjustToContents`, which the primitive honours with its rows' height
+  for its width. **Home's garden is the one ornament that moves**: a cloud wearing the
+  robot glyph rains on seedlings until they bloom, painted from `garden.py`'s Qt-free state
+  in the plan's own tones, ticking only between a show and a hide, and put away by its ✕ or
+  *Settings ▸ Home* (a global preference). Nothing else earns motion by being pleasant.
+  `ARCHITECTURE.md`'s *Home is where a window starts* has the reasoning.
 - **A panel inside a tab is a `SidePanel`, hosted through `HostedSidePanel`**
   (`framework/side_panel.py`). A dock panel follows the *window* — one instance, retargeted
   by the context; a panel inside a tab follows *that tab* — one per tab, handed a

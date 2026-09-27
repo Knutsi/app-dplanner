@@ -66,6 +66,8 @@ GLYPHS: dict[str, str] = {
     "info": "info-circle",
     # -- the index, and what a row is about -------------------------------------------
     "container": "folders",
+    "home": "home",  # Where a window starts: the getting-started guide.
+    "robot": "robot",  # Home's rain cloud: an agent at work, and the plan growing under it.
     "leaf": "file-text",
     "project": "layout-board",
     "graph": "topology-star-3",

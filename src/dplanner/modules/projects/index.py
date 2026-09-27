@@ -12,7 +12,8 @@ every other Project verb, and double-clicking it folds it (Qt's own behaviour, w
 nothing here fights). An entry row opens its own surface through ``entry.open``; the
 segment never learns what an editor is. A plain click opens the same surface as a
 *preview* tab — the glance that VS Code's next glance replaces — and activation is what
-keeps it.
+keeps it. The folder's own row offers what adds a row to it: its right-click renders the
+File menu's project group, New Project… and Open Project… with Share Project… beside them.
 """
 
 from collections.abc import Callable, Sequence
@@ -47,6 +48,8 @@ KIND_ROLE = int(Qt.ItemDataRole.UserRole) + 1
 # project id would collide with the project row's own key).
 ENTRY_ROLE = int(Qt.ItemDataRole.UserRole) + 2
 PROJECT_ROLE = int(Qt.ItemDataRole.UserRole) + 3
+# What a right-click on the folder itself renders: the menu and group a project joins through.
+FOLDER_MENU = ("File", "project")
 
 
 @dataclass(frozen=True)
@@ -156,12 +159,17 @@ class ProjectsSegment:
             entry.open(project_id)
 
     def context_menu(self, item: QTreeWidgetItem) -> QMenu | None:
+        parent = self._tree()
+        if parent is None:
+            return None
+        if item is self._root:
+            folder_menu, group = FOLDER_MENU
+            return build_menu(self._actions, self._context, folder_menu, parent, group=group)
         kind, _node_id = self._identity(item)
         menu = "Project" if kind == "project" else None
         if kind == "entry" and (entry := self._entry_of(item)):
             menu = entry.menu
-        parent = self._tree()
-        if menu is None or parent is None:
+        if menu is None:
             return None
         return build_menu(self._actions, self._context, menu, parent)
 

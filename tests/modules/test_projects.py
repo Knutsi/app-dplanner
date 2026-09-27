@@ -8,6 +8,7 @@ undoable fails here rather than in front of a user.
 
 import pytest
 from tests.facts import code_row
+from tests.index_helpers import click, folder
 
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
@@ -36,10 +37,11 @@ def state(services, action_id, context):
 # -- the index folder --------------------------------------------------------------------------
 
 
-def test_the_module_contributes_the_first_index_folder(services):
-    """Projects is the top folder and the Archive the last; Tests and Docs register between.
-    Order is (order, id)."""
+def test_the_module_contributes_the_folder_under_home(services):
+    """Projects is the top folder under Home and the Archive the last; Tests and Docs
+    register between. Order is (order, id)."""
     assert [segment.id for segment in services.index_segments.segments()] == [
+        "home",
         "projects",
         "tests",
         "docs",
@@ -52,7 +54,7 @@ def test_the_folder_shows_projects_and_not_their_steps(services, project):
     a list of rows cannot show. What may nest under a project is a ProjectEntry — a door
     into a project-scoped surface, not the project's content."""
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
-    root = panel.tree.topLevelItem(0)
+    root = folder(panel, "projects")
     assert root.text(0) == "Projects"
     assert root.child(0).text(0) == "Discovery"
     kinds = {
@@ -63,7 +65,7 @@ def test_the_folder_shows_projects_and_not_their_steps(services, project):
 
 def test_the_folder_follows_the_model(services, project, make_project):
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
-    root = panel.tree.topLevelItem(0)
+    root = folder(panel, "projects")
     make_project("Build")
     assert [root.child(i).text(0) for i in range(root.childCount())] == ["Discovery", "Build"]
 
@@ -71,7 +73,7 @@ def test_the_folder_follows_the_model(services, project, make_project):
 def test_selecting_a_row_publishes_the_selection_scope(services, project):
     """The panel publishes once for every segment, so two folders cannot fight over it."""
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
-    row = panel.tree.topLevelItem(0).child(0)
+    row = folder(panel, "projects").child(0)
     panel.tree.setCurrentItem(row)
     uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
     assert uris == [selection_uri("project", project.id)]
@@ -84,11 +86,11 @@ def test_a_rebuild_keeps_the_tree_selection_and_the_published_scope(services, pr
     from dplanner.domain.commands import SetFieldCommand
 
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
-    row = panel.tree.topLevelItem(0).child(0)
+    row = folder(panel, "projects").child(0)
     panel.tree.setCurrentItem(row)
 
     SetFieldCommand(project.id, "title", "Renamed").redo(services.document)
-    fresh_row = panel.tree.topLevelItem(0).child(0)
+    fresh_row = folder(panel, "projects").child(0)
     assert fresh_row.isSelected()
     uris = [node.uri for node in services.context.current().scope(SCOPE_SELECTION)]
     assert uris == [selection_uri("project", project.id)]
@@ -100,7 +102,7 @@ def test_a_rebuild_that_loses_the_selected_row_announces_the_empty_selection(ser
     from dplanner.domain.commands import RemoveNodeCommand
 
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
-    row = panel.tree.topLevelItem(0).child(0)
+    row = folder(panel, "projects").child(0)
     panel.tree.setCurrentItem(row)
 
     RemoveNodeCommand(project.id).redo(services.document)
@@ -111,14 +113,14 @@ def test_activating_a_project_row_opens_no_tab(services, project):
     """A project row stands for its project; the graph opens from its Steps entry, and
     its forms from *Project ▸ Settings…*."""
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
-    row = panel.tree.topLevelItem(0).child(0)
+    row = folder(panel, "projects").child(0)
     panel.tree.itemActivated.emit(row, 0)
     assert services.tabs.activities() == []
 
 
 def test_the_steps_entry_opens_the_project_tab(services, project):
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
-    row = panel.tree.topLevelItem(0).child(0)
+    row = folder(panel, "projects").child(0)
     steps = next(row.child(i) for i in range(row.childCount()) if row.child(i).text(0) == "Steps")
     panel.tree.itemActivated.emit(steps, 0)
     assert [a.title for a in services.tabs.activities()] == ["Discovery"]
@@ -127,34 +129,8 @@ def test_the_steps_entry_opens_the_project_tab(services, project):
 # -- single-click previews ---------------------------------------------------------------------
 
 
-def click(panel, item, modifiers=None, button=None):
-    """A plain click on a row, as press-then-release through the panel's event filter.
-
-    Hand-built events rather than QTest.mouseClick: QTest drives the QPA layer, whose
-    button bookkeeping leaks into ``QApplication.mouseButtons()`` for later tests.
-    """
-    from PySide6.QtCore import QEvent, QPointF, Qt
-    from PySide6.QtGui import QMouseEvent
-    from PySide6.QtWidgets import QApplication
-
-    modifiers = Qt.KeyboardModifier.NoModifier if modifiers is None else modifiers
-    button = Qt.MouseButton.LeftButton if button is None else button
-    viewport = panel.tree.viewport()
-    pos = QPointF(panel.tree.visualItemRect(item).center())
-    for kind, held in (
-        (QEvent.Type.MouseButtonPress, button),
-        (QEvent.Type.MouseButtonRelease, Qt.MouseButton.NoButton),
-    ):
-        QApplication.sendEvent(
-            viewport,
-            QMouseEvent(
-                kind, pos, QPointF(viewport.mapToGlobal(pos.toPoint())), button, held, modifiers
-            ),
-        )
-
-
 def entry_row(panel, label):
-    row = panel.tree.topLevelItem(0).child(0)
+    row = folder(panel, "projects").child(0)
     return next(row.child(i) for i in range(row.childCount()) if row.child(i).text(0) == label)
 
 
@@ -205,7 +181,7 @@ def test_clicking_a_project_row_selects_it_and_opens_no_tab(services, project):
     nothing: what shows while no tab is open is the window's, not the project's."""
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
     panel.tree.expandAll()
-    click(panel, panel.tree.topLevelItem(0).child(0))
+    click(panel, folder(panel, "projects").child(0))
     assert services.tabs.activities() == []
     assert services.context.current().focus_entity("project") == project.id
 

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 
 import pytest
 from PySide6.QtGui import QColor, QIcon
+from tests.index_helpers import folder
 
 from dplanner.core.signals import Signal
 from dplanner.domain.document_source import (
@@ -511,7 +512,7 @@ def specs_row(services):
     from dplanner.framework.builder import INDEX_PANEL_ID
 
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
-    project_row = panel.tree.topLevelItem(0).child(0)
+    project_row = folder(panel, "projects").child(0)
     return next(
         project_row.child(i)
         for i in range(project_row.childCount())

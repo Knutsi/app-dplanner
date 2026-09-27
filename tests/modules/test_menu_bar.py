@@ -91,6 +91,7 @@ def compositions() -> list[tuple[str, Band]]:
     """Every pop-up that renders part of a menu by name rather than a whole one."""
     from dplanner.modules.project_editor.canvas_menus import BANDS
     from dplanner.modules.project_editor.canvas_toolbar import LOOK_MENU, MENUS
+    from dplanner.modules.projects.index import FOLDER_MENU
     from dplanner.modules.spec.activity import ADD_SUBMENU
 
     return [
@@ -98,6 +99,7 @@ def compositions() -> list[tuple[str, Band]]:
         *((f"strip {verb}", Band(menu, submenu=child)) for verb, (menu, child) in MENUS.items()),
         ("strip Options", Band(LOOK_MENU[0], LOOK_MENU[1])),
         ("Specs tab +", Band("Project", submenu=ADD_SUBMENU)),
+        ("Projects folder", Band(*FOLDER_MENU)),
     ]
 
 

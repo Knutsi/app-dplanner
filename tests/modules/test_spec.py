@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pypdfium2 as pdfium
 import pytest
+from tests.index_helpers import folder
 
 from dplanner.domain.commands import RemoveNodeCommand, SetModuleDataCommand
 from dplanner.framework.builder import INDEX_PANEL_ID
@@ -59,7 +60,7 @@ def select(services, project):
 
 def test_the_specs_entry_opens_the_specs_tab(services, project):
     panel = services.window.dock.widget_for(INDEX_PANEL_ID)
-    row = panel.tree.topLevelItem(0).child(0)
+    row = folder(panel, "projects").child(0)
     entries = [row.child(i).text(0) for i in range(row.childCount())]
     assert entries == [
         "Specs",

@@ -15,8 +15,9 @@ by nothing, since the well's own border is already there. The parts are named (`
 from collections.abc import Callable, Hashable, Sequence
 from typing import cast
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
+    QAbstractScrollArea,
     QHBoxLayout,
     QLabel,
     QProgressBar,
@@ -174,6 +175,36 @@ class RowWell(QScrollArea):
         for key in keys:
             update(key, cast(R, self._rows[key]))
         self._mark_last(self._rows[keys[-1]] if keys else None)
+        if self._fits():
+            self.updateGeometry()  # What it is as tall as may have changed.
+
+    # -- a well as tall as its rows -----------------------------------------------------------
+
+    def _fits(self) -> bool:
+        return self.sizeAdjustPolicy() == QAbstractScrollArea.SizeAdjustPolicy.AdjustToContents
+
+    def sizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        """``AdjustToContents`` as documented: as tall as the rows. ``QScrollArea`` stops its
+        own hint at twenty-four lines of text whatever the policy, which put a five-row
+        guide behind a scroll bar with half the page empty around it."""
+        if not self._fits():
+            return super().sizeHint()
+        frame = 2 * self.frameWidth()
+        hint = self.host.sizeHint()
+        return QSize(hint.width() + frame, hint.height() + frame)
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802 - Qt override
+        return self._fits() or super().hasHeightForWidth()
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802 - Qt override
+        """The rows' height at this width — their notes wrap — so the layout can give a
+        fitted well exactly what it needs and no scroll bar appears with room to spare.
+        Its minimum stays the scroll area's own, so a short window still scrolls it."""
+        if not self._fits():
+            return super().heightForWidth(width)
+        frame = 2 * self.frameWidth()
+        height = self.host.heightForWidth(width - frame)
+        return (height if height >= 0 else self.host.sizeHint().height()) + frame
 
     def rows(self) -> list[WellRow]:
         """Top to bottom, as listed."""

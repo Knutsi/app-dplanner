@@ -4633,3 +4633,46 @@ from `Cell.struck`, and `TableDelegate.font_for` applies `setStrikeOut`, so `siz
 struck through (DESIGN.md's *Tables*). A look belongs in the primitive, not in one view.
 
 **Upstream?** Yes. It is four lines, and any list of work has finished rows.
+
+## 65. From F9: Home, where a window starts
+
+### `framework/index_panel.py` — a folder's own row reaches its segment; the menu is built apart
+
+**What.** `_on_clicked`, `_on_activated` and `_on_context_menu` no longer skip a folder's
+root item: a click, an activation and a right-click on it go to the segment like any row's.
+Selection still skips it (a folder row is not selectable). The right-click is split into a
+public `context_menu(item) -> QMenu | None` that builds the menu, and `_on_context_menu`
+that shows it. The tree also gets a `_RowDelegate` that strips `State_HasFocus`, as every row
+primitive already does.
+
+**Why.** Home is a folder row with nothing under it — the top of the index — and a
+right-click on the *Projects* folder offered nothing where a person reaches to add a project.
+Every existing segment already ignored its root, because a root carries none of the roles
+their rows are read by. The build/show split lets a test read the menu a row offers without
+the modal loop `exec` starts. The focus frame was Fusion's washed box round the current
+row's name, visible on every window that opened with the tree focused.
+
+**Upstream?** Yes, all three. The template's index has the same dead folder rows, and the
+same focus frame.
+
+### `framework/row_well.py` — a well asked to adjust to its contents does
+
+**What.** `RowWell` honours `QAbstractScrollArea.AdjustToContents`: its `sizeHint` is its
+rows', it reports `hasHeightForWidth` and answers `heightForWidth` with the rows' height at
+that width, and `reconcile` calls `updateGeometry` so a layout asks again. Its minimum stays
+the scroll area's own. Without the policy nothing changes.
+
+**Why.** Home's guide is five rows in a well, centred on the page. `QScrollArea.sizeHint`
+stops at twenty-four lines of text whatever its adjust policy, so the guide sat behind a
+scroll bar with half the page empty around it. The rows' notes wrap, which is why it is
+height-for-width and not a fixed hint.
+
+**Upstream?** Yes — the template's well has the same cap, and a short well that should be
+exactly as tall as its rows is common (a dialog's list of three things).
+
+A lesson, not a code change: the first version of Home put a page behind the tabs while none
+was open (a backdrop in `TabHost`), and a recent-tabs list with the stale-address checks
+pulled into `TabHost.reopen`. Both were taken out in review — Home is an ordinary tab the
+program opens at its start, and a blank window is allowed — so `tabs.py` is unchanged. A
+page for "nothing open" is still a reasonable template feature; it was not what this
+application wanted.

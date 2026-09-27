@@ -125,6 +125,11 @@ def container_icon(color: str | QColor) -> QIcon:
     return glyph_icon("container", color)
 
 
+def home_icon(color: str | QColor) -> QIcon:
+    """A house: Home, where a window starts."""
+    return glyph_icon("home", color)
+
+
 def edit_icon(color: str | QColor) -> QIcon:
     """A pencil: rename, or edit in place."""
     return glyph_icon("edit", color)

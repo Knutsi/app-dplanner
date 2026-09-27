@@ -432,6 +432,18 @@ rebuilding on change is the normal case and that bookkeeping is what every segme
 otherwise copy — and survives a *restart* too, which is *Where the user left off is
 remembered by key* below.
 
+**A folder's own row is one of its segment's rows.** The panel used to swallow every gesture
+on a folder row, on the reasoning that a folder is furniture. Two requests broke that: Home
+wanted a row at the top of the index with nothing under it, and a right-click on *Projects*
+offered nothing where a person reaches to add one. Home as a row *inside* some other folder
+would have put it under a heading it does not belong to, so the panel now hands a click, an
+activation and a right-click on a folder row to its segment like any other row's, and a
+segment with nothing to say about its folder ignores it — every existing one already did,
+because a folder row carries none of the roles their rows are read by. Only selection still
+skips it: a folder row is not selectable, so it never stands for anything in the context.
+The Projects folder's right-click renders the File menu's `project` group through
+`build_menu`, so the index and the menu bar cannot disagree about how a project joins.
+
 ### A click is a glance: preview tabs
 
 A single click on an entry row opens its surface as a **preview tab** — VS Code's
@@ -543,6 +555,61 @@ Only the tabs have a switch (*Settings ▸ Startup*). Folders are cheap to close
 has ever wanted them shut on purpose; a window that reopens six tabs is a real opinion about
 how someone starts their day. The list is kept even while the switch is off, so turning it
 back on returns the session they last had rather than one from whenever they turned it off.
+
+## Home is where a window starts
+
+Since the Dashboard retired, a program that started with no tabs to reopen showed an empty
+tab bar over nothing. It starts on Home now: a short getting-started guide, centred, over a
+garden that says what DPlanner does, in the `home` tab — kept as the top row of the index
+and *Go ▸ Home* for whenever it is wanted. The rules are `.claude/rules/shell-ui.md`'s
+*Home is a tab like any other*.
+
+**A tab like any other, opened at the program's start and at no other time.** The first
+build stood Home behind the tabs as a backdrop whenever none was open. The developer's call
+was the simpler one: Home is an ordinary activity, and a blank window is allowed — closing
+the last tab leaves nothing, rather than a page the person just closed coming back. So the
+one automatic open is the program's start: `app.open_at_startup` calls the composition
+root's `start_window` after the build, and it opens Home only when reopen_tabs brought back
+no tab. It lives there rather than in a module because only the entry point knows a start
+from a rebuild — a reload builds through the same modules and must bring back the window the
+person had, blank included — and because the test session is built the same way minus the
+entry point, so the suite's windows start as empty as they always did. The Home row in the
+index is a folder, so a surface that spans the whole library — the Control Centre is the
+first — hangs a row under it through `HomeDeps.rows`, a `LeadingRow` the composition root
+hands over: the Tests folder's *All Projects* row, one folder up, and no module edits Home to
+get there.
+
+**The guide is data, and its buttons are the verbs.** `modules/home/guide.py` is a tuple of
+steps, each a title, a sentence from the README and an **action id**. The page restates each
+button from that spec's `ActionState` on every context change and runs it through the
+registry, exactly as a menu entry does — so *Open Agent in Code* greys with its own *no
+project is open* until a project is picked in the index, and a verb refiled tomorrow is still
+the verb the guide means. A guide that described verbs in its own words would drift from
+them; one that called them directly would skip their gates. A test holds every id to the
+registry.
+
+**The garden is the one ornament that moves, and it earns it by saying what DPlanner is.**
+A first version listed the tabs a person kept lately; the developer's call was that a
+newcomer's first page should say what the application is for instead, and without a word:
+a row of seedlings is the plan, a cloud wearing the robot glyph is an agent, it rains on
+what it passes over, and what it rains on blooms. Everywhere else a still surface is the
+rule (DESIGN.md's *Focus and motion*) because every change on it is a change of fact; this
+strip is the stated exception, and it keeps the exception cheap. Its state is plain
+arithmetic in `garden.py` — positions as fractions, time in seconds — so the rules are
+tested without a window and a render sets the clock by hand; `GardenView` paints it in the
+plan's own tones (a milestone's violet, a feature's teal, a review's amber, an agent's blue
+as the rain) and ticks only between a show and a hide, so a Home tab in the background costs
+nothing and a test that never shows a window never starts a timer. A tick takes the time
+since the last one, and a long gap is one short step rather than a leap across a season.
+Somebody who would rather not have it closes it, and *Settings ▸ Home* — a global
+preference, since it is about the person and not the library — brings it back.
+
+**A well can be as tall as its rows.** The guide is a `RowWell`, which is a scroll area, and
+`QScrollArea` stops its size hint at twenty-four lines of text whatever its adjust policy —
+so five steps sat behind a scroll bar with half the page empty around them. The primitive
+now honours `AdjustToContents` as Qt documents it: its hint is its rows', its
+`heightForWidth` their height at that width (their notes wrap), and its minimum stays the
+scroll area's, so a short window still scrolls it rather than growing.
 
 ## How a gesture becomes a change on screen
 
@@ -1657,8 +1724,10 @@ Dashboard as a preview: a tab for every glance at the index. Now the row only se
 project. Every Project verb, *Settings…* among them, acts on it from the menu bar and the
 row's right-click; the Steps row opens the graph; a double-click still folds the row (Qt's
 behaviour, not fought). What shows while no tab is open is the window's to decide, not any
-one project's. The rule is `.claude/rules/step-panel.md`'s project-level editor bullet and
-`CLAUDE.md`'s panel bullet.
+one project's — a blank window, with Home opened only at the program's start (*Home is
+where a window starts*). The rule
+is `.claude/rules/step-panel.md`'s project-level editor bullet and `CLAUDE.md`'s panel
+bullet.
 
 ## A markdown toolbar is verbs over a selection, and one splice each
 

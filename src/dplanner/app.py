@@ -45,6 +45,7 @@ from dplanner.modules import (
     at_work_board,
     default_modules,
     dictation_providers,
+    start_window,
     theme_providers,
 )
 from dplanner.theme.providers import BUILTIN, ThemeProvider
@@ -191,7 +192,7 @@ def new_session(
 
 
 def open_at_startup(session: AppSession, library_path: Path) -> bool:
-    """Open the library behind a splash.
+    """Open the library behind a splash, and start the window on Home if nothing reopened.
 
     A failure has already been explained to the user by the session's startup reporter —
     and with a library that is auto-seeded there is nothing sensible to re-ask, so a
@@ -199,6 +200,9 @@ def open_at_startup(session: AppSession, library_path: Path) -> bool:
     """
     splash = StartupSplash()
     try:
-        return session.open_initial(library_path, progress=splash.status)
+        opened = session.open_initial(library_path, progress=splash.status)
     finally:
         splash.close()
+    if opened and session.services is not None:
+        start_window(session.services)
+    return opened

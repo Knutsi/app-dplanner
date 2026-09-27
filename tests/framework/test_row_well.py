@@ -66,6 +66,22 @@ def test_only_the_last_row_goes_without_a_hairline(well):
     assert first.property("last") is True
 
 
+def test_a_well_that_adjusts_to_its_contents_is_as_tall_as_its_rows(app):
+    """Twelve rows are past the twenty-four lines of text ``QScrollArea`` stops its hint at;
+    asked to fit, the well claims all of them, and a plain well still stops where Qt does."""
+    plain, fitted = RowWell(), RowWell()
+    fitted.setSizeAdjustPolicy(RowWell.SizeAdjustPolicy.AdjustToContents)
+    for made in (plain, fitted):
+        made.reconcile(list(range(12)), lambda key: WellRow(f"row {key}"), lambda *_: None)
+    rows = fitted.host.sizeHint().height()
+    assert fitted.sizeHint().height() >= rows
+    assert fitted.hasHeightForWidth() and fitted.heightForWidth(400) >= rows
+    assert plain.sizeHint().height() < rows
+    assert fitted.minimumSizeHint().height() < rows  # A short window still scrolls it.
+    plain.deleteLater()
+    fitted.deleteLater()
+
+
 def test_a_rows_verbs_keep_their_room_and_never_take_the_keyboard(app):
     row = WellRow("Fetching 12 pages")
     try:

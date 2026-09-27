@@ -57,6 +57,7 @@ def test_the_index_lists_what_the_library_holds(session, make_project):
     services = session.services
     seed_steps(services, make_project("Discovery"))
     assert [s.id for s in services.index_segments.segments()] == [
+        "home",
         "projects",
         "tests",
         "docs",

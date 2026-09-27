@@ -64,7 +64,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
         "window",
     ),
     # **Go is the places**: every surface a project has, so the bar reaches each without the
-    # index beside it. "views" is the surfaces that stand as rows under a project in the
+    # index beside it. "home" is Home, the index's first row and where a window starts;
+    # "views" is the surfaces that stand as rows under a project in the
     # index — Specs, Assets, Steps, Order, Step Statuses, Time Estimates, Coverage, Tests —
     # in the index's order; "survey" the two looks over the whole plan that have no row
     # there, Estimate Steps and Preview Report, which is also what empty canvas's right-click
@@ -72,7 +73,7 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # own right-click never repeats the rows beside it (the Project menu below), and a table's
     # Step menu reaches the views about a step through Step ▸ Show in. ARCHITECTURE.md's *The
     # menu bar is sorted by subject* has the reasoning.
-    "Go": ("views", "survey", "archive"),
+    "Go": ("home", "views", "survey", "archive"),
     # The planner's own vocabulary. "Project" is the verbs on a project — what the index
     # tree's right-click renders — and "Step" the verbs on picked steps, which every table
     # renders whole and a card renders in part (project_editor/canvas_menus.py).
