@@ -4174,27 +4174,57 @@ plan on an empty machine, is asked nothing, and their first Save clones the repo
 repository and publishes; Run Agent on code nobody checked out clones and launches.
 
 `domain/repositories.py` is the one derivation over the three — `RepositoryFacts`, every
-row placed, with three states read off the code rows: **separated**, the shape the
-application wants; **colocated**, the same remote or either checkout inside the other; and
-**legacy**, no code location at all, read as colocated so nothing breaks on the day the
-build updates. *Warns* is one predicate — not separated and not accepted — asked by lint
+row placed, with four states read off the code rows: **separated**, the shape the
+application wants; **colocated**, the same remote or either checkout inside the other;
+**legacy**, no code location and no index line naming the project — a plan that is its
+repository's root, or one from before the index — read as colocated so nothing breaks on
+the day the build updates; and **unset**, no code location in a plan repository that lists
+the project, whose code is simply not recorded yet (below). *Warns* is one predicate — the
+plan is in its code (`plan_in_code`: legacy or colocated) and not accepted — asked by lint
 (`repo.unset`, `repo.colocated`, exit 1; and the table's own `location.invalid`,
 `location.unknown_role`, `location.duplicate`), by the briefing's preamble (WARNING: leave
 the plan files alone), by the Project dialog and the Repositories card, and by the opening
 status line; `colocation: "accepted"` silences all of them at once, because it is the
 people on the project saying the shape is on purpose.
 
+**Unset is not legacy, and the index is what tells them apart.** For a while every
+project with no code row read as legacy, and *File ▸ New Project…* made exactly such
+projects: it never asked for the code, so a plan created in a plan repository was read as
+living inside its own code — Run Agent opened in the plan repository, the GitHub tab read
+its origin, lint told the person to `project move` a plan that was already where it
+belonged, and the Project dialog offered to set up a plan repository for it. The guess
+"no code named means the plan is in its code" was right for every plan made before the
+fact existed and wrong for every plan made in a plan repository since, and the two are
+told apart by a fact already on disk: a plan repository names its projects in its
+`.dplanner` index, while a plan from before it had none (and a project that *is* its
+repository's root is never listed). So a listed project with no code row is **unset** —
+no derivation reads it as anything: Run Agent and Open Agent in Code grey with *record the
+code repository*, refs read nothing, `repo.unset` names `location add`, the briefing says
+the code is not recorded, the dialog shows the plan's own history with no set-up offer,
+and Move Plan moves it on still unset, because the repository it leaves was never its
+code. Accepting colocation does not quiet it, since there is no colocation to accept.
+`code_root` and `code_remote` are the fallback in one place — the plan's root and origin
+for legacy, nothing for unset — and every reader asks them rather than spelling the
+fallback itself, which is what let the guess spread to five readers in the first place.
+One shape pays for it: a plan made in a subfolder of its code after new projects began to
+be written into the index is listed, so it reads unset until its code row is recorded —
+which, naming the same repository, makes it colocated again. The alternative, a heuristic that
+looks for source files beside the plan, would be a guess about the person's tree; the
+index is their own word.
+
 The readers are seams the composition root wires. The agent module is handed
 `facts_for(step)` and decides *where an agent works*: the checkout of the code location
 the step's `workplace` names — an aspect with a default, the primary, because two code
 repositories in a project means some steps are in one and some in the other, and which is
-a fact about the step exactly as its worktree choice is — the plan's own repository for a
-project that records no code, greyed with the reason ("acme/ui is not checked out on this
-machine — Project ▸ Settings…") until a checkout is recorded — and `store.checkout_changed`
-refreshes the context, since nothing in the context graph changed. A conflict handed to
-an agent is about plan files and opens in the plan repository whatever the code is. The
-github module's `repository_for` is the primary code repository, the plan's origin only
-for the older shape. `dplanner project show`, `location list`, `agent prompt --json` and
+a fact about the step exactly as its worktree choice is — else `code_root`, the plan's own
+repository for the legacy shape and nowhere for an unset one, greyed with the reason
+("acme/ui is not checked out on this machine — Project ▸ Settings…", "no code repository
+is recorded — record the code repository") until the fact is there — and
+`store.checkout_changed` refreshes the context, since nothing in the context graph
+changed. A conflict handed to an agent is about plan files and opens in the plan
+repository whatever the code is. The github module's `repository_for`, `dplanner github`
+and the report's refs all read `code_remote`: the primary code repository, the plan's
+origin only for the legacy shape. `dplanner project show`, `location list`, `agent prompt --json` and
 the Repositories card print the same facts, and the briefing tells the agent the table
 in words — which repositories the project is about and where each stands here, so an
 agent never guesses a path. Discovery (`cli/discovery.py`) gained one rule: a `dplanner`
@@ -4278,20 +4308,24 @@ exception that proves it — it has a spec, and the dialog reaches it through th
 callback the module hands in, which is the very function `projects.move` runs, so the
 menu and the card cannot mean different things by it.
 
-**Create mode keeps its form, and its fields carry the same ⋯.** With nothing on disk yet
-there is no log to read, so the fields *are* the answer — but *picking* a repository is a
-verb, and "no verb to run" was the reading that left one field without one. The plan
-repository always had its `RepoPicker`; the code repository had a bare combo box, so the
-only way to name it was to choose a checkout and let its origin back-fill the field — a
-discovery a person makes by accident, not a design. It now carries the ⋯ the code column
-has, over the two verbs that mean anything before a project exists (*Pick from GitHub…*,
-*Clone into Repositories Folder*), and it lists the code this library already plans;
-picking one of those brings that project's checkout with it through `known_checkout`, the
-seam the Open Project wizard already had for the same question. The two modes share the
-verbs rather than paralleling them — `_code_url`, `_set_repository` and `_record_checkout`
-answer into the form's fields or into the model, so neither mode can grow a behaviour the
-other lacks, and the checkout that disagrees with the repository named is asked about in
-both.
+**Create mode keeps its form, and it asks where the code is.** With nothing on disk yet
+there is no log to read, so the fields *are* the answer: the plan repository with its
+`RepoPicker`, the folder, and then the code repository — a question nobody can skip,
+because skipping it silently is what once made a plan in a plan repository read as its own
+code. `code_choice.py` is a plain combo box with nothing current until it is answered: the
+code repositories this library already plans first (picking one brings its checkout
+along, through the checkouts map every project shares), then the two ways to name another —
+*From GitHub…* over the listing `gh` knows, and *A folder on this computer…*, which reads
+the repository, the position and the checkout off one picked folder through
+`located_folder` — and then *No code repository yet*, which is an answer too: the project
+is created unset and says so everywhere until the code is recorded. Create is refused in
+words until one is picked. The combo is a **view of the draft**, never a second record:
+it shows the draft's primary code row, and the Locations table below edits the same draft,
+so a code row added or removed there moves it, and *No code repository yet* drops the
+draft's code rows. The two modes still share the verbs rather than paralleling them —
+`_code_url`, `_set_repository` and `_record_checkout` answer into the draft or into the
+model, so neither mode can grow a behaviour the other lacks. It is a combo and not a
+radio list or a strip of buttons because the list is the library's, and grows with it.
 
 **A plan repository holds several projects for several people.** Its root carries the
 `.dplanner` index (`FORMAT.md`), which is what lets *Open Project…* and `dplanner library
@@ -4302,7 +4336,8 @@ folder*, asked for once from the likely candidates on disk and kept per user.
 
 **Moving a plan is a storage operation that rewrites the working tree**, and so is
 synchronous (below): `domain/relocate.move_project` copies the plan entries, rewrites the
-meta with the code repository it left as the first code row, maintains both indexes, removes the source,
+meta — with the code repository it left as the first code row when the plan was legacy,
+and nothing added for an unset one — maintains both indexes, removes the source,
 re-points the store and commits on both sides, best-effort; the window pauses autosave
 around it and reloads after, because every view that cached a directory is rebuilt rather
 than patched. It is the one place colocation is *refused* rather than warned about: moving

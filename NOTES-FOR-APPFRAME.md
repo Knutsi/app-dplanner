@@ -4357,3 +4357,15 @@ template applied over a refused toggle skips it, as it skips any disabled action
 **Upstream?** Yes: it is the template's own disabled-with-its-reason rule, given a seam on
 the one helper every aspect toggle goes through.
 
+
+## 56. From F22: whether a plan repository names a project
+
+### `core/storage/pointer.py` — `indexed(path)` (new)
+
+**What.** Whether the `.dplanner` index at `path`'s repository root lists a directory that
+is, or holds, `path`; `add_to_index` asks it instead of repeating the check inline.
+**Why.** A project with no code row is read two ways — code not named yet when a plan
+repository lists it, the older colocated shape when nothing does — and the domain's
+repository facts ask this to tell them apart. It lives beside the index's other readers
+because `domain/` and `cli/` both need it and only `core/` sits below both. **Upstream?**
+No: the index is DPlanner's.

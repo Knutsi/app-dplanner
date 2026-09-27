@@ -225,9 +225,12 @@ else's `.gitattributes` is a bigger intrusion than this needs.
 **Two keys on the project say where it stands with its code.** `"locations"` is the table
 of places the project is about — rows of `{"id", "role", "repository", "path", "ref",
 "label"}`, absence encoding the default: no `path` is the root, no `ref` the repository's
-default branch, no `label` the only row of its role, and no `locations` at all a project
-that plans the repository it sits in — the older shape, warned about by lint, the briefing
-and the window until it is moved or accepted. The `id` (`l1`, `l2`, …) is minted per
+default branch, no `label` the only row of its role, and no code row at all one of two
+things, told apart by the `.dplanner` index below: a project the index lists has its code
+**not set yet**, and nothing reads the plan repository as its code; one it does not list —
+a project that is its repository's root, or one from before the index — plans the
+repository it sits in, the older shape, warned about by lint, the briefing and the window
+until it is moved or accepted. The `id` (`l1`, `l2`, …) is minted per
 project and kept while the row is edited, because a spec source and a step's workplace
 name a row by it; `role` is a word from the registry — the domain's `code`, and `spec` and
 `reporting` from the modules that act on them — and **a role this build does not
@@ -235,8 +238,8 @@ know is loaded and written back untouched**, the edge-kind rule; the first `code
 *the* code repository every older reader means. `"colocation": "accepted"` is the
 acceptance: the people on the project decided the plan stays inside its code on purpose,
 and every warning stands down. Both are set by the Project dialog and the `dplanner
-location` and `project set` verbs; `project move` adds the first code row and drops the
-second as it goes. Format 3 moved the earlier `"repository"` string into the first row.
+location` and `project set` verbs; `project move` adds the first code row to a plan of
+the older shape and drops the second as it goes. Format 3 moved the earlier `"repository"` string into the first row.
 
 **Edges are keyed by kind**: `"edges": {"requires": ["<step id>", …]}`. One line per edge
 rather than an object per edge, and the direction cannot be read the wrong way round —

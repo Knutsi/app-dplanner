@@ -240,9 +240,11 @@ class Project(Node):
         # go — each a role, a repository as git names its remote, and a position inside it
         # (`domain/locations.py`). Shared, so a colleague opening the plan knows which
         # code it is about; the first `code` row is *the* code repository every older
-        # reader means. An empty table is the older shape: the plan's own repository *is*
-        # the code repository. Where the plan itself lives is never stored; it is the
-        # repository enclosing the project directory.
+        # reader means. A table with no code row is the older shape — the plan's own
+        # repository *is* the code repository — unless a plan repository's index lists the
+        # project, where it is code not named yet (`domain/repositories.py`). Where the
+        # plan itself lives is never stored; it is the repository enclosing the project
+        # directory.
         self.locations: tuple[Location, ...] = tuple(locations)
         # "accepted" once the people on this project have decided the plan stays inside
         # its code repository; "" means warn. `domain/repositories.py` reads both.

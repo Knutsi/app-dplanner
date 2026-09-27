@@ -22,18 +22,20 @@ A pull request row names the step that carries it, when one does — the github 
 record, looked up by the composition root — and activating the row opens the PR. Where
 the plan has no repository of its own the plan column offers *Set up a plan repository…*
 instead of a log: its history *is* the code's, and showing the same commits twice would
-say they were apart. Cloning, publishing and creating on GitHub run in a second task body,
+say they were apart. A plan whose code is not set yet shows its own history and an empty
+code column. Cloning, publishing and creating on GitHub run in a second task body,
 and their outcome lands in the model on the GUI thread through one ``_done`` signal.
 
 *File ▸ New Project…* is the same dialog in **create mode**: a form, because there is no
 history yet to read — the name, the summary, then the plan repository, the folder inside
-it, the code repository and its checkout as captioned blocks, and Create as the primary,
-refused in words until the plan has a home. **Both repositories are picked rather than
-typed**, and each field carries the ⋯ of the other ways in: the plan's is the
-:class:`~dplanner.modules.projects.repo_picker.RepoPicker`, the code's is a list of what
-this library already plans over *Pick from GitHub…* and *Clone into Repositories Folder* —
-and naming code another project here plans brings that project's checkout with it, because
-a second plan for one repository needs no second clone. It answers a
+it and the code repository as captioned blocks over the Locations table's draft, and
+Create as the primary, refused in words until the plan has a home and the code question an
+answer. **Both repositories are picked rather than typed**: the plan's through the
+:class:`~dplanner.modules.projects.repo_picker.RepoPicker`, the code's through a
+:class:`~dplanner.modules.projects.code_choice.CodeChoice` — what this library already
+plans, *From GitHub…*, *A folder on this computer…* or *No code repository yet* — and
+naming code another project here plans brings that project's checkout with it, because a
+second plan for one repository needs no second clone. It answers a
 :class:`NewProjectSpec`; the module seeds the project and connects it, so the dialog writes
 nothing into the library.
 """
@@ -841,9 +843,9 @@ class ProjectDialog(DialogFrame):
         QDesktopServices.openUrl(QUrl(location.repository))
 
     def _choose_location_checkout(self, location: Location) -> None:
-        root = self._ask_checkout()
-        if root is not None:
-            self._record_checkout(root, location.repository)
+        found = self._ask_folder()
+        if found is not None:
+            self._record_checkout(found.root, location.repository)
 
     def _clone_location(self, location: Location) -> None:
         self._clone(location.repository)
@@ -1104,9 +1106,10 @@ class ProjectDialog(DialogFrame):
         about — silently keeping either answer would leave the two disagreeing — and it is
         the same question in both modes, answered into the field or into the library file.
         """
-        root = self._ask_checkout()
-        if root is None:
+        found = self._ask_folder()
+        if found is None:
             return
+        root = found.root
         self._record_checkout(root)
         origin = origin_url(root)
         named = self._code_url()
@@ -1122,15 +1125,10 @@ class ProjectDialog(DialogFrame):
             return
         self._set_repository(origin)
 
-    def _ask_checkout(self) -> Path | None:
-        """A checkout on this machine: the repository root enclosing whatever folder of
-        it was picked, refused in words when the folder is in no repository."""
-        found = self._ask_folder()
-        return found.root if found is not None else None
-
     def _ask_folder(self) -> LocatedFolder | None:
-        """A folder on this machine, read as a location — its repository, that checkout's
-        root and the folder's position — refused in words when it is in no repository."""
+        """A folder on this machine, read as a location — its repository, the root of the
+        checkout it is in and the folder's position there — refused in words when it is in
+        no repository."""
         start = repositories_folder() or Path.home()
         chosen = QFileDialog.getExistingDirectory(self, "Code Checkout", str(start))
         if not chosen:
@@ -1344,7 +1342,7 @@ def _code_empty_text(facts: RepositoryFacts | None) -> str:
     if facts is None:
         return ""
     if facts.state == UNSET:
-        return "No code repository yet — set it from the ⋯ below."
+        return "No code repository yet."
     if facts.repository and facts.checkout is None:
         return "Not checked out on this machine — choose the checkout, or clone it."
     if not facts.repository and facts.plan_root is None:

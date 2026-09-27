@@ -504,8 +504,15 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
         )
     )
     services.repo.set_checkout(CODE_URL, code)
+    # Listed in the plan repository with no code named: unset.
     satellite = services.repo.attach(seed_project(workspace / "satellite", "Satellite"))
     services.document.add_child(services.document.id, satellite)
+    # A plan kept in a folder of the code it plans: colocated, and warned about.
+    quick_reg = services.repo.attach(seed_project(code / "planning", "Quick-reg"))
+    services.document.add_child(services.document.id, quick_reg)
+    services.undo.push(
+        SetFieldCommand(quick_reg.id, "locations", (Location("l1", CODE.id, CODE_URL),))
+    )
     settle(app)
     repos = fake_repositories(services, plans)
     checkouts = CheckoutService(
@@ -545,8 +552,10 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
     project.show_project(discovery.id)
     framed(project, SETTINGS_SIZE, app)
     save(project, out, "project-settings", theme, app)
-    project.show_project(satellite.id)
+    project.show_project(quick_reg.id)
     save(project, out, "project-colocated", theme, app)
+    project.show_project(satellite.id)
+    save(project, out, "project-unset", theme, app)
     discard(project)
 
     creating = ProjectDialog(
@@ -560,10 +569,12 @@ def render_session(app: QApplication, theme: Theme, out: Path, home: Path) -> No
         mode=CREATE,
         parent=services.window,
     )
-    (plans / "alpha-search").mkdir()
     creating.name_edit.setText("Alpha Search")
     framed(creating, CREATE_SIZE, app)
     save(creating, out, "project-create", theme, app)
+    assert creating.code_choice is not None
+    creating.code_choice.pick("acme/widget")
+    save(creating, out, "project-create-code", theme, app)
     discard(creating)
 
     # -- one location, asked for: the repositories gh knows listed, a position to browse ------

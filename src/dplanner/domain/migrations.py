@@ -24,7 +24,8 @@ the project — one string, the code repository's remote — became the first ``
 ``"locations"`` (``domain/locations.py``), so a project can name several repositories,
 each with a role and a position. A ``node`` hook, because the old key is read off the raw
 dict the model no longer has a field for; a project with no ``repository`` gets no row,
-and still reads as the older shape.
+and reads as it did — the older shape, or, listed in a plan repository's index, code not
+named yet.
 """
 
 from pathlib import Path

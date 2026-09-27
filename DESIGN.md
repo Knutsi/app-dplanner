@@ -833,9 +833,10 @@ Dialogs:
   its own and built from `settings_page` and `block` — captions over fields, the standing
   explanations behind the caption's glyph.
 - *(done — S16)* `ProjectDialog` — Close alone in settings mode; create mode a form of
-  captioned blocks whose Create is refused in words, both repository fields carrying the
-  `⋯` of the ways in beside them; what a request came to in the footer's status slot, and
-  the plan column's set-up offer the verb of an `EmptyState`.
+  captioned blocks whose Create is refused in words, the plan repository carrying the `⋯`
+  of the ways in beside it and the code repository a plain combo with nothing current
+  until answered (F22); what a request came to in the footer's status slot, and the plan
+  column's set-up offer the verb of an `EmptyState`.
 - *(done — S16)* `OpenProjectDialog`, `MovePlanDialog`, `RepositoriesFolderDialog`,
   `GhRepoListDialog` — on the frame; the repository picker's four glyph buttons one ⋯
   menu and its note a `StatusLine`; the GitHub list captioned, its listing in the status

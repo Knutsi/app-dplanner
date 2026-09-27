@@ -9,7 +9,9 @@ while its transaction flushes what the move marked.
 What moves is the plan, ``PLAN_ENTRIES``: ``project.dproj``, ``modules/`` and ``steps/``,
 module file areas included, so specs, images and attachments travel. What is written into
 the moved ``project.dproj`` is the one fact the plan needs from then on — the code
-repository it came out of, as git names it. What stays behind, on purpose: the plan's
+repository it came out of, as git names it — for a plan of the older shape; a plan a plan
+repository held with no code named leaves a repository that was never its code, and moves
+on with nothing added. What stays behind, on purpose: the plan's
 history, which was the code's history (the target starts at *Add «title»*), and the
 worktrees under the code checkout, which are code. Both repositories are committed, scoped
 to exactly what changed in each; a commit that cannot be made — no git identity, say — is

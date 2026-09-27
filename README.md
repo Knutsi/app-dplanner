@@ -132,7 +132,9 @@ The library file lists your projects and lives per user (`$DPLANNER_LIBRARY` als
 one). A plan lives in a **plan repository** — a git repository holding several projects,
 listed in its `.dplanner` index — and records the **code repository** it is about, so an
 agent works in the code and every `dplanner` call reaches the plan. *File ▸ New Project…*
-starts one in a plan repository you pick, initialise or clone; *Open Project…* is a wizard
+starts one in a plan repository you pick, initialise or clone, and asks which code it is
+about — one this library already plans, one on GitHub, a folder on this computer, or *No
+code repository yet*, which leaves the code to record later; *Open Project…* is a wizard
 over the two ways into a library — a **project link** somebody sent you, or a plan
 repository browsed for the projects you work on; *Project ▸ Settings…* is one column per
 repository — its log and open pull requests over what the repository is and where it is on
@@ -426,7 +428,8 @@ src/dplanner/
 │   ├── __init__.py          THE COMPOSITION ROOT — read this to know the application
 │   ├── library/             which library: File ▸ New/Open Project Library, the title; `library …` verbs
 │   ├── projects/            the Projects folder in the index, the project and `location` verbs, New
-│   │                        Project…, Open Project… (link, browse, then the Repositories page), the Project
+│   │                        Project… (its code question: code_choice.py), Open Project… (link,
+│   │                        browse, then the Repositories page), the Project
 │   │                        dialog (the Locations table over the role registry, a log column per
 │   │                        repository), the location dialog (location_dialog.py), the Repositories
 │   │                        card, Move Plan, the repositories folder and the clone policy
