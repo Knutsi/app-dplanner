@@ -69,6 +69,7 @@ def test_showing_a_step_reveals_the_aspect_tabs(services, project, panel):
         "Tests",
         "Covers",
         "Agent",
+        "Review",
         "Feature",
         "Milestone",
         "GitHub",
@@ -166,6 +167,7 @@ def test_the_bar_words_the_templates_left_and_glyphs_every_toggle_right(services
         "Milestone",
         "Feature",
         "Agent",
+        "Review",
         "Check",
         "Wait",
     ]

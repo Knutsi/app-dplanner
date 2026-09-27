@@ -7,6 +7,8 @@
         --out docs/screenshots/s16-stack-one-tall-card
     uv run python scripts/render_graph_editor.py --auto-progress \
         --out docs/screenshots/f11-auto-progress
+    uv run python scripts/render_graph_editor.py --review \
+        --out docs/screenshots/f12-automatic-review
 
 What S7 reworked: the strip of verbs over the canvas as glyphs in named bands, folding
 whole bands into its ``…`` menu; the *Find* picker, which opens on the plan's landmarks
@@ -18,9 +20,10 @@ is under it; since F15, with ``--contract``, Divide's dropdown offering Contract
 contract held mid-drag; since S16, with ``--stacks``, a stacked chain drawn as a column on
 the canvas and as a frame in the report; since F11, with ``--auto-progress``, parallel work
 handed to a step that collects it: the doubled links, and the arrow's menu with the toggle
-on. A whole application is built over a throwaway library — the tab is the tab host's, so
-nothing here hand-wires a surface the window would build differently — and torn down per
-theme.
+on; since F12, with ``--review``, a step and its review, the link into the review doubled by
+rule and its menu's toggle ticked and greyed. A whole application is built over a throwaway
+library — the tab is the tab host's, so nothing here hand-wires a surface the window would
+build differently — and torn down per theme.
 """
 
 import argparse
@@ -75,6 +78,9 @@ from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
 from dplanner.modules.step_check.aspect import write as check_write
 from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
 from dplanner.modules.step_milestone.aspect import write as milestone_write
+from dplanner.modules.step_review.aspect import MODULE_ID as REVIEW_ID
+from dplanner.modules.step_review.aspect import ReviewSettings
+from dplanner.modules.step_review.aspect import write as review_write
 from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
 from dplanner.modules.step_status.aspect import read as status_for
 from dplanner.modules.step_status.aspect import write as status_write
@@ -150,6 +156,13 @@ ROUND = (
     ("Merge the import round", (420.0, -5.0), ()),
 )
 ROUND_SIZE = (1100, 560)
+# F12: a step, its review, and what follows the review — never the step directly.
+REVIEWED = (
+    ("Build the parser", (0.0, 0.0), "ready-for-review", False),
+    ("Review the parser", (340.0, 0.0), "in-progress", True),
+    ("Ship the parser", (680.0, 0.0), "", False),
+)
+REVIEW_SIZE = (1100, 480)
 
 # A line of work that kept growing, stacked (S16): a chain in, three steps as one tall card,
 # and the milestone after it — placed by the ambient layout, which folds the stack like
@@ -563,6 +576,70 @@ def render_stacks(app: QApplication, theme: Theme, out: Path, workspace: Path) -
     discard(page)
 
 
+def render_review(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """A step and its review: the link into the review doubled though nobody flagged it,
+    and that arrow's right-click with *Auto-progress* ticked and greyed, saying why."""
+    QSettings().clear()
+    apply_theme(app, theme)
+    library_file = workspace / f"review-library-{theme.name}.json"
+    create_library(library_file)
+    init_repo(workspace)
+    session = new_session()
+    assert session.open_initial(library_file)
+    services = session.services
+    assert services is not None
+    services.debounce.set_immediate(True)
+    library = services.document
+
+    directory = seed_project(workspace / f"review-{theme.name}", "Parser")
+    project = services.repo.attach(directory)
+    library.add_child(library.id, project)
+    made = []
+    for title, (x, y), status, review in REVIEWED:
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(library)
+        SetModuleDataCommand(step.id, POSITION_KEY, write_position(x, y)).redo(library)
+        library.set_text(step.id, "step_description", f"{title}, in full.")
+        SetModuleDataCommand(step.id, "estimation", estimate_write(0.25)).redo(library)
+        SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
+        if status:
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+        if review:
+            SetModuleDataCommand(step.id, REVIEW_ID, review_write(ReviewSettings())).redo(library)
+            SetModuleDataCommand(step.id, AGENT_RUN_ID, agent_run_write("working")).redo(library)
+        made.append(step.id)
+    work, review_id, ship = made
+    SetEdgesCommand(review_id, "requires", [work]).redo(library)
+    SetEdgesCommand(ship, "requires", [review_id]).redo(library)
+
+    tab = services.tabs.open("project", project.id)
+    assert isinstance(tab, ProjectActivity)
+    page = tab.widget
+    page.resize(*REVIEW_SIZE)
+    page.show()
+    tab.frame()
+    settle(app)
+    # The right-click first, while the tab is the tab host's current one and publishes.
+    arrow = tab._scene._edges[EdgeRef(waiter=review_id, kind="requires", source=work)]
+    menu = tab.context_menu(tab._view.mapFromScene(arrow.path().pointAtPercent(0.5)))
+    menu.popup(QPoint(0, 0))
+    save(menu, out, "menu-review-arrow", theme, app)
+    menu.hide()
+    discard(menu)
+
+    tab._scene.select_steps([])
+    page.setParent(None)
+    page.resize(*REVIEW_SIZE)
+    page.show()
+    tab.frame()
+    tab._scene.advance_rings()
+    tab._scene.advance_rings()
+    save(page, out, "pair", theme, app)
+    page.setParent(None)
+    session.close()
+    discard(page)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory for the PNGs")
@@ -581,6 +658,9 @@ def main(argv: list[str]) -> int:
         "--auto-progress",
         action="store_true",
         help="only a round of parallel work and the step that collects it (F11)",
+    )
+    parser.add_argument(
+        "--review", action="store_true", help="only a step and its review (F12), nothing else"
     )
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -605,6 +685,9 @@ def main(argv: list[str]) -> int:
                 continue
             if args.auto_progress:
                 render_auto_progress(app, theme, args.out, Path(tmp))
+                continue
+            if args.review:
+                render_review(app, theme, args.out, Path(tmp))
                 continue
             render(app, theme, args.out, Path(tmp))
             render_cards(app, theme, args.out, Path(tmp))

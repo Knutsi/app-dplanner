@@ -499,6 +499,10 @@ src/dplanner/
 │   │                        their sources are ready for review, lands them and sets them done —
 │   │                        Graph ▸ Auto-progress on picked arrows, `dplanner auto-progress`,
 │   │                        `step add --auto-progress`, `auto-progress.waiter` lint
+│   ├── step_review/         a step whose agent reviews the step it waits on: the Type ▸ Review
+│   │                        toggle, the Review template and tab, `dplanner review` (the
+│   │                        conversation both sides drive, `review wait` included) and its
+│   │                        lint — the settings in `aspect.py`, the rounds in `rounds.py`
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll

@@ -331,6 +331,32 @@ agent's dev server, test runner and agent process carries the same names and pat
 yours, and one agent's `pkill -f vite` has stopped three others mid-task. Kill only by a
 pid your own shell started, on a port you chose.
 
+## Reviewing and being reviewed
+
+A **review step** (key `R`) is an agent step that reviews the step it waits on, its
+*subject*: `dplanner step add <project> 'Review the parser' --after S7 --agent --review`,
+then `dplanner review set R8 --agent codex --lens architecture --lens <a skill> --max-rounds
+2` for anything but the defaults (the default profile, architecture and security, three
+rounds). It may start as soon as its subject reads ready for review. The two sides talk
+through `dplanner review`, one verb per turn:
+
+- **Reviewing (R8):** `review start R8` opens a round. Read the subject's branch or PR, then
+  `review post R8 --file findings.md` — the subject is in progress again — and `review wait
+  R8` for the answer. When the work is right, `review approve R8`: the subject is done and
+  the review ready to merge, carrying its branch and PR. Past the cap `start` is refused:
+  approve, or `review escalate R8 --file why.md` hands it to a person. A review comments; the
+  subject's own agent changes its branch.
+- **Being reviewed (S7):** after `status set S7 ready-for-review`, run `review wait S7`. When
+  findings arrive, `review take S7`, do the work, push, and `review reply S7 --file
+  reply.md` — S7 is ready for review again — then wait again, until the review approves (S7
+  is done) or escalates.
+
+`review wait` reads the plan afresh until it is your turn, then exits 0 with what arrived;
+after nine minutes it exits 3, and you run it again. Give the tool call running it a longer
+timeout than that, or shorten the wait with `--timeout`. A collector sends work back to a
+source the same way: `review start C9 --to S4`, then `post` and `wait` with the same `--to`.
+`review show <step>` prints a conversation.
+
 ## Recording your work on GitHub
 
 A step can carry the branch its work lives on and the PR that lands it, so the plan always

@@ -38,6 +38,9 @@ class AutoProgressDeps:
     # may collect; the composition root knows what marks one.
     is_agent: Callable[[Step], bool]
     key_of: Callable[[Step], str]
+    # Why every link into this step auto-progresses whatever its flag says — a review takes
+    # its subject from review on — or "" for a step whose links are its flags alone.
+    always: Callable[[Step], str]
 
 
 class AutoProgressModule:
@@ -73,6 +76,13 @@ class AutoProgressModule:
                 enabled=False, checked=False, label=f"{LABEL} — only a requires link can"
             )
         for waiter in self._waiters(links):
+            why = self._deps.always(waiter)
+            if why:
+                name = self._deps.key_of(waiter) or f"“{waiter.title}”"
+                return ActionState(
+                    enabled=False, checked=self._all_on(links), label=f"{LABEL} — {name} {why}"
+                )
+        for waiter in self._waiters(links):
             if not self._deps.is_agent(waiter):
                 name = self._deps.key_of(waiter) or f"“{waiter.title}”"
                 return ActionState(
@@ -98,5 +108,11 @@ class AutoProgressModule:
         return [self._deps.library.step(step_id) for step_id in ids]
 
     def _all_on(self, links: Sequence[Edge]) -> bool:
+        """Whether every picked link auto-progresses — by its flag, or by the rule of the
+        step it leads into."""
         library = self._deps.library
-        return all(source in flagged(library.step(waiter)) for waiter, _kind, source in links)
+        return all(
+            source in flagged(step) or bool(self._deps.always(step))
+            for waiter, _kind, source in links
+            for step in (library.step(waiter),)
+        )

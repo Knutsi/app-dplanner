@@ -1,12 +1,13 @@
 ---
 paths:
-  - "src/dplanner/modules/{step_agent_instruction,step_agent_run,agent_claude,agent_codex,agent_opencode}/**"
+  - "src/dplanner/modules/{step_agent_instruction,step_agent_run,step_review,agent_claude,agent_codex,agent_opencode}/**"
   - "src/dplanner/domain/agents.py"
   - "tests/modules/test_agent_*.py"
+  - "tests/{cli,modules}/test_review*.py"
   - "scripts/render_briefing_size.py"
 ---
 
-# Agents — Run Agent, worktrees, run directories, usage, harnesses and profiles
+# Agents — Run Agent, worktrees, run directories, usage, harnesses, profiles and reviews
 
 - **Running an agent launches a peer, never a task.** *Run Agent* spawns a detached terminal
   the user owns — not a `TaskRunner` body, which would promise cancel and progress nobody
@@ -233,3 +234,24 @@ paths:
   the same verb again: `agent.run` seated with its arrow dropping this child
   (`StripVerb("agent.run", data_menu=RUN_MENU_ID)`), over the rows ticked in its check
   column — which are the published selection, so no context is constructed for it.
+- **A review is a conversation kept on the step that asks.** `modules/step_review/` holds
+  two aspect ids. `step_review` is the settings: agent, lenses and cap, with absence
+  meaning the default profile, architecture and security, and three rounds.
+  `review_rounds` is the ledger, on the review or on a collector. Rules:
+  - **The subject is the step a review `requires`, read off the graph and never stored.**
+    Lint `review.subject` names a review with none or several.
+  - **A round holds only texts and stamps.** Its state and whose turn it is are derived
+    (`rounds.turn`), never stored.
+  - **Who a step may talk to is whoever it takes work from review on** (the root's
+    `_auto_progresses`), so a collector sends work upstream with the same verbs and `--to`.
+    `approve` and `escalate` are a review's alone.
+  - **Every status a `review` verb moves goes through `status_command`**, the writer
+    `status set` uses, handed in as the root's `set_status`. A stopped status ends a claim
+    exactly as `status set` does.
+  - **The window posts nothing**: the Review tab is the settings and a read-only list.
+  - **`review wait` reads a fresh `LibraryStore` each poll and holds nothing between.** It
+    exits 0 on an arrival and 3 on a timeout, under an agent tool's ten minutes. Its loop is
+    `await_turn`, tested with an injected sleep and never a thread.
+
+  `ARCHITECTURE.md`'s *A review is a conversation kept on the step that asks* has the
+  reasoning.

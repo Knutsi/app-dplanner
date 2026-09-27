@@ -193,6 +193,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
+    from dplanner.modules.step_agent_instruction.profiles import default_profile
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
     from dplanner.modules.step_agent_run.usage import summary as usage_words
@@ -209,6 +210,11 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.step_properties.module import (
         StepPropertiesDeps,
         StepPropertiesModule,
+    )
+    from dplanner.modules.step_review.module import (
+        ReviewRoundsModule,
+        StepReviewDeps,
+        StepReviewModule,
     )
     from dplanner.modules.step_start.module import StepStartDeps, StepStartModule
     from dplanner.modules.step_status.aspect import read as step_status
@@ -752,6 +758,15 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                     frozenset({"agent.toggle", "description.toggle", "estimate.toggle"}),
                     tone="info",
                     glyph="spark",
+                ),
+                # A review is an agent step whose work is reading another's.
+                AspectTemplate(
+                    "Review",
+                    frozenset(
+                        {"agent.toggle", "review.toggle", "description.toggle", "estimate.toggle"}
+                    ),
+                    tone="info",
+                    glyph="review",
                 ),
                 AspectTemplate(
                     "Check", frozenset({"check.toggle", "description.toggle"}), glyph="shield"
@@ -1846,8 +1861,25 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 ],
                 is_agent=_is_agent_step,
                 key_of=_step_key,
+                # A link into a review auto-progresses by the review's rule, not its flag.
+                always=_always_progresses,
             )
         ),
+        # The Review tab and toggle; the conversation is the `review` verbs' to write.
+        StepReviewModule(
+            StepReviewDeps(
+                library=library,
+                undo=services.undo,
+                actions=services.actions,
+                sections=services.inspector_sections,
+                is_wait=_is_wait,
+                key_of=_step_key,
+                harnesses=agent_harnesses(),
+                default_profile=lambda: default_profile().name,
+            )
+        ),
+        # Declares the conversation's format only; the `review` verbs write it.
+        ReviewRoundsModule(),
         # A feature is a step: one a person would name and demo, gathering the work behind
         # it and stopping at the previous feature. The Covers tab that shows what it
         # gathers is still the tests module's.
@@ -2243,7 +2275,8 @@ def _default_briefing() -> "Briefing":
 def _step_key(step: "Step") -> str:
     """The step's readable key: a letter for what it is, the number the project dealt.
 
-    ``M`` a milestone, ``F`` a feature, ``C`` a check, ``W`` a wait, ``S`` any other step —
+    ``M`` a milestone, ``F`` a feature, ``C`` a check, ``W`` a wait, ``R`` a review, ``S``
+    any other step —
     the coarser claim wins, in the order the body tone ranks them, so a milestone that is
     also a feature reads ``M``. The letter is presentation over the stored number, which is why
     a step keeps its number when its kind changes and the letter follows. Read by the
@@ -2253,6 +2286,7 @@ def _step_key(step: "Step") -> str:
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_review.aspect import is_review
     from dplanner.modules.step_wait.aspect import is_wait
 
     if not step.number:
@@ -2266,6 +2300,8 @@ def _step_key(step: "Step") -> str:
         if check_read(step)
         else "W"
         if is_wait(step)
+        else "R"
+        if is_review(step)
         else "S"
     )
     return f"{letter}{step.number}"
@@ -2273,11 +2309,13 @@ def _step_key(step: "Step") -> str:
 
 def _step_kind(step: "Step") -> str:
     """What a step *is*, in one word, the coarser claim first — the same ranking as the key's
-    letter and the body tone: milestone, feature, check, wait, agent step, or nothing."""
+    letter and the body tone: milestone, feature, check, wait, review, agent step, or
+    nothing."""
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_review.aspect import is_review
     from dplanner.modules.step_wait.aspect import is_wait
 
     if milestone_read(step):
@@ -2288,6 +2326,8 @@ def _step_kind(step: "Step") -> str:
         return "check"
     if is_wait(step):
         return "wait"
+    if is_review(step):
+        return "review"
     if agent_enabled(step):
         return "agent"
     return ""
@@ -2369,11 +2409,13 @@ def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
 def _step_type_icons(step: "Step") -> tuple[str, ...]:
     """What kind of thing a step is, in the medallion vocabulary the canvas painted
     first: "tag" a milestone, "layers" a feature, "beaker" one carrying tests, "shield" a
-    check. The order table's title column reads the same answer, so a step is the same kind
-    everywhere. Who works it is :func:`_primary_glyph`'s, and a card says a thing once."""
+    check, "review" a review. The order table's title column reads the same answer, so a
+    step is the same kind everywhere. Who works it is :func:`_primary_glyph`'s, and a card
+    says a thing once."""
     from dplanner.modules.feature.aspect import is_feature
     from dplanner.modules.step_check.aspect import read as check_read
     from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.step_review.aspect import is_review
     from dplanner.modules.testing.aspect import enabled as test_enabled
 
     return (
@@ -2381,6 +2423,7 @@ def _step_type_icons(step: "Step") -> tuple[str, ...]:
         *(("layers",) if is_feature(step) else ()),
         *(("beaker",) if test_enabled(step) else ()),
         *(("shield",) if check_read(step) else ()),
+        *(("review",) if is_review(step) else ()),
     )
 
 
@@ -2492,10 +2535,20 @@ def _is_wait(step: "Step") -> bool:
 
 def _auto_progresses(waiter: "Step", source: "Step") -> bool:
     """Whether ``waiter`` may start once ``source`` is ready for review — the one answer
-    the frontier, Run Agent's gate, the canvas and every CLI mark read."""
+    the frontier, Run Agent's gate, the canvas and every CLI mark read: a flagged link, or
+    any link into a review."""
     from dplanner.modules.auto_progress.aspect import progresses
+    from dplanner.modules.step_review.aspect import reviews
 
-    return progresses(waiter, source)
+    return progresses(waiter, source) or reviews(waiter, source)
+
+
+def _always_progresses(step: "Step") -> str:
+    """Why every link into ``step`` auto-progresses whatever its flag says, or "" — the
+    review's rule, which the Edge menu's toggle shows checked and greyed."""
+    from dplanner.modules.step_review.aspect import TAKES_FROM_REVIEW, is_review
+
+    return TAKES_FROM_REVIEW if is_review(step) else ""
 
 
 def _is_agent_step(step: "Step") -> bool:
@@ -2503,6 +2556,40 @@ def _is_agent_step(step: "Step") -> bool:
     from dplanner.modules.step_agent_instruction.aspect import enabled
 
     return enabled(step)
+
+
+def _inherit_refs(subject: "Step", review: "Step") -> "Command | None":
+    """The command giving ``review`` the branch and PR of the step it approved — so the
+    review carries the PR's label into the merge — or None when there are none to carry."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
+    from dplanner.modules.github.aspect import read, write
+
+    refs = read(subject)
+    if refs is None:
+        return None
+    return SetModuleDataCommand(review.id, GITHUB_ID, write(refs), label="Inherit GitHub Refs")
+
+
+def _note_escalation(context: "CliContext", review: "Step", title: str, body: str) -> str:
+    """Keep what a person must decide as a handoff note on the escalated review — the note
+    a blocked step says why in — and answer its id. A retried verb finds the same note."""
+    from dplanner.modules.notes.log import Note, adding, check_label
+
+    note, command = adding(
+        context.library.project_of(review.id),
+        Note(
+            id="",
+            label=check_label("handoff"),
+            title=title,
+            body=body,
+            made=context.clock.today().isoformat(),
+            step=review.id,
+        ),
+    )
+    if command is not None:
+        context.apply(command)
+    return note.id
 
 
 def _note_reason(context: "CliContext", step: "Step", reason: str) -> tuple[str, bool]:
@@ -2576,8 +2663,16 @@ def _time_writers() -> "TimeWriters":
     return Writers(steps=(estimate, status, milestone, agent, wait), plan=(start,))
 
 
-# The status verbs that write one, each followed by the day's progress row.
-STATUS_WRITES = (("status", "set"), ("status", "clear"))
+# The status verbs that write one, each followed by the day's progress row — the review
+# verbs among them, since each moves a status too.
+STATUS_WRITES = (
+    ("status", "set"),
+    ("status", "clear"),
+    ("review", "post"),
+    ("review", "reply"),
+    ("review", "approve"),
+    ("review", "escalate"),
+)
 
 
 def _recording_status(
@@ -3100,17 +3195,18 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
 
     Assembled here because each policy lives in its owner's Qt-free half and no module may
     import another's; both the window's Paste/Duplicate and ``step duplicate`` read this
-    tuple. Six entries, on purpose: an id minted per project (a test's), the state of a
-    shell somebody is running and what its runs consumed, and the days a status was said
-    on — all facts about the original — a feature's passages, which were read into
-    *that* feature and are not a claim a copy may make, and the steps an auto-progress
-    entry names, which become their copies'. Everything else a step carries copies as it
-    is.
+    tuple. Seven entries, on purpose: an id minted per project (a test's), the state of a
+    shell somebody is running and what its runs consumed, the conversation a review held,
+    and the days a status was said on — all facts about the original — a feature's
+    passages, which were read into *that* feature and are not a claim a copy may make, and
+    the steps an auto-progress entry names, which become their copies'. Everything else a
+    step carries copies as it is.
     """
     from dplanner.modules.auto_progress.aspect import remap_for_paste
     from dplanner.modules.feature.aspect import drop_cites_for_paste
     from dplanner.modules.step_agent_run.aspect import forget_for_paste
     from dplanner.modules.step_agent_run.usage import forget_for_paste as forget_usage
+    from dplanner.modules.step_review.rounds import forget_for_paste as forget_rounds
     from dplanner.modules.step_status.aspect import forget_days_for_paste
     from dplanner.modules.testing.aspect import remint_for_paste
 
@@ -3118,6 +3214,7 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
         remint_for_paste,
         forget_for_paste,
         forget_usage,
+        forget_rounds,
         forget_days_for_paste,
         drop_cites_for_paste,
         remap_for_paste,
@@ -3245,6 +3342,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_description.aspect import read as description_read
+    from dplanner.modules.step_review import cli as review_cli
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.testing import cli as testing_cli
     from dplanner.modules.testing.aspect import enabled as test_enabled
@@ -3255,6 +3353,10 @@ def _lint_checks() -> tuple["LintCheck", ...]:
         *start_cli.lint_checks(),
         # Collecting is an agent's job: the agent aspect's reader, handed over.
         *auto_progress_cli.lint_checks(is_agent=_is_agent_step, key_of=_step_key),
+        # A review needs an agent, one subject and an agent this build knows.
+        *review_cli.lint_checks(
+            is_agent=_is_agent_step, key_of=_step_key, harnesses=agent_harnesses()
+        ),
         *description_cli.lint_checks(),
         *docs_cli.lint_checks(kinds=scopes),
         # An agent step is briefed by its description unless it carries a separate
@@ -3401,9 +3503,11 @@ def default_cli_commands(
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_milestone import cli as milestone_cli
     from dplanner.modules.step_order import cli as order_cli
+    from dplanner.modules.step_review import cli as review_cli
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.modules.step_status.aspect import status_command
     from dplanner.modules.step_ticket import cli as ticket_cli
     from dplanner.modules.step_wait import cli as wait_cli
     from dplanner.modules.testing import cli as testing_cli
@@ -3426,6 +3530,15 @@ def default_cli_commands(
     )
     if board is None:
         board = at_work_board()
+
+    def end_claim(context: "CliContext", step: "Step") -> bool:
+        return board.end(context.library.project_of(step.id).id, step.id)
+
+    def set_status(context: "CliContext", step: "Step", word: str) -> bool:
+        """A status written as `status set` writes it, ending a stopped step's claim."""
+        context.apply(status_command(step, word, today=context.clock.today()))
+        return word in status_cli.STOPPED and end_claim(context, step)
+
     commands = [
         *library_cli.commands(),
         # The step authors let `step add` author the step in the same call; the list
@@ -3437,6 +3550,7 @@ def default_cli_commands(
                 agent_cli.step_author(),
                 # After --after has made the links, and the agent aspect beside them.
                 auto_progress_cli.step_author(),
+                review_cli.step_author(),
                 estimation_cli.step_author(),
                 # The feature author carries the spec-passage flags: creating a feature
                 # *is* creating its step, so there is no verb of its own to put them on.
@@ -3477,9 +3591,7 @@ def default_cli_commands(
             is_agent=_is_agent_step,
             in_agent_shell=lambda: bool(agent_shell_marker()),
             note_reason=_note_reason,
-            end_claim=lambda context, step: board.end(
-                context.library.project_of(step.id).id, step.id
-            ),
+            end_claim=end_claim,
         ),
         *milestone_cli.commands(),
         *wait_cli.commands(),
@@ -3487,6 +3599,20 @@ def default_cli_commands(
         # owners' Qt-free readers.
         *auto_progress_cli.commands(
             is_agent=_is_agent_step, status_for=step_status, key_of=_step_key
+        ),
+        # A review talks to whoever it takes work from review on — the root's one answer —
+        # and moves their statuses through the writer `status set` uses, so a claim ends
+        # the same way whichever verb stopped the work. Approving carries the reviewed
+        # step's refs across; escalating keeps a note for a person.
+        *review_cli.commands(
+            auto_progresses=_auto_progresses,
+            status_for=step_status,
+            set_status=set_status,
+            inherit_refs=_inherit_refs,
+            note_escalation=_note_escalation,
+            is_wait=_is_wait,
+            key_of=_step_key,
+            harnesses=agent_harnesses(),
         ),
         # A feature's passages are anchored in the spec documents by the spec module's
         # one derivation, handed across here — `cite`, `reanchor`, `step add --feature`
@@ -3695,6 +3821,8 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.step_check import aspect as check
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_milestone import aspect as milestone
+    from dplanner.modules.step_review import aspect as review
+    from dplanner.modules.step_review import rounds as review_rounds
     from dplanner.modules.step_start import aspect as start
     from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
@@ -3714,6 +3842,8 @@ def aspect_specs() -> list["AspectSpec"]:
         feature.SPEC,
         github.SPEC,
         milestone.SPEC,
+        review.SPEC,
+        review_rounds.SPEC,
         spec.SPEC,
         start.SPEC,
         status.SPEC,

@@ -27,7 +27,6 @@ from collections.abc import Callable
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
-from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
 from dplanner.domain.progression import (
@@ -38,12 +37,11 @@ from dplanner.domain.progression import (
     REVIEW_AND_MERGE,
 )
 from dplanner.modules.step_status.aspect import (
-    MODULE_ID,
     NO_STATUS_ON_A_WAIT,
     PENDING,
     STATUSES,
     read,
-    write,
+    status_command,
 )
 
 # The statuses that say nobody is working a step any more: setting one ends its claim.
@@ -150,9 +148,7 @@ def _say(
 ) -> None:
     """Write ``status``, and say so — naming the note a ``--because`` was kept as, or the one
     already there that it did not replace, and the agent's claim it ended."""
-    previous = step.module_data.get(MODULE_ID)
-    entry = write(status, today=context.clock.today(), previous=previous)
-    context.apply(SetModuleDataCommand(step.id, MODULE_ID, entry))
+    context.apply(status_command(step, status, today=context.clock.today()))
     data = (
         {"step": step.id, "status": status}
         | ({"note": note} if note else {})
