@@ -1,36 +1,41 @@
-"""Reopen tabs: the window comes back to the work that was open in it.
+"""Reopen tabs: the window comes back to the work that was open in it, and remembers what
+was kept lately.
 
 A tab is identified by its activity URI and by nothing else, which is what makes this safe
-to persist. Restoring is `parse_activity_uri` followed by the same `tabs.open(kind, target)`
-call a menu item makes — so a remembered tab is reopened by the one path that opens
-anything, and no surface grows a second, restore-only way in.
+to persist. Restoring is ``tabs.reopen(uri, exists)`` — `TabHost` parses the address and hands
+it to the same ``open(kind, target)`` a menu item calls, so a remembered tab is reopened by
+the one path that opens anything, and no surface grows a second, restore-only way in.
 
 **Everything that can be stale is checked, and a stale entry simply does not reappear.**
-Three things can have changed since the list was written: the *kind* may be gone from this
-build (`tabs.can_open`), the *target* may be gone from the library (the `exists` callback —
+The kind may be gone from this build, the target from the library (the `exists` callback —
 the composition root hands over `Library.has`, so this module never learns what a project
-is), and the factory may refuse for a reason neither test could see, which is caught and
-logged. A window that opens with fewer tabs than it had is the correct degradation; one
-that refuses to start is not, and that is why the last guard is deliberately broad.
+is), and the factory may refuse for a reason neither test could see. `TabHost.reopen` asks
+all three, because Home's recent list asks the same questions of the same addresses.
 
-The list is per library — a tab list is only true of the library it was written in — while
-the on/off preference is per user. :mod:`dplanner.framework.user_config` has the two scopes
-and why they are different.
+**The recent tabs are kept here, beside the open ones**, though Home is what lists them. A
+tab is recent when the person *kept* it — made it current, and not as a preview — and this
+module is the one that can tell that from a reopen: it does the reopening, behind the
+``_restoring`` guard, so the tabs it brings back are not taken for the person's choice.
+
+Both lists are per library — a tab list is only true of the library it was written in —
+while the on/off preference is per user. :mod:`dplanner.framework.user_config` has the two
+scopes and why they are different.
 """
 
-import logging
 from collections.abc import Callable
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
-from dplanner.framework.context import parse_activity_uri
+from dplanner.core.signals import Signal
 from dplanner.framework.settings_registry import SettingsSection, SettingsSectionRegistry
-from dplanner.framework.tabs import TabHost
+from dplanner.framework.tabs import KeptTab, TabHost
 from dplanner.framework.user_config import get_scoped, set_scoped
 from dplanner.modules.reopen_tabs.settings_page import MODULE_ID, build_page, reopen_wanted
 
-logger = logging.getLogger(__name__)
-
 OPEN_KEY = "open_tabs"
+RECENT_KEY = "recent_tabs"
+# About as many as a person scans without searching; the rest were not really recent.
+RECENT_CAP = 10
 
 
 @dataclass(frozen=True)
@@ -51,6 +56,9 @@ class ReopenTabsModule:
         self._deps = deps
         # Reopening opens tabs, and opening a tab is what triggers a save.
         self._restoring = False
+        self._recent = _stored_recent(deps.scope)
+        # The recent list changed — a tab was kept, retitled or found stale.
+        self.recent_changed: Signal[()] = Signal()
 
     def register(self) -> None:
         deps = self._deps
@@ -63,6 +71,11 @@ class ReopenTabsModule:
         deps.tabs.activity_changed.connect(lambda _activity: self._remember())
         if reopen_wanted():
             self._reopen()
+
+    def recent(self) -> list[KeptTab]:
+        """The tabs kept lately, newest first — as recorded; a reader asks
+        ``tabs.live_address`` which of them still open."""
+        return list(self._recent)
 
     # -- remembering ---------------------------------------------------------------------------
 
@@ -82,6 +95,7 @@ class ReopenTabsModule:
             return
         tabs = self._deps.tabs
         current = tabs.current_activity()
+        self._remember_recent()
         set_scoped(
             self._deps.scope,
             MODULE_ID,
@@ -95,6 +109,33 @@ class ReopenTabsModule:
             },
         )
 
+    def _remember_recent(self) -> None:
+        """Put the current tab first if the person kept it, and write the list down.
+
+        Titles are the tabs' own, refreshed for every tab still open, so a list read after
+        the tab has closed says what the tab last said; the stamp is when the tab was last
+        the one in front. An address that no longer opens is dropped here, so it cannot hold
+        one of the few places.
+        """
+        tabs = self._deps.tabs
+        recent = list(self._recent)
+        current = tabs.current_activity()
+        if current is not None and not tabs.is_preview(current):
+            now = datetime.now(UTC).isoformat(timespec="seconds")
+            recent = [KeptTab(current.uri, "", now)]
+            recent += [entry for entry in self._recent if entry.uri != current.uri]
+        titles = {activity.uri: tabs.tab_title(activity) for activity in tabs.activities()}
+        recent = [
+            entry._replace(title=titles.get(entry.uri) or entry.title)
+            for entry in recent
+            if tabs.live_address(entry.uri, self._deps.exists) is not None
+        ][:RECENT_CAP]
+        if recent == self._recent:
+            return
+        self._recent = recent
+        set_scoped(self._deps.scope, MODULE_ID, RECENT_KEY, [entry._asdict() for entry in recent])
+        self.recent_changed.emit()
+
     # -- reopening -----------------------------------------------------------------------------
 
     def _reopen(self) -> None:
@@ -105,27 +146,26 @@ class ReopenTabsModule:
         current = stored.get("current")
         self._restoring = True
         try:
+            tabs, exists = self._deps.tabs, self._deps.exists
             for uri in open_uris if isinstance(open_uris, list) else []:
-                self._open(uri)
+                tabs.reopen(uri, exists)
             # Opening it again is a plain focus, so the tab the user was on is current
             # without this module knowing anything about how focus works.
-            if isinstance(current, str):
-                self._open(current)
+            tabs.reopen(current, exists)
         finally:
             self._restoring = False
 
-    def _open(self, uri: object) -> None:
-        parsed = parse_activity_uri(uri) if isinstance(uri, str) else None
-        if parsed is None:
-            return
-        kind, target = parsed
-        if not self._deps.tabs.can_open(kind):
-            return  # A feature this build no longer has.
-        if target is not None and not self._deps.exists(target):
-            return  # The project it was showing is gone.
-        try:
-            self._deps.tabs.open(kind, target)
-        except Exception:
-            # Deliberately broad: a surface that cannot rebuild itself must cost the user
-            # one tab, never the launch.
-            logger.warning("could not reopen %s", uri, exc_info=True)
+
+def _stored_recent(scope: str) -> list[KeptTab]:
+    """The recent list as last written; anything unreadable reads as nothing."""
+    stored = get_scoped(scope, MODULE_ID, RECENT_KEY, [])
+    recent: list[KeptTab] = []
+    for entry in stored if isinstance(stored, list) else []:
+        if isinstance(entry, dict) and isinstance(uri := entry.get("uri"), str):
+            title, at = entry.get("title"), entry.get("at")
+            recent.append(
+                KeptTab(
+                    uri, title if isinstance(title, str) else "", at if isinstance(at, str) else ""
+                )
+            )
+    return recent

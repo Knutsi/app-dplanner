@@ -9,6 +9,7 @@ ids, which is what makes a stale one harmless: a key naming no row restores noth
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QTreeWidgetItem
+from tests.index_helpers import click
 
 from dplanner.framework.context import ContextService
 from dplanner.framework.index_panel import IndexPanel, IndexSegment, IndexSegmentRegistry
@@ -20,7 +21,10 @@ SCOPE = "a-library"
 class StubSegment:
     """One folder of flat rows, keyed the way every segment keys its own."""
 
-    def __init__(self, root: QTreeWidgetItem, keys: tuple[str, ...]) -> None:
+    def __init__(
+        self, root: QTreeWidgetItem, keys: tuple[str, ...], heard: list[tuple[str, str]]
+    ) -> None:
+        self._heard = heard
         for key in keys:
             row = QTreeWidgetItem([key.title()])
             row.setData(0, Qt.ItemDataRole.UserRole, key)
@@ -31,12 +35,13 @@ class StubSegment:
         return ()
 
     def clicked(self, item):
-        pass
+        self._heard.append(("clicked", item.text(0)))
 
     def activated(self, item):
-        pass
+        self._heard.append(("activated", item.text(0)))
 
     def context_menu(self, item):
+        self._heard.append(("menu", item.text(0)))
         return None
 
     def dispose(self):
@@ -54,10 +59,13 @@ def build(app):
     dropped, PySide takes its tree items with it and the next line reads a deleted row."""
     opened = []
 
-    def open_one(*, scope=SCOPE, keys=("alpha", "beta")):
+    def open_one(*, scope=SCOPE, keys=("alpha", "beta"), heard=None):
         registry = IndexSegmentRegistry()
+        heard = [] if heard is None else heard
         registry.register(
-            IndexSegment(id="stub", label="Stub", factory=lambda root: StubSegment(root, keys))
+            IndexSegment(
+                id="stub", label="Stub", factory=lambda root: StubSegment(root, keys, heard)
+            )
         )
         panel = IndexPanel(registry, ContextService(), scope=scope)
         opened.append(panel)
@@ -117,3 +125,17 @@ def test_a_folder_that_is_not_in_this_build_keeps_what_it_had(build):
     stored = get_scoped(SCOPE, "index", "expanded", {})
     assert stored["gone"] == ["something"]
     assert stored["stub"] == ["alpha", "stub"]
+
+
+def test_the_folder_row_itself_is_its_segments_to_answer(build):
+    """A click, an activation and a right-click on a folder's own row reach its segment like
+    any other row's — the Home row is a folder with nothing under it, and the Projects
+    folder's right-click adds a project. Selection is the one thing a folder row never has."""
+    heard: list[tuple[str, str]] = []
+    panel = build(heard=heard)
+    folder = panel.tree.topLevelItem(0)
+    click(panel, folder)
+    panel.tree.itemActivated.emit(folder, 0)
+    assert panel.context_menu(folder) is None
+    assert heard == [("clicked", "Stub"), ("activated", "Stub"), ("menu", "Stub")]
+    assert panel.context_menu(None) is None  # Empty space under the last folder.

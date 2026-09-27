@@ -35,9 +35,18 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
-from PySide6.QtCore import QEvent, QObject, Qt
+from PySide6.QtCore import QEvent, QModelIndex, QObject, QPersistentModelIndex, Qt
 from PySide6.QtGui import QIcon, QMouseEvent
-from PySide6.QtWidgets import QMenu, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QMenu,
+    QStyle,
+    QStyledItemDelegate,
+    QStyleOptionViewItem,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dplanner.core.signals import Signal
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, ContextService
@@ -59,6 +68,12 @@ class IndexSegmentView(Protocol):
     The panel creates the folder item and hands it over; from then on the segment owns its
     contents. Every hook is optional in spirit — a segment with nothing to say returns
     nothing — but all five exist so the panel never has to guess.
+
+    **The folder's own row is one of the segment's rows.** A click, an activation and a
+    right-click on it reach these hooks like any other row's, so a segment that has nothing
+    to say about its folder ignores it — and one that has can answer: the Home row is a
+    folder with nothing under it, and the Projects folder's right-click adds a project.
+    Only selection skips it, because a folder row is not selectable.
     """
 
     def selection_nodes(self, items: Sequence[QTreeWidgetItem]) -> Sequence[ContextNode]:
@@ -144,6 +159,7 @@ class IndexPanel(QWidget):
         self._tree.setUniformRowHeights(True)
         self._tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
         self._tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._tree.setItemDelegate(_RowDelegate(self._tree))
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -246,7 +262,7 @@ class IndexPanel(QWidget):
 
     def _on_activated(self, item: QTreeWidgetItem, _column: int) -> None:
         owner = self._owner_of(item)
-        if owner is not None and item is not self._roots[owner]:
+        if owner is not None:
             self._views[owner].activated(item)
 
     def _on_clicked(self, item: QTreeWidgetItem, _column: int) -> None:
@@ -257,7 +273,7 @@ class IndexPanel(QWidget):
         ):
             return  # Building a multi-selection, not glancing at a row.
         owner = self._owner_of(item)
-        if owner is not None and item is not self._roots[owner]:
+        if owner is not None:
             self._views[owner].clicked(item)
 
     def _on_selection(self) -> None:
@@ -272,17 +288,34 @@ class IndexPanel(QWidget):
             nodes.extend(self._views[owner].selection_nodes(items))
         self._context.set_scope(SCOPE_SELECTION, tuple(nodes))
 
+    def context_menu(self, item: QTreeWidgetItem | None) -> QMenu | None:
+        """The right-click menu for ``item``, folder rows included — built, not shown, so the
+        menu a row offers can be read without the modal loop ``exec`` would start."""
+        owner = self._owner_of(item)
+        if item is None or owner is None:
+            return None
+        return self._views[owner].context_menu(item)
+
     def _on_context_menu(self, position: object) -> None:
         from PySide6.QtCore import QPoint
 
         assert isinstance(position, QPoint)
-        item = self._tree.itemAt(position)
-        owner = self._owner_of(item)
-        if item is None or owner is None or item is self._roots[owner]:
-            return
-        menu = self._views[owner].context_menu(item)
+        menu = self.context_menu(self._tree.itemAt(position))
         if menu is not None:
             menu.exec(self._tree.viewport().mapToGlobal(position))
+
+
+class _RowDelegate(QStyledItemDelegate):
+    """The stylesheet's rows, less Qt's focus frame — the rule every row primitive keeps
+    (``.claude/rules/shell-ui.md``'s *A picked row is one ground*). Left on, it drew a box
+    round the name of whichever row was current the moment the tree took the keyboard: the
+    top row, on a window that opens with no tab."""
+
+    def initStyleOption(  # noqa: N802 - Qt override
+        self, option: QStyleOptionViewItem, index: QModelIndex | QPersistentModelIndex
+    ) -> None:
+        super().initStyleOption(option, index)
+        option.state &= ~QStyle.StateFlag.State_HasFocus
 
 
 def _remembered(scope: str) -> dict[str, set[str]]:

@@ -25,9 +25,20 @@ place.
 else's tab titles and puts an accent edge on the pane you are in — only while there is more
 than one, since one pane is the whole window. Both cues are set in that one place so they
 cannot disagree; the edge is drawn by :class:`_Pane`, which exists for that and nothing else.
+
+**What shows while nothing is open is a backdrop, never a tab.** :meth:`TabHost.set_backdrop`
+hands the host a page it trades places with while it holds no tab. It is not an activity:
+``activities()`` stays empty, so every verb and every test that asks "is anything open?" gets
+the true answer, and there is no phantom tab for Close All to close.
+
+**A remembered tab is reopened through here.** :meth:`TabHost.reopen` is the one way a tab
+address written down earlier — a session's open tabs, a list of recent ones — comes back,
+because every such address can have gone stale in the same three ways.
 """
 
+import logging
 from collections.abc import Callable
+from typing import NamedTuple
 
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt
 from PySide6.QtGui import QFont, QPaintEvent
@@ -35,6 +46,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QSplitter,
+    QStackedWidget,
     QStyle,
     QStyleOptionTab,
     QStylePainter,
@@ -46,9 +58,28 @@ from PySide6.QtWidgets import (
 
 from dplanner.core.signals import Signal
 from dplanner.framework.activity import Activity
-from dplanner.framework.context import SCOPE_ACTIVITY, SCOPE_SELECTION, ContextService, activity_uri
+from dplanner.framework.context import (
+    SCOPE_ACTIVITY,
+    SCOPE_SELECTION,
+    ContextService,
+    activity_uri,
+    parse_activity_uri,
+)
+
+logger = logging.getLogger(__name__)
 
 type ActivityFactory = Callable[[str | None], Activity]
+
+
+class KeptTab(NamedTuple):
+    """A tab somebody kept, as it is remembered: its address, what its tab last said, and
+    when it was last in front of them (ISO-8601). A list of recent tabs is made of these,
+    and :meth:`TabHost.reopen` is how one comes back."""
+
+    uri: str
+    title: str
+    at: str
+
 
 # Three is enough to be useful and few enough that every pane stays wide enough to work in.
 MAX_GROUPS = 3
@@ -150,9 +181,10 @@ class TabHost(QWidget):
 
         self.activity_changed: Signal[Activity | None] = Signal()
         # Which tabs are open, or in what order, changed — opened, closed, moved between
-        # panes or dragged within one. Distinct from ``activity_changed``, which is only
-        # about which tab is *current*: closing a tab the user is not on changes the list
-        # and nothing else, and a listener that persists the list would never hear of it.
+        # panes or dragged within one, or a preview kept. Distinct from ``activity_changed``,
+        # which is only about which tab is *current*: closing a tab the user is not on
+        # changes the list and nothing else, and a listener that persists the list would
+        # never hear of it.
         self.tabs_changed: Signal[()] = Signal()
         # A tab was right-clicked, and it is now the current one. Carries where to pop up.
         # The host builds no menu of its own: what a tab offers is application vocabulary,
@@ -166,10 +198,14 @@ class TabHost(QWidget):
         self._groups: list[QTabWidget] = []
         self._watcher = _ActiveGroupWatcher(self)
         self._active = self._new_group(0)
+        # The groups, or the backdrop while there is nothing to put in them.
+        self._stack = QStackedWidget(self)
+        self._stack.addWidget(self._splitter)
+        self._backdrop: QWidget | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._splitter)
+        layout.addWidget(self._stack)
 
     # -- registration ------------------------------------------------------------------------
 
@@ -187,6 +223,24 @@ class TabHost(QWidget):
         asks without an exception for control flow.
         """
         return kind in self._factories
+
+    def set_backdrop(self, widget: QWidget) -> None:
+        """Show ``widget`` wherever the tabs would be, for as long as no tab is open.
+
+        The host takes it over and never closes it: it is the window's page, not a tab, so
+        it has no title, no preview state and no place in :meth:`activities`.
+        """
+        if self._backdrop is not None:
+            self._stack.removeWidget(self._backdrop)
+            self._backdrop.deleteLater()
+        self._backdrop = widget
+        self._stack.addWidget(widget)
+        self._show_backdrop()
+
+    def _show_backdrop(self) -> None:
+        backdrop = self._backdrop
+        showing = backdrop if backdrop is not None and not self._activities else self._splitter
+        self._stack.setCurrentWidget(showing)
 
     # -- opening ---------------------------------------------------------------------------
 
@@ -241,6 +295,41 @@ class TabHost(QWidget):
         self.tabs_changed.emit()
         return activity
 
+    def live_address(
+        self, uri: object, exists: Callable[[str], bool]
+    ) -> tuple[str, str | None] | None:
+        """The kind and target a remembered tab address still names, or None once it is stale.
+
+        Two things can have changed since it was written down: the *kind* may be gone from
+        this build, which the host answers, and the *target* may be gone from the model,
+        which ``exists`` answers for whoever knows what a target is.
+        """
+        parsed = parse_activity_uri(uri) if isinstance(uri, str) else None
+        if parsed is None:
+            return None
+        kind, target = parsed
+        if not self.can_open(kind) or (target is not None and not exists(target)):
+            return None
+        return parsed
+
+    def reopen(
+        self, uri: object, exists: Callable[[str], bool], *, preview: bool = False
+    ) -> Activity | None:
+        """Open a remembered tab address through :meth:`open`, or nothing when it is stale.
+
+        A factory may still refuse for a reason neither check could see, and that is caught
+        and logged — deliberately broadly: a surface that cannot rebuild itself must cost the
+        user one tab, never the launch or the page that offered it.
+        """
+        address = self.live_address(uri, exists)
+        if address is None:
+            return None
+        try:
+            return self.open(*address, preview=preview)
+        except Exception:
+            logger.warning("could not reopen %s", uri, exc_info=True)
+            return None
+
     def is_preview(self, activity: Activity) -> bool:
         return activity is self._preview
 
@@ -248,11 +337,13 @@ class TabHost(QWidget):
         """Make a preview permanent. A no-op for anything that is not the preview.
 
         Repaints itself: pinning the tab the user is already on changes nothing the
-        announcement would notice, and the italics must still go.
+        announcement would notice, and the italics must still go. And says so, since a tab
+        the user kept is a change to what is open that a listener remembering it must hear.
         """
         if self._preview is activity:
             self._preview = None
             self._paint_active()
+            self.tabs_changed.emit()
 
     def focus(self, activity: Activity) -> bool:
         """Make ``activity``'s tab current, in whichever group holds it. False if closed."""
@@ -471,7 +562,7 @@ class TabHost(QWidget):
             self._pin(activity)
         else:
             self._paint_active()
-        self.tabs_changed.emit()
+            self.tabs_changed.emit()
 
     def _close(self, group: QTabWidget, index: int) -> None:
         widget = group.widget(index)
@@ -541,6 +632,7 @@ class TabHost(QWidget):
         """Say what the user is now doing. The one path everything else learns through."""
         if self._suspended:
             return
+        self._show_backdrop()
         widget = self._active.currentWidget()
         activity = self._activities.get(widget) if widget is not None else None
         # Qt reports a drag-reorder as currentChanged with the same page still current, and

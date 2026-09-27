@@ -140,6 +140,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.github.module import GithubDeps, GithubModule
+    from dplanner.modules.home.module import HomeDeps, HomeModule
     from dplanner.modules.install.module import InstallDeps, InstallModule
     from dplanner.modules.library.module import LibraryDeps, LibraryModule
     from dplanner.modules.library_watch.module import LibraryWatchDeps, LibraryWatchModule
@@ -1435,6 +1436,19 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         )
     )
 
+    # Built here, listed near the end: Home, listed before it, lists the tabs it keeps.
+    reopen_tabs = ReopenTabsModule(
+        ReopenTabsDeps(
+            tabs=services.tabs,
+            settings_sections=services.settings_sections,
+            # Which tabs were open, and which were kept lately, is true of this library alone.
+            scope=services.source_scope,
+            # A remembered tab whose project has since been deleted is dropped; the
+            # module never learns what a project is.
+            exists=library.has,
+        )
+    )
+
     return [
         # -- the shell -------------------------------------------------------------------
         AppShellModule(
@@ -1978,20 +1992,26 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 checks=lambda: _machine_checks(files=skill_files),
             )
         ),
+        # After every module whose verb the guide names — its page reads their specs as it
+        # is built — and before reopen_tabs, which reopens a Home tab like any other.
+        HomeModule(
+            HomeDeps(
+                tabs=services.tabs,
+                actions=services.actions,
+                context=services.context,
+                segments=services.index_segments,
+                library=library,
+                # The tabs kept lately are reopen_tabs': it is the one that can tell the
+                # tabs it reopened at startup from the ones the person chose.
+                recent=reopen_tabs.recent,
+                watch_recent=reopen_tabs.recent_changed.connect,
+                theme=services.theme,
+            )
+        ),
         # After every module that registers an activity factory: it reopens the tabs the
         # last session had, and a kind whose factory has not arrived yet is one it would
         # decide this build no longer has.
-        ReopenTabsModule(
-            ReopenTabsDeps(
-                tabs=services.tabs,
-                settings_sections=services.settings_sections,
-                # Which tabs were open is true of this library alone.
-                scope=services.source_scope,
-                # A remembered tab whose project has since been deleted is dropped; the
-                # module never learns what a project is.
-                exists=library.has,
-            )
-        ),
+        reopen_tabs,
         # Last: its dialog is built during register() and must see every other module's
         # settings sections.
         settings,
