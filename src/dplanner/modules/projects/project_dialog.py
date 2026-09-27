@@ -22,18 +22,20 @@ A pull request row names the step that carries it, when one does — the github 
 record, looked up by the composition root — and activating the row opens the PR. Where
 the plan has no repository of its own the plan column offers *Set up a plan repository…*
 instead of a log: its history *is* the code's, and showing the same commits twice would
-say they were apart. Cloning, publishing and creating on GitHub run in a second task body,
+say they were apart. A plan whose code is not set yet shows its own history and an empty
+code column. Cloning, publishing and creating on GitHub run in a second task body,
 and their outcome lands in the model on the GUI thread through one ``_done`` signal.
 
 *File ▸ New Project…* is the same dialog in **create mode**: a form, because there is no
 history yet to read — the name, the summary, then the plan repository, the folder inside
-it, the code repository and its checkout as captioned blocks, and Create as the primary,
-refused in words until the plan has a home. **Both repositories are picked rather than
-typed**, and each field carries the ⋯ of the other ways in: the plan's is the
-:class:`~dplanner.modules.projects.repo_picker.RepoPicker`, the code's is a list of what
-this library already plans over *Pick from GitHub…* and *Clone into Repositories Folder* —
-and naming code another project here plans brings that project's checkout with it, because
-a second plan for one repository needs no second clone. It answers a
+it and the code repository as captioned blocks over the Locations table's draft, and
+Create as the primary, refused in words until the plan has a home and the code question an
+answer. **Both repositories are picked rather than typed**: the plan's through the
+:class:`~dplanner.modules.projects.repo_picker.RepoPicker`, the code's through a
+:class:`~dplanner.modules.projects.code_choice.CodeChoice` — what this library already
+plans, *From GitHub…*, *A folder on this computer…* or *No code repository yet* — and
+naming code another project here plans brings that project's checkout with it, because a
+second plan for one repository needs no second clone. It answers a
 :class:`NewProjectSpec`; the module seeds the project and connects it, so the dialog writes
 nothing into the library.
 """
@@ -70,6 +72,7 @@ from dplanner.core.storage.provider import StorageError
 from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.locations import (
     CODE,
+    LocatedFolder,
     Location,
     Placement,
     located_folder,
@@ -81,7 +84,7 @@ from dplanner.domain.locations import (
 )
 from dplanner.domain.model import Library, NodeId, Project
 from dplanner.domain.plan_repo import ago
-from dplanner.domain.repositories import ACCEPTED, LEGACY, SEPARATED, RepositoryFacts
+from dplanner.domain.repositories import ACCEPTED, LEGACY, UNSET, RepositoryFacts
 from dplanner.framework.cards import card_rule
 from dplanner.framework.dialog import DialogFrame, LinePrompt
 from dplanner.framework.list_rows import (
@@ -97,6 +100,7 @@ from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import EmptyState, block, caption, confirm, note, quiet
 from dplanner.modules.projects.checkouts import CheckoutService
+from dplanner.modules.projects.code_choice import CodeChoice
 from dplanner.modules.projects.location_dialog import LocationDialog, known_repositories
 from dplanner.modules.projects.locations_table import LocationsTable
 from dplanner.modules.projects.repo_picker import (
@@ -546,7 +550,9 @@ class ProjectDialog(DialogFrame):
         # -- create mode: a form, because there is nothing yet to have a menu about -------
         self.plan_picker: RepoPicker | None = None
         self.folder_edit: QLineEdit | None = None
+        self.code_choice: CodeChoice | None = None
         self._folder_touched = False
+        self._no_code = False  # *No code repository yet*, chosen: an answer, not a blank.
 
         self._unsubscribes = [
             library.field_changed.connect(self._on_field),
@@ -570,12 +576,13 @@ class ProjectDialog(DialogFrame):
     def _build_create_form(
         self, services: RepositoryServices, tasks: TaskService, theme: ThemeService
     ) -> None:
-        """New Project…: the same name and summary, then the plan repository and the
-        folder under their captions (DESIGN.md's *Forms*), then the Locations table over a
-        draft — the code this project changes, and anything else it is about, added
-        through the same Add ▾ and edited through the same ⋯ the settings mode has. No
-        logs — there is no history yet to read. The answer is a :class:`NewProjectSpec`
-        and Create is the primary."""
+        """New Project…: the same name and summary, then the plan repository, the folder
+        and the code repository under their captions (DESIGN.md's *Forms*), then the
+        Locations table over a draft — the code this project changes, and anything else it
+        is about, added through the same Add ▾ and edited through the same ⋯ the settings
+        mode has. The code question is a :class:`CodeChoice` over that draft, answered or
+        Create is refused. No logs — there is no history yet to read. The answer is a
+        :class:`NewProjectSpec` and Create is the primary."""
         body, layout = self.body, self.body_layout
 
         self.plan_picker = RepoPicker(services, tasks, allow_new=True, theme=theme, parent=body)
@@ -591,6 +598,13 @@ class ProjectDialog(DialogFrame):
         self.name_edit.textChanged.connect(self._suggest_folder)
         self.target_label = note("", body)  # The path the two make, and only the path.
         block(layout, caption("Folder", body), self.folder_edit, self.target_label)
+
+        self.code_choice = CodeChoice(known_repositories((), self._library, CODE.id), body)
+        self.code_choice.repository_chosen.connect(self._set_repository)
+        self.code_choice.github_requested.connect(self._pick_repository)
+        self.code_choice.folder_requested.connect(self._code_from_folder)
+        self.code_choice.none_chosen.connect(self._choose_no_code)
+        block(layout, caption("Code repository", body), self.code_choice)
 
         layout.addWidget(self.locations, 1)
         self._show_locations()
@@ -631,11 +645,37 @@ class ProjectDialog(DialogFrame):
         if self.folder_edit is not None and not self._folder_touched:
             self.folder_edit.setText(slugify(title, fallback="project") if title.strip() else "")
 
+    def _show_code_choice(self) -> None:
+        """The code question, as the draft answers it: a code row settles it, and one added
+        after *No code repository yet* takes that answer's place."""
+        if self.code_choice is None:
+            return
+        primary = primary_code(self._draft)
+        if primary is not None:
+            self._no_code = False
+        repository = primary.repository if primary is not None else ""
+        self.code_choice.show_answer(repository, no_code=self._no_code)
+
+    def _choose_no_code(self) -> None:
+        self._no_code = True
+        self._set_locations(tuple(row for row in self._draft if row.role != CODE.id))
+
+    def _code_from_folder(self) -> None:
+        """The code named by a checkout on this computer: its repository, the folder's
+        position in it, and the checkout itself, all off the one picked folder."""
+        found = self._ask_folder()
+        if found is None:
+            return
+        self._record_checkout(found.root, found.repository)
+        self._set_locations(_with_code(self._rows(), found.repository, found.position))
+
     def _revalidate_create(self) -> None:
-        """Create is refused with its reason, field by field, until the plan has a home."""
+        """Create is refused with its reason, field by field, until the plan has a home and
+        the code question an answer."""
         if self.mode != CREATE:
             return
         assert self.plan_picker is not None and self.folder_edit is not None
+        assert self.code_choice is not None
         missing = (
             "Name the project first"
             if not self.name_edit.text().strip()
@@ -652,7 +692,13 @@ class ProjectDialog(DialogFrame):
         spec = self.spec()
         assert spec is not None
         self.target_label.setText(shown_path(spec.target))
-        self.refuse("A project already exists at that folder" if spec.target.exists() else None)
+        self.refuse(
+            "A project already exists at that folder"
+            if spec.target.exists()
+            else "Choose the code repository — or No code repository yet"
+            if not self.code_choice.answered()
+            else None
+        )
 
     def accept(self) -> None:
         if self.plan_picker is not None:
@@ -697,6 +743,7 @@ class ProjectDialog(DialogFrame):
         if self.mode == CREATE:
             self._draft = list(rows)
             self._show_locations()
+            self._show_code_choice()
             self._revalidate_create()
             return
         project = self._project()
@@ -796,9 +843,9 @@ class ProjectDialog(DialogFrame):
         QDesktopServices.openUrl(QUrl(location.repository))
 
     def _choose_location_checkout(self, location: Location) -> None:
-        root = self._ask_checkout()
-        if root is not None:
-            self._record_checkout(root, location.repository)
+        found = self._ask_folder()
+        if found is not None:
+            self._record_checkout(found.root, location.repository)
 
     def _clone_location(self, location: Location) -> None:
         self._clone(location.repository)
@@ -842,7 +889,7 @@ class ProjectDialog(DialogFrame):
         self.warning_row.setVisible(facts.warns)
         # A plan inside its code has no history of its own — the code column already
         # shows it — so the column offers the way out instead of the same commits.
-        if facts.state != SEPARATED:
+        if facts.plan_in_code:
             self.plan_column.show_setup(primary=facts.warns)
 
     # -- what each column's ⋯ offers -------------------------------------------------------------
@@ -894,7 +941,7 @@ class ProjectDialog(DialogFrame):
         gh = self._gh_reason()
         return [
             RepoAction(
-                MOVE_PLAN if facts.state == SEPARATED else SET_UP_PLAN,
+                SET_UP_PLAN if facts.plan_in_code else MOVE_PLAN,
                 move_icon,
                 self._on_move,
                 self._busy(),
@@ -927,8 +974,8 @@ class ProjectDialog(DialogFrame):
         services = self._services
         steps = services.pr_steps(project_id)
         # The older shape keeps plan and code in one repository: its log is the code's.
-        code_root = facts.checkout if facts.repository else facts.plan_root
-        plan_root = facts.plan_root if facts.state == SEPARATED else None
+        code_root = facts.code_root
+        plan_root = None if facts.plan_in_code else facts.plan_root
         plan_scope = ""
         if plan_root is not None:
             directory = services.project_dir(project_id).resolve()
@@ -975,7 +1022,7 @@ class ProjectDialog(DialogFrame):
             self.code_column.show_log(
                 logs.code, logs.prs, logs.steps, empty_text=_code_empty_text(facts)
             )
-        if facts is not None and facts.state == SEPARATED:
+        if facts is not None and not facts.plan_in_code:
             if logs.plan is None and logs.error:
                 self.plan_column.show_message(logs.error)
             else:
@@ -1059,9 +1106,10 @@ class ProjectDialog(DialogFrame):
         about — silently keeping either answer would leave the two disagreeing — and it is
         the same question in both modes, answered into the field or into the library file.
         """
-        root = self._ask_checkout()
-        if root is None:
+        found = self._ask_folder()
+        if found is None:
             return
+        root = found.root
         self._record_checkout(root)
         origin = origin_url(root)
         named = self._code_url()
@@ -1077,9 +1125,10 @@ class ProjectDialog(DialogFrame):
             return
         self._set_repository(origin)
 
-    def _ask_checkout(self) -> Path | None:
-        """A checkout on this machine: the repository root enclosing whatever folder of
-        it was picked, refused in words when the folder is in no repository."""
+    def _ask_folder(self) -> LocatedFolder | None:
+        """A folder on this machine, read as a location — its repository, the root of the
+        checkout it is in and the folder's position there — refused in words when it is in
+        no repository."""
         start = repositories_folder() or Path.home()
         chosen = QFileDialog.getExistingDirectory(self, "Code Checkout", str(start))
         if not chosen:
@@ -1087,8 +1136,7 @@ class ProjectDialog(DialogFrame):
         found = located_folder(Path(chosen))
         if found is None:
             self._say(f"{shown_path(Path(chosen))} is not inside a git repository", "error")
-            return None
-        return found.root
+        return found
 
     def _keep_here(self) -> None:
         project = self._project()
@@ -1265,15 +1313,19 @@ class ProjectDialog(DialogFrame):
             repaint(theme.text_secondary)
 
 
-def _with_code(locations: tuple[Location, ...], url: str) -> tuple[Location, ...]:
-    """The table with its primary code row set to ``url`` — replaced in place, added
-    first when there is none, dropped when ``url`` is empty."""
+def _with_code(
+    locations: tuple[Location, ...], url: str, path: str | None = None
+) -> tuple[Location, ...]:
+    """The table with its primary code row set to ``url`` — and to ``path`` inside it,
+    when one is given — replaced in place, added first when there is none, dropped when
+    ``url`` is empty."""
     primary = primary_code(locations)
     if not url:
         return without(locations, primary.id) if primary is not None else locations
     if primary is None:
-        return (Location(next_id(locations), CODE.id, url), *locations)
-    changed = Location(primary.id, CODE.id, url, primary.path, primary.ref, primary.label)
+        return (Location(next_id(locations), CODE.id, url, path or ""), *locations)
+    position = primary.path if path is None else path
+    changed = Location(primary.id, CODE.id, url, position, primary.ref, primary.label)
     return replaced(locations, changed)
 
 
@@ -1289,6 +1341,8 @@ def _warning_text(facts: RepositoryFacts) -> str:
 def _code_empty_text(facts: RepositoryFacts | None) -> str:
     if facts is None:
         return ""
+    if facts.state == UNSET:
+        return "No code repository yet."
     if facts.repository and facts.checkout is None:
         return "Not checked out on this machine — choose the checkout, or clone it."
     if not facts.repository and facts.plan_root is None:

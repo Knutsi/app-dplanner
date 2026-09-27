@@ -59,11 +59,24 @@ def test_create_warns_when_the_code_repository_is_the_plans(cli, workspace):
 
 
 def test_show_prints_both_repositories_and_the_way_out(cli, workspace):
-    cli("project", "create", "Discovery")
+    """A project at its repository's root, listed by no index, is the legacy shape: the
+    plan's repository reads as its code, and the way out is a plan repository."""
+    cli("project", "create", "Discovery", "--dir", str(workspace))
     said = cli("project", "show", "Discovery")
     assert "plan: widget" in said and "code: not set" in said and "project move" in said
     row = data(cli("project", "show", "Discovery", "--json"))
     assert row["state"] == "legacy" and row["plan_root"] == str(workspace)
+
+
+def test_create_in_a_plan_repository_without_code_says_the_code_is_not_set(cli, tmp_path):
+    """Made in a plan repository with no --code, a project is unset — never read as its
+    own code — and says, once, the verb that records it."""
+    plans = init_repo(tmp_path / "plans")
+    said = cli("project", "create", "Search rewrite", "--in", str(plans))
+    assert "code: not set yet" in said and "project move" not in said
+    assert said.count("dplanner location add 'Search rewrite' --role code") == 1
+    row = data(cli("project", "show", "Search rewrite", "--json"))
+    assert row["state"] == "unset" and row["repository"] == "" and row["checkout"] == ""
 
 
 def test_a_location_is_added_checked_out_changed_and_removed(cli, tmp_path):
@@ -166,7 +179,7 @@ def test_set_records_the_acceptance(cli):
 def test_move_takes_the_plan_into_a_plan_repository(cli, workspace, tmp_path):
     _origin(workspace, "https://github.com/acme/widget.git")
     _identity(workspace)
-    cli("project", "create", "Discovery")
+    cli("project", "create", "Discovery", "--code", "https://github.com/acme/widget.git")
     cli("step", "add", "Discovery", "Deploy")
     subprocess.run(["git", "-C", str(workspace), "add", "-A"], check=True)
     subprocess.run(["git", "-C", str(workspace), "commit", "-qm", "plan"], check=True)
@@ -186,7 +199,7 @@ def test_move_takes_the_plan_into_a_plan_repository(cli, workspace, tmp_path):
 
 def test_move_refuses_into_the_code_repository_and_needs_one_target(cli, workspace):
     _origin(workspace, "https://github.com/acme/widget.git")
-    cli("project", "create", "Discovery")
+    cli("project", "create", "Discovery", "--code", "https://github.com/acme/widget.git")
     said = cli("project", "move", "Discovery", "--to", str(workspace / "plans" / "d"), expect=1)
     assert "code repository" in said
     assert "exactly one" in cli("project", "move", "Discovery", expect=1)

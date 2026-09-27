@@ -38,6 +38,8 @@ site` writes it too): never write there yourself. Three rules follow:
   way to keep it there on purpose is `project set <project> --accept-colocation`. While it
   stays there, do not touch anything under the plan's directory on your branch, and merge
   or rebase `main` before opening a PR — planning commits land on `main` while you work.
+  A project in a plan repository with no code recorded is *unset* (`repo.unset` naming
+  `location add`): the plan repository is never its code, so ask which code it is.
 - **Moving a plan is yours to run when the developer asks, never unasked.** `dplanner
   project move <project> --into <plan repository>` (`--init-repo` to start one there;
   `--to DIR` for an exact folder) copies the plan, lists it in the new repository's

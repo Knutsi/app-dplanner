@@ -67,7 +67,8 @@ paths:
 - **An agent may be opened with nothing to do, and that is a second invocation.**
   *Project ▸ Open Agent in Code* is the same profiles in the same child menu, opening a
   shell where a step's agent would work (the code checkout — cloned first, where the
-  clone policy says, when nobody has one here — else the plan's repository)
+  clone policy says, when nobody has one here — else the plan's repository for the legacy
+  shape, and greyed while the project's code is not set)
   with the harness's `open_command` — `claude`, `codex`, `opencode` — and **no briefing at
   all**: no `prompt.md`, no opening line, no worktree. It is the planning before the plan,
   when a spec has landed and there is no step to be about yet. The bare command is the

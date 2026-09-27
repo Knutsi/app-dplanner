@@ -159,13 +159,22 @@ def make_project(services, library_repo):
     purpose: a project now *is* a directory, and a store asked for a record-less project's
     files would refuse. Every project this creates lives in the test's one repository —
     several projects per repo is a supported layout, and the cheapest one to build.
+
+    Seeded, a project is listed in that repository's index and names no code: it is
+    *unset*, and nothing reads the plan's repository as its code. ``legacy=True`` takes
+    the line out again — a plan from before the index, read as living beside its code —
+    which is what a test needs that runs an agent or reads refs in the plan's own
+    repository.
     """
     from dplanner.core.fsio import slugify
+    from dplanner.core.storage.pointer import remove_from_index
     from dplanner.domain.seed import seed_project
 
-    def make(title="Discovery"):
+    def make(title="Discovery", *, legacy=False):
         store = services.repo
         directory = seed_project(library_repo / slugify(title, fallback="project"), title)
+        if legacy:
+            remove_from_index(directory)
         project = store.attach(directory)
         services.document.add_child(services.document.id, project)
         return project

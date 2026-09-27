@@ -18,10 +18,9 @@ from functools import partial
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_step, step_arg
-from dplanner.core.storage.locations import origin_url
 from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.locations import primary_code
 from dplanner.domain.model import Project, Step
+from dplanner.domain.repositories import repository_facts
 from dplanner.domain.shelf import turn_off
 from dplanner.modules.github.aspect import (
     MODULE_ID,
@@ -277,8 +276,8 @@ def _gh[T](call: Callable[[], T]) -> T:
 
 
 _NO_REPOSITORY = (
-    "no GitHub remote on the project's repository — add one with "
-    "`git remote add origin https://github.com/owner/repo`"
+    "the project names no GitHub code repository — `dplanner location add <project> "
+    "--role code --repository https://github.com/owner/repo`"
 )
 
 
@@ -290,11 +289,9 @@ def _need_gh() -> None:
 
 def _repo_url(context: CliContext, project: Project) -> str:
     """The remote URL a project's work belongs to: the code repository it records, else —
-    the older shape — its own directory's origin, from git."""
-    primary = primary_code(project.locations)
-    if primary is not None:
-        return primary.repository
-    return origin_url(context.store.project_dir(project.id))
+    the older shape — its own directory's origin, from git; none while its code is not
+    set. The same reading the GitHub tab's ``repository_for`` makes."""
+    return repository_facts(project, context.store.project_dir(project.id), {}).code_remote
 
 
 def _step_repo(context: CliContext, step: Step) -> str | None:

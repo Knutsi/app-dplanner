@@ -1,4 +1,5 @@
-"""Which repository is which — legacy, colocated, separated — one derivation, many readers."""
+"""Which repository is which — legacy, unset, colocated, separated — one derivation, many
+readers."""
 
 import subprocess
 from pathlib import Path
@@ -7,6 +8,7 @@ import pytest
 from tests.facts import code_facts, code_row
 
 from dplanner.core.storage.locations import canonical_remote, init_repo
+from dplanner.core.storage.pointer import remove_from_index
 from dplanner.domain.locations import CODE, Location, Placement
 from dplanner.domain.model import Project
 from dplanner.domain.repositories import (
@@ -14,8 +16,11 @@ from dplanner.domain.repositories import (
     COLOCATED,
     LEGACY,
     SEPARATED,
+    UNSET,
+    RepositoryFacts,
     repository_facts,
 )
+from dplanner.domain.seed import seed_project
 
 PLAN = Path("/home/anna/plans")
 WIDGET = Path("/home/anna/src/widget")
@@ -34,7 +39,32 @@ def facts(**overrides):
 
 def test_no_repository_is_the_legacy_shape_and_warns():
     found = facts(repository="")
-    assert found.state == LEGACY and found.warns
+    assert found.state == LEGACY and found.warns and found.plan_in_code
+    # Read as colocated: the plan's own repository stands in for the code.
+    assert found.code_root == PLAN and found.code_remote == "git@github.com:acme/plans.git"
+
+
+def test_no_repository_in_a_plan_repositorys_index_is_unset_and_read_as_nothing():
+    """A project the index lists was made in a plan repository: with no code named its
+    code is nowhere yet — never the plan's — and accepting colocation does not change that."""
+    found = RepositoryFacts(
+        plan_root=PLAN,
+        plan_remote="git@github.com:acme/plans.git",
+        placements=(),
+        colocation="",
+        indexed=True,
+    )
+    assert found.state == UNSET
+    assert not found.plan_in_code and not found.warns
+    assert found.code_root is None and found.code_remote == ""
+    accepted = RepositoryFacts(PLAN, "", (), ACCEPTED, indexed=True)
+    assert accepted.state == UNSET
+
+
+def test_a_named_code_repository_is_read_the_same_indexed_or_not():
+    listed = RepositoryFacts(PLAN, "", facts().placements, "", indexed=True)
+    assert listed.state == SEPARATED and listed.code_root == WIDGET
+    assert listed.code_remote == "https://github.com/acme/widget"
 
 
 def test_a_separate_code_repository_does_not_warn():
@@ -82,6 +112,19 @@ def test_the_facts_are_read_off_the_project_directory(tmp_path):
     assert canonical_remote(found.plan_remote) == "github.com/acme/plans"
     assert found.checkout == tmp_path / "src" / "widget"
     assert found.repository == "https://github.com/acme/widget"
+
+
+def test_the_index_decides_between_unset_and_legacy(tmp_path):
+    """Seeded into a plan repository, a project is listed and reads unset; one that is its
+    repository's root, or that no line names — a plan from before the index — is legacy."""
+    plans = init_repo(tmp_path / "plans")
+    seed_project(plans / "search", "Search")
+    assert repository_facts(Project(title="Search"), plans / "search", {}).state == UNSET
+    remove_from_index(plans / "search")
+    assert repository_facts(Project(title="Search"), plans / "search", {}).state == LEGACY
+    root = init_repo(tmp_path / "widget")
+    assert repository_facts(Project(title="Widget"), root, {}).state == LEGACY
+    assert not repository_facts(Project(), tmp_path / "loose", {}).indexed
 
 
 def test_every_location_is_placed_and_the_primary_code_row_is_the_repository(tmp_path):

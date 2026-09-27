@@ -823,7 +823,7 @@ def step(services, make_project):
     from dplanner.domain.commands import AddNodeCommand
     from dplanner.domain.model import Step
 
-    project = make_project("Discovery")
+    project = make_project("Discovery", legacy=True)
     step = Step(title="Deploy")
     AddNodeCommand(project.id, step).redo(services.document)
     return step
@@ -880,17 +880,41 @@ def test_without_a_repository_the_reason_says_so(services, step, library_repo):
     assert state.label is not None and "git repository" in state.label
 
 
+def test_a_project_whose_code_is_not_set_greys_run_agent_and_says_what_to_record(
+    services, make_project
+):
+    """Listed in a plan repository with no code row, a project has nowhere for an agent to
+    work — the plan repository is not the code — so Run Agent and Open Agent in Code are
+    greyed with the one thing that would change that."""
+    from dplanner.domain.commands import AddNodeCommand
+    from dplanner.domain.model import Step
+
+    project = make_project("Search")
+    unset = Step(title="Index the catalogue")
+    AddNodeCommand(project.id, unset).redo(services.document)
+    services.document.set_text(unset.id, "step_agent_instruction", "Ship it.")
+    select(services, unset)
+    state = services.actions.spec("agent.run").state(services.context.current())
+    assert state.visible and not state.enabled
+    assert state.label is not None and "record the code repository" in state.label
+    services.tabs.open("project", project.id)
+    state = services.actions.spec("agent.open").state(services.context.current())
+    assert not state.enabled
+    assert state.label is not None and "record the code repository" in state.label
+
+
 def test_each_projects_own_repository_root_is_the_workdir(
     services, make_project, step, tmp_path, monkeypatch
 ):
-    """Two projects, two repositories: a step's agent runs in its own project's repo root."""
+    """Two projects, two repositories: a step's agent runs in its own project's repo root —
+    each a plan read as living beside its code, the second one being its repository."""
     from dplanner.core.storage.locations import init_repo
     from dplanner.domain.commands import AddNodeCommand
     from dplanner.domain.model import Step
     from dplanner.domain.seed import seed_project
 
     second_repo = init_repo(tmp_path / "second")
-    directory = seed_project(second_repo / "satellite", "Satellite")
+    directory = seed_project(second_repo, "Satellite")
     satellite = services.repo.attach(directory)
     services.document.add_child(services.document.id, satellite)
     other = Step(title="Wire the antenna")
@@ -1464,7 +1488,7 @@ def test_a_selection_spanning_two_projects_opens_each_shell_in_its_own_repositor
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     second_repo = init_repo(tmp_path / "second")
-    satellite = services.repo.attach(seed_project(second_repo / "satellite", "Satellite"))
+    satellite = services.repo.attach(seed_project(second_repo, "Satellite"))
     services.document.add_child(services.document.id, satellite)
     select_all(services, step, briefed(services, satellite, "Wire the antenna"))
     assert services.actions.spec("agent.run").state(services.context.current()).enabled
@@ -1705,10 +1729,11 @@ def test_agent_prompt_carries_the_note_index_and_the_epilogue(cli_stdin, workspa
     assert shown["root"] == str(workspace / "discovery")
 
 
-def test_agent_prompt_says_where_the_plan_lives(cli_stdin):
+def test_agent_prompt_says_where_the_plan_lives(cli_stdin, workspace):
     """The verb hands the briefing the same facts the window does: a plan with no code
-    repository recorded is warned about, one with its own repository is not."""
-    cli_stdin("project", "create", "Discovery")
+    repository recorded and no index around it — here, its repository's root — is warned
+    about, one with its own repository is not."""
+    cli_stdin("project", "create", "Discovery", "--dir", str(workspace))
     cli_stdin("step", "add", "Discovery", "Deploy", "--agent")
     cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="Ship it.")
     shown = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))
@@ -1730,6 +1755,18 @@ def test_agent_prompt_says_where_the_plan_lives(cli_stdin):
     # The table is told too, with where each row stands on this machine.
     assert "Code: acme/widget — not checked out on this machine" in shown["prompt"]
     assert "`dplanner location list`" in shown["prompt"]
+
+
+def test_agent_prompt_never_takes_an_unset_plans_repository_for_the_code(cli_stdin):
+    """A project a plan repository lists, whose code nobody named: no warning about a plan
+    inside its code, because it is not — the briefing says the code is not recorded."""
+    cli_stdin("project", "create", "Discovery")
+    cli_stdin("step", "add", "Discovery", "Deploy", "--agent")
+    cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="Ship it.")
+    shown = json.loads(cli_stdin("agent", "prompt", "Deploy", "--json"))
+    assert "WARNING" not in shown["prompt"]
+    assert "no code repository is recorded for the project yet" in shown["prompt"]
+    assert shown["repository"] == ""
 
 
 def test_a_step_without_a_worktree_is_briefed_to_stay_in_the_checkout(cli_stdin):

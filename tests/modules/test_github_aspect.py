@@ -4,9 +4,10 @@ No ``qapp`` fixture — ``aspect.py``, ``cli.py`` and ``gh.py`` are Qt-free by r
 gh call is monkeypatched: these tests must pass with no ``gh`` installed and no network.
 
 Which repository a step's refs belong to is the **code repository its project records**;
-a project that records none — the older shape, a plan kept beside its code — falls back to
-its own directory's ``origin`` remote, so most tests here add a real remote with git and
-one sets the repository through the CLI.
+a project that records none and that no index lists — the older shape, a plan kept beside
+its code — falls back to its own directory's ``origin`` remote, so most tests here add a
+real remote with git and one sets the repository through the CLI. A project a plan
+repository lists with no code row reads nothing at all.
 """
 
 import json
@@ -14,6 +15,7 @@ import subprocess
 
 import pytest
 
+from dplanner.core.storage.pointer import remove_from_index
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.github import cli as github_cli
 from dplanner.modules.github.aspect import GithubRefs, read, summary, write
@@ -29,9 +31,11 @@ def add_origin(repo, url):
 
 
 @pytest.fixture
-def cli(cli):
-    """The shared CLI over a seeded project — the conftest fixture, pre-populated."""
+def cli(cli, workspace):
+    """The shared CLI over a seeded project — the conftest fixture, pre-populated — in the
+    older shape: no code row and no index line, so its refs are the workspace's own."""
     cli("project", "create", "Discovery")
+    remove_from_index(workspace / "discovery")
     cli("step", "add", "Discovery", "Read the spec")
     return cli
 
@@ -159,8 +163,9 @@ def test_gh_gated_verbs_refuse_without_gh(cli, gh_less):
 
 
 def test_gh_gated_verbs_refuse_without_a_github_remote(cli, gh_present):
-    """No origin on the project's repository: the refusal says how to add one."""
-    assert "git remote add origin" in cli("github", "prs", "--project", "Discovery", expect=1)
+    """No GitHub repository to read refs from: the refusal names the verb that records
+    the code."""
+    assert "location add" in cli("github", "prs", "--project", "Discovery", expect=1)
 
 
 def test_prs_lists_open_by_default_and_all_on_request(cli, origin, gh_present, monkeypatch):
@@ -201,7 +206,7 @@ def test_each_projects_own_repository_answers_for_its_steps(
     add_origin(workspace, "https://github.com/acme/widget.git")
     satellite = init_repo(tmp_path / "second")
     add_origin(satellite, "https://github.com/acme/satellite.git")
-    cli("project", "create", "Satellite", "--dir", str(satellite / "satellite"))
+    cli("project", "create", "Satellite", "--dir", str(satellite))
     cli("step", "add", "Satellite", "Wire the antenna")
 
     asked = []
@@ -213,6 +218,19 @@ def test_each_projects_own_repository_answers_for_its_steps(
     monkeypatch.setattr(github_cli, "view_pr", view_pr)
     cli("github", "set", "Wire the antenna", "--pr", "7")
     assert asked == ["acme/satellite"]
+
+
+def test_a_project_whose_code_is_not_set_reads_no_refs_from_its_plan_repository(
+    cli, tmp_path, gh_present
+):
+    """A plan repository's origin is the plan's, never the code's: a project it lists with
+    no code row has no repository for refs, and says what to add."""
+    from dplanner.core.storage.locations import init_repo
+
+    plans = init_repo(tmp_path / "plans")
+    add_origin(plans, "https://github.com/acme/plans.git")
+    cli("project", "create", "Search", "--in", str(plans))
+    assert "location add" in cli("github", "prs", "--project", "Search", expect=1)
 
 
 def test_the_projects_code_repository_answers_over_the_directorys_origin(
@@ -244,7 +262,7 @@ def test_prs_can_ask_a_named_projects_repository(cli, tmp_path, gh_present, monk
 
     satellite = init_repo(tmp_path / "second")
     add_origin(satellite, "https://github.com/acme/satellite.git")
-    cli("project", "create", "Satellite", "--dir", str(satellite / "satellite"))
+    cli("project", "create", "Satellite", "--dir", str(satellite))
 
     asked = []
 

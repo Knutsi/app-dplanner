@@ -287,9 +287,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
     def repository_for(step_id: str) -> str:
         """Which repository a step's GitHub refs belong to: the code repository the
         project records, else — the older shape, a plan kept beside its code — the plan's
-        own origin. Git's answer either way; nothing stored can disagree with it."""
-        facts = facts_for(step_id)
-        return facts.repository or facts.plan_remote
+        own origin, and none while the code is not set. Git's answer either way; nothing
+        stored can disagree with it."""
+        return facts_for(step_id).code_remote
 
     # A checkout recorded for a repository — by the Project dialog, or by an agent's
     # first `dplanner` call from the code and adopted through the library file — is what
@@ -2613,10 +2613,18 @@ def _locations_told(facts: "RepositoryFacts") -> str:
 
 def _plan_whereabouts(facts: "RepositoryFacts") -> str:
     """Where the plan lives, told to the agent: in a repository of its own, or — warned
-    about unless the people on the project accepted it — inside the code it plans."""
-    from dplanner.domain.repositories import SEPARATED
+    about unless the people on the project accepted it — inside the code it plans; or, before
+    anybody named the code, in a repository of its own with nothing yet to work in."""
+    from dplanner.domain.repositories import UNSET
 
-    if facts.state == SEPARATED:
+    if facts.state == UNSET:
+        return (
+            f"The plan is kept in its own repository, {facts.plan_label}, and no code"
+            " repository is recorded for the project yet: the plan repository is not the"
+            " code, so change nothing in it by hand. The developer records the code with"
+            " `dplanner location add <project> --role code --repository URL`."
+        )
+    if not facts.plan_in_code:
         code = f" ({facts.code_label})" if facts.code_label else ""
         return (
             f"The plan is kept in its own repository, {facts.plan_label}, apart from the"

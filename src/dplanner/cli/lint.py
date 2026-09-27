@@ -17,7 +17,7 @@ from dplanner.cli.command import CliCommand, CliContext
 from dplanner.cli.lookup import find_project
 from dplanner.domain.locations import LocationRole, duplicates, problem
 from dplanner.domain.model import Library, Project
-from dplanner.domain.repositories import LEGACY, RepositoryFacts, repository_facts
+from dplanner.domain.repositories import LEGACY, UNSET, RepositoryFacts, repository_facts
 from dplanner.domain.store import FilesFor
 
 
@@ -38,10 +38,22 @@ LintCheck = Callable[[Library, Project, FilesFor], Sequence[LintFinding]]
 def repository_finding(project: Project, facts: RepositoryFacts) -> LintFinding | None:
     """The plan's own repository question, asked before any module's: a plan kept inside
     the code it plans is what drifts, and the finding names the way out — or the way to
-    keep it there on purpose, which silences it. ``project show`` prints the same line."""
+    keep it there on purpose, which silences it. A plan in a plan repository whose code
+    nobody named yet names the verb that records it. ``project show`` prints the same
+    line."""
+    title = project.title or project.folder_name
+    if facts.state == UNSET:
+        return LintFinding(
+            check="repo.unset",
+            subject_id=project.id,
+            subject=title,
+            message=(
+                "no code repository is recorded yet, so no agent has anywhere to work — "
+                f"`dplanner location add '{title}' --role code --repository URL`"
+            ),
+        )
     if not facts.warns:
         return None
-    title = project.title or project.folder_name
     if facts.state == LEGACY:
         check = "repo.unset"
         what = (

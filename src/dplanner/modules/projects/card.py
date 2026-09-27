@@ -8,7 +8,6 @@ through the registry so the palette and the Project menu agree with the card.
 from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 
 from dplanner.domain.model import Library, NodeId
-from dplanner.domain.repositories import SEPARATED
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextService
 from dplanner.framework.theme_service import ThemeService
@@ -155,7 +154,7 @@ class RepositoriesCard(QWidget):
         self.note.setVisible(facts.warns)
         # A plan apart from its code is not set up again — but it can still be moved, and
         # the button says which of the two this project is asking for.
-        self.move_button.setText(MOVE_PLAN if facts.state == SEPARATED else SET_UP_PLAN)
+        self.move_button.setText(SET_UP_PLAN if facts.plan_in_code else MOVE_PLAN)
 
     def texts(self) -> list[str]:
         """What the location rows say, top to bottom — the test seam."""

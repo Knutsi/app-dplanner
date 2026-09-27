@@ -177,21 +177,31 @@ paths:
   shows under `FOLDER` alone. `Placement.kept` is wording only (*kept by DPlanner at …*);
   a repository stored as a path is placed there only when a working tree is there. `domain/repositories.py` is
   the one derivation (`RepositoryFacts` over placements, with `code`/`repository`/
-  `checkout` as the primary row's; separated, colocated, legacy; `warns` unless
-  `colocation == "accepted"`), and every reader asks it — lint's `repo.unset`/
-  `repo.colocated` and `location.invalid`/`unknown_role`/`duplicate`, the briefing's
-  preamble and its locations paragraph, the Project dialog, the Repositories card, the
-  opening status line. The root hands the agent module `facts_for` and it decides where
-  an agent works: the checkout of the code location the step's `workplace` names, else
-  the primary's, or the plan's own repository for the older shape; a conflict is settled
-  in the plan repository whatever the code is. `cli/discovery.py` finds the project from a
+  `checkout` as the primary row's; separated, colocated, legacy, unset; `warns` while
+  `plan_in_code` unless `colocation == "accepted"`), and every reader asks it — lint's
+  `repo.unset`/`repo.colocated` and `location.invalid`/`unknown_role`/`duplicate`, the
+  briefing's preamble and its locations paragraph, the Project dialog, the Repositories
+  card, the opening status line. **No code row is two states, and the plan repository's
+  `.dplanner` index tells them apart** (`indexed`): listed, the project is **unset** and
+  nothing reads the plan repository as its code — Run Agent greys with *record the code
+  repository*, refs read nothing, `repo.unset` names `location add`, Move Plan leaves it
+  unset; not listed (a repository root, a plan from before the index), it is **legacy**,
+  read as colocated. `code_root` and `code_remote` are that fallback, and a reader asks
+  them rather than falling back to the plan's root or origin itself. The root hands the
+  agent module `facts_for` and it decides where an agent works: the checkout of the code
+  location the step's `workplace` names, else the primary's, else `code_root`; a conflict
+  is settled in the plan repository whatever the code is. `cli/discovery.py` finds the project from a
   checkout whose `origin` is one of its code locations (`canonical_remote`) and records
   the checkout the first time; the wrapper exports `DPLANNER_PROJECT`. The verbs are
   `dplanner location list|roles|add|set|remove|checkout` and `project create --code`,
   every mutating one a `SetFieldCommand` on `locations` — the table the dialog pushes.
   A plan repository holds
   several projects for several people under a `.dplanner` index (`FORMAT.md`); *File ▸ New
-  Project…* is the Project dialog in create mode over a picked plan repository, *Open
+  Project…* is the Project dialog in create mode over a picked plan repository, **and it
+  asks where the code is in a way nobody can skip** (`code_choice.py`: the library's code,
+  *From GitHub…*, *A folder on this computer…*, *No code repository yet*; Create refused in
+  words until one is picked — a question left blank is how a plan was once read as its own
+  code), *Open
   Projects…* browses one and adds the chosen projects, and *Move Plan…* moves a plan
   through `domain/relocate.py` and reloads. **It is offered on every project**: picking a
   plan repository is a choice that can be got wrong, and the surface that made it is the

@@ -11,13 +11,17 @@ def data(text):
     return json.loads(text)
 
 
+# A code repository apart from the plan's: a project that names it has nothing to say
+# about where it lives.
+CODE = "https://github.com/acme/widget"
+
+
 def checks_in(report):
     return sorted({row["check"] for row in report["findings"]})
 
 
 def test_a_complete_plan_is_clean_and_exits_zero(cli, cli_stdin):
-    cli("project", "create", "Discovery")
-    cli("project", "set", "Discovery", "--accept-colocation")
+    cli("project", "create", "Discovery", "--code", CODE)
     cli_stdin("topology", "set", "Discovery", "--file", "-", stdin="One feature, one step.")
     cli("step", "add", "Discovery", "Deploy")
     cli_stdin("describe", "set", "Deploy", "--file", "-", stdin="The release step.")
@@ -28,8 +32,7 @@ def test_a_complete_plan_is_clean_and_exits_zero(cli, cli_stdin):
 
 
 def test_a_bare_step_is_reported_on_every_authoring_axis(cli):
-    cli("project", "create", "Discovery")
-    cli("project", "set", "Discovery", "--accept-colocation")
+    cli("project", "create", "Discovery", "--code", CODE)
     cli("step", "add", "Discovery", "Deploy")
     report = data(cli("project", "lint", "Discovery", "--json", expect=1))
     assert checks_in(report) == ["description.missing", "estimate.missing", "topology.missing"]
@@ -40,11 +43,13 @@ def test_a_bare_step_is_reported_on_every_authoring_axis(cli):
 
 def test_a_plan_with_no_code_repository_or_inside_it_is_a_finding_until_accepted(cli, workspace):
     """The plan's own place is the first thing lint asks about: a project that records
-    no code repository reads as living inside it, one that records its own repository
-    does, and both stop once the people on it say the plan stays there on purpose."""
+    no code repository and no plan repository lists — the legacy shape, here a project
+    that is its repository's root — reads as living inside it, one that records its own
+    repository does, and both stop once the people on it say the plan stays there on
+    purpose."""
     import subprocess
 
-    cli("project", "create", "Discovery")
+    cli("project", "create", "Discovery", "--dir", str(workspace))
     report = data(cli("project", "lint", "Discovery", "--json", expect=1))
     assert "repo.unset" in checks_in(report)
     assert "project move" in next(
@@ -68,6 +73,26 @@ def test_a_plan_with_no_code_repository_or_inside_it_is_a_finding_until_accepted
     assert "repo.colocated" in checks and "repo.unset" not in checks
 
     cli("project", "set", "Discovery", "--accept-colocation")
+    assert "Clean." in cli("project", "lint", "Discovery")
+
+
+def test_a_plan_whose_code_is_not_set_is_a_finding_that_names_location_add(cli):
+    """A project a plan repository lists, with no code row, is unset: the finding names the
+    verb that records the code, and saying the plan stays in its code does not quiet it —
+    the plan repository was never the code."""
+    cli("project", "create", "Discovery")
+    finding = next(
+        row
+        for row in data(cli("project", "lint", "Discovery", "--json", expect=1))["findings"]
+        if row["check"] == "repo.unset"
+    )
+    assert "location add 'Discovery' --role code" in finding["message"]
+    assert "project move" not in finding["message"]
+
+    cli("project", "set", "Discovery", "--accept-colocation")
+    assert "repo.unset" in checks_in(data(cli("project", "lint", "Discovery", "--json", expect=1)))
+
+    cli("location", "add", "Discovery", "--role", "code", "--repository", CODE)
     assert "Clean." in cli("project", "lint", "Discovery")
 
 
@@ -105,8 +130,7 @@ def test_a_start_date_is_only_expected_once_something_is_estimated(cli):
 def test_a_project_with_steps_owes_a_topology(cli, cli_stdin):
     """An empty project has no shape to describe; the first step makes the question
     real, and the finding names the verb — the same one the gate points at."""
-    cli("project", "create", "Discovery")
-    cli("project", "set", "Discovery", "--accept-colocation")
+    cli("project", "create", "Discovery", "--code", CODE)
     report = data(cli("project", "lint", "Discovery", "--json"))
     assert "topology.missing" not in checks_in(report)
     cli("step", "add", "Discovery", "Deploy")
@@ -162,10 +186,8 @@ def test_a_ghost_id_is_named_and_a_remove_leaves_none(cli, workspace):
 
 
 def test_lint_without_a_project_covers_them_all(cli):
-    cli("project", "create", "One")
-    cli("project", "create", "Two")
-    for title in ("One", "Two"):
-        cli("project", "set", title, "--accept-colocation")
+    cli("project", "create", "One", "--code", CODE)
+    cli("project", "create", "Two", "--code", CODE)
     cli("step", "add", "Two", "Deploy")
     report = data(cli("project", "lint", "--json", expect=1))
     projects = {row["project"] for row in report["findings"]}
@@ -178,8 +200,7 @@ def test_lint_without_a_project_covers_them_all(cli):
 
 def plan(cli, cli_stdin, *titles):
     """A project with a topology read and a step per title, so only shape is left to fail."""
-    cli("project", "create", "Discovery")
-    cli("project", "set", "Discovery", "--accept-colocation")
+    cli("project", "create", "Discovery", "--code", CODE)
     cli_stdin("topology", "set", "Discovery", "--file", "-", stdin="Flat.")
     for title in titles:
         cli("step", "add", "Discovery", title, "--days", "1")

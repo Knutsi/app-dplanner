@@ -25,8 +25,8 @@ class GithubDeps:
     tasks: TaskService
     actions: ActionRegistry
     parent: QWidget  # The window: owns the PR refresher.
-    # step id -> the repository URL that step's refs belong to. project_repo's rule (the
-    # project's own repository over the library's), arriving through the composition root.
+    # step id -> the repository URL that step's refs belong to: the project's code
+    # repository (`RepositoryFacts.code_remote`), arriving through the composition root.
     repository_for: Callable[[StepId], str]
 
 
