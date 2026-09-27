@@ -571,6 +571,14 @@ the other, format 1, a count written as a float. A wait is no work: no worker ta
 has no status, and every tally leaves it out, while the graph treats it as any other step.
 The schedule reads it through the root's `wait_of` as the domain's `Wait`.
 
+**`auto_progress` names the links a step collects its sources' work across**:
+`{"from": ["<step id>", …]}` on the step that waits, format 1. A listed id counts only while
+the step's own `requires` holds it, so an edge verb never rewrites the list and a stale id is
+inert rather than wrong; a paste renames the ids of the copied steps and drops the rest, and
+an entry left naming nothing is removed. Absence is every link plain. It needs no format
+bump for the rule above: an older build carries the entry untouched and reads every link
+as plain.
+
 **Absence encodes the default, and the default is not always "off".** Every aspect above is
 one most steps do not have, so the marker records the *claim*. Two go the other way:
 `estimation` and `step_description` are things most steps do have, so absence means **on**

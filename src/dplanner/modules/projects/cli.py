@@ -92,6 +92,10 @@ from dplanner.domain.seed import seed_project
 from dplanner.domain.store import PROJECT_META, FilesFor
 
 
+def _plain(_waiter: Step, _source: Step) -> bool:
+    return False
+
+
 def _no_key(_step: Step) -> str:
     return ""
 
@@ -144,13 +148,16 @@ def commands(
     step_authors: Sequence[StepAuthor] = (),
     key_of: Callable[[Step], str] = _no_key,
     *,
+    auto_progresses: Callable[[Step, Step], bool] = _plain,
     roles: Mapping[str, LocationRole] | None = None,
     managed: ManagedFor | None = None,
     kept_root: Path | None = None,
 ) -> list[CliCommand]:
     """``key_of`` is the step's readable key (``S7``, ``F3``) — the letter is a fact
     about aspects this file never reads, so the root hands the rule in and every row,
-    listing and chart here prints the same key the canvas paints. ``roles`` is the
+    listing and chart here prints the same key the canvas paints; ``auto_progresses``
+    marks, in the chart and ``step show``, a link its waiter may start across from review
+    on — another module's flag, read through the root. ``roles`` is the
     location role registry the root gathers (the domain's ``code`` alone without it),
     ``managed`` says where a read-only location's clone stands, and ``kept_root`` is the
     configuration directory a clone DPlanner keeps lives under."""
@@ -352,7 +359,7 @@ def commands(
             summary="The step graph as a Mermaid flowchart: waves as rows, requires as "
             "arrows. Paste it into a PR or a report.",
             configure=_configure_graph,
-            run=partial(_project_graph, key_of=key_of),
+            run=partial(_project_graph, key_of=key_of, auto_progresses=auto_progresses),
             examples=(
                 "dplanner project graph discovery",
                 "dplanner project graph discovery --short",
@@ -383,7 +390,7 @@ def commands(
             path=("step", "show"),
             summary="One step: what it waits on, what waits on it, and its aspects.",
             configure=step_arg,
-            run=partial(_step_show, key_of=key_of),
+            run=partial(_step_show, key_of=key_of, auto_progresses=auto_progresses),
             examples=("dplanner step show read-the-spec",),
         ),
         CliCommand(
@@ -1039,11 +1046,14 @@ def mermaid(
     project: Project,
     short: bool = False,
     key_of: Callable[[Step], str] = _no_key,
+    auto_progresses: Callable[[Step, Step], bool] = _plain,
 ) -> str:
     """The step graph as a Mermaid flowchart — the same map the canvas draws, as text.
 
     Deliberately structure-only: waves become subgraphs so parallelism is visible at a
-    glance, ``requires`` edges order them, and nothing else is styled in. The walk is
+    glance, ``requires`` edges order them, and nothing else is styled in — but a link its
+    waiter may start across from review on is drawn thick (``==>``), as the canvas doubles
+    it, because how work flows along the graph is part of its structure. The walk is
     ``placed()``, whose order is stable, so regenerating the chart after an unrelated edit
     diffs clean. Dangling edges are skipped, as everywhere ``requires()`` is read.
 
@@ -1072,15 +1082,21 @@ def mermaid(
         lines.append("    end")
     for row in rows:
         for other in library.requires(row.step.id):
-            lines.append(f"    {node_ids[other.id]} --> {node_ids[row.step.id]}")
+            arrow = "==>" if auto_progresses(row.step, other) else "-->"
+            lines.append(f"    {node_ids[other.id]} {arrow} {node_ids[row.step.id]}")
     return "\n".join(lines)
 
 
 def _project_graph(
-    context: CliContext, args: Namespace, key_of: Callable[[Step], str] = _no_key
+    context: CliContext,
+    args: Namespace,
+    key_of: Callable[[Step], str] = _no_key,
+    auto_progresses: Callable[[Step, Step], bool] = _plain,
 ) -> int:
     project = find_project(context.library, args.project)
-    chart = mermaid(context.library, project, short=args.short, key_of=key_of)
+    chart = mermaid(
+        context.library, project, short=args.short, key_of=key_of, auto_progresses=auto_progresses
+    )
     context.report({"project": project.id, "mermaid": chart}, chart)
     return 0
 
@@ -1414,14 +1430,19 @@ def _step_list(
 
 
 def _step_show(
-    context: CliContext, args: Namespace, key_of: Callable[[Step], str] = _no_key
+    context: CliContext,
+    args: Namespace,
+    key_of: Callable[[Step], str] = _no_key,
+    auto_progresses: Callable[[Step, Step], bool] = _plain,
 ) -> int:
     library = context.library
     step = find_step(library, args.step, context.current)
     project = library.project_of(step.id)
+    waiting = library.requires(step.id)
     data = _step_row(library, step, key_of) | {
         "project": project.id,
         "dependents": [other.id for other in library.dependents(step.id)],
+        "auto_progress": [other.id for other in waiting if auto_progresses(step, other)],
         "aspects": {key: dict(value) for key, value in sorted(step.module_data.items())},
         "text": sorted(step.module_text),
     }
@@ -1429,10 +1450,13 @@ def _step_show(
     def named(others: Sequence[Step]) -> str:
         return ", ".join(f"{key_of(s)} {s.title}".strip() for s in others)
 
+    def marked(source: Step) -> str:
+        mark = " (auto-progress)" if auto_progresses(step, source) else ""
+        return f"{key_of(source)} {source.title}".strip() + mark
+
     lines = [f"{key_of(step)} {step.title}".strip() + f"  {step.id}", f"  in {project.title}"]
-    waiting = library.requires(step.id)
     if waiting:
-        lines.append("  waits on: " + named(waiting))
+        lines.append("  waits on: " + ", ".join(marked(source) for source in waiting))
     blocked = library.dependents(step.id)
     if blocked:
         lines.append("  blocks:   " + named(blocked))

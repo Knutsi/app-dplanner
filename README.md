@@ -492,6 +492,10 @@ src/dplanner/
 │   ├── step_check/          a step that gathers every test it waits on — the Type ▸ Check toggle
 │   ├── step_start/          the step a plan begins from, which no feature or milestone gathers —
 │   │                        the Type ▸ Start toggle, `dplanner start`, `step add --start`, `graph.start`
+│   ├── auto_progress/       the links a step collects parallel work across: it may start once
+│   │                        their sources are ready for review, lands them and sets them done —
+│   │                        Graph ▸ Auto-progress on picked arrows, `dplanner auto-progress`,
+│   │                        `step add --auto-progress`, `auto-progress.waiter` lint
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll

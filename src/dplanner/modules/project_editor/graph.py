@@ -18,7 +18,7 @@ to run *after* Qt has updated the selection — so a mode that claims a press su
 dragging for free, because the scene never sees it.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer
@@ -62,12 +62,20 @@ from dplanner.modules.project_editor.modes import (
     PanMode,
 )
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped
-from dplanner.modules.project_editor.renderers import RING_STEP, NodeAccent, RenderHints
+from dplanner.modules.project_editor.renderers import (
+    RING_STEP,
+    EdgeAccent,
+    NodeAccent,
+    RenderHints,
+)
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef, neighbourhood
 
 # How often a live ring's dashes move: quick enough to read as motion, slow enough that an
 # agent working for an hour costs the canvas nothing worth measuring.
 RING_TICK_MS = 80
+
+# An arrow the sync names no accent for.
+PLAIN_EDGE = EdgeAccent()
 
 ZOOM_MIN = 0.4
 ZOOM_MAX = 2.5
@@ -156,8 +164,9 @@ class GraphScene(QGraphicsScene):
         # the per-item selectionChanged is not announced — one gesture, one announcement.
         self._reselecting = False
 
-        # The live rings' clock: one timer for every node wearing one, running only while
-        # there is one — an idle canvas ticks nothing. Sync settles it; nothing else does.
+        # The live rings' clock: one timer for every node wearing one and every arrow whose
+        # chevrons flow, running only while there is one — an idle canvas ticks nothing.
+        # Sync settles it; nothing else does.
         self._ring_phase = 0.0
         self._ring_timer = QTimer(self)
         self._ring_timer.setInterval(RING_TICK_MS)
@@ -165,7 +174,15 @@ class GraphScene(QGraphicsScene):
 
     # -- what the activity puts in ---------------------------------------------------------
 
-    def sync(self, nodes: list[NodeSpec], edges: list[EdgeRef]) -> None:
+    def sync(
+        self,
+        nodes: list[NodeSpec],
+        edges: list[EdgeRef],
+        edge_accents: Mapping[EdgeRef, EdgeAccent] | None = None,
+    ) -> None:
+        """Make the scene the graph: ``edge_accents`` dresses the arrows it names, and an
+        arrow it leaves out is plain."""
+        accents = edge_accents or {}
         wanted = {spec.step_id for spec in nodes}
         for spec in nodes:
             item = self._nodes.get(spec.step_id)
@@ -184,7 +201,6 @@ class GraphScene(QGraphicsScene):
                 item.set_size(*spec.size)
         for gone_node in set(self._nodes) - wanted:
             self.removeItem(self._nodes.pop(gone_node))
-        self._settle_ring_timer()
 
         drawable = {ref for ref in edges if ref.source in self._nodes and ref.waiter in self._nodes}
         for gone_edge in set(self._edges) - drawable:
@@ -198,16 +214,23 @@ class GraphScene(QGraphicsScene):
                 self.addItem(edge)
             else:
                 edge.follow()  # A node may have moved under it since the last sync.
+            edge.set_accent(accents.get(ref, PLAIN_EDGE))
+        self._settle_ring_timer()
         self._light_selection()  # The graph changed under the selection; re-derive.
 
     def advance_rings(self) -> None:
-        """One tick: every live ring's dashes move on together."""
+        """One tick: every live ring's dashes, and every flowing arrow's chevrons, move on
+        together."""
         self._ring_phase = (self._ring_phase + RING_STEP) % 1000.0
         for item in self._nodes.values():
             item.set_ring_phase(self._ring_phase)
+        for edge in self._edges.values():
+            edge.set_flow_phase(self._ring_phase)
 
     def _settle_ring_timer(self) -> None:
-        live = any(item.wears_ring() for item in self._nodes.values())
+        live = any(item.wears_ring() for item in self._nodes.values()) or any(
+            edge.flows() for edge in self._edges.values()
+        )
         if live and not self._ring_timer.isActive():
             self._ring_timer.start()
         elif not live and self._ring_timer.isActive():

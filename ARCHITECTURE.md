@@ -767,7 +767,7 @@ verb act on, and where is that picked*:
   where Ctrl+V lives; one enabled QAction may own a shortcut);
 - the **plane** as a place — `select`: Find, Lasso, Select Nearest;
 - a **mixed** pick — `narrow`: Select Only Steps, Select Only Links;
-- a picked **arrow** — `links`: Remove Link and the Redirect pair (Auto-progress next);
+- a picked **arrow** — `links`: Remove Link, Auto-progress and the Redirect pair;
 - the drawing itself — `arrange`, `look`, `panels` as before;
 - picked **steps** — Step: Rename, Delete, Connect, Link, Unlink (the link between two
   picked steps, which a table can offer with no arrow in sight), Isolate, and Reveal in
@@ -3815,6 +3815,70 @@ jumps late exactly when work lands. So `since_for` answers `started` for the two
 change today?*, which the Work page draws a day solid by. The simulator plays only the
 prototype's four words, so a folded reading never reaches a real plan (a test pins both).
 
+## An auto-progress link is an aspect on the step that waits
+
+An agent stops at Ready for review, and a plain `requires` is fulfilled by done alone —
+together, the right rules for one step, and a deadlock for the shape the plan runs on: three
+agents in parallel, then one step that takes their branches, lands them and sets them done.
+That step cannot start until they are done, and they are done only once it has landed them.
+So a link may **auto-progress**: its waiter may start as soon as the source reads ready for
+review or ready to merge, and the waiter's briefing makes landing that work its job. Three
+places to keep the flag were weighed:
+
+| Where | Cost |
+|---|---|
+| **Data on the edge** — edges become objects with fields | A project-format bump older builds refuse to open, for one boolean; and every writer of an edge list (Link, Unlink, Redirect, Isolate, paste, import) learns to carry a field it does not care about. |
+| **A new edge kind** — `auto` beside `requires` and `relates` | Every reader of `requires` — ordering, the schedule, cones, cycles, lint, redirect, the report — has to learn that `auto` orders too, or silently miss it; an older build keeps the kind but stops ordering by it. |
+| **An aspect on the step that waits** — `{"from": [source ids]}` | None of the above: no format bump, an older build ignores it, and the graph learns nothing. (Chosen, N2.) |
+
+It follows *Status is an aspect*: the flag is a fact about the step that waits — *I take
+these steps' work from review on* — so it lives on that step, and the derivation that wants
+it is handed a function, `auto_progresses(waiter, source)`, exactly as it is handed
+`status_for`. `domain/progression.py`'s `outstanding()` is the one answer — a source is
+fulfilled when it is done, or under review or waiting on its merge across a flagged link —
+and the Step statuses tab, `progression show`, the report and Run Agent's gate all read it.
+
+**A listed id counts only while the link exists, and nothing repairs it.** `flagged(step)`
+intersects the list with the step's own `requires`, which the waiter holds, so no verb that
+rewrites edges learns the aspect exists. A removed, redirected or isolated link leaves its
+id inert, which is exactly *a redirected link arrives plain*; and undoing the removal
+restores the flag with the link, because the list was never touched. The cost is one
+surprise worth writing down: remove a flagged link and make it again, and it remembers its
+flag. A paste is the one place ids change, so `PastePolicy` is handed the old→new map (the
+five other policies ignore it) and the copies keep their flags; `project import` makes new
+ids without a policy, so an imported plan's flags go inert — the same gap named layouts
+have.
+
+**Only an agent collects.** The flag's whole promise is a briefing — *Work you collect*
+names each source's status, branch, PR and worktree on this machine, the duty to land that
+work and the right to `status set <source> done`, and each source's epilogue names who takes
+its work — and only an agent reads one. So the Edge menu's toggle greys on a waiter that is
+not an agent step, and lint `auto-progress.waiter` names one that arrived another way. The
+CLI still writes it, saying so, because a plan reshaped in several calls passes through that
+state. The right to finish a source needed no new rule: an agent may already set done a step
+under review, which is where a collected source stands.
+
+**It is drawn as work that moves on its own.** The canvas never learns the word: the root
+translates the flag into an `EdgeAccent` (`doubled`, `flowing`), as it does a node's
+`NodeAccent`. A doubled arrow is two rails with chevrons between them pointing at the step
+that waits — read from across the graph, where a medallion at the middle would be a dot —
+and its chevrons move while the source wears the live ring, on the ring's own clock: the
+motion that says *somebody is at work on this*, carried along to the step that will take
+the work. `project graph` draws the same link `==>`, and `step show` marks it.
+
+Two measurements shaped the painter. Placing a chevron with `QPainterPath.percentAtLength`
+costs about 40 µs a call, so a doubled arrow first cost 1.5 ms to lay out — on every sync,
+which runs once per keystroke. `follow()` now flattens the curve once and walks the
+polyline (0.2 ms), and it returns at once when the arrow's two ends have not moved, which is
+nearly every sync: 17 µs → 4 µs for *every* arrow, plain ones included. A flowing arrow's
+tick re-walks the cached polyline only, 0.13 ms per 80 ms.
+
+*Collect* here is not a scope's collecting (*A check is a scope over the graph, and so is a
+milestone*): a scope gathers a cone of steps for coverage and documentation, while this
+takes a handful of branches and lands them. The aspect's readers say `sources` and
+`collectors`, the briefing says *Work you collect*, and the scope code never meets either.
+The rule is in `.claude/rules/graph-model.md`.
+
 ## Running an agent launches a peer, not a task
 
 *Run Agent* writes the briefing to a per-run temp directory — never the project, which
@@ -4828,6 +4892,12 @@ The rules worth writing down, because each was a decision:
   percent — and **a plain `requires` is fulfilled by done alone**: nothing starts on work
   nobody has accepted, or on work not merged yet. The Run Agent gate asks the same
   question and so agrees, which a test pins.
+- **An auto-progress link is fulfilled from review on.** A step that exists to land its
+  sources' work cannot wait for them to be done, because they are done only once it has
+  landed them; so across a link its waiter flags, a source reading ready for review or
+  ready to merge frees it. The walk is handed `auto_progresses(waiter, source)` beside
+  `status_for`, and `outstanding()` is the one answer the frontier, the lookahead and the
+  Run Agent gate all read (*An auto-progress link is an aspect on the step that waits*).
 - **A blocked or reviewed prerequisite still counts as "on the board"** for the one-move
   lookahead: its dependents stay in *upcoming*, pointing at it. The alternative — demoting
   them to waiting — would make the queue churn every time a prerequisite flips between

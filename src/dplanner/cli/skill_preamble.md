@@ -310,11 +310,20 @@ not in it, stop and say so rather than working in the main checkout.
 **An agent finishes at Ready for review, never at done.** When your work on a step is
 finished, `dplanner status set S7 ready-for-review`: a person or a reviewing agent looks
 next, sets it `ready-to-merge` once it is accepted and `done` once it has landed — and
-nothing that waits on the step starts before then. From inside an agent's shell, `status
+nothing that waits on the step starts before then, except a step that collects it over an
+auto-progress link, which starts now and takes your branch. From inside an agent's shell, `status
 set <agent step> done` on a step nobody has reviewed is refused; when there is genuinely
 nothing to review, say why — `dplanner status set S7 done --because '<reason>'` — and the
 reason is kept as a decision note on the step. Ready for review is the *step's* work
 finished; the agent-run state `plan-for-review` is your *plan* waiting for a look, mid-run.
+
+**A step that collects other steps' work lands it, and finishes them.** Its briefing has
+*Work you collect*: each source's status, branch, PR and worktree on this machine. Merge each
+into your branch as a merge commit of its own, reconcile what they could not see of each
+other, review the whole — and once a source's work has landed, `dplanner status set <source>
+done` yourself: that is your job, and the CLI allows it. A step whose briefing names who
+collects it leaves its own done to them, so push everything and open the PR before `status
+set <step> ready-for-review`.
 
 **Other agents work beside you — same repository, same project, same process names.**
 Never kill a process by name or pattern: `pkill -f`, `killall`, `kill $(pgrep …)`. Every

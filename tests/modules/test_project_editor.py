@@ -1807,7 +1807,8 @@ def offered(tab, scene_pos):
 
 
 def test_a_right_click_on_an_arrow_picks_it_and_offers_the_link_verbs(services, project, tab):
-    """What an arrow is for, and nothing else: removed, or one of its ends moved."""
+    """What an arrow is for, and nothing else: removed, made to auto-progress, or one of its
+    ends moved."""
     first, second = project.steps
     services.undo.push(SetEdgesCommand(second.id, "requires", [first.id]))
     scene(tab).select_step(first.id)
@@ -1815,6 +1816,7 @@ def test_a_right_click_on_an_arrow_picks_it_and_offers_the_link_verbs(services, 
 
     assert offered(tab, a_point_on(edge)) == [
         "Remove Link",
+        "Auto-progress — S2 is not an agent step",
         ("Redirect", ["To Step", "From Step"]),
     ]
     assert scene(tab).selection().steps == ()
@@ -1966,7 +1968,14 @@ def test_a_mixed_pick_leads_with_narrowing_and_offers_each_kind_below(services, 
     assert rendered[:3] == ["Select Only Steps", "Select Only Links", "|"]
     assert "Delete 3 Items" in rendered and "Copy 2 Steps" in rendered
     assert [entry[0] for entry in rendered if isinstance(entry, tuple)] == ["Step", "Links"]
-    assert rendered[-1] == ("Links", ["Remove Link", ("Redirect", ["To Step", "From Step"])])
+    assert rendered[-1] == (
+        "Links",
+        [
+            "Remove Link",
+            "Auto-progress — S2 is not an agent step",
+            ("Redirect", ["To Step", "From Step"]),
+        ],
+    )
     assert rendered[-3] == "|"  # Above the two children, and none between them.
 
     services.actions.run("canvas.select_only_steps", services.context.current())

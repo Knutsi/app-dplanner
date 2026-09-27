@@ -110,9 +110,9 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "new" is what lands where the canvas was clicked: New Step, and Paste's second seat
     # (its home is Edit, with Ctrl+V). "select" is the ways to a step on the plane — Find,
     # Lasso, Select Nearest. "narrow" keeps one kind of a mixed pick: steps, or links.
-    # "links" is what a picked arrow is for: Remove Link and the Redirect pair. The canvas's
-    # right-click renders these bands by what it lands on, which is why each is a group of
-    # its own.
+    # "links" is what a picked arrow is for: Remove Link, Auto-progress and the Redirect
+    # pair. The canvas's right-click renders these bands by what it lands on, which is why
+    # each is a group of its own.
     # "arrange" is the Sort, Layout and Divide child menus: three ways of moving cards
     # about, from the wholesale to the one cut at a time. "contract" feeds that same Divide
     # child menu with the verbs that take room back, so the rule between opening a gap and

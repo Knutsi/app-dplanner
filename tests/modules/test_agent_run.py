@@ -1197,6 +1197,30 @@ def test_a_prerequisite_under_review_still_asks(services, step, prerequisite, mo
         assert f"Prepare — {said}" in detail
 
 
+def test_a_source_under_review_across_an_auto_progress_link_launches_without_asking(
+    services, step, prerequisite, monkeypatch
+):
+    """The gate reads the frontier's own answer: a step that collects its source's work may
+    start once the source is ready for review, so Run Agent has nothing to ask."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
+    from dplanner.modules.auto_progress.aspect import write as write_flags
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as write_status
+
+    library = services.document
+    SetModuleDataCommand(step.id, AUTO_PROGRESS_ID, write_flags([prerequisite.id])).redo(library)
+    SetModuleDataCommand(
+        prerequisite.id, STATUS_ID, write_status("ready-for-review", today=date(2026, 9, 21))
+    ).redo(library)
+    calls = _fake_terminal(monkeypatch)
+    boxes = _record_boxes(monkeypatch, click=None)
+    select(services, step)
+    services.actions.run("agent.run", services.context.current())
+    assert boxes == []
+    assert calls == [["fake-term"]]
+
+
 def test_running_spawns_a_terminal_in_the_projects_repo_root(
     services, step, library_repo, monkeypatch
 ):
@@ -1800,6 +1824,38 @@ def test_agent_prompt_says_where_the_plan_lives(cli_stdin, workspace):
     # The table is told too, with where each row stands on this machine.
     assert "Code: acme/widget — not checked out on this machine" in shown["prompt"]
     assert "`dplanner location list`" in shown["prompt"]
+
+
+def test_a_collector_is_briefed_with_the_work_it_collects(cli_stdin, workspace):
+    """Each source where it stands — status, branch, PR, and its worktree when it is on
+    this machine — then the duty to land it and the right to set it done."""
+    cli_stdin("project", "create", "Discovery", "--dir", str(workspace))
+    cli_stdin("step", "add", "Discovery", "Import", "--agent")
+    cli_stdin("step", "add", "Discovery", "Export", "--agent")
+    cli_stdin(
+        "step", "add", "Discovery", "Merge the round", "--agent",
+        "--after", "Import", "--after", "Export", "--auto-progress",
+    )  # fmt: skip
+    cli_stdin("describe", "set", "Merge the round", "--file", "-", stdin="Land them.")
+    cli_stdin("status", "set", "Import", "ready-for-review")
+    cli_stdin("github", "set", "Import", "--branch", "agent/s1-import", "--pr", "12")
+    worktree = workspace / ".dplanner-worktrees" / "s1-import"
+    worktree.mkdir(parents=True)
+
+    prompt = json.loads(cli_stdin("agent", "prompt", "Merge the round", "--json"))["prompt"]
+    collected = prompt.split("## Work you collect", 1)[1].split("\n## ", 1)[0]
+    assert "**S1** Import — ready for review · branch `agent/s1-import` · PR #12" in collected
+    assert f"worktree `{worktree}`" in collected
+    assert "**S2** Export — pending · no branch recorded" in collected
+    assert "no worktree of it on this machine" in collected
+    assert "`dplanner status set S1 done`, `dplanner status set S2 done`." in collected
+    assert prompt.index("## Work you collect") < prompt.index("## Instructions")
+
+    # And each source is told who takes its work, and to leave its done to them.
+    cli_stdin("describe", "set", "Import", "--file", "-", stdin="Import things.")
+    source = json.loads(cli_stdin("agent", "prompt", "Import", "--json"))["prompt"]
+    assert "- S3 collects this step's work" in source
+    assert "## Work you collect" not in source
 
 
 def test_agent_prompt_never_takes_an_unset_plans_repository_for_the_code(cli_stdin):

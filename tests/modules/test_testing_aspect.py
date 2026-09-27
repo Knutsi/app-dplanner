@@ -342,7 +342,7 @@ def test_a_pasted_test_keeps_its_audience_and_loses_only_its_id():
     _library, project = build("A")
     step = by_title(project, "A")
     give(step, Test("T100", "One", audiences=("qa",)))
-    remint_for_paste(project, [step])
+    remint_for_paste(project, [step], {})
     pasted = read(step)[0]
     assert pasted.audiences == ("qa",)
     assert pasted.id != "T100"

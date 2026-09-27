@@ -10,7 +10,7 @@ and when the shell itself ends without clearing it, the window that launched it 
 (:func:`record_exit`), because a chip on a step nobody is working on is a lie.
 """
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any, Final
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
@@ -95,7 +95,9 @@ def record_exit(library: Library, step_id: StepId) -> bool:
     return True
 
 
-def forget_for_paste(_project: Project, steps: Sequence[Step]) -> None:
+def forget_for_paste(
+    _project: Project, steps: Sequence[Step], _remapped: Mapping[StepId, StepId]
+) -> None:
     """A copied step carries no agent run — the paste policy this module hands in.
 
     The state is a fact about a shell somebody launched on the *original*; a chip and a

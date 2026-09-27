@@ -102,7 +102,7 @@ def test_a_pasted_feature_step_is_a_feature_citing_nothing():
     step = Step(title="Search")
     step.module_data[MODULE_ID] = write((FeatureSource("spec", "a quote"),))
     plain = Step(title="Plain")
-    drop_cites_for_paste(Project(title="P"), [step, plain])
+    drop_cites_for_paste(Project(title="P"), [step, plain], {})
     assert read(step) == () and is_feature(step)
     assert MODULE_ID not in plain.module_data
 
