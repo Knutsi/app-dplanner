@@ -8,6 +8,14 @@ deliberately no terminal state here: finishing is ``step_status``'s claim
 (``status set … done``), so a finishing agent clears this entry instead, restoring absence;
 and when the shell itself ends without clearing it, the window that launched it does
 (:func:`record_exit`), because a chip on a step nobody is working on is a lie.
+
+**A launch into plan mode says so** (``plans_first``). Claude's preset starts a session that
+writes a plan and waits for a person to approve it, and a session in plan mode runs nothing
+that writes — so it never reports ``plan-for-review`` itself, and waits reading
+``launched``. The launch stamp carries the fact instead, and the agent's first state of its
+own drops it, since :func:`write` builds the entry afresh. :func:`asks_person` is what the
+Step statuses tab, the Control Centre and ``progression show`` read to list it under
+*Waits for you*.
 """
 
 from collections.abc import Mapping, Sequence
@@ -22,6 +30,10 @@ MODULE_ID = "step_agent_run"
 
 # The lifecycle, in the order a run moves through it. Absence means no agent run.
 STATES: Final = ("launched", "working", "plan-for-review", "pending-approval", "needs-input")
+LAUNCHED: Final = "launched"
+# What an agent says when it waits on a person: a plan to approve, a question to answer.
+ASKING: Final = ("plan-for-review", "needs-input")
+PLANS_FIRST_KEY: Final = "plans_first"
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
 
@@ -50,6 +62,16 @@ def launched(step: Step) -> str:
     return stamp if isinstance(stamp, str) else ""
 
 
+def asks_person(step: Step) -> bool:
+    """Whether the step's agent waits on a person: it said so, or it was launched into plan
+    mode and has not said anything since."""
+    state = read(step)
+    if state in ASKING:
+        return True
+    entry = step.module_data.get(MODULE_ID) or {}
+    return state == LAUNCHED and entry.get(PLANS_FIRST_KEY) is True
+
+
 def write(state: str, launched: str = "") -> dict[str, Any]:
     """The entry to store. An empty state gives ``{}``, which removes the file.
 
@@ -70,17 +92,17 @@ def summary(step: Step) -> str:
     return "" if not state else f"agent: {state.replace('-', ' ')}"
 
 
-def record_launch(library: Library, step_id: StepId) -> None:
-    """Stamp "an agent shell was launched on this step" — directly, off the undo stack.
+def record_launch(library: Library, step_id: StepId, plans_first: bool = False) -> None:
+    """Stamp "an agent shell was launched on this step" — directly, off the undo stack —
+    and whether its session starts in plan mode, waiting for a person.
 
     The stamp records an external fact: a detached shell now exists, and Ctrl+Z cannot
     un-launch it. An undo entry would make undo erase a true record instead of undoing the
     user's last edit, so the command is applied the way a background sync applies one.
     Autosave flushes on the store's dirty signal regardless of the stack.
     """
-    SetModuleDataCommand(step_id, MODULE_ID, write("launched"), view_origin=LAUNCH_ORIGIN).redo(
-        library
-    )
+    entry = write(LAUNCHED) | ({PLANS_FIRST_KEY: True} if plans_first else {})
+    SetModuleDataCommand(step_id, MODULE_ID, entry, view_origin=LAUNCH_ORIGIN).redo(library)
 
 
 def record_exit(library: Library, step_id: StepId) -> bool:

@@ -63,7 +63,9 @@ if TYPE_CHECKING:
     from dplanner.modules.project_editor.clipboard import PastePolicy
     from dplanner.modules.spec.source_kind import DocumentSourceKind
     from dplanner.modules.spec_confluence.module import SecretStore
+    from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
+    from dplanner.modules.step_review.rounds import TurnDue
     from dplanner.modules.sync.service import Publication
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
@@ -73,16 +75,22 @@ __all__ = [
     "agent_harnesses",
     "aspect_specs",
     "at_work_board",
+    "auto_launch_directory",
     "default_cli_commands",
     "default_module_formats",
     "default_modules",
     "dictation_providers",
+    "launch_locks_in",
     "start_window",
     "theme_providers",
 ]
 
 
-def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None) -> list["Module"]:
+def default_modules(
+    services: "AppServices",
+    board: "AtWorkBoard | None" = None,
+    launch_locks: "LaunchLocks | None" = None,
+) -> list["Module"]:
     from pathlib import Path
 
     from dplanner.cli.report.website import SiteTarget
@@ -189,6 +197,7 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
         separate_instruction as agent_separate,
     )
     from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write_state
+    from dplanner.modules.step_agent_instruction.auto_launch import Due
     from dplanner.modules.step_agent_instruction.module import (
         RUN_MENU_ID,
         StepAgentInstructionDeps,
@@ -1042,6 +1051,8 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             counts_as_work=_counts_as_work,
             # A step that collects its sources' work is ready once they are under review.
             auto_progresses=_auto_progresses,
+            # An agent that waits on a person is a row of its own: Waits for you.
+            asks_person=_asks_person,
             verbs=(
                 StripVerb("agent.run", data_menu=RUN_MENU_ID, face="Run Agents"),
                 StripVerb("status.ready-to-merge"),
@@ -1340,8 +1351,40 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             reveal=reveal_step,
             # Which CLI ran a step, and how to read its record back when the shell ends.
             harnesses=agent_harnesses(),
+            # A run that ended frees a slot for what is due — even when the agent had
+            # cleared its state and the plan did not change. The agent module is built
+            # below, and nothing ends before the build is up.
+            ended=lambda: agent_instruction.settle_launches(),
         )
     )
+
+    def due_here() -> "list[Due]":
+        """What this window would launch, across the library, each with its claim: in
+        progress for what auto-progress made due, the round's stamp for a turn. Running is
+        the plan's run stamp *or* a run this window is watching, so a claim still on its
+        way to disk can never make a live shell's step due again."""
+        from dplanner.modules.step_review.rounds import record_turn_launched
+
+        today = services.clock.today()
+        status_for = _status_in(library, today)
+
+        def running(step: "Step") -> bool:
+            return bool(agent_run_state(step)) or agent_runs.live(step.id) > 0
+
+        def claim(step: "Step", turn: "TurnDue | None") -> "Callable[[], None]":
+            def claimed() -> None:
+                if turn is not None:
+                    record_turn_launched(library, turn.asker, turn.party)
+                else:
+                    record_started(library, step.id, today)
+
+            return claimed
+
+        return [
+            Due(step.id, claim(step, turn))
+            for project in library.projects
+            for step, turn in _due_now(library, project, status_for, running)
+        ]
 
     # Built ahead of the list: the agent module deep-links to its own settings page
     # through it. Registered last, since its dialog must see every other module's
@@ -1418,6 +1461,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 files.session if _names_session(harness) else "",
                 # What the briefing came to: measured where prompt.md was written.
                 files.prompt_chars,
+                # A session that starts in plan mode waits for a person from the first
+                # moment, and says nothing until its plan is approved.
+                files.plans_first,
             ),
             harnesses=agent_harnesses(),
             # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.
@@ -1438,6 +1484,19 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
             ticket_key=_ticket_key,
             # Manage Agent Profiles… lands on the module's own settings page.
             open_settings=settings.open,
+            # What the window launches with nobody clicking, when this machine says so.
+            due=due_here,
+            preferred_agent=_preferred_agent,
+            asks_person=_asks_person,
+            run_state=agent_run_state,
+            live_runs=agent_runs.live,
+            repo=store,
+            notices=services.window,
+            clock=services.clock,
+            flush=services.autosave.flush_now,
+            launch_lock=(
+                launch_locks.for_library(store.library_path) if launch_locks is not None else None
+            ),
         )
     )
 
@@ -1532,6 +1591,9 @@ def default_modules(services: "AppServices", board: "AtWorkBoard | None" = None)
                 # Whether an agent says it is at work on a project: the modal stands down
                 # while one is, and the dialog says so when it does open.
                 agent_at_work=agent_at_work.at_work_words,
+                # Every settle of an outside change — even one that changed nothing the
+                # model heard, like Keep Mine — lets the launcher look again.
+                settled=agent_instruction.settle_launches,
             )
         ),
         TaskCenterModule(
@@ -2734,6 +2796,67 @@ def _is_agent_step(step: "Step") -> bool:
     return enabled(step)
 
 
+def _preferred_agent(step: "Step") -> str:
+    """The agent a step asks to be run by — a review's own choice, a harness id — or "" for
+    the default profile."""
+    from dplanner.modules.step_review.aspect import is_review, settings
+
+    return settings(step).agent if is_review(step) else ""
+
+
+def _asks_person(step: "Step") -> bool:
+    """Whether a step's agent waits on a person — a plan to approve, a question to answer:
+    what puts a running row under *Waits for you*."""
+    from dplanner.modules.step_agent_run.aspect import asks_person
+
+    return asks_person(step)
+
+
+def _has_run(step: "Step") -> bool:
+    """Whether the plan records an agent run on the step — the launch's own stamp."""
+    from dplanner.modules.step_agent_run.aspect import read
+
+    return bool(read(step))
+
+
+def _due_now(
+    library: "Library",
+    project: "Project",
+    status_for: "Callable[[Step], str]",
+    running: "Callable[[Step], bool]" = _has_run,
+) -> "list[tuple[Step, TurnDue | None]]":
+    """Every step of ``project`` a window that launches what becomes due would start, in
+    project order: what auto-progress made due (``progression.due``), and a side of a
+    conversation whose turn it is and whose agent has gone (``rounds.due_turns``) — carried
+    with its turn, since its claim is a stamp on that round. One step due both ways is due
+    for its turn: that claim is the one a later settle must read.
+
+    The one derivation every surface reads: ``progression show`` marks it, the status verbs
+    say what they made due, and the window launches it — with ``running`` widened there to
+    the runs it is watching, which a claim not yet on disk cannot hide.
+    """
+    from dplanner.domain.progression import due
+    from dplanner.modules.step_review.rounds import due_turns
+
+    found: dict[str, tuple[Step, TurnDue | None]] = {
+        turn.step.id: (turn.step, turn)
+        for turn in due_turns(library, project, _is_agent_step, running, status_for)
+    }
+    for step in due(
+        library, project, status_for, _auto_progresses, _is_agent_step, running, _counts_as_work
+    ):
+        found.setdefault(step.id, (step, None))
+    place = {step.id: index for index, step in enumerate(project.steps)}
+    return sorted(found.values(), key=lambda pair: place[pair[0].id])
+
+
+def _due_steps(
+    library: "Library", project: "Project", status_for: "Callable[[Step], str]"
+) -> "list[Step]":
+    """The due steps alone — what the terminal marks and names."""
+    return [step for step, _turn in _due_now(library, project, status_for)]
+
+
 def _inherit_refs(subject: "Step", review: "Step") -> "Command | None":
     """The command giving ``review`` the branch and PR of the step it approved — so the
     review carries the PR's label into the merge — or None when there are none to carry."""
@@ -2851,20 +2974,42 @@ STATUS_WRITES = (
 )
 
 
-def _recording_status(
+def _status_written(
     command: "CliCommand", record: "Callable[[CliContext, Project], bool]"
 ) -> "CliCommand":
-    """``command`` followed by ``record`` for the project of the step it named."""
+    """``command`` followed by ``record`` for the project of the step it named — and a line
+    for every step the change made due, since only a window launches one and the terminal is
+    where the agent that caused it reads what happens next.
+
+    The line is text alone: ``--json`` keeps the one document the verb answers with, and
+    ``progression show --json`` marks what is due for a caller that parses.
+    """
     from dataclasses import replace
 
     from dplanner.cli.lookup import find_step
 
     inner = command.run
 
+    def due_in(context: "CliContext", project: "Project") -> "list[Step]":
+        today = context.clock.today()
+        return _due_steps(context.library, project, _status_in(context.library, today))
+
     def run(context: "CliContext", args: "Namespace") -> int:
+        project = context.library.project_of(
+            find_step(context.library, args.step, context.current).id
+        )
+        before = {step.id for step in due_in(context, project)}
         code = inner(context, args)
-        step = find_step(context.library, args.step, context.current)
-        record(context, context.library.project_of(step.id))
+        record(context, project)
+        if not context.as_json:
+            for step in due_in(context, project):
+                if step.id not in before:
+                    print(
+                        f"Now due: {_step_key(step)} {step.title or 'Untitled step'} — a DPlanner"
+                        " window set to launch due steps starts its agent; with none open, a"
+                        " person does",
+                        file=context.out,
+                    )
         return code
 
     return replace(command, run=run)
@@ -3707,6 +3852,22 @@ def at_work_board() -> "AtWorkBoard":
     return AtWorkBoard(config_dir() / DIRECTORY)
 
 
+def launch_locks_in(directory: "Path") -> "LaunchLocks":
+    """The launch locks a session holds, one per library, under ``directory`` — built once
+    per session so a reload's window keeps the hold (``auto_launch.py``)."""
+    from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
+
+    return LaunchLocks(directory)
+
+
+def auto_launch_directory() -> "Path":
+    """Where this machine's launch locks live: which window launches what becomes due, one
+    per library. Named here and nowhere deeper, like the at-work board."""
+    from dplanner.core.config_dir import config_dir
+
+    return config_dir() / "auto-launch"
+
+
 def start_window(services: "AppServices") -> None:
     """What the program's first window shows once it is built: the tabs the last session
     had, which reopen_tabs brought back during the build — or, when that left none open,
@@ -3936,6 +4097,8 @@ def default_cli_commands(
             days_for=estimated_days,
             auto_progresses=_auto_progresses,
             is_agent=_is_agent_step,
+            asks_person=_asks_person,
+            due=_due_steps,
         ),
         # The timeline sort reads a step's length through estimation's Qt-free reader —
         # handed over here so neither cli.py imports the other.
@@ -3971,9 +4134,10 @@ def default_cli_commands(
         *lint_commands(checks=list(_lint_checks()), roles=roles),
     ]
     # A status said from the terminal is a day of work on record, window or no window: an
-    # agent reports with `status set`, and nobody opens a window to record it.
+    # agent reports with `status set`, and nobody opens a window to record it. It is also
+    # the moment a step may become due, which the terminal says.
     commands = [
-        _recording_status(
+        _status_written(
             command, lambda context, project: time_cli.record_day(context, project, time_readers)
         )
         if command.path in STATUS_WRITES

@@ -22,6 +22,14 @@ paths:
   `status_for`): `progression.outstanding()` is the one answer the frontier, the lookahead
   and Run Agent's gate read, so a step that collects its sources is Ready to start once they
   are under review (`graph-model.md`).
+  **Some of Ready to start is due, and an agent waiting on a person is on the board.**
+  `progression.due` is the part of the frontier nobody decides to launch — an agent step,
+  pending, no run, a prerequisite fulfilled *through* an auto-progress link — read with the
+  review turns by the root's `_due_now`, marked `due` by `progression show`, and launched by
+  a window (`agents.md`). `asks_person` (the agent-run aspect's reading: `plan-for-review`,
+  `needs-input`, or a plan-mode launch that has said nothing since) splits running work
+  into `asking`, the **Waits for you** group under Blocked on both boards and in
+  `progression show`; the report keeps the default, since it publishes the plan.
   **Every partition a person acts on is ranked by `unlocks`** (the map covers every step
   of work not done), ties in project order. **The surface is named for the question and
   the derivation for the answer**: the tab, its menu entries and its index row say *Step

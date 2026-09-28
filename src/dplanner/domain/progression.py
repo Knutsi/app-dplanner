@@ -37,6 +37,16 @@ honoured as done — the graph gates *launching*, not *recording* — so out-of-
 completion is never an error, and finishing a step frees its dependents no matter what
 the rest of the graph says.
 
+**An agent waiting on a person is on the board.** A step in progress whose agent asks for
+somebody — a plan to approve, a question to answer — is handed in as ``asks_person`` and
+lands in ``asking`` rather than ``running``: the work is not stuck on the graph, it is stuck
+on a person, which is what a board of what needs a person is for.
+
+**Some of the frontier is due.** :func:`due` is the part of it nobody needs to launch by
+hand: an agent step whose last prerequisite was fulfilled *through* an auto-progress link —
+a collector's sources, a review's subject, just reached review. A window that launches
+what becomes due starts it; the terminal says it became due.
+
 **Several projects are one board by merging theirs** (:func:`across`, :func:`merge`): edges
 never cross a project, so each walk is unchanged, and the merge ranks what a person acts on
 by unlocks again over the whole, ties going library order and then each project's own.
@@ -78,6 +88,10 @@ def _never(_waiter: Step, _source: Step) -> bool:
     return False
 
 
+def _answers_no(_step: Step) -> bool:
+    return False
+
+
 def outstanding(
     library: Library,
     waiter: Step,
@@ -100,6 +114,42 @@ def outstanding(
     return waiting
 
 
+def due(
+    library: Library,
+    project: Project,
+    status_for: Callable[[Step], str],
+    auto_progresses: Callable[[Step, Step], bool],
+    is_agent: Callable[[Step], bool],
+    running: Callable[[Step], bool] = _answers_no,
+    counts_as_work: Callable[[Step], bool] = _all_work,
+) -> list[Step]:
+    """The agent steps auto-progress made due, in project order: nobody has started them, no
+    agent runs in them, nothing they wait on is unfinished — and at least one of those
+    prerequisites was fulfilled *through* an auto-progress link, reading ready for review or
+    ready to merge.
+
+    That last clause is the whole difference from Ready to start. A collector whose sources a
+    person set done by hand is ready for a person to launch; one whose sources just reached
+    review was made ready by the flag, and the flag's promise is that it starts on its own.
+    ``running`` is whether an agent run is recorded on the step — the launch's own stamp,
+    which is what keeps a step from being due twice.
+    """
+    found = []
+    for step in project.steps:
+        if not counts_as_work(step) or not is_agent(step) or running(step):
+            continue
+        if status_for(step) in (DONE, IN_PROGRESS, BLOCKED, WAITING, *REVIEW_AND_MERGE):
+            continue
+        if outstanding(library, step, status_for, auto_progresses):
+            continue
+        if any(
+            status_for(source) in REVIEW_AND_MERGE and auto_progresses(step, source)
+            for source in library.requires(step.id)
+        ):
+            found.append(step)
+    return found
+
+
 @dataclass(frozen=True)
 class Upcoming:
     """A step one move away: everything it waits on is on the board already.
@@ -117,8 +167,9 @@ class Progression:
     """Every step in exactly one place: how far the project is, and what moves next.
 
     ``attention`` is the blocked steps — stuck on a person, not on the graph — kept
-    apart from ``running`` because they are the rows that need eyes; ``review`` and
-    ``merge`` are finished work a person looks at next. ``waiting`` is everything further
+    apart from ``running`` because they are the rows that need eyes; ``asking`` is running
+    work whose agent waits on a person, for the same reason; ``review`` and ``merge`` are
+    finished work a person looks at next. ``waiting`` is everything further
     than one move out; a step whose prerequisite is merely upcoming stays there, because
     the lookahead is deliberately one move and not a forecast.
 
@@ -130,6 +181,7 @@ class Progression:
 
     done: tuple[Step, ...]
     running: tuple[Step, ...]
+    asking: tuple[Step, ...]
     review: tuple[Step, ...]
     merge: tuple[Step, ...]
     attention: tuple[Step, ...]
@@ -143,6 +195,7 @@ class Progression:
         return (
             len(self.done)
             + len(self.running)
+            + len(self.asking)
             + len(self.review)
             + len(self.merge)
             + len(self.attention)
@@ -168,6 +221,7 @@ def progression(
     status_for: Callable[[Step], str],
     counts_as_work: Callable[[Step], bool] = _all_work,
     auto_progresses: Callable[[Step, Step], bool] = _never,
+    asks_person: Callable[[Step], bool] = _answers_no,
 ) -> Progression:
     """One walk in project order, so the answer is deterministic — ``ordering.py``'s rule.
 
@@ -179,7 +233,8 @@ def progression(
     (``counts_as_work``) lands in none of them, but what it reads still gates what waits
     on it. Each partition a person acts on is ranked by ``unlocks``; ties keep project
     order. ``auto_progresses`` says which links free their waiter from review on
-    (:func:`outstanding`).
+    (:func:`outstanding`); ``asks_person`` which steps in progress wait on a person
+    (``asking``).
     """
     status = {step.id: status_for(step) for step in project.steps}
     work = [step for step in project.steps if counts_as_work(step)]
@@ -227,9 +282,11 @@ def progression(
         else:
             waiting.append(step)
 
+    in_progress = claiming(IN_PROGRESS)
     return Progression(
         done=tuple(claiming(DONE)),
-        running=tuple(claiming(IN_PROGRESS)),
+        running=tuple(step for step in in_progress if not asks_person(step)),
+        asking=ranked([step for step in in_progress if asks_person(step)]),
         review=ranked(claiming(READY_FOR_REVIEW)),
         merge=ranked(claiming(READY_TO_MERGE)),
         attention=ranked(claiming(BLOCKED)),
@@ -263,6 +320,7 @@ def merge(found: Iterable[Progression]) -> Progression:
     return Progression(
         done=joined(lambda one: one.done),
         running=joined(lambda one: one.running),
+        asking=_ranked(joined(lambda one: one.asking), unlocks),
         review=_ranked(joined(lambda one: one.review), unlocks),
         merge=_ranked(joined(lambda one: one.merge), unlocks),
         attention=_ranked(joined(lambda one: one.attention), unlocks),
@@ -279,6 +337,7 @@ def across(
     status_for: Callable[[Step], str],
     counts_as_work: Callable[[Step], bool] = _all_work,
     auto_progresses: Callable[[Step, Step], bool] = _never,
+    asks_person: Callable[[Step], bool] = _answers_no,
 ) -> Progression:
     """Every project's progression merged into one board — what can start anywhere.
 
@@ -286,7 +345,7 @@ def across(
     cross a project, so each walk is the one-project walk unchanged.
     """
     return merge(
-        progression(library, project, status_for, counts_as_work, auto_progresses)
+        progression(library, project, status_for, counts_as_work, auto_progresses, asks_person)
         for project in projects
     )
 
@@ -331,6 +390,7 @@ def estimated_progress(
     everything: Iterable[Step] = (
         *progress.done,
         *progress.running,
+        *progress.asking,
         *progress.review,
         *progress.merge,
         *progress.attention,

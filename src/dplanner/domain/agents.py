@@ -114,6 +114,11 @@ class AgentHarness:
     # The binary the command runs: what the checklist asks PATH for, and what the
     # settings page's detection and "not found" note name.
     binary: str = ""
+    # The words in a command that start this CLI's session in plan mode — writing a plan
+    # and waiting for a person to approve it; "" for a CLI with no such mode. Whether a
+    # launch waits on somebody is read off the command it ran (``launcher.plans_first``),
+    # so a profile edited to drop the words launches an agent that does not wait.
+    plan_mode: str = ""
 
     def marks(self, name: str) -> bool:
         """Whether an environment variable of this name marks one of this CLI's shells."""

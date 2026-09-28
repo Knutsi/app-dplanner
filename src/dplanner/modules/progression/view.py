@@ -3,10 +3,11 @@ one project's, or every project's in the Control Centre.
 
 Pure rendering — the domain's :class:`~dplanner.domain.progression.Progression` arrives
 computed and the table is rebuilt wholesale, so nothing here can disagree with the model.
-The groups are the partitions a person acts on, in the order they are closest to done —
-Blocked, Ready to merge, Ready for review, Ready to start — and then Waiting, what cannot
-start yet. Work in progress is not listed: an agent at work needs nobody, and the tab is
-for the rows that do.
+The groups are the partitions a person acts on — Blocked and Waits for you, what is stuck
+on a person, then in the order the work is closest to done Ready to merge, Ready for
+review, Ready to start — and then Waiting, what cannot start yet. Work in progress is not
+listed: an agent at work needs nobody, and the tab is for the rows that do — which is why
+an agent that waits on a person (a plan to approve, a question) is.
 
 **The box is the selection.** The first column is a check column (``Column(check=True)``):
 ticking a row picks it, and the host publishes what is picked, so the strip's verbs, the
@@ -67,6 +68,13 @@ class Group:
 
 GROUPS = (
     Group("blocked", "Blocked", "Blocked", "Nothing is blocked.", lambda found: found.attention),
+    Group(
+        "asking",
+        "Waits for you",
+        "Answer",
+        "No agent is waiting for you.",
+        lambda found: found.asking,
+    ),
     Group(
         "merge",
         "Ready to merge",

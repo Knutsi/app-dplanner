@@ -321,6 +321,15 @@ finished; the agent-run state `plan-for-review` is your *plan* waiting for a loo
 A step a review waits on does not stop there: its briefing says to wait for the review's
 rounds and answer them (below).
 
+**What happens after Ready for review is not yours to start.** When your `status set` makes
+a collector or a review *due* — every prerequisite finished, at least one through an
+auto-progress link — the terminal says so (`Now due: C9 …`), and `progression show` marks
+it `due`. With a DPlanner window open whose *Agent profiles ▸ When a step becomes due* is
+on, that window launches its agent within seconds, claimed in progress; with none, it waits
+for a person. Either way, stop as you would have: never launch another agent from your own
+shell. `progression show` lists an agent that waits on a person — a plan to approve, a
+question — under **Waits for you**, not Running.
+
 **A step that collects other steps' work lands it, and finishes them.** Its briefing has
 *Work you collect*: each source's status, branch, PR and worktree on this machine. Merge each
 into your branch as a merge commit of its own, reconcile what they could not see of each
@@ -354,7 +363,9 @@ through `dplanner review`, one verb per turn:
   pending-approval`, run `review wait S7`. When findings arrive, `review take S7`, do the
   work, push, and `review reply S7 --file reply.md` — S7 is ready for review again — then
   wait again, until the review approves (S7 is done) or escalates. After an hour with
-  nothing new, stop: relaunching S7 briefs you with any round that arrived.
+  nothing new, stop: relaunching S7 briefs you with any round that arrived — and a window
+  that launches what becomes due relaunches whichever side has the turn once its agent has
+  gone, once per round.
 
 Both briefings carry this protocol — the review's `## Instructions` are generated from its
 lenses, its cap and its subject, with its description as what to look for — and a

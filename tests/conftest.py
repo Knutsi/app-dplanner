@@ -117,7 +117,15 @@ def at_work_board(tmp_path):
 
 
 @pytest.fixture
-def session(app, library_file, at_work_board):
+def launch_locks(tmp_path):
+    """Where a test's window keeps its launch lock — this test's own directory, never the
+    machine's, so no window a test builds competes with a DPlanner the developer has open.
+    A test that plays the other window holds a lock of its own over the same directory."""
+    return tmp_path / "auto-launch"
+
+
+@pytest.fixture
+def session(app, library_file, at_work_board, launch_locks):
     """A whole application, built over a fresh, empty library in a temp directory.
 
     Built through ``AppSession`` — the same path ``dplanner.app.main`` takes — so a test can
@@ -132,7 +140,7 @@ def session(app, library_file, at_work_board):
     # not read what some agent is really doing on this machine — and a test that writes a
     # claim through the ``cli`` fixture sees it in the window it built, because both
     # fixtures are handed the one board.
-    session = new_session(at_work=at_work_board)
+    session = new_session(at_work=at_work_board, launch_locks=launch_locks)
     assert session.open_initial(library_file)
     assert session.services is not None
     # Every coalesced view refresh runs inline: a test asserts on a view the line after it

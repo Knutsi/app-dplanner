@@ -58,7 +58,11 @@ paths:
   which is what retired the status-bar button it used to leave. The watcher no
   longer waits for a quiet window: a flush re-stamps as it writes, so our own writes never
   read as foreign. Branch switch and pull go through the same `SessionControl.refresh`,
-  clearing undo history (theirs describes another tree). `ARCHITECTURE.md`'s *Adopting the
+  clearing undo history (theirs describes another tree). **The watcher says it settled**
+  (`LibraryWatchDeps.settled`, after every settle and every answer), because some settles
+  change nothing the model announces — *Keep Mine*, an identical rewrite, a project still
+  unreadable — and whoever stood down while the plan changed underneath must look again:
+  the auto-launcher is (`agents.md`). `ARCHITECTURE.md`'s *Adopting the
   other writer's changes in place* has the reasoning.
 - **An agent at work says so, and the window says it back.** The other writer is
   invisible, which is the whole problem: a developer editing a step an agent is rewriting

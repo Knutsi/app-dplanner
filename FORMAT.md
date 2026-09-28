@@ -31,6 +31,7 @@ Four places, and the choice is not stylistic:
 | Per user, per machine (Qt-free) | a working clone DPlanner keeps for a verb that needed the repository here and nobody had checked out — Run Agent's code, a report's destination — under the default clone policy | `core/storage/kept.py` under `config_dir()/checkouts/<name>-<digest of remote>`, one per repository; recorded in the library file's `checkouts` map like any checkout | it is a checkout: commits an agent made there and never pushed are in it and nowhere else, so it is not wiped by the application |
 
 | Per user, per machine (GUI only) | preferences: panel layout, model choices, the agent launch profiles | `framework/user_config.py`'s `get_global` (QSettings) | no |
+| Per user, per machine (GUI only) | which window launches what becomes due: one lock per library, held by the window whose *When a step becomes due* is on | a `QLockFile` at `config_dir()/auto-launch/<library_scope(library path)>.lock` (`step_agent_instruction/auto_launch.py`) — stale only once its process is gone | no — it is a process that is running here, now |
 | Per user, per machine, per library | where the user left off: open index folders, open tabs | `framework/user_config.py`'s `get_scoped`, under `library_scope(path)` | no |
 | The OS keychain | credentials, API keys — the LLM keys, a Confluence token per site (`spec_confluence.token:<host>`) | `core/secrets.py` | no, and never on disk |
 
@@ -576,6 +577,15 @@ finer split rides under `details` in its own words. Totals are summed on read
 `step_agent_run` and is cleared at exit — the two are different claims, and only this one
 outlives the shell.
 
+**`step_agent_run` is where a launched agent stands**, absent when none is:
+`{"state": "launched", "launched": "<ISO stamp>"}`, format 1, `state` one of `launched`,
+`working`, `plan-for-review`, `pending-approval` and `needs-input`, cleared by the agent at
+the end or by the window when the shell ends. A launch into a session that starts in plan
+mode adds `"plans_first": true`: such a session writes nothing until its plan is approved,
+so the launch says that it waits on a person, and the agent's first state of its own
+rebuilds the entry without it. No bump: an older build reads the state and ignores the key,
+and its next write drops it, which only takes the step off *Waits for you*.
+
 **`step_wait` makes a step a wait**: `{"until": "2026-11-04"}`, the first day what requires
 it may start, or `{"days": 3.0}`, that many working days from when it is reached — one key or
 the other, format 1, a count written as a float. A wait is no work: no worker takes it, it
@@ -604,12 +614,17 @@ What it reviews is never stored: it is the step the review requires.
 **`review_rounds` is the conversation, kept on the step that asks** — a review, or a
 collector — and a ledger of rounds, never a state: `{"rounds": [{"with": "<step id>",
 "opened": "<stamp>", "findings": "…", "posted": "<stamp>", "taken": "<stamp>", "reply":
-"…", "replied": "<stamp>", "approved": "<stamp>", "escalated": "<stamp>", "note": "…"}]}`,
-format 1.
+"…", "replied": "<stamp>", "approved": "<stamp>", "escalated": "<stamp>", "note": "…",
+"asker_turn_launched": "<stamp>", "party_turn_launched": "<stamp>"}]}`, format 1.
 - `with` names the party answering, and a round's number counts that party's rounds.
 - Every key after `opened` is written when it is said.
 - A round's state and whose turn it is are read off which stamps are present.
 - A key this build does not know is kept when a round is stamped again.
+- `asker_turn_launched` and `party_turn_launched` are the window's, never a verb's: when a
+  side has the turn and its agent has gone, a window launching what becomes due relaunches
+  it and writes *the stamp that began that turn* there — `posted` for the party, `replied`
+  (else `opened`) for the asker — so the turn is due once, for every reader. A turn, not a
+  moment: equal means launched, whatever another machine's clock says.
 - A paste forgets the ledger: a conversation belongs to the original.
 
 **Absence encodes the default, and the default is not always "off".** Every aspect above is

@@ -13,19 +13,22 @@ The projects are positionals because ``--project`` is every verb's own option al
 
 The status and estimate readers arrive as functions from the composition root, the same
 hand-over ``layout_cli.commands(days_for=…)`` uses — neither ``cli.py`` imports the other.
+So does what is **due**: the agent steps a window that launches what becomes due would start
+on its own, marked on their rows, and **Waits for you** — running work whose agent waits on
+a person — which ``asks_person`` splits from Running.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project
-from dplanner.domain.model import Library, Project, Step
+from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.progression import Progression, across, estimated_progress
 from dplanner.domain.short_titles import UNTITLED
 
@@ -40,6 +43,8 @@ class _Readers:
     days_for: Callable[[Step], float | None]
     auto_progresses: Callable[[Step, Step], bool]
     is_agent: Callable[[Step], bool]
+    asks_person: Callable[[Step], bool]
+    due: Callable[[Library, Project, Callable[[Step], str]], Sequence[Step]]
 
 
 def commands(
@@ -49,14 +54,20 @@ def commands(
     days_for: Callable[[Step], float | None],
     auto_progresses: Callable[[Step, Step], bool],
     is_agent: Callable[[Step], bool],
+    asks_person: Callable[[Step], bool],
+    due: Callable[[Library, Project, Callable[[Step], str]], Sequence[Step]],
 ) -> list[CliCommand]:
     """``status_in`` reads a step's status in a library on a day — a wait is done once it is
     over, which only the day can say. ``auto_progresses`` says which links free their waiter
-    from review on; ``is_agent`` whether an agent works a step, which every row says."""
+    from review on; ``is_agent`` whether an agent works a step, which every row says;
+    ``asks_person`` whether a running step's agent waits on a person; ``due`` which steps of
+    a project a window would launch on its own, read with the day's statuses."""
 
     def show(context: CliContext, args: Namespace) -> int:
         status_for = status_in(context.library, context.clock.today())
-        readers = _Readers(status_for, counts_as_work, days_for, auto_progresses, is_agent)
+        readers = _Readers(
+            status_for, counts_as_work, days_for, auto_progresses, is_agent, asks_person, due
+        )
         return _show(context, args, readers)
 
     return [
@@ -105,9 +116,19 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
     library = context.library
     projects = _projects(library, args)
     found = across(
-        library, projects, readers.status_for, readers.counts_as_work, readers.auto_progresses
+        library,
+        projects,
+        readers.status_for,
+        readers.counts_as_work,
+        readers.auto_progresses,
+        readers.asks_person,
     )
     weighted = estimated_progress(found, readers.days_for)
+    due = {
+        step.id
+        for project in projects
+        for step in readers.due(library, project, readers.status_for)
+    }
 
     def row(step: Step, **more: Any) -> dict[str, Any]:
         return {
@@ -115,6 +136,7 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
             "title": step.title,
             "project": library.project_of(step.id).id,
             "agent": readers.is_agent(step),
+            "due": step.id in due,
             **more,
         }
 
@@ -126,6 +148,7 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
         "counts": {
             "done": len(found.done),
             "running": len(found.running),
+            "asking": len(found.asking),
             "review": len(found.review),
             "merge": len(found.merge),
             "attention": len(found.attention),
@@ -134,6 +157,7 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
             "waiting": len(found.waiting),
         },
         "attention": named(found.attention),
+        "asking": named(found.asking),
         "merge": named(found.merge),
         "review": named(found.review),
         "running": named(found.running),
@@ -152,7 +176,7 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
         finished, total = weighted
         data["estimated_days"] = {"done": finished, "total": total}
     spans = projects if args.all else ()
-    context.report(data, _report(library, found, weighted, spans, readers.is_agent))
+    context.report(data, _report(library, found, weighted, spans, readers.is_agent, due))
     return 0
 
 
@@ -162,9 +186,11 @@ def _report(
     weighted: tuple[float, float] | None,
     spans: Sequence[Project],
     is_agent: Callable[[Step], bool],
+    due: Collection[StepId],
 ) -> str:
     """The board as text. ``spans`` is the projects of a board across several — each row then
-    leads with its project's name — and empty for one project's, which needs no name."""
+    leads with its project's name — and empty for one project's, which needs no name. A row
+    in ``due`` says so: a window that launches what becomes due starts it."""
     if not found.total:
         return "No steps yet."
     across_words = f" across {len(spans)} projects" if len(spans) > 1 else ""
@@ -178,8 +204,9 @@ def _report(
 
     def line(step: Step, *facts: str) -> str:
         """A row: its project where the board spans several, its title, and in brackets
-        whether an agent works it and whatever else the section says about it."""
-        said = ", ".join(("agent", *facts) if is_agent(step) else facts)
+        whether an agent works it, whether it is due, and whatever else the section says."""
+        marks = (*(("agent",) if is_agent(step) else ()), *(("due",) if step.id in due else ()))
+        said = ", ".join((*marks, *facts))
         where = f"{library.project_of(step.id).title or UNTITLED} · " if spans else ""
         return f"{where}{title(step)}  ({said})" if said else f"{where}{title(step)}"
 
@@ -194,6 +221,7 @@ def _report(
             lines.extend(f"  {row}" for row in rows)
 
     section("Blocked", [line(step) for step in found.attention])
+    section("Waits for you", [line(step) for step in found.asking])
     section("Ready to merge", [unblocking(step) for step in found.merge])
     section("Ready for review", [unblocking(step) for step in found.review])
     section("Running", [line(step) for step in found.running])

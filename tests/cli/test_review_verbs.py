@@ -160,6 +160,32 @@ def test_a_round_is_answered_before_the_next_is_opened(cli):
     assert "already taken" in cli("review", "take", "S1")  # Taking twice is no harm.
 
 
+def test_the_subject_reaching_review_makes_the_review_due(cli):
+    said = cli("status", "set", "S1", "ready-for-review")
+    assert "Now due: R2 Review the parser — a DPlanner window" in said
+
+
+def test_findings_posted_to_a_subject_whose_agent_has_gone_make_it_due(cli):
+    cli("status", "set", "S1", "ready-for-review")
+    cli("review", "start", "R2")
+    said = cli("review", "post", "R2", "--text", "The parser drops the last line.")
+    assert "Now due: S1 Build the parser — a DPlanner window" in said
+    # With its agent still there, nothing is due: it takes the findings itself.
+    cli("agent-state", "set", "S1", "pending-approval")
+    assert "due" not in cli("progression", "show", "widget")
+
+
+def test_an_agent_waiting_on_a_person_is_listed_as_waiting_for_you(cli):
+    cli("status", "set", "S1", "in-progress")
+    cli("agent-state", "set", "S1", "plan-for-review")
+    text = cli("progression", "show", "widget")
+    assert "Waits for you:\n  Build the parser  (agent)" in text
+    assert "Running:" not in text
+    found = data(cli("progression", "show", "widget", "--json"))
+    assert [row["title"] for row in found["asking"]] == ["Build the parser"]
+    assert found["counts"]["asking"] == 1 and found["counts"]["running"] == 0
+
+
 def test_post_refuses_with_no_round_open_and_names_start(cli):
     assert "review start R2" in cli("review", "post", "R2", "--text", "x", expect=1)
     assert "nothing to answer" in cli("review", "reply", "S1", "--text", "x", expect=1)

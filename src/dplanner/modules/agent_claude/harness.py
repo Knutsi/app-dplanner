@@ -150,4 +150,5 @@ HARNESS = AgentHarness(
     is_marker=is_session_marker,
     report=report,
     binary="claude",
+    plan_mode="--permission-mode plan",
 )

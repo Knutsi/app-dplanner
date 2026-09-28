@@ -838,3 +838,13 @@ def test_open_agent_in_code_offers_the_same_profiles_over_the_project(services, 
     assert not files.prompt_file.exists() and files.opening == ""
     script = files.script.read_text(encoding="utf-8")
     assert "codex" in script and "Read your briefing" not in script
+
+
+def test_plan_mode_is_read_off_the_command_a_profile_runs():
+    """Claude's preset starts in plan mode and waits for a person; a profile edited out of
+    it does not, and neither does a CLI with no such mode."""
+    harnesses = agent_harnesses()
+    assert launcher.plans_first("", harnesses)  # Blank is the first harness's preset.
+    assert launcher.plans_first("claude --permission-mode plan {prompt}", harnesses)
+    assert not launcher.plans_first("claude --permission-mode acceptEdits {prompt}", harnesses)
+    assert not launcher.plans_first(codex.HARNESS.command, harnesses)

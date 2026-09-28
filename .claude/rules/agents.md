@@ -30,7 +30,8 @@ paths:
   and say nothing. Past *Settings ▸ Agent profiles*'s **Max agents launched at once** (four by
   default, per user and per machine like the terminal beside it) the count itself is the
   refusal — a lasso is one flick of the wrist, and a deskful of terminals is not what it
-  meant.
+  meant. What the window launches on its own is held to the same number as a *live* cap
+  (below).
   **A launch that opened a shell claims the step is in progress** — `mark_started`, the
   writer half of that same seam, applied off the undo stack the way the launch stamp is
   (`step_status`'s `record_started`), because Ctrl+Z must not file a step as pending while
@@ -38,9 +39,9 @@ paths:
   run that stopped at its third step has claimed two. It is the *Agent profiles ▸ On launch* switch
   beside *Max agents launched at once*, on by default: the agent's own first report is
   minutes away and a step somebody is working on that still reads pending is a lie the
-  plan was never asked to tell. Only Run Agent makes the claim — in the step loop, never
-  in the shared `_launch` — so a conflict handed to an agent, a merge of two writers' plan
-  files and not the step's work, claims nothing.
+  plan was never asked to tell. Only Run Agent and its unattended twin `launch_due` make
+  the claim — in the step loop, never in the shared `_launch` — so a conflict handed to an
+  agent, a merge of two writers' plan files and not the step's work, claims nothing.
   **The briefing never rides in argv, and the peer is a top-level session.** The
   agent's opening line is `launcher.opening_prompt` — a pointer at `prompt.md`, carrying
   nothing the project is about — because the whole briefing as one argument was every
@@ -84,6 +85,34 @@ paths:
   `Briefing.sections` is handed the repository facts, as the preamble is. Each source's
   `_agent_epilogue` names who collects it and leaves its done to them. The status guard
   needed nothing: an agent may already finish a step under review.
+- **The window launches what the plan made due, and only a window does.** Due is the root's
+  one derivation `_due_now`: `progression.due` (an agent step, pending, no run, nothing
+  outstanding, and a prerequisite fulfilled *through* an auto-progress link) and
+  `rounds.due_turns` (a conversation's side with the turn, no run, not launched for that
+  turn — `*_turn_launched` holds the stamp that began it, equality not order). The terminal
+  says it (`_status_written` after every status-moving verb, text only; `progression show`'s
+  `due`) and `step_agent_instruction/auto_launch.py` launches it: **level-triggered** — after
+  every change of any origin, the day turning, a run ending (`StepAgentRunDeps.ended`), the
+  watcher settling (`LibraryWatchDeps.settled`) and once at start, over a **0 ms**
+  `Debounced` registered with the service — never on an edge, and never held behind a
+  modal, which a view's settle is; a title or prose edit only forgets that step's refusal. A pass stands down while
+  `changed_underneath()`, asked only once something is due and the **live cap** (*Max
+  agents* against the tracker's live runs) has a slot; re-reads each step before its shell
+  opens; launches through `launch_due`, which asks nothing (no confirmation, no clone, no
+  fallback — a refusal is a status line, remembered until that step, the switch or a
+  profile changes); and writes the claim at the spawn — in progress whatever *On launch*
+  says, or the round's stamp for a turn — flushing at once. It must run **after** the
+  adoption that woke it (the store mutes dirty forwarding while adopting), so its tests turn
+  immediate mode off and `flush_all()`. The profile is the step's (`preferred_agent`: a
+  review's agent, refused when no profile runs it). **Who launches**: *Agent profiles ▸ When
+  a step becomes due*, per user and machine, **off by default**, and among windows on one
+  library the holder of a `LaunchLock` (`QLockFile` under `config_dir()/auto-launch/`,
+  stale only once its process is gone), built once per session by `new_session` so a
+  reload keeps the hold — none in a test or script unless handed a directory. **Plan mode
+  waits on a person**: `record_launch(plans_first=)` from the harness's `plan_mode` words,
+  `asks_person` for *Waits for you*, and a notice while an agent launched here waits.
+  `ARCHITECTURE.md`'s *Auto-progress is launched by the window* has the reasoning and the
+  race across machines.
 - **A step names the code location it works in.** With several code rows in a project,
   the agent-instruction entry's `workplace` holds a location id (`aspect.workplace`,
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
@@ -266,7 +295,8 @@ paths:
   - **Every status a `review` verb moves goes through `status_command`**, the writer
     `status set` uses, handed in as the root's `set_status`. A stopped status ends a claim
     exactly as `status set` does.
-  - **The window posts nothing, and reads all of it**: the Review tab is the settings and a
+  - **The window posts nothing, and reads all of it** — its one write to the ledger is a
+    turn's launch stamp (below): the Review tab is the settings and a
     read-only list, and *Step ▸ Review Conversation…* (`review.conversation`; the tab's
     *Open Conversation…* and a row's double-click) opens `conversation.py`'s dialog — every
     message beside the picked one in full, live on the ledger. It is **enabled by the ledger,

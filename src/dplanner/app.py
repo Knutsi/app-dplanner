@@ -43,8 +43,10 @@ from dplanner.identity import APP_DOMAIN, APP_ID, APP_NAME, APP_VERSION
 from dplanner.menus import MENU_STRUCTURE
 from dplanner.modules import (
     at_work_board,
+    auto_launch_directory,
     default_modules,
     dictation_providers,
+    launch_locks_in,
     start_window,
     theme_providers,
 )
@@ -144,7 +146,9 @@ def main(argv: list[str] | None = None) -> int:
     session_started(telemetry, library=library_path, version=APP_VERSION)
     code = 1
     try:
-        session = new_session(providers, dictation_providers(), at_work_board())
+        session = new_session(
+            providers, dictation_providers(), at_work_board(), auto_launch_directory()
+        )
         if open_at_startup(session, library_path):
             # Only once the window is up: the build itself blocks the GUI thread behind the
             # splash for as long as it takes, and the session's "open" span already says so.
@@ -167,6 +171,7 @@ def new_session(
     theme_providers: Sequence[ThemeProvider] = (BUILTIN,),
     dictation_providers: Sequence[DictationProvider] = (),
     at_work: AtWorkBoard | None = None,
+    launch_locks: Path | None = None,
 ) -> AppSession:
     """The session, wired to this application's model, menus and modules.
 
@@ -178,11 +183,15 @@ def new_session(
     ``dictation_providers`` likewise: none by default, so no test reaches a microphone.
     ``at_work`` is where agents' claims are read from, and for the third time the same
     rule: a board holding nothing by default, so a session built by a test never reads
-    what some agent is really doing on this machine.
+    what some agent is really doing on this machine. ``launch_locks`` is the directory of
+    this machine's launch locks — which window launches what becomes due — and a fourth
+    time: none by default, so a session built by a test or a script never launches. The
+    locks are made here, once per session, so a reload's new window keeps the hold.
     """
     board = at_work if at_work is not None else AtWorkBoard(None)
+    locks = launch_locks_in(launch_locks) if launch_locks is not None else None
     return AppSession(
-        module_factory=partial(default_modules, board=board),
+        module_factory=partial(default_modules, board=board, launch_locks=locks),
         repository=LibraryStore,
         menus=MenuStructure(MENU_STRUCTURE),
         seed=create_library,
