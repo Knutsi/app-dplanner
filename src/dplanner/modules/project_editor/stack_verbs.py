@@ -3,7 +3,9 @@
 Every verb here pushes the very command its ``dplanner stack`` verb applies, built by
 ``stack_edits.py``: New Stack, Make Stack, Add Step Below, Take Out and Dissolve. A step
 born by one — New Stack's first, a stack's "+" — goes through ``StepVerbs.born``, so it is
-placed, picked and opened in Step Details exactly as New's is.
+placed, picked and opened in Step Details exactly as New's is. A card Shift-dragged on the
+canvas lands here too (:meth:`StackVerbs.drop_into`, :meth:`StackVerbs.drop_out`): the
+gesture says where it went, and which of move, add and take out that is, is read here.
 
 **A greyed state never walks the project per announce** (CLAUDE.md). A stack's order, whether
 it is still one line, and whether a pick is one line, all take a walk over the project's
@@ -38,9 +40,11 @@ from dplanner.modules.project_editor.sorts import H_GAP
 from dplanner.modules.project_editor.stack_edits import (
     add_command,
     dissolve_command,
+    join_refusal,
     line_refusal,
     make_command,
     make_refusal,
+    move_command,
     new_stack_command,
     take_out_command,
 )
@@ -276,17 +280,56 @@ class StackVerbs:
         if picked is not None:
             self.undo.push(dissolve_command(self.library, self._stack(picked[0][0])))
 
+    # -- a card Shift-dragged on the canvas ---------------------------------------------------
+
+    def refusal(self, stack: Stack, joining: StepId | None) -> str | None:
+        """Why a gesture may not reorder ``stack`` — or bring ``joining`` into it — or None:
+        the builders' own refusals, asked fresh, since a gesture asks once per stack rather
+        than on every announce."""
+        refusal = line_refusal(self.library, stack)
+        if refusal is None and joining is not None:
+            refusal = join_refusal(self.library, self.library.step(joining), stack)
+        return refusal
+
+    def drop_into(self, step_id: StepId, stack_id: str, slot: int) -> bool:
+        """A card let go in a stack at a slot: a member moves there, and any other step
+        joins, disconnected. False when nothing was pushed, and the status line says why."""
+        steps = self.library.project_of(step_id).steps
+        stack = next((one for one in read_stacks(steps) if one.id == stack_id), None)
+        if stack is None:
+            self.status("Cannot put it in that stack — the stack is gone")
+            return False
+        if step_id in stack.members:
+            return self._push(
+                lambda: move_command(self.library, stack, step_id, slot), "Cannot move it there"
+            )
+        step = self.library.step(step_id)
+        return self._push(
+            lambda: add_command(self.library, step, stack, slot), "Cannot add it to the stack"
+        )
+
+    def drop_out(self, step_id: StepId, seat: Seat) -> bool:
+        """A member let go outside its stack's frame: taken out, with no links, at ``seat``."""
+        stack = stack_of(self.library.project_of(step_id).steps, step_id)
+        if stack is None:
+            self.status("Cannot take it out — it is no longer in a stack")
+            return False
+        return self._push(
+            lambda: take_out_command(self.library, stack, step_id, seat), "Cannot take it out"
+        )
+
     def _stack(self, member: StepId) -> Stack:
         """The member's stack as the model has it now — the gesture never reads a reading."""
         found = stack_of(self.library.project_of(member).steps, member)
         assert found is not None  # The state gate read the member's stack key.
         return found
 
-    def _push(self, build: Callable[[], Command], refused: str) -> None:
-        """Push what ``build`` makes, or say why the builder refused."""
+    def _push(self, build: Callable[[], Command], refused: str) -> bool:
+        """Push what ``build`` makes, or say why the builder refused — False then."""
         try:
             command = build()
         except ValueError as refusal:
             self.status(f"{refused} — {refusal}")
-            return
+            return False
         self.undo.push(command)
+        return True

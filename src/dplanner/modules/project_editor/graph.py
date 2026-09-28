@@ -23,7 +23,7 @@ dragging for free, because the scene never sees it.
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QPointF, QRect, QRectF, Qt, QTimer
+from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import (
     QFocusEvent,
     QKeyEvent,
@@ -58,6 +58,7 @@ from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.minimap import Minimap
 from dplanner.modules.project_editor.modes import (
     HINTS_BY_MODE,
+    IDLE,
     CanvasDeps,
     CanvasEvent,
     CanvasKey,
@@ -114,10 +115,12 @@ class GraphScene(QGraphicsScene):
         self,
         link_refusal: Callable[[StepId, StepId], str | None],
         redirection: Callable[[Sequence[EdgeRef], StepId, EdgeEnd], Redirection],
+        stack_refusal: Callable[[Stack, StepId | None], str | None],
     ) -> None:
         super().__init__()
         self._link_refusal = link_refusal
         self._redirection = redirection
+        self._stack_refusal = stack_refusal
         self._hints = RenderHints()
         self._marks = Marks()
         # Whether gestures land on the grid — the user's setting, pushed by the module.
@@ -131,6 +134,11 @@ class GraphScene(QGraphicsScene):
         # Every stack's frame by stack id, and the frame each member stands in.
         self._frames: dict[str, StackItem] = {}
         self._frame_of: dict[StepId, StackItem] = {}
+        # The frame saying what Shift does, because the pointer is over it.
+        self._hinted: StackItem | None = None
+        # A card in the hand of a restack, whose arrows are not drawn until it lands: every
+        # drop rewires them, and drawn meanwhile they would run to where it no longer stands.
+        self._lifted: StepId | None = None
         # True while sync places the cards: a moved card's stack is laid out once, after,
         # over the membership the sync brings — never over the one it is replacing.
         self._syncing = False
@@ -171,6 +179,11 @@ class GraphScene(QGraphicsScene):
         self.redirect_requested: Signal[StepId, EdgeEnd] = Signal()
         # A stack's "+" was pressed: a step is wanted below this one, its last.
         self.stack_add_requested: Signal[StepId] = Signal()
+        # A card Shift-dragged and let go in the stack with this id, at this slot — to move
+        # there if it is a member, to join if it is not.
+        self.dropped_into_stack: Signal[StepId, str, int] = Signal()
+        # A stack's card Shift-dragged out past its frame and let go at this seat.
+        self.dropped_out_of_stack: Signal[StepId, float, float] = Signal()
 
         self.selectionChanged.connect(self._on_selection)
         # True while select_steps reconciles Qt's selection item by item, so
@@ -262,6 +275,8 @@ class GraphScene(QGraphicsScene):
         wanted = {s.id: s for s in stacks if all(m in self._nodes for m in s.members)}
         for gone in set(self._frames) - set(wanted):
             stale = self._frames.pop(gone)
+            if stale is self._hinted:
+                self._hinted = None
             self.removeItem(stale.add)
             self.removeItem(stale)
         self._frame_of = {}
@@ -375,6 +390,36 @@ class GraphScene(QGraphicsScene):
     def stacks(self) -> list[Stack]:
         """The stacks drawn now — every one whose members all have a card."""
         return [frame.stack for frame in self._frames.values()]
+
+    def frame(self, stack_id: str) -> StackItem | None:
+        return self._frames.get(stack_id)
+
+    def stack_refusal(self, stack: Stack, joining: StepId | None) -> str | None:
+        """Why this stack cannot be reordered — or cannot take ``joining`` — or None: the
+        builders' own refusal, asked once as a gesture begins or finds a new stack."""
+        return self._stack_refusal(stack, joining)
+
+    def hint_at(self, scene_pos: QPointF | None) -> None:
+        """Let the frame round this point say what Shift does, and every other be quiet. By
+        the frame's rect, not what is drawn on top, so crossing its chain never flickers it."""
+        frame = None
+        if scene_pos is not None:
+            frame = next(
+                (f for f in self._frames.values() if f.frame_scene_rect().contains(scene_pos)),
+                None,
+            )
+        if frame is not self._hinted:
+            if self._hinted is not None:
+                self._hinted.set_hinted(False)
+            if frame is not None:
+                frame.set_hinted(True)
+            self._hinted = frame
+
+    def lift_links(self, step_id: StepId | None) -> None:
+        """Stop drawing this step's arrows until it lands — or, with None, draw them all."""
+        if step_id != self._lifted:
+            self._lifted = step_id
+            self._light_selection()
 
     def frame_at(self, scene_pos: QPointF) -> Stack | None:
         """The stack whose frame (or its "+") is the topmost thing at a point — None when a
@@ -539,7 +584,8 @@ class GraphScene(QGraphicsScene):
         the look says — that is how a card says what it is connected to — and the spotlight,
         from the preference or the held key, fades every node and arrow the neighbourhood
         does not name. **Nothing picked lights nothing**: the neighbourhood of an empty
-        selection is empty, so a spotlight over one dims nothing rather than everything.
+        selection is empty, so a spotlight over one dims nothing rather than everything. A
+        card in the hand of a restack draws none of its arrows until it lands.
         """
         near = neighbourhood(self._edges, self._selection_order)
         dim = (self._spotlight or self._spotlight_held) and bool(near.steps)
@@ -548,6 +594,7 @@ class GraphScene(QGraphicsScene):
         for ref, edge in self._edges.items():
             edge.set_lit(ref in near.edges)
             edge.set_dimmed(dim and ref not in near.edges)
+            edge.setVisible(self._lifted not in (ref.source, ref.waiter))
         for frame in self._frames.values():
             frame.set_dimmed(dim and not near.steps.intersection(frame.stack.members))
 
@@ -623,12 +670,17 @@ class GraphView(QGraphicsView):
             run_action=run_action,
         )
         self.modes = ModeStack(base_mode(self.deps))
+
         # The mode's look reaches the nodes here: one subscription on the stack, not
         # per-mode enter/exit — Space stacks Pan over Connect, and popping back must
-        # restore Connect's hints, which only the stack's current answer gets right.
-        self.modes.changed.connect(
-            lambda name: scene.set_render_hints(HINTS_BY_MODE.get(name, RenderHints()))
-        )
+        # restore Connect's hints, which only the stack's current answer gets right. A
+        # frame's Shift hint says what an idle press does, so any other mode quiets it.
+        def on_mode(name: str) -> None:
+            scene.set_render_hints(HINTS_BY_MODE.get(name, RenderHints()))
+            if name != IDLE:
+                scene.hint_at(None)
+
+        self.modes.changed.connect(on_mode)
         # Space is released after the drag it started often enough that popping immediately
         # would strand the hand cursor mid-pan; the pop waits for the button.
         self._pan_release_pending = False
@@ -707,6 +759,12 @@ class GraphView(QGraphicsView):
             event.accept()
             return
         super().keyReleaseEvent(event)
+
+    def leaveEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        scene = self.scene()
+        if isinstance(scene, GraphScene):
+            scene.hint_at(None)
+        super().leaveEvent(event)
 
     def focusOutEvent(self, event: QFocusEvent) -> None:  # noqa: N802 - Qt override
         # A held key ends when the keyboard does: Alt+Tab is Alt held and then taken away,

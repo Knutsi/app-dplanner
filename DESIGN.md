@@ -219,7 +219,10 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
   16 px of pad to take hold of. The chain runs down the frame's middle as short straight
   arrows; the way in meets the first card's side and the way out leaves the last card's,
   as with any card, and only the last card offers a link handle. The "+" is a
-  medallion-sized disc set into the bottom edge that adds a step there.
+  medallion-sized disc set into the bottom edge that adds a step there. While the pointer
+  is over the stack — and only then — the bottom pad left of the "+" says *Shift-drag to
+  reorder* in small secondary ink (`f19-restack/hint-*`): a gesture held behind a key has
+  to be found, and a canvas of stacks all saying it would be noise.
 - **The ground is quiet.** The default is a dot at every grid crossing, at an alpha that
   keeps a card's resting shadow the darkest thing on the plane; lines, crosses and plain are
   offered beside it, and the pitch coarsens as the graph zooms out so the ground never turns
@@ -818,6 +821,12 @@ and one stylesheet rule for the progress bar:
   after two seasons, and turned off in *Settings ▸ Home*. It is not a precedent: a
   surface where people work stays still, and what the canvas might do with
   `framework/motion/` is ARCHITECTURE.md's *Motion is a library*, not yet a rule.
+  **The one slide** is a stack making way (`f19-restack/make-way-*`): while a card is
+  Shift-dragged through a stack, the cards between ease aside over about 120 ms to open
+  the slot it would drop into, and close up behind one dragged out. It is allowed because
+  it is a fact moving, not an ornament — the drop is visible before it happens, which a
+  jump would show too, but a jump of four cards under the hand loses which card went
+  where. It follows the hand and ends with the gesture; nothing slides on its own.
 - **Selection follows the keyboard**: arrows move the row edge and whatever follows the
   selection follows it, as a click would.
 

@@ -197,6 +197,7 @@ class ProjectActivity(EntityActivity):
         project_id: NodeId,
         verbs: StepVerbs,
         layout_verbs: LayoutVerbs,
+        stack_verbs: StackVerbs,
         look: Look | None = None,
     ) -> None:
         # Only the pane the user is in may write to the selection scope: a background one
@@ -209,7 +210,8 @@ class ProjectActivity(EntityActivity):
         self._layout_verbs = layout_verbs
         self.project_id = project_id
 
-        self._scene = GraphScene(self._link_refusal, self._redirection)
+        self._stack_verbs = stack_verbs
+        self._scene = GraphScene(self._link_refusal, self._redirection, stack_verbs.refusal)
         self._view = GraphView(
             self._scene,
             base_mode=IdleMode,
@@ -235,6 +237,8 @@ class ProjectActivity(EntityActivity):
         )
         self._scene.redirect_requested.connect(self._on_redirect_requested)
         self._scene.stack_add_requested.connect(self._on_stack_add)
+        self._scene.dropped_into_stack.connect(self._on_dropped_into_stack)
+        self._scene.dropped_out_of_stack.connect(self._on_dropped_out_of_stack)
         self._view.modes.changed.connect(lambda _name: self._publish_activity())
 
         # Once per event-loop turn, not once per signal: a paste of forty steps is forty
@@ -583,6 +587,21 @@ class ProjectActivity(EntityActivity):
         Stack menu offers, so the "+" cannot come to mean something the menu does not."""
         self._run_on("stacks.add_below", (last,), "A step cannot be added to that stack")
 
+    def _on_dropped_into_stack(self, step_id: StepId, stack_id: str, slot: int) -> None:
+        self._restacked(self._stack_verbs.drop_into(step_id, stack_id, slot))
+
+    def _on_dropped_out_of_stack(self, step_id: StepId, x: float, y: float) -> None:
+        self._restacked(self._stack_verbs.drop_out(step_id, self._snapped(x, y)))
+
+    def _restacked(self, pushed: bool) -> None:
+        """A Shift-drag let go: one undo step — or, refused, the cards put back where the
+        model has them, since the gesture left them where the drop would have for a sync
+        that is now not coming."""
+        if pushed:
+            self._deps.undo.break_coalescing()
+        else:
+            self._sync_soon.trigger()
+
     def _run_on(self, action_id: str, step_ids: Sequence[StepId], refused: str) -> None:
         """Run a verb on steps the gesture named rather than the ones picked, and say why
         when its state refuses — the greyed entry's label is the reason."""
@@ -788,7 +807,9 @@ class ProjectEditorModule:
 
         def factory(target: str | None) -> ProjectActivity:
             assert target is not None
-            return ProjectActivity(deps, target, self._verbs, self._layout_verbs, self._look)
+            return ProjectActivity(
+                deps, target, self._verbs, self._layout_verbs, self._stack_verbs, self._look
+            )
 
         deps.tabs.register_factory(PROJECT_KIND, factory)
         self._verbs.register_into(deps.actions)

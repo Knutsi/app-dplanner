@@ -261,7 +261,8 @@ paths:
   stacked card is never Qt-movable, shows a link handle only as the last, grows only right
   and down (`resize_command` stores no seat for a member below the first). **A drag moves
   the pick, and a stack moves whole**: `IdleMode` claims, in order, a right press, the
-  handle, the "+", a resize band, a card in a stack or a picked card beside one, and then —
+  handle, the "+", a resize band, any card with Shift held (the next bullet), a card in a
+  stack or a picked card beside one, and then —
   after an arrow drawn over it, which stays Qt's — the frame; the drag is `BlockDragMode`,
   moving each block's anchor and reporting through `nodes_moved` (*Move Stack* for one
   stack); a click on a card narrows to it, one on the frame picks the stack, and a double
@@ -274,6 +275,32 @@ paths:
   right — and a mixed pick's right-click offers it flat, since a drag across a line picks
   its arrows too.
   `ARCHITECTURE.md`'s *A stack's frame is the stack's handle* has the reasoning.
+- **Shift-drag restacks one card, and the cards make way.** A Shift press on any card
+  narrows the pick to it and starts `RestackMode`; below the drag distance it is a click.
+  The card follows the hand, and its **centre** against each frame's rect at the press,
+  grown by `FRAME_PAD` — its own stack's first — says where it is; the slot is the one whose
+  gap centre (`member_seats` over the order the drop would make, from the columns as they
+  stood) is nearest. The other cards **glide** to that column over `MAKE_WAY_S` on one
+  `FrameClock` the mode owns, running only while a card glides, stopped, unsubscribed and
+  deleted on exit; `settle()` ends every glide for a test or a render — never wait on the
+  clock. Out past its own frame the card is leaving (the column closes up, the frame
+  shrinks, an empty one hides); a loose card over a stack joins at the slot, and over
+  nothing is a plain move through `nodes_moved`. **The mode reports where, never which
+  verb**: `dropped_into_stack(step, stack_id, slot)` and `dropped_out_of_stack(step, x, y)`,
+  and `StackVerbs.drop_into`/`drop_out` ask the model — `move_command` for a member,
+  `add_command` for anyone else, `take_out_command` at the snapped drop — one undo each.
+  Whether a stack may be reordered or joined is `StackVerbs.refusal` through
+  `Canvas.stack_refusal` (`line_refusal`, then `join_refusal` for a joiner — the builders'
+  order), asked once per stack per gesture; a refused stack opens no gap and its drop does
+  nothing, and a member onto another stack stays refused (N118). **A gesture borrows a
+  frame** — `StackItem.stand(rect)` stops `follow()` laying the column, and it must be
+  lent *before* the card moves — and a drop frees it **without** laying it out, popping
+  before it reports, so the command's sync lays out the new order and the old one never
+  flashes; a refused command re-syncs. The card's arrows are not drawn while it is in a
+  stack or joining one (`lift_links`). The frame says *Shift-drag to reorder* only while the
+  pointer is over its rect (`hint_at`, from `IdleMode.mouse_move`; any other mode or the
+  pointer leaving the view quiets it). This is DESIGN.md's one slide. `ARCHITECTURE.md`'s
+  *Shift-drag restacks one card, and the cards make way* has the reasoning.
 - **Every stack edit is one command from `stack_edits.py`, and the stack rule is the
   domain's to ask.** New, make, add, move, take out and dissolve each build one composite
   the canvas and `dplanner stack …` push alike; `bridged_removal` is what Delete, Cut,

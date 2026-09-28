@@ -651,6 +651,15 @@ amended from "only these move" to "motion explains a change", and one *Reduce mo
 preference that completes every tween at once — which the suite would run under, as it runs
 the debounce service immediate.
 
+**The first of it is built, and it needed neither.** A stack making way for a card dragged
+through it (F19, *Shift-drag restacks one card* below) is the first canvas motion on the
+frame clock, and the one slide DESIGN.md now allows by name rather than by a general
+"motion explains a change". It needed no *Reduce motion* either, because it is a different
+kind of motion from everything listed above: it happens only under a hand, the model has
+not changed yet, and the release settles every glide before anything is written — so there
+is nothing for a preference to complete, and a test calls the gesture's `settle()` the way
+a render does. The list above still waits on both.
+
 **A well can be as tall as its rows.** The guide is a `RowWell`, which is a scroll area, and
 `QScrollArea` stops its size hint at twenty-four lines of text whatever its adjust policy —
 so five steps sat behind a scroll bar with half the page empty around them. The primitive
@@ -2486,6 +2495,66 @@ a state asks and forgets it when a link, a step or the canvas's own data changes
 per change to the graph, never one per keystroke, and the app and the tests read the same
 thing. The price is a refusal worded before a rename keeping the old title until the graph
 next moves.
+
+### Shift-drag restacks one card, and the cards make way
+
+S18 gave a plain drag on a stack to the stack as a whole; this is the other half of the
+developer's note on S17 — "Shift gates reorder and disconnect from stack", and a step
+dragged in from outside joins at the drop. `canvas.md`'s bullet of the same name has the
+rules. Six choices shaped it.
+
+**One mode, whatever the card and wherever it goes.** Reorder, take out and join could have
+been three gestures; they are one `RestackMode`, because the hand does not know which it is
+doing until it lets go — a card dragged out of its stack and back is a reorder, a loose
+card carried over a stack and past it is a move. So the mode keeps one question — which
+frame holds the card's centre, and at which slot — and answers it on every move, and the
+release reports only *where*: into this stack at this slot, or out of its own at this seat.
+Which verb that is — `move_command` for a member, `add_command` for anyone else,
+`take_out_command` for a member let go outside — `StackVerbs` asks the model, the way a
+redirect's plan is asked again on release rather than carried over from the gesture, and
+beside the menu's stack verbs, so a refusal is worded by the same `_push`.
+
+**The refusal is the builders'.** `stack_refusal` is `line_refusal`, then `join_refusal`
+for a card coming in — `add_command`'s own order — asked once per stack per gesture: a broken stack of its own
+leaves the card where it is with the reason on the status line, and a refused stack opens no
+gap and does nothing on release. A member carried onto *another* stack is refused this way
+too, "take it out first", because moving between stacks in one gesture is two builders over
+two states of the graph (N118).
+
+**A slot is the nearest gap, measured on the columns as they stood.** Each candidate slot is
+`member_seats` over the order the drop would make, from the stack's seat at the press, and
+the card takes the one whose gap centre is nearest its own. Measuring against the cards as
+they are drawn — mid-glide, or already out of the way — made a boundary where the answer
+changed the geometry that decided it, and the slot flickered between two. Against the
+columns as they stood, the answer depends on the pointer alone.
+
+**The frame is lent, and a drop does not give it back.** `StackItem.follow()` is the one
+place a column is laid out (*A stack's frame is the stack's handle*), so while a gesture
+places the cards itself the frame must stop: `stand(rect)` fits it round the column the drop
+would make and leaves the cards alone, and `free()` hands it back. The first move lent it
+too late — the card moved, its frame laid it straight back into the column, and nothing
+seemed to drag. On a drop the frame is freed *without* being laid out: the model has not
+changed yet, so laying out now would show the old order for one frame before the command's
+sync arrived with the new one. The mode pops before it reports, so that sync finds nothing
+held and lays everything out from the model; a refused command triggers one itself.
+
+**The card's arrows are lifted with it.** A stacked card's links are rewired by every drop
+— the chain closes behind it or opens in front of it, and the stack's way in and out
+follows whichever card is first and last — and a joining card's are dropped. Drawn while it
+is in the hand, they ran to ports computed for a column it was no longer in: straight lines
+down the frame's middle to nowhere. Faded, they were the same lines, fainter. So they are
+not drawn until it lands (`lift_links`), and the column shows its chain as it stands
+without the card.
+
+**One clock per gesture, and gone with it.** The make-way is the frame clock's first canvas
+use (*Motion is a library*): each card that moves eases on `out_cubic` over 120 ms from
+wherever it is, re-aimed mid-flight, and the mode's own `FrameClock` runs only while one is
+gliding. It is parented to the view and deleted on exit, and its listener is unsubscribed
+first, because a parentless `QObject` connected to its own method is one of the shapes the
+suite has crashed on (`suite-crash`); the test holds that no `FrameClock` is left under the
+view once the gesture ends. The hint that says *Shift-drag to reorder* is drawn only while
+the pointer is over that stack, decided by the frame's rect rather than what is on top, so
+crossing a chain arrow never blinks it.
 
 ### Regions were retired
 

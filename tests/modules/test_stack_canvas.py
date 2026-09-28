@@ -18,6 +18,7 @@ from tests.modules.test_project_editor import (
     scene,
     send,
     silence_details,
+    status_line,
     view,
 )
 
@@ -30,7 +31,15 @@ from dplanner.framework.context import (
     ContextNode,
     selection_uri,
 )
-from dplanner.modules.project_editor.positions import GRID, centred_on, read_stack, write_member
+from dplanner.framework.motion.clock import FrameClock
+from dplanner.modules.project_editor.modes import IDLE, RestackMode
+from dplanner.modules.project_editor.positions import (
+    GRID,
+    centred_on,
+    read_stack,
+    write_member,
+    write_position,
+)
 from dplanner.modules.project_editor.stacks import FRAME_PAD, MEMBER_GAP, read_stacks, stack_of
 from dplanner.theme.cards import DIM_OPACITY
 
@@ -396,3 +405,220 @@ def test_a_card_in_a_stack_offers_the_stack_child(tab, plan):
 def test_the_strip_offers_new_stack_and_make_stack(tab, plan):
     for action_id in ("stacks.new", "stacks.make"):
         assert tab._toolbar.button(action_id) is not None
+
+
+# -- restacking: one card Shift-dragged (F19) --------------------------------------------------
+
+SHIFT = Qt.KeyboardModifier.ShiftModifier
+
+
+def shift_press(app, tab, at):
+    send(app, tab, QEvent.Type.MouseButtonPress, at, modifiers=SHIFT)
+
+
+def move_to(app, tab, at):
+    send(app, tab, QEvent.Type.MouseMove, at, modifiers=SHIFT)
+
+
+def let_go(app, tab, at):
+    send(app, tab, QEvent.Type.MouseButtonRelease, at, Qt.MouseButton.NoButton, SHIFT)
+
+
+def restacking(tab):
+    mode = view(tab).modes.current()
+    assert isinstance(mode, RestackMode)
+    return mode
+
+
+def columns(tab, *step_ids):
+    return {step_id: body_of(tab, step_id).topLeft() for step_id in step_ids}
+
+
+def test_shift_dragging_the_last_card_to_the_top_is_one_move_in_stack(app, services, tab, plan):
+    first, head, body, tail, ship, _loose = ids(plan)
+    # A stack somebody placed, so the seat has somewhere to be handed on to.
+    SetModuleDataCommand(head, "project_editor", write_position(400.0, 200.0, stack="s1")).redo(
+        services.document
+    )
+    was = columns(tab, head, body, tail)
+    grip = body_of(tab, tail).center()
+    shift_press(app, tab, grip)
+    move_to(app, tab, grip - QPointF(0.0, was[tail].y() - was[head].y()))
+    restacking(tab).settle()
+    let_go(app, tab, grip - QPointF(0.0, was[tail].y() - was[head].y()))
+
+    assert undo_text(services) == "Move in Stack"
+    assert read_stacks(plan.steps)[0].members == (tail, head, body)
+    assert requires(services, tail) == [first]
+    assert (requires(services, head), requires(services, body)) == ([tail], [head])
+    assert requires(services, ship) == [body]
+    seat = placement_of(services, tail)
+    assert (seat["x"], seat["y"]) == (400.0, 200.0)
+    assert "x" not in placement_of(services, head)
+    assert columns(tab, tail, head, body) == {tail: was[head], head: was[body], body: was[tail]}
+
+    services.undo.undo()
+    assert read_stacks(plan.steps)[0].members == (head, body, tail)
+    assert placement_of(services, head)["x"] == 400.0
+    assert columns(tab, head, body, tail) == was
+
+
+def test_the_cards_between_make_way_as_the_card_passes(app, tab, plan):
+    _plan, head, body, tail, *_rest = ids(plan)
+    was = columns(tab, head, body, tail)
+    rect = frame_of(tab).frame_scene_rect()
+    grip = body_of(tab, tail).center()
+    shift_press(app, tab, grip)
+    move_to(app, tab, grip - QPointF(0.0, was[tail].y() - was[head].y()))
+
+    # Nothing jumps: the two cards above ease down, on the gesture's one clock.
+    mode = restacking(tab)
+    assert mode.moving() and body_of(tab, head).topLeft() == was[head]
+    (clock,) = view(tab).findChildren(FrameClock)
+    clock.step(0.06)
+    assert was[head].y() < body_of(tab, head).top() < was[body].y()
+    mode.settle()
+    assert not mode.moving() and not clock.running()
+    assert columns(tab, head, body) == {head: was[body], body: was[tail]}
+    assert frame_of(tab).frame_scene_rect() == rect  # The same cards, so the same column.
+
+
+def test_dragging_a_card_out_past_the_frame_takes_it_out_where_it_is_let_go(
+    app, services, tab, plan
+):
+    _plan, head, body, tail, *_rest = ids(plan)
+    was = columns(tab, head, body, tail)
+    rect = frame_of(tab).frame_scene_rect()
+    grip = body_of(tab, body).center()
+    away = QPointF(rect.right() + 200.0, grip.y())
+    shift_press(app, tab, grip)
+    move_to(app, tab, away)
+    restacking(tab).settle()
+
+    # Leaving: the column closes up without it, the frame lets go, and it has no arrows.
+    assert body_of(tab, tail).topLeft() == was[body]
+    assert frame_of(tab).frame_scene_rect().height() < rect.height()
+    its_arrows = [e for r, e in scene(tab)._edges.items() if body in (r.source, r.waiter)]
+    assert its_arrows and not any(edge.isVisible() for edge in its_arrows)
+    assert "Take out" in status_line(services)
+
+    dropped = body_of(tab, body).topLeft()
+    let_go(app, tab, away)
+    assert undo_text(services) == "Take Out of Stack"
+    assert not read_stack(services.document.step(body)) and not requires(services, body)
+    assert requires(services, tail) == [head]
+    seat = placement_of(services, body)
+    assert (seat["x"], seat["y"]) == (dropped.x(), dropped.y())
+    assert all(edge.isVisible() for edge in scene(tab)._edges.values())
+
+    services.undo.undo()
+    assert read_stacks(plan.steps)[0].members == (head, body, tail)
+    assert columns(tab, head, body, tail) == was
+
+
+@pytest.mark.parametrize("travel", [(0.0, -96.0), (600.0, 0.0)], ids=["inside", "leaving"])
+def test_escape_mid_restack_puts_every_card_and_the_frame_back(app, services, tab, plan, travel):
+    _plan, head, body, tail, *_rest = ids(plan)
+    was = columns(tab, head, body, tail)
+    rect = frame_of(tab).frame_scene_rect()
+    depth = undo_text(services)
+    grip = body_of(tab, body).center()
+    shift_press(app, tab, grip)
+    move_to(app, tab, grip + QPointF(*travel))
+    restacking(tab).settle()
+    assert columns(tab, head, body, tail) != was
+
+    press_key(app, tab, Qt.Key.Key_Escape)
+    assert view(tab).modes.current().name == IDLE
+    assert columns(tab, head, body, tail) == was
+    assert frame_of(tab).frame_scene_rect() == rect
+    assert undo_text(services) == depth
+
+
+def test_no_clock_outlives_the_gesture(app, tab, plan):
+    tail = ids(plan)[3]
+    grip = body_of(tab, tail).center()
+    shift_press(app, tab, grip)
+    move_to(app, tab, grip - QPointF(0.0, 192.0))
+    (clock,) = view(tab).findChildren(FrameClock)
+    assert clock.running()
+
+    let_go(app, tab, grip - QPointF(0.0, 192.0))
+    assert not clock.running()
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    assert view(tab).findChildren(FrameClock) == []
+
+
+def test_a_shift_click_on_a_stacked_card_picks_it_and_changes_nothing(app, services, tab, plan):
+    _plan, head, body, tail, *_rest = ids(plan)
+    scene(tab).select_steps([head, body, tail])
+    depth = undo_text(services)
+    shift_press(app, tab, body_of(tab, body).center())
+    let_go(app, tab, body_of(tab, body).center())
+    assert picked(tab) == [body]
+    assert undo_text(services) == depth
+    assert view(tab).modes.current().name == IDLE
+
+
+def test_shift_dragging_a_loose_card_into_a_stack_adds_it_there_disconnected(
+    app, services, tab, plan
+):
+    first, head, body, tail, *_rest, loose = ids(plan)
+    SetEdgesCommand(loose, "requires", [first]).redo(services.document)
+    grip = body_of(tab, loose).center()
+    shift_press(app, tab, grip)
+    move_to(app, tab, body_of(tab, body).center())
+    restacking(tab).settle()
+    assert "Add to stack" in status_line(services)
+    let_go(app, tab, body_of(tab, body).center())
+
+    assert undo_text(services) == "Add to Stack"
+    assert read_stacks(plan.steps)[0].members == (head, loose, body, tail)
+    assert requires(services, loose) == [head] and requires(services, body) == [loose]
+
+    services.undo.undo()
+    assert read_stacks(plan.steps)[0].members == (head, body, tail)
+    assert requires(services, loose) == [first]
+
+
+def test_a_card_dropped_on_another_stack_is_refused_with_the_reason(app, services, tab, plan):
+    _plan, head, body, tail, *_rest, loose = ids(plan)
+    SetModuleDataCommand(loose, "project_editor", write_member("s2")).redo(services.document)
+    was = columns(tab, head, body, tail, loose)
+    depth = undo_text(services)
+    other = scene(tab)._frames["s2"].frame_scene_rect().center()
+    grip = body_of(tab, head).center()
+    shift_press(app, tab, grip)
+    move_to(app, tab, other)
+    assert "take it out first" in status_line(services)
+    let_go(app, tab, other)
+    assert undo_text(services) == depth
+    assert columns(tab, head, body, tail, loose) == was
+
+
+def test_a_broken_stack_refuses_the_restack_with_its_reason(app, services, tab, plan):
+    _plan, head, body, tail, *_rest = ids(plan)
+    services.document.set_edges(body, "requires", [], rules=False)
+    was = columns(tab, head, body, tail)
+    depth = undo_text(services)
+    grip = body_of(tab, tail).center()
+    shift_press(app, tab, grip)
+    move_to(app, tab, grip - QPointF(0.0, 192.0))
+    assert "not one line" in status_line(services)
+    assert columns(tab, head, body, tail) == was
+    let_go(app, tab, grip - QPointF(0.0, 192.0))
+    assert undo_text(services) == depth
+
+
+def test_the_frame_says_what_shift_does_only_while_the_pointer_is_over_it(app, tab, plan):
+    body = ids(plan)[2]
+    hover = Qt.MouseButton.NoButton
+    send(app, tab, QEvent.Type.MouseMove, body_of(tab, body).center(), hover)
+    assert frame_of(tab)._hinted
+    send(app, tab, QEvent.Type.MouseMove, pad(tab) + QPointF(-400.0, 0.0), hover)
+    assert not frame_of(tab)._hinted
+
+    send(app, tab, QEvent.Type.MouseMove, pad(tab), hover)
+    assert frame_of(tab)._hinted
+    shift_press(app, tab, body_of(tab, body).center())
+    assert not frame_of(tab)._hinted  # Another mode has the press.
