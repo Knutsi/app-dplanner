@@ -7,7 +7,8 @@ The groups are the partitions a person acts on — Blocked and Waits for you, wh
 on a person, then in the order the work is closest to done Ready to merge, Ready for
 review, Ready to start — and then Waiting, what cannot start yet. Work in progress is not
 listed: an agent at work needs nobody, and the tab is for the rows that do — which is why
-an agent that waits on a person (a plan to approve, a question) is.
+an agent that waits on a person (a plan to approve, a question) is, and why work under
+review that an agent takes on (a review of it, a collector) is not.
 
 **The box is the selection.** The first column is a check column (``Column(check=True)``):
 ticking a row picks it, and the host publishes what is picked, so the strip's verbs, the

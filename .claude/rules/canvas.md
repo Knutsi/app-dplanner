@@ -344,9 +344,22 @@ paths:
   does* has the reasoning.
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
-  right now". One `QTimer` on the scene advances every ring and runs only while a node
-  wears one or an arrow flows — `GraphScene._settle_ring_timer` after every sync. The ring
-  is derived from the chip (`NodeAccent.chip_text`), so one field says both.
+  right now". The ring is derived from the chip (`NodeAccent.chip_text`), so one field says
+  both.
+- **The canvas has one motion clock.** One `QTimer` on the scene (`_motion_clock`,
+  `advance_motion`) moves every ring, every pulse and every flowing arrow on one phase, and
+  runs only while a card `moves()` or an arrow `flows()` — `_settle_motion_clock` after every
+  sync, so an idle canvas ticks nothing. A new motion rides this clock, never a timer of its
+  own; the one exception is a gesture's own `FrameClock` (the restack's make-way), which
+  lives and dies with the gesture. A test calls `advance_motion()` rather than waiting.
+- **A step a person moves next pulses.** `NodeAccent.pulse`, translated by the root's
+  `_persons_turn`: ready to merge, always; ready for review unless a live agent takes it on
+  (`progression.taken` — a step waiting on it across an auto-progress link, worked by an
+  agent, neither blocked nor done), the very rule that keeps it off the boards' *Ready for
+  review*. `paint_pulse` breathes bands of the **key tone** round the body, painted before
+  it, reaching `PULSE_REACH` inside `PAINT_MARGIN`, over `PULSE_PERIOD` of the clock's phase
+  (3.2 s, a divisor of its wrap). DESIGN.md's *Focus and motion* says why it may move;
+  `ARCHITECTURE.md`'s *A card pulses where a person moves next* has the reasoning.
 - **An arrow says more than its kind only through an `EdgeAccent`, translated by the root.**
   `requires` is solid with a head, `relates` dashed without one; beyond that the canvas
   reads `ProjectEditorDeps.edge_accents(project_id)` once per sync, keyed (waiter, kind,
@@ -355,11 +368,18 @@ paths:
   `CHEVRON_PITCH` pointing at the step that waits, both cached in `EdgeItem.follow()` —
   which does nothing while the arrow's ends stand, and places chevrons by walking the
   flattened curve, never `percentAtLength` (~40 µs a call, on every sync); a
-  *flowing* one moves its chevrons on the ring clock's phase (`advance_rings`), which the
+  *flowing* one moves its chevrons on the motion clock's phase (`advance_motion`), which the
   root sets while the source wears the live ring — one motion, carried along the link, and
-  still one timer. Every look stays inside `EDGE_GRAB`'s margin and keeps the lit, picked,
-  hovered and dimmed rules. `ARCHITECTURE.md`'s *An auto-progress link is an aspect on the
-  step that waits* has the reasoning.
+  still one timer. **A *medallion* is a glyph in a circle at the middle of the arrow's
+  length** — the root puts the review's talk bubble on every link into a review — found by
+  walking the same flattened track, drawn opaque in the arrow's own ink, and kept
+  `MEDALLION_CLEAR` clear of the chevrons, which pass behind it; `shape()` takes in its disc
+  and `boundingRect()` grows by it while the accent names one, and an arrow too short to hold
+  it (`MEDALLION_ROOM`, a stack's own link) wears none. Auto-progress wears no medallion: the
+  rails already say it along the whole link (N65). Every look stays inside its margin and
+  keeps the lit, picked, hovered and dimmed rules. `ARCHITECTURE.md`'s *An auto-progress link
+  is an aspect on the step that waits* and *An arrow into a review wears its talk bubble*
+  have the reasoning.
 - **A step placed by pointing at a spot earns a stored position.** `StepVerbs.born()` is
   the one place a step is born on the canvas — New and the double-click on empty space
   through `create()`, New Stack and a stack's "+" with the command a stack builder made —

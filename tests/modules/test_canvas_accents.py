@@ -282,20 +282,20 @@ def test_a_live_agent_run_wears_a_marching_ring(services, project, tab):
     scene clock drives every ring, and it runs only while there is one to drive."""
     scene = tab._scene
     step = project.steps[0]
-    assert not scene._ring_timer.isActive()
+    assert not scene._motion_clock.isActive()
 
     SetModuleDataCommand(step.id, agent_run.MODULE_ID, agent_run.write("working")).redo(
         services.document
     )
     item = node(tab, step)
-    assert item.wears_ring() and scene._ring_timer.isActive()
-    before = item._ring_phase
-    scene.advance_rings()
-    assert item._ring_phase != before
-    assert node(tab, project.steps[1])._ring_phase == item._ring_phase  # One clock for all.
+    assert item.wears_ring() and scene._motion_clock.isActive()
+    before = item._phase
+    scene.advance_motion()
+    assert item._phase != before
+    assert node(tab, project.steps[1])._phase == item._phase  # One clock for all.
 
     SetModuleDataCommand(step.id, agent_run.MODULE_ID, {}).redo(services.document)
-    assert not item.wears_ring() and not scene._ring_timer.isActive()
+    assert not item.wears_ring() and not scene._motion_clock.isActive()
 
 
 def test_the_ring_is_painted_outside_the_body_and_moves_with_the_phase(app):
@@ -320,7 +320,7 @@ def test_the_ring_is_painted_outside_the_body_and_moves_with_the_phase(app):
         body = QRectF(0, 0, NODE_W, NODE_H)
         # Linked at both sockets: the orphan mark is on by default and rings the same few
         # pixels, and this is about the ring an agent run wears.
-        state = NodeState(ring_phase=phase, ports=(True, True))
+        state = NodeState(phase=phase, ports=(True, True))
         paint_node(painter, QPalette(), body, "T", accent, state)
         painter.end()
         row = int(-RING_GAP) + margin

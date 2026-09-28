@@ -17,6 +17,7 @@ from dplanner.domain.progression import (
     merge,
     outstanding,
     progression,
+    taken,
 )
 
 
@@ -304,6 +305,41 @@ def test_an_agent_waiting_on_a_person_is_asking_not_running():
     assert titles(found.running) == ["A"] and titles(found.asking) == ["B"]
     assert titles(found.attention) == ["C"] and found.total == 3
     assert titles(merge([found, found]).asking) == ["B", "B"]
+
+
+def test_work_under_review_an_agent_takes_on_is_taken_not_a_person_s():
+    """A1 is under review and C, an agent, collects it: C's turn, so off *Ready for review*.
+    P reaches C over a plain link, so nobody takes it on — a person looks next."""
+    library, project, auto = collector()
+    statuses = status_of({"A1": "ready-for-review", "P": "ready-for-review"})
+    found = progression(library, project, statuses, auto_progresses=auto, is_agent=agents("C"))
+    assert titles(found.taken) == ["A1"] and titles(found.review) == ["P"]
+    assert found.total == len(project.steps)
+    assert titles(merge([found, found]).taken) == ["A1", "A1"]
+
+
+def test_only_a_live_agent_takes_work_on():
+    """A collector a person works, or one blocked or done, takes nothing on: the work under
+    review is a person's turn again."""
+    library, project, auto = collector()
+    a1 = by_title(project, "A1")
+    under_review = {"A1": "ready-for-review"}
+    assert taken(library, a1, status_of(under_review), auto, agents("C"))
+    assert not taken(library, a1, status_of(under_review), auto, agents())
+    for word in ("blocked", "done"):
+        statuses = status_of({**under_review, "C": word})
+        assert not taken(library, a1, statuses, auto, agents("C"))
+    in_progress = status_of({**under_review, "C": "in-progress"})
+    assert taken(library, a1, in_progress, auto, agents("C"))
+
+
+def test_without_is_agent_everything_under_review_is_a_person_s():
+    """The default is the board before this rule: every call that passes nothing is unchanged."""
+    library, project, auto = collector()
+    found = progression(
+        library, project, status_of({"A1": "ready-for-review"}), auto_progresses=auto
+    )
+    assert titles(found.review) == ["A1"] and found.taken == ()
 
 
 def test_every_group_a_person_acts_on_is_ranked_by_what_it_unlocks():

@@ -825,6 +825,16 @@ and one stylesheet rule for the progress bar:
   after two seasons, and turned off in *Settings ▸ Home*. It is not a precedent: a
   surface where people work stays still, and what the canvas might do with
   `framework/motion/` is ARCHITECTURE.md's *Motion is a library*, not yet a rule.
+  **The pulse** (`f20-flow/flow-*`) is a card a person moves next — ready to merge, and
+  ready for review with no live agent to take it on — breathing a glow in its key block's
+  own tone, amber or green, once every 3.2 s. It may move because it is the one fact on the
+  canvas that is *waiting on the reader*: a mark would be one more thing to find, where a
+  slow swell is found without looking for it, and a glance at the canvas finds every step
+  waiting on a person. It is slow so it never competes with the ring's crawl — the ring
+  says somebody is at work, the pulse that somebody is waited on — and it runs on the
+  ring's clock, so an idle canvas still ticks nothing. What it marks is the boards' *Ready
+  to merge* and *Ready for review*, one answer (ARCHITECTURE.md's *A card pulses where a
+  person moves next*). The talk bubble on a link into a review is a medallion, and still.
   **The one slide** is a stack making way (`f19-restack/make-way-*`): while a card is
   Shift-dragged through a stack, the cards between ease aside over about 120 ms to open
   the slot it would drop into, and close up behind one dragged out. It is allowed because

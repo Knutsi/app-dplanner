@@ -16,6 +16,7 @@ are paddings, radii and the reach of the decorations round the edge.
 """
 
 from dataclasses import dataclass, field
+from math import cos, tau
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import (
@@ -58,6 +59,7 @@ from dplanner.theme.tones import (
     CHIP_INFO_BORDER,
     CHIP_INFO_TINT,
     INVALID_TINT,
+    STATUS_TONES,
     VALID_TINT,
     recoloured,
     toned,
@@ -121,6 +123,16 @@ RING_W = 1.5
 RING_DASH = (4.0, 3.0)
 RING_STEP = 0.5
 
+# A card a person moves next breathes: a glow round the body in its key block's tone,
+# swelling and fading once every PULSE_PERIOD of the scene's phase — 40 ticks, 3.2 s, slow
+# enough never to compete with the ring's crawl, and a divisor of the phase's wrap so a
+# breath never jumps. The glow is PULSE_LAYERS bands reaching PULSE_REACH past the body,
+# brightest nearest it; PULSE_ALPHA is the innermost band's at the height of a breath.
+PULSE_PERIOD = 20.0
+PULSE_REACH = 7.0
+PULSE_LAYERS = 3
+PULSE_ALPHA = 255
+
 # The icon medallions on the top edge, left end: one small circle per aspect kind a step
 # carries, bound by the same boundingRect inequality the badge is. Twice grown by a fifth from
 # the 14 they were first drawn at, and rounded to the pixel at the end of it.
@@ -151,6 +163,7 @@ PAINT_MARGIN = max(
     ICON_D / 2 + 1.0 + LIFT,
     CHIP_H / 2 + 1.0,
     RING_GAP + RING_W + 1.0 + LIFT,
+    PULSE_REACH + 1.0 + LIFT,
     PROBLEM_DROP + PROBLEM_RISE + PROBLEM_W / 2 + 1.0 + LIFT,
     LIFTED_SHADOW.drop + LIFTED_SHADOW.spread + 1.0,
 )
@@ -167,12 +180,15 @@ class EdgeAccent:
 
     ``doubled`` draws the line as two rails with chevrons running between them towards
     the step that waits — work that moves along on its own; ``flowing`` sets the
-    chevrons moving, on the marching ring's clock. The composition root decides which
-    arrow is which, the same seam as :class:`NodeAccent`.
+    chevrons moving, on the scene's motion clock; ``medallion`` names a glyph the arrow
+    wears in a circle at its middle — the canvas knows the glyph, never what it stands
+    for. The composition root decides which arrow is which, the same seam as
+    :class:`NodeAccent`.
     """
 
     doubled: bool = False
     flowing: bool = False
+    medallion: str = ""  # "" → none.
 
 
 @dataclass(frozen=True)
@@ -187,7 +203,7 @@ class NodeAccent:
     sits on the second line with a tone that is "good" or "bad", never "merged";
     ``branch`` asks for the small fork glyph beside it. The key block down the left edge
     reads ``key_text`` under ``key_glyph`` — who works the step — and is shaded by
-    ``key_tone``.
+    ``key_tone``; ``pulse`` breathes a glow round the card in that same tone.
     """
 
     muted: bool = False
@@ -218,6 +234,9 @@ class NodeAccent:
     # Something in the plan is wrong about this step, so it wears the squiggle. What is
     # wrong is the Problems panel's to say; the canvas only ever knows *that*.
     flagged: bool = False
+    # A person moves this step next, so the card pulses in its key tone. Who that is and
+    # why is the composition root's to decide; the canvas only ever knows *that*.
+    pulse: bool = False
 
 
 @dataclass(frozen=True)
@@ -243,7 +262,8 @@ class NodeState:
     hovered: bool = False
     link_state: str = ""  # "" | "valid" | "invalid"
     hints: RenderHints = field(default_factory=RenderHints)
-    ring_phase: float = 0.0  # Where the live ring's dashes are; the scene advances it.
+    # Where the scene's motion clock stands: the live ring's dashes and a pulse's breath.
+    phase: float = 0.0
     ports: tuple[bool, bool] = (False, False)  # (something arrives, something leaves).
     marks: Marks = field(default_factory=Marks)
     # Whether this card offers a link handle at all: a stack's links leave from its last
@@ -278,6 +298,8 @@ def paint_node(
     if state.selected:
         painter.translate(0.0, -LIFT)
 
+    if accent.pulse:
+        paint_pulse(painter, body, accent.key_tone, state.phase)
     paint_body(painter, palette, body, accent, state)
     paint_key_block(
         painter,
@@ -293,7 +315,7 @@ def paint_node(
     if accent.flagged:
         paint_problem(painter, body)
     if accent.chip_text:
-        paint_ring(painter, body, accent.chip_tone, state.ring_phase)
+        paint_ring(painter, body, accent.chip_tone, state.phase)
     inner = body.adjusted(KEY_BLOCK_W + PAD_Y, PAD_Y, -PADDING, -PAD_Y)
     detail = bool(accent.stat_text or accent.pill_text or accent.branch)
     reserved = painter.fontMetrics().height() + LINE_GAP if detail else 0.0
@@ -574,6 +596,35 @@ def paint_ring(painter: QPainter, body: QRectF, tone: str, phase: float) -> None
     painter.drawRoundedRect(ring, RADIUS + RING_GAP, RADIUS + RING_GAP)
 
 
+def pulse_level(phase: float) -> float:
+    """How far into a breath the pulse is at ``phase``: 0 at rest, 1 at its height."""
+    return 0.5 - 0.5 * cos(tau * phase / PULSE_PERIOD)
+
+
+def paint_pulse(painter: QPainter, body: QRectF, tone: str, phase: float) -> None:
+    """The glow round a card a person moves next, as far into its breath as ``phase`` says.
+
+    Bands of the key block's own tone outside the body, fading outward — one colour for
+    one fact, so the amber of a review and the green of a merge say who is waited on in
+    the hue the card already wears. Painted before the body, whose opaque fill covers the
+    inner edge; its reach is in :data:`PAINT_MARGIN`.
+    """
+    level = pulse_level(phase)
+    tint = STATUS_TONES.get(tone)
+    if tint is None or level <= 0.0:
+        return
+    band = PULSE_REACH / PULSE_LAYERS
+    painter.setBrush(Qt.BrushStyle.NoBrush)
+    for layer in range(PULSE_LAYERS):
+        colour = QColor(tint)
+        colour.setAlpha(round(PULSE_ALPHA * level * (1.0 - layer / PULSE_LAYERS)))
+        painter.setPen(QPen(colour, band))
+        spread = band * (layer + 0.5)
+        painter.drawRoundedRect(
+            body.adjusted(-spread, -spread, spread, spread), RADIUS + spread, RADIUS + spread
+        )
+
+
 def paint_chip(painter: QPainter, palette: QPalette, body: QRectF, text: str, tone: str) -> None:
     """A pill on the bottom edge, left end: the badge's mirror, worn by a live agent run."""
     font = painter.font()
@@ -618,19 +669,36 @@ def paint_icon_medallions(
     tag_fill = recoloured(BADGE_TINT, color) if color else QColor(BADGE_TINT)
     x = LEFT_INSET
     for kind in icons:
-        centre = QPointF(x + ICON_D / 2, 0.0)
-        border = tag_border if kind == "tag" else faded
-        fill = tag_fill if kind == "tag" else QColor(palette.window().color())
-        painter.setBrush(fill)
-        painter.setPen(QPen(border, 1.0))
-        painter.drawEllipse(centre, ICON_D / 2, ICON_D / 2)
-        glyph = QRectF(
-            centre.x() - ICON_GLYPH / 2, centre.y() - ICON_GLYPH / 2, ICON_GLYPH, ICON_GLYPH
-        )
         # A milestone's glyph is full ink on its own tinted medallion; every other kind
         # sits quietly on the card's own ground. The kind *is* the glyph's name.
-        paint_glyph(painter, glyph, kind, ink if kind == "tag" else faded)
+        tag = kind == "tag"
+        paint_medallion(
+            painter,
+            QPointF(x + ICON_D / 2, 0.0),
+            kind,
+            tag_border if tag else faded,
+            tag_fill if tag else QColor(palette.window().color()),
+            ink if tag else faded,
+        )
         x += ICON_D + ICON_GAP
+
+
+def paint_medallion(
+    painter: QPainter,
+    centre: QPointF,
+    glyph: str,
+    border: QColor,
+    fill: QColor,
+    ink: QColor,
+    border_w: float = 1.0,
+) -> None:
+    """One medallion: a circle :data:`ICON_D` across round ``glyph`` — a card's aspects
+    along its top edge, and what an arrow wears at its middle."""
+    painter.setBrush(fill)
+    painter.setPen(QPen(border, border_w))
+    painter.drawEllipse(centre, ICON_D / 2, ICON_D / 2)
+    rect = QRectF(centre.x() - ICON_GLYPH / 2, centre.y() - ICON_GLYPH / 2, ICON_GLYPH, ICON_GLYPH)
+    paint_glyph(painter, rect, glyph, ink)
 
 
 def paint_handle(painter: QPainter, palette: QPalette, body: QRectF, state: NodeState) -> None:

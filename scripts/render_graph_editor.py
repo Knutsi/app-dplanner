@@ -15,6 +15,7 @@
         --out docs/screenshots/f11-auto-progress
     uv run python scripts/render_graph_editor.py --review \
         --out docs/screenshots/f12-automatic-review
+    uv run python scripts/render_graph_editor.py --flow --out docs/screenshots/f20-flow
 
 What S7 reworked: the strip of verbs over the canvas as glyphs in named bands, folding
 whole bands into its ``…`` menu; the *Find* picker, which opens on the plan's landmarks
@@ -34,7 +35,10 @@ Shift-dragged to the top with the cards easing down to open its slot, one dragge
 the frame, and a loose step dragged in; since F11,
 with ``--auto-progress``, parallel work handed to a step that collects it: the doubled
 links, and the arrow's menu with the toggle on; since F12, with ``--review``, a step and its
-review, the link into the review doubled by rule and its menu's toggle ticked and greyed. A
+review, the link into the review doubled by rule and its menu's toggle ticked and greyed; since
+F20, with ``--flow``, where work moves on its own and where a person is next: the talk bubble
+on the link into a review, a collector's doubled links, and the steps a person moves next
+pulsing — at the height of a breath, at rest, and with the review picked. A
 whole application is built over a throwaway library — the tab is the tab host's, so nothing
 here hand-wires a surface the window would build differently — and torn down per theme.
 """
@@ -84,6 +88,7 @@ from dplanner.modules.project_editor.positions import (
     write_position,
 )
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
+from dplanner.modules.project_editor.renderers import PULSE_PERIOD
 from dplanner.modules.project_editor.selection import EdgeRef
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write
@@ -178,6 +183,29 @@ REVIEWED = (
     ("Ship the parser", (680.0, 0.0), "", False),
 )
 REVIEW_SIZE = (1100, 480)
+# F20: where work moves on its own and where a person is next. Title, seat, status, the
+# agent run, whether an agent works it and whether it is a review; then who waits on whom,
+# and which of those links auto-progress by flag.
+FLOW = (
+    ("Build the parser", (0.0, -240.0), "ready-for-review", "", True, False),
+    ("Review the parser", (380.0, -240.0), "in-progress", "working", True, True),
+    ("Parse the dates", (0.0, -90.0), "ready-for-review", "", True, False),
+    ("Map the columns", (0.0, 40.0), "in-progress", "working", True, False),
+    ("Merge the import round", (380.0, -25.0), "", "", True, False),
+    ("Write the release notes", (380.0, 150.0), "ready-for-review", "", False, False),
+    ("Land the loader", (380.0, 280.0), "ready-to-merge", "", True, False),
+    ("Ship the importer", (760.0, -25.0), "", "", False, False),
+)
+FLOW_LINKS = (
+    ("Review the parser", "Build the parser", False),
+    ("Merge the import round", "Parse the dates", True),
+    ("Merge the import round", "Map the columns", True),
+    ("Ship the importer", "Review the parser", False),
+    ("Ship the importer", "Merge the import round", False),
+    ("Ship the importer", "Write the release notes", False),
+    ("Ship the importer", "Land the loader", False),
+)
+FLOW_SIZE = (1320, 600)
 
 # A line of work that kept growing, stacked (S16): a chain in, three steps as one tall card,
 # and the milestone after it — placed by the ambient layout, which folds the stack like
@@ -522,10 +550,10 @@ def render_auto_progress(app: QApplication, theme: Theme, out: Path, workspace: 
     page.resize(*ROUND_SIZE)
     page.show()
     tab.frame()
-    # Two ticks of the ring clock, so the flowing link's chevrons stand where they would a
+    # Two ticks of the motion clock, so the flowing link's chevrons stand where they would a
     # moment in, as the ring beside them does.
-    tab._scene.advance_rings()
-    tab._scene.advance_rings()
+    tab._scene.advance_motion()
+    tab._scene.advance_motion()
     save(page, out, "round", theme, app)
     page.setParent(None)
     session.close()
@@ -664,9 +692,82 @@ def render_review(app: QApplication, theme: Theme, out: Path, workspace: Path) -
     page.resize(*REVIEW_SIZE)
     page.show()
     tab.frame()
-    tab._scene.advance_rings()
-    tab._scene.advance_rings()
+    tab._scene.advance_motion()
+    tab._scene.advance_motion()
     save(page, out, "pair", theme, app)
+    page.setParent(None)
+    session.close()
+    discard(page)
+
+
+def render_flow(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """Where the work moves on its own and where a person is next: the talk bubble on the
+    link into a review, a collector's links doubled and one flowing, and the two steps a
+    person moves next — a review nobody takes on, a merge — pulsing. Shot at the height of
+    a breath, at rest, and with the review picked, its bubble lit with its arrow."""
+    QSettings().clear()
+    apply_theme(app, theme)
+    library_file = workspace / f"flow-library-{theme.name}.json"
+    create_library(library_file)
+    init_repo(workspace)
+    session = new_session()
+    assert session.open_initial(library_file)
+    services = session.services
+    assert services is not None
+    services.debounce.set_immediate(True)
+    library = services.document
+
+    directory = seed_project(workspace / f"flow-{theme.name}", "Importer")
+    project = services.repo.attach(directory)
+    library.add_child(library.id, project)
+    made: dict[str, StepId] = {}
+    for title, (x, y), status, run, agent, review in FLOW:
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(library)
+        SetModuleDataCommand(step.id, POSITION_KEY, write_position(x, y)).redo(library)
+        library.set_text(step.id, "step_description", f"{title}, in full.")
+        SetModuleDataCommand(step.id, "estimation", estimate_write(0.25)).redo(library)
+        if agent:
+            SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
+        if status:
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+        if run:
+            SetModuleDataCommand(step.id, AGENT_RUN_ID, agent_run_write(run)).redo(library)
+        if review:
+            SetModuleDataCommand(step.id, REVIEW_ID, review_write(ReviewSettings())).redo(library)
+        made[title] = step.id
+    waits: dict[str, list[StepId]] = {}
+    flagged: dict[str, list[StepId]] = {}
+    for waiter, source, flag in FLOW_LINKS:
+        waits.setdefault(waiter, []).append(made[source])
+        if flag:
+            flagged.setdefault(waiter, []).append(made[source])
+    for waiter, sources in waits.items():
+        SetEdgesCommand(made[waiter], "requires", sources).redo(library)
+    for waiter, sources in flagged.items():
+        SetModuleDataCommand(made[waiter], AUTO_PROGRESS_ID, auto_progress_write(sources)).redo(
+            library
+        )
+
+    tab = services.tabs.open("project", project.id)
+    assert isinstance(tab, ProjectActivity)
+    page = tab.widget
+    page.resize(*FLOW_SIZE)
+    page.show()
+    tab.frame()
+    settle(app)
+    tab._scene.select_steps([])
+    # The height of a breath: half a pulse's period on the motion clock.
+    while tab._scene._phase < PULSE_PERIOD / 2:
+        tab._scene.advance_motion()
+    save(page, out, "flow", theme, app)
+    while tab._scene._phase % PULSE_PERIOD:
+        tab._scene.advance_motion()
+    save(page, out, "flow-rest", theme, app)
+    tab._scene.select_steps([made["Review the parser"]])
+    while tab._scene._phase % PULSE_PERIOD != PULSE_PERIOD / 2:
+        tab._scene.advance_motion()
+    save(page, out, "flow-picked", theme, app)
     page.setParent(None)
     session.close()
     discard(page)
@@ -851,6 +952,11 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--review", action="store_true", help="only a step and its review (F12), nothing else"
     )
+    parser.add_argument(
+        "--flow",
+        action="store_true",
+        help="only the review bubble and the pulsing steps a person moves next (F20)",
+    )
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
@@ -886,6 +992,9 @@ def main(argv: list[str]) -> int:
                 continue
             if args.review:
                 render_review(app, theme, args.out, Path(tmp))
+                continue
+            if args.flow:
+                render_flow(app, theme, args.out, Path(tmp))
                 continue
             render(app, theme, args.out, Path(tmp))
             render_cards(app, theme, args.out, Path(tmp))

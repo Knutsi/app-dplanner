@@ -76,9 +76,10 @@ from dplanner.modules.project_editor.renderers import (
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef, neighbourhood
 from dplanner.modules.project_editor.stacks import Stack
 
-# How often a live ring's dashes move: quick enough to read as motion, slow enough that an
-# agent working for an hour costs the canvas nothing worth measuring.
-RING_TICK_MS = 80
+# How often the canvas's motion clock ticks — a live ring's dashes, a flowing arrow's
+# chevrons, a pulse's breath: quick enough to read as motion, slow enough that an agent
+# working for an hour costs the canvas nothing worth measuring.
+MOTION_TICK_MS = 80
 
 # An arrow the sync names no accent for.
 PLAIN_EDGE = EdgeAccent()
@@ -190,13 +191,13 @@ class GraphScene(QGraphicsScene):
         # the per-item selectionChanged is not announced — one gesture, one announcement.
         self._reselecting = False
 
-        # The live rings' clock: one timer for every node wearing one and every arrow whose
-        # chevrons flow, running only while there is one — an idle canvas ticks nothing.
-        # Sync settles it; nothing else does.
-        self._ring_phase = 0.0
-        self._ring_timer = QTimer(self)
-        self._ring_timer.setInterval(RING_TICK_MS)
-        self._ring_timer.timeout.connect(self.advance_rings)
+        # The canvas's one motion clock: one timer for every card that rings or pulses and
+        # every arrow whose chevrons flow, running only while one does — an idle canvas
+        # ticks nothing. Sync settles it; nothing else does.
+        self._phase = 0.0
+        self._motion_clock = QTimer(self)
+        self._motion_clock.setInterval(MOTION_TICK_MS)
+        self._motion_clock.timeout.connect(self.advance_motion)
 
     # -- what the activity puts in ---------------------------------------------------------
 
@@ -248,26 +249,26 @@ class GraphScene(QGraphicsScene):
             else:
                 edge.follow()  # A node may have moved under it since the last sync.
             edge.set_accent(accents.get(ref, PLAIN_EDGE))
-        self._settle_ring_timer()
+        self._settle_motion_clock()
         self._light_selection()  # The graph changed under the selection; re-derive.
 
-    def advance_rings(self) -> None:
-        """One tick: every live ring's dashes, and every flowing arrow's chevrons, move on
-        together."""
-        self._ring_phase = (self._ring_phase + RING_STEP) % 1000.0
+    def advance_motion(self) -> None:
+        """One tick: every live ring's dashes, every pulse's breath and every flowing arrow's
+        chevrons move on together."""
+        self._phase = (self._phase + RING_STEP) % 1000.0
         for item in self._nodes.values():
-            item.set_ring_phase(self._ring_phase)
+            item.set_phase(self._phase)
         for edge in self._edges.values():
-            edge.set_flow_phase(self._ring_phase)
+            edge.set_phase(self._phase)
 
-    def _settle_ring_timer(self) -> None:
-        live = any(item.wears_ring() for item in self._nodes.values()) or any(
+    def _settle_motion_clock(self) -> None:
+        live = any(item.moves() for item in self._nodes.values()) or any(
             edge.flows() for edge in self._edges.values()
         )
-        if live and not self._ring_timer.isActive():
-            self._ring_timer.start()
-        elif not live and self._ring_timer.isActive():
-            self._ring_timer.stop()
+        if live and not self._motion_clock.isActive():
+            self._motion_clock.start()
+        elif not live and self._motion_clock.isActive():
+            self._motion_clock.stop()
 
     def _sync_frames(self, stacks: Sequence[Stack]) -> None:
         """One frame per stack whose every member has a card, diffed by stack id like the
