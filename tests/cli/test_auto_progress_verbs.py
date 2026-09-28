@@ -97,6 +97,20 @@ def test_a_plain_source_still_holds_a_collector(cli):
     assert "C" in progression(cli)["upcoming"]
 
 
+def test_a_source_its_collector_takes_on_is_taken_by_an_agent_not_ready_for_review(cli):
+    """C is an agent collecting A1: A1 is C's turn. A2 goes to its collector over a plain
+    link, so a person looks next — the same answer the canvas pulses by."""
+    cli("auto-progress", "set", "C", "A1", "on")
+    for source in ("A1", "A2"):
+        cli("status", "set", source, "ready-for-review")
+    found = data(cli("progression", "show", "widget", "--json"))
+    assert [row["title"] for row in found["taken"]] == ["A1"]
+    assert [row["title"] for row in found["review"]] == ["A2"]
+    assert found["counts"]["taken"] == 1
+    said = cli("progression", "show", "widget")
+    assert "Taken by an agent:\n  A1  (agent)" in said
+
+
 def test_the_last_source_to_reach_review_says_it_made_the_collector_due(cli):
     """Only a window launches, so the terminal says what became due and who starts it."""
     for source in ("A1", "A2"):

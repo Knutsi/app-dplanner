@@ -607,12 +607,14 @@ def default_modules(
         # The settled reading, never a fresh lint pass: the checks are super-linear in the
         # size of a plan (66 ms at 300 steps) and this runs on every canvas sync.
         flagged = problems.flagged(project_id)
+        status_for = _status_in(library, services.clock.today())
         return {
             step.id: step_accent(
                 step,
                 stats.get(step.id, ""),
                 colors.get(step.id, ""),
                 flagged=step.id in flagged,
+                pulse=_persons_turn(library, step, status_for),
             )
             for step in project.steps
         }
@@ -621,10 +623,16 @@ def default_modules(
         """How the arrows of a project look beyond their kind: an auto-progress link is
         doubled — the frontier's own answer, so the canvas draws what progression does —
         and its chevrons flow while its source wears the live ring: the motion the source's
-        agent run already has, carried to the step that will take its work."""
+        agent run already has, carried to the step that will take its work. A link into a
+        review — doubled by that same answer — also wears the review's talk bubble at its
+        middle: the work on this arrow is about to be talked over."""
+        from dplanner.modules.step_review.aspect import reviews
+
         return {
             (waiter.id, "requires", source.id): EdgeAccent(
-                doubled=True, flowing=bool(agent_run_state(source))
+                doubled=True,
+                flowing=bool(agent_run_state(source)),
+                medallion="review" if reviews(waiter, source) else "",
             )
             for waiter in library.project(project_id).steps
             for source in library.requires(waiter.id)
@@ -637,6 +645,7 @@ def default_modules(
         milestone_color: str = "",
         *,
         flagged: bool = False,
+        pulse: bool = False,
     ) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
@@ -650,9 +659,9 @@ def default_modules(
         schedule's accumulated days and date as its stat (done outranks it on the body — a
         shipped milestone reads finished, and the tag still says what it was); a PR is a
         pill with its state as a tone and a branch the fork glyph; a live agent run is the
-        chip on the bottom edge; a plain step's stat is its own estimate. The card says
-        nothing in words beyond its title and its key: every aspect it wears is one of
-        these, never a phrase.
+        chip on the bottom edge; a plain step's stat is its own estimate; a step a person
+        moves next pulses (:func:`_persons_turn`). The card says nothing in words beyond its
+        title and its key: every aspect it wears is one of these, never a phrase.
         """
         refs = github_read(step)
 
@@ -707,6 +716,8 @@ def default_modules(
             # Something in the plan is wrong about this step. The canvas draws the
             # squiggle; what is wrong is the Problems panel's to say.
             flagged=flagged,
+            # A person moves this step next: the card breathes in its key block's tone.
+            pulse=pulse,
             stat_text=stat,
             stat_strong=bool(milestone),
         )
@@ -1053,6 +1064,9 @@ def default_modules(
             auto_progresses=_auto_progresses,
             # An agent that waits on a person is a row of its own: Waits for you.
             asks_person=_asks_person,
+            # Work under review an agent takes on is that agent's, not a person's row —
+            # the same answer the canvas pulses by (step_accents above).
+            is_agent=_is_agent_step,
             verbs=(
                 StripVerb("agent.run", data_menu=RUN_MENU_ID, face="Run Agents"),
                 StripVerb("status.ready-to-merge"),
@@ -2778,6 +2792,19 @@ def _auto_progresses(waiter: "Step", source: "Step") -> bool:
     from dplanner.modules.step_review.aspect import reviews
 
     return progresses(waiter, source) or reviews(waiter, source)
+
+
+def _persons_turn(library: "Library", step: "Step", status_for: "Callable[[Step], str]") -> bool:
+    """Whether a person moves ``step`` next — what its card pulses for: ready to merge,
+    always; ready for review, unless an agent takes it on from there (``progression.taken``,
+    the rule that keeps it off the boards' *Ready for review* too)."""
+    from dplanner.domain.progression import READY_FOR_REVIEW, READY_TO_MERGE, taken
+
+    status = status_for(step)
+    return status == READY_TO_MERGE or (
+        status == READY_FOR_REVIEW
+        and not taken(library, step, status_for, _auto_progresses, _is_agent_step)
+    )
 
 
 def _always_progresses(step: "Step") -> str:

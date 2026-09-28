@@ -328,7 +328,9 @@ it `due`. With a DPlanner window open whose *Agent profiles ▸ When a step beco
 on, that window launches its agent within seconds, claimed in progress; with none, it waits
 for a person. Either way, stop as you would have: never launch another agent from your own
 shell. `progression show` lists an agent that waits on a person — a plan to approve, a
-question — under **Waits for you**, not Running.
+question — under **Waits for you**, not Running; and work under review that a live agent
+takes on from there — its review, a collector — under **Taken by an agent**, not Ready for
+review, which names a person's turn alone.
 
 **A step that collects other steps' work lands it, and finishes them.** Its briefing has
 *Work you collect*: each source's status, branch, PR and worktree on this machine. Merge each

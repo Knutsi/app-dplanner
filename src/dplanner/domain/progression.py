@@ -42,6 +42,12 @@ somebody — a plan to approve, a question to answer — is handed in as ``asks_
 lands in ``asking`` rather than ``running``: the work is not stuck on the graph, it is stuck
 on a person, which is what a board of what needs a person is for.
 
+**And work under review an agent takes on is not.** A step reading ready for review is a
+person's turn unless an agent will take it from there — its review, a collector — through
+a link that auto-progresses, and that agent is neither blocked nor done (:func:`taken`).
+Such a step lands in ``taken`` rather than ``review``, off the board like running work, so
+the board's *Ready for review* is exactly the steps the canvas pulses for.
+
 **Some of the frontier is due.** :func:`due` is the part of it nobody needs to launch by
 hand: an agent step whose last prerequisite was fulfilled *through* an auto-progress link —
 a collector's sources, a review's subject, just reached review. A window that launches
@@ -150,6 +156,27 @@ def due(
     return found
 
 
+def taken(
+    library: Library,
+    step: Step,
+    status_for: Callable[[Step], str],
+    auto_progresses: Callable[[Step, Step], bool],
+    is_agent: Callable[[Step], bool],
+) -> bool:
+    """Whether an agent takes ``step``'s work on from review: a step waiting on it across a
+    link that auto-progresses — its review, a collector — that an agent works and that is
+    neither blocked nor done. A step under review that none takes waits on a person.
+
+    The one answer the board's *Ready for review* and the canvas's pulse both read.
+    """
+    return any(
+        is_agent(waiter)
+        and status_for(waiter) not in (BLOCKED, DONE)
+        and auto_progresses(waiter, step)
+        for waiter in library.dependents(step.id)
+    )
+
+
 @dataclass(frozen=True)
 class Upcoming:
     """A step one move away: everything it waits on is on the board already.
@@ -169,7 +196,8 @@ class Progression:
     ``attention`` is the blocked steps — stuck on a person, not on the graph — kept
     apart from ``running`` because they are the rows that need eyes; ``asking`` is running
     work whose agent waits on a person, for the same reason; ``review`` and ``merge`` are
-    finished work a person looks at next. ``waiting`` is everything further
+    finished work a person looks at next, and ``taken`` finished work an agent takes on
+    from review (:func:`taken`). ``waiting`` is everything further
     than one move out; a step whose prerequisite is merely upcoming stays there, because
     the lookahead is deliberately one move and not a forecast.
 
@@ -183,6 +211,7 @@ class Progression:
     running: tuple[Step, ...]
     asking: tuple[Step, ...]
     review: tuple[Step, ...]
+    taken: tuple[Step, ...]
     merge: tuple[Step, ...]
     attention: tuple[Step, ...]
     ready: tuple[Step, ...]
@@ -197,6 +226,7 @@ class Progression:
             + len(self.running)
             + len(self.asking)
             + len(self.review)
+            + len(self.taken)
             + len(self.merge)
             + len(self.attention)
             + len(self.ready)
@@ -222,6 +252,7 @@ def progression(
     counts_as_work: Callable[[Step], bool] = _all_work,
     auto_progresses: Callable[[Step, Step], bool] = _never,
     asks_person: Callable[[Step], bool] = _answers_no,
+    is_agent: Callable[[Step], bool] = _answers_no,
 ) -> Progression:
     """One walk in project order, so the answer is deterministic — ``ordering.py``'s rule.
 
@@ -234,7 +265,8 @@ def progression(
     on it. Each partition a person acts on is ranked by ``unlocks``; ties keep project
     order. ``auto_progresses`` says which links free their waiter from review on
     (:func:`outstanding`); ``asks_person`` which steps in progress wait on a person
-    (``asking``).
+    (``asking``); ``is_agent`` which steps an agent works, so a step under review that one
+    of them takes on is ``taken`` rather than a person's ``review``.
     """
     status = {step.id: status_for(step) for step in project.steps}
     work = [step for step in project.steps if counts_as_work(step)]
@@ -283,11 +315,18 @@ def progression(
             waiting.append(step)
 
     in_progress = claiming(IN_PROGRESS)
+    under_review = claiming(READY_FOR_REVIEW)
+    handed_on = {
+        step.id
+        for step in under_review
+        if taken(library, step, status_of, auto_progresses, is_agent)
+    }
     return Progression(
         done=tuple(claiming(DONE)),
         running=tuple(step for step in in_progress if not asks_person(step)),
         asking=ranked([step for step in in_progress if asks_person(step)]),
-        review=ranked(claiming(READY_FOR_REVIEW)),
+        review=ranked([step for step in under_review if step.id not in handed_on]),
+        taken=tuple(step for step in under_review if step.id in handed_on),
         merge=ranked(claiming(READY_TO_MERGE)),
         attention=ranked(claiming(BLOCKED)),
         ready=ranked(frontier),
@@ -322,6 +361,7 @@ def merge(found: Iterable[Progression]) -> Progression:
         running=joined(lambda one: one.running),
         asking=_ranked(joined(lambda one: one.asking), unlocks),
         review=_ranked(joined(lambda one: one.review), unlocks),
+        taken=joined(lambda one: one.taken),
         merge=_ranked(joined(lambda one: one.merge), unlocks),
         attention=_ranked(joined(lambda one: one.attention), unlocks),
         ready=_ranked(joined(lambda one: one.ready), unlocks),
@@ -338,6 +378,7 @@ def across(
     counts_as_work: Callable[[Step], bool] = _all_work,
     auto_progresses: Callable[[Step, Step], bool] = _never,
     asks_person: Callable[[Step], bool] = _answers_no,
+    is_agent: Callable[[Step], bool] = _answers_no,
 ) -> Progression:
     """Every project's progression merged into one board — what can start anywhere.
 
@@ -345,7 +386,9 @@ def across(
     cross a project, so each walk is the one-project walk unchanged.
     """
     return merge(
-        progression(library, project, status_for, counts_as_work, auto_progresses, asks_person)
+        progression(
+            library, project, status_for, counts_as_work, auto_progresses, asks_person, is_agent
+        )
         for project in projects
     )
 
@@ -392,6 +435,7 @@ def estimated_progress(
         *progress.running,
         *progress.asking,
         *progress.review,
+        *progress.taken,
         *progress.merge,
         *progress.attention,
         *progress.ready,

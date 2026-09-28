@@ -153,6 +153,9 @@ class ProgressionDeps:
     # Whether a running step's agent waits on a person — a plan to approve, a question to
     # answer: the agent-run aspect's reading, which puts the row under *Waits for you*.
     asks_person: Callable[[Step], bool] = field(default=lambda _step: False)
+    # Whether an agent works a step: a step under review that an agent takes on from there
+    # is that agent's turn, not a person's, and leaves *Ready for review*.
+    is_agent: Callable[[Step], bool] = field(default=lambda _step: False)
     # The verbs a person runs over the ticked rows, named by the composition root: which
     # they are is a fact about other modules. None seated is a build without them.
     verbs: tuple[StripVerb, ...] = ()
@@ -294,6 +297,7 @@ class StatusBoard(EntityActivity):
                 deps.counts_as_work,
                 deps.auto_progresses,
                 deps.asks_person,
+                deps.is_agent,
             )
             for project in self._projects()
         }

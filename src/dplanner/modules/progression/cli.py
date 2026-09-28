@@ -15,7 +15,9 @@ The status and estimate readers arrive as functions from the composition root, t
 hand-over ``layout_cli.commands(days_for=…)`` uses — neither ``cli.py`` imports the other.
 So does what is **due**: the agent steps a window that launches what becomes due would start
 on its own, marked on their rows, and **Waits for you** — running work whose agent waits on
-a person — which ``asks_person`` splits from Running.
+a person — which ``asks_person`` splits from Running. **Taken by an agent** is the other
+half of that line: work under review that an agent takes on from there, which ``is_agent``
+splits from Ready for review, so that section names a person's turn alone.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
@@ -122,6 +124,7 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
         readers.counts_as_work,
         readers.auto_progresses,
         readers.asks_person,
+        readers.is_agent,
     )
     weighted = estimated_progress(found, readers.days_for)
     due = {
@@ -150,6 +153,7 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
             "running": len(found.running),
             "asking": len(found.asking),
             "review": len(found.review),
+            "taken": len(found.taken),
             "merge": len(found.merge),
             "attention": len(found.attention),
             "ready": len(found.ready),
@@ -160,6 +164,7 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
         "asking": named(found.asking),
         "merge": named(found.merge),
         "review": named(found.review),
+        "taken": named(found.taken),
         "running": named(found.running),
         "ready": [row(step, unlocks=found.unlocks[step.id]) for step in found.ready],
         "upcoming": [
@@ -225,6 +230,7 @@ def _report(
     section("Ready to merge", [unblocking(step) for step in found.merge])
     section("Ready for review", [unblocking(step) for step in found.review])
     section("Running", [line(step) for step in found.running])
+    section("Taken by an agent", [line(step) for step in found.taken])
     section("Ready to start", [unblocking(step) for step in found.ready])
     section(
         "Up next",

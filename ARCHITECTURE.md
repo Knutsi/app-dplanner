@@ -2676,6 +2676,58 @@ so the general mark covers the case the ring was invented for, and covers it bet
 because the Problems panel then says *which* thing is wrong. A stored `orphans` is ignored
 rather than refused, which is `from_json`'s tolerance doing its job.
 
+### A card pulses where a person moves next
+
+A step ready to merge, and a step ready for review that no live agent takes on, breathe: a
+glow in the key block's own tone swells and fades round the card every 3.2 seconds. The
+rule is `canvas.md`'s; the three decisions behind it are these.
+
+**It is a fact, not a way of looking.** The marks above are a preference because what they
+light is a reading of the graph a person may not want; this is the plan saying *you are
+waited on here*, and a preference that could switch it off would be a way to stop hearing
+that. So it is an accent the root translates — `_persons_turn`, over `progression.taken` —
+never a field on `Look`, and it is the boards' own answer: the card pulses exactly when the
+Step statuses tab and the Control Centre list it under *Ready to merge* or *Ready for
+review* (*Progression is the status-aware frontier*). Why a pulse at all, where everything
+else on a card is still, is DESIGN.md's *Focus and motion*: the one fact waiting on the
+reader is the one found without looking for it.
+
+**Its colour is the key block's.** Amber for a review and green for a merge are already
+on the card, on its left edge; a glow in a hue of its own would be a second vocabulary for
+the same status. So the painter takes `key_tone` and the accent carries only *that* it
+pulses. It is painted before the body, whose opaque fill covers its inner edge, and its
+reach is measured into `PAINT_MARGIN` like every other decoration's.
+
+**It rides the ring's clock.** Two timers on one scene would be two things ticking on an
+idle canvas's behalf and two phases to line up; the one clock (`advance_motion`) moves the
+ring's dashes, the flowing chevrons and the pulse's breath together and stops the moment
+nothing moves. The period is 20 of its phase units — a divisor of the phase's wrap, so a
+breath never jumps — and slow on purpose, so the pulse reads as *waiting* beside the ring's
+*working*.
+
+### An arrow into a review wears its talk bubble
+
+A link into a review step carries the review's glyph — the talk bubble its Type toggle
+wears — in a circle at the middle of its length. The spec asked for it so a review reads as
+a review from across the graph, and the arrow is the right place: a review is a relation to
+the step it reviews, not only a kind of card.
+
+**A medallion, and only here.** The same step's instructions first asked for a chevron
+medallion on every auto-progress link as well; F11 had already drawn those links doubled
+with chevrons along their whole length, which reads from across the graph where a medallion
+at the middle would be a dot (N65). A link into a review is doubled by that same rule — every
+link into a review auto-progresses — so the bubble adds what the rails cannot say: *this
+arrow is a conversation*. `EdgeAccent.medallion` names a glyph and nothing more, so the
+canvas still never learns what a review is.
+
+**It is found the way the chevrons are.** The middle is half the flattened track's length,
+walked by hand — `percentAtLength` costs ~40 µs a call — and the chevrons stop a clearance
+short of it either side, so a flowing mark passes behind the bubble rather than through its
+rim. It is part of what a press and a hover hit (`shape()` takes in its disc), and the
+bounding rect grows while the accent names one, a function of the accent alone, so a sync
+that moves nothing changes no geometry. A stack's own link is a card's gap long; a bubble
+there would sit on both cards, so an arrow too short for it wears none.
+
 ### A problem is a squiggle, and the reading is shared
 
 A plan can be wrong about a step — no description, no estimate, a dangling `requires`, a
@@ -5653,6 +5705,18 @@ The rules worth writing down, because each was a decision:
   ready to merge frees it. The walk is handed `auto_progresses(waiter, source)` beside
   `status_for`, and `outstanding()` is the one answer the frontier, the lookahead and the
   Run Agent gate all read (*An auto-progress link is an aspect on the step that waits*).
+- **Ready for review is a person's turn, and what an agent takes on is not.** The same
+  link that frees a collector from review on hands it the work: once a live agent — a
+  review of the step, a collector of it, neither blocked nor done — waits on it across a
+  link that auto-progresses, the step is that agent's to move, and a board of what needs a
+  person listing it would send somebody to review work a reviewer is about to review.
+  `taken()` is the rule, handed `is_agent` beside `auto_progresses`; the walk puts such a
+  step in `taken`, off both boards like running work and *Taken by an agent* in
+  `progression show`. It is the canvas's rule too — a card pulses exactly when it is on
+  the boards' *Ready to merge* or *Ready for review* (*A card pulses where a person moves
+  next*) — which is what "the Control Centre says the same" meant: one answer, two
+  surfaces. A blocked or finished agent takes nothing on, so a review that escalated puts
+  its subject back in front of a person on both at once. The report keeps the default.
 - **A blocked or reviewed prerequisite still counts as "on the board"** for the one-move
   lookahead: its dependents stay in *upcoming*, pointing at it. The alternative — demoting
   them to waiting — would make the queue churn every time a prerequisite flips between

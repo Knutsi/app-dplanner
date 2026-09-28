@@ -65,7 +65,8 @@ paths:
   place ids change is a paste, which hands every `PastePolicy` the old→new map
   (`remap_for_paste`). **Whether a link frees its waiter from review on** is the root's one
   `_auto_progresses`, handed as `auto_progresses(waiter, source)` to the progression walk,
-  Run Agent's gate, `project graph`/`step show` and the canvas's `edge_accents`, so every
+  Run Agent's gate, `project graph`/`step show`, the canvas's `edge_accents` and its pulse
+  (`progression.taken`, which the boards read too), so every
   surface agrees with the frontier — **and a link into a review always auto-progresses**, by
   the review's rule ORed in there rather than by a flag written onto it; the Edge menu shows
   such a link checked and greyed with that reason (`AutoProgressDeps.always`). **Whether a

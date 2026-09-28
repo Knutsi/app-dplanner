@@ -12,6 +12,7 @@ between a stack's cards is its own, drawn short and straight down the frame's mi
 (``ARCHITECTURE.md``'s *A stack's frame is the stack's handle*).
 """
 
+from itertools import pairwise
 from math import hypot
 
 from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
@@ -36,12 +37,14 @@ from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.renderers import (
+    ICON_D,
     PAINT_MARGIN,
     PROBLEM_INK,
     EdgeAccent,
     NodeAccent,
     NodeState,
     RenderHints,
+    paint_medallion,
     paint_node,
 )
 from dplanner.modules.project_editor.selection import EdgeRef
@@ -87,6 +90,12 @@ CHEVRON_HEAD = 12.0
 # How far the chevrons travel per step of the scene's ring phase: the pace of the ring's
 # own dashes (RING_STEP of a dash measured in 1.5 px pens), so the two motions are one.
 FLOW_PER_PHASE = 1.5
+# An arrow's medallion sits at the middle of its length, and the chevrons stop this far
+# either side of its centre, so a flowing mark passes behind it rather than through it. An
+# arrow too short to hold it clear of both cards — a stack's own link — wears none.
+MEDALLION_R = ICON_D / 2
+MEDALLION_CLEAR = MEDALLION_R + CHEVRON_ARM + 2.0
+MEDALLION_ROOM = 2 * MEDALLION_CLEAR + CHEVRON_TAIL + CHEVRON_HEAD
 
 # The least a curve's end reaches along its heading before it turns: what keeps an arrow
 # between two cards side by side from arriving edge-on.
@@ -156,7 +165,7 @@ class StepNodeItem(QGraphicsItem):
         self._link_state = ""
         self._accent = NodeAccent()
         self._hints = RenderHints()
-        self._ring_phase = 0.0
+        self._phase = 0.0
         self._ports = (False, False)
         self._marks = Marks()
         # The frame of the stack this card stands in, set by the scene every sync.
@@ -196,14 +205,20 @@ class StepNodeItem(QGraphicsItem):
             self.update()
 
     def wears_ring(self) -> bool:
-        """Whether this node has a live agent run — the one thing the scene animates."""
+        """Whether this node has a live agent run, and so wears the marching ring."""
         return bool(self._accent.chip_text)
 
-    def set_ring_phase(self, phase: float) -> None:
-        """Where the ring's dashes are — pushed by the scene's tick, one number for all."""
-        if phase != self._ring_phase:
-            self._ring_phase = phase
-            if self.wears_ring():
+    def moves(self) -> bool:
+        """Whether anything on this card moves — the ring or the pulse — which is what keeps
+        the scene's motion clock running."""
+        return self.wears_ring() or self._accent.pulse
+
+    def set_phase(self, phase: float) -> None:
+        """Where the scene's motion clock stands — the ring's dashes, the pulse's breath —
+        pushed by its tick, one number for all."""
+        if phase != self._phase:
+            self._phase = phase
+            if self.moves():
                 self.update()
 
     def set_link_state(self, state: str) -> None:
@@ -371,7 +386,7 @@ class StepNodeItem(QGraphicsItem):
                 hovered=self._hovered,
                 link_state=self._link_state,
                 hints=self._hints,
-                ring_phase=self._ring_phase,
+                phase=self._phase,
                 ports=self._ports,
                 marks=self._marks,
                 handle=self.has_handle(),
@@ -394,8 +409,9 @@ class EdgeItem(QGraphicsPathItem):
     without one because it does not — what ``EDGE_KINDS`` means. An :class:`EdgeAccent`
     says the rest, translated by the composition root: a *doubled* arrow is two rails with
     chevrons between them (the work moves along it on its own — an auto-progress link),
-    and a *flowing* one moves its chevrons on the scene's ring clock (that work is being
-    done right now).
+    a *flowing* one moves its chevrons on the scene's motion clock (that work is being
+    done right now), and a *medallion* is a glyph in a circle at the middle of its length
+    (a review's talk bubble), part of what a press and a hover hit.
     """
 
     def __init__(self, source: StepNodeItem, waiter: StepNodeItem, kind: str) -> None:
@@ -416,6 +432,8 @@ class EdgeItem(QGraphicsPathItem):
         # The curve flattened to a polyline, kept while the path stands: the chevrons are
         # placed by walking it, since asking Qt for a point at a length costs ~40 µs a time.
         self._track: list[QPointF] = []
+        # Where the medallion sits, when the accent names one and the arrow has room for it.
+        self._middle: QPointF | None = None
         self._ends: tuple[float, ...] | None = None
         self.setZValue(-1)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
@@ -436,6 +454,8 @@ class EdgeItem(QGraphicsPathItem):
     def set_accent(self, accent: EdgeAccent) -> None:
         """How the arrow looks beyond its kind — the scene hands it over on every sync."""
         if accent != self._accent:
+            if bool(accent.medallion) != bool(self._accent.medallion):
+                self.prepareGeometryChange()  # A medallion reaches past the line's margin.
             self._accent = accent
             self._dress()
             self.update()
@@ -444,23 +464,34 @@ class EdgeItem(QGraphicsPathItem):
         return self._accent
 
     def flows(self) -> bool:
-        """Whether this arrow's chevrons move — what keeps the scene's ring clock running."""
+        """Whether this arrow's chevrons move — what keeps the scene's motion clock running."""
         return self._accent.doubled and self._accent.flowing
 
-    def set_flow_phase(self, phase: float) -> None:
-        """One tick of the scene's ring clock: a flowing arrow's chevrons move on."""
+    def set_phase(self, phase: float) -> None:
+        """One tick of the scene's motion clock: a flowing arrow's chevrons move on."""
         if self.flows():
             self._phase = phase
             self._chevrons = self._chevron_marks()
             self.update()
 
+    def medallion_centre(self) -> QPointF | None:
+        """Where the medallion sits — half the arrow's length along it — or None."""
+        return self._middle
+
     def shape(self) -> QPainterPath:
         stroker = QPainterPathStroker()
         stroker.setWidth(EDGE_GRAB)
-        return stroker.createStroke(self.path())
+        stroke = stroker.createStroke(self.path())
+        if self._middle is None:
+            return stroke
+        disc = QPainterPath()
+        disc.addEllipse(self._middle, MEDALLION_R, MEDALLION_R)
+        return stroke.united(disc)
 
     def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override
-        margin = EDGE_GRAB / 2
+        # A function of the path and whether the accent names a medallion, never of where
+        # the medallion landed: set_accent and setPath are then the only geometry changes.
+        margin = max(EDGE_GRAB / 2, MEDALLION_R + 1.0) if self._accent.medallion else EDGE_GRAB / 2
         return self.path().boundingRect().adjusted(-margin, -margin, margin, margin)
 
     def hoverEnterEvent(self, event: object) -> None:  # noqa: N802 - Qt override
@@ -496,41 +527,51 @@ class EdgeItem(QGraphicsPathItem):
         self._dress()
 
     def _dress(self) -> None:
-        """The doubled arrow's rails and chevrons, over the current path — or nothing."""
-        if not self._accent.doubled:
-            self._rails = self._chevrons = QPainterPath()
-            self._track = []
+        """The doubled arrow's rails and chevrons and the medallion's seat, over the current
+        path — or nothing."""
+        doubled, medallion = self._accent.doubled, bool(self._accent.medallion)
+        self._rails = self._chevrons = QPainterPath()
+        self._track, self._middle = [], None
+        if not (doubled or medallion):
             return
-        stroker = QPainterPathStroker()
-        stroker.setWidth(RAIL_GAP)
-        stroker.setCapStyle(Qt.PenCapStyle.FlatCap)
-        self._rails = stroker.createStroke(self.path()).simplified()
         polygons = self.path().toSubpathPolygons()
         curve = polygons[0] if polygons else QPolygonF()
         self._track = [curve.at(index) for index in range(curve.size())]
-        self._chevrons = self._chevron_marks()
+        if medallion:
+            self._middle = _halfway(self._track, MEDALLION_ROOM)
+        if doubled:
+            stroker = QPainterPathStroker()
+            stroker.setWidth(RAIL_GAP)
+            stroker.setCapStyle(Qt.PenCapStyle.FlatCap)
+            self._rails = stroker.createStroke(self.path()).simplified()
+            self._chevrons = self._chevron_marks()
 
     def _chevron_marks(self) -> QPainterPath:
         """A chevron every CHEVRON_PITCH along the track, pointing at the step that waits
-        and shifted along by the flow's phase — each one a short open polyline."""
+        and shifted along by the flow's phase — each one a short open polyline, and none
+        within MEDALLION_CLEAR of a medallion's centre."""
         marks = QPainterPath()
         segments = []
         for start, end in zip(self._track, self._track[1:], strict=False):
             dx, dy = end.x() - start.x(), end.y() - start.y()
             if length := hypot(dx, dy):
                 segments.append((start, dx, dy, length))
-        stop = sum(length for *_rest, length in segments) - CHEVRON_HEAD
+        total = sum(length for *_rest, length in segments)
+        stop = total - CHEVRON_HEAD
+        # How far a mark must stand from the medallion's centre, measured along the track.
+        clear = MEDALLION_CLEAR if self._middle is not None else -1.0
         at = CHEVRON_TAIL + ((self._phase * FLOW_PER_PHASE) % CHEVRON_PITCH if self.flows() else 0)
         walked = 0.0
         for start, dx, dy, length in segments:
             while at < min(walked + length, stop):
-                share = (at - walked) / length
-                ahead = QPointF(dx / length, dy / length)
-                across = QPointF(-ahead.y(), ahead.x())
-                tip = start + QPointF(dx * share, dy * share) + ahead * CHEVRON_ARM * 0.6
-                marks.moveTo(tip - ahead * CHEVRON_ARM + across * CHEVRON_ARM)
-                marks.lineTo(tip)
-                marks.lineTo(tip - ahead * CHEVRON_ARM - across * CHEVRON_ARM)
+                if abs(at - total / 2) > clear:
+                    share = (at - walked) / length
+                    ahead = QPointF(dx / length, dy / length)
+                    across = QPointF(-ahead.y(), ahead.x())
+                    tip = start + QPointF(dx * share, dy * share) + ahead * CHEVRON_ARM * 0.6
+                    marks.moveTo(tip - ahead * CHEVRON_ARM + across * CHEVRON_ARM)
+                    marks.lineTo(tip)
+                    marks.lineTo(tip - ahead * CHEVRON_ARM - across * CHEVRON_ARM)
                 at += CHEVRON_PITCH
             walked += length
         return marks
@@ -569,6 +610,18 @@ class EdgeItem(QGraphicsPathItem):
             painter.setPen(Qt.PenStyle.NoPen)
             painter.setBrush(colour)
             painter.drawPolygon(self._head)
+        if self._middle is not None:
+            # Opaque, so the rails do not run through it; inked like the arrow, so it is lit,
+            # picked and hovered with it.
+            paint_medallion(
+                painter,
+                self._middle,
+                self._accent.medallion,
+                colour,
+                QColor(palette.window().color()),
+                colour,
+                1.6 if stressed else 1.0,
+            )
 
 
 class StackItem(QGraphicsItem):
@@ -873,6 +926,25 @@ class OutlinePreviewItem(QGraphicsPathItem):
         painter.setPen(QPen(ink, 1.4, Qt.PenStyle.DashLine))
         painter.setBrush(wash)
         painter.drawPath(self.path())
+
+
+def _halfway(track: list[QPointF], least: float) -> QPointF | None:
+    """The point half a polyline's length along it, or None for one shorter than ``least``.
+
+    Walked by hand for the reason the chevrons are: asking Qt for a point at a length costs
+    ~40 µs a time, and every sync dresses every arrow that moved.
+    """
+    lengths = [hypot(b.x() - a.x(), b.y() - a.y()) for a, b in pairwise(track)]
+    total = sum(lengths)
+    if total < least:
+        return None
+    left = total / 2
+    for (start, end), length in zip(pairwise(track), lengths, strict=True):
+        if left <= length and length:
+            share = left / length
+            return start + (end - start) * share
+        left -= length
+    return track[-1]
 
 
 def _reach(start: QPointF, end: QPointF, heading: QPointF) -> float:

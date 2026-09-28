@@ -146,19 +146,19 @@ def test_its_chevrons_flow_on_the_ring_clock_while_the_source_is_worked(services
     c, a1 = by_title(project, "C"), by_title(project, "A1")
     services.actions.run(TOGGLE, picking(services, *arrows(project, "A1")))
     edge = edge_item(tab, c, a1)
-    assert not edge.flows() and not scene._ring_timer.isActive()
+    assert not edge.flows() and not scene._motion_clock.isActive()
 
     SetModuleDataCommand(a1.id, agent_run.MODULE_ID, agent_run.write("working")).redo(
         services.document
     )
-    assert edge.flows() and scene._ring_timer.isActive()
+    assert edge.flows() and scene._motion_clock.isActive()
     before = edge._chevrons.boundingRect()
-    scene.advance_rings()
-    scene.advance_rings()
+    scene.advance_motion()
+    scene.advance_motion()
     assert edge._chevrons.boundingRect() != before  # The marks moved along.
 
     SetModuleDataCommand(a1.id, agent_run.MODULE_ID, {}).redo(services.document)
-    assert not edge.flows() and not scene._ring_timer.isActive()
+    assert not edge.flows() and not scene._motion_clock.isActive()
 
 
 def test_a_redirected_link_arrives_plain(services, project, tab):
@@ -188,3 +188,25 @@ def test_the_step_statuses_tab_puts_a_collector_in_ready_to_start(services, proj
         SetModuleDataCommand(step.id, "step_status", entry).redo(services.document)
     statuses = services.tabs.open("progression", project.id)
     assert c.id in {step.id for step in statuses._found.ready}
+
+
+def test_a_source_its_collector_takes_on_is_off_both_boards_ready_for_review(services, project):
+    """A1 is under review and C, a live agent, collects it: C's turn, so neither board lists
+    it as a person's — the same answer the canvas pulses by. P, under review with nobody to
+    take it on, is a person's row on both, and A1 is not in what the tab's title counts."""
+    from dplanner.modules.progression.module import CONTROL_CENTRE_KIND
+    from dplanner.modules.step_status.aspect import write as status_write
+
+    services.actions.run(TOGGLE, picking(services, *arrows(project, "A1")))
+    for title in ("A1", "P"):
+        entry = status_write("ready-for-review", today=services.clock.today())
+        SetModuleDataCommand(by_title(project, title).id, "step_status", entry).redo(
+            services.document
+        )
+    statuses = services.tabs.open("progression", project.id)
+    centre = services.tabs.open(CONTROL_CENTRE_KIND)
+    for board in (statuses, centre):
+        assert [step.title for step in board._found.review] == ["P"]
+        assert [step.title for step in board._found.taken] == ["A1"]
+    # P for review and A2 and A3 ready to start: three rows need a person, not four.
+    assert statuses.title.endswith("Step statuses (3)")
