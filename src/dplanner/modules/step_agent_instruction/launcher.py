@@ -234,6 +234,14 @@ def open_command(agent_command: str, harnesses: tuple[AgentHarness, ...]) -> str
     return harness.open_command if harness is not None else ""
 
 
+def plans_first(agent_command: str, harnesses: tuple[AgentHarness, ...]) -> bool:
+    """Whether ``agent_command`` starts its session in plan mode, waiting for a person —
+    read off the command, since a profile is the person's to edit (blank reads as the first
+    harness's, as everywhere)."""
+    command = current_command(agent_command, harnesses)
+    return any(harness.plan_mode and harness.plan_mode in command for harness in harnesses)
+
+
 def new_session() -> str:
     """A run's session id: a UUID, which is what ``claude --session-id`` accepts."""
     return str(uuid.uuid4())
@@ -386,6 +394,8 @@ class LaunchFiles:
     # What the briefing came to, measured where it was written: the run tracker keeps it, so
     # the Agents browser and the step's usage row can say what this run was handed.
     prompt_chars: int = 0
+    # Whether the agent starts in plan mode and waits for a person to approve its plan.
+    plans_first: bool = False
 
 
 def new_run_dir() -> Path:
@@ -508,6 +518,7 @@ def prepare(
         session=session or new_session(),
         opening=opening_prompt(prompt_file) if prompt_text else "",
         prompt_chars=len(prompt_text),
+        plans_first=plans_first(agent_command, harnesses),
     )
     # newline="": each builder already ends its lines the way its interpreter needs them —
     # CRLF for cmd, LF for sh — and the default translation turned _windows_script's "\r\n"

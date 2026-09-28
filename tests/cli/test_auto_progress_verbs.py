@@ -97,6 +97,40 @@ def test_a_plain_source_still_holds_a_collector(cli):
     assert "C" in progression(cli)["upcoming"]
 
 
+def test_the_last_source_to_reach_review_says_it_made_the_collector_due(cli):
+    """Only a window launches, so the terminal says what became due and who starts it."""
+    for source in ("A1", "A2"):
+        cli("auto-progress", "set", "C", source, "on")
+    cli("status", "set", "P", "done")
+    assert "Now due" not in cli("status", "set", "A1", "ready-for-review")
+    said = cli("status", "set", "A2", "ready-for-review")
+    assert "Now due: " in said and " C — a DPlanner window set to launch due steps" in said
+    assert "Now due" not in cli("status", "set", "A1", "ready-to-merge")  # C was due already.
+
+
+def test_progression_marks_a_due_step_and_the_json_says_it(cli):
+    for source in ("A1", "A2"):
+        cli("auto-progress", "set", "C", source, "on")
+        cli("status", "set", source, "ready-for-review")
+    cli("status", "set", "P", "done")
+    assert "C  (agent, due)" in cli("progression", "show", "widget")
+    found = data(cli("progression", "show", "widget", "--json"))
+    assert [(row["title"], row["due"]) for row in found["ready"]] == [("A3", False), ("C", True)]
+    # A step somebody started is not due, whatever it waits on.
+    cli("status", "set", "C", "in-progress")
+    assert "due" not in cli("progression", "show", "widget")
+
+
+def test_a_status_said_as_json_is_one_document(cli):
+    for source in ("A1", "A2"):
+        cli("auto-progress", "set", "C", source, "on")
+    cli("status", "set", "P", "done")
+    cli("status", "set", "A1", "ready-for-review")
+    assert data(cli("status", "set", "A2", "ready-for-review", "--json"))["status"] == (
+        "ready-for-review"
+    )
+
+
 def test_on_makes_the_missing_link_in_one_command_and_off_leaves_it_plain(cli):
     said = cli("auto-progress", "set", "C", "A3", "on")
     assert "may start once" in said

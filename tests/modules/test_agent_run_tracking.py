@@ -577,3 +577,23 @@ def test_an_ended_run_without_a_resume_shows_none(services, step, tmp_path):
     runs._browser.show_ended.setChecked(True)
     (row,) = runs._browser.rows()
     assert not row.note.isVisibleTo(row) and row.note.text() == ""
+
+
+def test_a_launch_into_plan_mode_waits_on_a_person_until_the_agent_says_anything():
+    """A session in plan mode runs nothing that writes, so the launch stamp says it waits;
+    the agent's first state of its own — or a question — speaks for itself."""
+    from dplanner.domain.model import Library, Project
+
+    library = Library()
+    project = Project(title="Discovery")
+    library.add_child(library.id, project)
+    step = Step(title="Collect")
+    library.add_child(project.id, step)
+    aspect.record_launch(library, step.id)
+    assert not aspect.asks_person(step)
+    aspect.record_launch(library, step.id, plans_first=True)
+    assert aspect.asks_person(step) and aspect.read(step) == "launched"
+    for state, asks in (("working", False), ("plan-for-review", True), ("needs-input", True)):
+        entry = aspect.write(state, aspect.launched(step))
+        SetModuleDataCommand(step.id, aspect.MODULE_ID, entry).redo(library)
+        assert aspect.asks_person(step) is asks

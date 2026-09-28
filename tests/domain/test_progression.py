@@ -12,6 +12,7 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import ready
 from dplanner.domain.progression import (
     across,
+    due,
     estimated_progress,
     merge,
     outstanding,
@@ -248,6 +249,63 @@ def test_outstanding_is_the_one_answer_run_agent_reads():
     assert titles(outstanding(library, step, statuses)) == ["A1", "A2", "A3", "P"]
 
 
+def agents(*titles):
+    """An ``is_agent`` answering yes for the steps named."""
+    return lambda step: step.title in titles
+
+
+ALL_SOURCES_IN = {"A1": "ready-for-review", "A2": "ready-to-merge", "A3": "ready-for-review"}
+
+
+def test_a_collector_is_due_once_its_last_source_reaches_review():
+    library, project, auto = collector()
+    statuses = {**ALL_SOURCES_IN, "P": "done"}
+    assert titles(due(library, project, status_of(statuses), auto, agents("C"))) == ["C"]
+    del statuses["A3"]  # One source still pending: ready for nobody yet.
+    assert due(library, project, status_of(statuses), auto, agents("C")) == []
+
+
+def test_a_collector_whose_sources_were_all_set_done_is_ready_but_not_due():
+    """Fulfilled by done alone, nothing auto-progress did: a person launches it."""
+    library, project, auto = collector()
+    statuses = status_of({"A1": "done", "A2": "done", "A3": "done", "P": "done"})
+    assert titles(progression(library, project, statuses, auto_progresses=auto).ready) == ["C"]
+    assert due(library, project, statuses, auto, agents("C")) == []
+
+
+def test_a_plain_prerequisite_not_done_keeps_a_collector_from_being_due():
+    library, project, auto = collector()
+    statuses = status_of({**ALL_SOURCES_IN, "P": "ready-for-review"})
+    assert due(library, project, statuses, auto, agents("C")) == []
+
+
+def test_only_an_agent_step_nobody_started_and_no_run_holds_is_due():
+    library, project, auto = collector()
+    statuses = {**ALL_SOURCES_IN, "P": "done"}
+    assert due(library, project, status_of(statuses), auto, agents()) == []
+    for word in ("in-progress", "blocked", "done", "ready-for-review"):
+        started = status_of({**statuses, "C": word})
+        assert due(library, project, started, auto, agents("C")) == []
+    launched = due(library, project, status_of(statuses), auto, agents("C"), running=lambda s: True)
+    assert launched == []
+
+
+def test_a_wait_is_never_due():
+    library, project, auto = collector()
+    statuses = status_of({**ALL_SOURCES_IN, "P": "done"})
+    found = due(library, project, statuses, auto, agents("C"), counts_as_work=lambda s: False)
+    assert found == []
+
+
+def test_an_agent_waiting_on_a_person_is_asking_not_running():
+    library, project = build("A", "B", "C")
+    statuses = status_of({"A": "in-progress", "B": "in-progress", "C": "blocked"})
+    found = progression(library, project, statuses, asks_person=lambda s: s.title == "B")
+    assert titles(found.running) == ["A"] and titles(found.asking) == ["B"]
+    assert titles(found.attention) == ["C"] and found.total == 3
+    assert titles(merge([found, found]).asking) == ["B", "B"]
+
+
 def test_every_group_a_person_acts_on_is_ranked_by_what_it_unlocks():
     """Blocked, review and merge rank like the frontier does; ties keep project order."""
     library, project = build("A", "B", "C", "X", "Y")
@@ -282,6 +340,7 @@ def test_an_empty_project_is_zero_percent_and_empty_everywhere():
     assert found.percent == 0.0
     assert found.done == found.running == found.attention == found.waiting == ()
     assert found.review == found.merge == found.ready == () and found.upcoming == ()
+    assert found.asking == ()
 
 
 def test_estimated_progress_weighs_the_done_work():

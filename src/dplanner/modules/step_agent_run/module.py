@@ -100,6 +100,9 @@ class StepAgentRunDeps:
     # Every agent CLI this build knows: which one a run recorded is looked up here for
     # its ``report`` (the session and the tokens) and its ``resume`` template.
     harnesses: tuple[AgentHarness, ...] = ()
+    # Told once runs have ended: a slot is free, even when the agent had already cleared
+    # its state and the plan did not change — what the window's launcher waits on.
+    ended: Callable[[], None] = lambda: None
 
 
 class StepAgentRunModule:
@@ -192,6 +195,10 @@ class StepAgentRunModule:
     def runs(self) -> list[AgentRun]:
         return list(self._runs)
 
+    def live(self, step_id: StepId | None = None) -> int:
+        """How many runs this window launched are still going — on ``step_id``, or at all."""
+        return sum(run.live and step_id in (None, run.step_id) for run in self._runs)
+
     def track(
         self,
         step_id: StepId,
@@ -200,9 +207,10 @@ class StepAgentRunModule:
         harness: str = "",
         session: str = "",
         prompt_chars: int = 0,
+        plans_first: bool = False,
     ) -> None:
         """A shell was just spawned on the step: stamp it, remember it, start watching."""
-        record_launch(self._deps.library, step_id)
+        record_launch(self._deps.library, step_id, plans_first)
         self._runs.append(new_run(step_id, shell_file, exit_file, harness, session, prompt_chars))
         self._store()
         self._refresh()
@@ -238,6 +246,7 @@ class StepAgentRunModule:
             )
         self._store()
         self._refresh()
+        deps.ended()
 
     def _read_back(self, run: AgentRun) -> tuple[AgentRun, str]:
         """The harness's own record of the ended run: the session it was, kept on the

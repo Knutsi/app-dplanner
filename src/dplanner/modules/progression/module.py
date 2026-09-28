@@ -3,8 +3,10 @@ tab beside its graph, or in every project at once.
 
 The graph plans the work; these tabs are for the weeks the work is *happening*, and they ask
 one question: what needs me? A table answers it, grouped the way the work comes back to a
-person — Blocked, Ready to merge, Ready for review, Ready to start — with Waiting, what
-cannot start yet, last. Work an agent is doing is not listed: it needs nobody. The walk
+person — Blocked, Waits for you, Ready to merge, Ready for review, Ready to start — with
+Waiting, what cannot start yet, last. Work an agent is doing is not listed: it needs
+nobody — unless the agent waits on a person, a plan to approve or a question to answer,
+which is *Waits for you* (``asks_person``, the agent-run aspect's reading). The walk
 itself is the domain's (``domain/progression.py``) — this module renders it and adds
 nothing to the model, so the tabs, ``dplanner progression show`` and ``--json`` can never
 disagree.
@@ -148,6 +150,9 @@ class ProgressionDeps:
     # Whether a waiter may start once a source it requires is ready for review — an
     # auto-progress link, read through the owning aspect by the composition root.
     auto_progresses: Callable[[Step, Step], bool] = field(default=lambda _waiter, _source: False)
+    # Whether a running step's agent waits on a person — a plan to approve, a question to
+    # answer: the agent-run aspect's reading, which puts the row under *Waits for you*.
+    asks_person: Callable[[Step], bool] = field(default=lambda _step: False)
     # The verbs a person runs over the ticked rows, named by the composition root: which
     # they are is a fact about other modules. None seated is a build without them.
     verbs: tuple[StripVerb, ...] = ()
@@ -283,7 +288,12 @@ class StatusBoard(EntityActivity):
         deps = self._deps
         self._each = {
             project.id: progression(
-                deps.library, project, deps.status_for, deps.counts_as_work, deps.auto_progresses
+                deps.library,
+                project,
+                deps.status_for,
+                deps.counts_as_work,
+                deps.auto_progresses,
+                deps.asks_person,
             )
             for project in self._projects()
         }
