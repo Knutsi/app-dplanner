@@ -9,6 +9,10 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.modules.project_editor.positions import MODULE_ID, write_member, write_position
 from dplanner.modules.project_editor.stacks import link_rule, read_stacks, stray_links
 
+# How far down the column each next default member sits: its card and the gap, rounded up
+# onto the grid.
+PITCH = 104.0
+
 
 def plan(*titles):
     library = Library()

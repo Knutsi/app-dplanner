@@ -217,8 +217,9 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
   badge, a bar or a pill; none is repeated as a phrase.
 - **A stack is a frame, not a bigger card.** Its cards stand in a column on a quiet wash of
   ink (about 5 %) edged a shade lighter than a card, its corners rounder than a card's, with
-  16 px of pad to take hold of. The chain runs down the frame's middle as short straight
-  arrows; the way in meets the first card's side and the way out leaves the last card's,
+  16 px of pad to take hold of and at least 24 between its cards. The chain runs down the
+  frame's middle as short straight arrows; the way in meets the first card's side and the
+  way out leaves the last card's,
   as with any card, and only the last card offers a link handle. The "+" is a
   medallion-sized disc set into the bottom edge that adds a step there. While the pointer
   is over the stack — and only then — the bottom pad left of the "+" says *Shift-drag to
@@ -836,7 +837,7 @@ and one stylesheet rule for the progress bar:
   to merge* and *Ready for review*, one answer (ARCHITECTURE.md's *A card pulses where a
   person moves next*). The talk bubble on a link into a review is a medallion, and still.
   **The one slide** is a stack making way (`f19-restack/make-way-*`): while a card is
-  Shift-dragged through a stack, the cards between ease aside over about 120 ms to open
+  dragged through a stack, the cards between ease aside over about 120 ms to open
   the slot it would drop into, and close up behind one dragged out. It is allowed because
   it is a fact moving, not an ornament — the drop is visible before it happens, which a
   jump would show too, but a jump of four cards under the hand loses which card went

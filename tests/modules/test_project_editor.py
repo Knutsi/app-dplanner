@@ -14,6 +14,7 @@ from datetime import date
 import pytest
 from PySide6.QtCore import QEvent, QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QKeyEvent, QMouseEvent, QPainter
+from tests.modules.stack_helpers import PITCH
 
 from dplanner.domain.commands import (
     AddNodeCommand,
@@ -35,6 +36,7 @@ from dplanner.modules.project_editor.modes import (
     PAN,
     REDIRECT_FROM,
     REDIRECT_TO,
+    RESTACK,
 )
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, snapped, write_member
 from dplanner.modules.project_editor.renderers import (
@@ -261,15 +263,25 @@ def test_a_drag_that_would_close_a_cycle_creates_nothing(app, services, project,
 
 def test_dragging_a_node_stores_its_position(app, services, project, tab):
     step = project.steps[0]
-    canvas = scene(tab)
-    node = canvas._nodes[step.id]
-    start = centre_of(node)
-    send(app, tab, QEvent.Type.MouseButtonPress, start)
-    node.setPos(node.pos() + QPointF(64, 32))
-    send(app, tab, QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
+    start = centre_of(scene(tab)._nodes[step.id])
+    drag(app, tab, start, start + QPointF(64, 32))
 
     assert services.document.step(step.id).module_data["project_editor"]["x"] == 104.0
     assert services.undo.undo_text() == "Move Step"
+
+
+def test_escape_mid_drag_puts_the_card_back(app, services, project, tab):
+    step = project.steps[0]
+    node = scene(tab)._nodes[step.id]
+    was, depth = node.pos(), services.undo.undo_text()
+    start = centre_of(node)
+    send(app, tab, QEvent.Type.MouseButtonPress, start)
+    send(app, tab, QEvent.Type.MouseMove, start + QPointF(160.0, 80.0))
+    assert node.pos() == was + QPointF(160.0, 80.0)
+
+    press_key(app, tab, Qt.Key.Key_Escape)
+    assert node.pos() == was
+    assert services.undo.undo_text() == depth
 
 
 def test_double_clicking_empty_space_creates_a_step_there(app, services, project, tab, monkeypatch):
@@ -2406,12 +2418,12 @@ def test_a_stack_is_drawn_as_a_column_and_moves_through_any_member(services, pro
     _first, second, third = chain(services, project)
     stack_steps(services, second, third)
     top = body_of(tab, second.id).topLeft()
-    assert body_of(tab, third.id).topLeft() == top + QPointF(0.0, 96.0)
+    assert body_of(tab, third.id).topLeft() == top + QPointF(0.0, PITCH)
 
     scene(tab).nodes_moved.emit([(third.id, 600.0, 400.0)])
     assert services.undo.undo_text() == "Move Stack"
     head = placement_of(services, second.id)
-    assert (head["x"], head["y"], head["stack"]) == (600.0, 400.0 - 96.0, "s1")
+    assert (head["x"], head["y"], head["stack"]) == (600.0, 400.0 - PITCH, "s1")
     assert "x" not in placement_of(services, third.id)
     assert body_of(tab, third.id).topLeft() == QPointF(600.0, 400.0)
 
@@ -2948,12 +2960,12 @@ def test_the_pointer_says_where_a_card_can_be_grabbed(app, services, project, ta
 
 def test_a_press_on_the_body_still_drags_the_card(app, services, project, tab):
     step = project.steps[0]
-    node = scene(tab)._nodes[step.id]
-    start = centre_of(node)
+    start = centre_of(scene(tab)._nodes[step.id])
     send(app, tab, QEvent.Type.MouseButtonPress, start)
-    assert view(tab).modes.current().name == IDLE  # Nothing claimed it; Qt has the drag.
-    node.setPos(node.pos() + QPointF(64, 32))
-    send(app, tab, QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
+    # Not a resize: the one-card drag, which lets a stack it hovers make way for it.
+    assert view(tab).modes.current().name == RESTACK
+    send(app, tab, QEvent.Type.MouseMove, start + QPointF(64, 32))
+    send(app, tab, QEvent.Type.MouseButtonRelease, start + QPointF(64, 32), Qt.MouseButton.NoButton)
     assert services.undo.undo_text() == "Move Step"
 
 
@@ -3250,11 +3262,8 @@ def test_with_snapping_off_a_card_lands_where_it_was_left(app, services, project
     up to the grid on the way to disk."""
     services.actions.run("canvas.snap", services.context.current())
     step = project.steps[0]
-    node = scene(tab)._nodes[step.id]
-    start = centre_of(node)
-    send(app, tab, QEvent.Type.MouseButtonPress, start)
-    node.setPos(node.pos() + QPointF(37.0, 13.0))
-    send(app, tab, QEvent.Type.MouseButtonRelease, start, Qt.MouseButton.NoButton)
+    start = centre_of(scene(tab)._nodes[step.id])
+    drag(app, tab, start, start + QPointF(37.0, 13.0))
 
     entry = placement_of(services, step.id)
     assert (entry["x"], entry["y"]) == (77.0, 53.0)

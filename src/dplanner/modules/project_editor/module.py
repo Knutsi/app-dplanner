@@ -594,7 +594,7 @@ class ProjectActivity(EntityActivity):
         self._restacked(self._stack_verbs.drop_out(step_id, self._snapped(x, y)))
 
     def _restacked(self, pushed: bool) -> None:
-        """A Shift-drag let go: one undo step — or, refused, the cards put back where the
+        """A restack let go: one undo step — or, refused, the cards put back where the
         model has them, since the gesture left them where the drop would have for a sync
         that is now not coming."""
         if pushed:

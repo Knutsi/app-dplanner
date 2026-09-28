@@ -36,11 +36,11 @@ type Gap = tuple[StepId, StepId]
 # The frame's margin round its column: room to take hold of it, and for the "+" set into its
 # bottom edge. On the grid, so a stack whose first card sits on it has a frame on it too.
 FRAME_PAD = 16.0
-# The least room between one member's card and the next, for the connector drawn in place of
-# an arrow. The next seat is rounded up onto the grid from there — the canvas snaps every card
-# it places, and a default card's 76 plus 16 is not a multiple of 8 — so a column whose first
-# card is on the grid is on it all the way down.
-MEMBER_GAP = 16.0
+# The least room between one member's card and the next, for the chain's short arrow. The
+# next seat is rounded up onto the grid from there — the canvas snaps every card it places,
+# and a default card's 76 plus 24 is not a multiple of 8 — so a column whose first card is on
+# the grid is on it all the way down, default cards 104 apart with 28 of air between them.
+MEMBER_GAP = 24.0
 
 
 def mint_id() -> str:

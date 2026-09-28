@@ -3,7 +3,7 @@
 Every verb here pushes the very command its ``dplanner stack`` verb applies, built by
 ``stack_edits.py``: New Stack, Make Stack, Add Step Below, Take Out and Dissolve. A step
 born by one — New Stack's first, a stack's "+" — goes through ``StepVerbs.born``, so it is
-placed, picked and opened in Step Details exactly as New's is. A card Shift-dragged on the
+placed, picked and opened in Step Details exactly as New's is. A card restacked on the
 canvas lands here too (:meth:`StackVerbs.drop_into`, :meth:`StackVerbs.drop_out`): the
 gesture says where it went, and which of move, add and take out that is, is read here.
 
@@ -280,7 +280,7 @@ class StackVerbs:
         if picked is not None:
             self.undo.push(dissolve_command(self.library, self._stack(picked[0][0])))
 
-    # -- a card Shift-dragged on the canvas ---------------------------------------------------
+    # -- a card restacked on the canvas -------------------------------------------------------
 
     def refusal(self, stack: Stack, joining: StepId | None) -> str | None:
         """Why a gesture may not reorder ``stack`` — or bring ``joining`` into it — or None:

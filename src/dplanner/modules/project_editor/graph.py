@@ -180,10 +180,10 @@ class GraphScene(QGraphicsScene):
         self.redirect_requested: Signal[StepId, EdgeEnd] = Signal()
         # A stack's "+" was pressed: a step is wanted below this one, its last.
         self.stack_add_requested: Signal[StepId] = Signal()
-        # A card Shift-dragged and let go in the stack with this id, at this slot — to move
+        # A card restacked and let go in the stack with this id, at this slot — to move
         # there if it is a member, to join if it is not.
         self.dropped_into_stack: Signal[StepId, str, int] = Signal()
-        # A stack's card Shift-dragged out past its frame and let go at this seat.
+        # A stack's card restacked out past its frame and let go at this seat.
         self.dropped_out_of_stack: Signal[StepId, float, float] = Signal()
 
         self.selectionChanged.connect(self._on_selection)

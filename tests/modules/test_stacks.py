@@ -11,7 +11,7 @@ split one.
 import math
 
 import pytest
-from tests.modules.stack_helpers import link, plan, stack, stacked
+from tests.modules.stack_helpers import PITCH, link, plan, stack, stacked
 
 from dplanner.core.module_data import migrated
 from dplanner.modules.project_editor.geometry import contract, shift
@@ -52,16 +52,12 @@ from dplanner.modules.project_editor.stacks import (
     read_stacks,
 )
 
-# How far down the column each next default member sits: its card and the gap, rounded up
-# onto the grid.
-STEP = 96.0
-
 
 def assert_column(placed, steps, *titles):
     """The members are a column under the first, in chain order, at the gap."""
     x, y = placed[steps[titles[0]].id]
     for index, title in enumerate(titles):
-        assert placed[steps[title].id] == (x, y + index * STEP), title
+        assert placed[steps[title].id] == (x, y + index * PITCH), title
 
 
 def assert_clear_of_frame(placed, project, steps, *titles):
@@ -131,7 +127,7 @@ def test_a_seat_a_member_below_the_first_stored_is_ignored():
     library, project, steps = stacked()
     stack(library, steps, "a", "b", "c", seat=(400.0, 80.0))
     library.set_module_data(steps["b"].id, MODULE_ID, write_position(0.0, 0.0, stack="s1"))
-    assert positions(library, project)[steps["b"].id] == (400.0, 80.0 + STEP)
+    assert positions(library, project)[steps["b"].id] == (400.0, 80.0 + PITCH)
 
 
 def test_a_stack_whose_first_has_no_seat_stands_in_the_ambient_layout():
@@ -152,7 +148,7 @@ def test_a_settled_plan_with_a_stack_never_computes_the_ambient_layout(monkeypat
         raise AssertionError("the ambient layout ran for a settled plan")
 
     monkeypatch.setattr("dplanner.modules.project_editor.placement.auto_positions", fail)
-    assert positions(library, project)[steps["c"].id] == (300.0, 200.0 + 2 * STEP)
+    assert positions(library, project)[steps["c"].id] == (300.0, 200.0 + 2 * PITCH)
 
 
 def test_a_stack_of_one_is_still_framed():
@@ -172,7 +168,7 @@ def test_the_frame_is_as_wide_as_the_widest_member():
         -FRAME_PAD,
         -FRAME_PAD,
         320.0 + 2 * FRAME_PAD,
-        STEP + 120.0 + 2 * FRAME_PAD,
+        PITCH + 120.0 + 2 * FRAME_PAD,
     )
 
 
@@ -263,7 +259,7 @@ def test_a_cut_through_a_stack_moves_it_whole(by):
     packing = pack(project)
     placed = packing.blocks(positions(library, project))
     # A level cut between b's bottom and c's top: the stack's frame centre decides its side.
-    cut = (80.0 + STEP + NODE_H + 80.0 + 2 * STEP) / 2
+    cut = (80.0 + PITCH + NODE_H + 80.0 + 2 * PITCH) / 2
     moved = packing.unfold(shift(placed, packing.sizes, "y", cut, by))
     members = {steps[t].id for t in ("a", "b", "c")}
     assert members <= moved.keys() or not members & moved.keys()
@@ -293,7 +289,7 @@ def test_moving_any_member_moves_the_stack_through_its_first():
     stack(library, steps, "a", "b", "c", seat=(400.0, 80.0))
     [command] = position_commands(project, {steps["b"].id: (600.0, 300.0)}, "Move Step")
     command.redo(library)
-    assert read_position(steps["a"]) == (600.0, 300.0 - STEP)
+    assert read_position(steps["a"]) == (600.0, 300.0 - PITCH)
     assert read_stack(steps["a"]) == "s1"
     assert read_position(steps["b"]) is None and read_stack(steps["b"]) == "s1"
 

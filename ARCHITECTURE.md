@@ -2298,8 +2298,11 @@ member lands somewhere, and a gap is where one run meets the next.
 one-file diff, as moving a card is, and there is no project-level map of stacks for two
 writers to merge. A member's seat is derived — the column under the first, `MEMBER_GAP`
 apart and rounded up onto the grid, since the canvas snaps every card it places and a
-default card's 76 plus 16 is not a multiple of 8 — so a member cannot drift out of its
-column, and a seat one of them stored (an older build moved it) is ignored.
+default card's 76 plus 24 is not a multiple of 8 — so a member cannot drift out of its
+column, and a seat one of them stored (an older build moved it) is ignored. The gap was 16
+until S40 asked for a little more air inside a stack: the grid allows only whole steps, so
+it grew by one, between the cards rather than round them — about 15 % more air inside a
+stack of three, and nothing off the grid.
 
 **Every reader of positions goes through one fold.** There are a dozen of them — the
 ambient layout, five sorts, tidy, `layout show` and its map, shift, contract, the canvas's
@@ -2513,6 +2516,18 @@ Which verb that is — `move_command` for a member, `add_command` for anyone els
 `take_out_command` for a member let go outside — `StackVerbs` asks the model, the way a
 redirect's plan is asked again on release rather than carried over from the gesture, and
 beside the menu's stack verbs, so a refusal is worded by the same `_push`.
+
+**Joining needs no key (S40).** F19 held the join behind Shift with the reorder, and a
+loose card carried over a stack only overlapped it. Shift is there to tell apart two
+meanings of one press: a member's plain drag moves its whole stack (*A stack's frame is the
+stack's handle*), so restacking that member needs a key. A loose card's plain drag has only
+one meaning, and hovering a stack gives it no second one, so a loose card the press leaves
+alone in the pick starts `RestackMode` with no key held and joins whatever stack it hovers.
+Over nothing it is the plain move it always was, and it says nothing on the status line —
+"drop it on a stack" on every move of every card would be noise, and a word an earlier aim
+put there is cleared rather than left to outlive it. Qt's own item drag is left only for
+several loose cards picked together, which have no one slot to take. `canvas.md`'s bullet
+has the rule.
 
 **The refusal is the builders'.** `stack_refusal` is `line_refusal`, then `join_refusal`
 for a card coming in — `add_command`'s own order — asked once per stack per gesture: a broken stack of its own

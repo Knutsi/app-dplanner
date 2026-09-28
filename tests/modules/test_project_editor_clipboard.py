@@ -7,6 +7,7 @@ policies the composition root wires are tested beside them for the same reason.
 """
 
 import pytest
+from tests.modules.stack_helpers import PITCH
 
 from dplanner.domain.model import Library, Project, Step
 from dplanner.modules.project_editor.clipboard import (
@@ -240,7 +241,7 @@ def test_a_whole_stack_pastes_as_a_new_stack_below_its_frame(library):
     assert read_position(head) == (40.0, 40.0 + box[3] + V_GAP)
     assert all(read_position(library.step(m)) is None for m in new.members[1:])
     placed = positions(library, project)
-    assert placed[new.members[2]] == (40.0, placed[new.head][1] + 2 * 96.0)
+    assert placed[new.members[2]] == (40.0, placed[new.head][1] + 2 * PITCH)
 
 
 def test_part_of_a_stack_pastes_as_plain_steps_beside_its_frame(library):
@@ -253,7 +254,7 @@ def test_part_of_a_stack_pastes_as_plain_steps_beside_its_frame(library):
     command.redo(library)
 
     assert read_stack(copy) == ""
-    assert read_position(copy) == (box[0] + box[2] + H_GAP, 40.0 + 96.0)
+    assert read_position(copy) == (box[0] + box[2] + H_GAP, 40.0 + PITCH)
     assert [found.id for found in read_stacks(project.steps)] == ["s1"]
 
 
