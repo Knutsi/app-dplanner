@@ -990,11 +990,7 @@ class SpecsActivity(EntityActivity):
         column = QVBoxLayout(strip)
         column.setContentsMargins(STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN, STRIP_MARGIN)
         column.setSpacing(CAPTION_GAP)
-        # One line of facts, never wrapped: it is a row of short claims parted by dots, and
-        # a second line of it reads as a paragraph rather than as a caption.
-        self.source_facts = note("", strip)
-        self.source_facts.setWordWrap(False)
-        self.source_facts.setTextFormat(Qt.TextFormat.PlainText)
+        self.source_facts = note("", strip, one_line=True)
         column.addWidget(self.source_facts)
         row = QHBoxLayout()
         row.setContentsMargins(0, 0, 0, 0)

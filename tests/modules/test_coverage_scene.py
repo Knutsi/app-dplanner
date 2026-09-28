@@ -325,3 +325,21 @@ def test_a_project_with_nothing_to_trace_says_so_where_the_lanes_would_be(servic
     page = empty.widget
     assert empty.empty.isVisibleTo(page) and not empty.view.isVisibleTo(page)
     assert empty.summary.text() == "No spec documents — import one to trace it"
+
+
+def test_the_summary_never_holds_the_window_to_its_width(app, services, make_project):
+    """The strip's summary is every document's name and count on one line. A label that
+    never wraps is as wide as its words at the least, and a tab behind the others still
+    sets how narrow the window's centre may go — so a plan with long names left the index
+    panel stuck, its seam twitching and never growing, while this tab was open anywhere."""
+    project = make_project("Long names")
+    name = "A guide whose name runs on well past the width of any pane it is shown in " * 3
+    imported(services, project, name.strip(), GUIDE.encode(), "guide.md")
+    coverage = services.tabs.open("coverage", project.id)
+    assert isinstance(coverage, CoverageActivity)
+    services.tabs.open("project", project.id)  # Coverage is now a tab behind.
+    app.processEvents()  # The layout requests climb to the window a turn later.
+    words = coverage.summary.sizeHint().width()
+    assert words >= coverage.summary.fontMetrics().horizontalAdvance(name.strip())
+    assert services.tabs.minimumSizeHint().width() < words
+    assert coverage.summary.toolTip() == coverage.summary.text()

@@ -48,6 +48,19 @@ def test_the_caption_and_the_note_wear_the_panel_names(host):
     assert remark.objectName() == "InspectorNote" and remark.wordWrap()
 
 
+def test_a_line_of_remarks_asks_for_its_words_and_requires_none(host):
+    """A label that never wraps is as wide as its words at the least, and a tab behind the
+    others still sets how narrow the window's centre may go; this one elides instead."""
+    words = "from Confluence · 12 pages · fetched today · <b>not markup</b>"
+    line = note(words, host, one_line=True)
+    assert line.objectName() == "InspectorNote" and not line.wordWrap()
+    assert line.sizeHint().width() >= line.fontMetrics().horizontalAdvance(words)
+    assert line.minimumSizeHint().width() == 0
+    assert line.toolTip() == words
+    line.setText("fetched yesterday")
+    assert line.toolTip() == "fetched yesterday"
+
+
 def test_confirm_is_a_frame_whose_default_never_discards(app, monkeypatch):
     from PySide6.QtWidgets import QDialog, QPushButton
 

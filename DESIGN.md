@@ -52,6 +52,7 @@ styling one surface by name.
 | independent things listed on a page | `#ToolCard` wells on a `#CardLane`, `framework/cards.py`'s metrics and `card_rule()` | `framework/cards.py` | a check's Covers tab in Step Details |
 | a panel a tab hosts beside its surface | `SidePanel`, `HostedSidePanel` | `framework/side_panel.py` | `s16-tests-view/test-panel-*` |
 | a caption over a block, a remark under it | `caption()`, `captioned()`, `note()`, `block()` | `framework/widgets.py` | the modal's form |
+| a line of facts that must never wrap | `note(one_line=True)`; `ElidedLabel` for another look | `framework/widgets.py` | the Coverage strip, the Specs source strip |
 | a settings page | `settings_page()`, then `block()`s — no margin of its own | `framework/settings_registry.py` | `s16-dialogs/settings-*` |
 | a verb in a dialog's or a page's body | `quiet()`; `GlyphButton` when it carries a glyph | `framework/widgets.py` | `s16-dialogs/settings-openai-*`, `project-colocated-*` |
 | a list of rich items | `RichList` — a `QListWidget` on `TwoLineDelegate` | `framework/list_rows.py` | `s15-tables-and-browsers/notes-*` |
@@ -431,7 +432,10 @@ saying what is missing (*not checked out on this machine*), greyed and italic: t
 the block is then constant and a reader learns where to look once. A line too long for its
 column elides in the **paint**, never in a resize — a widget that rewrites its own text
 while being resized can drive the layout in a circle — with the full text as the tooltip,
-and a path elides from the left, because a path's tail is what names it.
+and a path elides from the left, because a path's tail is what names it. `ElidedLabel` is
+that line, and it **requires no width**: a label that never wraps is otherwise as wide as
+its words at the least, and a tab behind the others still sets how narrow the window's
+centre may go.
 `ARCHITECTURE.md`'s *The Project dialog is the Locations table over two log columns* has the
 reasoning, including why the count of fields was the symptom rather than the disease.
 

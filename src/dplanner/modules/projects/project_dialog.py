@@ -50,7 +50,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtCore import Signal as QtSignal
-from PySide6.QtGui import QDesktopServices, QHideEvent, QIcon, QPainter, QPaintEvent
+from PySide6.QtGui import QDesktopServices, QHideEvent, QIcon
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -105,7 +105,15 @@ from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.undo import UndoService
-from dplanner.framework.widgets import EmptyState, block, caption, confirm, note, quiet
+from dplanner.framework.widgets import (
+    ElidedLabel,
+    EmptyState,
+    block,
+    caption,
+    confirm,
+    note,
+    quiet,
+)
 from dplanner.modules.projects.checkouts import CheckoutService
 from dplanner.modules.projects.code_choice import CodeChoice
 from dplanner.modules.projects.location_dialog import LocationDialog, known_repositories
@@ -206,32 +214,6 @@ def glyph_label(parent: QWidget) -> QLabel:
     return label
 
 
-class ElidedLabel(QLabel):
-    """A one-line label that shows what it has room for and elides the rest.
-
-    Elision happens in the **paint**, never in a resize: a widget that rewrites its own
-    text while being resized can change its size hint and drive the layout in a circle,
-    which is the shape behind the `suite-crash` skill's layout-loop crash. Painting cannot.
-    The full text is the tooltip, so nothing is lost — and a path elides from the left,
-    because a path's tail is what names it.
-    """
-
-    def __init__(self, mode: Qt.TextElideMode, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
-        self._mode = mode
-        # Ignored horizontally: the label asks for no width of its own, so a long path
-        # cannot stretch the dialog — it elides into whatever the column has.
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-
-    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 - Qt's name
-        painter = QPainter(self)
-        painter.setPen(self.palette().color(self.foregroundRole()))
-        shown = self.fontMetrics().elidedText(self.text(), self._mode, self.width())
-        painter.drawText(
-            self.rect(), int(self.alignment()) | int(Qt.AlignmentFlag.AlignVCenter), shown
-        )
-
-
 def smaller(widget: QWidget, points: float = 1.0) -> None:
     """A step down from the surface's font, for a line that states a fact under the thing
     it is about. Guarded: a font sized in pixels reports a point size of -1."""
@@ -324,12 +306,15 @@ class RepositoryColumn(QWidget):
         # to either — small, because it states facts under the thing they are about.
         footer = QGridLayout()
         layout.addLayout(footer)
-        self.identity = ElidedLabel(Qt.TextElideMode.ElideRight, self)
-        self.location = ElidedLabel(Qt.TextElideMode.ElideLeft, self)
+        self.identity = ElidedLabel(parent=self)
+        self.location = ElidedLabel(parent=self, mode=Qt.TextElideMode.ElideLeft)
         # Each line's own name, to return to after a spell greyed as #RepoLineMissing.
         self._names = {self.identity: "RepoIdentity", self.location: "RepoLocation"}
         for label, name in self._names.items():
             label.setObjectName(name)
+            # Asking for no width at all: a long path cannot stretch the dialog, it elides
+            # into whatever the column has.
+            label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             smaller(label)
         self.menu_button = menu_button(
@@ -360,7 +345,6 @@ class RepositoryColumn(QWidget):
             (self.location, lines.location, lines.location_missing),
         ):
             label.setText(text)
-            label.setToolTip(text)
             restyle(label, "RepoLineMissing" if missing else self._names[label])
 
     def show_log(

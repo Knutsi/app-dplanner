@@ -4809,3 +4809,23 @@ so running it again converges: a visibility that does not change asks for no lay
 
 **Upstream?** Yes. Any overflowing strip whose buttons can change size needs it, and the
 template's has the same resize-only hook.
+
+## 71. Out of plan: a tab behind the others held the index panel's seam shut
+
+### `framework/widgets.py` — `ElidedLabel`, and `note(one_line=True)` to build one
+
+**What.** `ElidedLabel` moved here from the Project dialog, where it was private. It is a
+one-line `QLabel` that elides in the paint, carries its full text as the tooltip, and
+reports a minimum width of nought while its size hint stays its words. `note()` takes
+`one_line=True` to build one in the note's look. The Coverage strip's summary and the Specs
+tab's source facts use it now. Before, both were a `note()` with word wrap turned off.
+
+**Why.** A `QLabel` that never wraps reports its whole text as its *minimum* width. A tab
+stack's minimum is its widest page's minimum, even for a page behind the others, and the
+window's centre is a splitter pane that cannot collapse. So a Coverage summary naming long
+spec documents made the centre 1,400 px at the least. The index panel's seam could then
+only twitch, and closing the tab was the only way out. The layout was obeying the label,
+so nothing was wrong with the splitter.
+
+**Upstream?** Yes. The template has the same `note()` and the same kind of strip. Any
+non-wrapping label with text the user controls, sitting in a tab, will do this.

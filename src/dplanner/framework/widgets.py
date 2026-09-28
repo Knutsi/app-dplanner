@@ -3,8 +3,9 @@
 Nothing here is a framework concept — these are the handful of things every second feature
 would otherwise reimplement slightly differently: a confirmation whose default is "no", a
 notice for what a gesture came to, a centred column at a readable measure, what an empty
-page says, the caption over a block (with its help glyph) and the remark under it, a form
-block, a quiet verb for a body and one whose glyph follows the theme, and Ctrl+wheel zoom.
+page says, the caption over a block (with its help glyph) and the remark under it — or a
+line of remarks, eliding what it has no room for — a form block, a quiet verb for a body
+and one whose glyph follows the theme, and Ctrl+wheel zoom.
 Add to it sparingly; a helper that only one feature uses belongs in that feature.
 """
 
@@ -14,6 +15,8 @@ from PySide6.QtCore import QEvent, QObject, QSize, Qt
 from PySide6.QtGui import (
     QColor,
     QIcon,
+    QPainter,
+    QPaintEvent,
     QPalette,
     QTextBlockFormat,
     QTextCursor,
@@ -111,12 +114,61 @@ def caption(text: str, parent: QWidget | None = None) -> QLabel:
     return label
 
 
-def note(text: str, parent: QWidget | None = None) -> QLabel:
-    """A remark that changes with the data (DESIGN.md's *Words*): secondary, normal weight."""
-    label = QLabel(text, parent)
+def note(text: str, parent: QWidget | None = None, *, one_line: bool = False) -> QLabel:
+    """A remark that changes with the data (DESIGN.md's *Words*): secondary, normal weight.
+
+    ``one_line`` is for a row of short claims parted by dots, which reads as a caption on
+    one line and as a paragraph on two: it never wraps, and elides what it has no room for.
+    """
+    if one_line:
+        label: QLabel = ElidedLabel(text, parent)
+    else:
+        label = QLabel(text, parent)
+        label.setWordWrap(True)
     label.setObjectName("InspectorNote")
-    label.setWordWrap(True)
     return label
+
+
+class ElidedLabel(QLabel):
+    """A one-line label that shows what it has room for and elides the rest.
+
+    **It asks for its words' width and requires none.** A label that never wraps is
+    otherwise as wide as its words at the least, and a tab's least is the window centre's
+    least even while that tab is behind the others: a Coverage summary naming long
+    documents held the index panel's seam shut until the tab was closed.
+
+    Elision happens in the **paint**, never in a resize: a widget that rewrites its own
+    text while being resized can change its size hint and drive the layout in a circle,
+    which is the shape behind the `suite-crash` skill's layout-loop crash. Painting cannot.
+    The full text is the tooltip, so nothing is lost — and a path elides from the left,
+    because a path's tail is what names it.
+    """
+
+    def __init__(
+        self,
+        text: str = "",
+        parent: QWidget | None = None,
+        mode: Qt.TextElideMode = Qt.TextElideMode.ElideRight,
+    ) -> None:
+        super().__init__(parent)
+        self._mode = mode
+        # Measured as it is painted: the paint draws the words, never markup.
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setText(text)
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt override
+        super().setText(text)
+        self.setToolTip(text)
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802 - Qt override
+        return QSize(0, super().minimumSizeHint().height())
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 - Qt override
+        painter = QPainter(self)
+        painter.setPen(self.palette().color(self.foregroundRole()))
+        room = self.contentsRect()
+        shown = self.fontMetrics().elidedText(self.text(), self._mode, room.width())
+        painter.drawText(room, int(self.alignment()) | int(Qt.AlignmentFlag.AlignVCenter), shown)
 
 
 def ink_of(widget: QWidget) -> QColor:
