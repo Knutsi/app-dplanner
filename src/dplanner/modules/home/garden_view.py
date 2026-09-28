@@ -13,8 +13,8 @@ is a radial gradient, never a blur. What moves is a few paths a frame.
 
 **Colours are the plan's own**: the stems are finished work's green, the flowers a feature's
 teal, an agent's blue, a review's amber, a milestone's violet, the agent's light is its blue
-— constants that read on every theme (DESIGN.md's exception #2) — and the soil, the hills
-and the roots are the palette's own ink at a whisper, so the garden sits on any theme.
+— constants that read on every theme (DESIGN.md's exception #2) — and the soil and the hills
+are the palette's own ink at a whisper, so the garden sits on any theme.
 """
 
 import math
@@ -77,6 +77,7 @@ SLOW_S = 0.05  # How often the grass and the stars are redrawn: twenty times a s
 # a reason to spend a core — and how long into that rest it waits for the sparkle to settle.
 AWAKE_SEASONS = 2
 SETTLE_S = 2.5
+ROOT_S = 1.6  # How long a bloom's roots take to reach halfway to its neighbours.
 
 
 def rgba(colour: QColor, alpha: int) -> QColor:
@@ -555,26 +556,67 @@ class GardenView(QWidget):
         )
 
     def _roots(self, painter: QPainter, ground: float) -> None:
-        """The plan's links, underground: dotted while nothing flows, lit once the seed they
-        come from has bloomed. Still between blooms, so they are drawn with the slow layers."""
-        ink, dark = self._ink(), self._dark()
-        plants = self.state.plants
+        """The plan's links, underground: a flower that has bloomed sends a root out along
+        each of its links, reaching halfway and fading as it goes, so two bloomed neighbours
+        meet in the soil between them and an unbloomed one is reached towards, not touched.
+        They grow at the slow layers' pace, which a root's reach is slow enough for."""
         painter.save()
-        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(Qt.PenStyle.NoPen)
         for source, waiter in self.state.edges():
             curve = self._root_curve(source, waiter, ground)
-            path = QPainterPath(curve[0])
-            path.cubicTo(curve[1], curve[2], curve[3])
-            carried = plants[source].stage == "bloomed" and plants[source].wilt < 1.0
-            if carried:
-                pen = QPen(rgba(GOOD_BORDER, round(120 * (1 - plants[source].wilt))), 1.4)
-            else:
-                pen = QPen(rgba(ink, 60 if dark else 50), 1.1)
-                pen.setDashPattern([1.5, 3.0])
-            pen.setCapStyle(Qt.PenCapStyle.RoundCap)
-            painter.setPen(pen)
-            painter.drawPath(path)
+            for index, outward in ((source, True), (waiter, False)):
+                plant = self.state.plants[index]
+                if plant.stage != "bloomed" or plant.wilt >= 1.0:
+                    continue
+                reach = out_cubic(span(self.state.t, plant.since, ROOT_S)) * 0.5
+                self._root(painter, curve, reach, outward, index, 1.0 - plant.wilt)
         painter.restore()
+
+    def _root(
+        self,
+        painter: QPainter,
+        curve: tuple[QPointF, ...],
+        reach: float,
+        outward: bool,
+        seed: int,
+        strength: float,
+    ) -> None:
+        """One root along ``curve`` from the end it grows from, ``reach`` of the way across:
+        tapering, wandering a little, and fading to nothing where it stops."""
+        if reach <= 0.01:
+            return
+        a, b, c, d = ((point.x(), point.y()) for point in curve)
+        steps = 14
+        points: list[tuple[float, float]] = []
+        for step in range(steps + 1):
+            along = reach * step / steps
+            x, y = cubic(a, b, c, d, along if outward else 1.0 - along)
+            wander = math.sin(along * 19.0 + seed * 1.7) * 2.2 * math.sin(math.pi * along * 2)
+            points.append((x, y + wander))
+        start, stop = QPointF(*points[0]), QPointF(*points[-1])
+        fade = QLinearGradient(start, stop)
+        fade.setColorAt(0.0, rgba(GOOD_BORDER, round(150 * strength)))
+        fade.setColorAt(1.0, rgba(GOOD_BORDER, 0))
+        painter.setBrush(fade)
+        outline = tapered(points, 2.4, 0.3)
+        # Two rootlets off the main root, forking down and on, once it has reached past them.
+        for fork, length in ((0.3, 7.0), (0.6, 5.0)):
+            if fork * 0.5 > reach:
+                continue
+            x, y = points[round(fork * 0.5 / reach * steps)]
+            ahead = 1.0 if (curve[-1].x() > curve[0].x()) == outward else -1.0
+            outline.addPath(
+                tapered(
+                    [
+                        (x, y),
+                        (x + ahead * length * 0.5, y + length * 0.6),
+                        (x + ahead * length, y + length),
+                    ],
+                    1.2,
+                    0.2,
+                )
+            )
+        painter.drawPath(outline)
 
     def _pulses(self, painter: QPainter, ground: float) -> None:
         """A bloom's pulse, travelling down a root to what it unblocks."""
