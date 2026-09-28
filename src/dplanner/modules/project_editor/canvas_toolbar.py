@@ -47,7 +47,17 @@ GROUPS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (PANEL_BAND, ()),
     # Then where you are looking: a graph is a place before it is a thing to edit.
     ("Go", ("steps.find", "canvas.frame", "order.open")),
-    ("Step", ("steps.new", "steps.rename", "steps.delete", "steps.lasso")),
+    (
+        "Step",
+        (
+            "steps.new",
+            "stacks.new",
+            "stacks.make",
+            "steps.rename",
+            "steps.delete",
+            "steps.lasso",
+        ),
+    ),
     ("Link", ("steps.connect", "steps.redirect_to", "links.remove", "steps.isolate")),
     ("Arrange", ("canvas.sort_flow", "canvas.divide_vertical")),
     ("History", ("appshell.undo", "appshell.redo")),

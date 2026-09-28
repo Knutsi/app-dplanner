@@ -192,6 +192,16 @@ def plus_icon(color: str | QColor) -> QIcon:
     return glyph_icon("plus", color)
 
 
+def new_stack_icon(color: str | QColor) -> QIcon:
+    """Two cards in a column: a new stack."""
+    return glyph_icon("new-stack", color)
+
+
+def make_stack_icon(color: str | QColor) -> QIcon:
+    """A line folded down into a column: stack the picked steps."""
+    return glyph_icon("make-stack", color)
+
+
 def trash_icon(color: str | QColor) -> QIcon:
     """A waste basket: delete."""
     return glyph_icon("trash", color)

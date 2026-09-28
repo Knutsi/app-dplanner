@@ -1,13 +1,20 @@
-"""What the canvas draws: a node per step, an arrow per edge, and the line under a link drag.
+"""What the canvas draws: a node per step, an arrow per edge, a frame per stack, and the line
+under a link drag.
 
 Each item owns its geometry and holds its state and nothing else. A step node's actual
 painting is composed in ``renderers.py`` from pure helpers; interaction lives in
 ``modes.py``, one mode per behaviour, so no item and no scene grows a state machine.
+
+**An arrow meets an item at a port** — a point and the way the arrow travels there. A card's
+is its near edge, travelling across, which is every link into or out of a stack too: in at
+its first card's side, out of its last card's, as into and out of any card. Only the chain
+between a stack's cards is its own, drawn short and straight down the frame's middle
+(``ARCHITECTURE.md``'s *A stack's frame is the stack's handle*).
 """
 
 from math import hypot
 
-from PySide6.QtCore import QPointF, QRectF, Qt
+from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
 from PySide6.QtGui import (
     QColor,
     QPainter,
@@ -30,6 +37,7 @@ from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.renderers import (
     PAINT_MARGIN,
+    PROBLEM_INK,
     EdgeAccent,
     NodeAccent,
     NodeState,
@@ -37,7 +45,9 @@ from dplanner.modules.project_editor.renderers import (
     paint_node,
 )
 from dplanner.modules.project_editor.selection import EdgeRef
-from dplanner.theme.cards import DIM_OPACITY
+from dplanner.modules.project_editor.stacks import FRAME_PAD, Stack, member_seats
+from dplanner.theme.cards import DIM_OPACITY, RADIUS
+from dplanner.theme.icons import paint_glyph
 from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import INVALID_TINT, VALID_TINT
 
@@ -77,6 +87,29 @@ CHEVRON_HEAD = 12.0
 # How far the chevrons travel per step of the scene's ring phase: the pace of the ring's
 # own dashes (RING_STEP of a dash measured in 1.5 px pens), so the two motions are one.
 FLOW_PER_PHASE = 1.5
+
+# The least a curve's end reaches along its heading before it turns: what keeps an arrow
+# between two cards side by side from arriving edge-on.
+MIN_REACH = 40.0
+
+# A stack's frame: a quiet wash of ink round its column, edged a shade lighter than a card,
+# its corners rounder than a card's so the two never read as one shape.
+FRAME_RADIUS = 12.0
+FRAME_WASH_ALPHA = 12
+FRAME_BORDER_ALPHA = 60
+# The "+" set into the bottom edge: a disc the size of a medallion, straddling the edge.
+ADD_R = 10.0
+ADD_GLYPH = 12.0
+# How far inside the narrower of two cards a connector stays, when the frame's middle is
+# past that card's right edge: clear of its rounded corner.
+CONNECTOR_INSET = RADIUS + 4.0
+
+# Which way an arrow travels where it meets an item: across a card, down through a stack.
+ACROSS = QPointF(1.0, 0.0)
+DOWN = QPointF(0.0, 1.0)
+
+# Where an arrow meets an item, and the way it travels there.
+type Port = tuple[QPointF, QPointF]
 
 
 def snapped_point(scene: object, point: QPointF) -> QPointF:
@@ -122,6 +155,8 @@ class StepNodeItem(QGraphicsItem):
         self._ring_phase = 0.0
         self._ports = (False, False)
         self._marks = Marks()
+        # The frame of the stack this card stands in, set by the scene every sync.
+        self._frame: StackItem | None = None
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
@@ -191,6 +226,40 @@ class StepNodeItem(QGraphicsItem):
             self._marks = marks
             self.update()
 
+    def ports(self) -> tuple[bool, bool]:
+        return self._ports
+
+    def set_frame(self, frame: "StackItem | None") -> None:
+        """The stack this card stands in, or None — pushed by the scene every sync.
+
+        A member is never dragged by Qt on its own: its stack moves whole, through a mode.
+        """
+        if frame is not self._frame:
+            self.prepareGeometryChange()  # Its shape reaches out on fewer sides in a stack.
+            self._frame = frame
+            self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, frame is None)
+            self.update()
+
+    @property
+    def stack(self) -> Stack | None:
+        """The stack this card stands in, with its order and its gaps — None for a loose one."""
+        return None if self._frame is None else self._frame.stack
+
+    def has_handle(self) -> bool:
+        """Whether a link may be dragged out of this card: a loose one, or a stack's last."""
+        return self._frame is None or self._frame.stack.members[-1] == self.step_id
+
+    def port(self, other: "StepNodeItem", *, leaving: bool) -> Port:
+        """Where an arrow to or from ``other`` meets this card, and which way it travels.
+
+        The near edge, travelling across — unless this card's stack answers for it.
+        """
+        if self._frame is not None:
+            port = self._frame.port(self.step_id, other.step_id, leaving=leaving)
+            if port is not None:
+                return port
+        return self.anchor_toward(other.scenePos()), ACROSS
+
     def set_dimmed(self, dimmed: bool) -> None:
         """Fade the whole card: the spotlight is on and this step is not in it.
 
@@ -214,13 +283,19 @@ class StepNodeItem(QGraphicsItem):
         return self.mapRectToScene(self.body_rect())
 
     def is_over_handle(self, scene_pos: QPointF) -> bool:
+        if not self.has_handle():
+            return False
         delta = scene_pos - self.handle_scene_pos()
         return bool(delta.manhattanLength() <= HANDLE_GRAB)
 
     def edge_at(self, scene_pos: QPointF) -> str:
         """Which part of the frame a point grabs: "left", "bottom-right", … or "" for the
         body and for anywhere off the card. The band is ``GRAB_IN`` inside the border and
-        ``EDGE_REACH`` outside it; a point in two bands at once is at a corner."""
+        ``EDGE_REACH`` outside it; a point in two bands at once is at a corner.
+
+        A card in a stack grows only right and down: its column keeps its left edge and its
+        order, and a member below the first stores no seat for a left or top drag to move.
+        """
         local = self.mapFromScene(scene_pos)
         w, h = self._size
         reach = QRectF(-EDGE_REACH, -EDGE_REACH, w + 2 * EDGE_REACH, h + 2 * EDGE_REACH)
@@ -228,6 +303,9 @@ class StepNodeItem(QGraphicsItem):
             return ""
         across = "left" if local.x() <= GRAB_IN else "right" if local.x() >= w - GRAB_IN else ""
         down = "top" if local.y() <= GRAB_IN else "bottom" if local.y() >= h - GRAB_IN else ""
+        if self._frame is not None:
+            across = "" if across == "left" else across
+            down = "" if down == "top" else down
         return "-".join(part for part in (down, across) if part)
 
     def anchor_toward(self, other: QPointF) -> QPointF:
@@ -240,9 +318,11 @@ class StepNodeItem(QGraphicsItem):
         # What a press, a hover and a rubber band hit: the card and the outer half of its
         # resize band — not the bounding rect, which reaches PAINT_MARGIN further out to
         # hold the shadow and the stat line, and would make empty canvas beside a card
-        # select it.
+        # select it. A card in a stack grows only right and down, so it reaches out only
+        # there, and the frame's pad on its other sides stays the frame's to grab.
+        reach = 0.0 if self._frame is not None else EDGE_REACH
         path = QPainterPath()
-        path.addRect(self.body_rect().adjusted(-EDGE_REACH, -EDGE_REACH, EDGE_REACH, EDGE_REACH))
+        path.addRect(self.body_rect().adjusted(-reach, -reach, EDGE_REACH, EDGE_REACH))
         return path
 
     def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override
@@ -290,6 +370,7 @@ class StepNodeItem(QGraphicsItem):
                 ring_phase=self._ring_phase,
                 ports=self._ports,
                 marks=self._marks,
+                handle=self.has_handle(),
             ),
         )
 
@@ -331,7 +412,7 @@ class EdgeItem(QGraphicsPathItem):
         # The curve flattened to a polyline, kept while the path stands: the chevrons are
         # placed by walking it, since asking Qt for a point at a length costs ~40 µs a time.
         self._track: list[QPointF] = []
-        self._ends: tuple[float, float, float, float] | None = None
+        self._ends: tuple[float, ...] | None = None
         self.setZValue(-1)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setAcceptHoverEvents(True)
@@ -387,17 +468,21 @@ class EdgeItem(QGraphicsPathItem):
         self.update()
 
     def follow(self) -> None:
-        start = self.source.anchor_toward(self.waiter.scenePos())
-        end = self.waiter.anchor_toward(self.source.scenePos())
+        start, out = self.source.port(self.waiter, leaving=True)
+        end, into = self.waiter.port(self.source, leaving=False)
         # Every sync asks every arrow to follow, and most have not moved: the curve is a
-        # function of its two ends, so an arrow whose ends stand keeps what it drew.
-        ends = (start.x(), start.y(), end.x(), end.y())
+        # function of its two ports, so an arrow whose ports stand keeps what it drew.
+        ends = (start.x(), start.y(), end.x(), end.y(), out.y(), into.y())
         if ends == self._ends:
             return
         self._ends = ends
         path = QPainterPath(start)
-        reach = max(40.0, abs(end.x() - start.x()) / 2)
-        path.cubicTo(QPointF(start.x() + reach, start.y()), QPointF(end.x() - reach, end.y()), end)
+        if out == into == DOWN and start.x() == end.x():
+            path.lineTo(end)  # A stack's own link, from one card down to the next.
+        else:
+            path.cubicTo(
+                start + out * _reach(start, end, out), end - into * _reach(start, end, into), end
+            )
         self.setPath(path)
         # The head is kept apart from the curve rather than added to its path: one filled
         # path containing both would fill the area under the curve as well.
@@ -482,6 +567,197 @@ class EdgeItem(QGraphicsPathItem):
             painter.drawPolygon(self._head)
 
 
+class StackItem(QGraphicsItem):
+    """A stack's frame: the shaded ground its column of cards stands on, and what a press on
+    it drags.
+
+    It holds its member cards and is the one place their column lives on screen:
+    :meth:`follow` lays every member under the first by ``stacks.member_seats`` at the
+    cards' current sizes, then fits the frame round them — so a sync, a card being resized
+    and any gesture moving the first card all show the column the model derives, live. It
+    answers for the ports of the chain between its cards, and places its "+"
+    (:class:`StackAddItem`, an item of its own so it sits over the arrows). Behind the
+    arrows and the cards; never selectable — a click on it picks its members, which is a
+    mode's business.
+    """
+
+    def __init__(self, stack: Stack) -> None:
+        super().__init__()
+        self.stack = stack
+        self._members: list[StepNodeItem] = []
+        self._size = (0.0, 0.0)
+        self._following = False
+        self.add = StackAddItem(self)
+        self.setZValue(-2)
+
+    def set_stack(self, stack: Stack, members: list[StepNodeItem]) -> None:
+        """Its order, its gaps and its cards, as the model has them now."""
+        self.stack = stack
+        self._members = members
+        self.update()
+        self.add.update()
+
+    def set_dimmed(self, dimmed: bool) -> None:
+        """Fade with its cards: the spotlight is on and none of them is in it."""
+        opacity = DIM_OPACITY if dimmed else 1.0
+        self.setOpacity(opacity)
+        self.add.setOpacity(opacity)
+
+    def following(self) -> bool:
+        """True while :meth:`follow` is moving the members — their own moves are its echo."""
+        return self._following
+
+    def follow(self) -> None:
+        """Lay the column under its first card and fit the frame round it."""
+        if not self._members or self._following:
+            return
+        self._following = True
+        try:
+            sizes = {node.step_id: node.size() for node in self._members}
+            head = self._members[0].pos()
+            seats = member_seats(self.stack, (head.x(), head.y()), sizes.__getitem__)
+            for node in self._members[1:]:
+                seat = QPointF(*seats[node.step_id])
+                if node.pos() != seat:
+                    node.setPos(seat)
+            rect = QRectF()
+            for node in self._members:
+                rect = rect.united(node.body_scene_rect())
+            rect.adjust(-FRAME_PAD, -FRAME_PAD, FRAME_PAD, FRAME_PAD)
+            if (rect.width(), rect.height()) != self._size:
+                self.prepareGeometryChange()
+                self._size = (rect.width(), rect.height())
+            self.setPos(rect.topLeft())
+            self.add.setPos(QPointF(rect.center().x(), rect.bottom()))
+            self.update()
+        finally:
+            self._following = False
+
+    def frame_scene_rect(self) -> QRectF:
+        return QRectF(self.pos(), QSizeF(*self._size))
+
+    def port(self, member: StepId, other: StepId, *, leaving: bool) -> Port | None:
+        """Where the chain's link between ``member`` and its neighbour ``other`` meets it —
+        the bottom of the upper card, the top of the lower — or None for any other link,
+        which meets the card's own side as it would any card's."""
+        members = self.stack.members
+        at = members.index(member)
+        if leaving and at + 1 < len(members) and members[at + 1] == other:
+            return QPointF(
+                self._connector_x(at), self._members[at].body_scene_rect().bottom()
+            ), DOWN
+        if not leaving and at > 0 and members[at - 1] == other:
+            return QPointF(
+                self._connector_x(at - 1), self._members[at].body_scene_rect().top()
+            ), DOWN
+        return None
+
+    def _connector_x(self, upper: int) -> float:
+        """Where the connector below member ``upper`` runs: the frame's middle, kept inside
+        the narrower of the two cards it joins."""
+        pair = self._members[upper : upper + 2]
+        left = pair[0].body_scene_rect().left()
+        narrowest = min(node.size()[0] for node in pair)
+        return min(self.frame_scene_rect().center().x(), left + narrowest - CONNECTOR_INSET)
+
+    def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override
+        w, h = self._size
+        return QRectF(-1.0, -1.0, w + 2.0, h + 2.0)
+
+    def shape(self) -> QPainterPath:
+        path = QPainterPath()
+        path.addRoundedRect(QRectF(0.0, 0.0, *self._size), FRAME_RADIUS, FRAME_RADIUS)
+        return path
+
+    def paint(
+        self,
+        painter: QPainter,
+        _option: QStyleOptionGraphicsItem,
+        _widget: QWidget | None = None,
+    ) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        palette = live_palette(self)
+        ink = QColor(palette.text().color())
+        wash, border = QColor(ink), QColor(ink)
+        wash.setAlpha(FRAME_WASH_ALPHA)
+        border.setAlpha(FRAME_BORDER_ALPHA)
+        frame = QRectF(0.0, 0.0, *self._size).adjusted(0.5, 0.5, -0.5, -0.5)
+        painter.setPen(QPen(border, 1.0))
+        painter.setBrush(wash)
+        painter.drawRoundedRect(frame, FRAME_RADIUS, FRAME_RADIUS)
+        self._paint_gaps(painter)
+
+    def _paint_gaps(self, painter: QPainter) -> None:
+        """Where the chain is broken, a dashed break in the refusal red, where its link
+        would run: the stack is drawn as it is, and lint names it."""
+        at = {member: index for index, member in enumerate(self.stack.members)}
+        pen = QPen(PROBLEM_INK, 1.4, Qt.PenStyle.DashLine)
+        painter.setPen(pen)
+        for before, then in self.stack.gaps:
+            upper, lower = at.get(before), at.get(then)
+            if upper is None or lower is None or lower != upper + 1:
+                continue
+            x = self._connector_x(upper)
+            top = self._members[upper].body_scene_rect().bottom()
+            bottom = self._members[lower].body_scene_rect().top()
+            painter.drawLine(
+                self.mapFromScene(QPointF(x, top)), self.mapFromScene(QPointF(x, bottom))
+            )
+
+
+class StackAddItem(QGraphicsItem):
+    """The "+" set into a stack's bottom edge: add a step at the end of the stack.
+
+    An item of its own, over the arrows and resting cards, so nothing drawn is ever on top of
+    it and its hover is its own. What a press on it means is ``IdleMode``'s to say.
+    """
+
+    def __init__(self, frame: StackItem) -> None:
+        super().__init__()
+        self.frame = frame
+        self._hovered = False
+        self.setZValue(0.5)
+        self.setAcceptHoverEvents(True)
+
+    def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override
+        reach = ADD_R + 2.0
+        return QRectF(-reach, -reach, 2 * reach, 2 * reach)
+
+    def shape(self) -> QPainterPath:
+        path = QPainterPath()
+        path.addEllipse(QPointF(0.0, 0.0), ADD_R, ADD_R)
+        return path
+
+    def paint(
+        self,
+        painter: QPainter,
+        _option: QStyleOptionGraphicsItem,
+        _widget: QWidget | None = None,
+    ) -> None:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        palette = live_palette(self)
+        accent = QColor(palette.highlight().color())
+        ink = QColor(palette.text().color())
+        ink.setAlpha(SECONDARY_ALPHA)
+        border = QColor(ink)
+        border.setAlpha(FRAME_BORDER_ALPHA * 2)
+        if self._hovered:
+            border, ink = accent, accent
+        painter.setBrush(QColor(palette.window().color()))
+        painter.setPen(QPen(border, 1.0))
+        painter.drawEllipse(QPointF(0.0, 0.0), ADD_R, ADD_R)
+        glyph = QRectF(-ADD_GLYPH / 2, -ADD_GLYPH / 2, ADD_GLYPH, ADD_GLYPH)
+        paint_glyph(painter, glyph, "plus", ink)
+
+    def hoverEnterEvent(self, event: object) -> None:  # noqa: N802 - Qt override
+        self._hovered = True
+        self.update()
+
+    def hoverLeaveEvent(self, event: object) -> None:  # noqa: N802 - Qt override
+        self._hovered = False
+        self.update()
+
+
 class LinkPreviewItem(QGraphicsPathItem):
     """The line that follows the cursor while a link is being dragged."""
 
@@ -536,6 +812,13 @@ class OutlinePreviewItem(QGraphicsPathItem):
         painter.setPen(QPen(ink, 1.4, Qt.PenStyle.DashLine))
         painter.setBrush(wash)
         painter.drawPath(self.path())
+
+
+def _reach(start: QPointF, end: QPointF, heading: QPointF) -> float:
+    """How far a curve's end runs along its heading before turning: half the distance it
+    covers that way, and never less than :data:`MIN_REACH`."""
+    along = (end.x() - start.x()) * heading.x() + (end.y() - start.y()) * heading.y()
+    return max(MIN_REACH, abs(along) / 2)
 
 
 def _arrow_head(start: QPointF, end: QPointF, size: float = 8.0) -> QPolygonF:

@@ -253,7 +253,8 @@ paths:
   and the module keeps no icon table, so adding a button is adding a string to `GROUPS`.
   A canvas can always be dragged narrower than its own strip, and what no longer fits leaves
   **a whole band at a time** into the `…` menu, as glyph *and* words with a rule where each
-  band begins — never Qt's `»`, which pops the hidden buttons up as glyphs again. **A band's
+  band begins — never Qt's `»`, which pops the hidden buttons up as glyphs again — refolding
+  whenever a control asks for room (a `LayoutRequest`), not only on a resize. **A band's
   buttons are squares** (`CONTROL_HEIGHT` each way; a *dense* strip that is not banded stays
   narrow, because the aspect bar wants ten toggles in a 360 px dock). A control that is not a
   verb goes in the band it is *about*, as a widget — the layout picker names the arrangement,

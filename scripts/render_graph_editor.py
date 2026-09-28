@@ -7,6 +7,8 @@
         --out docs/screenshots/s16-stack-one-tall-card
     uv run python scripts/render_graph_editor.py --stack-edits \
         --out docs/screenshots/s17-editing-a-stack
+    uv run python scripts/render_graph_editor.py --stack-canvas \
+        --out docs/screenshots/s18-stack-on-the-canvas
     uv run python scripts/render_graph_editor.py --auto-progress \
         --out docs/screenshots/f11-auto-progress
     uv run python scripts/render_graph_editor.py --review \
@@ -21,7 +23,11 @@ minimum size. Since F7, with ``--menus`` and nothing else, what a right-click of
 is under it; since F15, with ``--contract``, Divide's dropdown offering Contract and a
 contract held mid-drag; since S16, with ``--stacks``, a stacked chain drawn as a column on
 the canvas and as a frame in the report; since S17, with ``--stack-edits``, a member
-deleted with the chain closing round it and a broken stack in the Problems list; since F11,
+deleted with the chain closing round it and a broken stack in the Problems list; since S18,
+with ``--stack-canvas``, the stack's frame and its "+", the chain drawn down its middle with
+an auto-progress link doubled, the whole stack picked, a link aimed at its middle landing on
+its first step, a broken stack's gap, the frame's right-click and the strip's two stack
+verbs; since F11,
 with ``--auto-progress``, parallel work handed to a step that collects it: the doubled
 links, and the arrow's menu with the toggle on; since F12, with ``--review``, a step and its
 review, the link into the review doubled by rule and its menu's toggle ticked and greyed. A
@@ -654,6 +660,64 @@ def render_review(app: QApplication, theme: Theme, out: Path, workspace: Path) -
     discard(page)
 
 
+def render_stack_canvas(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """A stack on the canvas (S18): its frame and "+", the way in at the top and out under
+    the "+", the chain down its middle — one link of it doubled — then the stack picked by a
+    click on its frame, a link from a loose step aimed at its middle card lighting the
+    first, a broken stack's gap, the frame's right-click, and the strip's Step band."""
+    session, services, made, tab = open_stacked(app, theme, workspace, "stack-canvas")
+    library = services.document
+    project = library.project_of(made[0])
+    loose = Step(title="Check the encoding")
+    AddNodeCommand(project.id, loose).redo(library)
+    SetModuleDataCommand(loose.id, POSITION_KEY, write_position(40.0, 360.0)).redo(library)
+    SetModuleDataCommand(made[3], AUTO_PROGRESS_ID, auto_progress_write([made[2]])).redo(library)
+    SetEdgesCommand(made[-1], "requires", [made[3], loose.id]).redo(library)
+    # Described, so the squiggles say nothing this shot is not about.
+    for step_id in (*made, loose.id):
+        library.set_text(step_id, "step_description", "What the step delivers.")
+    page = tab.widget
+    page.resize(*STACK_SIZE)
+    page.show()
+    tab.frame()
+    scene, view = tab._scene, tab._view
+    save(page, out, "frame", theme, app)
+
+    (frame,) = scene._frames.values()
+    rect = frame.frame_scene_rect()
+    pad = QPointF(rect.left() + 8.0, rect.center().y())
+    press(view, QEvent.Type.MouseButtonPress, pad)
+    press(view, QEvent.Type.MouseButtonRelease, pad, held=False)
+    save(page, out, "picked", theme, app)
+    scene.select_steps([])
+
+    node = scene.node(loose.id)
+    middle = scene.node(made[2])
+    assert node is not None and middle is not None
+    press(view, QEvent.Type.MouseButtonPress, node.handle_scene_pos())
+    press(view, QEvent.Type.MouseMove, middle.body_scene_rect().center())
+    save(page, out, "aim", theme, app)
+    view.modes.pop_to_base()
+
+    menu = tab.context_menu(view.mapFromScene(pad))
+    menu.popup(QPoint(0, 0))
+    save(menu, out, "menu-frame", theme, app)
+    menu.hide()
+    discard(menu)
+    scene.select_steps([])
+
+    tab._toolbar.resize(tab._toolbar.sizeHint().width(), tab._toolbar.height())
+    save(tab._toolbar, out, "strip", theme, app)
+
+    # Another writer's edit: the stack's second step no longer waits on its first.
+    library.set_edges(made[2], "requires", [], rules=False)
+    tab.frame()
+    save(page, out, "broken", theme, app)
+    page.setParent(None)
+    session.close()
+    discard(page)
+
+
 def render_stack_edits(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     """Editing a stack (S17): the middle member picked, then deleted — the chain closes round
     the gap — and a stack another writer broke, named in the Problems list beside the
@@ -707,6 +771,11 @@ def main(argv: list[str]) -> int:
         help="only a stack edited: a member deleted, and a broken stack named (S17)",
     )
     parser.add_argument(
+        "--stack-canvas",
+        action="store_true",
+        help="only a stack on the canvas: its frame, its +, linking to it (S18)",
+    )
+    parser.add_argument(
         "--auto-progress",
         action="store_true",
         help="only a round of parallel work and the step that collects it (F11)",
@@ -737,6 +806,9 @@ def main(argv: list[str]) -> int:
                 continue
             if args.stack_edits:
                 render_stack_edits(app, theme, args.out, Path(tmp))
+                continue
+            if args.stack_canvas:
+                render_stack_canvas(app, theme, args.out, Path(tmp))
                 continue
             if args.auto_progress:
                 render_auto_progress(app, theme, args.out, Path(tmp))

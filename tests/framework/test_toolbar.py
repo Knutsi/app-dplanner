@@ -7,7 +7,7 @@ from itertools import pairwise
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QComboBox, QWidget
+from PySide6.QtWidgets import QComboBox, QPushButton, QWidget
 
 from dplanner.framework.action_registry import (
     ActionRegistry,
@@ -224,6 +224,31 @@ def test_a_narrow_strip_folds_a_whole_band_at_a_time(host, app):
     bar.resize(900, bar.height())
     app.processEvents()
     assert band_names(bar) == ["Go", "Step", "Link"]
+
+
+def test_a_control_that_grows_folds_the_strip_without_a_resize(host, app):
+    """A count gaining digits asks for room and never resizes the strip; the strip folds
+    anyway, or its bands are drawn over one another until the window next moves."""
+    bar = Toolbar(host, dense=True)
+    bar.add_group("Go")
+    bar.add_verb("Go one", plus_icon, lambda: None)
+    bar.add_group("Step")
+    grower = QPushButton("(4)")
+    bar.add_widget(grower)
+    host.resize(900, 90)
+    host.show()
+    app.processEvents()
+    gap = bar._layout.spacing()
+    exact = sum(item.widget.sizeHint().width() + gap for item in bar._items) - gap
+    bar.resize(exact, bar.sizeHint().height())
+    app.processEvents()
+    assert band_names(bar) == ["Go", "Step"]
+
+    grower.setText("(" + "1 000 " * 20 + ")")
+    # The button's band re-lays first and then asks the strip, one event round later.
+    for _ in range(2):
+        app.processEvents()
+    assert band_names(bar) == ["Go"]
 
 
 # -- fed by the registry -------------------------------------------------------------------

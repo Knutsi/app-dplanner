@@ -171,24 +171,58 @@ def test_make_stacks_a_line_where_it_stands_and_changes_no_link():
     assert_one_line(library, project)
 
 
+def test_make_links_steps_that_are_not_a_line_left_to_right():
+    """Steps nobody linked: the line runs across the canvas as they stand, and the one
+    placed furthest left keeps its seat — the stack's."""
+    library, project, steps = plan("x", "y", "z")
+    for title, seat in (("y", (400.0, 0.0)), ("z", (800.0, 40.0)), ("x", (0.0, 80.0))):
+        library.set_module_data(steps[title].id, MODULE_ID, write_position(*seat))
+    walk(library, project, make_command(library, ids(steps, "z", "x", "y")))
+    assert members(project, steps) == [["x", "y", "z"]]
+    assert requires(steps, "y") == ids(steps, "x") and requires(steps, "z") == ids(steps, "y")
+    assert read_position(steps["x"]) == (0.0, 80.0)
+    assert_one_line(library, project)
+
+
+def test_make_takes_every_input_to_the_first_and_every_dependent_from_the_last():
+    """A fork and a stray: whatever the steps waited on, the first waits on now, and
+    whatever waited on any of them waits on the last — no step waits on less."""
+    library, project, steps = plan("start", "a", "b", "c", "beside", "after", "other")
+    link(library, steps, "a", "start")
+    link(library, steps, "b", "a", "beside")  # An input into what will be the middle.
+    link(library, steps, "c", "a")  # A fork: c follows a, not b.
+    link(library, steps, "after", "c")
+    link(library, steps, "other", "b")  # A dependent of what will be the middle.
+    for title, x in (("a", 0.0), ("b", 300.0), ("c", 600.0)):  # b and c tie on links alone.
+        library.set_module_data(steps[title].id, MODULE_ID, write_position(x, 0.0))
+    walk(library, project, make_command(library, ids(steps, "a", "b", "c")))
+    assert members(project, steps) == [["a", "b", "c"]]
+    assert requires(steps, "a") == ids(steps, "start", "beside")
+    assert requires(steps, "b") == ids(steps, "a")
+    assert requires(steps, "c") == ids(steps, "b")
+    assert requires(steps, "other") == ids(steps, "c")
+    assert requires(steps, "after") == ids(steps, "c")
+    assert_one_line(library, project)
+
+
 @pytest.mark.parametrize(
     ("change", "said"),
     [
-        (lambda library, steps: link(library, steps, "c"), "'c' does not wait on 'b'"),
-        (lambda library, steps: link(library, steps, "b", "a", "beside"), "'b' waits on 'beside'"),
-        (lambda library, steps: link(library, steps, "beside", "b"), "'beside' waits on 'b'"),
+        (lambda library, steps: link(library, steps, "c", "beside"), "'beside' comes between"),
         (lambda library, steps: stack(library, steps, "c", stack_id="s2"), "already in a stack"),
     ],
 )
-def test_make_refuses_what_is_not_one_free_line(change, said):
+def test_make_refuses_a_step_left_out_between_and_a_step_already_stacked(change, said):
+    """A step left out that one of them waits on through it would sit both before and after
+    the line — the only pick that cannot be made one."""
     library, _project, steps = plan("start", "a", "b", "c", "beside")
-    for waiter, source in (("a", "start"), ("b", "a"), ("c", "b")):
+    for waiter, source in (("a", "start"), ("b", "a"), ("beside", "a")):
         link(library, steps, waiter, source)
     library.link_rules = ()
     change(library, steps)
     refusal = make_refusal(library, ids(steps, "a", "b", "c"))
     assert refusal is not None and said in refusal
-    with pytest.raises(ValueError, match=r"stack|line"):
+    with pytest.raises(ValueError, match=r"stack|between"):
         make_command(library, ids(steps, "a", "b", "c"))
 
 

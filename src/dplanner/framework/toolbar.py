@@ -759,6 +759,15 @@ class Toolbar(QWidget):
         super().resizeEvent(event)
         self._reflow()
 
+    def event(self, event: QEvent) -> bool:
+        # A control that grows after the strip was laid out — a count gaining a digit, a
+        # glyph polished on first show — asks for a new layout without any resize, and the
+        # strip must fold again or it overflows until the window is next resized.
+        handled = super().event(event)
+        if event.type() == QEvent.Type.LayoutRequest:
+            self._reflow()
+        return handled
+
     def hidden_items(self) -> list[_Item]:
         """The controls that belong on the strip and did not fit — never what was taken off
         it, and never a divider, which parts rather than folds."""

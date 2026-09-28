@@ -246,6 +246,9 @@ class NodeState:
     ring_phase: float = 0.0  # Where the live ring's dashes are; the scene advances it.
     ports: tuple[bool, bool] = (False, False)  # (something arrives, something leaves).
     marks: Marks = field(default_factory=Marks)
+    # Whether this card offers a link handle at all: a stack's links leave from its last
+    # card, so the cards above it have none, whatever the mode's hints say.
+    handle: bool = True
 
 
 def paint_node(
@@ -638,7 +641,7 @@ def paint_handle(painter: QPainter, palette: QPalette, body: QRectF, state: Node
     every handle is a target, and the one under the cursor is unmissable.
     """
     hints = state.hints
-    if hints.handles == "hidden":
+    if hints.handles == "hidden" or not state.handle:
         return
     centre = QPointF(body.right(), body.center().y())
     active = state.hovered or bool(state.link_state)

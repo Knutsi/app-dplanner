@@ -14,8 +14,9 @@ or going out left with no links at all. The seat is the first member's, so it is
 whenever the first member changes (``ARCHITECTURE.md``'s *A stack is presentation over a
 chain*).
 
-**A builder refuses what it cannot keep one line** — make over steps that are not one, add,
-move and take out on a stack somebody broke — raising ``ValueError`` with the words; the
+**A builder refuses what it cannot keep one line** — make over steps with another step
+between two of them, add, move and take out on a stack somebody broke — raising
+``ValueError`` with the words; the
 ``*_refusal`` functions answer the same question without building, for a verb's greyed
 state. Dissolve and the removal never refuse: a broken stack can always be taken apart, and
 a Delete is never refused. ``ARCHITECTURE.md``'s *One in, one out is a rule the domain asks*
@@ -39,7 +40,7 @@ from dplanner.domain.commands import (
     remove_steps_command,
     rewire_command,
 )
-from dplanner.domain.model import EDGE_KINDS, Edge, Library, NodeId, Step, StepId
+from dplanner.domain.model import EDGE_KINDS, Edge, Library, NodeId, Project, Step, StepId
 from dplanner.modules.project_editor.geometry import shift
 from dplanner.modules.project_editor.named_layouts import position_commands
 from dplanner.modules.project_editor.placement import positions
@@ -58,7 +59,6 @@ from dplanner.modules.project_editor.stacks import (
     Point,
     Stack,
     broken_reason,
-    chain,
     mint_id,
     pack,
     read_stacks,
@@ -80,9 +80,9 @@ DISSOLVE_LABEL = "Dissolve Stack"
 def make_refusal(library: Library, step_ids: Sequence[StepId]) -> str | None:
     """Why these steps cannot become one stack, or None.
 
-    A stack is one line of linked steps: every one waits on the one before it and nothing
-    else, and only the last has anything else waiting on it — the first's other inputs and
-    the last's other dependents become the stack's. None may already stand in a stack.
+    Any steps of one project can, linked or not — :func:`make_command` links them into one
+    line — unless one already stands in a stack, or a step left out comes between two of
+    them: a line through both would have to wait on it and be waited on by it at once.
     """
     chosen = list(dict.fromkeys(step_ids))
     if not chosen:
@@ -94,10 +94,10 @@ def make_refusal(library: Library, step_ids: Sequence[StepId]) -> str | None:
     for step in steps:
         if read_stack(step):
             return f"{step.title!r} is already in a stack"
-    order, gaps = chain(chosen, lambda step_id: library.step(step_id).edges.get("requires", []))
-    candidate = Stack("", order, gaps)
-    reason = broken_reason(candidate, _title(library), stray_links(candidate, project.steps))
-    return None if reason is None else f"these steps are not one line: {reason}"
+    between = _left_between(project, set(chosen))
+    if between is not None:
+        return f"{between.title!r} comes between them — pick it too, or leave a step out"
+    return None
 
 
 def line_refusal(library: Library, stack: Stack) -> str | None:
@@ -145,13 +145,23 @@ def new_stack_command(
 def make_command(
     library: Library, step_ids: Sequence[StepId], label: str = MAKE_LABEL
 ) -> CompositeCommand:
-    """Stack a line of linked steps where it stands: the first keeps its seat, which is the
-    stack's, and the others' seats go — the column derives them. No link changes and nothing
-    moves out of the way; the room the line took is left as it was."""
+    """Stack these steps where they stand, linked into one line.
+
+    The order is the links' where there are any, and the canvas's left to right, top to
+    bottom where there are none (:func:`line_order`). Each step waits on the one before it
+    and nothing else among them — a link between two of them the line does not keep is one
+    it implies. What any of them waited on from outside, the first waits on now, and what
+    waited on any of them waits on the last: the stack takes its links in at its first step
+    and sends them out from its last, and no step waits on less than it did. A line already
+    one keeps every link. The first keeps its seat, which is the stack's, and the others'
+    seats go — the column derives them; nothing moves out of the way, and the room the
+    steps took is left as it was.
+    """
     if (refusal := make_refusal(library, step_ids)) is not None:
         raise ValueError(refusal)
-    chosen = list(dict.fromkeys(step_ids))
-    order, _gaps = chain(chosen, lambda step_id: library.step(step_id).edges.get("requires", []))
+    order = line_order(library, list(dict.fromkeys(step_ids)))
+    lists: dict[EdgeList, list[StepId]] = {}
+    _link_line(library, order, lists)
     stack = mint_id()
     commands: list[Command] = []
     for index, member in enumerate(order):
@@ -163,7 +173,26 @@ def make_command(
             else write_member(stack, read_size(step))
         )
         commands.append(SetModuleDataCommand(member, MODULE_ID, entry, label=label))
-    return CompositeCommand(label, commands)
+    return rewire_command(library, lists, label, commands)
+
+
+def line_order(library: Library, step_ids: Sequence[StepId]) -> list[StepId]:
+    """The order a stack made of these steps runs in: every link among them runs forward,
+    and among steps no link orders, the one further left comes first, then the higher."""
+    project = library.project_of(step_ids[0])
+    seats = positions(library, project)
+    inside = set(step_ids)
+    waits = {
+        step_id: [s for s in library.step(step_id).edges.get("requires", []) if s in inside]
+        for step_id in step_ids
+    }
+    rank = {step_id: (*seats[step_id], index) for index, step_id in enumerate(step_ids)}
+    order: list[StepId] = []
+    while len(order) < len(step_ids):
+        left = [step_id for step_id in step_ids if step_id not in order]
+        ready = [step_id for step_id in left if all(s in order for s in waits[step_id])]
+        order.append(min(ready or left, key=rank.__getitem__))
+    return order
 
 
 def add_command(
@@ -353,6 +382,59 @@ def bridged_removal(
 
 
 # -- the pieces --------------------------------------------------------------------------------
+
+
+def _left_between(project: Project, chosen: set[StepId]) -> Step | None:
+    """A step outside ``chosen`` on a path from one of them to another, or None — the one a
+    line through them would have to wait on and be waited on by at once."""
+    dependents: dict[StepId, list[Step]] = {}
+    for step in project.steps:
+        for source in step.edges.get("requires", []):
+            dependents.setdefault(source, []).append(step)
+    seen: set[StepId] = set()
+    reached = [d for c in chosen for d in dependents.get(c, []) if d.id not in chosen]
+    while reached:
+        step = reached.pop()
+        if step.id in seen:
+            continue
+        seen.add(step.id)
+        for onward in dependents.get(step.id, []):
+            if onward.id in chosen:
+                return step
+            reached.append(onward)
+    return None
+
+
+def _link_line(
+    library: Library, order: Sequence[StepId], lists: dict[EdgeList, list[StepId]]
+) -> None:
+    """Plan, into ``lists``, the ``requires`` lists that make ``order`` one line: each step
+    waits on the one before it alone, the first on everything any of them waited on from
+    outside, and whatever waited on any of them on the last instead. Links that no longer
+    resolve stay where they are."""
+    inside = set(order)
+    first, last = order[0], order[-1]
+    inputs: list[StepId] = []
+    for member in order:
+        for source in library.step(member).edges.get("requires", []):
+            if library.has(source) and source not in inside and source not in inputs:
+                inputs.append(source)
+    for index, member in enumerate(order):
+        held = edge_list(lists, library, member, "requires")
+        ghosts = [source for source in held if not library.has(source)]
+        wanted = inputs if member == first else [order[index - 1]]
+        if [s for s in held if library.has(s)] != wanted:
+            held[:] = [*wanted, *ghosts]
+    project = library.project_of(first)
+    for step in project.steps:
+        if step.id in inside:
+            continue
+        waits = step.edges.get("requires", [])
+        if any(source in inside and source != last for source in waits):
+            held = edge_list(lists, library, step.id, "requires")
+            for member in order[:-1]:
+                if member in held:
+                    _replace(held, member, last)
 
 
 def _member_refusal(library: Library, stack: Stack, member: StepId) -> str | None:

@@ -566,8 +566,9 @@ def commands(
         ),
         CliCommand(
             path=("stack", "make"),
-            summary="Stack a line of linked steps where it stands: each waits on the one "
-            "before it and nothing else, and only the last has other steps waiting on it.",
+            summary="Stack steps where they stand, linked into one line: in the order their "
+            "links give, else left to right; the first takes their inputs, the last their "
+            "dependents.",
             configure=_make_args,
             run=_stack_make,
             examples=("dplanner stack make S4 S5 S6",),

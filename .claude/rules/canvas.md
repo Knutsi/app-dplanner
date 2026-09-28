@@ -80,16 +80,19 @@ paths:
   clears it and notes the point — and the menu is then a function of the selection alone:
   `canvas_menus.py`'s `BANDS` row for a **card** (the Step menu's bands about the step
   itself, `STEP_ITSELF`), an **arrow** (Graph ▸ `links`), a **mixed** pick (Graph ▸
-  `narrow`, Edit ▸ `clipboard`, then `Step` and `Links` children) or the **background**
+  `narrow`, Edit ▸ `clipboard`, Make Stack, then `Step` and `Links` children) or the **background**
   (Graph ▸ `new` and `select`, Edit ▸ `selection`, Go ▸ `survey`), rendered by
   `fill_bands`. **A card is the step, not a table's Step menu**: its type and tests are set
   in Step Details, compiling is the Docs tab's, and a view the index lists as a row under
   the project is left to that row — on the card, on the background and in the Project menu
   alike (their seat in the bar is Go ▸ `views`, which no right-click renders); what a table
   adds is filed in groups of its own (`compile`, `surfaces`) so the card can leave them
-  out, and what a step *is* (`classify`) is in no menu at all. A new target — a stack's frame — is a row
-  and a branch in `target_of`; a new verb for arrows registers into Graph ▸ `links` and
-  appears wherever that band is rendered. **`IdleMode` claims every right press**: handed
+  out, and what a step *is* (`classify`) is in no menu at all. A **stack** — the pick exactly
+  one stack's members, which a click on its frame makes — leads with Step ▸ *Stack*'s
+  `stacked` band flat (Add Step Below, Take Out, Dissolve) and puts the card's bands one
+  level down; a card's own menu carries the *Stack* child. A new target is a row and a
+  branch in `target_of`; a new verb for arrows registers into Graph ▸ `links` and appears
+  wherever that band is rendered. **`IdleMode` claims every right press**: handed
   to Qt, a right press on an arrow (selectable, not movable) clears the whole selection
   before the menu is asked for, so three picked arrows became one. `context_menu()` builds
   and `_on_context_menu` only shows, so a test reads the menu without a modal loop. **Delete
@@ -245,6 +248,32 @@ paths:
   from part of one. Add a reader of positions through the fold, never beside it — a second
   copy of the column is one that can split a stack. `ARCHITECTURE.md`'s *A stack is
   presentation over a chain* has the reasoning.
+- **A stack's frame is the stack's handle.** `StackItem` (z −2, under the arrows) is the one
+  place the column lives on screen: `follow()` lays every member under the first card by
+  `member_seats` at the cards' live sizes and fits the frame round them, so a sync, a resize
+  and every drag show the derived column; the scene lays frames out after the cards and
+  before the arrows, and a member's move reaches its frame first. **An arrow meets an item at
+  a port** — a point and a heading: every card's near side, across, as always — so a
+  stack's way in meets its first card's side and its way out leaves its last card's, the
+  sockets any card has — and the chain's own links drawn **straight, down the frame's
+  middle**, still `EdgeItem`s, so they keep auto-progress rails, lighting and picking. The "+" is `StackAddItem` (z 0.5), and a
+  press on it runs `stacks.add_below` on the last card through a constructed context. A
+  stacked card is never Qt-movable, shows a link handle only as the last, grows only right
+  and down (`resize_command` stores no seat for a member below the first). **A drag moves
+  the pick, and a stack moves whole**: `IdleMode` claims, in order, a right press, the
+  handle, the "+", a resize band, a card in a stack or a picked card beside one, and then —
+  after an arrow drawn over it, which stays Qt's — the frame; the drag is `BlockDragMode`,
+  moving each block's anchor and reporting through `nodes_moved` (*Move Stack* for one
+  stack); a click on a card narrows to it, one on the frame picks the stack, and a double
+  click on the frame makes nothing. **A link end landing on a stack means its first card for
+  an arrowhead and its last for a tail** (`GraphScene.link_end`, `link_target_at`, frames
+  included) — link drag, Connect and Redirect alike — and the verdict is still
+  `link_refusal`'s. New Stack is Graph ▸ `new`; Make Stack (`stack`) and Add Step Below,
+  Take Out, Dissolve (`stacked`) feed Step ▸ *Stack*; each pushes its `stack_edits` builder.
+  **Make Stack links whatever is picked into one line** — the links' order, else left to
+  right — and a mixed pick's right-click offers it flat, since a drag across a line picks
+  its arrows too.
+  `ARCHITECTURE.md`'s *A stack's frame is the stack's handle* has the reasoning.
 - **Every stack edit is one command from `stack_edits.py`, and the stack rule is the
   domain's to ask.** New, make, add, move, take out and dissolve each build one composite
   the canvas and `dplanner stack …` push alike; `bridged_removal` is what Delete, Cut,
@@ -253,10 +282,14 @@ paths:
   wait joins its stack in its slot. One relink rebuilds a line in its new order: the chain,
   the first member's outside inputs on whoever is first now, the last's dependents on
   whoever is last, a step joining disconnected first and a step leaving left with no links;
-  **the seat is handed on whenever the first member changes**. A builder refuses a stack
-  that is no longer one line (`line_refusal`, `make_refusal`, `join_refusal` — a greyed
-  state reads them over the synced `step_stacks` or settles once, never walks a project per
-  announce); dissolve and the removal never refuse, and dissolve lays a placed stack out as
+  **the seat is handed on whenever the first member changes**. Make links any pick into one
+  line (`line_order`, `_link_line`): each step waits on the one before, the first on every
+  input any of them had from outside, and whatever waited on any of them on the last — no
+  step waits on less. A builder refuses a stack that is no longer one line, and make a pick
+  with a step left out between two of its steps (`line_refusal`, `make_refusal`,
+  `join_refusal` — a greyed
+  state reads them from `StackVerbs`' per-project reading, built on first read and forgotten
+  when the graph or the canvas's data changes, never walks a project per announce); dissolve and the removal never refuse, and dissolve lays a placed stack out as
   a row and pushes the far side by Divide's rule, never contracting. What may link to a
   stack is `stacks.link_rule`, asked through `Library.link_refusal` (`graph-model.md`):
   links arrive at the first member and leave from the last. What another writer brought in
@@ -300,10 +333,11 @@ paths:
   still one timer. Every look stays inside `EDGE_GRAB`'s margin and keeps the lit, picked,
   hovered and dimmed rules. `ARCHITECTURE.md`'s *An auto-progress link is an aspect on the
   step that waits* has the reasoning.
-- **A step placed by pointing at a spot earns a stored position.** `StepVerbs.create()` is
-  the one place a step is born on the canvas — New and the double-click on empty space both
-  come through it — and it writes the position **in the same command** as the node,
-  because a gesture is one undo. Where it lands is `GraphView.last_click`, which
+- **A step placed by pointing at a spot earns a stored position.** `StepVerbs.born()` is
+  the one place a step is born on the canvas — New and the double-click on empty space
+  through `create()`, New Stack and a stack's "+" with the command a stack builder made —
+  and the position rides **in the same command** as the node, because a gesture is one
+  undo. Where it lands is `GraphView.last_click`, which
   every button press records *before* the mode stack sees it, and which a right-click
   refreshes so the menu's own New lands where the menu was raised. No click yet means no
   stored position, which is the ambient layout doing what it always did. The step then
