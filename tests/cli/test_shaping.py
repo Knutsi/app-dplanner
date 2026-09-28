@@ -61,6 +61,46 @@ def test_the_guide_cuts_steps_for_an_agent_to_run():
     assert "A design foundation lands before the views that depend on it" in prose
 
 
+def test_the_guide_makes_a_feature_one_run_delivers_its_own_work_step():
+    """A feature and its only work step, one waiting on the other, is one launch and one
+    review drawn as two cards."""
+    prose = " ".join(guide().split())
+    assert "When one agent run delivers the whole feature, the feature step is that run" in prose
+    assert "--feature --agent --days N --describe-file -" in prose
+    assert "A feature is not a boundary on its own" in prose
+
+
+def test_a_feature_step_can_be_its_own_agent_work(cli, cli_stdin, project, tmp_path):
+    """The shape the guide recommends is whole in one `step add`: briefed from its own
+    passage, and nothing lint would send the author back for."""
+    spec = tmp_path / "spec.txt"
+    spec.write_text("Imports must accept CSV files.\n")
+    cli("spec", "import", project, str(spec))
+    cli_stdin(
+        "step",
+        "add",
+        project,
+        "Bulk import",
+        "--feature",
+        "--agent",
+        "--days",
+        "1",
+        "--document",
+        "spec",
+        "--quote",
+        "must accept CSV",
+        "--describe-file",
+        "-",
+        stdin="Build the CSV importer.",
+    )
+    prompt = cli("agent", "prompt", "Bulk import")
+    assert "## Read from the spec" in prompt and "> must accept CSV" in prompt
+    assert "Build the CSV importer." in prompt
+    findings = data(cli("project", "lint", project, "--json", expect=1))["findings"]
+    about_it = {row["check"] for row in findings if row["subject"] == "Bulk import"}
+    assert not about_it & {"description.missing", "estimate.missing", "agent.missing"}
+
+
 def test_the_spatial_loop_moved_here_with_the_rest_of_the_shaping(skill):
     """Look, sort, make room or tidy, look again, keep — a shaping act, so it left the
     skill with its neighbours."""

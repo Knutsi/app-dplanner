@@ -103,8 +103,9 @@ should do.
    was read from yet: read it before you call the reading done.
 
    You may not know a feature's work steps yet, and that is fine: its step stands on the
-   graph on its own until you link the work into it at step 8. `project lint` calls it an
-   orphan meanwhile, which is the plan telling you the truth about itself.
+   graph on its own until step 7 decides whether it does the work itself or gathers work
+   steps. `project lint` calls it an orphan meanwhile, which is the plan telling you the
+   truth about itself.
 5. **Collect the features into milestones.** A milestone is a release. Decide what is in
    each one — *Ask, then propose* when the spec does not say — and mark the step that
    closes it: `dplanner milestone set <step> --label MVP`. Each release's work branches
@@ -125,7 +126,18 @@ should do.
    description. The standalone verbs (`describe set`, `agent on`, `estimate set`, `spec
    attach-to-step`) remain for editing later. A work step's briefing names the feature it
    flows into, with the passage it was read from — so it needs no citation of its own.
-8. **Link the work into its feature.** `dplanner step link '<feature>' '<work step>'`
+
+   **When one agent run delivers the whole feature, the feature step is that run.** Do not
+   add a work step for it to wait on: author the feature step itself — `agent on`,
+   `estimate set`, and a description written as the executing agent's instructions (`step
+   add … --feature --agent --days N --describe-file -` when you read it out of the spec
+   already knowing this). Its briefing carries the passages it was read from, it gathers
+   its own tests, and the check or review the topology asks for follows it directly. A
+   feature and its only work step, one waiting on the other, is one launch and one review
+   drawn as two steps, and a card on the graph that says nothing the other does not. Keep
+   them apart only when the feature gathers several steps, or work a different person does.
+8. **Link the work into its feature.** Where the work is steps of its own,
+   `dplanner step link '<feature>' '<work step>'`
    makes the feature wait on the work that flows into it, and `scope show '<feature>'`
    prints what it then gathers. A feature you only thought of here is born the same way it
    was at step 4, with `step add … --feature`. Follow the topology for what comes after — a
@@ -164,9 +176,11 @@ already has the first one's context. So, **unless the project's topology says ot
 lump similar work into one large step**: the five endpoints of one API, the three views
 that share a layout, the migrations and the model they serve. Cut a step only where the
 graph needs a boundary — a real dependency another step waits on, a feature step that
-gathers the work, a check or a review the topology asks for, or work that belongs to a
-different person or agent. A plan of many quarter-day steps is a plan of many launches;
-a plan of a few well-batched days is what an agent and its reviewer both prefer.
+gathers the work of several, a check or a review the topology asks for, or work that
+belongs to a different person or agent. A feature is not a boundary on its own: a feature
+one run delivers *is* its work step (step 7). A plan of many quarter-day steps is a plan
+of many launches; a plan of a few well-batched days is what an agent and its reviewer both
+prefer.
 
 **Cluster what is connected, and cut for calendar time.** Two things are worth optimising —
 how much can run at once, and how few launches it takes — and they pull against each other.
