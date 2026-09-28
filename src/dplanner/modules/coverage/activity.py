@@ -166,8 +166,7 @@ class CoverageActivity(EntityActivity):
         )
         # The stretch is the strip's: a Toolbar's size hint is its … button.
         row.addWidget(self.controls, 1)
-        self.summary = note("", self.strip)
-        self.summary.setWordWrap(False)
+        self.summary = note("", self.strip, one_line=True)
         row.addWidget(self.summary)
         self.updating = UpdatingIndicator(self.strip)
         row.addWidget(self.updating)
