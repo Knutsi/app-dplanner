@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.core.storage.locations import find_repo_root, origin_url, remote_label
 from dplanner.core.storage.provider import StorageError
+from dplanner.domain.plan_repo import plan_repositories_in
 from dplanner.framework.dialog import DialogFrame, LinePrompt
 from dplanner.framework.signalling import StatusLine, Tone
 from dplanner.framework.task_runner import TaskRunner
@@ -209,11 +210,17 @@ class RepoPicker(QWidget):
         layout.addWidget(self.note)
 
         # The repository last picked leads, and is offered even when no library project
-        # lives there yet — a browsed-to repository is worth remembering once.
+        # lives there yet — a browsed-to repository is worth remembering once. After the
+        # library's own, the plan repositories already checked out in the repositories
+        # folder: a clone this machine has is one nobody should have to browse to.
         last = str(get_global(MODULE_ID, LAST_ROOT_KEY, ""))
         roots = services.plan_roots()
         if last and Path(last) not in roots and (Path(last) / ".git").exists():
             roots.insert(0, Path(last))
+        folder = repositories_folder()
+        if folder is not None:
+            known = {root.resolve() for root in roots}
+            roots += [root for root in plan_repositories_in(folder) if root.resolve() not in known]
         for root in sorted(roots, key=lambda root: str(root) != last):
             self._add(PlanTarget(root))
 
@@ -291,6 +298,9 @@ class RepoPicker(QWidget):
             return
         dest = folder / repo.rsplit("/", 1)[-1]
         if (dest / ".git").exists():
+            # Picked as it stands, never pulled under somebody's working tree — so say
+            # which checkout this is, or an old one reads as what GitHub holds.
+            self.say(f"Already cloned at {shown_path(dest)} — opened as it stands", "info")
             self._add(PlanTarget(dest), select=True)
             return
         if dest.exists():

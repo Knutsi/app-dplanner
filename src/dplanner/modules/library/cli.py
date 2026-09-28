@@ -180,7 +180,7 @@ def _add_one(context: CliContext, directory: Path, done: str = "added to the lib
 
 
 def _add_all(context: CliContext, root: Path) -> int:
-    """A plan repository: every project it lists — or, with no index, holds — that is not
+    """A plan repository: every project it lists or holds that is not
     here already, by directory or by id (the same plan in another clone)."""
     if find_repo_root(root) is None:
         raise CliError(

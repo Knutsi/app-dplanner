@@ -4,7 +4,7 @@ import json
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.core.storage.pointer import POINTER_FILE, WORKTREES_DIR
-from dplanner.domain.plan_repo import list_projects
+from dplanner.domain.plan_repo import list_projects, plan_repositories_in
 from dplanner.domain.seed import seed_project
 from dplanner.domain.store import PROJECT_META
 
@@ -38,6 +38,35 @@ def test_without_an_index_a_shallow_scan_finds_the_projects(tmp_path):
     assert sorted(project.title for project in found.projects) == ["Deep", "Search"]
     assert not any(project.indexed for project in found.projects)
     assert found.dangling == ()
+
+
+def test_a_project_the_index_does_not_list_still_follows_the_ones_it_does(tmp_path):
+    """An index that fell behind — a Save once left it uncommitted — hides no plan."""
+    root = init_repo(tmp_path / "plans")
+    seed_project(root / "search", "Search")
+    seed_project(root / "billing", "Billing")
+    (root / POINTER_FILE).write_text("search\n")
+
+    found = list_projects(root)
+    assert [(project.title, project.indexed) for project in found.projects] == [
+        ("Search", True),
+        ("Billing", False),
+    ]
+
+
+def test_the_plan_repositories_in_a_folder_are_the_checkouts_holding_a_plan(tmp_path):
+    folder = tmp_path / "Code"
+    plans = init_repo(folder / "plans")
+    seed_project(plans / "search", "Search")
+    solo = init_repo(folder / "solo")
+    seed_project(solo, "Solo")
+    code = init_repo(folder / "code")  # Its index points at a plan kept elsewhere.
+    (code / POINTER_FILE).write_text("../plans/search\n")
+    init_repo(folder / "empty")
+    seed_project(folder / "loose" / "plan", "Not in git")
+
+    assert plan_repositories_in(folder) == [plans, solo]
+    assert plan_repositories_in(tmp_path / "missing") == []
 
 
 def test_a_repository_that_is_one_project_lists_itself(tmp_path):

@@ -24,6 +24,7 @@ from typing import Protocol, runtime_checkable
 
 from PySide6.QtCore import QObject, Signal
 
+from dplanner.core.storage.pointer import POINTER_FILE
 from dplanner.core.storage.provider import (
     RemoteStorage,
     StorageError,
@@ -215,12 +216,15 @@ class SyncService(QObject):
             if not group.is_dirty():
                 self.saving.emit(index, NOTHING)
                 continue
-            also: Sequence[str] = ()
+            # The repository's index names the projects in it, and a project created or
+            # removed rewrites it — outside every project's scope, so it is named here or
+            # the line stays on the machine that wrote it.
+            also: Sequence[str] = (POINTER_FILE,)
             publish = (publications or {}).get(id(group))
             if publish is not None:
                 self.saving.emit(index, PUBLISHING)
                 try:
-                    also = publish()
+                    also = (POINTER_FILE, *publish())
                 except Exception:
                     logger.exception("Publishing the reports beside %s failed", group.label)
                     unpublished += 1

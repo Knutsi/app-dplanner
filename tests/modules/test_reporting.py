@@ -17,6 +17,7 @@ from PySide6.QtWidgets import QMessageBox, QPushButton
 
 from dplanner.cli.report import website
 from dplanner.core.storage.locations import init_repo
+from dplanner.core.storage.pointer import POINTER_FILE
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
@@ -163,7 +164,9 @@ def test_the_switch_turns_publishing_off(qapp, services, project, library_repo):
     services.actions.run("sync.save", services.context.current())
     wait_for(qapp, lambda: not services.tasks.active())
     assert not (library_repo / website.REPORTS_DIR).exists()
-    assert all(path.startswith("discovery/") for path in committed_paths(library_repo))
+    assert all(
+        path.startswith(("discovery/", POINTER_FILE)) for path in committed_paths(library_repo)
+    )
 
 
 def test_a_failing_publication_never_costs_the_save(
@@ -281,7 +284,9 @@ def test_save_publishes_into_the_reporting_location_and_commits_it_scoped(
     assert all(path.startswith("reports/search/") for path in published) and published
     assert "notes.txt" not in published
     assert not (library_repo / website.REPORTS_DIR).exists()  # Beside the plan: nothing.
-    assert all(path.startswith("discovery/") for path in committed_paths(library_repo))
+    assert all(
+        path.startswith(("discovery/", POINTER_FILE)) for path in committed_paths(library_repo)
+    )
     # Every row of the save is said, the reporting repository's after the plan's.
     service = sync_service(services)
     service.refresh()
