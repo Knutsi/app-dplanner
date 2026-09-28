@@ -83,7 +83,7 @@ paths:
   per claim with its words, its count as a bar, when it was last heard, *Reveal* and a ✕
   that clears that one. Never a notice per claim again — four agents were four bands to
   read past. **A silent claim lapses** (`domain/at_work.py`): not heard from in
-  `FRESH_MINUTES` (thirty) and `claims()` stops returning it, so every reader drops it at
+  `FRESH_MINUTES` (three) and `claims()` stops returning it, so every reader drops it at
   once — but **a lapse deletes nothing**: the file stays until a later claim sweeps it as a
   day old, and the agent's next `dplanner` run renews it, which is the moment it touches
   the plan again. No tense, no quiet state: a claim stands or it does not. **A status that

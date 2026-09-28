@@ -3161,13 +3161,17 @@ heard 40 minutes ago*) and stood until somebody who knew something ended it. In 
 was the wrong way round. Agents finish and stop without a word far more often than they
 think for an hour, so the window collected bands from agents long gone, and a banner that
 is usually stale teaches the developer to read past the one surface they must not. So a
-claim not heard from in `FRESH_MINUTES` (thirty) **lapses**: `AtWorkBoard.claims()` stops
+claim not heard from in `FRESH_MINUTES` (three) **lapses**: `AtWorkBoard.claims()` stops
 returning it, and the window, `agent-work show` and the library watcher all stop saying it
 at once. What makes a lease safe here, where the usual objection is that it is too short,
 is that **a lapse deletes nothing**: the file stays until the day-old sweep, and the
 agent's next `dplanner` run renews it, so it stands again. That run is exactly the moment
 it matters — an agent that is not touching the CLI is not touching the plan either, and the
-banner exists to keep a person off the plan while an agent writes it. The tense went with
+banner exists to keep a person off the plan while an agent writes it. The lease began at
+thirty minutes and was still the wrong way round in use — bands stood long after the work
+had finished — so it is three: a quiet agent's band may drop out between two runs and come
+back with the next, which costs a person nothing, where a stale one teaches them to stop
+reading. The tense went with
 it: one threshold where there were two, and every standing claim reads *is at work*, with
 when it was last heard said in its own words. It goes for good four ways — the agent ends
 it, `status set` says its step is finished (below), a person clears it, or a claim made a
