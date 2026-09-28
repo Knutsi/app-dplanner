@@ -40,7 +40,8 @@ from dplanner.domain.commands import (
     remove_steps_command,
     rewire_command,
 )
-from dplanner.domain.model import EDGE_KINDS, Edge, Library, NodeId, Project, Step, StepId
+from dplanner.domain.model import EDGE_KINDS, Edge, Library, NodeId, Step, StepId
+from dplanner.domain.ordering import left_between
 from dplanner.modules.project_editor.geometry import shift
 from dplanner.modules.project_editor.named_layouts import position_commands
 from dplanner.modules.project_editor.placement import positions
@@ -94,7 +95,7 @@ def make_refusal(library: Library, step_ids: Sequence[StepId]) -> str | None:
     for step in steps:
         if read_stack(step):
             return f"{step.title!r} is already in a stack"
-    between = _left_between(project, set(chosen))
+    between = left_between(project, set(chosen))
     if between is not None:
         return f"{between.title!r} comes between them — pick it too, or leave a step out"
     return None
@@ -382,27 +383,6 @@ def bridged_removal(
 
 
 # -- the pieces --------------------------------------------------------------------------------
-
-
-def _left_between(project: Project, chosen: set[StepId]) -> Step | None:
-    """A step outside ``chosen`` on a path from one of them to another, or None — the one a
-    line through them would have to wait on and be waited on by at once."""
-    dependents: dict[StepId, list[Step]] = {}
-    for step in project.steps:
-        for source in step.edges.get("requires", []):
-            dependents.setdefault(source, []).append(step)
-    seen: set[StepId] = set()
-    reached = [d for c in chosen for d in dependents.get(c, []) if d.id not in chosen]
-    while reached:
-        step = reached.pop()
-        if step.id in seen:
-            continue
-        seen.add(step.id)
-        for onward in dependents.get(step.id, []):
-            if onward.id in chosen:
-                return step
-            reached.append(onward)
-    return None
 
 
 def _link_line(

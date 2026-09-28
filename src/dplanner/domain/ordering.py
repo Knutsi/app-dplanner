@@ -156,6 +156,52 @@ def upstream(library: Library, project: Project, step_id: StepId) -> list[Step]:
     return list(cone(library, project, step_id).steps)
 
 
+def dependents_index(project: Project) -> dict[StepId, list[Step]]:
+    """Who waits on each step, built once: ``Library.dependents`` answers one step and scans
+    the project to do it, so a walk forwards reads this instead."""
+    index: dict[StepId, list[Step]] = {}
+    for step in project.steps:
+        for source in step.edges.get("requires", []):
+            index.setdefault(source, []).append(step)
+    return index
+
+
+def downstream(
+    project: Project, step_id: StepId, index: dict[StepId, list[Step]] | None = None
+) -> list[Step]:
+    """Every step that waits on this one, directly or through others, in project order —
+    :func:`upstream` walked the other way. ``index`` is :func:`dependents_index`, handed in
+    by a caller that walks from several steps."""
+    index = dependents_index(project) if index is None else index
+    reached: set[StepId] = set()
+    pending = [step_id]
+    while pending:
+        for dependent in index.get(pending.pop(), []):
+            if dependent.id not in reached:  # Also the cycle guard.
+                reached.add(dependent.id)
+                pending.append(dependent.id)
+    return [step for step in project.steps if step.id in reached and step.id != step_id]
+
+
+def left_between(project: Project, chosen: set[StepId]) -> Step | None:
+    """A step outside ``chosen`` on a path from one of them to another, or None — the one
+    that would have to wait on the picked steps and be waited on by them at once, which is
+    why neither a line (a stack) nor a bracket (a branch) can be drawn round them."""
+    index = dependents_index(project)
+    seen: set[StepId] = set()
+    reached = [d for c in chosen for d in index.get(c, []) if d.id not in chosen]
+    while reached:
+        step = reached.pop()
+        if step.id in seen:
+            continue
+        seen.add(step.id)
+        for onward in index.get(step.id, []):
+            if onward.id in chosen:
+                return step
+            reached.append(onward)
+    return None
+
+
 def ports(steps: Sequence[Step]) -> dict[StepId, tuple[bool, bool]]:
     """``(has incoming, has outgoing)`` per step, over every edge kind whose both ends are
     among ``steps`` — the edges the canvas draws, and no others.
