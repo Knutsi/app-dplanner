@@ -374,6 +374,55 @@ def test_browsing_to_a_folder_outside_git_is_refused_in_the_note(services, tmp_p
     dialog.deleteLater()
 
 
+def test_the_plan_repositories_in_the_repositories_folder_are_offered_unasked(
+    services, tmp_path, monkeypatch
+):
+    """A clone this machine already has is one nobody should have to browse to."""
+    folder = tmp_path / "Code"
+    plans = init_repo(folder / "plans")
+    seed_project(plans / "search", "Search")
+    init_repo(folder / "tool")  # Code, no plan: not offered.
+    set_repositories_folder(folder)
+    dialog = browsing(services, monkeypatch)
+    combo = dialog.browse.picker.combo
+    assert [combo.itemData(index) for index in range(combo.count())] == [str(plans)]
+    dialog.deleteLater()
+
+
+def test_cloning_what_is_already_checked_out_says_it_opened_that_checkout(
+    services, tmp_path, monkeypatch
+):
+    """Nothing is pulled under a working tree, so the note says which one this is — an
+    old checkout must not read as what GitHub holds."""
+    from dplanner.modules.projects import repo_picker
+
+    folder = tmp_path / "Code"
+    plans = init_repo(folder / "plans")
+    set_repositories_folder(folder)
+    dialog = browsing(services, monkeypatch)
+    picker = dialog.browse.picker
+
+    class Listing:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def exec(self):
+            return 1
+
+        def chosen(self):
+            return "acme/plans"
+
+        def deleteLater(self):  # noqa: N802 - Qt's name
+            pass
+
+    monkeypatch.setattr(repo_picker, "GhRepoListDialog", Listing)
+    clone = next(e for e in picker.entries() if e is not None and e.label == "Clone from GitHub…")
+    clone.run()
+    assert picker.note.words() == f"Already cloned at {shown_path(plans)} — opened as it stands"
+    assert picker.current() == PlanTarget(plans)
+    dialog.deleteLater()
+
+
 def test_an_empty_repository_says_so_and_a_dangling_index_line_is_named(
     services, tmp_path, monkeypatch
 ):

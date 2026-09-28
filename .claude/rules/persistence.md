@@ -17,8 +17,12 @@ paths:
 
 - **There is no Save-file action.** Autosave writes 1.5 s after the last change; *Save*
   means recording a version: **one commit per dirty repository, scoped to that repository's
-  project directories** — several projects in one repo save as one commit, and the user's
-  source code is never swept up. Quitting with dirty repos asks once, listing them
+  project directories and its `.dplanner` index** — several projects in one repo save as one
+  commit, and the user's source code is never swept up. The index is named on purpose
+  (`modules/sync/service.py`): seeding writes it outside every project's scope, and a Save
+  that left it out kept a new project's line on the machine that made it, and a clone
+  never offered the plan (`list_projects` also scans, for indexes that fell behind).
+  Quitting with dirty repos asks once, listing them
   (`modules/sync/exit_dialog.py`, on the dialog frame), and **the save that follows is an
   ordinary task under a modal progress dialog** — a row per repository, publishing then
   committing (`modules/sync/save_progress.py`) — with the **close deferred** until it ends:

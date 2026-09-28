@@ -3,8 +3,9 @@
 A plan repository is a git repository whose root carries the ``.dplanner`` index — one
 project directory per line, in the order a panel shows them — and whose projects are
 folders in it, flat at the root by default (``<repo>/<slug>/project.dproj``), nested where
-somebody chose to. The index is the structure; a repository made before it existed has no
-index and is scanned instead, shallowly, so a clone from any era answers the same question.
+somebody chose to. The index is the structure and gives the order; the repository is also
+scanned, shallowly, so one made before the index existed — or whose index fell behind —
+still offers every project it holds.
 
 Two readers, one function: ``dplanner library browse`` (and ``library add <root>``) and the
 Open Project wizard's browse page. Nothing here opens a project or touches the library — it
@@ -59,20 +60,28 @@ def read_meta(directory: Path) -> dict[str, Any]:
 
 
 def list_projects(root: Path) -> PlanRepo:
-    """The projects at ``root``: in index order when there is an index, else by scan."""
+    """The projects at ``root``: those the index lists, in its order, then whatever the scan
+    finds that it does not.
+
+    The index is not trusted to be complete: a Save once left it uncommitted, so a clone
+    held projects its index had never heard of — and a listing that hid them hid the plans
+    the person had come for.
+    """
     root = root.expanduser().resolve()
-    entries = resolve_index(root)
-    if entries:
-        projects: list[PlanProject] = []
-        dangling: list[str] = []
-        for line, target in entries:
-            if (target / PROJECT_META).is_file():
-                projects.append(_describe(root, target, indexed=True))
-            else:
-                dangling.append(line)
-        return PlanRepo(root, tuple(projects), tuple(dangling))
-    found = tuple(_describe(root, directory, indexed=False) for directory in scan_projects(root))
-    return PlanRepo(root, found, ())
+    projects: list[PlanProject] = []
+    dangling: list[str] = []
+    for line, target in resolve_index(root):
+        if (target / PROJECT_META).is_file():
+            projects.append(_describe(root, target, indexed=True))
+        else:
+            dangling.append(line)
+    listed = {project.directory for project in projects}
+    projects += [
+        _describe(root, directory, indexed=False)
+        for directory in scan_projects(root)
+        if directory.resolve() not in listed
+    ]
+    return PlanRepo(root, tuple(projects), tuple(dangling))
 
 
 def scan_projects(root: Path, depth: int = SCAN_DEPTH) -> list[Path]:
@@ -92,6 +101,33 @@ def scan_projects(root: Path, depth: int = SCAN_DEPTH) -> list[Path]:
 
     walk(root, 0)
     return found
+
+
+def plan_repositories_in(folder: Path) -> list[Path]:
+    """The git repositories directly in ``folder`` that hold a plan — the ones worth
+    offering before anybody has browsed to them, sorted by name.
+
+    Cheaper than :func:`list_projects` on purpose, since it runs over every checkout a
+    person keeps: a project the index lists inside the repository, or one at its root or a
+    folder down. A ``.dplanner`` alone is not enough — in a code repository it points at a
+    plan kept elsewhere.
+    """
+    try:
+        children = sorted(child for child in folder.iterdir() if (child / ".git").exists())
+    except OSError:
+        return []
+    return [child for child in children if _holds_projects(child.resolve())]
+
+
+def _holds_projects(root: Path) -> bool:
+    listed = any(
+        target.is_relative_to(root) and (target / PROJECT_META).is_file()
+        for _line, target in resolve_index(root)
+    )
+    try:
+        return listed or bool(scan_projects(root, depth=1))
+    except OSError:
+        return False
 
 
 _UNITS = (
