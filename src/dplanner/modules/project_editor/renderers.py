@@ -131,7 +131,7 @@ RING_STEP = 0.5
 PULSE_PERIOD = 20.0
 PULSE_REACH = 7.0
 PULSE_LAYERS = 3
-PULSE_ALPHA = 255
+PULSE_ALPHA = 128
 
 # The icon medallions on the top edge, left end: one small circle per aspect kind a step
 # carries, bound by the same boundingRect inequality the badge is. Twice grown by a fifth from
