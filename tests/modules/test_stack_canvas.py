@@ -407,21 +407,22 @@ def test_the_strip_offers_new_stack_and_make_stack(tab, plan):
         assert tab._toolbar.button(action_id) is not None
 
 
-# -- restacking: one card Shift-dragged (F19) --------------------------------------------------
+# -- restacking: one card Shift-dragged (F19), or a loose one dragged (S40) ---------------------
 
 SHIFT = Qt.KeyboardModifier.ShiftModifier
+PLAIN = Qt.KeyboardModifier.NoModifier
 
 
-def shift_press(app, tab, at):
-    send(app, tab, QEvent.Type.MouseButtonPress, at, modifiers=SHIFT)
+def grab(app, tab, at, modifiers=SHIFT):
+    send(app, tab, QEvent.Type.MouseButtonPress, at, modifiers=modifiers)
 
 
-def move_to(app, tab, at):
-    send(app, tab, QEvent.Type.MouseMove, at, modifiers=SHIFT)
+def move_to(app, tab, at, modifiers=SHIFT):
+    send(app, tab, QEvent.Type.MouseMove, at, modifiers=modifiers)
 
 
-def let_go(app, tab, at):
-    send(app, tab, QEvent.Type.MouseButtonRelease, at, Qt.MouseButton.NoButton, SHIFT)
+def let_go(app, tab, at, modifiers=SHIFT):
+    send(app, tab, QEvent.Type.MouseButtonRelease, at, Qt.MouseButton.NoButton, modifiers)
 
 
 def restacking(tab):
@@ -442,7 +443,7 @@ def test_shift_dragging_the_last_card_to_the_top_is_one_move_in_stack(app, servi
     )
     was = columns(tab, head, body, tail)
     grip = body_of(tab, tail).center()
-    shift_press(app, tab, grip)
+    grab(app, tab, grip)
     move_to(app, tab, grip - QPointF(0.0, was[tail].y() - was[head].y()))
     restacking(tab).settle()
     let_go(app, tab, grip - QPointF(0.0, was[tail].y() - was[head].y()))
@@ -468,7 +469,7 @@ def test_the_cards_between_make_way_as_the_card_passes(app, tab, plan):
     was = columns(tab, head, body, tail)
     rect = frame_of(tab).frame_scene_rect()
     grip = body_of(tab, tail).center()
-    shift_press(app, tab, grip)
+    grab(app, tab, grip)
     move_to(app, tab, grip - QPointF(0.0, was[tail].y() - was[head].y()))
 
     # Nothing jumps: the two cards above ease down, on the gesture's one clock.
@@ -491,7 +492,7 @@ def test_dragging_a_card_out_past_the_frame_takes_it_out_where_it_is_let_go(
     rect = frame_of(tab).frame_scene_rect()
     grip = body_of(tab, body).center()
     away = QPointF(rect.right() + 200.0, grip.y())
-    shift_press(app, tab, grip)
+    grab(app, tab, grip)
     move_to(app, tab, away)
     restacking(tab).settle()
 
@@ -523,7 +524,7 @@ def test_escape_mid_restack_puts_every_card_and_the_frame_back(app, services, ta
     rect = frame_of(tab).frame_scene_rect()
     depth = undo_text(services)
     grip = body_of(tab, body).center()
-    shift_press(app, tab, grip)
+    grab(app, tab, grip)
     move_to(app, tab, grip + QPointF(*travel))
     restacking(tab).settle()
     assert columns(tab, head, body, tail) != was
@@ -538,7 +539,7 @@ def test_escape_mid_restack_puts_every_card_and_the_frame_back(app, services, ta
 def test_no_clock_outlives_the_gesture(app, tab, plan):
     tail = ids(plan)[3]
     grip = body_of(tab, tail).center()
-    shift_press(app, tab, grip)
+    grab(app, tab, grip)
     move_to(app, tab, grip - QPointF(0.0, 192.0))
     (clock,) = view(tab).findChildren(FrameClock)
     assert clock.running()
@@ -553,24 +554,25 @@ def test_a_shift_click_on_a_stacked_card_picks_it_and_changes_nothing(app, servi
     _plan, head, body, tail, *_rest = ids(plan)
     scene(tab).select_steps([head, body, tail])
     depth = undo_text(services)
-    shift_press(app, tab, body_of(tab, body).center())
+    grab(app, tab, body_of(tab, body).center())
     let_go(app, tab, body_of(tab, body).center())
     assert picked(tab) == [body]
     assert undo_text(services) == depth
     assert view(tab).modes.current().name == IDLE
 
 
-def test_shift_dragging_a_loose_card_into_a_stack_adds_it_there_disconnected(
-    app, services, tab, plan
+@pytest.mark.parametrize("held", [SHIFT, PLAIN], ids=["shift", "plain"])
+def test_dragging_a_loose_card_into_a_stack_adds_it_there_disconnected(
+    app, services, tab, plan, held
 ):
     first, head, body, tail, *_rest, loose = ids(plan)
     SetEdgesCommand(loose, "requires", [first]).redo(services.document)
     grip = body_of(tab, loose).center()
-    shift_press(app, tab, grip)
-    move_to(app, tab, body_of(tab, body).center())
+    grab(app, tab, grip, held)
+    move_to(app, tab, body_of(tab, body).center(), held)
     restacking(tab).settle()
     assert "Add to stack" in status_line(services)
-    let_go(app, tab, body_of(tab, body).center())
+    let_go(app, tab, body_of(tab, body).center(), held)
 
     assert undo_text(services) == "Add to Stack"
     assert read_stacks(plan.steps)[0].members == (head, loose, body, tail)
@@ -581,6 +583,44 @@ def test_shift_dragging_a_loose_card_into_a_stack_adds_it_there_disconnected(
     assert requires(services, loose) == [first]
 
 
+def test_a_loose_card_carried_over_a_stack_and_past_it_is_only_moved(app, services, tab, plan):
+    _plan, head, body, tail, *_rest, loose = ids(plan)
+    was = columns(tab, head, body, tail)
+    rect = frame_of(tab).frame_scene_rect()
+    grip = body_of(tab, loose).center()
+    away = QPointF(rect.right() + 200.0, rect.top())
+    grab(app, tab, grip, PLAIN)
+    move_to(app, tab, body_of(tab, body).center(), PLAIN)
+    move_to(app, tab, away, PLAIN)
+    restacking(tab).settle()
+    # The column closes up again, and what the aim at the stack said no longer holds.
+    assert columns(tab, head, body, tail) == was
+    assert status_line(services) == ""
+    let_go(app, tab, away, PLAIN)
+
+    assert undo_text(services) == "Move Step"
+    assert read_stacks(plan.steps)[0].members == (head, body, tail)
+
+
+def test_loose_cards_dragged_together_over_a_stack_are_only_moved(app, services, tab, plan):
+    first, head, body, tail, *_rest, loose = ids(plan)
+    scene(tab).select_steps([first, loose])
+    grip = body_of(tab, loose).center()
+    send(app, tab, QEvent.Type.MouseButtonPress, grip)
+    assert view(tab).modes.current().name == IDLE  # Qt's drag, which moves the pick.
+    send(app, tab, QEvent.Type.MouseMove, body_of(tab, body).center())
+    send(
+        app,
+        tab,
+        QEvent.Type.MouseButtonRelease,
+        body_of(tab, body).center(),
+        Qt.MouseButton.NoButton,
+    )
+
+    assert undo_text(services) == "Move Steps"
+    assert read_stacks(plan.steps)[0].members == (head, body, tail)
+
+
 def test_a_card_dropped_on_another_stack_is_refused_with_the_reason(app, services, tab, plan):
     _plan, head, body, tail, *_rest, loose = ids(plan)
     SetModuleDataCommand(loose, "project_editor", write_member("s2")).redo(services.document)
@@ -588,7 +628,7 @@ def test_a_card_dropped_on_another_stack_is_refused_with_the_reason(app, service
     depth = undo_text(services)
     other = scene(tab)._frames["s2"].frame_scene_rect().center()
     grip = body_of(tab, head).center()
-    shift_press(app, tab, grip)
+    grab(app, tab, grip)
     move_to(app, tab, other)
     assert "take it out first" in status_line(services)
     let_go(app, tab, other)
@@ -602,7 +642,7 @@ def test_a_broken_stack_refuses_the_restack_with_its_reason(app, services, tab, 
     was = columns(tab, head, body, tail)
     depth = undo_text(services)
     grip = body_of(tab, tail).center()
-    shift_press(app, tab, grip)
+    grab(app, tab, grip)
     move_to(app, tab, grip - QPointF(0.0, 192.0))
     assert "not one line" in status_line(services)
     assert columns(tab, head, body, tail) == was
@@ -620,5 +660,5 @@ def test_the_frame_says_what_shift_does_only_while_the_pointer_is_over_it(app, t
 
     send(app, tab, QEvent.Type.MouseMove, pad(tab), hover)
     assert frame_of(tab)._hinted
-    shift_press(app, tab, body_of(tab, body).center())
+    grab(app, tab, body_of(tab, body).center())
     assert not frame_of(tab)._hinted  # Another mode has the press.

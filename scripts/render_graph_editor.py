@@ -32,7 +32,7 @@ an auto-progress link doubled, the whole stack picked, a link aimed at its middl
 its first step, a broken stack's gap, the frame's right-click and the strip's two stack
 verbs; since F19, with ``--restack``, the frame's Shift hint under the pointer, a card
 Shift-dragged to the top with the cards easing down to open its slot, one dragged out past
-the frame, and a loose step dragged in; since F11,
+the frame, and a loose step dragged in — since S40 with no key held; since F11,
 with ``--auto-progress``, parallel work handed to a step that collects it: the doubled
 links, and the arrow's menu with the toggle on; since F12, with ``--review``, a step and its
 review, the link into the review doubled by rule and its menu's toggle ticked and greyed; since
@@ -835,7 +835,7 @@ def render_restack(app: QApplication, theme: Theme, out: Path, workspace: Path) 
     """Restacking one card (F19): the frame saying what Shift does while the pointer is over
     it; its last card Shift-dragged to the top, the cards above eased down to open the slot;
     its middle card dragged out past the frame, the column closed up and the card's links
-    faded; and a loose step dragged in between its first two cards."""
+    faded; and a loose step dragged in between its first two cards, a plain drag (S40)."""
     session, services, made, tab = open_stacked(app, theme, workspace, "restack")
     library = services.document
     project = library.project_of(made[0])
@@ -858,10 +858,12 @@ def render_restack(app: QApplication, theme: Theme, out: Path, workspace: Path) 
     press(view, QEvent.Type.MouseMove, middle.body_scene_rect().center(), held=False)
     save(page, out, "hint", theme, app)
 
-    def restacked(node: StepNodeItem, to: QPointF, name: str) -> None:
+    def restacked(
+        node: StepNodeItem, to: QPointF, name: str, keys: Qt.KeyboardModifier = shift
+    ) -> None:
         grip = node.body_scene_rect().center()
-        press(view, QEvent.Type.MouseButtonPress, grip, modifiers=shift)
-        press(view, QEvent.Type.MouseMove, to, modifiers=shift)
+        press(view, QEvent.Type.MouseButtonPress, grip, modifiers=keys)
+        press(view, QEvent.Type.MouseMove, to, modifiers=keys)
         mode = view.modes.current()
         assert isinstance(mode, RestackMode)
         mode.settle()
@@ -876,7 +878,8 @@ def render_restack(app: QApplication, theme: Theme, out: Path, workspace: Path) 
     rect = frame.frame_scene_rect()
     away = QPointF(rect.right() + 140.0, rect.bottom() + 40.0)
     restacked(middle, away, "leaving")
-    restacked(card, middle.body_scene_rect().center() + QPointF(24.0, 0.0), "joining")
+    plain = Qt.KeyboardModifier.NoModifier
+    restacked(card, middle.body_scene_rect().center() + QPointF(24.0, 0.0), "joining", plain)
     page.setParent(None)
     session.close()
     discard(page)
@@ -937,7 +940,7 @@ def main(argv: list[str]) -> int:
     parser.add_argument(
         "--restack",
         action="store_true",
-        help="only a card Shift-dragged into, through and out of a stack (F19)",
+        help="only a card restacked: into, through and out of a stack (F19)",
     )
     parser.add_argument(
         "--stack-canvas",

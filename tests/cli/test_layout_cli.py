@@ -228,7 +228,7 @@ def test_show_names_a_stack_and_counts_it_as_one_card(cli, stacked):
     said = cli("layout", "show", "Stacks")
     assert "5 steps in 3 columns x 2 rows" in said
     assert "  2  x 340..592  [S2 S3 S4]" in said
-    assert said.rstrip().endswith("stacks:\n  s1  frame 340,40 to 592,340  S2 S3 S4")
+    assert said.rstrip().endswith("stacks:\n  s1  frame 340,40 to 592,356  S2 S3 S4")
 
     data = json.loads(cli("layout", "show", "Stacks", "--json"))
     assert data["stacks"][0]["id"] == "s1" and data["stacks"][0]["steps"] == stacked

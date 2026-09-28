@@ -200,8 +200,8 @@ class Canvas(Protocol):
     nodes_moved: Signal[list[tuple[StepId, float, float]]]
     # A stack's "+" was pressed: a step is wanted below this one, the stack's last.
     stack_add_requested: Signal[StepId]
-    # A card Shift-dragged and let go in the stack with this id at this slot, or out of its
-    # own stack at this seat — where it went; which verb that is, is the model's to say.
+    # A card restacked — let go in the stack with this id at this slot, or out of its own
+    # stack at this seat: where it went; which verb that is, is the model's to say.
     dropped_into_stack: Signal[StepId, str, int]
     dropped_out_of_stack: Signal[StepId, float, float]
 
@@ -877,17 +877,16 @@ def drag_the_pick(
     deps: CanvasDeps, event: CanvasEvent, node: StepNodeItem | None, stack: Stack | None
 ) -> BlockDragMode | None:
     """The block drag a press starts, having picked what the press landed on — or None when
-    the press is Qt's: a card on its own, in a pick that holds no stack.
+    the press is Qt's: a loose card picked among other loose cards.
 
-    A press on a card picks it unless it is picked already, the way Qt's press does; a press
-    on a frame picks every member of its stack, added to the pick with Ctrl or Shift held.
+    A press on a stacked card picks it unless it is picked already, the way Qt's press does;
+    a press on a frame picks every member of its stack, added to the pick with Ctrl or Shift
+    held. A loose card the press leaves alone in the pick is ``RestackMode``'s, never this.
     """
     canvas = deps.canvas
     picked = list(canvas.selection().steps)
     if node is not None:
         if node.step_id not in picked:
-            if node.stack is None:
-                return None
             canvas.select_steps([node.step_id])
         elif node.stack is None and not any(
             (other := canvas.node(step_id)) is not None and other.stack is not None
@@ -923,18 +922,19 @@ class _Glide:
 
 
 class RestackMode(GestureMode):
-    """One card Shift-dragged into, through or out of a stack, the cards making way for it.
+    """One card dragged into, through or out of a stack, the cards making way for it: any
+    card Shift-dragged, and a loose card dragged on its own.
 
     The card follows the hand, and its *centre* says where it is. Inside a frame grown by
     the frame's pad — its own stack's before any other — it takes the slot whose gap is
     nearest, and the other cards ease aside to open that gap, so the drop is visible before
     it happens. Out past its own frame's pad it is *leaving*: the column closes up without
     it and the frame lets go. A loose card over a stack joins it the same way, and over
-    nothing is only moved. A card in a stack, or joining one, is lifted out of its arrows —
-    every drop rewires them, and drawn meanwhile they would run to where it no longer
-    stands. Every gap is ``member_seats`` over the order the drop would make, from the
-    columns as they stood at the press, so what the hand sees never feeds back into which
-    slot it is at.
+    nothing is only moved, saying nothing. A card in a stack, or joining one, is lifted out
+    of its arrows — every drop rewires them, and drawn meanwhile they would run to where it
+    no longer stands. Every gap is ``member_seats`` over the order the drop would make, from
+    the columns as they stood at the press, so what the hand sees never feeds back into
+    which slot it is at.
 
     The motion is the one slide the canvas allows (DESIGN.md's *Focus and motion*): a card
     that moves glides for ``MAKE_WAY_S`` on one :class:`FrameClock` this mode owns, which
@@ -1130,8 +1130,9 @@ class RestackMode(GestureMode):
             self._drop = self._report_out
             self.deps.status(f"Take out: let go to leave {name} here, with no links. Esc cancels.")
         else:
+            # A plain move — and what an aim at a stack said a moment ago no longer holds.
             self._drop = self._report_moved
-            self.deps.status(f"Drop {name} on a stack to add it; Esc cancels.")
+            self.deps.status("")
 
     def _arrange(self, stack: Stack, order: tuple[StepId, ...]) -> None:
         """The stack's cards gliding to the column ``order`` makes, and its frame round it."""
@@ -1509,11 +1510,11 @@ def visible_scene_rect(view: QGraphicsView) -> QRectF:
 
 
 class IdleMode(ModeBase):
-    """The base. Qt does selection, rubber banding and a loose card's drag; this catches the
-    rest: every right press, and a left press on a card's link handle, a stack's "+", a
-    card's resize band, any card with Shift held, a card in a stack, and a stack's frame —
-    in that order, each before the next may claim the point. An arrow drawn over a frame is
-    Qt's to pick."""
+    """The base. Qt does selection, rubber banding and the drag of several loose cards; this
+    catches the rest: every right press, and a left press on a card's link handle, a stack's
+    "+", a card's resize band, any card with Shift held or a loose card on its own, a card
+    in a stack, and a stack's frame — in that order, each before the next may claim the
+    point. An arrow drawn over a frame is Qt's to pick."""
 
     name = IDLE
 
@@ -1541,9 +1542,12 @@ class IdleMode(ModeBase):
                 return True
             if event.modifiers & Qt.KeyboardModifier.ControlModifier:
                 return False  # Qt's toggle of one card in the pick.
-            if event.modifiers & Qt.KeyboardModifier.ShiftModifier:
-                # Shift takes the one card into, through or out of a stack — a press that
-                # never travels is a click, and picks it.
+            # The one card into, through or out of a stack: Shift on any card, and a loose
+            # card the press leaves alone in the pick — a press outside the pick narrows it,
+            # as Qt's would. A press that never travels is a click, and picks it.
+            picked = canvas.selection().steps
+            alone = node.stack is None and (node.step_id not in picked or len(picked) == 1)
+            if alone or event.modifiers & Qt.KeyboardModifier.ShiftModifier:
                 canvas.select_steps([node.step_id])
                 return self._push(RestackMode(self.deps, event, node))
             return self._push(drag_the_pick(self.deps, event, node, None))
