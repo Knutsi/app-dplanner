@@ -217,10 +217,9 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
 - **A stack is a frame, not a bigger card.** Its cards stand in a column on a quiet wash of
   ink (about 5 %) edged a shade lighter than a card, its corners rounder than a card's, with
   16 px of pad to take hold of. The chain runs down the frame's middle as short straight
-  arrows; the way in arrives at the top and the way out leaves from under the "+" — a
-  medallion-sized disc set into the bottom edge that adds a step there. Only the last card
-  offers a link handle, and the stack's socket marks are the frame's: the start disc on its
-  top edge, the end mark ringing the "+".
+  arrows; the way in meets the first card's side and the way out leaves the last card's,
+  as with any card, and only the last card offers a link handle. The "+" is a
+  medallion-sized disc set into the bottom edge that adds a step there.
 - **The ground is quiet.** The default is a dot at every grid crossing, at an alpha that
   keeps a card's resting shadow the darkest thing on the plane; lines, crosses and plain are
   offered beside it, and the pitch coarsens as the graph zooms out so the ground never turns

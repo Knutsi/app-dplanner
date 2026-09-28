@@ -80,7 +80,7 @@ paths:
   clears it and notes the point — and the menu is then a function of the selection alone:
   `canvas_menus.py`'s `BANDS` row for a **card** (the Step menu's bands about the step
   itself, `STEP_ITSELF`), an **arrow** (Graph ▸ `links`), a **mixed** pick (Graph ▸
-  `narrow`, Edit ▸ `clipboard`, then `Step` and `Links` children) or the **background**
+  `narrow`, Edit ▸ `clipboard`, Make Stack, then `Step` and `Links` children) or the **background**
   (Graph ▸ `new` and `select`, Edit ▸ `selection`, Go ▸ `survey`), rendered by
   `fill_bands`. **A card is the step, not a table's Step menu**: its type and tests are set
   in Step Details, compiling is the Docs tab's, and a view the index lists as a row under
@@ -253,14 +253,13 @@ paths:
   `member_seats` at the cards' live sizes and fits the frame round them, so a sync, a resize
   and every drag show the derived column; the scene lays frames out after the cards and
   before the arrows, and a member's move reaches its frame first. **An arrow meets an item at
-  a port** — a point and a heading: a loose card's near edge, across, as always; a stack's
-  way in at its frame's top centre and way out from under its "+", heading down; and the
-  chain's own links drawn **straight, down the frame's middle** — still `EdgeItem`s, so they
-  keep auto-progress rails, lighting and picking. The "+" is `StackAddItem` (z 0.5), and a
+  a port** — a point and a heading: every card's near side, across, as always — so a
+  stack's way in meets its first card's side and its way out leaves its last card's, the
+  sockets any card has — and the chain's own links drawn **straight, down the frame's
+  middle**, still `EdgeItem`s, so they keep auto-progress rails, lighting and picking. The "+" is `StackAddItem` (z 0.5), and a
   press on it runs `stacks.add_below` on the last card through a constructed context. A
   stacked card is never Qt-movable, shows a link handle only as the last, grows only right
-  and down (`resize_command` stores no seat for a member below the first) and wears no
-  socket marks — the frame wears the stack's, the end mark ringing the "+". **A drag moves
+  and down (`resize_command` stores no seat for a member below the first). **A drag moves
   the pick, and a stack moves whole**: `IdleMode` claims, in order, a right press, the
   handle, the "+", a resize band, a card in a stack or a picked card beside one, and then —
   after an arrow drawn over it, which stays Qt's — the frame; the drag is `BlockDragMode`,
@@ -271,6 +270,9 @@ paths:
   included) — link drag, Connect and Redirect alike — and the verdict is still
   `link_refusal`'s. New Stack is Graph ▸ `new`; Make Stack (`stack`) and Add Step Below,
   Take Out, Dissolve (`stacked`) feed Step ▸ *Stack*; each pushes its `stack_edits` builder.
+  **Make Stack links whatever is picked into one line** — the links' order, else left to
+  right — and a mixed pick's right-click offers it flat, since a drag across a line picks
+  its arrows too.
   `ARCHITECTURE.md`'s *A stack's frame is the stack's handle* has the reasoning.
 - **Every stack edit is one command from `stack_edits.py`, and the stack rule is the
   domain's to ask.** New, make, add, move, take out and dissolve each build one composite
@@ -280,8 +282,12 @@ paths:
   wait joins its stack in its slot. One relink rebuilds a line in its new order: the chain,
   the first member's outside inputs on whoever is first now, the last's dependents on
   whoever is last, a step joining disconnected first and a step leaving left with no links;
-  **the seat is handed on whenever the first member changes**. A builder refuses a stack
-  that is no longer one line (`line_refusal`, `make_refusal`, `join_refusal` — a greyed
+  **the seat is handed on whenever the first member changes**. Make links any pick into one
+  line (`line_order`, `_link_line`): each step waits on the one before, the first on every
+  input any of them had from outside, and whatever waited on any of them on the last — no
+  step waits on less. A builder refuses a stack that is no longer one line, and make a pick
+  with a step left out between two of its steps (`line_refusal`, `make_refusal`,
+  `join_refusal` — a greyed
   state reads them from `StackVerbs`' per-project reading, built on first read and forgotten
   when the graph or the canvas's data changes, never walks a project per announce); dissolve and the removal never refuse, and dissolve lays a placed stack out as
   a row and pushes the far side by Divide's rule, never contracting. What may link to a

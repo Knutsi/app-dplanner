@@ -237,10 +237,13 @@ chain's. A stack takes its links in at its first step and sends them out from it
 last's dependents move to it; `--at N` puts it elsewhere, and an existing step named instead
 of `--new` arrives with no links of its own. `stack move <step> --to N` reorders,
 `stack take-out <step>` lifts one out with no links and closes the chain round it, and
-`stack dissolve <step>` lays the line out as a row again. Stack a line that is *one*
-surface worked in order; a line whose steps each have dependents or inputs of their own is
-a chain, and `stack make` refuses it. `stack list` names each stack, and `project lint` names
-one another writer broke (`stack.broken`).
+`stack dissolve <step>` lays the line out as a row again. `stack make` also links steps that
+are not a line yet — in the order their links give, else left to right — and the first takes
+every input they had from outside, the last every dependent; it refuses only a step left out
+that comes between two of them. Stack a line that is *one* surface worked in order; steps
+that each have inputs and dependents of their own are a chain, and stacking them ties those
+to the ends. `stack list` names each stack, and `project lint` names one another writer broke
+(`stack.broken`).
 
 ## Leave the graph readable
 

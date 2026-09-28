@@ -930,7 +930,9 @@ always followed, so "Delete 2 Steps" can be said — and empty canvas clears the
 the point, so New and Paste land there. Choosing the row from the *selection* rather than from
 the item under the cursor means the verbs offered and the pick they act on are one fact: a
 mixed pick right-clicked on one of its cards is still a mixed pick. A mixed pick leads with
-narrowing it because nothing else is about steps and arrows at once.
+narrowing it because nothing else is about steps and arrows at once — and with Make Stack
+beside what acts on any of it, because a drag across a line picks the line's arrows too, and
+stacking what was dragged across is the reason to drag (S18).
 
 **A card is the step, not a table's Step menu.** The first cut rendered the Step menu whole
 on a card, which took the canvas's verbs off it and left a table's: Type, Test and the test
@@ -2381,6 +2383,21 @@ builder**: `make_refusal`, `line_refusal` and `join_refusal` refuse what cannot 
 line, and the tests walk every builder part by part to prove the graph after is one line
 and every graph on the way is a part of the one before or after (`stack_helpers.walk`).
 
+**Make links what it stacks** (S18, at the developer's word: "if you select multiple nodes
+that are not connected, that should not stop you from stacking them"). It first refused any
+pick that was not already one free line, which made stacking three loose cards three links
+and a Make. Now the line runs in the order the links among the steps give, and where none
+does, left to right then top to bottom as the cards stand — the order a line that spread
+across the canvas was read in. Each step waits on the one before it and nothing else among
+them: every link between two of them runs forward in that order, so what the chain drops
+it also implies. Outside links move to the ends, the fold's own reading of a stack (*A stack
+is presentation over a chain*): what any of them waited on, the first waits on, and what
+waited on any of them waits on the last — so no step waits on less than it did, only on
+more. The one pick that cannot be a line is one with a step left out *between* two of its
+steps: the line would have to wait on it and be waited on by it at once, a cycle, so
+`make_refusal` names it. It is the one walk make does, and it is why there is no other
+refusal to keep.
+
 **Why a broken stack refuses edits but never a Delete or a dissolve.** Over a stack that is
 one line, the relink's result is one line by construction. Over a broken one it would
 silently mend gaps or carry a stray link into a new place — links the person did not touch.
@@ -2422,15 +2439,20 @@ down, because `resize_command` stores no seat for a member below the first: a le
 drag would snap back on release.
 
 **An arrow meets an item at a port, and the chain stays arrows.** A stack takes its links in
-at the top and sends them out from under its "+", heading down, and the chain between is
-drawn straight down the frame's middle. The first design hid the chain's arrows and painted
+at its first card's side and sends them out from its last card's, the sockets any card has,
+and the chain between is drawn straight down the frame's middle. The first cut brought the
+links in at the frame's top and out from under its "+"; the developer turned that down —
+the way in is on the left and the way out on the right, as everywhere else on the canvas —
+and that also kept the handle, the marks and the drawn arrow in one place. The first design
+of the chain hid its arrows and painted
 connectors in their place; review sank it, because a chain link is a real link — it can
 auto-progress, and the rails that say so live on `EdgeItem`; it lights when a member is
 picked, so the spotlight kept a member's stack-mates in view; and it can be picked and
 removed. So the edge asks each end for a port — `(point, heading)` — and a card answers its
-near edge travelling across, which is every curve the canvas drew before, while a member
-asks its frame. A link a broken stack carries into its middle answers from the card's own
-edge, so the break is drawn where it lands.
+near edge travelling across, which is every curve the canvas drew before, while the frame
+answers for a link between two of its neighbouring cards, straight down. A link a broken
+stack carries into its middle meets the card's own side, so the break is drawn where it
+lands.
 
 **A press on a stack drags the stack, and a drag moves the pick.** Qt's item drag moves
 cards one by one; a member moved that way stood alone until the release, when

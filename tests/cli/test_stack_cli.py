@@ -88,9 +88,15 @@ def test_removing_a_middle_step_leaves_the_chain_closed(line):
     assert waits_on(line, "S4") == ["S2"]
 
 
-def test_make_refuses_steps_that_are_not_one_line(line):
+def test_make_links_what_is_not_a_line_and_refuses_a_step_left_between(line):
     said = line("stack", "make", "S2", "S4", expect=1)
-    assert "these steps are not one line: 'Three' does not wait on 'One'" in said
+    assert "'Two' comes between them" in said
+
+    # Spare stands left of Wrap-up in the ambient layout, so it comes first and takes over
+    # what Wrap-up waited on.
+    line("stack", "make", "S5", "S6")
+    assert listed(line) == "S6 S5"
+    assert waits_on(line, "S6") == ["S4"] and waits_on(line, "S5") == ["S6"]
 
 
 def test_lint_names_a_stack_somebody_broke_and_the_link_that_mends_it(line):

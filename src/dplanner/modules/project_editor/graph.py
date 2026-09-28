@@ -269,7 +269,6 @@ class GraphScene(QGraphicsScene):
             frame = self._frames.get(stack.id)
             if frame is None:
                 frame = self._frames[stack.id] = StackItem(stack)
-                frame.set_marks(self._marks)
                 self.addItem(frame)
                 self.addItem(frame.add)
             frame.set_stack(stack, [self._nodes[member] for member in stack.members])
@@ -458,12 +457,10 @@ class GraphScene(QGraphicsScene):
             item.set_render_hints(hints)
 
     def set_marks(self, marks: Marks) -> None:
-        """Fan the user's marks out to every node and every stack's frame, the same way."""
+        """Fan the user's marks out to every node, the same way."""
         self._marks = marks
         for item in self._nodes.values():
             item.set_marks(marks)
-        for frame in self._frames.values():
-            frame.set_marks(marks)
 
     def set_spotlight(self, on: bool) -> None:
         """Whether the user's look fades what the selection is not linked to."""

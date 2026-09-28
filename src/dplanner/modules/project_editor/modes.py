@@ -370,7 +370,7 @@ class _LinkingMode(ModeBase):
         origin_node = canvas.node(sources[0])
         if origin_node is None:
             return
-        origin = origin_node.link_origin()
+        origin = origin_node.handle_scene_pos()
         ok = target is not None and self._refusal(sources, target.step_id) is None
         if target is None or target.step_id in sources:
             canvas.set_link_states(None, None)
@@ -387,7 +387,9 @@ class _LinkingMode(ModeBase):
             return
         ok = self._refusal(sources, target) is None
         canvas.set_link_states(target if ok else None, None if ok else target)
-        canvas.aim_preview(origin_node.link_origin(), target_node.sceneBoundingRect().center(), ok)
+        canvas.aim_preview(
+            origin_node.handle_scene_pos(), target_node.sceneBoundingRect().center(), ok
+        )
 
     def _tails(self, step_ids: Sequence[StepId]) -> tuple[StepId, ...]:
         """The steps a link would leave from: a stack's last card for any of its own, each

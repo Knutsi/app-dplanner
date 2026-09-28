@@ -30,9 +30,8 @@ from dplanner.framework.context import (
     ContextNode,
     selection_uri,
 )
-from dplanner.modules.project_editor.items import ADD_R
 from dplanner.modules.project_editor.positions import GRID, centred_on, read_stack, write_member
-from dplanner.modules.project_editor.stacks import FRAME_PAD, MEMBER_GAP, read_stacks
+from dplanner.modules.project_editor.stacks import FRAME_PAD, MEMBER_GAP, read_stacks, stack_of
 from dplanner.theme.cards import DIM_OPACITY
 
 TITLES = ("Plan", "Parse head", "Parse body", "Parse tail", "Ship", "Loose")
@@ -108,11 +107,14 @@ def test_the_frame_stands_round_the_column_and_the_chain_runs_down_its_middle(ta
     assert start.x() == end.x() == frame.center().x()
     assert (start.y(), end.y()) == (body_of(tab, head).bottom(), body_of(tab, body).top())
 
-    # The way in arrives at the frame's top, and the way out leaves from under the "+".
+    # The way in arrives at the first card's side, and the way out leaves the last card's,
+    # as into and out of any card; the "+" sits in the frame's bottom edge.
     into = next(e for r, e in scene(tab)._edges.items() if r.waiter == head)
-    assert into.path().pointAtPercent(1.0) == QPointF(frame.center().x(), frame.top())
+    first = body_of(tab, head)
+    assert into.path().pointAtPercent(1.0) == QPointF(first.left(), first.center().y())
     out = next(e for r, e in scene(tab)._edges.items() if r.waiter == ship)
-    assert out.path().pointAtPercent(0.0) == QPointF(frame.center().x(), frame.bottom() + ADD_R)
+    last = body_of(tab, tail)
+    assert out.path().pointAtPercent(0.0) == QPointF(last.right(), last.center().y())
     assert plus(tab) == QPointF(frame.center().x(), frame.bottom())
 
 
@@ -313,16 +315,35 @@ def run_on(services, tab, action_id, *step_ids):
     return state
 
 
-def test_make_stack_stacks_a_line_and_is_greyed_for_steps_that_are_not_one(services, tab, plan):
+def test_make_stack_links_steps_that_are_not_a_line_as_one_undo(services, tab, plan):
     first, *_rest, loose = ids(plan)
-    state = run_on(services, tab, "stacks.make", first, loose)
-    assert not state.enabled and "not one line" in (state.label or "")
-
-    run_on(services, tab, "stacks.make", loose)
-    assert read_stack(services.document.step(loose))
+    run_on(services, tab, "stacks.make", first, loose)
+    made = stack_of(plan.steps, loose)
+    assert made is not None and set(made.members) == {first, loose}
+    assert requires(services, made.members[1]) == [made.members[0]]
     assert undo_text(services) == "Make Stack"
     services.undo.undo()
-    assert not read_stack(services.document.step(loose))
+    assert not read_stack(services.document.step(loose)) and not requires(services, loose)
+
+
+def test_make_stack_is_greyed_for_steps_with_one_left_out_between(services, tab, plan):
+    first, *_rest, ship, _loose = ids(plan)
+    state = run_on(services, tab, "stacks.make", first, ship)
+    assert not state.enabled and "'Parse tail' comes between" in (state.label or "")
+
+
+def test_a_pick_with_arrows_in_it_offers_make_stack_and_stacks_its_steps(tab, plan):
+    """A drag across steps picks their arrows too; stacking them is still one click."""
+    first, *_rest, loose = ids(plan)
+    scene(tab).select_steps([first, loose])
+    next(iter(scene(tab)._edges.values())).setSelected(True)
+    menu = tab.context_menu(view(tab).mapFromScene(body_of(tab, first).center()))
+    (make,) = [a for a in menu.actions() if a.text().replace("&", "") == "Make Stack"]
+    assert make.isEnabled()
+    make.trigger()
+    menu.deleteLater()
+    made = stack_of(plan.steps, loose)
+    assert made is not None and set(made.members) == {first, loose}
 
 
 def test_take_out_leaves_the_step_beside_the_stack_with_no_links(services, tab, plan):

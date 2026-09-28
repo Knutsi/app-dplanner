@@ -6,10 +6,10 @@ painting is composed in ``renderers.py`` from pure helpers; interaction lives in
 ``modes.py``, one mode per behaviour, so no item and no scene grows a state machine.
 
 **An arrow meets an item at a port** — a point and the way the arrow travels there. A card's
-is its near edge, travelling across, which is every curve the canvas drew before stacks. A
-stack answers for its members: a link into it arrives at the frame's top, one out of it
-leaves from under its "+", and the chain between them is drawn short and straight, down the
-frame's middle (``ARCHITECTURE.md``'s *A stack's frame is the stack's handle*).
+is its near edge, travelling across, which is every link into or out of a stack too: in at
+its first card's side, out of its last card's, as into and out of any card. Only the chain
+between a stack's cards is its own, drawn short and straight down the frame's middle
+(``ARCHITECTURE.md``'s *A stack's frame is the stack's handle*).
 """
 
 from math import hypot
@@ -36,11 +36,8 @@ from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.marks import Marks
 from dplanner.modules.project_editor.positions import NODE_H, NODE_W
 from dplanner.modules.project_editor.renderers import (
-    END_MARK,
-    MARK_R,
     PAINT_MARGIN,
     PROBLEM_INK,
-    START_MARK,
     EdgeAccent,
     NodeAccent,
     NodeState,
@@ -113,9 +110,6 @@ DOWN = QPointF(0.0, 1.0)
 
 # Where an arrow meets an item, and the way it travels there.
 type Port = tuple[QPointF, QPointF]
-
-# What a card in a stack paints of the marks: none — the frame wears the stack's.
-NO_MARKS = Marks(starts=False, ends=False)
 
 
 def snapped_point(scene: object, point: QPointF) -> QPointF:
@@ -266,13 +260,6 @@ class StepNodeItem(QGraphicsItem):
                 return port
         return self.anchor_toward(other.scenePos()), ACROSS
 
-    def link_origin(self) -> QPointF:
-        """Where the line of a link being dragged out of this card starts: where the arrow it
-        makes will — the handle, or a stack's outlet under its "+"."""
-        if self._frame is not None:
-            return self._frame.outlet()[0]
-        return self.handle_scene_pos()
-
     def set_dimmed(self, dimmed: bool) -> None:
         """Fade the whole card: the spotlight is on and this step is not in it.
 
@@ -382,8 +369,7 @@ class StepNodeItem(QGraphicsItem):
                 hints=self._hints,
                 ring_phase=self._ring_phase,
                 ports=self._ports,
-                # A stack's sockets are its frame's, so its cards wear no marks of their own.
-                marks=self._marks if self._frame is None else NO_MARKS,
+                marks=self._marks,
                 handle=self.has_handle(),
             ),
         )
@@ -589,9 +575,10 @@ class StackItem(QGraphicsItem):
     :meth:`follow` lays every member under the first by ``stacks.member_seats`` at the
     cards' current sizes, then fits the frame round them — so a sync, a card being resized
     and any gesture moving the first card all show the column the model derives, live. It
-    answers for its members' ports, and places its "+" (:class:`StackAddItem`, an item of its
-    own so it sits over the arrows). Behind the arrows and the cards; never selectable — a
-    click on it picks its members, which is a mode's business.
+    answers for the ports of the chain between its cards, and places its "+"
+    (:class:`StackAddItem`, an item of its own so it sits over the arrows). Behind the
+    arrows and the cards; never selectable — a click on it picks its members, which is a
+    mode's business.
     """
 
     def __init__(self, stack: Stack) -> None:
@@ -599,7 +586,6 @@ class StackItem(QGraphicsItem):
         self.stack = stack
         self._members: list[StepNodeItem] = []
         self._size = (0.0, 0.0)
-        self._marks = Marks()
         self._following = False
         self.add = StackAddItem(self)
         self.setZValue(-2)
@@ -610,12 +596,6 @@ class StackItem(QGraphicsItem):
         self._members = members
         self.update()
         self.add.update()
-
-    def set_marks(self, marks: Marks) -> None:
-        if marks != self._marks:
-            self._marks = marks
-            self.update()
-            self.add.update()
 
     def set_dimmed(self, dimmed: bool) -> None:
         """Fade with its cards: the spotlight is on and none of them is in it."""
@@ -656,31 +636,21 @@ class StackItem(QGraphicsItem):
     def frame_scene_rect(self) -> QRectF:
         return QRectF(self.pos(), QSizeF(*self._size))
 
-    def inlet(self) -> Port:
-        """Where every link into the stack arrives: the frame's top, in the middle."""
-        rect = self.frame_scene_rect()
-        return QPointF(rect.center().x(), rect.top()), DOWN
-
-    def outlet(self) -> Port:
-        """Where every link out of the stack leaves: from under its "+"."""
-        rect = self.frame_scene_rect()
-        return QPointF(rect.center().x(), rect.bottom() + ADD_R), DOWN
-
     def port(self, member: StepId, other: StepId, *, leaving: bool) -> Port | None:
-        """Where an arrow between ``member`` and ``other`` meets this stack, or None for the
-        card's own edge — a link a broken stack carries into or out of its middle, drawn
-        where it really lands."""
+        """Where the chain's link between ``member`` and its neighbour ``other`` meets it —
+        the bottom of the upper card, the top of the lower — or None for any other link,
+        which meets the card's own side as it would any card's."""
         members = self.stack.members
         at = members.index(member)
-        if leaving:
-            if at + 1 < len(members) and members[at + 1] == other:
-                x = self._connector_x(at)
-                return QPointF(x, self._members[at].body_scene_rect().bottom()), DOWN
-            return self.outlet() if at == len(members) - 1 else None
-        if at > 0 and members[at - 1] == other:
-            x = self._connector_x(at - 1)
-            return QPointF(x, self._members[at].body_scene_rect().top()), DOWN
-        return self.inlet() if at == 0 else None
+        if leaving and at + 1 < len(members) and members[at + 1] == other:
+            return QPointF(
+                self._connector_x(at), self._members[at].body_scene_rect().bottom()
+            ), DOWN
+        if not leaving and at > 0 and members[at - 1] == other:
+            return QPointF(
+                self._connector_x(at - 1), self._members[at].body_scene_rect().top()
+            ), DOWN
+        return None
 
     def _connector_x(self, upper: int) -> float:
         """Where the connector below member ``upper`` runs: the frame's middle, kept inside
@@ -690,20 +660,9 @@ class StackItem(QGraphicsItem):
         narrowest = min(node.size()[0] for node in pair)
         return min(self.frame_scene_rect().center().x(), left + narrowest - CONNECTOR_INSET)
 
-    def open_ends(self) -> tuple[bool, bool]:
-        """(nothing arrives, nothing leaves): the stack's sockets, as its cards report them."""
-        if not self._members:
-            return (False, False)
-        return (not self._members[0].ports()[0], not self._members[-1].ports()[1])
-
-    def ends_marked(self) -> bool:
-        """Whether the "+" wears the end mark: the mark is on and nothing leaves the stack."""
-        return self._marks.ends and self.open_ends()[1]
-
     def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override
-        # The start mark straddles the top edge; everything else is inside the frame.
         w, h = self._size
-        return QRectF(-1.0, -MARK_R - 1.0, w + 2.0, h + MARK_R + 2.0)
+        return QRectF(-1.0, -1.0, w + 2.0, h + 2.0)
 
     def shape(self) -> QPainterPath:
         path = QPainterPath()
@@ -727,11 +686,6 @@ class StackItem(QGraphicsItem):
         painter.setBrush(wash)
         painter.drawRoundedRect(frame, FRAME_RADIUS, FRAME_RADIUS)
         self._paint_gaps(painter)
-        if self._marks.starts and self.open_ends()[0]:
-            point = self.mapFromScene(self.inlet()[0])
-            painter.setPen(QPen(QColor(palette.window().color()), 1.0))
-            painter.setBrush(START_MARK)
-            painter.drawEllipse(point, MARK_R, MARK_R)
 
     def _paint_gaps(self, painter: QPainter) -> None:
         """Where the chain is broken, a dashed break in the refusal red, where its link
@@ -755,9 +709,7 @@ class StackAddItem(QGraphicsItem):
     """The "+" set into a stack's bottom edge: add a step at the end of the stack.
 
     An item of its own, over the arrows and resting cards, so nothing drawn is ever on top of
-    it and its hover is its own. What a press on it means is ``IdleMode``'s to say. It wears
-    the end mark as a ring when nothing leaves the stack — the socket is where the arrows
-    out would start.
+    it and its hover is its own. What a press on it means is ``IdleMode``'s to say.
     """
 
     def __init__(self, frame: StackItem) -> None:
@@ -789,13 +741,10 @@ class StackAddItem(QGraphicsItem):
         ink.setAlpha(SECONDARY_ALPHA)
         border = QColor(ink)
         border.setAlpha(FRAME_BORDER_ALPHA * 2)
-        width = 1.0
         if self._hovered:
             border, ink = accent, accent
-        elif self.frame.ends_marked():
-            border, width = END_MARK, 2.0
         painter.setBrush(QColor(palette.window().color()))
-        painter.setPen(QPen(border, width))
+        painter.setPen(QPen(border, 1.0))
         painter.drawEllipse(QPointF(0.0, 0.0), ADD_R, ADD_R)
         glyph = QRectF(-ADD_GLYPH / 2, -ADD_GLYPH / 2, ADD_GLYPH, ADD_GLYPH)
         paint_glyph(painter, glyph, "plus", ink)
