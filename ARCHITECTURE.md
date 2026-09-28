@@ -4347,6 +4347,119 @@ stashes), the Agent tab's box, greyed with the reason, and `agent worktree … o
 It lives on `Briefing` because that object is the one wiring both surfaces read — a Deps
 field and a CLI parameter would be the two declarations `Briefing` was made to end.
 
+## Auto-progress is launched by the window
+
+An auto-progress link says a step may start once its sources reach review; a review may
+start once its subject does. Until this, *may* meant a person noticing and clicking Run
+Agent, which is the one thing the round of three agents and a collector was meant not to
+need. The spec's question was who starts it — *likely an issue for race conditions* — and
+whether it could just happen when a step's dependencies are fulfilled. It happens now, and
+five decisions say how.
+
+**Only a window launches.** The terminal cannot: which agent CLI, which terminal and how
+many at once are this desk's settings, kept per user in QSettings, which the CLI has no
+business reading — and an agent that launched its collector from its own shell would start
+a child of itself, the nested session *The peer is a top-level session* exists to prevent.
+So the terminal's half is to *say* it: `status set` and the `review` verbs print a line for
+every step the change made due (`_status_written`, the wrapper already on the status-moving
+verbs, generalised rather than joined by a second one), and `progression show` marks due
+rows. `--json` keeps its one document — the line is text for whoever reads the terminal,
+and `progression show --json` carries `due` for a caller that parses.
+
+**What is due is one derivation, read by every surface.** The root's `_due_now` joins two
+owners' halves and never stores the answer:
+- `progression.due` — an agent step, pending, with no run recorded, nothing it waits on
+  unfinished, and at least one prerequisite fulfilled *through* an auto-progress link (it
+  reads review or merge across one). The last clause is the difference from Ready to
+  start: a collector whose sources a person set done by hand is ready for a person to
+  launch; one whose sources just reached review was made ready by the flag, and the flag's
+  promise is that it starts on its own.
+- `rounds.due_turns` — a side of a conversation whose turn it is (`rounds.turn`), whose
+  agent has gone, and that nobody launched *for this turn*. That last needs memory the
+  graph does not have, so the round keeps it: `party_turn_launched` / `asker_turn_launched`
+  hold the stamp that began the turn launched for, and equal means launched. A stamp that
+  names the turn rather than the moment is immune to another machine's clock, and it lives
+  in the ledger so the terminal, a second window and a second machine all read the same
+  answer. It covers a collector's upstream conversations too, since the ledger is shared.
+
+**Level-triggered, never edge-triggered.** The launcher (`step_agent_instruction/
+auto_launch.py`) does not react to "A3 moved to review": the window may have been closed
+when it happened, or adopt three such moves in one tick, and an edge missed is a collector
+never started. It re-derives what is due after every change of any origin — adopted
+outside changes included — when a run ends, when the day turns (a dated wait can make a
+step due overnight) and once at start, which also launches what became due while no window
+was open. What makes a level trigger launch once is **the claim, written the moment the
+shell opens**: the run stamp, and in progress for what auto-progress made due or the
+round's stamp for a turn — both off the undo stack like the launch stamp, and flushed at
+once rather than after autosave's pause. The next pass reads the step as no longer due. In
+the window, *running* is also a run the tracker is watching, so a claim still on its way to
+disk can never make a live shell's step due again. The claim is made whatever *On launch*
+says, because without it the step is due again the moment its run ends; a turn's claim is
+the stamp alone, since `post` and `reply` already moved its side's status.
+
+**It never launches on a plan it has not seen.** A pass stands down while the plan changed
+underneath and is not taken in yet (`changed_underneath`, asked only when something is due
+and a slot is free — the walk is the tracker's 300–500 ms on a large library), and it must
+run *after* the adoption that woke it: the store mutes dirty forwarding while it adopts, so
+a claim written inside an adoption would never reach disk. A **0 ms** settle guarantees the
+order — once per event-loop turn, so a burst adopted in one tick is one pass — which is why
+the launcher's tests run with coalescing on. And unlike a view's settle it never waits
+behind a modal (*A settle behind a modal waits for it* is about rebuilding what a person is
+not looking at): the first run found a first-start checklist left open holding every
+launch, and a dialog left open is exactly the desk nobody is at. A pass is cheap enough to
+run that often — 0.75 ms over an 820-step library — and a title or prose, which never make
+a step due, do not wake it at all. A stand-down is woken by the
+library watcher's `settled` hook as well as by model signals, because some settles change
+nothing the model announces — *Keep Mine*, an identical rewrite, a project still unreadable.
+Each step is re-read from the live model just before its shell opens. Past *Max agents*
+live runs — this window's tracker's count — the rest wait, the status bar says who, and the
+tracker's `ended` hook retries: a run that ends frees a slot even when the agent had
+already cleared its state and the plan did not change.
+
+**An unattended launch asks nobody.** `launch_due` is Run Agent for one step with the
+person's questions taken out: no prerequisite confirmation (a due step waits on nothing),
+no clone (a repository not checked out here is a refusal naming Run Agent, which clones),
+no prompt fallback. A refusal is a sentence in the status bar and is remembered for the
+step until the step, the switch or a profile changes — a refusal repeated every settle
+would be a retry nobody asked for. The profile is the step's: a review that names an agent
+runs through the first profile running it, and a named agent no profile runs is refused
+rather than swapped for the default, which may be the very agent whose work is reviewed.
+
+**Plan mode is waiting on a person, and says so.** The Claude preset starts in plan mode, so
+an auto-launched Claude writes a plan and waits for somebody to approve it — and a session
+in plan mode runs nothing that writes, so it never reports `plan-for-review` itself. The
+launch stamp carries it instead (`plans_first`, read off the command through the harness's
+`plan_mode` words, so a profile edited out of plan mode launches an agent that does not
+wait), and `asks_person` reads it with the states that ask: such a step is *Waits for
+you* on the boards and in `progression show` (*Progression is the status-aware frontier*),
+and while one this window launched unattended waits, a notice names it with *Show
+Terminal*. That notice's memory is the session's; after a reload the boards still list it.
+A profile that does not ask first is the person's to make — nothing ships one.
+
+**Who may launch.** The switch is *Agent profiles ▸ When a step becomes due*, per user and
+per machine, **off by default**: it spends terminals and tokens nobody clicked for, and
+every machine that opens the plan with it on is one more launcher. Among windows on one
+library on one machine, only the holder of a `QLockFile` under `config_dir()/auto-launch/`
+launches, and the other window's page says so. The lock is stale only once its process is
+gone (`setStaleLockTime(0)`), so a crash never locks the next window out, and it belongs to
+the *session* — `new_session` builds the holder once and hands it to every build — because
+a reload builds the new window before it discards the old, and the new one must not find
+itself locked out by its predecessor.
+
+**The race, across machines.** On one machine the lock makes one window the launcher, and a
+claim written at the spawn and flushed at once makes the launch happen once: the next pass,
+in that window or after its reload, reads the step as launched. Across machines nothing is
+shared but the plan, and the plan travels by commits: the claim reaches another machine
+only when one saves and the other pulls. Two machines with the switch on can therefore both
+see a collector due, and both launch it, within one sync interval — each claim is true on
+its own machine, and the second to land meets the first as an ordinary conflict on that
+step's status. No lock can close that gap without a server, which DPlanner does not have;
+what closes it is that the switch is per machine and off until a person turns it on, so the
+honest setup is one machine that runs the agents.
+
+The rules are in `.claude/rules/agents.md` (the launcher) and `.claude/rules/schedule.md`
+(what is due, *Waits for you*).
+
 ## Running an agent launches a peer, not a task
 
 *Run Agent* writes the briefing to a per-run temp directory — never the project, which
@@ -4466,7 +4579,9 @@ things at once: a run over a selection claims each step as its own shell opens a
 claiming where the shells stop, so three steps of which the third found no terminal leave
 two marked and one not; and an agent handed two writers' versions of a plan file is never
 marked as doing the step's work — it is merging, and marking that step in progress would
-be the same lie in the other direction. The verb decides; the mechanism obeys.
+be the same lie in the other direction. The verb decides; the mechanism obeys. The one
+other maker is its unattended twin, `launch_due`, which claims whatever *On launch* says
+(*Auto-progress is launched by the window*).
 
 Nothing un-claims it. Finishing is the agent's own `dplanner status set … done`, or the
 person's from Step ▸ Status — the run ending clears the agent *chip* (that state is about
@@ -5339,8 +5454,8 @@ chosen step for the same reason (*Status is an aspect*, above).
 `ordering.ready()` answers what the *graph* allows — wave one, nothing waited on. During
 execution that is the wrong question: a step deep in the graph whose prerequisites have all
 been finished is launchable today, and no wave number says so. `domain/progression.py`
-answers the execution question — every step in exactly one of *done / running / review /
-merge / attention / ready / upcoming / waiting* — and it is deliberately a **new derivation
+answers the execution question — every step in exactly one of *done / running / asking /
+review / merge / attention / ready / upcoming / waiting* — and it is deliberately a **new derivation
 beside the old one, not a refactor of it**: the frontier is a per-step check ("every
 `requires` target reads done"), not wave membership, and the two only coincide in a project
 where nothing has been finished yet. A test pins that equivalence; shared code would have
@@ -5352,6 +5467,14 @@ The rules worth writing down, because each was a decision:
   honoured as done, and its dependents may become ready through it. The graph gates
   *launching*, not *recording* — an agent reporting `status set … done` out of order is
   reporting a fact, and a derivation that refused it would be arguing with reality.
+- **An agent waiting on a person is on the board.** Running work is not listed — an agent
+  at work needs nobody — but one that waits on a person, a plan to approve or a question to
+  answer, does: it is stuck on somebody as surely as a blocked step. `asks_person`, handed
+  in like `status_for`, splits it from `running` into `asking`, the *Waits for you* group
+  under Blocked, with `progression show` saying the same. It reads the agent-run aspect: the
+  states that ask, and a launch into plan mode that has said nothing since, which is the
+  auto-launched Claude this was decided for (*Auto-progress is launched by the window*).
+  The report keeps it in running — it publishes the plan, not a live session.
 - **Blocked is attention, not waiting.** A blocked step is stuck on a person, so it leads
   the table rather than disappearing into the waited-on mass — it is the row that needs
   eyes, and the tab exists to route eyes.
