@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 
 from PySide6.QtCore import QEvent, QPointF, QRect, QRectF, Qt, QTimer
 from PySide6.QtGui import (
+    QColor,
     QFocusEvent,
     QKeyEvent,
     QMouseEvent,
@@ -73,7 +74,9 @@ from dplanner.modules.project_editor.renderers import (
     NodeAccent,
     RenderHints,
 )
+from dplanner.modules.project_editor.ruler import RULER_H, Heading, WaveRuler
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef, neighbourhood
+from dplanner.modules.project_editor.sorts import H_GAP
 from dplanner.modules.project_editor.stacks import Stack
 
 # How often the canvas's motion clock ticks — a live ring's dashes, a flowing arrow's
@@ -91,6 +94,8 @@ ZOOM_MAX = 2.5
 ZOOM_READABLE = 0.75
 FRAME_PADDING = 40.0
 ZOOM_STEP = 1.15
+# Wave view's band behind every other column: text ink at about 2 %, there to be felt.
+BAND_ALPHA = 5
 # The canvas is a plane, not a page: the scrollable area is this far out in every direction
 # from the origin and never moves, so panning stops nowhere anybody will reach and no graph
 # can change where the edges are. Large enough to be unbounded in practice, small enough
@@ -126,6 +131,8 @@ class GraphScene(QGraphicsScene):
         self._marks = Marks()
         # Whether gestures land on the grid — the user's setting, pushed by the module.
         self._snap = True
+        # Whether every card's seat is derived (Wave view), so none is dragged or resized.
+        self._pinned = False
         # The spotlight, from its two sources: the user's look, and a key held for a moment.
         # Either lights it, so letting go of the key never switches the preference off.
         self._spotlight = False
@@ -221,6 +228,7 @@ class GraphScene(QGraphicsScene):
                     item = self._nodes[spec.step_id] = StepNodeItem(spec.step_id)
                     item.set_render_hints(self._hints)  # A node born mid-mode dresses for it.
                     item.set_marks(self._marks)
+                    item.set_pinned(self._pinned)
                     self.addItem(item)
                 item.set_title(spec.title)
                 item.set_accent(spec.accent)
@@ -520,6 +528,14 @@ class GraphScene(QGraphicsScene):
             self._spotlight_held = on
             self._light_selection()
 
+    def set_pinned(self, on: bool) -> None:
+        """Whether every card's seat is derived rather than the hand's — Wave view's, whose
+        seats the activity substitutes on every sync. Cards are still picked, linked and
+        opened; none is dragged or resized, since nothing the hand did would be kept."""
+        self._pinned = on
+        for item in self._nodes.values():
+            item.set_pinned(on)
+
     def set_snap(self, on: bool) -> None:
         """Whether gestures land on the grid from now on. Nothing already placed moves."""
         self._snap = on
@@ -659,6 +675,10 @@ class GraphView(QGraphicsView):
         # The application's View ▸ Zoom is font size; a canvas zooms itself.
         install_ctrl_wheel_zoom(self, self.zoom_by)
         self.minimap = Minimap(self)
+        # Wave view's column headings, and the faint band behind every other column: both
+        # empty — the ruler off screen — in Free view.
+        self.ruler = WaveRuler(self)
+        self._bands: list[tuple[float, float]] = []
         scene.changed.connect(self._on_scene_changed)
         # The plane is centred on the origin and the automatic layout starts there, so this
         # is where the graph will be even before there is one to frame.
@@ -811,18 +831,43 @@ class GraphView(QGraphicsView):
         # graph — the same rule as items.live_palette.
         super().drawBackground(painter, rect)
         paint_ground(painter, QRectF(rect), self.palette(), self._background, self._zoom)
+        if self._bands:
+            # Every other wave's column, the full height — painted with the ground rather
+            # than as items, so it is never picked, framed or hit.
+            band = QColor(self.palette().text().color())
+            band.setAlpha(BAND_ALPHA)
+            area = QRectF(rect)
+            for left, right in self._bands:
+                if right >= area.left() and left <= area.right():
+                    painter.fillRect(QRectF(left, area.top(), right - left, area.height()), band)
+
+    def show_waves(self, headings: Sequence[Heading]) -> None:
+        """Wave view's chrome: the ruler saying these headings, and a band behind every
+        other column. Nothing takes both away — Free view."""
+        self.ruler.show_headings(headings)
+        bands = [(h.left - H_GAP / 2, h.right + H_GAP / 2) for h in headings[1::2]]
+        if bands != self._bands:
+            self._bands = bands
+            self.viewport().update()
 
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt override
         super().resizeEvent(event)
         self.minimap.place()
-        self._refresh_minimap()
+        self.ruler.place()
+        self._follow_overlays()
 
     def scrollContentsBy(self, dx: int, dy: int) -> None:  # noqa: N802 - Qt override
         super().scrollContentsBy(dx, dy)
-        self._refresh_minimap()
+        self._follow_overlays()
 
     def _on_scene_changed(self, _rects: list[QRectF]) -> None:
         self._refresh_minimap()
+
+    def _follow_overlays(self) -> None:
+        """The plane moved under the chrome: the map redraws where you are, and the ruler's
+        headings follow their columns across."""
+        self._refresh_minimap()
+        self.ruler.update()
 
     def _refresh_minimap(self) -> None:
         """Hand the map what to draw.
@@ -871,9 +916,11 @@ class GraphView(QGraphicsView):
             return
         padded = content.adjusted(-FRAME_PADDING, -FRAME_PADDING, FRAME_PADDING, FRAME_PADDING)
         viewport = self.viewport().rect()
+        # The ruler covers the top of the view while it stands; the graph is framed below it.
+        clear = RULER_H if self.ruler.headings() else 0
         fits = min(
             viewport.width() / max(padded.width(), 1.0),
-            viewport.height() / max(padded.height(), 1.0),
+            (viewport.height() - clear) / max(padded.height(), 1.0),
         )
         # Never magnify, and never shrink past legibility — a graph too big for the window
         # is scrolled, not squinted at.
@@ -881,8 +928,8 @@ class GraphView(QGraphicsView):
         if wanted != self._zoom:
             self.scale(wanted / self._zoom, wanted / self._zoom)
             self._zoom = wanted
-        self.centerOn(content.center())
-        self._refresh_minimap()
+        self.centerOn(content.center() - QPointF(0.0, clear / 2 / self._zoom))
+        self._follow_overlays()
 
     def centre_on_step(self, step_id: StepId) -> None:
         """Put the viewport on one step, at the zoom the user left it.
@@ -901,7 +948,7 @@ class GraphView(QGraphicsView):
             return
         self._centred_on = step_id
         self.centerOn(node.body_scene_rect().center())
-        self._refresh_minimap()
+        self._follow_overlays()
 
     def zoom_by(self, steps: int) -> None:
         factor = ZOOM_STEP**steps
@@ -909,4 +956,4 @@ class GraphView(QGraphicsView):
         if wanted != self._zoom:
             self.scale(wanted / self._zoom, wanted / self._zoom)
             self._zoom = wanted
-            self._refresh_minimap()
+            self._follow_overlays()

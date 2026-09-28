@@ -20,7 +20,7 @@ def on_clipboard() -> list[str]:
 
 
 def test_discarding_a_build_leaves_nothing_on_the_clipboard(app, tmp_path: Path) -> None:
-    args = Namespace(tabs=("project",), projects=1, unplaced=0.0, immediate=True)
+    args = Namespace(tabs=("project",), projects=1, unplaced=0.0, immediate=True, waves=False)
     harness = build(app, tmp_path, 10, args)
     try:
         harness.measure("paste", SCENARIOS["paste"])
@@ -29,3 +29,16 @@ def test_discarding_a_build_leaves_nothing_on_the_clipboard(app, tmp_path: Path)
         discard(harness, app)
     assert on_clipboard() == []
     assert harness.session.services is None
+
+
+def test_waves_measures_every_canvas_in_wave_view(app, tmp_path: Path) -> None:
+    from dplanner.modules.project_editor.layout_verbs import wave_view
+
+    args = Namespace(tabs=("project",), projects=1, unplaced=0.0, immediate=True, waves=True)
+    harness = build(app, tmp_path, 10, args)
+    try:
+        assert wave_view(harness.project.id)
+        canvas = harness.canvas()
+        assert canvas._view.ruler.headings()  # The ruler stands: the seats are derived.
+    finally:
+        discard(harness, app)

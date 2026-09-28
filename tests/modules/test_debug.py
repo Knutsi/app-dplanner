@@ -229,10 +229,11 @@ def test_the_toolbars_example_shows_every_shape_a_strip_comes_in(services):
     services.actions.run("debug.design_toolbars", services.context.current())
     (tab,) = [a for a in services.tabs.activities() if isinstance(a, DesignExampleToolbars)]
 
-    # The flat strip has no bands; the palette has four, each named.
+    # The flat strip has no bands; the palette has five, each named — Arrange holding a
+    # segmented pair, two ways of looking at one surface, among the squares.
     assert tab.verbs.findChildren(_Group) == []
     named = [g.caption.text() for g in tab.palette.findChildren(_Group) if g.caption]
-    assert named == ["Go", "Step", "Link", "Options"]
+    assert named == ["Go", "Step", "Link", "Arrange", "Options"]
 
     # And the third strip is the same palette with no room, so a band can be seen folding.
     tab.folded._reflow()

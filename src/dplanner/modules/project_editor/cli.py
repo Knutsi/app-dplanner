@@ -64,6 +64,7 @@ from dplanner.modules.project_editor.sorts import (
     spine,
     tidy,
     timeline,
+    waves,
 )
 from dplanner.modules.project_editor.stack_edits import (
     add_command,
@@ -82,7 +83,8 @@ from dplanner.modules.project_editor.stacks import (
     stray_links,
 )
 
-SORT_NAMES = ("flow", "down", "spine", "timeline", "radial")
+# The last is Wave view's arrangement, written: the canvas's *Keep This Arrangement*.
+SORT_NAMES = ("flow", "down", "spine", "timeline", "radial", "waves")
 TIDY_LABEL = "Tidy Layout"
 MAP_LEGEND = (
     f"one cell = one column pitch ({H_PITCH:g}) by one row pitch ({V_PITCH:g}); "
@@ -162,6 +164,7 @@ def commands(
             "spine": lambda: spine(context.library, project),
             "timeline": lambda: timeline(context.library, project, days_for=days_for),
             "radial": lambda: radial(context.library, project, center=center),
+            "waves": lambda: waves(context.library, project, days_for=days_for),
         }[args.algorithm]()
         moves: list[Command] = position_commands(project, placed, label=f"Sort {args.algorithm}")
         for command in moves:
@@ -174,7 +177,7 @@ def commands(
 
     def _show(context: CliContext, args: Namespace) -> int:
         project = find_project(context.library, args.project)
-        geometry = measure(context.library, project, key_of=key_of)
+        geometry = measure(context.library, project, key_of=key_of, days_for=days_for)
         data: dict[str, Any] = {"project": project.id, **as_json(geometry)}
         if args.map:
             picture = map_text(geometry)
@@ -461,6 +464,7 @@ def commands(
             run=_sort,
             examples=(
                 "dplanner layout sort discovery spine",
+                "dplanner layout sort discovery waves",
                 'dplanner layout sort discovery radial --center "read the spec"',
             ),
         ),

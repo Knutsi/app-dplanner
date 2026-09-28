@@ -219,6 +219,21 @@ paths:
   user gesture, so it writes through the undo stack like a drag. Named layouts are a
   project-level entry under the same `project_editor` id — `ARCHITECTURE.md`'s *An
   explicit sort persists; the ambient layout never does* has the reasoning.
+- **Wave view derives positions; only Free view saves them.** Whether a project is in Wave
+  view is per-user `user_config` (`layout_verbs.wave_view`), and toggling it writes nothing:
+  `ProjectActivity._sync` substitutes `sorts.arranged_in_waves`' seats in the `NodeSpec`s at
+  the default size, and the diff sync moves the same items. The one way it reaches the store
+  is *Keep This Arrangement* (`canvas.waves_keep`, one undo, then Free view) — `dplanner
+  layout sort <project> waves` builds the same seats; a sort or a named layout leaves Wave
+  view first, and Divide and Contract are greyed in it. **A card there is pinned**
+  (`GraphScene.set_pinned`): picked, linked and opened, never dragged, resized or restacked.
+  **The arrangement must hold still**: down a column by earliest start, then the highest
+  source's place in the column before, then project order — one forward pass, top-aligned —
+  so a link moves only what it changes the wave of, and nobody else swaps places; never add
+  a sweep or a centring. Stacks fold through `stacks.fold` (N39/N76). The ruler (`ruler.py`)
+  numbers waves as the Order tab does — START, WAVE 2… — and reads each `Wave`'s span (which
+  `layout show` prints too, off the same arrangement) and the cards' muted accents. `ARCHITECTURE.md`'s *Wave view derives positions; only Free view saves
+  them* has the reasoning.
 - **There are no regions; a project saved with them opens without them.** Titled rectangles
   behind the graph were retired — annotation the graph knows nothing about goes stale with
   every sort, tidy and move. `positions.DATA_FORMAT` is format 2, whose one migration drops

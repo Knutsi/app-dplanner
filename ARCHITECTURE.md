@@ -2265,6 +2265,68 @@ prints is the number a tidy acts on. One number to know: the column pitch, 300, 
 multiple of the grid, 8, so a tidy of a flow layout moves alternate columns by four
 points and nothing else — the fixed point of a sorted graph is the sorted graph snapped.
 
+### Wave view derives positions; only Free view saves them
+
+Wave view is a second way of looking at the same graph: every card in the column of its
+dependency depth, under a ruler saying what each wave is and when it runs. Positions have
+two owners, and the line between them is the rule of the previous section applied to a view
+that is shown live. **Free view's positions are the user's**: loaded from the store, written
+by a drag, a sort, a named layout or tidy. **Wave view's come from `sorts.arranged_in_waves`
+on every sync and are never saved** — whether a project is in Wave view is per-user state in
+`user_config` beside the applied layout (`layout_verbs.wave_view`), so toggling it leaves the
+plan byte-identical and dirties nothing. The one arrow from Wave view to the store is **Keep
+This Arrangement** (`canvas.waves_keep`), a sort in kind: one undo step of position writes,
+after which the canvas is in Free view. `dplanner layout sort <project> waves` is its headless
+form (N41) and builds the same seats. Applying a sort or a named layout leaves Wave view first,
+since what it writes is what Free view shows; the cut drags (Divide, Contract) are greyed
+there, because they write the seats the canvas shows.
+
+**Only the seats change, so no view learns a concept.** `ProjectActivity._sync` hands the
+scene the derived seats in the same `NodeSpec`s, every card at the default size, and the diff
+sync moves the same items — toggling rebuilds nothing, and a link an agent makes from the
+terminal lands in its wave through the ordinary sync without a seat being written. What the
+scene does learn is that a card's seat is not the hand's: `set_pinned` takes a card's
+`ItemIsMovable` and its resize band away, `BlockDragMode` holds no pinned block, and Shift
+restacks nothing — a press still picks, links and opens. A step born in Wave view is born
+where nobody pointed (`placement.free_spot`), since a point on a derived seat means nothing to
+the arrangement it will be stored in; it lands in its wave all the same.
+
+**A live layout has to hold still, and that decided the algorithm.** The sorts' `_layered`
+runs four barycenter sweeps, and one new edge can reorder a whole column — fine for a gesture
+somebody asked for, unusable for a view that re-derives on every keystroke. So down a column
+the blocks go by **earliest start** (`schedule.earliest_starts`, the critical path's bracket
+per step), then by **where the highest of their sources stands in the column before**, then by
+project order — one forward pass. Every key compares facts a new link changes only for the
+waiter and what follows it, so by induction over the columns *no other card swaps places*:
+it keeps its wave and its place among the others, and moves at most by the room a mover took
+or left in its column. That is why it is the highest source and not the mean the guide's
+"barycenter" suggests — a mean can swap two cards whose sources never moved relative to each
+other — and why the columns start together at the top rather than centred (a centred column
+shifts every card whenever its length changes). Columns are as wide as their widest card and
+a stack's frame stands outside its cards, so a stack arriving in a column never pushes the
+columns after it; every seat is on the grid, so the scene's snap never moves a card off the
+seat Keep would write. The tests pin the invariant over sixty seeded graphs rather than a
+picture: every card that changes column is the waiter or waits on it.
+
+A stack is one block in the wave of its first member, and what follows takes its depth from
+the stack as one node (N39), through the same `stacks.fold` every sort uses — never a second
+copy of the column (N76). Keep spaces the same columns and order by each card's own stored
+size, like every sort, so it is exactly what Wave view showed while no card is resized and
+never makes an overlap when one is.
+
+**The ruler numbers waves as the Order tab does.** The column with nothing before it is
+START — Order's wave 1 — and the next is WAVE 2, so a step has one wave number in the ruler,
+the Order tab, `layout show` and the off-view pills. Its day ranges are each `Wave`'s span,
+from the column's earliest start to its latest finish, a stack lasting as long as its members
+together — the one arrangement read twice, by the ruler and by `layout show`, and worded once
+(`sorts.span_words`); *k of n
+done* is counted from the cards' own muted accent, so the ruler and the cards under it cannot
+disagree. The ruler is chrome (`ruler.py`, DESIGN.md's *Overlays on a canvas*): a child of the
+view like the minimap, following the plane across and never down; the faint band behind every
+other column is painted with the ground in `GraphView.drawBackground`, never as items. The
+glide between the two views and a drag within a column are F30's, which replaces the still
+block drag at exactly the two seams in `modes.py`.
+
 ### A stack is presentation over a chain
 
 A stack is the answer to a line of steps that keeps growing while somebody iterates —

@@ -139,6 +139,12 @@ def node_size(step: Step) -> Size:
     return read_size(step) or (NODE_W, NODE_H)
 
 
+def default_size(_step: Step) -> Size:
+    """Every card at the default footprint, whatever was stored — Wave view's measure, where
+    a stored size applies only in Free view."""
+    return (NODE_W, NODE_H)
+
+
 def read_stack(step: Step) -> str:
     """The id of the stack this step stands in, or "" for none."""
     entry = step.module_data.get(MODULE_ID)

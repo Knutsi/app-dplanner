@@ -948,6 +948,55 @@ class CriticalPath:
     unestimated: int  # Steps on the chain counted as zero days — the floor's honesty.
 
 
+def earliest_starts(
+    library: Library,
+    project: Project,
+    days_for: Callable[[Step], float | None],
+) -> dict[StepId, float]:
+    """When each step can start at the soonest, in working days from the plan's start:
+    once everything it ``requires`` has finished — :func:`critical_path`'s bracket,
+    unlimited workers and bound only by the chains, answered per step.
+
+    An unestimated step takes no days, as on the critical path. The edges are read off the
+    steps ``project`` holds, never looked up in the library — ``ordering.depths``' rule — so
+    a project built as a view of another (the graph editor folding a stack into one block)
+    is measured as itself. A source still on the walk closes a cycle only a hand edit can
+    make, and counts as met.
+
+    One walk with an explicit stack, rooted in project order: linear in steps and edges,
+    and no chain is too long for it.
+    """
+    by_id = {step.id: step for step in project.steps}
+    order = {step.id: index for index, step in enumerate(project.steps)}
+    starts: dict[StepId, float] = {}
+    on_walk: set[StepId] = set()
+
+    def sources(step_id: StepId) -> list[StepId]:
+        # Project order, so a cycle is answered the same whatever order its edges are in.
+        found = (s for s in by_id[step_id].edges.get("requires", []) if s in by_id)
+        return sorted(found, key=order.__getitem__)
+
+    for root in project.steps:
+        if root.id in starts:
+            continue
+        on_walk.add(root.id)
+        walk = [(root.id, iter(sources(root.id)))]
+        while walk:
+            step_id, pending = walk[-1]
+            source = next((s for s in pending if s not in starts and s not in on_walk), None)
+            if source is not None:
+                on_walk.add(source)
+                walk.append((source, iter(sources(source))))
+                continue
+            walk.pop()
+            on_walk.discard(step_id)
+            starts[step_id] = max(
+                (starts[s] + (days_for(by_id[s]) or 0.0) for s in sources(step_id) if s in starts),
+                default=0.0,
+            )
+    return starts
+
+
 def critical_path(
     library: Library,
     project: Project,
@@ -955,48 +1004,36 @@ def critical_path(
 ) -> CriticalPath | None:
     """None only when the project has no steps.
 
-    ``ordering.depths()``'s walk, weighted by ``days_for`` instead of one per hop — and
-    handed the function rather than a schema, so whoever owns the estimate keeps its
-    shape. Ties break by project step order, the same rule every derivation here uses,
-    so the answer changes when the graph or the estimates change and not otherwise.
+    :func:`earliest_starts` carried one step further: a step finishes its own days after it
+    can start, and the chain is walked back from the latest finish through the source that
+    held each step up — handed the function rather than a schema, so whoever owns the
+    estimate keeps its shape. Ties break by project step order, the same rule every
+    derivation here uses, so the answer changes when the graph or the estimates change and
+    not otherwise.
     """
     if not project.steps:
         return None
     order = {step.id: index for index, step in enumerate(project.steps)}
-    finishes: dict[StepId, float] = {}
-    towards: dict[StepId, StepId | None] = {}
+    by_id = {step.id: step for step in project.steps}
+    starts = earliest_starts(library, project, days_for)
+    finishes = {step.id: starts[step.id] + (days_for(step) or 0.0) for step in project.steps}
 
-    def finish_of(step_id: StepId, seen: frozenset[StepId]) -> float:
-        if step_id in finishes:
-            return finishes[step_id]
-        if step_id in seen:  # Defensive: a hand-edited file could still contain a cycle.
-            return 0.0
-        step = library.step(step_id)
-        own = days_for(step) or 0.0
-        waiting = step.edges.get("requires", [])
+    def held_up_by(step: Step) -> StepId | None:
+        """The earliest source, in project order, whose finish is when this step starts —
+        None for a step nothing holds up."""
         resolved = sorted(
-            (target for target in waiting if target in order),
-            key=lambda target: order[target],
+            (s for s in step.edges.get("requires", []) if s in order), key=order.__getitem__
+        )
+        return next(
+            (s for s in resolved if finishes[s] > 0.0 and finishes[s] == starts[step.id]), None
         )
 
-        best: StepId | None = None
-        upstream = 0.0
-        for target in resolved:
-            candidate = finish_of(target, seen | {step_id})
-            if candidate > upstream:  # Strict: the earliest of equals keeps the tie.
-                upstream, best = candidate, target
-        finishes[step_id] = own + upstream
-        towards[step_id] = best
-        return finishes[step_id]
-
-    for step in project.steps:
-        finish_of(step.id, frozenset())
     last = max(project.steps, key=lambda step: (finishes[step.id], -order[step.id]))
     chain: list[Step] = []
     at: StepId | None = last.id
-    while at is not None:
-        chain.append(library.step(at))
-        at = towards.get(at)
+    while at is not None and all(at != step.id for step in chain):  # A cycle ends the walk.
+        chain.append(by_id[at])
+        at = held_up_by(by_id[at])
     chain.reverse()
     return CriticalPath(
         days=finishes[last.id],

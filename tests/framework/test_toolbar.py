@@ -7,7 +7,7 @@ from itertools import pairwise
 import pytest
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPalette
-from PySide6.QtWidgets import QComboBox, QPushButton, QWidget
+from PySide6.QtWidgets import QComboBox, QPushButton, QToolButton, QWidget
 
 from dplanner.framework.action_registry import (
     ActionRegistry,
@@ -205,6 +205,33 @@ def test_a_band_says_what_its_glyphs_are_for(host, app):
     bar = banded(host, app)
     assert band_names(bar) == ["Go", "Step", "Link"]
     assert bar.hidden_items() == [] and bar._more.isHidden()
+
+
+def test_a_segmented_pair_in_a_band_keeps_its_words(themed, app):
+    """A band squares its glyph buttons, and a segmented group's buttons wear the same
+    name — squared, *Free | Waves* read "… …". The words win (NOTES-FOR-APPFRAME §72)."""
+    from dplanner.framework.segmented import Segmented
+
+    apply_theme(themed, DARK)
+    host = QWidget()
+    bar = Toolbar(host, dense=True)
+    bar.add_group("Arrange")
+    sort = bar.add_verb("Sort", plus_icon, lambda: None)
+    pair = Segmented([(False, "Free", ""), (True, "Waves", "")])
+    bar.add_widget(pair)
+    host.resize(900, 90)
+    host.show()
+    app.processEvents()
+    try:
+        glyph = next(b for b in bar.findChildren(QToolButton) if b.defaultAction() is sort)
+        square = glyph.width()
+        assert square == glyph.height()  # The band's own rule still holds for a glyph.
+        for value in (False, True):
+            button = pair.button(value)
+            assert button.width() > square
+            assert button.width() > button.fontMetrics().horizontalAdvance(button.text())
+    finally:
+        host.deleteLater()
 
 
 def test_a_narrow_strip_folds_a_whole_band_at_a_time(host, app):

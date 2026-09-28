@@ -258,6 +258,59 @@ def test_an_empty_project_has_no_path():
     assert critical_path(library, project, days_of({})) is None
 
 
+def test_a_step_can_start_once_the_longest_way_to_it_has_finished():
+    from dplanner.domain.schedule import earliest_starts
+
+    library, project = diamond()
+    starts = earliest_starts(library, project, days_of({"A": 1, "B": 2, "C": 10, "D": 1}))
+    assert [starts[step.id] for step in project.steps] == [0.0, 1.0, 1.0, 11.0]
+    # The critical path's length is the latest of these plus the step's own days.
+    path = critical_path_of(library, project, {"A": 1, "B": 2, "C": 10, "D": 1})
+    assert path == 12
+
+
+def test_an_unestimated_step_takes_no_days_on_the_way_to_what_waits_on_it(project):
+    from dplanner.domain.schedule import earliest_starts
+
+    library, plan = project
+    starts = earliest_starts(library, plan, days_of({"A": 2, "C": 1}))
+    assert [starts[step.id] for step in plan.steps] == [0.0, 2.0, 2.0, 3.0]
+
+
+def test_a_cycle_a_hand_edit_made_is_walked_and_the_link_closing_it_counts_as_met(project):
+    from dplanner.domain.schedule import earliest_starts
+
+    library, plan = project
+    a, _b, _c, d = plan.steps
+    a.edges["requires"] = [d.id]  # Around the chain and back: only a hand edit gets here.
+    starts = earliest_starts(library, plan, days_of({"A": 1, "B": 1, "C": 1, "D": 1}))
+    # Walked from A, the first step: B's link back to A, still on the walk, is the one met.
+    assert [starts[step.id] for step in plan.steps] == [3.0, 0.0, 1.0, 2.0]
+
+
+def test_a_view_of_a_project_is_measured_by_its_own_edges(project):
+    """The graph editor folds a stack into one block — a scratch project whose edges differ
+    from the library's — and asks when each block starts."""
+    from dplanner.domain.schedule import earliest_starts
+
+    library, plan = project
+    a, b, _c, d = plan.steps
+    view = Project(title="Folded")
+    view.steps.extend(
+        [Step(node_id=a.id, title="A"), Step(node_id=d.id, title="D", edges={"requires": [a.id]})]
+    )
+    starts = earliest_starts(library, view, days_of({"A": 5}))
+    assert starts == {a.id: 0.0, d.id: 5.0}
+    assert b.id not in starts
+
+
+def critical_path_of(library, project, estimates):
+    from dplanner.domain.schedule import critical_path
+
+    path = critical_path(library, project, days_of(estimates))
+    return None if path is None else path.days
+
+
 # -- staffing between the brackets ---------------------------------------------------------------
 
 

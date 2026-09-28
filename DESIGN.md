@@ -189,6 +189,17 @@ well is `$BG_BASE`, and the canvas already is.
 - It is a child of the *view*, never of the viewport: a `QGraphicsView` pans by scrolling its
   viewport, and that carries the viewport's children away with the pixels.
 
+A **ruler** is the other overlay: a band pinned across the top of the view, not a panel in a
+corner — Wave view's column headings (`ruler.py`). It is 36 px of `$BG_BASE` at about 72 %
+over the ground, so cards pass under it and are still seen, with the `$BORDER` hairline under
+it; no frame, no radius, since it is an edge of the canvas and not a thing on it. Each
+heading stands over its column at every scroll and zoom and never moves down: the label in
+bold detail type and text ink (START, then WAVE 2…), the day range in the mono face at
+secondary ink, and *k of n done* in the good tint once any of it is. What does not fit its
+column drops from the end — done, then the range — never the label. It takes no clicks, and
+the faint band behind every other column (text ink at about 2 %) is painted with the ground,
+never as items, so nothing on the canvas can pick, frame or hit it.
+
 ## Cards on the canvas
 
 A step on the graph is a card on a table, and the canvas is drawn to say so.
@@ -676,6 +687,11 @@ Example Table wears one.
   *Arrange*. A widget never enters the `…` menu — it hides when there is no room — which is
   what keeps "not a verb" true without standing it outside the strip, where a lone worded
   button past a row of named bands reads as something that fell off.
+- **Two ways of looking at one surface are a `Segmented` pair**, both named and the one
+  shown lit: the graph's *Free | Waves* stands in *Arrange* before the layout picker. It is
+  a presenter of one checkable verb (`canvas.waves`, also the Graph menu's and `V`'s), so a
+  pick runs the verb and the switch shows what the verb decided — never a second way to
+  change the view. A lone checked glyph would say *on*, not *which*.
 - **A checked verb's glyph takes `$ON_ACCENT`.** A checked button is filled with the
   accent, and a glyph left in the quiet tone disappears into it — which is why the canvas's
   mode switches carried words for as long as they did. The primitive re-inks on the toggle,
