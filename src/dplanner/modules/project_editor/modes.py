@@ -18,7 +18,8 @@ Three rules keep it small:
   cursor, reached through :class:`Canvas`. There is no second reachability rule in here.
 
 A mode that drags something the canvas draws — a card by its frame, every card on one side
-of a cut, the pick with its stacks whole — is a :class:`GestureMode`: it holds what it moves
+of a cut, the pick with its stacks whole, one card into, through or out of a stack — is a
+:class:`GestureMode`: it holds what it moves
 so a sync leaves the geometry alone, Escape puts everything back, and the release reports and
 pops. A new one says what it holds, how to restore it, and what the release means, and
 inherits the rest.
@@ -46,13 +47,15 @@ from PySide6.QtWidgets import QApplication, QGraphicsView
 
 from dplanner.core.signals import Signal
 from dplanner.domain.model import SOURCE, WAITER, EdgeEnd, Redirection, StepId
+from dplanner.framework.motion.clock import FrameClock
+from dplanner.framework.motion.curves import out_cubic, span
 from dplanner.modules.project_editor.geometry import Axis, contract, direction, shift
-from dplanner.modules.project_editor.items import HANDLE_GRAB, StepNodeItem
+from dplanner.modules.project_editor.items import HANDLE_GRAB, StackItem, StepNodeItem
 from dplanner.modules.project_editor.named_layouts import Point
 from dplanner.modules.project_editor.positions import MIN_NODE_H, MIN_NODE_W, centred_on
 from dplanner.modules.project_editor.renderers import RenderHints
 from dplanner.modules.project_editor.selection import CanvasSelection, EdgeRef
-from dplanner.modules.project_editor.stacks import Packing, Stack
+from dplanner.modules.project_editor.stacks import FRAME_PAD, Packing, Stack, frame, member_seats
 
 # How the current mode reaches the context, so an action's ``state`` can read it as a pure
 # function — which is what makes the Connect toolbar button check itself for free.
@@ -64,6 +67,7 @@ PAN = "pan"
 LINK_DRAG = "link-drag"
 NODE_RESIZE = "node-resize"
 BLOCK_DRAG = "block-drag"
+RESTACK = "restack"
 LASSO = "lasso"
 DIVIDE_VERTICAL = "divide-vertical"
 DIVIDE_HORIZONTAL = "divide-horizontal"
@@ -103,6 +107,7 @@ HINTS_BY_MODE = {
     PAN: RenderHints(handles="hidden"),
     NODE_RESIZE: RenderHints(handles="hidden"),
     BLOCK_DRAG: RenderHints(handles="hidden"),
+    RESTACK: RenderHints(handles="hidden"),
     LASSO: RenderHints(handles="hidden"),
     DIVIDE_VERTICAL: RenderHints(handles="hidden"),
     DIVIDE_HORIZONTAL: RenderHints(handles="hidden"),
@@ -138,6 +143,10 @@ RESIZE_CURSORS = {
     "top-right": Qt.CursorShape.SizeBDiagCursor,
     "bottom-left": Qt.CursorShape.SizeBDiagCursor,
 }
+
+# How long the cards of a stack take to make way for one dragged through it: long enough to
+# be seen moving, short enough never to trail the hand.
+MAKE_WAY_S = 0.12
 
 # The cursor over a cut: the splitter's, since that is the gesture — a side of a vertical
 # line moves left or right, of a horizontal one up or down.
@@ -191,6 +200,10 @@ class Canvas(Protocol):
     nodes_moved: Signal[list[tuple[StepId, float, float]]]
     # A stack's "+" was pressed: a step is wanted below this one, the stack's last.
     stack_add_requested: Signal[StepId]
+    # A card Shift-dragged and let go in the stack with this id at this slot, or out of its
+    # own stack at this seat — where it went; which verb that is, is the model's to say.
+    dropped_into_stack: Signal[StepId, str, int]
+    dropped_out_of_stack: Signal[StepId, float, float]
 
     def node_at(self, scene_pos: QPointF) -> StepNodeItem | None: ...
 
@@ -206,6 +219,19 @@ class Canvas(Protocol):
     def frame_at(self, scene_pos: QPointF) -> Stack | None: ...
 
     def add_at(self, scene_pos: QPointF) -> Stack | None: ...
+
+    # A stack's frame, which a gesture reordering its column borrows (``StackItem.stand``).
+    def frame(self, stack_id: str) -> StackItem | None: ...
+
+    # Why this stack cannot be reordered — or take ``joining`` in — or None: the model's
+    # answer, as ``link_refusal`` is for a link.
+    def stack_refusal(self, stack: Stack, joining: StepId | None) -> str | None: ...
+
+    # The frame round a point says what Shift does; None quiets every one.
+    def hint_at(self, scene_pos: QPointF | None) -> None: ...
+
+    # A card in the hand: its arrows are not drawn until it lands, or None to draw them all.
+    def lift_links(self, step_id: StepId | None) -> None: ...
 
     # What a link end landing on this step means: a stack's first card for an arrowhead,
     # its last for a tail — and the card a link end at a point lands on, frames included.
@@ -880,6 +906,304 @@ def drag_the_pick(
     return BlockDragMode(deps, event)
 
 
+@dataclass
+class _Glide:
+    """A card easing from where it stood to where the column wants it now."""
+
+    start: QPointF
+    end: QPointF
+    elapsed: float = 0.0
+
+    def at(self) -> QPointF:
+        eased = out_cubic(span(self.elapsed, 0.0, MAKE_WAY_S))
+        return self.start + (self.end - self.start) * eased
+
+    def done(self) -> bool:
+        return self.elapsed >= MAKE_WAY_S
+
+
+class RestackMode(GestureMode):
+    """One card Shift-dragged into, through or out of a stack, the cards making way for it.
+
+    The card follows the hand, and its *centre* says where it is. Inside a frame grown by
+    the frame's pad — its own stack's before any other — it takes the slot whose gap is
+    nearest, and the other cards ease aside to open that gap, so the drop is visible before
+    it happens. Out past its own frame's pad it is *leaving*: the column closes up without
+    it and the frame lets go. A loose card over a stack joins it the same way, and over
+    nothing is only moved. A card in a stack, or joining one, is lifted out of its arrows —
+    every drop rewires them, and drawn meanwhile they would run to where it no longer
+    stands. Every gap is ``member_seats`` over the order the drop would make, from the
+    columns as they stood at the press, so what the hand sees never feeds back into which
+    slot it is at.
+
+    The motion is the one slide the canvas allows (DESIGN.md's *Focus and motion*): a card
+    that moves glides for ``MAKE_WAY_S`` on one :class:`FrameClock` this mode owns, which
+    runs only while a card is gliding and is stopped and deleted on exit; ``settle()`` ends
+    every glide at once, for a test or a render.
+
+    Whether a stack may be reordered or joined is the model's (``stack_refusal``): a refused
+    stack opens no gap, the status line says why, and letting go there does nothing. The
+    release reports only where the card went — into a stack at a slot, or out of its own at
+    a seat — and the activity asks the model which verb that is.
+    """
+
+    name = RESTACK
+    cursor = Qt.CursorShape.ClosedHandCursor
+
+    def __init__(self, deps: CanvasDeps, grab: CanvasEvent, node: StepNodeItem) -> None:
+        super().__init__(deps)
+        canvas = deps.canvas
+        self._grab = grab
+        self._card = node.step_id
+        self._home = node.stack
+        self._stacks = {stack.id: stack for stack in canvas.stacks()}
+        held = {self._card, *(m for stack in self._stacks.values() for m in stack.members)}
+        nodes = {step_id: n for step_id in held if (n := canvas.node(step_id)) is not None}
+        self._seats = {step_id: n.pos() for step_id, n in nodes.items()}
+        self._sizes = {step_id: n.size() for step_id, n in nodes.items()}
+        self._frames = {
+            stack_id: item.frame_scene_rect()
+            for stack_id in self._stacks
+            if (item := canvas.frame(stack_id)) is not None
+        }
+        self._dragging = False
+        # Why the card's own stack may not be reordered — asked once, as the drag begins.
+        self._stuck: str | None = None
+        self._refusals: dict[str, str | None] = {}
+        # Where the card is aimed — a stack's id and a slot, or None — what letting go there
+        # reports, and where the card then stands.
+        self._aimed: tuple[str | None, int] | None = None
+        self._drop: Callable[[], None] | None = None
+        self._landing: QPointF | None = None
+        # The frames this gesture has borrowed, and whether it ended in a drop.
+        self._stood: set[str] = set()
+        self._landed = False
+        self._glides: dict[StepId, _Glide] = {}
+        self._clock = FrameClock(deps.view)
+        self._unsubscribe = self._clock.ticked.connect(self._tick)
+
+    def held(self) -> set[StepId]:
+        return set(self._seats)
+
+    def restore(self) -> None:
+        self._glides.clear()
+        self._clock.stop()
+        for step_id, seat in self._seats.items():
+            node = self.deps.canvas.node(step_id)
+            if node is not None:
+                node.setPos(seat)
+
+    def exit(self) -> None:
+        self._unsubscribe()
+        self._clock.stop()
+        self._clock.deleteLater()
+        canvas = self.deps.canvas
+        canvas.lift_links(None)
+        for stack_id in self._stood:
+            item = canvas.frame(stack_id)
+            if item is not None:
+                item.free(lay=not self._landed)
+        super().exit()
+
+    def moving(self) -> bool:
+        """Whether a card is still gliding — the clock runs exactly while one is."""
+        return bool(self._glides)
+
+    def settle(self) -> None:
+        """Every glide at its end, now."""
+        for step_id, glide in self._glides.items():
+            node = self.deps.canvas.node(step_id)
+            if node is not None:
+                node.setPos(glide.end)
+        self._glides.clear()
+        self._clock.stop()
+
+    def mouse_move(self, event: CanvasEvent) -> bool:
+        if not self._dragging:
+            travel = event.view_pos - self._grab.view_pos
+            if travel.manhattanLength() < QApplication.startDragDistance():
+                return True
+            self._dragging = True
+            if self._home is not None:
+                self._stuck = self.deps.canvas.stack_refusal(self._home, None)
+                if self._stuck is not None:
+                    self.deps.status(f"Cannot move {self._name()} — {self._stuck}")
+                else:
+                    # Borrowed before the card moves, or its frame would lay it straight back.
+                    self._arrange(self._home, self._home.members)
+        node = self.deps.canvas.node(self._card)
+        if self._stuck is not None or node is None:
+            return True
+        node.setPos(self._seats[self._card] + event.scene_pos - self._grab.scene_pos)
+        centre = node.body_scene_rect().center()
+        target = self._target(centre)
+        aim = (None, 0) if target is None else (target.id, self._slot(target, centre.y()))
+        if aim != self._aimed:
+            self._aimed = aim
+            self._aim(target, aim[1])
+        return True
+
+    def mouse_release(self, event: CanvasEvent) -> bool:
+        drop = self._drop
+        if drop is None:
+            self.restore()
+        else:
+            self.settle()
+            node = self.deps.canvas.node(self._card)
+            if node is not None and self._landing is not None:
+                node.setPos(self._landing)
+            self._landed = True
+        # Popped before reporting, so the command's sync finds nothing held.
+        self.pop()
+        if drop is not None:
+            drop()
+        return True
+
+    def double_click(self, event: CanvasEvent) -> bool:
+        return True  # A press in flight is a drag or a click; the double click comes after.
+
+    # -- where the card is -----------------------------------------------------------------
+
+    def _target(self, centre: QPointF) -> Stack | None:
+        """The stack whose frame, grown by its pad, holds the card's centre."""
+        home = None if self._home is None else self._home.id
+        for stack_id in sorted(self._frames, key=lambda stack_id: stack_id != home):
+            grown = self._frames[stack_id].adjusted(-FRAME_PAD, -FRAME_PAD, FRAME_PAD, FRAME_PAD)
+            if grown.contains(centre):
+                return self._stacks[stack_id]
+        return None
+
+    def _slot(self, stack: Stack, centre_y: float) -> int:
+        """The slot whose gap's middle is nearest the card's."""
+        rest = self._without_card(stack)
+        half = self._sizes[self._card][1] / 2
+
+        def miss(slot: int) -> float:
+            return abs(
+                self._column(stack, _at(rest, slot, self._card))[self._card].y() + half - centre_y
+            )
+
+        return min(range(len(rest) + 1), key=miss)
+
+    def _aim(self, target: Stack | None, slot: int) -> None:
+        """Lay every stack the card has touched out as letting go now would leave it, and
+        work out what letting go reports."""
+        canvas, card, home = self.deps.canvas, self._card, self._home
+        refusal = None
+        if target is not None and (home is None or target.id != home.id):
+            if target.id not in self._refusals:
+                self._refusals[target.id] = canvas.stack_refusal(target, card)
+            refusal = self._refusals[target.id]
+        moving = target is not None and home is not None and target.id == home.id
+        joining = target is not None and not moving and refusal is None
+        leaving = home is not None and target is None
+        orders: dict[str, tuple[StepId, ...]] = {}
+        if home is not None:
+            rest = self._without_card(home)
+            orders[home.id] = _at(rest, slot, card) if moving else rest if leaving else home.members
+        if joining and target is not None:
+            orders[target.id] = _at(target.members, slot, card)
+        for stack_id in self._stood - orders.keys():
+            orders[stack_id] = self._stacks[stack_id].members
+        for stack_id, order in orders.items():
+            self._arrange(self._stacks[stack_id], order)
+        # A stacked card's arrows, or a joining one's, change whatever the drop: not drawn.
+        canvas.lift_links(card if home is not None or joining else None)
+
+        name = self._name()
+        self._drop, self._landing = None, None
+        if refusal is not None:
+            self.deps.status(f"Cannot put {name} in that stack — {refusal}")
+        elif target is not None:
+            order = orders[target.id]
+            self._landing = self._column(target, order)[card]
+            if order != target.members:
+                stack_id = target.id
+                self._drop = lambda: canvas.dropped_into_stack.emit(card, stack_id, slot)
+            place = f"{name} goes {slot + 1} of {len(order)}"
+            self.deps.status(
+                f"Reorder: {place}. Out of the frame takes it out; Esc cancels."
+                if moving
+                else f"Add to stack: {place}, without its links. Esc cancels."
+            )
+        elif leaving:
+            self._drop = self._report_out
+            self.deps.status(f"Take out: let go to leave {name} here, with no links. Esc cancels.")
+        else:
+            self._drop = self._report_moved
+            self.deps.status(f"Drop {name} on a stack to add it; Esc cancels.")
+
+    def _arrange(self, stack: Stack, order: tuple[StepId, ...]) -> None:
+        """The stack's cards gliding to the column ``order`` makes, and its frame round it."""
+        item = self.deps.canvas.frame(stack.id)
+        if item is None:
+            return
+        self._stood.add(stack.id)
+        if not order:
+            item.stand(QRectF())
+            return
+        for step_id, seat in self._column(stack, order).items():
+            if step_id != self._card:
+                self._glide(step_id, seat)
+        head = self._seats[stack.head]
+        rect = frame(Stack(stack.id, order), (head.x(), head.y()), self._sizes.__getitem__)
+        item.stand(QRectF(*rect))
+
+    def _column(self, stack: Stack, order: tuple[StepId, ...]) -> dict[StepId, QPointF]:
+        """Where each card of ``order`` would stand, under the stack's seat at the press."""
+        head = self._seats[stack.head]
+        seats = member_seats(Stack(stack.id, order), (head.x(), head.y()), self._sizes.__getitem__)
+        return {step_id: QPointF(x, y) for step_id, (x, y) in seats.items()}
+
+    def _without_card(self, stack: Stack) -> tuple[StepId, ...]:
+        return tuple(member for member in stack.members if member != self._card)
+
+    # -- the make-way motion -------------------------------------------------------------------
+
+    def _glide(self, step_id: StepId, end: QPointF) -> None:
+        node = self.deps.canvas.node(step_id)
+        glide = self._glides.get(step_id)
+        if node is None or (glide is not None and glide.end == end):
+            return
+        if node.pos() == end:
+            self._glides.pop(step_id, None)
+        else:
+            self._glides[step_id] = _Glide(node.pos(), end)
+            self._clock.start()
+
+    def _tick(self, dt: float) -> None:
+        for step_id, glide in list(self._glides.items()):
+            glide.elapsed += dt
+            node = self.deps.canvas.node(step_id)
+            if node is not None:
+                node.setPos(glide.at())
+            if glide.done():
+                del self._glides[step_id]
+        if not self._glides:
+            self._clock.stop()
+
+    # -- what letting go reports ---------------------------------------------------------------
+
+    def _report_out(self) -> None:
+        node = self.deps.canvas.node(self._card)
+        if node is not None:
+            self.deps.canvas.dropped_out_of_stack.emit(self._card, node.pos().x(), node.pos().y())
+
+    def _report_moved(self) -> None:
+        node = self.deps.canvas.node(self._card)
+        if node is not None and node.pos() != self._seats[self._card]:
+            self.deps.canvas.nodes_moved.emit([(self._card, node.pos().x(), node.pos().y())])
+
+    def _name(self) -> str:
+        node = self.deps.canvas.node(self._card)
+        return node.name() if node is not None else ""
+
+
+def _at(order: Sequence[StepId], slot: int, step_id: StepId) -> tuple[StepId, ...]:
+    """``order`` with ``step_id`` put in at ``slot``."""
+    return (*order[:slot], step_id, *order[slot:])
+
+
 class LassoMode(ModeBase):
     """Draw round the steps to pick: every card the outline touches is selected.
 
@@ -1187,8 +1511,9 @@ def visible_scene_rect(view: QGraphicsView) -> QRectF:
 class IdleMode(ModeBase):
     """The base. Qt does selection, rubber banding and a loose card's drag; this catches the
     rest: every right press, and a left press on a card's link handle, a stack's "+", a
-    card's resize band, a card in a stack, and a stack's frame — in that order, each
-    before the next may claim the point. An arrow drawn over a frame is Qt's to pick."""
+    card's resize band, any card with Shift held, a card in a stack, and a stack's frame —
+    in that order, each before the next may claim the point. An arrow drawn over a frame is
+    Qt's to pick."""
 
     name = IDLE
 
@@ -1216,17 +1541,24 @@ class IdleMode(ModeBase):
                 return True
             if event.modifiers & Qt.KeyboardModifier.ControlModifier:
                 return False  # Qt's toggle of one card in the pick.
+            if event.modifiers & Qt.KeyboardModifier.ShiftModifier:
+                # Shift takes the one card into, through or out of a stack — a press that
+                # never travels is a click, and picks it.
+                canvas.select_steps([node.step_id])
+                return self._push(RestackMode(self.deps, event, node))
             return self._push(drag_the_pick(self.deps, event, node, None))
         stack = canvas.frame_at(event.scene_pos)
         return stack is not None and self._push(drag_the_pick(self.deps, event, None, stack))
 
     def mouse_move(self, event: CanvasEvent) -> bool:
-        """Cursor feedback only — the event still falls through to Qt, which hovers and
-        drags. A card's frame shows the resize arrows so the gesture can be found, the
-        handle winning its corner of the right edge as it does on the press; a stack's "+"
-        shows a pointing hand, and its frame an open one: room to take hold of."""
+        """Feedback only — the event still falls through to Qt, which hovers and drags. A
+        card's frame shows the resize arrows so the gesture can be found, the handle winning
+        its corner of the right edge as it does on the press; a stack's "+" shows a pointing
+        hand, and its frame an open one: room to take hold of. The stack under the pointer
+        says what Shift does to its cards."""
         if event.buttons == Qt.MouseButton.NoButton:
             canvas = self.deps.canvas
+            canvas.hint_at(event.scene_pos)
             node = canvas.node_at(event.scene_pos)
             cursor: Qt.CursorShape | None = None
             if canvas.add_at(event.scene_pos) is not None:

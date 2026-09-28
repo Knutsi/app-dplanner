@@ -100,6 +100,10 @@ FRAME_BORDER_ALPHA = 60
 # The "+" set into the bottom edge: a disc the size of a medallion, straddling the edge.
 ADD_R = 10.0
 ADD_GLYPH = 12.0
+# What Shift does to a stack's cards, said in its bottom pad while the pointer is over it,
+# this far clear of the "+".
+SHIFT_HINT = "Shift-drag to reorder"
+HINT_GAP = 6.0
 # How far inside the narrower of two cards a connector stays, when the frame's middle is
 # past that card's right edge: clear of its rounded corner.
 CONNECTOR_INSET = RADIUS + 4.0
@@ -579,6 +583,10 @@ class StackItem(QGraphicsItem):
     (:class:`StackAddItem`, an item of its own so it sits over the arrows). Behind the
     arrows and the cards; never selectable — a click on it picks its members, which is a
     mode's business.
+
+    A gesture reordering the column borrows it: :meth:`stand` puts the frame round the
+    column the drop would make and leaves the cards to the gesture, and :meth:`free` gives
+    it back.
     """
 
     def __init__(self, stack: Stack) -> None:
@@ -587,6 +595,10 @@ class StackItem(QGraphicsItem):
         self._members: list[StepNodeItem] = []
         self._size = (0.0, 0.0)
         self._following = False
+        # True while a gesture has the column: follow() leaves the cards where it puts them.
+        self._stood = False
+        # Whether the pointer is over the stack, so the frame says what Shift does.
+        self._hinted = False
         self.add = StackAddItem(self)
         self.setZValue(-2)
 
@@ -608,8 +620,9 @@ class StackItem(QGraphicsItem):
         return self._following
 
     def follow(self) -> None:
-        """Lay the column under its first card and fit the frame round it."""
-        if not self._members or self._following:
+        """Lay the column under its first card and fit the frame round it — unless a
+        gesture has the column, which places the cards itself."""
+        if not self._members or self._following or self._stood:
             return
         self._following = True
         try:
@@ -623,15 +636,40 @@ class StackItem(QGraphicsItem):
             rect = QRectF()
             for node in self._members:
                 rect = rect.united(node.body_scene_rect())
-            rect.adjust(-FRAME_PAD, -FRAME_PAD, FRAME_PAD, FRAME_PAD)
-            if (rect.width(), rect.height()) != self._size:
-                self.prepareGeometryChange()
-                self._size = (rect.width(), rect.height())
-            self.setPos(rect.topLeft())
-            self.add.setPos(QPointF(rect.center().x(), rect.bottom()))
-            self.update()
+            self._place(rect.adjusted(-FRAME_PAD, -FRAME_PAD, FRAME_PAD, FRAME_PAD))
         finally:
             self._following = False
+
+    def stand(self, rect: QRectF) -> None:
+        """Lend the column to a gesture: the frame stands at ``rect`` — round the column the
+        drop would make — and the cards go wherever the gesture puts them. An empty rect
+        hides it, for a stack whose last card is leaving."""
+        self._stood = True
+        self._place(rect)
+
+    def free(self, *, lay: bool) -> None:
+        """Take the column back. ``lay`` lays it out as the model has it now; a gesture that
+        dropped leaves that to the sync its command brings, since the model has not changed
+        yet and laying the old order now would flash it."""
+        self._stood = False
+        if lay:
+            self.follow()
+
+    def set_hinted(self, hinted: bool) -> None:
+        if hinted != self._hinted:
+            self._hinted = hinted
+            self.update()
+
+    def _place(self, rect: QRectF) -> None:
+        shown = not rect.isEmpty()
+        self.setVisible(shown)
+        self.add.setVisible(shown)
+        if (rect.width(), rect.height()) != self._size:
+            self.prepareGeometryChange()
+            self._size = (rect.width(), rect.height())
+        self.setPos(rect.topLeft())
+        self.add.setPos(QPointF(rect.center().x(), rect.bottom()))
+        self.update()
 
     def frame_scene_rect(self) -> QRectF:
         return QRectF(self.pos(), QSizeF(*self._size))
@@ -686,6 +724,29 @@ class StackItem(QGraphicsItem):
         painter.setBrush(wash)
         painter.drawRoundedRect(frame, FRAME_RADIUS, FRAME_RADIUS)
         self._paint_gaps(painter)
+        if self._hinted and not self._stood:
+            self._paint_hint(painter, palette)
+
+    def _paint_hint(self, painter: QPainter, palette: QPalette) -> None:
+        """What Shift does, in small secondary ink in the bottom pad left of the "+" —
+        only while the pointer is over the stack, so a canvas of stacks stays quiet."""
+        w, h = self._size
+        room = QRectF(FRAME_PAD, h - FRAME_PAD, w / 2 - ADD_R - HINT_GAP - FRAME_PAD, FRAME_PAD)
+        if room.width() <= 0:
+            return
+        font = painter.font()
+        small = painter.font()
+        small.setPointSizeF(max(6.0, font.pointSizeF() - 2.0))
+        painter.setFont(small)
+        shown = painter.fontMetrics().elidedText(
+            SHIFT_HINT, Qt.TextElideMode.ElideRight, int(room.width())
+        )
+        ink = QColor(palette.text().color())
+        ink.setAlpha(SECONDARY_ALPHA)
+        painter.setPen(ink)
+        align = Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        painter.drawText(room, int(align), shown)
+        painter.setFont(font)
 
     def _paint_gaps(self, painter: QPainter) -> None:
         """Where the chain is broken, a dashed break in the refusal red, where its link

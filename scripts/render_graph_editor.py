@@ -9,6 +9,8 @@
         --out docs/screenshots/s17-editing-a-stack
     uv run python scripts/render_graph_editor.py --stack-canvas \
         --out docs/screenshots/s18-stack-on-the-canvas
+    uv run python scripts/render_graph_editor.py --restack \
+        --out docs/screenshots/f19-restack
     uv run python scripts/render_graph_editor.py --auto-progress \
         --out docs/screenshots/f11-auto-progress
     uv run python scripts/render_graph_editor.py --review \
@@ -27,7 +29,9 @@ deleted with the chain closing round it and a broken stack in the Problems list;
 with ``--stack-canvas``, the stack's frame and its "+", the chain drawn down its middle with
 an auto-progress link doubled, the whole stack picked, a link aimed at its middle landing on
 its first step, a broken stack's gap, the frame's right-click and the strip's two stack
-verbs; since F11,
+verbs; since F19, with ``--restack``, the frame's Shift hint under the pointer, a card
+Shift-dragged to the top with the cards easing down to open its slot, one dragged out past
+the frame, and a loose step dragged in; since F11,
 with ``--auto-progress``, parallel work handed to a step that collects it: the doubled
 links, and the arrow's menu with the toggle on; since F12, with ``--review``, a step and its
 review, the link into the review doubled by rule and its menu's toggle ticked and greyed. A
@@ -70,6 +74,8 @@ from dplanner.modules.auto_progress.aspect import write as auto_progress_write
 from dplanner.modules.estimation.aspect import write as estimate_write
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.aspect import write as feature_write
+from dplanner.modules.project_editor.items import StepNodeItem
+from dplanner.modules.project_editor.modes import RestackMode
 from dplanner.modules.project_editor.module import ProjectActivity, ProjectEditorModule
 from dplanner.modules.project_editor.positions import (
     MIN_NODE_H,
@@ -328,7 +334,13 @@ def render_menus(app: QApplication, theme: Theme, out: Path, workspace: Path) ->
     session.close()
 
 
-def press(view: QGraphicsView, kind: QEvent.Type, scene_pos: QPointF, held: bool = True) -> None:
+def press(
+    view: QGraphicsView,
+    kind: QEvent.Type,
+    scene_pos: QPointF,
+    held: bool = True,
+    modifiers: Qt.KeyboardModifier = Qt.KeyboardModifier.NoModifier,
+) -> None:
     """A mouse event at a point on the plane, sent where a real one arrives: the viewport,
     with a real global position — the scene picks what is under the *screen* point."""
     viewport = view.viewport()
@@ -342,7 +354,7 @@ def press(view: QGraphicsView, kind: QEvent.Type, scene_pos: QPointF, held: bool
             QPointF(viewport.mapToGlobal(local.toPoint())),
             left,
             left if held else Qt.MouseButton.NoButton,
-            Qt.KeyboardModifier.NoModifier,
+            modifiers,
         ),
     )
 
@@ -718,6 +730,57 @@ def render_stack_canvas(app: QApplication, theme: Theme, out: Path, workspace: P
     discard(page)
 
 
+def render_restack(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """Restacking one card (F19): the frame saying what Shift does while the pointer is over
+    it; its last card Shift-dragged to the top, the cards above eased down to open the slot;
+    its middle card dragged out past the frame, the column closed up and the card's links
+    faded; and a loose step dragged in between its first two cards."""
+    session, services, made, tab = open_stacked(app, theme, workspace, "restack")
+    library = services.document
+    project = library.project_of(made[0])
+    loose = Step(title="Check the encoding")
+    AddNodeCommand(project.id, loose).redo(library)
+    SetModuleDataCommand(loose.id, POSITION_KEY, write_position(40.0, 360.0)).redo(library)
+    # Described, so the squiggles say nothing this shot is not about.
+    for step_id in (*made, loose.id):
+        library.set_text(step_id, "step_description", "What the step delivers.")
+    page = tab.widget
+    page.resize(*STACK_SIZE)
+    page.show()
+    tab.frame()
+    scene, view = tab._scene, tab._view
+    first, middle, last = (scene.node(step_id) for step_id in made[1:4])
+    card = scene.node(loose.id)
+    assert first is not None and middle is not None and last is not None and card is not None
+    shift = Qt.KeyboardModifier.ShiftModifier
+
+    press(view, QEvent.Type.MouseMove, middle.body_scene_rect().center(), held=False)
+    save(page, out, "hint", theme, app)
+
+    def restacked(node: StepNodeItem, to: QPointF, name: str) -> None:
+        grip = node.body_scene_rect().center()
+        press(view, QEvent.Type.MouseButtonPress, grip, modifiers=shift)
+        press(view, QEvent.Type.MouseMove, to, modifiers=shift)
+        mode = view.modes.current()
+        assert isinstance(mode, RestackMode)
+        mode.settle()
+        save(page, out, name, theme, app)
+        mode.restore()
+        view.modes.pop_to_base()
+
+    top = first.body_scene_rect()
+    restacked(last, QPointF(top.center().x() + 24.0, top.center().y() + 8.0), "make-way")
+    frame = scene.frame("demo")
+    assert frame is not None
+    rect = frame.frame_scene_rect()
+    away = QPointF(rect.right() + 140.0, rect.bottom() + 40.0)
+    restacked(middle, away, "leaving")
+    restacked(card, middle.body_scene_rect().center() + QPointF(24.0, 0.0), "joining")
+    page.setParent(None)
+    session.close()
+    discard(page)
+
+
 def render_stack_edits(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     """Editing a stack (S17): the middle member picked, then deleted — the chain closes round
     the gap — and a stack another writer broke, named in the Problems list beside the
@@ -771,6 +834,11 @@ def main(argv: list[str]) -> int:
         help="only a stack edited: a member deleted, and a broken stack named (S17)",
     )
     parser.add_argument(
+        "--restack",
+        action="store_true",
+        help="only a card Shift-dragged into, through and out of a stack (F19)",
+    )
+    parser.add_argument(
         "--stack-canvas",
         action="store_true",
         help="only a stack on the canvas: its frame, its +, linking to it (S18)",
@@ -809,6 +877,9 @@ def main(argv: list[str]) -> int:
                 continue
             if args.stack_canvas:
                 render_stack_canvas(app, theme, args.out, Path(tmp))
+                continue
+            if args.restack:
+                render_restack(app, theme, args.out, Path(tmp))
                 continue
             if args.auto_progress:
                 render_auto_progress(app, theme, args.out, Path(tmp))
