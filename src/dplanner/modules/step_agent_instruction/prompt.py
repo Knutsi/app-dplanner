@@ -18,6 +18,7 @@ from dplanner.domain.model import Library, Step
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_agent_instruction.aspect import asset_paths, read, uses_worktree
+from dplanner.modules.step_agent_instruction.launcher import BranchPlan
 
 
 @dataclass(frozen=True)
@@ -81,19 +82,27 @@ class Briefing:
     run of a step gets no worktree whatever its agent aspect says — "" when the aspect
     decides — because what a step *is* can rule one out (a review reads the work it
     reviews and commits none of its own), and that is another module's word: every
-    surface asks :meth:`worktree` rather than the aspect. The default is the honest empty
+    surface asks :meth:`worktree` rather than the aspect. ``branch`` is which branches a run
+    works between — the one its worktree is on, where that starts, what its PR opens
+    against — decided once and handed to the preamble, the epilogue and the launcher alike,
+    so the script prepares what the agent is told. The default is the honest empty
     briefing of a build where no other module contributes.
     """
 
     parts: PartsFor = _no_parts
     sections: SectionsFor = _no_sections
     project_sections: PartsFor = _no_parts
-    epilogue: Callable[[Library, Step], str] = field(default=lambda _library, _step: "")
-    preamble: Callable[[Step, bool, RepositoryFacts | None], str] = field(
-        default=lambda _step, _worktree, _facts: ""
+    epilogue: Callable[[Library, Step, BranchPlan], str] = field(
+        default=lambda _library, _step, _branches: ""
+    )
+    preamble: Callable[[Step, bool, RepositoryFacts | None, BranchPlan], str] = field(
+        default=lambda _step, _worktree, _facts, _branches: ""
     )
     instruction: Callable[[Library, Step, FilesFor], PromptPart] = _own_instruction
     no_worktree: Callable[[Step], str] = field(default=lambda _step: "")
+    branch: Callable[[Library, Step, RepositoryFacts | None], BranchPlan] = field(
+        default=lambda _library, _step, _facts: BranchPlan()
+    )
 
     def worktree(self, step: Step) -> bool:
         """Whether a run of ``step`` gets a fresh worktree: the step's own choice, unless

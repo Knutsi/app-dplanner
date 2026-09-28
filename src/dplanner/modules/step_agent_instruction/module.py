@@ -681,6 +681,8 @@ class StepAgentInstructionModule:
         # The ## Instructions block comes from the briefing — the separate instruction
         # when one exists, the description otherwise, decided by the composition root.
         instruction = deps.briefing.instruction(deps.library, step, deps.files)
+        facts = deps.facts_for(step.id)
+        branches = deps.briefing.branch(deps.library, step, facts)
         return assemble(
             step_title=_titled(step),
             project_title=project.title or "Untitled project",
@@ -688,10 +690,8 @@ class StepAgentInstructionModule:
             parts=parts,
             sections=sections,
             project_sections=deps.briefing.project_sections(deps.library, step, deps.files),
-            epilogue=deps.briefing.epilogue(deps.library, step),
-            preamble=deps.briefing.preamble(
-                step, deps.briefing.worktree(step), deps.facts_for(step.id)
-            ),
+            epilogue=deps.briefing.epilogue(deps.library, step, branches),
+            preamble=deps.briefing.preamble(step, deps.briefing.worktree(step), facts, branches),
             project_instruction=read_project(project),
             project_files=project_files,
             instruction_files=place(instruction.files),
@@ -776,17 +776,18 @@ class StepAgentInstructionModule:
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
         worktree = self._run_name(step) if deps.briefing.worktree(step) else ""
-        workdir = launcher.workdir(deps.facts_for(step.id), step)
+        facts = deps.facts_for(step.id)
         spawned, prepared = self._launch(
             assembled.text,
             run_dir,
             worktree,
-            workdir,
+            launcher.workdir(facts, step),
             profile,
             project_id=deps.library.project_of(step.id).id,
             subject=f"{deps.step_key(step)} {step.title}".strip(),
             key=deps.step_key(step),
             step_id=step.id,
+            branches=deps.briefing.branch(deps.library, step, facts),
         )
         return spawned, assembled.text, prepared
 
@@ -1083,6 +1084,7 @@ class StepAgentInstructionModule:
         key: str = "",
         note: str = "",
         step_id: StepId | None = None,
+        branches: launcher.BranchPlan = launcher.DEFAULT_BRANCHES,
     ) -> tuple[bool, launcher.LaunchFiles]:
         """Open the profile's terminal on ``text`` in ``workdir``; the run is recorded only
         when a shell was actually spawned, and only when it is *a step's*.
@@ -1127,6 +1129,7 @@ class StepAgentInstructionModule:
                 step_title=_window_title(subject, note),
                 project_id=project_id,
                 harnesses=deps.harnesses,
+                branches=branches,
             )
             span.detail["prompt_chars"] = prepared.prompt_chars
             command = None
@@ -1224,7 +1227,7 @@ class StepAgentInstructionModule:
         text = conflict_prompt(
             step_title=_titled(step),
             project_title=library.project_of(step_id).title or "Untitled project",
-            preamble=deps.briefing.preamble(step, False, facts),
+            preamble=deps.briefing.preamble(step, False, facts, launcher.DEFAULT_BRANCHES),
             entries=entries,
         )
         spawned, prepared = self._launch(
@@ -1310,7 +1313,9 @@ class StepAgentInstructionModule:
             text = handover_prompt(
                 f"# Documentation: {_titled(step)}",
                 project.title or "Untitled project",
-                deps.briefing.preamble(step, False, deps.facts_for(step_id)),
+                deps.briefing.preamble(
+                    step, False, deps.facts_for(step_id), launcher.DEFAULT_BRANCHES
+                ),
                 body,
             )
             run_dir = launcher.new_run_dir()

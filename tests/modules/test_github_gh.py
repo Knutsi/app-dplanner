@@ -103,6 +103,13 @@ def test_pr_states_are_lowercased_at_the_boundary(monkeypatch):
     )
 
 
+def test_the_branch_a_pr_merges_into_is_read(monkeypatch):
+    row = PR_ROW.replace('"feat/login"}', '"feat/login", "baseRefName": "feature/stacks"}')
+    fake_run(monkeypatch, stdout=row)
+    pr = gh.view_pr("acme/widget", 12)
+    assert pr is not None and pr.base_ref == "feature/stacks"
+
+
 def test_view_pr_returns_none_for_a_number_the_repo_does_not_have(monkeypatch):
     fake_run(monkeypatch, returncode=1, stderr="GraphQL: Could not resolve to a PullRequest")
     assert gh.view_pr("acme/widget", 999) is None

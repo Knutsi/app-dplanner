@@ -64,6 +64,7 @@ if TYPE_CHECKING:
     from dplanner.modules.spec.source_kind import DocumentSourceKind
     from dplanner.modules.spec_confluence.module import SecretStore
     from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
+    from dplanner.modules.step_agent_instruction.launcher import BranchPlan
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
     from dplanner.modules.step_review.rounds import TurnDue
     from dplanner.modules.sync.service import Publication
@@ -2218,6 +2219,8 @@ def _briefing_sections(
                 pr += f" — {refs.pr_title}"
             if refs.pr_state:
                 pr += f" ({refs.pr_state})"
+            if refs.pr_base:
+                pr += f" into {refs.pr_base}"
             if refs.pr_url:
                 pr += f" {refs.pr_url}"
             lines.append(pr)
@@ -2256,6 +2259,8 @@ def _source_line(source: "Step", facts: "RepositoryFacts | None") -> str:
     )
     if refs is not None and refs.has_pr():
         pr = pr_label(refs)
+        if refs.pr_base:
+            pr += f" into `{refs.pr_base}`"
         if refs.pr_url:
             pr += f" {refs.pr_url}"
         facts_of.append(pr)
@@ -2512,7 +2517,18 @@ def _default_briefing() -> "Briefing":
         preamble=_agent_preamble,
         instruction=_briefing_instruction,
         no_worktree=_no_worktree,
+        branch=_branch_plan,
     )
+
+
+def _branch_plan(library: "Library", step: "Step", facts: "RepositoryFacts | None") -> "BranchPlan":
+    """Which branches a run of ``step`` works between: a new branch starts from the
+    mainline its code location names — the remote's default when it names none — and its
+    PR opens against the same."""
+    from dplanner.modules.step_agent_instruction.launcher import BranchPlan, mainline
+
+    base = mainline(facts, step)
+    return BranchPlan(start=f"origin/{base}" if base else "", pr_base=base)
 
 
 def _no_worktree(step: "Step") -> str:
@@ -3124,7 +3140,9 @@ def _run_name(step: "Step") -> str:
     return run_name(_step_key(step), _ticket_key(step), step.title)
 
 
-def _agent_preamble(step: "Step", in_worktree: bool, facts: "RepositoryFacts | None") -> str:
+def _agent_preamble(
+    step: "Step", in_worktree: bool, facts: "RepositoryFacts | None", branches: "BranchPlan"
+) -> str:
     """The briefing's preflight: the agent proves it can report back, that it is where
     this run said it would be, and knows where the plan lives, before it starts.
 
@@ -3139,12 +3157,10 @@ def _agent_preamble(step: "Step", in_worktree: bool, facts: "RepositoryFacts | N
     ``facts`` says where the plan lives: apart from the code, or inside it — the shape that
     drifts, so the agent is warned to leave the plan files alone and let the verbs write.
     Root prose for the same reason as the epilogue: it names other modules' verbs and the
-    launcher's naming.
+    launcher's naming. ``branches`` names the branch the worktree is on, the one the
+    launcher prepared.
     """
-    from dplanner.modules.step_agent_instruction.launcher import (
-        WORKTREES_DIR,
-        branch_name,
-    )
+    from dplanner.modules.step_agent_instruction.launcher import WORKTREES_DIR
 
     lines = [
         "First, confirm you can drive DPlanner: run `dplanner skill status`. If the"
@@ -3169,7 +3185,7 @@ def _agent_preamble(step: "Step", in_worktree: bool, facts: "RepositoryFacts | N
         lines.append(
             "Second, confirm you are in this step's own git worktree: `git rev-parse"
             f" --show-toplevel` must end in `{WORKTREES_DIR}/{name}` and `git branch"
-            f" --show-current` must print `{branch_name(name)}`. If either differs, STOP"
+            f" --show-current` must print `{branches.branch_for(name)}`. If either differs, STOP"
             " — do not touch the main checkout — and tell the developer the worktree"
             " was not prepared. Commit on that branch; every `dplanner` command still"
             " reaches the plan the window shows."
@@ -3279,7 +3295,7 @@ def _plan_whereabouts(facts: "RepositoryFacts") -> str:
     return text
 
 
-def _agent_epilogue(library: "Library", step: "Step") -> str:
+def _agent_epilogue(library: "Library", step: "Step", branches: "BranchPlan") -> str:
     """The briefing's closing words: how the agent reports back through the CLI.
 
     Cross-module prose — it names the status and note verbs — so it is written here, in
@@ -3342,12 +3358,17 @@ def _agent_epilogue(library: "Library", step: "Step") -> str:
             f" reviewing, `dplanner status set {ref} done --because '<why>'` keeps the reason"
             " as a decision note.\n"
         )
+    base = (
+        f" Open it against `{branches.pr_base}`: `gh pr create --base {branches.pr_base}`."
+        if branches.pr_base
+        else ""
+    )
     return (
         f"This step is {key}. Its branch and worktree carry that key; open the PR title"
         f" with it (`{key}: …`) and record the branch and the PR on the step as they"
         f" exist: `dplanner github set {ref} --branch $(git branch --show-current)`,"
-        f" then `dplanner github set {ref} --pr <number>`. Once the PR is open, set the"
-        " status (below) straight away: it takes the window's banner down with it.\n"
+        f" then `dplanner github set {ref} --pr <number>`.{base} Once the PR is open, set"
+        " the status (below) straight away: it takes the window's banner down with it.\n"
         "As you work, keep the run state current:\n"
         f"- `dplanner agent-state set {ref} plan-for-review` when your plan is ready"
         " to review\n"
