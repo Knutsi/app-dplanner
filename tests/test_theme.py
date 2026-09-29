@@ -40,6 +40,13 @@ def test_every_theme_substitutes_fully(theme):
     assert "$" not in load_stylesheet(theme)
 
 
+def test_no_size_ceiling_overflows_qts_limit():
+    """Qt adds padding and border to a max-width, so a ceiling of QWIDGETSIZE_MAX overflows
+    it and every widget the rule matches prints a setMaximumSize warning when built."""
+    ceilings = re.findall(r"max-(?:width|height):\s*(\d+)px", load_stylesheet(DEFAULT))
+    assert all(int(px) < 1_000_000 for px in ceilings)
+
+
 # An object name the stylesheet styles that no ``setObjectName("…")`` literal sets: name → why
 # (a name composed at runtime, say). Empty on purpose; an entry here needs its reason.
 NAMED_DYNAMICALLY: dict[str, str] = {}

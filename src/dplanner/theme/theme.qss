@@ -757,12 +757,15 @@ QProgressBar::chunk {
 
 /* …and a segmented group's choices, which are words, not glyphs: a banded strip seats one
    as a widget in the band it is about (the graph's *Free | Waves* in Arrange), and squared
-   they elide to "…". After the band's rule, for the same reason as the two above. */
+   they elide to "…". After the band's rule, for the same reason as the two above.
+   The ceiling is lifted to a large round number and never to QWIDGETSIZE_MAX (16777215):
+   Qt adds the padding and border to max-width, and the sum past its limit prints a
+   setMaximumSize warning for every segment built. */
 #ControlBar #ToolbarButton[segment="first"], #ControlBar #ToolbarButton[segment="middle"],
 #ControlBar #ToolbarButton[segment="last"], #ControlBar #ToolbarButton[segment="only"] {
     padding: 6px 12px;
     min-width: 0px;
-    max-width: 16777215px;
+    max-width: 10000px;
 }
 
 #ControlBar::separator {
