@@ -130,9 +130,7 @@ def read(
     return Reading(tuple(found), stray_cuts, tuple(stray_lands))
 
 
-def late_entries(
-    library: Library, project: Project, stretch: Stretch
-) -> list[tuple[Step, Step]]:
+def late_entries(library: Library, project: Project, stretch: Stretch) -> list[tuple[Step, Step]]:
     """``(member, source)`` for every link into the middle of ``stretch`` from work that is
     neither on it nor behind its cut — main work the branch was cut before, which a member's
     worktree will not have."""

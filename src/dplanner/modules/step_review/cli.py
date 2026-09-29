@@ -39,10 +39,10 @@ from dplanner.domain.store import FilesFor, LibraryStore
 from dplanner.modules.step_review.aspect import (
     DEFAULT_AGENT,
     MODULE_ID,
-    NO_REVIEW_ON_A_WAIT,
     ReviewSettings,
     is_review,
     lens_words,
+    no_review,
     settings,
     subjects,
     write,
@@ -98,7 +98,7 @@ def commands(
     set_status: SetStatus,
     inherit_refs: Callable[[Step, Step], Command | None],
     note_escalation: Callable[[CliContext, Step, str, str], str],
-    is_wait: Callable[[Step], bool],
+    works_nobody: Callable[[Step], str],
     key_of: Callable[[Step], str],
     harnesses: Sequence[AgentHarness],
 ) -> list[CliCommand]:
@@ -110,7 +110,7 @@ def commands(
     talk = _Conversations(auto_progresses, status_for, key_of)
 
     def run_set(context: CliContext, args: Namespace) -> int:
-        return _set(context, args, is_wait, harnesses)
+        return _set(context, args, works_nobody, harnesses)
 
     def run_show(context: CliContext, args: Namespace) -> int:
         return _show(context, args, talk, harnesses)
@@ -392,12 +392,12 @@ class _Conversations:
 def _set(
     context: CliContext,
     args: Namespace,
-    is_wait: Callable[[Step], bool],
+    works_nobody: Callable[[Step], str],
     harnesses: Sequence[AgentHarness],
 ) -> int:
     step = find_step(context.library, args.step, context.current)
-    if is_wait(step):
-        raise CliError(f"{step.title!r} is a wait: {NO_REVIEW_ON_A_WAIT}")
+    if kind := works_nobody(step):
+        raise CliError(f"{step.title!r} is {kind}: {no_review(kind)}")
     chosen = settings(step)
     if args.agent is not None:
         chosen = replace(chosen, agent=DEFAULT_AGENT if args.agent == DEFAULT_WORD else args.agent)

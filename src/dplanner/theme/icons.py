@@ -592,6 +592,7 @@ GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
     "review": review_icon,
     "ticket": ticket_icon,
     "clock": clock_icon,
+    "branch": branch_icon,
 }
 
 

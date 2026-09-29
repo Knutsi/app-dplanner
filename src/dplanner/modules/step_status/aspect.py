@@ -48,8 +48,14 @@ PENDING: Final = "pending"
 STATUSES: Final = (PENDING, IN_PROGRESS, READY_FOR_REVIEW, READY_TO_MERGE, DONE, BLOCKED)
 # Somebody has worked on the step: the first write of any of these stamps ``started``.
 WORKED: Final = (IN_PROGRESS, *REVIEW_AND_MERGE)
-# A wait (``step_wait``) has none: what it holds is released by the calendar, not by a claim.
-NO_STATUS_ON_A_WAIT: Final = "a wait has no status: it is over when its day comes"
+
+
+def no_status(kind: str) -> str:
+    """Why a step nobody works — a wait, a branch cut; ``kind`` is what it is called — takes
+    no status: what it holds is released by the calendar or by what it waits on, never by a
+    claim."""
+    return f"{kind} has no status: it is over when what it waits for is"
+
 
 SINCE_KEY: Final = "since"
 STARTED_KEY: Final = "started"
@@ -149,14 +155,19 @@ def record_started(library: Library, step_id: StepId, today: date) -> bool:
     return True
 
 
-def record_merged(library: Library, step_id: StepId, today: date) -> bool:
+def record_merged(
+    library: Library, step_id: StepId, today: date, *, accepted_by_merge: bool = False
+) -> bool:
     """The step's PR reads merged: a step waiting on its merge is ``done`` — directly, off
     the undo stack, like the PR state it follows (``ARCHITECTURE.md``'s *Syncing an
     external fact*): Ctrl+Z must not file a merged step as still waiting on its merge. False,
     and no write, when the step is gone or is not waiting on its merge — a merged PR says
-    nothing about a step nobody has accepted.
+    nothing about a step nobody has accepted — unless ``accepted_by_merge``: a PR merged
+    into the feature branch a step is on is the acceptance, and the branch's review comes
+    when it lands, so a step still under review is done by that merge too.
     """
-    if not library.has(step_id) or read(library.step(step_id)) != READY_TO_MERGE:
+    accepting = (READY_TO_MERGE, READY_FOR_REVIEW) if accepted_by_merge else (READY_TO_MERGE,)
+    if not library.has(step_id) or read(library.step(step_id)) not in accepting:
         return False
     step = library.step(step_id)
     status_command(step, DONE, today=today, view_origin=MERGED_ORIGIN).redo(library)

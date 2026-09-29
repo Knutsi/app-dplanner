@@ -59,6 +59,7 @@ def test_every_registered_aspect_became_a_tab_or_a_details_block(services, panel
         "step_properties.name",
         "estimation.details",
         "step_wait.details",
+        "branch_cut.details",
         "time_estimates.details",
         "step_description.details",
         "spec.figures",

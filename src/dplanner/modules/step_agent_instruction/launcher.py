@@ -229,6 +229,9 @@ class BranchPlan:
 # A run nothing narrows: its own branch, started from the remote's default, its PR opened
 # against the same — and every run that has no worktree, which reads none of it.
 DEFAULT_BRANCHES = BranchPlan()
+# The remote's default branch, as a start a plan can name when its mainline names none.
+DEFAULT_START = "origin/HEAD"
+DEFAULT_START_REF = "refs/remotes/origin/HEAD"
 
 
 def mainline(facts: RepositoryFacts | None, step: Step | None = None) -> str:
@@ -646,7 +649,7 @@ def _posix_script(
     if worktree:
         tree = worktree_path(workdir, worktree)
         branch = branches.branch_for(worktree)
-        head = "refs/remotes/origin/HEAD"
+        head = DEFAULT_START_REF
         lines += [
             # A registration whose directory is gone would refuse the add; prune is safe.
             "git worktree prune >/dev/null 2>&1",
@@ -663,6 +666,13 @@ def _posix_script(
         if branches.create:
             # The first run in a stretch cuts its branch on the remote: a push of a ref,
             # never a checkout, so a plan kept inside this checkout is not switched under.
+            # A cut from the remote's default pushes from origin/HEAD, which a checkout
+            # that was not cloned may never have been told.
+            if branches.create_from == DEFAULT_START:
+                lines.append(
+                    f"  git symbolic-ref -q {DEFAULT_START_REF} >/dev/null"
+                    " || git remote set-head origin --auto >/dev/null 2>&1"
+                )
             lines += [
                 f'  if ! git show-ref --verify --quiet "refs/remotes/origin/{branches.create}";'
                 " then",
@@ -766,6 +776,11 @@ def _windows_script(
             "if not errorlevel 1 git fetch --quiet origin",
         ]
         if branches.create:
+            if branches.create_from == DEFAULT_START:
+                lines += [
+                    f"git symbolic-ref -q {DEFAULT_START_REF} >nul 2>&1",
+                    "if errorlevel 1 git remote set-head origin --auto >nul 2>&1",
+                ]
             lines += [
                 f'git show-ref --verify --quiet "refs/remotes/origin/{branches.create}"',
                 f'if errorlevel 1 git push --quiet origin "{branches.create_from}'

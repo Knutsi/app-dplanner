@@ -135,6 +135,9 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # feed the one Stack child menu, the rule between them drawn inside it, and a stack's
     # frame on the canvas leads its right-click with "stacked" alone: a stack is never made
     # of itself. New Stack is Graph's "new", beside New Step.
+    # "branch" is Put on a Branch and Remove Branch: a cut before the picked steps and a
+    # landing after, or the whole bracket taken away again — a band of its own because a
+    # branch is not a stack, though both are drawn round steps that are already there.
     # "track" is where a step stands and how long it takes: the Status and Estimate child
     # menus, acting on every picked step. A child menu sits at its first entry's order, so
     # the two claim bands of it — Status the 200s, Estimate the 400s — and ``order`` still
@@ -158,6 +161,7 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
         "link",
         "stack",
         "stacked",
+        "branch",
         "track",
         "classify",
         "agent",

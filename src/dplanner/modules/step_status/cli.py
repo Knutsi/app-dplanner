@@ -37,9 +37,9 @@ from dplanner.domain.progression import (
     REVIEW_AND_MERGE,
 )
 from dplanner.modules.step_status.aspect import (
-    NO_STATUS_ON_A_WAIT,
     PENDING,
     STATUSES,
+    no_status,
     read,
     status_command,
 )
@@ -50,23 +50,24 @@ STOPPED = (READY_FOR_REVIEW, READY_TO_MERGE, DONE, BLOCKED)
 
 def commands(
     *,
-    is_wait: Callable[[Step], bool],
+    works_nobody: Callable[[Step], str],
     is_agent: Callable[[Step], bool],
     in_agent_shell: Callable[[], bool],
     note_reason: Callable[[CliContext, Step, str], tuple[str, bool]],
     end_claim: Callable[[CliContext, Step], bool],
 ) -> list[CliCommand]:
-    """``is_wait`` says a step is a wait, which has no status to set; ``is_agent`` that an
-    agent executes it, and ``in_agent_shell`` that this command runs inside an agent CLI's
-    shell — together, a done that skips review. ``note_reason`` keeps a ``--because`` as a
+    """``works_nobody`` names a step nobody works — "a wait" — which has no status to set;
+    ``is_agent`` says an agent executes a step, and ``in_agent_shell`` that this command
+    runs inside an agent CLI's shell — together, a done that skips review. ``note_reason``
+    keeps a ``--because`` as a
     decision note on the step and answers the note's id, and whether it was added — False
     when the step already carried that note, which then stands as it was. ``end_claim`` ends
     an agent's at-work claim on the step and answers whether one stood."""
 
     def set_status(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
-        if is_wait(step) and args.state != PENDING:
-            raise CliError(f"{step.title!r} is a wait: {NO_STATUS_ON_A_WAIT}")
+        if (kind := works_nobody(step)) and args.state != PENDING:
+            raise CliError(f"{step.title!r} is {kind}: {no_status(kind)}")
         because = (args.because or "").strip()
         if args.because is not None and args.state != DONE:
             raise CliError("--because says why a step is done without review; it goes with done")

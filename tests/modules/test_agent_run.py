@@ -472,6 +472,27 @@ def test_the_first_run_in_a_stretch_cuts_its_branch_and_starts_from_it(cloned_re
 
 
 @SH
+def test_a_cut_from_the_remotes_default_finds_it_on_a_checkout_that_was_never_told(
+    cloned_repo, tmp_path
+):
+    """A checkout made by init and remote-add has no origin/HEAD: the script asks the
+    remote which branch is its default before it pushes from it."""
+    from dplanner.modules.step_agent_instruction.launcher import DEFAULT_START
+
+    _git(cloned_repo, "remote", "set-head", "origin", "-d")
+    plan = BranchPlan(
+        start="origin/feature/y",
+        create="feature/y",
+        create_from=DEFAULT_START,
+        pr_base="feature/y",
+    )
+    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s5-x", plan))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "on main" in done.stdout
+    assert _git(tmp_path / "origin.git", "branch", "--list", "feature/y")
+
+
+@SH
 def test_a_landing_checks_out_the_feature_branch_tracking_it(cloned_repo, tmp_path):
     _git(cloned_repo, "push", "-q", "origin", "origin/main:refs/heads/feature/x")
     plan = BranchPlan(work_branch="feature/x", start="origin/feature/x", pr_base="main")

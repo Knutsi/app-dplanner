@@ -33,7 +33,7 @@ STACK_BANDS: Final = ("stack", "stacked")
 # The Step menu's bands about the step itself. What a table adds — its type and tests, set
 # in Step Details; compiling, the Docs tab's; the project's views, rows in the index beside
 # the canvas — a card leaves out.
-STEP_ITSELF: Final = ("edit", "link", *STACK_BANDS, "track", "agent", "open")
+STEP_ITSELF: Final = ("edit", "link", *STACK_BANDS, "branch", "track", "agent", "open")
 
 BANDS: Final[dict[str, tuple[Band, ...]]] = {
     CARD: (Band("Step", STEP_ITSELF),),

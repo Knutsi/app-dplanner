@@ -29,10 +29,10 @@ from dplanner.framework.undo import UndoService
 from dplanner.modules.step_review.aspect import (
     DATA_FORMAT,
     MODULE_ID,
-    NO_REVIEW_ON_A_WAIT,
     SPEC,
     ReviewSettings,
     is_review,
+    no_review,
     write,
 )
 from dplanner.modules.step_review.conversation import open_conversation
@@ -51,7 +51,7 @@ class StepReviewDeps:
     undo: UndoService[Library]
     actions: ActionRegistry
     sections: InspectorSectionRegistry
-    is_wait: Callable[[Step], bool]
+    works_nobody: Callable[[Step], str]
     key_of: Callable[[Step], str]
     # The agent CLIs this build can launch, and the name of this machine's default launch
     # profile — the choices the Agent field lays out, the default first.
@@ -100,7 +100,7 @@ class StepReviewModule:
                 fresh=lambda _step, _project: write(ReviewSettings()),
                 icon=review_icon,
                 tip="Make this step an automatic review of the step it waits on",
-                refusal=lambda step: NO_REVIEW_ON_A_WAIT if deps.is_wait(step) else "",
+                refusal=lambda step: no_review(kind) if (kind := deps.works_nobody(step)) else "",
             )
         )
         deps.actions.register(

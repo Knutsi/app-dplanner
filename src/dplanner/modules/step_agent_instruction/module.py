@@ -244,7 +244,11 @@ def _our_version(node: Node, entry: str) -> str:
     return node.module_text.get(module_id, "")
 
 
-NO_AGENT_ON_A_WAIT = "a wait has no work for an agent"
+def no_agent(kind: str) -> str:
+    """Why a step nobody works — ``kind`` is what it is called, "a wait" — has no run."""
+    return f"{kind} has no work for an agent"
+
+
 # A person's own shell where a step's work is: its worktree, or the checkout a step that
 # works in place uses. Not a run — nothing is briefed, tracked or claimed.
 SHELL_IN_WORKTREE = "&Open Terminal in Worktree"
@@ -307,9 +311,10 @@ class StepAgentInstructionDeps:
     # Whether a waiter may start once a source is ready for review — an auto-progress
     # link, which the gate reads through the same domain answer the frontier does.
     auto_progresses: Callable[[Step, Step], bool] = field(default=lambda _waiter, _source: False)
-    # A wait is no work, so there is nothing on one for an agent to do: the Agent toggle
-    # greys on a wait and Run Agent refuses one. The composition root knows what marks it.
-    is_wait: Callable[[Step], bool] = field(default=lambda _step: False)
+    # A wait or a branch cut is no work, so there is nothing on one for an agent to do: the
+    # Agent toggle greys on one and Run Agent refuses it. The root names what the step is
+    # ("a wait"), "" for a step somebody works.
+    works_nobody: Callable[[Step], str] = field(default=lambda _step: "")
     # The step's readable key ("F7") and its ticket key ("PROJ-12"), both composed by the
     # root from aspects this module never reads. They name the run — the worktree, the
     # branch, the terminal's title — through ``launcher.run_name``, which the briefing's
@@ -434,7 +439,7 @@ class StepAgentInstructionModule:
                 fresh=lambda _step, _project: write_state(True),
                 icon=spark_icon,
                 tip="Mark this step for agent execution; its description is the briefing",
-                refusal=lambda step: NO_AGENT_ON_A_WAIT if deps.is_wait(step) else "",
+                refusal=lambda step: no_agent(kind) if (kind := deps.works_nobody(step)) else "",
             )
         )
         # The verb every button and the palette run — through the default profile. Its
@@ -564,8 +569,8 @@ class StepAgentInstructionModule:
     def _step_refusal(self, step: Step) -> str:
         """Why this step has no agent run in it; "" when it has. The step's own facts."""
         deps = self._deps
-        if deps.is_wait(step):
-            return NO_AGENT_ON_A_WAIT
+        if kind := deps.works_nobody(step):
+            return no_agent(kind)
         if not enabled(step):
             return "mark the step as an agent step first (Agent, in Step Details)"
         briefed = deps.briefing.instruction(deps.library, step, deps.files)
