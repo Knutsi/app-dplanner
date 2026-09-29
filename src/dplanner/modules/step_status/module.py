@@ -38,10 +38,10 @@ from dplanner.framework.undo import UndoService
 from dplanner.modules.step_status.aspect import (
     DATA_FORMAT,
     MODULE_ID,
-    NO_STATUS_ON_A_WAIT,
     PENDING,
     STATUSES,
     label,
+    no_status,
     read,
     status_command,
 )
@@ -73,7 +73,7 @@ class StepStatusDeps:
     clock: Clock  # The day a status change is stamped with.
     # A wait has no status of its own — it is over when its day comes — so the verbs grey
     # on one. The composition root knows what marks a wait.
-    is_wait: Callable[[Step], bool] = field(default=lambda _step: False)
+    works_nobody: Callable[[Step], str] = field(default=lambda _step: "")
 
 
 class StepStatusModule:
@@ -111,8 +111,8 @@ class StepStatusModule:
             steps = self._chosen(context)
             if not steps:
                 return DISABLED
-            if any(self._deps.is_wait(step) for step in steps):
-                return ActionState(enabled=False, label=f"{label(status)} — {NO_STATUS_ON_A_WAIT}")
+            if kind := next(filter(None, map(self._deps.works_nobody, steps)), ""):
+                return ActionState(enabled=False, label=f"{label(status)} — {no_status(kind)}")
             return ActionState(checked=all(read(step) == status for step in steps))
 
         return state
@@ -120,7 +120,7 @@ class StepStatusModule:
     def _setter(self, status: str) -> Callable[[Context], None]:
         def run(context: Context) -> None:
             steps = self._chosen(context)
-            if any(self._deps.is_wait(step) for step in steps):
+            if any(self._deps.works_nobody(step) for step in steps):
                 return
             today = self._deps.clock.today()
             with self._deps.undo.gesture("Set Status"):

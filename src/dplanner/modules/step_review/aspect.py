@@ -64,7 +64,12 @@ DEFAULT_MAX_ROUNDS: Final = 3
 # "" is the default launch profile — whatever *Run Agent* itself runs on this machine.
 DEFAULT_AGENT: Final = ""
 
-NO_REVIEW_ON_A_WAIT: Final = "a wait reviews nothing: it holds, and no agent works it"
+
+def no_review(kind: str) -> str:
+    """Why a step nobody works — ``kind`` is what it is called, "a wait" — is no review."""
+    return f"{kind} reviews nothing: it holds, and no agent works it"
+
+
 # Why a link into a review auto-progresses whatever its flag says, as the Edge menu greys it.
 TAKES_FROM_REVIEW: Final = "is a review: it takes its subject from review on"
 # Why a review's run gets no worktree whatever its agent aspect says: it reads the subject's.

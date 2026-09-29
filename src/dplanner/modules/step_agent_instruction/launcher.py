@@ -89,7 +89,12 @@ again by that id, and one that mints its own id is found afterwards by its ``rep
 run.** When the step asks for one (its agent aspect's ``worktree``, on by default), the
 wrapper puts the agent in :data:`WORKTREES_DIR`/``<run name>`` on the ``agent/<run name>``
 branch — created on the first run, reused on the next — so parallel agents never trample
-one checkout, and the branch is the reviewable result. The run name is
+one checkout, and the branch is the reviewable result. **A new branch starts from the
+remote, never from whatever the checkout has checked out**: the script fetches, then
+starts it from the :class:`BranchPlan`'s ``start`` — a stretch's feature branch, the code
+location's own mainline, else the remote's default branch — with no upstream, so a bare
+push from the agent's branch reaches nothing shared. A landing's worktree is on the
+feature branch itself, tracking it. The run name is
 :func:`run_name`: the step's key, its ticket and its title, made safe for a ref, so the
 branch says which step it is and a person can find it in ``git branch``. The directory is
 excluded through ``.git/info/exclude`` (local, never versioned). **If git cannot make the
@@ -191,6 +196,49 @@ def worktree_path(workdir: Path, name: str) -> Path:
 
 def branch_name(name: str) -> str:
     return f"{BRANCH_PREFIX}{name}"
+
+
+@dataclass(frozen=True)
+class BranchPlan:
+    """Which git branches a run of a step works between — decided by the plan, carried out
+    by the wrapper script and told to the agent, so the two cannot disagree.
+
+    ``work_branch`` is the branch its worktree is on, "" for the step's own
+    ``agent/<run name>``; a landing names the feature branch it lands. ``start`` is where a
+    new branch starts — ``origin/<branch>`` — and "" is the remote's default branch, looked
+    up by the script. ``create`` is the branch this run may create on the remote from
+    ``create_from`` when it is not there yet: the first run in a stretch cuts it, and no
+    later one ever cuts it again. ``pr_base`` is the branch the step's PR opens against, ""
+    for the repository's default. ``refusal`` is why no agent may run on the step now, ""
+    when one may. Every field names a branch the plan wrote, so each is checked with
+    :func:`dplanner.core.storage.sparse.valid_ref` before it reaches a script.
+    """
+
+    work_branch: str = ""
+    start: str = ""
+    create: str = ""
+    create_from: str = ""
+    pr_base: str = ""
+    refusal: str = ""
+
+    def branch_for(self, run: str) -> str:
+        """The branch a worktree named ``run`` is on."""
+        return self.work_branch or branch_name(run)
+
+
+# A run nothing narrows: its own branch, started from the remote's default, its PR opened
+# against the same — and every run that has no worktree, which reads none of it.
+DEFAULT_BRANCHES = BranchPlan()
+# The remote's default branch, as a start a plan can name when its mainline names none.
+DEFAULT_START = "origin/HEAD"
+DEFAULT_START_REF = "refs/remotes/origin/HEAD"
+
+
+def mainline(facts: RepositoryFacts | None, step: Step | None = None) -> str:
+    """The branch a step's work lands on when no stretch holds it: the ref its code location
+    names, "" for the repository's default branch."""
+    placement = code_placement(facts, step) if facts is not None else None
+    return placement.location.ref if placement is not None else ""
 
 
 def current_command(agent_command: str, harnesses: tuple[AgentHarness, ...]) -> str:
@@ -484,12 +532,15 @@ def prepare(
     session: str = "",
     project_id: str = "",
     harnesses: tuple[AgentHarness, ...] = (),
+    branches: BranchPlan = DEFAULT_BRANCHES,
 ) -> LaunchFiles:
     """Write the prompt and a wrapper script to ``directory``, or a fresh temp directory.
 
     ``worktree`` is a run name (:func:`run_name`); when non-empty the script prepares
-    :func:`worktree_path` on :func:`branch_name` and moves into it before starting — or
-    stops with git's reason when it cannot. Empty means the checkout itself. ``session``
+    :func:`worktree_path` on the branch ``branches`` names and moves into it before
+    starting — or stops with git's reason when it cannot. Empty means the checkout itself.
+    A new branch starts from ``branches.start`` after a fetch — the remote's default branch
+    when that is "" — never from whatever the checkout has checked out. ``session``
     is the run's session id, minted here when not given. ``project_id`` is exported into
     the shell as ``$DPLANNER_PROJECT``, so every ``dplanner`` call the agent makes is
     scoped to its project — two projects may plan the code repository it works in.
@@ -500,6 +551,8 @@ def prepare(
     prompt and waits. ``agent_command`` should then be the harness's :func:`open_command`,
     whose flags are not about a briefing that does not exist.
     """
+    if refused := _unsafe_ref(branches):
+        raise ValueError(f"not a branch git accepts: {refused!r}")
     if directory is None:
         directory = new_run_dir()
     prompt_file = directory / "prompt.md"
@@ -527,18 +580,42 @@ def prepare(
     # not, because read_text normalises every line ending it reads.
     if platform.startswith("win"):
         files.script.write_text(
-            _windows_script(files, workdir, agent_command, worktree, project_id, harnesses),
+            _windows_script(
+                files, workdir, agent_command, worktree, project_id, harnesses, branches
+            ),
             encoding="utf-8",
             newline="",
         )
     else:
         files.script.write_text(
-            _posix_script(files, workdir, agent_command, worktree, project_id, harnesses),
+            _posix_script(files, workdir, agent_command, worktree, project_id, harnesses, branches),
             encoding="utf-8",
             newline="",
         )
         files.script.chmod(0o755)
     return files
+
+
+def _unsafe_ref(branches: BranchPlan) -> str:
+    """The first branch in ``branches`` git would refuse, or that a script could not carry
+    verbatim; "" when every one is safe."""
+    from dplanner.core.storage.sparse import valid_ref
+
+    named = (
+        branches.work_branch,
+        branches.start,
+        branches.create,
+        branches.create_from,
+        branches.pr_base,
+    )
+    return next((ref for ref in named if ref and not valid_ref(ref)), "")
+
+
+def _track(branch: str, start: str) -> str:
+    """How a new branch relates to where it starts: a branch that *is* its remote one — a
+    landing on the feature branch — tracks it, so a plain push lands there; any other never
+    does, so a bare push from an agent's own branch can reach nothing shared."""
+    return "--track" if start == f"origin/{branch}" else "--no-track"
 
 
 def _posix_script(
@@ -548,6 +625,7 @@ def _posix_script(
     worktree: str,
     project_id: str = "",
     harnesses: tuple[AgentHarness, ...] = (),
+    branches: BranchPlan = DEFAULT_BRANCHES,
 ) -> str:
     title = shlex.quote(files.title)
     shell, exit_file = shlex.quote(str(files.shell_file)), shlex.quote(str(files.exit_file))
@@ -570,7 +648,8 @@ def _posix_script(
         lines.append(f"export {PROJECT_ENV}={shlex.quote(project_id)}")
     if worktree:
         tree = worktree_path(workdir, worktree)
-        branch = branch_name(worktree)
+        branch = branches.branch_for(worktree)
+        head = DEFAULT_START_REF
         lines += [
             # A registration whose directory is gone would refuse the add; prune is safe.
             "git worktree prune >/dev/null 2>&1",
@@ -578,11 +657,50 @@ def _posix_script(
             f"grep -qxF '/{WORKTREES_DIR}/' \"$exclude\" 2>/dev/null"
             f" || echo '/{WORKTREES_DIR}/' >> \"$exclude\"",
             f'if [ ! -e "{tree}" ]; then',
+            # Start from what the remote has now, never from whatever is checked out here.
+            "  if git remote get-url origin >/dev/null 2>&1; then",
+            "    git fetch --quiet origin"
+            " || printf 'Could not fetch origin: starting from what was fetched last.\\n'",
+            "  fi",
+        ]
+        if branches.create:
+            # The first run in a stretch cuts its branch on the remote: a push of a ref,
+            # never a checkout, so a plan kept inside this checkout is not switched under.
+            # A cut from the remote's default pushes from origin/HEAD, which a checkout
+            # that was not cloned may never have been told.
+            if branches.create_from == DEFAULT_START:
+                lines.append(
+                    f"  git symbolic-ref -q {DEFAULT_START_REF} >/dev/null"
+                    " || git remote set-head origin --auto >/dev/null 2>&1"
+                )
+            lines += [
+                f'  if ! git show-ref --verify --quiet "refs/remotes/origin/{branches.create}";'
+                " then",
+                f'    git push --quiet origin "{branches.create_from}:refs/heads/{branches.create}"'
+                " && git fetch --quiet origin",
+                "  fi",
+            ]
+        if branches.start:
+            lines.append(f'  start="{branches.start}"')
+        else:
+            lines += [
+                f'  start="$(git symbolic-ref --quiet --short {head} 2>/dev/null)"',
+                '  if [ -z "$start" ] && git remote set-head origin --auto >/dev/null 2>&1; then',
+                f'    start="$(git symbolic-ref --quiet --short {head} 2>/dev/null)"',
+                "  fi",
+                # A repository with no remote default has only its own history to start from.
+                '  [ -n "$start" ] || start=HEAD',
+            ]
+        lines += [
             # One attempt, one honest error: reuse the branch when it exists.
             f'  if git show-ref --verify --quiet "refs/heads/{branch}"; then',
             f'    git worktree add "{tree}" "{branch}"',
+            '  elif git rev-parse --verify --quiet "$start^{commit}" >/dev/null; then',
+            f'    git worktree add {_track(branch, branches.start)} -b "{branch}" "{tree}"'
+            ' "$start"',
             "  else",
-            f'    git worktree add "{tree}" -b "{branch}"',
+            f"    printf '\\nThere is no %s to start {branch} from. A branch deleted after it"
+            ' landed can be restored from its pull request.\\n\' "$start"',
             "  fi",
             "fi",
             # A linked worktree is marked by a `.git` file; anything else is not one.
@@ -593,8 +711,11 @@ def _posix_script(
             f"  echo 1 > {exit_file}",
             "  exit 1",
             "fi",
-            f'cd "{tree}"',
         ]
+        if branches.pr_base:
+            # gh reads it when no --base is given: the briefing says it, this holds it.
+            lines.append(f'git config "branch.{branch}.gh-merge-base" "{branches.pr_base}"')
+        lines.append(f'cd "{tree}"')
     # In place now: where the agent works, and how to pick this run up again from there.
     lines.append(f"printf 'dir=%s\\n' \"$(pwd)\" >> {shell}")
     if resume:
@@ -635,28 +756,68 @@ def _windows_script(
     worktree: str,
     project_id: str = "",
     harnesses: tuple[AgentHarness, ...] = (),
+    branches: BranchPlan = DEFAULT_BRANCHES,
 ) -> str:
     lines = ["@echo off", f"title {files.title}", f'cd /d "{workdir}"']
     if project_id:
         lines.append(f"set {PROJECT_ENV}={project_id}")
     if worktree:
         tree = worktree_path(workdir, worktree)
-        branch = branch_name(worktree)
+        branch = branches.branch_for(worktree)
+        # cmd expands %var% when it reads a whole parenthesised block, before the block
+        # runs, so every step that reads %start% stands on a line of its own after the one
+        # that set it — labels, never a block.
+        head = 'for /f "delims=" %%b in (\'git symbolic-ref --quiet --short'
+        head += ' refs/remotes/origin/HEAD 2^>nul\') do set "start=%%b"'
         lines += [
             "git worktree prune >nul 2>&1",
-            f'if not exist "{tree}" (',
-            f'  git show-ref --verify --quiet "refs/heads/{branch}"',
-            f'  if errorlevel 1 (git worktree add "{tree}" -b "{branch}")'
-            f' else (git worktree add "{tree}" "{branch}")',
-            ")",
+            f'if exist "{tree}" goto tree_ready',
+            "git remote get-url origin >nul 2>&1",
+            "if not errorlevel 1 git fetch --quiet origin",
+        ]
+        if branches.create:
+            if branches.create_from == DEFAULT_START:
+                lines += [
+                    f"git symbolic-ref -q {DEFAULT_START_REF} >nul 2>&1",
+                    "if errorlevel 1 git remote set-head origin --auto >nul 2>&1",
+                ]
+            lines += [
+                f'git show-ref --verify --quiet "refs/remotes/origin/{branches.create}"',
+                f'if errorlevel 1 git push --quiet origin "{branches.create_from}'
+                f':refs/heads/{branches.create}" && git fetch --quiet origin',
+            ]
+        if branches.start:
+            lines.append(f'set "start={branches.start}"')
+        else:
+            lines += [
+                'set "start="',
+                head,
+                "if not defined start git remote set-head origin --auto >nul 2>&1",
+                f"if not defined start {head}",
+                'if not defined start set "start=HEAD"',
+            ]
+        lines += [
+            f'git show-ref --verify --quiet "refs/heads/{branch}"',
+            "if not errorlevel 1 goto tree_reuse",
+            'git rev-parse --verify --quiet "%start%^{commit}" >nul 2>&1',
+            f"if errorlevel 1 (echo There is no %start% to start {branch} from. A branch"
+            " deleted after it landed can be restored from its pull request.)"
+            f' else (git worktree add {_track(branch, branches.start)} -b "{branch}"'
+            f' "{tree}" "%start%")',
+            "goto tree_ready",
+            ":tree_reuse",
+            f'git worktree add "{tree}" "{branch}"',
+            ":tree_ready",
             f'if not exist "{tree}\\.git" (',
             f"  echo Could not prepare the worktree {tree} on branch {branch}.",
             "  pause",
             f'  >"{files.exit_file}" echo 1',
             "  exit /b 1",
             ")",
-            f'cd /d "{tree}"',
         ]
+        if branches.pr_base:
+            lines.append(f'git config "branch.{branch}.gh-merge-base" "{branches.pr_base}"')
+        lines.append(f'cd /d "{tree}"')
     agent = _agent_line(
         agent_command,
         _powershell_quoted(files.opening) if files.opening else "",

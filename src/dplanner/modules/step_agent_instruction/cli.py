@@ -140,6 +140,7 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
                 f"instruction with `dplanner agent set --for-project {project.title!r} "
                 "--file …`"
             )
+        branches = briefing.branch(context.library, step, facts)
         assembled = assemble(
             step_title=step.title or "Untitled step",
             project_title=project.title or "Untitled project",
@@ -147,8 +148,8 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             parts=briefing.parts(context.library, step, context.store.files),
             sections=briefing.sections(context.library, step, context.store.files, facts),
             project_sections=briefing.project_sections(context.library, step, context.store.files),
-            epilogue=briefing.epilogue(context.library, step),
-            preamble=briefing.preamble(step, briefing.worktree(step), facts),
+            epilogue=briefing.epilogue(context.library, step, branches),
+            preamble=briefing.preamble(step, briefing.worktree(step), facts, branches),
             project_instruction=project_instruction,
             project_files=asset_paths(context.store.files, project.id),
             instruction_files=instruction.files,
@@ -163,6 +164,10 @@ def commands(*, briefing: Briefing) -> list[CliCommand]:
             "checkout": str(facts.checkout) if facts.checkout is not None else "",
             # The step's own workplace, when it names one: where its shell opens.
             "workplace": workplace(step),
+            # The branch a run works on when it is not the step's own `agent/…` one, and
+            # what its PR opens against; "" for each default.
+            "branch": branches.work_branch,
+            "base": branches.pr_base,
             "prompt": assembled.text,
             # What each block cost, so "where does a briefing's weight go?" is one verb
             # rather than a script somebody writes again. The sizes sum to the prompt's.

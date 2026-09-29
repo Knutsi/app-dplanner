@@ -15,7 +15,17 @@ from dplanner.domain.model import Step
 from dplanner.modules.github.gh import PrInfo
 
 MODULE_ID = "github"
-DATA_FORMAT = ModuleDataFormat(MODULE_ID)
+
+
+def _to_format_2(entry: dict[str, Any]) -> dict[str, Any]:
+    """Format 2 adds ``pr_base``, the branch the PR merges into. A format-1 entry has none,
+    and a merged or closed PR is never asked again, so it stays unknown — every reader
+    takes "" as "not said". The bump is so an older build, whose ``write`` rebuilds the
+    entry field by field, knows it would drop it."""
+    return entry
+
+
+DATA_FORMAT = ModuleDataFormat(MODULE_ID, 2, (_to_format_2,))
 
 PR_STATES = ("open", "merged", "closed", "")  # "" = never checked, e.g. recorded gh-less.
 
@@ -27,6 +37,7 @@ class GithubRefs:
     pr_url: str = ""
     pr_state: str = ""  # One of PR_STATES; last seen, not live.
     pr_title: str = ""
+    pr_base: str = ""  # The branch the PR merges into, as GitHub last said.
 
     def is_empty(self) -> bool:
         return not (self.branch or self.pr_number is not None or self.pr_url)
@@ -47,6 +58,7 @@ def read(step: Step) -> GithubRefs | None:
         pr_url=str(entry.get("pr_url", "")),
         pr_state=str(entry.get("pr_state", "")),
         pr_title=str(entry.get("pr_title", "")),
+        pr_base=str(entry.get("pr_base", "")),
     )
     return None if refs.is_empty() else refs
 
@@ -85,7 +97,7 @@ def write(refs: GithubRefs | None) -> dict[str, Any]:
         entry["branch"] = refs.branch
     if refs.pr_number is not None:
         entry["pr_number"] = int(refs.pr_number)
-    for field in ("pr_url", "pr_state", "pr_title"):
+    for field in ("pr_url", "pr_state", "pr_title", "pr_base"):
         if getattr(refs, field):
             entry[field] = getattr(refs, field)
     return stamped(entry, DATA_FORMAT.version)
@@ -103,6 +115,7 @@ def refreshed(refs: GithubRefs, info: PrInfo) -> GithubRefs:
         pr_url=info.url,
         pr_state=info.state,
         pr_title=info.title,
+        pr_base=info.base_ref or refs.pr_base,
     )
 
 

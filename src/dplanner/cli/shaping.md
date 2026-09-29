@@ -239,6 +239,20 @@ parser' --after S7 --agent --review` puts it between S7 and whatever follows. Ev
 a review auto-progresses by rule, so it needs no flag. Link what comes next after the review,
 never after S7 directly: `project lint` names a step that goes round it (`review.bypassed`).
 
+## A stretch on its own branch
+
+When a stretch of work should not reach the mainline until all of it is done — a feature
+too large for one PR, a migration that must land whole — **put it on a branch**: `dplanner
+branch put S4 S5 S6 --branch feature/<name>`. A *cut* is born before the steps and a
+*landing* after, and the links from outside move onto the two, so the stretch has one way in
+and one way out. Each step's PR then merges into the feature branch, and merging there is
+what accepts it; the landing — an agent step — merges the mainline in and opens the
+branch's own PR. **Review the landing, not each step**: a review step after the landing
+reads the whole branch at once. Link work the stretch builds on into the cut, never into
+its middle (`project lint` names it, `branch.late-entry`), and keep milestones outside it —
+a release whose work is not on the mainline yet is not a release. `dplanner branch show`
+says what is on each branch; `dplanner branch remove` takes one away again.
+
 ## A line that keeps growing: stack it
 
 Iterating on one surface grows a line — task, then task, then task, each waiting on the one

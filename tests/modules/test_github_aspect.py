@@ -90,6 +90,18 @@ def test_refs_round_trip_and_empty_refs_leave_no_entry():
     assert write(None) == {}
 
 
+def test_the_base_github_reports_is_kept_and_survives_a_silent_refresh():
+    """Format 2 adds ``pr_base``; a refresh that learns none keeps what was known."""
+    from dplanner.modules.github.aspect import DATA_FORMAT, refreshed
+    from dplanner.modules.github.gh import PrInfo
+
+    assert DATA_FORMAT.version == 2
+    info = PrInfo(number=7, title="t", state="merged", url="u", head_ref="agent/s7", base_ref="x")
+    refs = refreshed(GithubRefs(pr_number=7), info)
+    assert refs.pr_base == "x" and write(refs)["pr_base"] == "x"
+    assert refreshed(refs, PrInfo(7, "t", "merged", "u", "agent/s7")).pr_base == "x"
+
+
 def test_the_pr_number_is_stored_as_an_int():
     """An identity, not a quantity: a JSON int round-trips byte-stably, unlike the float
     rule's coerced quantities — see the comment on ``write``."""

@@ -1997,6 +1997,8 @@ def test_a_mixed_pick_leads_with_narrowing_and_offers_each_kind_below(services, 
     rendered = offered(tab, centre_of(scene(tab).node(first.id)))
     assert rendered[:3] == ["Select Only Steps", "Select Only Links", "|"]
     assert "Delete 3 Items" in rendered and "Copy 2 Steps" in rendered
+    # A drag across a stretch picks its arrows too, and the stretch is what goes on a branch.
+    assert "Put on a Branch…" in rendered
     assert [entry[0] for entry in rendered if isinstance(entry, tuple)] == ["Step", "Links"]
     assert rendered[-1] == (
         "Links",

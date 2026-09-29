@@ -44,7 +44,7 @@ from dplanner.modules.project_editor.named_layouts import (
     snapshot,
 )
 from dplanner.modules.project_editor.placement import positions
-from dplanner.modules.project_editor.positions import MODULE_ID
+from dplanner.modules.project_editor.positions import MODULE_ID, Size, node_size
 from dplanner.modules.project_editor.sorts import (
     layered_down,
     layered_flow,
@@ -110,6 +110,9 @@ class LayoutVerbs:
     # Put a project's tabs in or out of Wave view, remembered for this user: the module's,
     # because every tab showing that project follows.
     set_waves: Callable[[NodeId, bool], None]
+    # How big each of a project's cards is — its body, and the branch strip some wear —
+    # so a sort leaves every card the room it is drawn with.
+    size_for: Callable[[Project], Callable[[Step], Size]] = lambda _project: node_size
 
     def register_into(self, actions: ActionRegistry) -> None:
         for spec in self._specs():
@@ -355,32 +358,38 @@ class LayoutVerbs:
         project = self._project()
         if project is None or not wave_view(project.id):
             return
-        placed = waves(self.library, project, days_for=self.days_for)
+        placed = waves(self.library, project, self.size_for(project), days_for=self.days_for)
         self._run_sort(project, "Keep Wave Arrangement", placed, "Kept Wave view's arrangement")
 
     def _sort_flow(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
-        self._run_sort(project, "Layered Flow", layered_flow(self.library, project))
+        self._run_sort(
+            project, "Layered Flow", layered_flow(self.library, project, self.size_for(project))
+        )
 
     def _sort_down(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
-        self._run_sort(project, "Layered Down", layered_down(self.library, project))
+        self._run_sort(
+            project, "Layered Down", layered_down(self.library, project, self.size_for(project))
+        )
 
     def _sort_spine(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
-        self._run_sort(project, "Spine Layout", spine(self.library, project))
+        self._run_sort(
+            project, "Spine Layout", spine(self.library, project, self.size_for(project))
+        )
 
     def _sort_timeline(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
-        placed = timeline(self.library, project, days_for=self.days_for)
+        placed = timeline(self.library, project, self.size_for(project), days_for=self.days_for)
         self._run_sort(project, "Timeline Layout", placed)
 
     def _sort_radial(self, context: Context) -> None:
@@ -389,13 +398,17 @@ class LayoutVerbs:
             return
         chosen = context.selected_entities("step")
         center = chosen[0] if len(chosen) == 1 else None
-        self._run_sort(project, "Radial Layout", radial(self.library, project, center=center))
+        sized = self.size_for(project)
+        self._run_sort(
+            project, "Radial Layout", radial(self.library, project, sized, center=center)
+        )
 
     def _sort_tidy(self, _context: Context) -> None:
         project = self._project()
         if project is None:
             return
-        placed = tidy(project, positions(self.library, project))
+        sized = self.size_for(project)
+        placed = tidy(project, positions(self.library, project, sized), sized)
         self._run_sort(project, "Tidy Layout", placed)
 
     # -- run -----------------------------------------------------------------------------------

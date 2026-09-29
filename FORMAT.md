@@ -600,6 +600,21 @@ an entry left naming nothing is removed. Absence is every link plain. It needs n
 bump for the rule above: an older build carries the entry untouched and reads every link
 as plain.
 
+**`branch_cut` makes a step the cut a feature branch starts from**: `{"branch":
+"feature/stacks"}`, format 1 — a name git accepts, since it reaches a script verbatim. A cut
+is no work: no worker takes it, it has no status of its own and it reads done once what it
+waits on is done. **`branch_land` makes an agent step the landing that merges it back**:
+`{"cut": "<step id>"}`, format 1. The pairing counts only while that cut is upstream of the
+landing, so an edge verb never rewrites it and a stale id is inert; a paste renames the id
+when the cut is copied along and drops the entry otherwise. What is on the branch is never
+stored: it is everything after the cut and before the landing (`domain/branches.py`).
+
+**`github` records where a step's work lands**: the branch and the PR, and the PR's last-seen
+state, title, URL and — since format 2 — `pr_base`, the branch it merges into. Format 2 is an
+identity migration: a format-1 entry has no base, and a merged PR is never asked again, so it
+stays unknown; the bump is so an older build, whose `write` rebuilds the entry field by field,
+knows it would drop the key.
+
 **`step_review` makes a step an automatic review of the step it `requires`**:
 `{"on": true, "agent": "codex", "lenses": ["architecture", "my-skill"], "max_rounds": 2}`,
 format 1. `on` is the marker. Every other key is written only when it differs from its

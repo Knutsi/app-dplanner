@@ -170,6 +170,8 @@ def test_the_bar_words_the_templates_left_and_glyphs_every_toggle_right(services
         "Review",
         "Check",
         "Wait",
+        "Branch cut",
+        "Landing",
     ]
 
 

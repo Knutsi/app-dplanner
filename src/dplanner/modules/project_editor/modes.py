@@ -774,21 +774,25 @@ class NodeResizeMode(GestureMode):
         snap = self.deps.canvas.snap
         rect = QRectF(self._seat)
         x, y = snap(event.scene_pos.x()), snap(event.scene_pos.y())
+        # The least a card can be is its least body and the strip it wears, if any.
+        strip = self._node.size()[1] - self._node.body_size()[1]
         if "left" in self._parts:
             rect.setLeft(min(x, rect.right() - MIN_NODE_W))
         elif "right" in self._parts:
             rect.setRight(max(x, rect.left() + MIN_NODE_W))
         if "top" in self._parts:
-            rect.setTop(min(y, rect.bottom() - MIN_NODE_H))
+            rect.setTop(min(y, rect.bottom() - MIN_NODE_H - strip))
         elif "bottom" in self._parts:
-            rect.setBottom(max(y, rect.top() + MIN_NODE_H))
+            rect.setBottom(max(y, rect.top() + MIN_NODE_H + strip))
         self._node.set_size(rect.width(), rect.height())
         self._node.setPos(rect.topLeft())
         return True
 
     def mouse_release(self, event: CanvasEvent) -> bool:
-        at, (w, h) = self._node.pos(), self._node.size()
-        if at != self._was_pos or (w, h) != self._was_size:
+        at = self._node.pos()
+        if at != self._was_pos or self._node.size() != self._was_size:
+            # The step stores its body: the strip is the branch's, never the card's own.
+            w, h = self._node.body_size()
             self.deps.canvas.node_resized.emit(self._node.step_id, at.x(), at.y(), w, h)
         self.pop()
         return True

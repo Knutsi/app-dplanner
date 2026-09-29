@@ -52,6 +52,8 @@ def test_aspect_list_names_every_aspect(cli):
         "step_agent_run",
         "agent_usage",
         "auto_progress",
+        "branch_cut",
+        "branch_land",
         "step_review",
         "review_rounds",
         "step_status",

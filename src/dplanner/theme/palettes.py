@@ -119,3 +119,17 @@ def shades(found: Palette, count: int) -> list[str]:
     """``count`` shades dealt evenly along the map, centred — one milestone sits in the
     middle, two at a quarter and three quarters, so no shade ever lands on an end."""
     return [shade(found, (index + 0.5) / count) for index in range(count)]
+
+
+# A feature branch's lane: the band under the arrows of the work on it. Unlike a milestone's
+# shade this names *which* branch, not a place in a sequence — two branches side by side are
+# peers — so it is dealt from a qualitative set rather than along a map, in the order the
+# branches were cut. The set stays clear of what a card already says in colour: the status
+# washes, the feature's teal and a milestone's shade sit on cards, and a lane sits under the
+# arrows between them.
+LANES: tuple[str, ...] = ("#e0559a", "#4fb3d9", "#a3c93a", "#f0874b", "#9b7bea")
+
+
+def lane(index: int) -> str:
+    """The lane colour dealt ``index``-th, wrapping when there are more branches than hues."""
+    return LANES[index % len(LANES)]

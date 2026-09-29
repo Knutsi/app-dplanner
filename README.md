@@ -367,6 +367,7 @@ src/dplanner/
 │   ├── aspects.py           what an aspect is: id, label, summary, data format
 │   ├── ordering.py          what order a project can be done in, and what can start now
 │   ├── scope.py             what a collector gathers: the cone, truncated at the next one
+│   ├── branches.py          which steps are on a feature branch: after a cut, until its landing
 │   ├── schedule.py          the same walk carrying estimates: running totals, dates, and when each
 │   │                        step lands in a staffed simulation
 │   ├── progression.py       the status-aware frontier: what can be launched right now
@@ -480,7 +481,7 @@ src/dplanner/
 │   │                        block, name.py leading it; every view's double-click on a step
 │   │                        opens it, and New opens it on the step it just made)
 │   │
-│   │   ── the thirteen aspect modules (`dplanner aspect list`); the `step_` prefix is not the
+│   │   ── the fourteen aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
 │   │      `step_properties` are views of steps, not aspects:
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
@@ -517,6 +518,10 @@ src/dplanner/
 │   │                        their sources are ready for review, lands them and sets them done —
 │   │                        Graph ▸ Auto-progress on picked arrows, `dplanner auto-progress`,
 │   │                        `step add --auto-progress`, `auto-progress.waiter` lint
+│   ├── branches/            a stretch on a feature branch: the cut that starts it and the
+│   │                        landing that merges it back (two aspects), Step ▸ Put on a Branch…
+│   │                        and Remove Branch…, `dplanner branch|cut|land`, `branch.*` lint;
+│   │                        what is on a branch is `domain/branches.py`'s derivation
 │   ├── step_review/         a step whose agent reviews the step it waits on: the Type ▸ Review
 │   │                        toggle, the Review template and tab, `dplanner review` (the
 │   │                        conversation both sides drive, `review wait` included) and its

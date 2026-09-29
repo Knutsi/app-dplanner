@@ -118,7 +118,7 @@ from dplanner.modules.project_editor.positions import (
     DATA_FORMAT,
     centred_on,
     default_size,
-    node_size,
+    footprints,
     read_stack,
 )
 from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
@@ -157,6 +157,10 @@ def _no_edge_accents(_project_id: str) -> Mapping[Edge, EdgeAccent]:
     return {}
 
 
+def _no_strips(_project_id: str) -> frozenset[StepId]:
+    return frozenset()
+
+
 def _no_days(_step: Step) -> float | None:
     return None
 
@@ -187,6 +191,10 @@ class ProjectEditorDeps:
     # The same for the arrows, keyed (waiter, kind, source): which links auto-progress, and
     # which of those carry work that is being done right now. Absent means a plain arrow.
     edge_accents: Callable[[str], Mapping[Edge, EdgeAccent]] = field(default=_no_edge_accents)
+    # Which of a project's cards wear a branch strip under the body, and so stand
+    # ``STRIP_H`` taller — the same steps whose accent names one. The canvas sizes its cards
+    # by it and every sort spaces by it, through ``positions.footprints``.
+    strips: Callable[[str], frozenset[StepId]] = field(default=_no_strips)
 
     # How long a step takes, from whichever module owns estimates — the timeline sort reads
     # time through this, the same seam domain/schedule.py uses one level down.
@@ -479,15 +487,18 @@ class ProjectActivity(EntityActivity):
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         project = self._project()
+        # Either way a card is its body and the branch strip it wears — in Wave view the
+        # default body, whatever was stored, since stored sizes are Free view's.
+        strips = self._deps.strips(project.id)
+        size_for = footprints(strips, default_size) if self._waves else footprints(strips)
         # Wave view substitutes the seats, and nothing else: the scene is handed the same
         # kind of spec, and the diff sync moves the same items.
         waves = (
-            arranged_in_waves(self._product, project, default_size, self._deps.days_for)
+            arranged_in_waves(self._product, project, size_for, self._deps.days_for)
             if self._waves
             else None
         )
-        placed = positions(self._product, project) if waves is None else waves.seats
-        size_of = node_size if waves is None else default_size
+        placed = positions(self._product, project, size_for) if waves is None else waves.seats
         connected = ports(project.steps)
         accents = self._deps.step_accents(project.id)
         nodes = [
@@ -498,7 +509,7 @@ class ProjectActivity(EntityActivity):
                 y=placed[step.id][1],
                 accent=accents.get(step.id) or NodeAccent(),
                 ports=connected[step.id],
-                size=size_of(step),
+                size=size_for(step),
             )
             for step in project.steps
         ]
@@ -826,6 +837,7 @@ class ProjectEditorModule:
             current_project=self._current_project,
             status=lambda text: deps.status.show_status(text, 4000),
             days_for=deps.days_for,
+            size_for=lambda project: footprints(deps.strips(project.id)),
             set_waves=self._set_waves,
         )
         self._canvas_verbs = CanvasVerbs(

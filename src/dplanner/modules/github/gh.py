@@ -20,7 +20,7 @@ from typing import Any
 GH_TIMEOUT = 20.0  # seconds; listing and viewing are small requests.
 PR_LIST_LIMIT = 100
 
-PR_FIELDS = "number,title,state,url,headRefName"
+PR_FIELDS = "number,title,state,url,headRefName,baseRefName"
 
 
 class GhError(Exception):
@@ -34,6 +34,7 @@ class PrInfo:
     state: str  # "open" | "merged" | "closed", lowercased at this boundary.
     url: str
     head_ref: str
+    base_ref: str = ""  # The branch the PR merges into.
 
 
 def which_gh() -> str | None:
@@ -122,6 +123,7 @@ def _pr_info(row: dict[str, Any]) -> PrInfo:
         state=str(row.get("state", "")).lower(),
         url=str(row.get("url", "")),
         head_ref=str(row.get("headRefName", "")),
+        base_ref=str(row.get("baseRefName", "")),
     )
 
 

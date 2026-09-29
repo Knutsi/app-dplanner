@@ -30,6 +30,7 @@ from PySide6.QtGui import (
 )
 
 from dplanner.modules.project_editor.marks import Marks
+from dplanner.modules.project_editor.positions import STRIP_H
 from dplanner.theme.cards import (
     FILL_ALPHA,
     KEY_BLOCK_W,
@@ -49,6 +50,7 @@ from dplanner.theme.cards import (
     title_font,
     title_lines,
 )
+from dplanner.theme.fonts import mono_font
 from dplanner.theme.icons import paint_glyph
 from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import (
@@ -151,6 +153,12 @@ PILL_MARGIN = 6.0
 PILL_FILL_ALPHA = 46
 GLYPH_SIZE = 9.0
 GLYPH_GAP = 5.0
+# The branch strip: a band of the lane's colour strong enough to be read as that branch's at
+# a glance and quiet enough that the name on it keeps the card's own ink; a landed branch's
+# band is barely there. The rule over it is what parts it from the body.
+STRIP_FILL_ALPHA = 0.22
+STRIP_RULE_ALPHA = 0.5
+STRIP_QUIET_ALPHA = 0.06
 
 # How far paint reaches outside the body, in every direction: the link handle (grown by
 # connect mode's emphasis), a badge's or a medallion's rise, a chip's fall, the lift and the
@@ -182,13 +190,16 @@ class EdgeAccent:
     the step that waits — work that moves along on its own; ``flowing`` sets the
     chevrons moving, on the scene's motion clock; ``medallion`` names a glyph the arrow
     wears in a circle at its middle — the canvas knows the glyph, never what it stands
-    for. The composition root decides which arrow is which, the same seam as
-    :class:`NodeAccent`.
+    for; ``lane`` is a colour, "#rrggbb", laid as a translucent band *under* the arrow — a
+    feature branch the work on it goes onto, which the arrow's own ink, lit and picked and
+    faded as it is, never has to carry. The composition root decides which arrow is which,
+    the same seam as :class:`NodeAccent`.
     """
 
     doubled: bool = False
     flowing: bool = False
     medallion: str = ""  # "" → none.
+    lane: str = ""  # "" → none.
 
 
 @dataclass(frozen=True)
@@ -237,6 +248,12 @@ class NodeAccent:
     # A person moves this step next, so the card pulses in its key tone. Who that is and
     # why is the composition root's to decide; the canvas only ever knows *that*.
     pulse: bool = False
+    # The feature branch this step's work goes onto, named in a strip under the body — the
+    # one place a card says a thing in words, because a branch is a name a person has to
+    # read — tinted with the branch's lane colour, "#rrggbb", or quiet once it has landed.
+    # The card is ``STRIP_H`` taller for it; the scene is handed that size.
+    strip: str = ""  # "" → none.
+    strip_tone: str = ""
 
 
 @dataclass(frozen=True)
@@ -286,21 +303,30 @@ def paint_node(
     a deeper shadow, so the whole composition — badge, chip, medallions, handle — travels
     together. The shadow is painted first and *unlifted*: it is the ground, not part of
     the card.
+
+    ``body`` is the whole card. A card wearing a branch strip keeps the strip's
+    :data:`STRIP_H` at its bottom: the shadow, the fill and border, the ring, the pulse,
+    the squiggle and the chip go round the whole card, and the key block, the text and the
+    sockets stay in the part above it, where the arrows meet.
     """
     text_colour = QColor(palette.text().color())
     if accent.muted:
         text_colour.setAlpha(MUTED_TEXT_ALPHA)
     faded = QColor(palette.text().color())
     faded.setAlpha(MUTED_SECONDARY_ALPHA if accent.muted else SECONDARY_ALPHA)
+    card = body
+    body = card.adjusted(0.0, 0.0, 0.0, -STRIP_H) if accent.strip else card
 
-    paint_shadow(painter, body, LIFTED_SHADOW if state.selected else RESTING_SHADOW)
+    paint_shadow(painter, card, LIFTED_SHADOW if state.selected else RESTING_SHADOW)
     painter.save()
     if state.selected:
         painter.translate(0.0, -LIFT)
 
     if accent.pulse:
-        paint_pulse(painter, body, accent.key_tone, state.phase)
-    paint_body(painter, palette, body, accent, state)
+        paint_pulse(painter, card, accent.key_tone, state.phase)
+    paint_body(painter, palette, card, accent, state)
+    if accent.strip:
+        paint_strip(painter, palette, card, accent.strip, accent.strip_tone, faded)
     paint_key_block(
         painter,
         palette,
@@ -313,9 +339,9 @@ def paint_node(
     )
     paint_marks(painter, palette, body, state)
     if accent.flagged:
-        paint_problem(painter, body)
+        paint_problem(painter, card)
     if accent.chip_text:
-        paint_ring(painter, body, accent.chip_tone, state.phase)
+        paint_ring(painter, card, accent.chip_tone, state.phase)
     inner = body.adjusted(KEY_BLOCK_W + PAD_Y, PAD_Y, -PADDING, -PAD_Y)
     detail = bool(accent.stat_text or accent.pill_text or accent.branch)
     reserved = painter.fontMetrics().height() + LINE_GAP if detail else 0.0
@@ -328,9 +354,44 @@ def paint_node(
             painter, palette, body, accent.badge, medallion_end(accent.icons), accent.tone_color
         )
     if accent.chip_text:
-        paint_chip(painter, palette, body, accent.chip_text, accent.chip_tone)
+        paint_chip(painter, palette, card, accent.chip_text, accent.chip_tone)
     paint_handle(painter, palette, body, state)
     painter.restore()
+
+
+def paint_strip(
+    painter: QPainter, palette: QPalette, card: QRectF, name: str, tone: str, faded: QColor
+) -> None:
+    """The branch strip across the card's foot: a band of the lane's colour inside the
+    card's own rounded corners, a rule over it, and the fork and the branch's name.
+
+    ``tone`` "" is a branch that has landed: the band goes quiet and the name stays, the
+    record of where the work went."""
+    strip = QRectF(card.left(), card.bottom() - STRIP_H, card.width(), STRIP_H)
+    shape = QPainterPath()
+    shape.addRoundedRect(card, RADIUS, RADIUS)
+    band = QPainterPath()
+    band.addRect(strip)
+    lane = QColor(tone) if tone else QColor(palette.text().color())
+    fill = QColor(lane)
+    fill.setAlphaF(STRIP_FILL_ALPHA if tone else STRIP_QUIET_ALPHA)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(fill)
+    painter.drawPath(shape.intersected(band))
+    rule = QColor(lane)
+    rule.setAlphaF(STRIP_RULE_ALPHA if tone else STRIP_QUIET_ALPHA * 2)
+    painter.setPen(QPen(rule, 1.0))
+    painter.drawLine(QPointF(strip.left(), strip.top()), QPointF(strip.right(), strip.top()))
+    glyph = QRectF(strip.left() + PAD_Y, strip.top() + 3.0, STRIP_H - 6.0, STRIP_H - 6.0)
+    paint_glyph(painter, glyph, "branch", QColor(tone) if tone else faded)
+    base = painter.font()
+    painter.setFont(mono_font(max(6.0, base.pointSizeF() - 1.0)))
+    text = QRectF(glyph.right() + GLYPH_GAP, strip.top(), 0.0, STRIP_H)
+    text.setRight(strip.right() - PADDING)
+    shown = painter.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, int(text.width()))
+    painter.setPen(QColor(palette.text().color()) if tone else faded)
+    painter.drawText(text, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), shown)
+    painter.setFont(base)
 
 
 def tone_of(accent: NodeAccent) -> tuple[QColor, QColor] | None:

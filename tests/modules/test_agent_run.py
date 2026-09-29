@@ -13,6 +13,8 @@ from tests.platforms import POSIX_MODE_BITS, SH, SYMLINKS
 from dplanner.modules import agent_harnesses
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.launcher import (
+    DEFAULT_BRANCHES,
+    BranchPlan,
     LaunchFiles,
     resolve_command,
 )
@@ -159,12 +161,50 @@ def test_the_preflight_names_the_worktree_for_this_run_not_for_the_step(services
     from dplanner.modules import _default_briefing
 
     briefing = _default_briefing()
-    isolated = briefing.preamble(step, True, None)
+    isolated = briefing.preamble(step, True, None, DEFAULT_BRANCHES)
     assert ".dplanner-worktrees/s1-deploy" in isolated and "agent/s1-deploy" in isolated
     assert "STOP" in isolated
-    shared = briefing.preamble(step, False, None)
+    shared = briefing.preamble(step, False, None, DEFAULT_BRANCHES)
     assert ".dplanner-worktrees" not in shared and "checkout itself" in shared
     assert "dplanner skill status" in isolated and "dplanner skill status" in shared
+
+
+def test_the_preflight_names_the_branch_the_plan_put_the_worktree_on(services, step):
+    """A landing's worktree is on the feature branch, not its own — the agent checks for the
+    branch the launcher prepared, from the one plan both were handed."""
+    from dplanner.modules import _default_briefing
+
+    landing = BranchPlan(work_branch="feature/stacks", start="origin/feature/stacks")
+    text = _default_briefing().preamble(step, True, None, landing)
+    assert "must print `feature/stacks`" in text and "agent/s1-deploy" not in text
+
+
+def test_the_epilogue_names_the_base_a_pr_opens_against(services, step):
+    from dplanner.modules import _default_briefing
+
+    briefing = _default_briefing()
+    held = briefing.epilogue(services.document, step, BranchPlan(pr_base="feature/stacks"))
+    assert "gh pr create --base feature/stacks" in held
+    assert "--base" not in briefing.epilogue(services.document, step, DEFAULT_BRANCHES)
+
+
+def test_a_code_location_naming_a_ref_is_the_mainline_a_run_starts_from(services, step):
+    """No stretch holds the step: its branch starts from the ref its code row names and its
+    PR opens against it — a project whose mainline is not the repository's default."""
+    from dataclasses import replace
+
+    from tests.facts import code_facts
+
+    from dplanner.modules import _default_briefing
+
+    facts = code_facts(plan_root=Path("/plans"), repository="https://github.com/acme/widget")
+    placement = facts.placements[0]
+    facts = replace(
+        facts, placements=(replace(placement, location=replace(placement.location, ref="develop")),)
+    )
+    plan = _default_briefing().branch(services.document, step, facts)
+    assert plan.start == "origin/develop" and plan.pr_base == "develop"
+    assert _default_briefing().branch(services.document, step, None) == DEFAULT_BRANCHES
 
 
 def test_the_preflight_says_where_the_plan_lives(services, step):
@@ -183,16 +223,16 @@ def test_the_preflight_says_where_the_plan_lives(services, step):
         plan_remote="git@github.com:acme/plans.git",
         repository="https://github.com/acme/widget",
     )
-    text = briefing.preamble(step, True, apart)
+    text = briefing.preamble(step, True, apart, DEFAULT_BRANCHES)
     assert "own repository, acme/plans" in text and "acme/widget" in text
     assert "WARNING" not in text
 
     inside = code_facts(plan_root=Path("/widget"))
-    text = briefing.preamble(step, True, inside)
+    text = briefing.preamble(step, True, inside, DEFAULT_BRANCHES)
     assert "WARNING" in text and "do not stage or commit" in text
     assert "dplanner project move" in text and "when the developer asks" in text
 
-    text = briefing.preamble(step, True, replace(inside, colocation="accepted"))
+    text = briefing.preamble(step, True, replace(inside, colocation="accepted"), DEFAULT_BRANCHES)
     assert "WARNING" not in text and "by the developer's choice" in text
     assert "project move" not in text
 
@@ -303,7 +343,7 @@ def test_a_run_name_isolates_the_run_beside_the_pointer_file(tmp_path):
     first version's `git worktree add` under it failed on every such project."""
     script = prepare("p", tmp_path, worktree="s7-build-it", platform="linux").script.read_text()
     tree = tmp_path / ".dplanner-worktrees" / "s7-build-it"
-    assert f'git worktree add "{tree}" -b "agent/s7-build-it"' in script
+    assert f'git worktree add --no-track -b "agent/s7-build-it" "{tree}" "$start"' in script
     assert f'git worktree add "{tree}" "agent/s7-build-it"' in script  # Reused on the next run.
     assert "info/exclude" in script  # The worktree dir never pollutes git status.
     assert f'cd "{tree}"' in script
@@ -312,6 +352,165 @@ def test_a_run_name_isolates_the_run_beside_the_pointer_file(tmp_path):
 
 def test_no_run_name_means_no_git_lines(tmp_path):
     assert "git worktree add" not in prepare("p", tmp_path, platform="linux").script.read_text()
+
+
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_a_new_branch_starts_from_the_remote_never_the_checkout(tmp_path, platform):
+    """The script fetches and starts the branch from the remote's default — looked up, since
+    nothing here knows it — so a checkout left on another branch is nobody's base."""
+    script = prepare("p", tmp_path, worktree="s7-x", platform=platform).script.read_text()
+    assert "git fetch --quiet origin" in script
+    assert "symbolic-ref --quiet --short refs/remotes/origin/HEAD" in script
+    assert "gh-merge-base" not in script  # No base named: gh's default is the right one.
+
+
+@pytest.mark.parametrize("platform", ["linux", "win32"])
+def test_a_plan_names_the_start_the_base_and_the_branch_to_cut(tmp_path, platform):
+    """A member of a stretch: its own branch, started from the stretch's with no upstream,
+    its PR held to the stretch's branch, and the branch cut on the remote when missing."""
+    plan = BranchPlan(
+        start="origin/feature/stacks",
+        create="feature/stacks",
+        create_from="origin/main",
+        pr_base="feature/stacks",
+    )
+    files = prepare("p", tmp_path, worktree="s7-x", platform=platform, branches=plan)
+    script = files.script.read_text()
+    assert "start=origin/feature/stacks" in script.replace('start="', "start=")
+    assert 'origin "origin/main:refs/heads/feature/stacks"' in script
+    assert "--no-track" in script and "--track" not in script.replace("--no-track", "")
+    assert 'git config "branch.agent/s7-x.gh-merge-base" "feature/stacks"' in script
+    assert "symbolic-ref" not in script  # The plan named the start; nothing is looked up.
+
+
+def test_a_landing_works_on_the_feature_branch_and_tracks_it(tmp_path):
+    plan = BranchPlan(work_branch="feature/stacks", start="origin/feature/stacks", pr_base="main")
+    script = prepare("p", tmp_path, worktree="s9-land", platform="linux", branches=plan)
+    text = script.script.read_text()
+    tree = tmp_path / ".dplanner-worktrees" / "s9-land"
+    assert f'git worktree add --track -b "feature/stacks" "{tree}" "$start"' in text
+    assert "agent/s9-land" not in text
+
+
+def test_a_branch_git_would_refuse_never_reaches_a_script(tmp_path):
+    with pytest.raises(ValueError, match="not a branch"):
+        prepare("p", tmp_path, worktree="s7-x", branches=BranchPlan(pr_base='x"; rm -rf ~'))
+
+
+def _git(repo, *args):
+    import subprocess
+
+    return subprocess.run(
+        ["git", "-C", str(repo), *args], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+
+@pytest.fixture
+def cloned_repo(tmp_path):
+    """A checkout of a bare remote with one commit on main — origin/HEAD set, as a clone
+    has it — left on a branch of its own that the remote has never seen."""
+    import subprocess
+
+    remote = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+    seed = tmp_path / "seed"
+    subprocess.run(["git", "init", "-q", "-b", "main", str(seed)], check=True)
+    _git(seed, "config", "user.email", "t@example.com")
+    _git(seed, "config", "user.name", "t")
+    _git(seed, "commit", "-q", "--allow-empty", "-m", "on main")
+    _git(seed, "push", "-q", str(remote), "main")
+    repo = tmp_path / "repo"
+    subprocess.run(["git", "clone", "-q", str(remote), str(repo)], check=True)
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "t")
+    _git(repo, "checkout", "-q", "-b", "elsewhere")
+    _git(repo, "commit", "-q", "--allow-empty", "-m", "on elsewhere")
+    return repo
+
+
+# What the agent reports: the commit it started from and the branch it tracks, if any.
+WHERE = (
+    "sh -c 'git log -1 --format=%s; git rev-parse --abbrev-ref @{u} || echo untracked' # {prompt}"
+)
+
+
+def _prepared(repo, run_dir, name, plan=DEFAULT_BRANCHES):
+    run_dir.mkdir()
+    return prepare(
+        "p",
+        repo,
+        agent_command=WHERE,
+        worktree=name,
+        platform="linux",
+        directory=run_dir,
+        branches=plan,
+    )
+
+
+@SH
+def test_a_fresh_worktree_starts_at_the_remotes_default_branch(cloned_repo, tmp_path):
+    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s1-x"))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "on main" in done.stdout and "on elsewhere" not in done.stdout
+    assert "untracked" in done.stdout
+
+
+@SH
+def test_the_first_run_in_a_stretch_cuts_its_branch_and_starts_from_it(cloned_repo, tmp_path):
+    plan = BranchPlan(
+        start="origin/feature/x",
+        create="feature/x",
+        create_from="origin/main",
+        pr_base="feature/x",
+    )
+    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s2-x", plan))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "on main" in done.stdout and "untracked" in done.stdout
+    assert _git(tmp_path / "origin.git", "branch", "--list", "feature/x")
+    assert _git(cloned_repo, "config", "branch.agent/s2-x.gh-merge-base") == "feature/x"
+    assert _git(cloned_repo, "branch", "--show-current") == "elsewhere"  # Never switched.
+
+
+@SH
+def test_a_cut_from_the_remotes_default_finds_it_on_a_checkout_that_was_never_told(
+    cloned_repo, tmp_path
+):
+    """A checkout made by init and remote-add has no origin/HEAD: the script asks the
+    remote which branch is its default before it pushes from it."""
+    from dplanner.modules.step_agent_instruction.launcher import DEFAULT_START
+
+    _git(cloned_repo, "remote", "set-head", "origin", "-d")
+    plan = BranchPlan(
+        start="origin/feature/y",
+        create="feature/y",
+        create_from=DEFAULT_START,
+        pr_base="feature/y",
+    )
+    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s5-x", plan))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "on main" in done.stdout
+    assert _git(tmp_path / "origin.git", "branch", "--list", "feature/y")
+
+
+@SH
+def test_a_landing_checks_out_the_feature_branch_tracking_it(cloned_repo, tmp_path):
+    _git(cloned_repo, "push", "-q", "origin", "origin/main:refs/heads/feature/x")
+    plan = BranchPlan(work_branch="feature/x", start="origin/feature/x", pr_base="main")
+    done = _run_script(_prepared(cloned_repo, tmp_path / "run", "s3-land", plan))
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "origin/feature/x" in done.stdout
+
+
+@SH
+def test_a_branch_gone_from_the_remote_is_never_cut_again(cloned_repo, tmp_path):
+    """No ``create``: the stretch has already run, so a missing branch was deleted — landed,
+    most likely — and starting it afresh from main would put members' work nowhere."""
+    plan = BranchPlan(start="origin/feature/gone", pr_base="feature/gone")
+    files = _prepared(cloned_repo, tmp_path / "run", "s4-x", plan)
+    done = _run_script(files)
+    assert done.returncode == 1
+    assert "There is no origin/feature/gone" in done.stdout
+    assert files.exit_file.read_text().strip() == "1"
 
 
 @pytest.fixture

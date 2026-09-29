@@ -32,10 +32,11 @@ the way the drag would.
 migration list — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
 
+from collections.abc import Callable, Container
 from typing import Any, TypeGuard
 
 from dplanner.core.module_data import ModuleDataFormat, migrated, stamped
-from dplanner.domain.model import Project, Step
+from dplanner.domain.model import Project, Step, StepId
 
 MODULE_ID = "project_editor"
 
@@ -135,7 +136,8 @@ def read_size(step: Step) -> Size | None:
 
 
 def node_size(step: Step) -> Size:
-    """The card's footprint: what was stored, else the default. The sorts space by this."""
+    """The card's body: what was stored, else the default. The sorts space by this, through
+    :func:`footprint` when a card may wear a strip under it."""
     return read_size(step) or (NODE_W, NODE_H)
 
 
@@ -143,6 +145,28 @@ def default_size(_step: Step) -> Size:
     """Every card at the default footprint, whatever was stored — Wave view's measure, where
     a stored size applies only in Free view."""
     return (NODE_W, NODE_H)
+
+
+# A card whose work is on a feature branch wears the branch's name in a strip under its
+# body, this tall. The strip is part of the card — its shadow, its ring, what a click and a
+# lasso hit, the room a sort leaves — while arrows still meet the body's middle.
+STRIP_H = 16.0
+
+
+def footprint(step: Step, strip: bool, body: Callable[[Step], Size] = node_size) -> Size:
+    """What a card takes on the plane: its ``body`` — the stored size, else the default; a
+    view that draws every card at the default hands its own — and the strip under it when
+    it wears one. The one rule every arranger and the canvas measure a card by."""
+    w, h = body(step)
+    return (w, h + STRIP_H) if strip else (w, h)
+
+
+def footprints(
+    strips: Container[StepId], body: Callable[[Step], Size] = node_size
+) -> Callable[[Step], Size]:
+    """:func:`footprint` for a project whose cards in ``strips`` wear one — the ``size_for``
+    a sort, a stack's column and the canvas are handed."""
+    return lambda step: footprint(step, step.id in strips, body)
 
 
 def read_stack(step: Step) -> str:

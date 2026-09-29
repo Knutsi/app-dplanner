@@ -168,6 +168,26 @@ paths:
   *Open Terminal in Worktree|Checkout*, the Agent tab (its box unticked and greyed with the
   reason) and `agent worktree … on` (refused). `ARCHITECTURE.md`'s *A worktree is the
   step's decision* has the reasoning.
+- **A run starts from the remote, and the plan names its base.** `launcher.BranchPlan` —
+  decided once by `Briefing.branch`, the root's `_branch_plan` — is the branch a worktree is
+  on (its own `agent/<run name>`, or the feature branch for a landing), where a new one
+  starts, what the first run in a stretch may cut on the remote, and the PR's base. The
+  wrapper script **fetches and starts the branch from the plan's start** — a stretch's
+  branch, else the code row's `Location.ref` as the mainline, else the remote's default,
+  looked up — **never from whatever the checkout has checked out**, with `--no-track` (a
+  landing on the feature branch tracks it); it cuts a missing branch only when told to
+  (`create`, set while nothing on the stretch has recorded a branch or a PR) by pushing a
+  ref, never checking one out, and **refuses a branch gone from the remote** rather than
+  re-cut it from the mainline. It sets `gh-merge-base` as a backstop for the `--base` the
+  epilogue names; the preamble checks the plan's branch. Every name is checked with
+  `sparse.valid_ref` before it reaches a script. A landing is briefed like a review is —
+  its instructions generated from the stretch it closes (`_landing_instruction`, *Work you
+  land*): merge the mainline in as a merge commit, never a squash, and open the branch's
+  own PR. **A PR merged into the branch of an open stretch accepts its step** from
+  ready-for-review (`record_merged(accepted_by_merge=)`, the root's `finish_merged` on both
+  surfaces), since the branch's review comes after its landing; the GitHub aspect records
+  the base a PR merges into (`pr_base`, format 2). `ARCHITECTURE.md`'s *A branch stretch is
+  bracketed by a cut and a landing* has the reasoning.
 - **The peer reports its end through its run directory, and the window clears the chip.**
   The wrapper script is the one process that knows when the agent exits, so it writes the
   shell's facts (`shell`: tty, pid, tmux pane, terminal program, window title) beside the

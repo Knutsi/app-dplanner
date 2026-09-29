@@ -80,7 +80,7 @@ paths:
   clears it and notes the point — and the menu is then a function of the selection alone:
   `canvas_menus.py`'s `BANDS` row for a **card** (the Step menu's bands about the step
   itself, `STEP_ITSELF`), an **arrow** (Graph ▸ `links`), a **mixed** pick (Graph ▸
-  `narrow`, Edit ▸ `clipboard`, Make Stack, then `Step` and `Links` children) or the **background**
+  `narrow`, Edit ▸ `clipboard`, Make Stack, Put on a Branch, then `Step` and `Links` children) or the **background**
   (Graph ▸ `new` and `select`, Edit ▸ `selection`, Go ▸ `survey`), rendered by
   `fill_bands`. **A card is the step, not a table's Step menu**: its type and tests are set
   in Step Details, compiling is the Docs tab's, and a view the index lists as a row under
@@ -200,6 +200,13 @@ paths:
   has room for, and the bottom line holds the estimate at the right in full ink — a
   wait's how long it holds, `until 21 Oct` or `3 wd` — and nothing in words: every aspect a
   card wears is a medallion, a badge, a bar or a pill, never a phrase. `ARCHITECTURE.md`'s *A card's size is the step's* has the reasoning.
+  **The one exception is the branch strip** (`NodeAccent.strip`): a card whose work is on a
+  feature branch names it in a `STRIP_H` band across its foot, and **the card is that much
+  taller** — `positions.footprint(step, strip, body=node_size)` is the one size rule, the
+  canvas sizes its cards by it and every arranger is handed it as `size_for` (the editor's
+  `strips` seam, the CLI's `strips` on `layout sort`); the arrows, the handle and the marks
+  meet the *body's* middle, and a resize stores the body. `ARCHITECTURE.md`'s *A card on a
+  branch names it* has the reasoning.
 - **The look is one per-user value, and snapping is the gesture's, never the write's.**
   `project_editor/look.py`: the marks, the background under the graph (plain, dots, lines,
   crosses — painted by `ground.py`) and *Snap to Grid* are one `Look`, kept under one key,
@@ -395,7 +402,12 @@ paths:
   `MEDALLION_CLEAR` clear of the chevrons, which pass behind it; `shape()` takes in its disc
   and `boundingRect()` grows by it while the accent names one, and an arrow too short to hold
   it (`MEDALLION_ROOM`, a stack's own link) wears none. Auto-progress wears no medallion: the
-  rails already say it along the whole link (N65). Every look stays inside its margin and
+  rails already say it along the whole link (N65). **A *lane* is a colour laid under the
+  arrow** — `LANE_W` wide at `LANE_ALPHA`, inside the edge's margin, so its geometry never
+  changes and the ink on top keeps being lit, picked and faded: the root lays it on every
+  arrow of work on a feature branch not yet landed, in a colour dealt from
+  `theme/palettes.LANES` in the order the branches were cut, and takes it away once the
+  landing is done — colour means *not on main yet*. Every look stays inside its margin and
   keeps the lit, picked, hovered and dimmed rules. `ARCHITECTURE.md`'s *An auto-progress link
   is an aspect on the step that waits* and *An arrow into a review wears its talk bubble*
   have the reasoning.

@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.marks import Marks
-from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.positions import NODE_H, NODE_W, STRIP_H
 from dplanner.modules.project_editor.renderers import (
     ICON_D,
     PAINT_MARGIN,
@@ -96,6 +96,11 @@ FLOW_PER_PHASE = 1.5
 MEDALLION_R = ICON_D / 2
 MEDALLION_CLEAR = MEDALLION_R + CHEVRON_ARM + 2.0
 MEDALLION_ROOM = 2 * MEDALLION_CLEAR + CHEVRON_TAIL + CHEVRON_HEAD
+# A branch's lane is a band this wide under the arrow — inside EDGE_GRAB's margin, so an
+# arrow wearing one keeps the bounds it had — at this much of its colour, so the ink on top
+# still reads and a lit arrow is still lit.
+LANE_W = 10.0
+LANE_ALPHA = 0.35
 
 # The least a curve's end reaches along its heading before it turns: what keeps an arrow
 # between two cards side by side from arriving edge-on.
@@ -154,7 +159,9 @@ class StepNodeItem(QGraphicsItem):
     """One step. Movable and selectable; Qt does the dragging.
 
     Its size is the card's own — pushed by the scene from what the step stored, or the
-    default footprint — and every rect below is measured from it, never from ``NODE_W``.
+    default footprint, with a branch strip's height under it when the card wears one — and
+    every rect below is measured from it, never from ``NODE_W``. The body is the card less
+    that strip: arrows, the handle and the marks meet its middle, and a resize stores it.
     """
 
     def __init__(self, step_id: StepId) -> None:
@@ -197,14 +204,29 @@ class StepNodeItem(QGraphicsItem):
     def size(self) -> tuple[float, float]:
         return self._size
 
+    def body_size(self) -> tuple[float, float]:
+        """The card less its strip: what the step stores as its size."""
+        return self._size[0], self._size[1] - self._strip_h()
+
+    def _strip_h(self) -> float:
+        return STRIP_H if self._accent.strip else 0.0
+
+    def _middle_y(self) -> float:
+        """Where arrows, the handle and the marks meet the card: the body's middle."""
+        return (self._size[1] - self._strip_h()) / 2
+
     def name(self) -> str:
         """What a status line calls this card: its key, else its title."""
         return self._accent.key_text or self._title or "Untitled step"
 
     def set_accent(self, accent: NodeAccent) -> None:
         if accent != self._accent:
+            moved = bool(accent.strip) != bool(self._accent.strip)
             self._accent = accent
             self.update()
+            scene = self.scene()
+            if moved and scene is not None and hasattr(scene, "reflow_edges"):
+                scene.reflow_edges(self.step_id)  # A strip moves the body's middle.
 
     def wears_ring(self) -> bool:
         """Whether this node has a live agent run, and so wears the marching ring."""
@@ -313,7 +335,7 @@ class StepNodeItem(QGraphicsItem):
         return QRectF(0.0, 0.0, self._size[0], self._size[1])
 
     def handle_scene_pos(self) -> QPointF:
-        return self.mapToScene(QPointF(self._size[0], self._size[1] / 2))
+        return self.mapToScene(QPointF(self._size[0], self._middle_y()))
 
     def body_scene_rect(self) -> QRectF:
         """The card itself, in scene coordinates — what a lasso has to touch. Not the
@@ -351,9 +373,9 @@ class StepNodeItem(QGraphicsItem):
 
     def anchor_toward(self, other: QPointF) -> QPointF:
         """Where an edge should touch this node: the near edge, not the centre."""
-        w, h = self._size
-        centre = self.mapToScene(QPointF(w / 2, h / 2))
-        return self.mapToScene(QPointF(w if other.x() >= centre.x() else 0.0, h / 2))
+        w, middle = self._size[0], self._middle_y()
+        centre = self.mapToScene(QPointF(w / 2, middle))
+        return self.mapToScene(QPointF(w if other.x() >= centre.x() else 0.0, middle))
 
     def shape(self) -> QPainterPath:
         # What a press, a hover and a rubber band hit: the card and the outer half of its
@@ -434,8 +456,9 @@ class EdgeItem(QGraphicsPathItem):
     says the rest, translated by the composition root: a *doubled* arrow is two rails with
     chevrons between them (the work moves along it on its own — an auto-progress link),
     a *flowing* one moves its chevrons on the scene's motion clock (that work is being
-    done right now), and a *medallion* is a glyph in a circle at the middle of its length
-    (a review's talk bubble), part of what a press and a hover hit.
+    done right now), a *medallion* is a glyph in a circle at the middle of its length
+    (a review's talk bubble), part of what a press and a hover hit, and a *lane* is a
+    translucent band of a colour under the whole arrow (a feature branch it is work on).
     """
 
     def __init__(self, source: StepNodeItem, waiter: StepNodeItem, kind: str) -> None:
@@ -618,6 +641,13 @@ class EdgeItem(QGraphicsPathItem):
         stressed = self.isSelected() or self._hovered or self._lit
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setBrush(Qt.BrushStyle.NoBrush)
+        if self._accent.lane:
+            band = QColor(self._accent.lane)
+            band.setAlphaF(LANE_ALPHA)
+            lane = QPen(band, LANE_W)
+            lane.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(lane)
+            painter.drawPath(self.path())
         if self._accent.doubled:
             # Thinner than a single line, since there are two of them and the chevrons.
             painter.setPen(QPen(colour, 1.6 if stressed else 1.0, style))

@@ -140,7 +140,7 @@ class TestsDeps:
     # Dictation into the editors; None is a build without a microphone.
     dictation: DictationService | None = None
     # A wait is no work, so it has nothing to test: the Test toggle greys on one.
-    is_wait: Callable[[Step], bool] = lambda _step: False
+    works_nobody: Callable[[Step], str] = lambda _step: ""
 
 
 class TestsModule:
@@ -252,7 +252,7 @@ class TestsModule:
                 icon=beaker_icon,
                 tip="Give this step tests: what must keep passing once the work is done",
                 refusal=lambda step: (
-                    "a wait has no work to test" if self._deps.is_wait(step) else ""
+                    f"{kind} has no work to test" if (kind := self._deps.works_nobody(step)) else ""
                 ),
             ),
             ActionSpec(
