@@ -192,3 +192,13 @@ def test_a_cut_takes_no_status(cli):
     said = data(cli("branch", "put", "Card", "--branch", "feature/one", "--json"))
     said = cli("status", "set", said["cut"], "done", expect=1)
     assert "is a branch cut: a branch cut has no status" in said
+
+
+def test_step_show_and_the_graph_say_which_branch_a_step_is_on(cli):
+    cli("branch", "put", "Card", "Edit", "--branch", "feature/stacks")
+    shown = data(cli("step", "show", "Edit", "--json"))
+    assert shown["branch"] == "feature/stacks"
+    assert "on branch: feature/stacks" in cli("step", "show", "Edit")
+    assert data(cli("step", "show", "Home", "--json"))["branch"] == ""
+    chart = cli("project", "graph", "widget")
+    assert "Edit · feature/stacks" in chart and "Home · " not in chart

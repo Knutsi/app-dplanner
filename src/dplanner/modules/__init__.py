@@ -628,19 +628,26 @@ def default_modules(
         and its chevrons flow while its source wears the live ring: the motion the source's
         agent run already has, carried to the step that will take its work. A link into a
         review — doubled by that same answer — also wears the review's talk bubble at its
-        middle: the work on this arrow is about to be talked over."""
+        middle: the work on this arrow is about to be talked over. And every arrow of work
+        on a feature branch not yet landed lies on that branch's lane."""
+        from dataclasses import replace
+
         from dplanner.modules.step_review.aspect import reviews
 
-        return {
+        project = library.project(project_id)
+        accents = {
             (waiter.id, "requires", source.id): EdgeAccent(
                 doubled=True,
                 flowing=bool(agent_run_state(source)),
                 medallion="review" if reviews(waiter, source) else "",
             )
-            for waiter in library.project(project_id).steps
+            for waiter in project.steps
             for source in library.requires(waiter.id)
             if _auto_progresses(waiter, source)
         }
+        for edge, color in _lanes(library, branches.reading_of(project)).items():
+            accents[edge] = replace(accents.get(edge, EdgeAccent()), lane=color)
+        return accents
 
     def step_accent(
         step: "Step",
@@ -2514,6 +2521,45 @@ def _briefing_instruction(
     return PromptPart(heading="Instructions", body=body, files=carried)
 
 
+def _branches_in(project: "Project") -> "dict[str, str]":
+    """The feature branch each step's work is on, for the steps a stretch not yet landed
+    holds — and each landing, whose work is on the branch it brings back."""
+    found = _branch_reading(project)
+    on: dict[str, str] = {}
+    for step in project.steps:
+        stretch = found.of_land(step.id) or found.innermost(step.id, open_only=True)
+        if stretch is not None and not stretch.landed:
+            on[step.id] = stretch.branch
+    return on
+
+
+def _lane_colors(found: "BranchReading") -> "dict[str, str]":
+    """Each stretch's lane colour by its cut's id, dealt in the order the cuts were made, so
+    a branch keeps its colour while others come and go after it."""
+    from dplanner.theme.palettes import lane
+
+    cuts = sorted((stretch.cut for stretch in found.stretches), key=lambda cut: cut.number)
+    return {cut.id: lane(index) for index, cut in enumerate(cuts)}
+
+
+def _lanes(library: "Library", found: "BranchReading") -> "dict[Edge, str]":
+    """The arrows of work on a branch not yet landed, each with its branch's lane colour:
+    from the cut or a step on it, into a step on it or its landing. An arrow on a branch
+    off a branch wears the inner one's."""
+    colors = _lane_colors(found)
+    lanes: dict[Edge, str] = {}
+    widest_first = sorted(found.stretches, key=lambda stretch: -len(stretch.members))
+    for stretch in widest_first:
+        if stretch.landed:
+            continue
+        on = {member.id for member in stretch.members}
+        for waiter in (*stretch.members, stretch.land):
+            for source in library.requires(waiter.id):
+                if source.id in on or source.id == stretch.cut.id:
+                    lanes[(waiter.id, "requires", source.id)] = colors[stretch.cut.id]
+    return lanes
+
+
 def _is_land(step: "Step") -> bool:
     from dplanner.modules.branches.aspect import is_land
 
@@ -2924,7 +2970,8 @@ def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
 def _step_type_icons(step: "Step") -> tuple[str, ...]:
     """What kind of thing a step is, in the medallion vocabulary the canvas painted
     first: "tag" a milestone, "layers" a feature, "beaker" one carrying tests, "shield" a
-    check, "review" a review. The order table's title column reads the same answer, so a
+    check, "review" a review, "merge" a landing. The order table's title column reads the
+    same answer, so a
     step is the same kind everywhere. Who works it is :func:`_primary_glyph`'s, and a card
     says a thing once."""
     from dplanner.modules.feature.aspect import is_feature
@@ -2939,6 +2986,7 @@ def _step_type_icons(step: "Step") -> tuple[str, ...]:
         *(("beaker",) if test_enabled(step) else ()),
         *(("shield",) if check_read(step) else ()),
         *(("review",) if is_review(step) else ()),
+        *(("merge",) if _is_land(step) else ()),
     )
 
 
@@ -4356,8 +4404,10 @@ def default_cli_commands(
             ],
             # The key a row prints is the one the canvas paints: one rule, here.
             key_of=_step_key,
-            # `project graph` and `step show` mark the links a step collects across.
+            # `project graph` and `step show` mark the links a step collects across, and
+            # the feature branch a step's work is on.
             auto_progresses=_auto_progresses,
+            branches_in=_branches_in,
             # The location roles every module declared, and where a read-only one's
             # managed clone stands — both cross-module facts, handed in here.
             roles=roles,

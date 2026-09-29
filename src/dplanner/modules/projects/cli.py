@@ -106,6 +106,10 @@ def _no_key(_step: Step) -> str:
     return ""
 
 
+def _no_branches(_project: Project) -> Mapping[StepId, str]:
+    return {}
+
+
 def lint_checks() -> list[LintCheck]:
     def dangling_requires(
         _product: Library, project: Project, _files: FilesFor
@@ -155,6 +159,7 @@ def commands(
     key_of: Callable[[Step], str] = _no_key,
     *,
     auto_progresses: Callable[[Step, Step], bool] = _plain,
+    branches_in: Callable[[Project], Mapping[StepId, str]] = _no_branches,
     roles: Mapping[str, LocationRole] | None = None,
     managed: ManagedFor | None = None,
     kept_root: Path | None = None,
@@ -164,7 +169,8 @@ def commands(
     about aspects this file never reads, so the root hands the rule in and every row,
     listing and chart here prints the same key the canvas paints; ``auto_progresses``
     marks, in the chart and ``step show``, a link its waiter may start across from review
-    on — another module's flag, read through the root. ``roles`` is the
+    on — another module's flag, read through the root; ``branches_in`` names the feature
+    branch each step's work is on, where a stretch puts it on one. ``roles`` is the
     location role registry the root gathers (the domain's ``code`` alone without it),
     ``managed`` says where a read-only location's clone stands, and ``kept_root`` is the
     configuration directory a clone DPlanner keeps lives under. ``remove_steps`` is how
@@ -368,7 +374,12 @@ def commands(
             summary="The step graph as a Mermaid flowchart: waves as rows, requires as "
             "arrows. Paste it into a PR or a report.",
             configure=_configure_graph,
-            run=partial(_project_graph, key_of=key_of, auto_progresses=auto_progresses),
+            run=partial(
+                _project_graph,
+                key_of=key_of,
+                auto_progresses=auto_progresses,
+                branches_in=branches_in,
+            ),
             examples=(
                 "dplanner project graph discovery",
                 "dplanner project graph discovery --short",
@@ -399,7 +410,9 @@ def commands(
             path=("step", "show"),
             summary="One step: what it waits on, what waits on it, and its aspects.",
             configure=step_arg,
-            run=partial(_step_show, key_of=key_of, auto_progresses=auto_progresses),
+            run=partial(
+                _step_show, key_of=key_of, auto_progresses=auto_progresses, branches_in=branches_in
+            ),
             examples=("dplanner step show read-the-spec",),
         ),
         CliCommand(
@@ -1056,6 +1069,7 @@ def mermaid(
     short: bool = False,
     key_of: Callable[[Step], str] = _no_key,
     auto_progresses: Callable[[Step, Step], bool] = _plain,
+    branches_in: Callable[[Project], Mapping[StepId, str]] = _no_branches,
 ) -> str:
     """The step graph as a Mermaid flowchart — the same map the canvas draws, as text.
 
@@ -1068,7 +1082,8 @@ def mermaid(
 
     ``short`` swaps full titles for ``S7: Truncated title…`` labels over the steps' keys
     as node ids — narrow enough for a PR description, and the key is the name the branch
-    and the PR carry, so a reader can match the chart to the work.
+    and the PR carry, so a reader can match the chart to the work. A step on a feature
+    branch says which after its title, as its card's strip does.
     """
     lines = ["flowchart TD"]
     rows = placed(library, project)
@@ -1079,6 +1094,7 @@ def mermaid(
         return (key_of(step) or f"s{step.id[:12]}").lower() if short else f"s{step.id[:12]}"
 
     node_ids = {row.step.id: node_id(row.step) for row in rows}
+    on = branches_in(project)
     for wave in range(1, rows[-1].wave + 1):
         lines.append(f'    subgraph wave{wave}["Wave {wave}"]')
         for row in rows:
@@ -1087,6 +1103,8 @@ def mermaid(
                 if short:
                     cut = title if len(title) <= SHORT_TITLE else title[: SHORT_TITLE - 1] + "…"
                     title = f"{key_of(row.step) or row.index}: {cut}"
+                if row.step.id in on:
+                    title += f" · {on[row.step.id]}"
                 lines.append(f'        {node_ids[row.step.id]}["{title}"]')
         lines.append("    end")
     for row in rows:
@@ -1101,10 +1119,16 @@ def _project_graph(
     args: Namespace,
     key_of: Callable[[Step], str] = _no_key,
     auto_progresses: Callable[[Step, Step], bool] = _plain,
+    branches_in: Callable[[Project], Mapping[StepId, str]] = _no_branches,
 ) -> int:
     project = find_project(context.library, args.project)
     chart = mermaid(
-        context.library, project, short=args.short, key_of=key_of, auto_progresses=auto_progresses
+        context.library,
+        project,
+        short=args.short,
+        key_of=key_of,
+        auto_progresses=auto_progresses,
+        branches_in=branches_in,
     )
     context.report({"project": project.id, "mermaid": chart}, chart)
     return 0
@@ -1447,13 +1471,16 @@ def _step_show(
     args: Namespace,
     key_of: Callable[[Step], str] = _no_key,
     auto_progresses: Callable[[Step, Step], bool] = _plain,
+    branches_in: Callable[[Project], Mapping[StepId, str]] = _no_branches,
 ) -> int:
     library = context.library
     step = find_step(library, args.step, context.current)
     project = library.project_of(step.id)
     waiting = library.requires(step.id)
+    branch = branches_in(project).get(step.id, "")
     data = _step_row(library, step, key_of) | {
         "project": project.id,
+        "branch": branch,
         "dependents": [other.id for other in library.dependents(step.id)],
         "auto_progress": [other.id for other in waiting if auto_progresses(step, other)],
         "aspects": {key: dict(value) for key, value in sorted(step.module_data.items())},
@@ -1468,6 +1495,8 @@ def _step_show(
         return f"{key_of(source)} {source.title}".strip() + mark
 
     lines = [f"{key_of(step)} {step.title}".strip() + f"  {step.id}", f"  in {project.title}"]
+    if branch:
+        lines.append(f"  on branch: {branch}")
     if waiting:
         lines.append("  waits on: " + ", ".join(marked(source) for source in waiting))
     blocked = library.dependents(step.id)

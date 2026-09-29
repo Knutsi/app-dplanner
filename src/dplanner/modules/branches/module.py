@@ -93,13 +93,17 @@ class BranchesModule:
     def __init__(self, deps: BranchesDeps) -> None:
         self._deps = deps
         self._memos: dict[NodeId, _Memo] = {}
-
-    def register(self) -> None:
-        deps = self._deps
+        # Forgotten here rather than in register(): the root builds this module before any
+        # view that reads its answers follows the library, so the forgetting always runs
+        # ahead of a canvas sync that asks — a stale answer is never read.
         library = deps.library
         library.structure_changed.connect(lambda *_args: self._memos.clear())
         library.edges_changed.connect(lambda *_args: self._memos.clear())
         library.module_data_changed.connect(lambda *_args: self._memos.clear())
+
+    def register(self) -> None:
+        deps = self._deps
+        library = deps.library
         deps.details.register(
             InspectorSection(
                 id=f"{CUT_ID}.details",

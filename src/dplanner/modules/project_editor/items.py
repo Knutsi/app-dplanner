@@ -96,6 +96,11 @@ FLOW_PER_PHASE = 1.5
 MEDALLION_R = ICON_D / 2
 MEDALLION_CLEAR = MEDALLION_R + CHEVRON_ARM + 2.0
 MEDALLION_ROOM = 2 * MEDALLION_CLEAR + CHEVRON_TAIL + CHEVRON_HEAD
+# A branch's lane is a band this wide under the arrow — inside EDGE_GRAB's margin, so an
+# arrow wearing one keeps the bounds it had — at this much of its colour, so the ink on top
+# still reads and a lit arrow is still lit.
+LANE_W = 10.0
+LANE_ALPHA = 0.35
 
 # The least a curve's end reaches along its heading before it turns: what keeps an arrow
 # between two cards side by side from arriving edge-on.
@@ -410,8 +415,9 @@ class EdgeItem(QGraphicsPathItem):
     says the rest, translated by the composition root: a *doubled* arrow is two rails with
     chevrons between them (the work moves along it on its own — an auto-progress link),
     a *flowing* one moves its chevrons on the scene's motion clock (that work is being
-    done right now), and a *medallion* is a glyph in a circle at the middle of its length
-    (a review's talk bubble), part of what a press and a hover hit.
+    done right now), a *medallion* is a glyph in a circle at the middle of its length
+    (a review's talk bubble), part of what a press and a hover hit, and a *lane* is a
+    translucent band of a colour under the whole arrow (a feature branch it is work on).
     """
 
     def __init__(self, source: StepNodeItem, waiter: StepNodeItem, kind: str) -> None:
@@ -594,6 +600,13 @@ class EdgeItem(QGraphicsPathItem):
         stressed = self.isSelected() or self._hovered or self._lit
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         painter.setBrush(Qt.BrushStyle.NoBrush)
+        if self._accent.lane:
+            band = QColor(self._accent.lane)
+            band.setAlphaF(LANE_ALPHA)
+            lane = QPen(band, LANE_W)
+            lane.setCapStyle(Qt.PenCapStyle.RoundCap)
+            painter.setPen(lane)
+            painter.drawPath(self.path())
         if self._accent.doubled:
             # Thinner than a single line, since there are two of them and the chevrons.
             painter.setPen(QPen(colour, 1.6 if stressed else 1.0, style))

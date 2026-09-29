@@ -163,3 +163,35 @@ def test_a_pasted_landing_lands_its_copied_cut_or_nothing():
     assert cut_of(land) == "new-cut"
     remap_for_paste(None, [land], {})  # type: ignore[arg-type]
     assert LAND_ID not in land.module_data
+
+
+# -- the canvas -----------------------------------------------------------------------------
+
+
+def edge(tab, waiter, source):
+    from dplanner.modules.project_editor.selection import EdgeRef
+
+    return tab._scene._edges[EdgeRef(waiter=waiter.id, kind="requires", source=source.id)]
+
+
+def test_the_work_on_a_branch_lies_on_its_lane_until_it_lands(services, plan):
+    from dplanner.modules import _branch_births
+    from dplanner.modules.branches.edits import put_command
+    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
+    from dplanner.modules.step_status.aspect import write as status_write
+    from dplanner.theme.palettes import LANES
+
+    library = services.document
+    chosen = [titled(plan, t).id for t in ("Card", "Edit", "Canvas", "Drag")]
+    cut, land = _branch_births(plan, "feature/stacks")
+    services.undo.push(put_command(library, chosen, cut, land))
+    tab = services.tabs.open("project", plan.id)
+    card, edit, drag = titled(plan, "Card"), titled(plan, "Edit"), titled(plan, "Drag")
+    assert edge(tab, card, cut).accent().lane == LANES[0]
+    assert edge(tab, edit, card).accent().lane == LANES[0]
+    assert edge(tab, land, drag).accent().lane == LANES[0]
+    assert not edge(tab, cut, titled(plan, "Menu")).accent().lane  # The way in is main's.
+    assert not edge(tab, titled(plan, "Release"), land).accent().lane  # And the way out.
+    assert "merge" in tab._scene._nodes[land.id]._accent.icons
+    library.set_module_data(land.id, STATUS_ID, status_write("done", today=TODAY))
+    assert not edge(tab, edit, card).accent().lane  # Landed: on main now.
