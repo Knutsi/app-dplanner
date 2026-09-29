@@ -7,7 +7,8 @@ the menu bar, so the popup can never say something the menu would not.
 
 The face carries a modified dot: “• release plan” means the graph has drifted since that
 layout was applied — a drag, a new step, an edit from the CLI. The comparison is one dict
-build over the project's steps, cheap at the scale a project has.
+build over the project's steps, cheap at the scale a project has. In Wave view the face
+reads “Waves” and nothing else: the arrangement shown is derived, so it cannot drift.
 """
 
 from collections.abc import Callable
@@ -22,8 +23,10 @@ from dplanner.framework.context import ContextService
 from dplanner.modules.project_editor.layout_verbs import (
     MANAGE_ACTION_IDS,
     SORT_ACTION_IDS,
+    WAVE_ACTION_IDS,
     LayoutVerbs,
     current_layout_name,
+    wave_view,
 )
 from dplanner.modules.project_editor.named_layouts import is_current, read_layouts
 from dplanner.modules.project_editor.positions import MODULE_ID
@@ -60,9 +63,9 @@ class LayoutButton(QToolButton):
 
         self._unsubscribes: list[Callable[[], None]] = [
             library.module_data_changed.connect(self._on_module_data),
-            library.structure_changed.connect(lambda *_args: self._refresh_face()),
+            library.structure_changed.connect(lambda *_args: self.refresh_face()),
         ]
-        self._refresh_face()
+        self.refresh_face()
 
     def build_popup(self) -> QMenu:
         """The popup as it would open right now — how a test asks what it offers."""
@@ -92,10 +95,15 @@ class LayoutButton(QToolButton):
 
     def _on_module_data(self, _node_id: NodeId, module_id: str, _origin: object) -> None:
         if module_id == MODULE_ID:
-            self._refresh_face()
+            self.refresh_face()
 
-    def _refresh_face(self) -> None:
+    def refresh_face(self) -> None:
+        """Say what the canvas is showing — called by the tab when it enters or leaves Wave
+        view, which changes nothing the library could announce."""
         project = self._project()
+        if project is not None and wave_view(self._project_id):
+            self.setText("Waves")
+            return
         name = self._applied_name()
         if project is None or name is None:
             self.setText("Layout")
@@ -110,6 +118,9 @@ class LayoutButton(QToolButton):
         project = self._project()
         if project is None:
             return
+        for action_id in WAVE_ACTION_IDS:
+            append_action(self._menu, self._actions, self._context, action_id)
+        self._menu.addSeparator()
         applied = self._applied_name()
         names = sorted(read_layouts(project))
         for name in names:

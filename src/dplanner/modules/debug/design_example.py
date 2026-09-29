@@ -570,7 +570,8 @@ class DesignExampleToolbars(ActivityBase):
             "the bands stand apart with a hairline between them, and each carries its name. "
             "A band's buttons are squares — a palette is a grid of targets of one size. A "
             "family of verbs is one button and its arrow; a band of the menus is one face, "
-            "which runs no verb of its own.",
+            "which runs no verb of its own. Two ways of looking at one surface are a "
+            "segmented pair in the band they are about, keeping their words.",
         )
 
         self.folded = self._banded_strip()
@@ -646,6 +647,18 @@ class DesignExampleToolbars(ActivityBase):
             bar.add_group(band)
             for label, glyph in verbs:
                 bar.add_verb(label, glyph, lambda: None)
+        # Two ways of looking at one surface, named at once, in the band they are about —
+        # the graph's Free | Waves. Words in a band of squares: the primitive keeps them.
+        bar.add_group("Arrange")
+        view = Segmented(
+            [
+                ("free", "Free", "Your own arrangement"),
+                ("waves", "Waves", "Every step in the column of its wave"),
+            ],
+            bar,
+        )
+        view.set_value("waves")
+        bar.add_widget(view)
         bar.add_group("Options")
         bar.add_verb("How the graph is drawn", options_icon, lambda: None)
         return bar

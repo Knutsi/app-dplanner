@@ -21,18 +21,24 @@ and only resolves overlaps, evens the spacing to the pitches and closes holes. T
 clustering ``dplanner layout show`` reports gaps by and the map is drawn on, so what the
 report says and what a tidy does can never disagree.
 
+The seventh, :func:`waves`, is Wave view's arrangement — every card in the column of its
+dependency depth — and is also shown **live**, derived on every sync while Wave view is on and
+never saved; so where the others only have to be deterministic, it also has to hold still
+(see its section below). Keep This Arrangement and ``dplanner layout sort waves`` write it.
+
 **Qt-free** — ``dplanner layout sort`` and ``layout tidy`` run these where no graphics
 stack exists.
 """
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from math import cos, sin, tau
+from math import ceil, cos, sin, tau
 
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import depths
+from dplanner.domain.schedule import earliest_starts
 from dplanner.modules.project_editor.positions import GRID, NODE_H, NODE_W, node_size, snapped
-from dplanner.modules.project_editor.stacks import fold
+from dplanner.modules.project_editor.stacks import FRAME_PAD, Folded, fold
 
 type Point = tuple[float, float]
 type SizeFor = Callable[[Step], tuple[float, float]]
@@ -260,44 +266,194 @@ def timeline(
     def duration(block: Step) -> float:
         return sum(days(real[member]) for member in folded.packing.members_of(block.id))
 
-    return folded.packing.unfold(_timeline(folded.project, folded.size_for, duration))
+    return folded.packing.unfold(_timeline(library, folded.project, folded.size_for, duration))
 
 
 def _timeline(
-    project: Project, size_for: SizeFor, duration: Callable[[Step], float]
+    library: Library, project: Project, size_for: SizeFor, duration: Callable[[Step], float]
 ) -> dict[StepId, Point]:
     steps = project.steps
     if not steps:
         return {}
     order = {step.id: index for index, step in enumerate(steps)}
-    by_id = {step.id: step for step in steps}
     sizes = {step.id: size_for(step) for step in steps}
     lane_height = max(h for _w, h in sizes.values()) + V_GAP
-    earliest: dict[StepId, float] = {}
-
-    def start_of(step: Step, seen: frozenset[StepId] = frozenset()) -> float:
-        if step.id not in earliest:
-            # A step already on the walk closes a cycle — a hand edit, or a broken stack
-            # folded into one — and counts as starting at once, as ``depths`` places it.
-            sources = [
-                by_id[s] for s in step.edges.get("requires", []) if s in by_id and s not in seen
-            ]
-            earliest[step.id] = max(
-                (start_of(source, seen | {step.id}) + duration(source) for source in sources),
-                default=0.0,
-            )
-        return earliest[step.id]
+    # A broken stack can fold into a cycle; the walk counts the step closing it as met.
+    starts = earliest_starts(library, project, duration)
 
     placed: dict[StepId, Point] = {}
     lane_right: list[float] = []
-    for step in sorted(steps, key=lambda step: (start_of(step), order[step.id])):
-        x = ORIGIN + start_of(step) * DAY_PX
+    for step in sorted(steps, key=lambda step: (starts[step.id], order[step.id])):
+        x = ORIGIN + starts[step.id] * DAY_PX
         lane = next((i for i, right in enumerate(lane_right) if right <= x), len(lane_right))
         if lane == len(lane_right):
             lane_right.append(0.0)
         lane_right[lane] = x + sizes[step.id][0] + H_GAP
         placed[step.id] = (x, ORIGIN + lane * lane_height)
     return placed
+
+
+# -- waves -------------------------------------------------------------------------------------
+#
+# Wave view's arrangement: every card in the column of its dependency depth. Unlike the sorts
+# above it is shown live — derived on every sync while Wave view is on, never saved — so its
+# one extra duty is to hold still: a link added must move only the steps it changes the wave
+# of, and nothing may reshuffle a column it did not touch (``ARCHITECTURE.md``'s *Wave view
+# derives positions; only Free view saves them*).
+
+
+@dataclass(frozen=True)
+class Wave:
+    """One column: how deep its steps stand, where its cards stand across, and when its work
+    runs — from its earliest start to its latest finish, in working days from the plan's
+    start. ``steps`` is every card in it top to bottom, a stack's members included."""
+
+    depth: int
+    left: float
+    right: float
+    start: float
+    finish: float
+    steps: tuple[StepId, ...]
+
+    @property
+    def label(self) -> str:
+        """What the ruler calls it — numbered as the Order tab numbers waves, so a step has
+        one wave number everywhere; the first, what nothing waits before, is the start."""
+        return "START" if self.depth == 0 else f"WAVE {self.depth + 1}"
+
+    @property
+    def span(self) -> str:
+        return span_words(self.start, self.finish)
+
+
+# The dash between the ends of a range, spelled out: the lint would read the glyph as a hyphen.
+EN_DASH = "\u2013"
+
+
+def span_words(start: float, finish: float) -> str:
+    """When a wave runs, in words — "day 0", or from one day to another, "1 to 2.5 d" with
+    an en dash — the ruler's and ``layout show``'s alike, so the two cannot word one answer
+    differently."""
+    if start == finish:
+        return f"day {start:g}"
+    return f"{start:g} {EN_DASH} {finish:g} d"
+
+
+@dataclass(frozen=True)
+class WaveArrangement:
+    """Every card's seat in Wave view, and the columns they stand in — what the ruler reads."""
+
+    seats: dict[StepId, Point]
+    waves: tuple[Wave, ...]
+
+
+def waves(
+    library: Library,
+    project: Project,
+    size_for: SizeFor = node_size,
+    days_for: DaysFor | None = None,
+) -> dict[StepId, Point]:
+    """Every card in the column of its dependency depth — Wave view's seats, and what *Keep
+    This Arrangement* and ``dplanner layout sort waves`` write."""
+    return arranged_in_waves(library, project, size_for, days_for).seats
+
+
+def arranged_in_waves(
+    library: Library,
+    project: Project,
+    size_for: SizeFor = node_size,
+    days_for: DaysFor | None = None,
+) -> WaveArrangement:
+    """The columns and every seat in them.
+
+    A card's column is its dependency depth, over the folded graph: a stack is one block in
+    the wave of its first member, and what follows it takes its depth from the stack as one
+    node (N39). Down a column the blocks go by earliest start, then by where the highest of
+    their sources stands in the column before, then by project order — one forward pass.
+    Every rank there compares facts a new link changes only for the steps it moves, so no
+    other card swaps places: that is why it is the *highest* source and not the mean of them
+    (a mean can swap two cards whose sources never moved relative to each other), and why
+    there is no second sweep.
+
+    Columns start together at the top rather than centred, so a column changes only when
+    its own cards do. Each is as wide as its widest card, and a stack's frame stands outside
+    its cards' column, so a stack arriving never pushes the columns after it. Every seat is
+    on the grid, where the canvas would have snapped it.
+    """
+    folded = fold(project, size_for)
+    packing = folded.packing
+    blocks = folded.project.steps
+    if not blocks:
+        return WaveArrangement({}, ())
+    by_depth = depths(library, folded.project)
+    starts, finishes = _block_times(library, project, folded, days_for)
+    order = {block.id: index for index, block in enumerate(blocks)}
+    columns: dict[int, list[Step]] = {}
+    for block in blocks:
+        columns.setdefault(by_depth.get(block.id, 0), []).append(block)
+
+    rank: dict[StepId, int] = {}
+    for depth in sorted(columns):
+
+        def highest_source(block: Step, before: int = depth - 1) -> int:
+            above = (
+                rank[source]
+                for source in block.edges.get("requires", [])
+                if by_depth.get(source) == before and source in rank
+            )
+            return min(above, default=-1)
+
+        column = columns[depth]
+        column.sort(key=lambda block: (starts[block.id], highest_source(block), order[block.id]))
+        rank.update((block.id, index) for index, block in enumerate(column))
+
+    def inset(block: Step) -> float:
+        return FRAME_PAD if block.id in packing.stacks else 0.0
+
+    seats: dict[StepId, Point] = {}
+    found: list[Wave] = []
+    x = ORIGIN
+    for depth in sorted(columns):
+        column = columns[depth]
+        y = ORIGIN
+        for block in column:
+            seats[block.id] = (x - inset(block), y)
+            y = _up_to_grid(y + packing.sizes[block.id][1] + V_GAP)
+        width = max(packing.sizes[block.id][0] - 2 * inset(block) for block in column)
+        start, finish = _span(column, starts, finishes)
+        members = tuple(member for block in column for member in packing.members_of(block.id))
+        found.append(Wave(depth, x, x + width, start, finish, members))
+        x = _up_to_grid(x + width + H_GAP)
+    return WaveArrangement(packing.unfold(seats), tuple(found))
+
+
+def _block_times(
+    library: Library, project: Project, folded: Folded, days_for: DaysFor | None
+) -> tuple[dict[StepId, float], dict[StepId, float]]:
+    """Each block's earliest start and finish. A stack lasts as long as its members
+    together, since its chain runs one after another; an unestimated step takes no days."""
+    real = {step.id: step for step in project.steps}
+
+    def own(step: Step) -> float:
+        return (days_for(step) if days_for is not None else None) or 0.0
+
+    lasting = {
+        block.id: sum(own(real[member]) for member in folded.packing.members_of(block.id))
+        for block in folded.project.steps
+    }
+    starts = earliest_starts(library, folded.project, lambda block: lasting[block.id])
+    return starts, {block: start + lasting[block] for block, start in starts.items()}
+
+
+def _span(
+    column: Sequence[Step], starts: dict[StepId, float], finishes: dict[StepId, float]
+) -> tuple[float, float]:
+    return min(starts[block.id] for block in column), max(finishes[block.id] for block in column)
+
+
+def _up_to_grid(value: float) -> float:
+    """The next seat on the grid at or past ``value`` — never nearer than the gap asked."""
+    return float(ceil(value / GRID) * GRID)
 
 
 # -- radial ------------------------------------------------------------------------------------

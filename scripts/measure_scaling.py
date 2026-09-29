@@ -22,7 +22,9 @@ The last line is the 2026-09-04 measurement (``measure_edit_cost.py``, which thi
 replaces). Deferred is the window's regime and the default; ``--immediate`` runs every
 view inline, which moves attribution but not the total, and is the honesty check. The
 numbers here are the ones to quote before changing a delay in ``framework/debounce.py``.
-Nothing it builds touches the user's config, journal or library.
+``--waves`` puts every canvas in Wave view, whose seats are derived on every sync — run a
+scenario with and without it to price the view. Nothing it builds touches the user's
+config, journal or library.
 """
 
 from __future__ import annotations
@@ -87,10 +89,12 @@ from dplanner.modules.feature import aspect as feature_aspect
 from dplanner.modules.feature.aspect import FeatureSource
 from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.project_editor.clipboard import clip, paste
+from dplanner.modules.project_editor.layout_verbs import wave_view
 from dplanner.modules.project_editor.look import BACKGROUNDS, Look
 from dplanner.modules.project_editor.placement import auto_positions
 from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
-from dplanner.modules.project_editor.positions import write_position
+from dplanner.modules.project_editor.positions import default_size, write_position
+from dplanner.modules.project_editor.sorts import arranged_in_waves
 from dplanner.modules.spec import aspect as spec_aspect
 from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
 from dplanner.modules.step_agent_instruction.aspect import enabled as is_agent
@@ -171,7 +175,14 @@ class GcMeter:
 
 
 class Harness:
-    def __init__(self, app: QApplication, session: AppSession, size: int, tabs: Sequence[str]):
+    def __init__(
+        self,
+        app: QApplication,
+        session: AppSession,
+        size: int,
+        tabs: Sequence[str],
+        waves: bool = False,
+    ):
         self.app = app
         self.session = session
         services = session.services
@@ -180,6 +191,8 @@ class Harness:
         self.library: Library = services.document
         self.size = size
         self.tabs = tuple(tabs)
+        # Every project tab in Wave view: its seats derived on every sync, never stored.
+        self.waves = waves
         self.gc = GcMeter()
         by_title = {project.title: project for project in self.library.projects}
         self.project: Project = by_title["Big"]
@@ -220,7 +233,12 @@ class Harness:
 
     def open_tab(self, kind: str) -> object:
         target = None if kind == "all_tests" else self.project.id
-        return self.services.tabs.open(kind, target)
+        activity = self.services.tabs.open(kind, target)
+        if self.waves and kind == "project" and target is not None and not wave_view(target):
+            # Through the verb, as the switch and V go: Wave view is the user's to turn on.
+            self.services.actions.run("canvas.waves", self.services.context.current())
+            self.pump()
+        return activity
 
     def selection(self, *step_ids: str) -> Context:
         nodes = tuple(ContextNode(selection_uri("step", step_id)) for step_id in step_ids)
@@ -733,6 +751,7 @@ def _derive(h: Harness) -> dict[str, float]:
         "progression": lambda: progression(library, project, step_status),
         "link_refusal": lambda: library.link_refusal(first, "requires", last),
         "auto_positions": lambda: auto_positions(library, project),
+        "waves": lambda: arranged_in_waves(library, project, default_size, estimated_days),
         "time_report": lambda: time_report(
             library,
             project,
@@ -776,7 +795,7 @@ def build(app: QApplication, root: Path, size: int, args: argparse.Namespace) ->
     services = session.services
     assert services is not None
     services.debounce.set_immediate(args.immediate)
-    harness = Harness(app, session, size, args.tabs)
+    harness = Harness(app, session, size, args.tabs, waves=args.waves)
     harness.extra_open = {"build_ms": built_ms, "open_ms": opened_ms}  # type: ignore[attr-defined]
     harness.open_tabs()
     return harness
@@ -885,6 +904,7 @@ def main() -> None:
     parser.add_argument("--projects", type=int, default=3)
     parser.add_argument("--unplaced", type=float, default=0.0)
     parser.add_argument("--immediate", action="store_true", help="every view inline")
+    parser.add_argument("--waves", action="store_true", help="every canvas in Wave view")
     parser.add_argument("--repeat", type=int, default=1)
     parser.add_argument("--json", type=Path, default=None)
     parser.add_argument("--profile", default=None, help="one scenario, under a profiler")
@@ -928,6 +948,7 @@ def main() -> None:
         "tabs": list(args.tabs),
         "sizes": sizes,
         "immediate": args.immediate,
+        "waves": args.waves,
         "projects": args.projects,
         "unplaced": args.unplaced,
     }

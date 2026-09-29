@@ -16,6 +16,8 @@
     uv run python scripts/render_graph_editor.py --review \
         --out docs/screenshots/f12-automatic-review
     uv run python scripts/render_graph_editor.py --flow --out docs/screenshots/f20-flow
+    uv run python scripts/render_graph_editor.py --waves \
+        --out docs/screenshots/f28-wave-view
 
 What S7 reworked: the strip of verbs over the canvas as glyphs in named bands, folding
 whole bands into its ``…`` menu; the *Find* picker, which opens on the plan's landmarks
@@ -38,7 +40,9 @@ links, and the arrow's menu with the toggle on; since F12, with ``--review``, a 
 review, the link into the review doubled by rule and its menu's toggle ticked and greyed; since
 F20, with ``--flow``, where work moves on its own and where a person is next: the talk bubble
 on the link into a review, a collector's doubled links, and the steps a person moves next
-pulsing — at the height of a breath, at rest, and with the review picked. A
+pulsing — at the height of a breath, at rest, and with the review picked; since F28, with
+``--waves``, one plan as its author arranged it and then in Wave view — every card in the
+column of its wave under the ruler, the strip's *Free | Waves* lit on Waves. A
 whole application is built over a throwaway library — the tab is the tab host's, so nothing
 here hand-wires a surface the window would build differently — and torn down per theme.
 """
@@ -79,6 +83,7 @@ from dplanner.modules.estimation.aspect import write as estimate_write
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.project_editor.items import StepNodeItem
+from dplanner.modules.project_editor.layout_verbs import set_wave_view
 from dplanner.modules.project_editor.modes import RestackMode
 from dplanner.modules.project_editor.module import ProjectActivity, ProjectEditorModule
 from dplanner.modules.project_editor.positions import (
@@ -212,6 +217,27 @@ FLOW_SIZE = (1320, 600)
 # every other arrangement.
 STACKED = ("Read the fixtures", "Write the parser", "Parse the dates", "Map the columns")
 STACK_SIZE = (1180, 560)
+
+# Wave view (F28): the guide's figure, as a plan — a start, a wide first wave mostly done, one
+# step everything after waits on, and a stack at the end. Each is (title, estimate, status,
+# what it waits on, where its author left it). The author's arrangement is deliberately not
+# by wave, so the two shots differ.
+WAVE_PLAN = (
+    ("Project start", 0.0, "done", (), (-320.0, 200.0)),
+    ("Retire canvas renderer fallbacks", 1.0, "done", (0,), (0.0, -120.0)),
+    ("Ready for review hands off to a human", 1.5, "in-progress", (0,), (320.0, 360.0)),
+    ("New Project asks where it should live", 1.25, "done", (0,), (0.0, 360.0)),
+    ("Primary icons on the main strip", 1.25, "done", (0,), (-320.0, -120.0)),
+    ("A Start marker: a step with no inputs", 1.0, "done", (0,), (0.0, 120.0)),
+    ("Right-click by what is under the cursor", 1.5, "", (1,), (320.0, 0.0)),
+    ("Contract: close up the step API", 1.25, "", (6,), (640.0, -120.0)),
+    ("The menu bar, sorted by task", 1.25, "", (6,), (960.0, 120.0)),
+    ("Auto-progress links", 1.5, "", (6, 2), (640.0, 360.0)),
+    ("A stack is one tall card", 1.5, "", (7,), (960.0, -240.0)),
+    ("Editing a stack", 1.0, "", (10,), (0.0, 0.0)),
+)
+WAVE_STACK = (10, 11)
+WAVES_SIZE = (1400, 760)
 
 
 def settle(app: QApplication) -> None:
@@ -918,6 +944,66 @@ def render_stack_edits(app: QApplication, theme: Theme, out: Path, workspace: Pa
     discard(page)
 
 
+def render_waves(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """One plan as its author left it, then in Wave view: the ruler naming each wave and when
+    it runs, the band behind every other column, the stack one tall card in its wave,
+    and the strip's switch lit on Waves with the picker saying so."""
+    QSettings().clear()
+    apply_theme(app, theme)
+    library_file = workspace / f"waves-library-{theme.name}.json"
+    create_library(library_file)
+    init_repo(workspace)
+    session = new_session()
+    assert session.open_initial(library_file)
+    services = session.services
+    assert services is not None
+    services.debounce.set_immediate(True)
+    library = services.document
+
+    directory = seed_project(workspace / f"waves-{theme.name}", "DPlanner changes 2")
+    project = services.repo.attach(directory)
+    library.add_child(library.id, project)
+    made: list[StepId] = []
+    for title, days, status, _sources, (x, y) in WAVE_PLAN:
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(library)
+        SetModuleDataCommand(step.id, POSITION_KEY, write_position(x, y)).redo(library)
+        SetModuleDataCommand(step.id, "estimation", estimate_write(days)).redo(library)
+        library.set_text(step.id, "step_description", f"{title}, in full.")
+        if status:
+            SetModuleDataCommand(step.id, STATUS_ID, status_write(status, today=DAY)).redo(library)
+        made.append(step.id)
+    for index, (*_rest, sources, _seat) in enumerate(WAVE_PLAN):
+        if sources:
+            SetEdgesCommand(made[index], "requires", [made[s] for s in sources]).redo(library)
+    first, *rest = WAVE_STACK
+    head = WAVE_PLAN[first][4]
+    SetModuleDataCommand(made[first], POSITION_KEY, write_position(*head, stack="demo")).redo(
+        library
+    )
+    for index in rest:
+        SetModuleDataCommand(made[index], POSITION_KEY, write_member("demo")).redo(library)
+
+    tab = services.tabs.open("project", project.id)
+    assert isinstance(tab, ProjectActivity)
+    tab.select_steps([made[6]])
+    page = tab.widget
+    page.setParent(None)
+    page.resize(*WAVES_SIZE)
+    page.show()
+    tab.frame()
+    save(page, out, "free", theme, app)
+    # What the module's set_waves does: remember, then show. The page was taken out of the
+    # tab host to be sized, so the tab is told directly (render()'s side panel does the same).
+    set_wave_view(project.id, True)
+    tab.show_waves(True)
+    tab.frame()
+    save(page, out, "waves", theme, app)
+    page.setParent(None)
+    session.close()
+    discard(page)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory for the PNGs")
@@ -960,6 +1046,9 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="only the review bubble and the pulsing steps a person moves next (F20)",
     )
+    parser.add_argument(
+        "--waves", action="store_true", help="only a plan in Free and in Wave view (F28)"
+    )
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
@@ -998,6 +1087,9 @@ def main(argv: list[str]) -> int:
                 continue
             if args.flow:
                 render_flow(app, theme, args.out, Path(tmp))
+                continue
+            if args.waves:
+                render_waves(app, theme, args.out, Path(tmp))
                 continue
             render(app, theme, args.out, Path(tmp))
             render_cards(app, theme, args.out, Path(tmp))

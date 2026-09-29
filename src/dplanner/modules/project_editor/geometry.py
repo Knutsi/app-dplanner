@@ -18,7 +18,9 @@ rather than on pixels — a graph at an odd pitch still reads as the columns it 
 **It measures the picture, and in the picture a stack is one tall card**: the lanes, the
 overlaps, the bounds and the waves are taken over the graph folded (``stacks.fold``), each
 stack its frame — what tidy acts on, and what a stack is in Wave view (N39), so a wave here
-is not ``order show``'s. The cards are still every step at its own seat.
+is not ``order show``'s. The cards are still every step at its own seat. Handed ``days_for``,
+each wave also says when it runs — Wave view's ruler, in words, read off the one arrangement
+(``sorts.arranged_in_waves``).
 
 **Qt-free** — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
@@ -41,9 +43,11 @@ from dplanner.modules.project_editor.sorts import (
     V_GAP,
     V_PITCH,
     Lane,
+    arranged_in_waves,
     hole,
     lanes,
     measured,
+    span_words,
 )
 from dplanner.modules.project_editor.stacks import Rect, Stack, broken_reason, fold
 
@@ -83,9 +87,14 @@ class StackBox:
 
 @dataclass(frozen=True)
 class Wave:
+    """One wave's cards and their box — and, measured with ``days_for``, when it runs, in
+    working days from the plan's start, as Wave view's ruler says it."""
+
     number: int
     steps: tuple[StepId, ...]
     bounds: Rect
+    start: float | None = None
+    finish: float | None = None
 
 
 @dataclass(frozen=True)
@@ -106,8 +115,14 @@ class Geometry:
 # -- measuring ----------------------------------------------------------------------------------
 
 
-def measure(library: Library, project: Project, *, key_of: Callable[[Step], str]) -> Geometry:
-    """The geometry as it stands."""
+def measure(
+    library: Library,
+    project: Project,
+    *,
+    key_of: Callable[[Step], str],
+    days_for: Callable[[Step], float | None] | None = None,
+) -> Geometry:
+    """The geometry as it stands — with each wave's span when ``days_for`` is handed in."""
     steps = project.steps
     if not steps:
         return Geometry((), None, (), (), (), ())
@@ -131,11 +146,15 @@ def measure(library: Library, project: Project, *, key_of: Callable[[Step], str]
         )
         for step in steps
     )
+    runs = () if days_for is None else arranged_in_waves(library, project, days_for=days_for).waves
+    spans = {wave.depth: (wave.start, wave.finish) for wave in runs}
     waves = []
     for number in sorted({card.wave for card in cards}):
         members = tuple(card.id for card in cards if card.wave == number)
         blocks = dict.fromkeys(packing.block_of(step_id) for step_id in members)
-        waves.append(Wave(number, members, _bounds([rects[block] for block in blocks])))
+        start, finish = spans.get(number - 1, (None, None))
+        box = _bounds([rects[block] for block in blocks])
+        waves.append(Wave(number, members, box, start, finish))
     ids = list(rects)
 
     def left(step_id: StepId) -> float:
@@ -213,7 +232,13 @@ def as_json(geometry: Geometry) -> dict[str, Any]:
         ],
         "bounds": _rect_json(geometry.bounds),
         "waves": [
-            {"wave": wave.number, "steps": list(wave.steps), "bounds": _rect_json(wave.bounds)}
+            {
+                "wave": wave.number,
+                "steps": list(wave.steps),
+                "bounds": _rect_json(wave.bounds),
+                "start": wave.start,
+                "finish": wave.finish,
+            }
             for wave in geometry.waves
         ],
         "overlaps": [list(pair) for pair in geometry.overlaps],
@@ -258,7 +283,12 @@ def text(geometry: Geometry) -> str:
     for wave in geometry.waves:
         bx, by, bw, bh = wave.bounds
         named = " ".join(keys[i] for i in wave.steps)
-        lines.append(f"  {wave.number:>2}  at {bx:g},{by:g} size {bw:g} x {bh:g}  {named}")
+        runs = (
+            ""
+            if wave.start is None or wave.finish is None
+            else "  " + span_words(wave.start, wave.finish)
+        )
+        lines.append(f"  {wave.number:>2}  at {bx:g},{by:g} size {bw:g} x {bh:g}{runs}  {named}")
     if geometry.stacks:
         lines.append("stacks:")
     for box in geometry.stacks:
