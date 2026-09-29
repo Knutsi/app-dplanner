@@ -56,10 +56,11 @@ DIRECTORY = "at-work"  # Under config_dir(); the composition root names the path
 PLAN = "plan"  # The file-name half of a claim on no particular step.
 
 # Silence past which a claim lapses: no reader shows it until the agent's next sign of life.
-# Generous, since an agent can spend a long time on one tool call; and cheap to get wrong,
-# since the file stays and the agent's next ``dplanner`` run — its next touch of the plan —
-# renews it.
-FRESH_MINUTES = 30
+# Short, because a band from an agent that has finished is the costlier mistake — thirty
+# minutes left bands standing long after the work was done. Cheap to get wrong the other
+# way, since the file stays and the agent's next ``dplanner`` run — its next touch of the
+# plan — renews it; an agent quiet for longer than this is not touching the plan either.
+FRESH_MINUTES = 3
 
 # A claim nobody ended and nobody has renewed since yesterday is swept by the next writer:
 # the machine rebooted, or an agent died in a way it could not report. Until then a lapsed

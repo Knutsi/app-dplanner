@@ -1,7 +1,7 @@
 """An agent's claim that it is at work: what is stored, and what is derived from it.
 
 These tests pin the two halves of a claim's life: it stands while the agent is heard from
-and lapses after half an hour of silence — without being deleted, so the agent's next run
+and lapses after three minutes of silence — without being deleted, so the agent's next run
 brings it back — and every reading of *how long ago* comes out of the stamp.
 """
 
@@ -114,8 +114,8 @@ def test_a_claim_a_newer_build_wrote_is_read_for_what_it_carries(board, tmp_path
 def test_every_run_renews_the_claims_of_its_own_project(board):
     board.start("p1", doing="shaping")
     board.start("p2", doing="elsewhere")
-    _backdate(board, "p1", 10)
-    _backdate(board, "p2", 10)
+    _backdate(board, "p1", FRESH_MINUTES - 1)
+    _backdate(board, "p2", FRESH_MINUTES - 1)
     board.touch("p1")
     assert quiet_seconds(board.claims("p1")[0]) < 60
     assert quiet_seconds(board.claims("p2")[0]) > 60
@@ -155,7 +155,7 @@ def test_a_claim_stands_until_it_has_been_quiet_half_an_hour(board):
 
 
 def test_a_silent_claim_lapses_and_the_next_run_brings_it_back(board):
-    """Half an hour without a word and no reader shows it; the file stays, so the agent's
+    """Three minutes without a word and no reader shows it; the file stays, so the agent's
     next ``dplanner`` run — its next touch of the plan — makes it stand again, words and
     all."""
     board.start("p1", doing="thinking")

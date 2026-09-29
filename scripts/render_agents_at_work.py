@@ -3,7 +3,7 @@
     uv run python scripts/render_agents_at_work.py --out docs/screenshots/s23-agents-at-work
 
 A whole application over a synthetic library, with claims written to a throwaway board the
-way `dplanner agent-work` writes them. It renders the window's top with one agent at work
+way `dplanner agent-work` writes them. It renders the window's foot with one agent at work
 (that agent's own line), then with three at once (one band that counts them, filled by
 everything they counted), and then the *Agents at Work* dialog a click on that band opens.
 """
@@ -32,7 +32,7 @@ from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 
 WINDOW_SIZE = (1180, 720)
-BELOW_BAR = 44  # How much of the tabs under the band the grab keeps, for context.
+ABOVE_BAR = 44  # How much of the tabs over the band the grab keeps, for context.
 STEPS = 24
 # A claim's stamp carries whole seconds and claims begun within one are listed by step id,
 # so each is begun a second after the last for the rows to read in the order they began.
@@ -51,12 +51,12 @@ def save(widget: QWidget, out: Path, name: str, theme: Theme, app: QApplication)
     print(path)
 
 
-def save_top(window: QWidget, bar: QWidget, out: Path, name: str, theme: Theme, app) -> None:
-    """The window from its menu bar to just under the band — where the band is read."""
+def save_foot(window: QWidget, bar: QWidget, out: Path, name: str, theme: Theme, app) -> None:
+    """The window from just over the band to its status bar — where the band is read."""
     settle(app)
-    bottom = bar.mapTo(window, bar.rect().bottomLeft()).y() + BELOW_BAR
+    top = max(0, bar.mapTo(window, bar.rect().topLeft()).y() - ABOVE_BAR)
     path = out / f"{name}-{theme.name}.png"
-    window.grab(QRect(0, 0, window.width(), bottom)).save(str(path), "PNG")
+    window.grab(QRect(0, top, window.width(), window.height() - top)).save(str(path), "PNG")
     print(path)
 
 
@@ -80,7 +80,7 @@ def render(app: QApplication, theme: Theme, out: Path, root: Path) -> None:
     board.start(project.id, steps[3].id, "Linking the steps under the payments milestone", of=8)
     board.set(project.id, steps[3].id, done=3)
     module.refresh()
-    save_top(window, bar, out, "banner-one", theme, app)
+    save_foot(window, bar, out, "banner-one", theme, app)
 
     time.sleep(BEGIN_APART_S)
     board.start(project.id, steps[7].id, "Writing the migration and its tests", of=10)
@@ -88,7 +88,7 @@ def render(app: QApplication, theme: Theme, out: Path, root: Path) -> None:
     time.sleep(BEGIN_APART_S)
     board.start(project.id, doing="Reading the spec before cutting the next steps")
     module.refresh()
-    save_top(window, bar, out, "banner", theme, app)
+    save_foot(window, bar, out, "banner", theme, app)
 
     (notice,) = bar.notices()
     assert notice.open is not None

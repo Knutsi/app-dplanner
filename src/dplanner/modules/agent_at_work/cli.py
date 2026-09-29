@@ -15,7 +15,7 @@ says which work it is on; without one the claim is on the plan as a whole.
 
 **Nothing here proves an agent is alive, and nothing tries.** The claim's last sign of life
 is renewed by *every* ``dplanner`` run (``cli/main.py``), so an agent that is working
-renews it without thinking about it; half an hour with none and the claim lapses until the
+renews it without thinking about it; three minutes with none and the claim lapses until the
 next, and ``status set`` on the step ends it outright. ``domain/at_work.py`` has the
 reasoning.
 

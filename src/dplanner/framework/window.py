@@ -25,7 +25,7 @@ class StatusHost(Protocol):
 
 
 class NoticeHost(Protocol):
-    """The standing notices over the window's content (:mod:`dplanner.framework.notices`).
+    """The standing notices below the window's content (:mod:`dplanner.framework.notices`).
 
     Separate from :class:`StatusHost` because they answer different questions: the status
     bar says what a gesture came to, a notice says what is true until it stops being true.
