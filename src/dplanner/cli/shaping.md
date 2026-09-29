@@ -277,8 +277,10 @@ and the loop is: look, sort, make room or tidy, look again, keep.
   depth, left to right; `spine` lays the main chain on a central line with feeder work
   branching off it — the right shape when a project drives toward milestones, and the
   one that draws the picture at the top of this document; `timeline`
-  spaces steps by their estimates so the graph reads as a schedule. A sort is one undo
-  step in an open window.
+  spaces steps by their estimates so the graph reads as a schedule; `waves` stands every
+  step in the column of its wave, top-aligned — the window's Wave view, kept. A sort is one
+  undo step in an open window. `layout show` says when each wave runs (`0 – 1.5 d`), from
+  its earliest start to its latest finish.
 - **Cut the features, and mark the milestones.** A feature *is* a step — `step add
   <project> '<title>' --feature --after <its work>`, read out of a spec or named by hand —
   and the work upstream of it flows into it. `feature list` says which steps are features

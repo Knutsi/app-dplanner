@@ -755,6 +755,16 @@ QProgressBar::chunk {
     padding-right: ${INDICATOR_ROOM}px;
 }
 
+/* …and a segmented group's choices, which are words, not glyphs: a banded strip seats one
+   as a widget in the band it is about (the graph's *Free | Waves* in Arrange), and squared
+   they elide to "…". After the band's rule, for the same reason as the two above. */
+#ControlBar #ToolbarButton[segment="first"], #ControlBar #ToolbarButton[segment="middle"],
+#ControlBar #ToolbarButton[segment="last"], #ControlBar #ToolbarButton[segment="only"] {
+    padding: 6px 12px;
+    min-width: 0px;
+    max-width: 16777215px;
+}
+
 #ControlBar::separator {
     background-color: $BORDER_FAINT;
     width: 1px;

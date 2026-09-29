@@ -42,6 +42,7 @@ from dplanner.framework.action_registry import (
 )
 from dplanner.framework.context import Context
 from dplanner.framework.side_panel import SidePanel
+from dplanner.modules.project_editor.layout_verbs import wave_view
 from dplanner.modules.project_editor.look import BACKGROUNDS, Look
 from dplanner.modules.project_editor.marks import MARK_NAMES
 from dplanner.modules.project_editor.modes import (
@@ -271,7 +272,7 @@ class CanvasVerbs:
                 icon=divide_vertical_icon,
                 tip="Cut the graph with an upright line and push one side left or right "
                 "to make room. Esc leaves",
-                state=self._mode_state(DIVIDE_VERTICAL),
+                state=self._cut_state(DIVIDE_VERTICAL, "&Vertical"),
                 run=self._mode_toggle(DIVIDE_VERTICAL),
             ),
             ActionSpec(
@@ -284,7 +285,7 @@ class CanvasVerbs:
                 icon=divide_horizontal_icon,
                 tip="Cut the graph with a level line and push one side up or down "
                 "to make room. Esc leaves",
-                state=self._mode_state(DIVIDE_HORIZONTAL),
+                state=self._cut_state(DIVIDE_HORIZONTAL, "&Horizontal"),
                 run=self._mode_toggle(DIVIDE_HORIZONTAL),
             ),
             # Divide's other half, in the same child menu under a rule of its own: the
@@ -299,7 +300,7 @@ class CanvasVerbs:
                 icon=contract_vertical_icon,
                 tip="Cut the graph with an upright line and pull one side left or right "
                 "to close the gap, stopping a gap short of the first step in its row. Esc leaves",
-                state=self._mode_state(CONTRACT_VERTICAL),
+                state=self._cut_state(CONTRACT_VERTICAL, "&Contract Vertically"),
                 run=self._mode_toggle(CONTRACT_VERTICAL),
             ),
             ActionSpec(
@@ -312,7 +313,7 @@ class CanvasVerbs:
                 icon=contract_horizontal_icon,
                 tip="Cut the graph with a level line and pull one side up or down to close "
                 "the gap, stopping a gap short of the first step in its column. Esc leaves",
-                state=self._mode_state(CONTRACT_HORIZONTAL),
+                state=self._cut_state(CONTRACT_HORIZONTAL, "Contract Hori&zontally"),
                 run=self._mode_toggle(CONTRACT_HORIZONTAL),
             ),
             *[
@@ -413,6 +414,20 @@ class CanvasVerbs:
             if self.current_project() is None:
                 return DISABLED
             return ActionState(checked=context.edge("mode") == mode_uri(name))
+
+        return state
+
+    def _cut_state(self, name: str, label: str) -> Callable[[Context], ActionState]:
+        """A cut's mode switch, greyed in Wave view: a cut writes the seats the canvas shows,
+        and Wave view's are derived — so it would save an arrangement nobody chose."""
+        mode_state = self._mode_state(name)
+
+        def state(context: Context) -> ActionState:
+            project_id = self.current_project()
+            if project_id is not None and wave_view(project_id):
+                said = f"{label} — not in Wave view"
+                return ActionState(enabled=False, checked=False, label=said)
+            return mode_state(context)
 
         return state
 

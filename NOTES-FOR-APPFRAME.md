@@ -4830,7 +4830,26 @@ so nothing was wrong with the splitter.
 **Upstream?** Yes. The template has the same `note()` and the same kind of strip. Any
 non-wrapping label with text the user controls, sitting in a tab, will do this.
 
-## 72. Out of plan: the notice bar moved to the foot of the content
+## 72. From F28: Wave view
+
+### `theme/theme.qss` — a segmented group keeps its words in a banded strip
+
+**What.** A rule after the banded strip's square-button rule gives a `Segmented` group's
+buttons (`#ToolbarButton[segment=…]`) their words' padding back and lifts the 18 px width
+cap: `padding: 6px 12px; min-width: 0; max-width: 16777215px`.
+
+**Why.** `Segmented` names its buttons `ToolbarButton` so they wear the quiet button's look,
+and `#ControlBar[banded="true"] #ToolbarButton` squares every glyph button in a tool
+palette — so the first `Segmented` seated as a widget in a band (the graph's *Free | Waves*)
+rendered as two "…". Nothing warns: the elision looks like a narrow strip. The rule has to
+come **after** the band's, at the same specificity, which is the ordering the `hasMenu` and
+`face` exceptions already rely on. Debug ▸ Design Examples' tool palette now carries a
+segmented pair so the combination is rendered.
+
+**Upstream?** Yes — the template's `Segmented` and banded `Toolbar` meet the same way in any
+application that puts a choice in a band.
+
+## 73. Out of plan: the notice bar moved to the foot of the content
 
 ### `framework/main_window.py` — `NoticeBar` below the `PanelDock`, not above it
 

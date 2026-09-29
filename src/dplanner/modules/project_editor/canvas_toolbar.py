@@ -26,7 +26,10 @@ The layout picker sits **in** the Arrange band, at its end. It is not a verb —
 the arrangement the canvas is showing — so it is added as a *widget*, which means it hides
 when there is no room rather than folding into the ``…`` menu, the way a filter does. It
 stood outside the strip while the strip was one undifferentiated row; beside named bands a
-lone worded button at the far right reads as something that fell off.
+lone worded button at the far right reads as something that fell off. The **view switch**
+stands just before it — *Free | Waves*, a ``Segmented`` naming both ways of looking with the
+one shown lit — for the same reason: which view is shown is the band's business, and the
+switch runs ``canvas.waves`` rather than being a second way to change it.
 """
 
 from collections.abc import Sequence
@@ -94,6 +97,7 @@ class CanvasToolbar(QWidget):
         parent: QWidget | None = None,
         groups: Sequence[tuple[str, Sequence[str]]] = GROUPS,
         picker: QWidget | None = None,
+        view_switch: QWidget | None = None,
         panel_button: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
@@ -113,6 +117,8 @@ class CanvasToolbar(QWidget):
                 self.tools.add_action(actions, context, action_id, menu=MENUS.get(action_id))
             if label == PANEL_BAND and panel_button is not None:
                 self.tools.add_widget(panel_button)
+            if label == PICKER_BAND and view_switch is not None:
+                self.tools.add_widget(view_switch)
             if label == PICKER_BAND and picker is not None:
                 self.tools.add_widget(picker)
         self.tools.add_group(OPTIONS)
