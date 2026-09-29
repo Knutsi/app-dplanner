@@ -4829,3 +4829,21 @@ so nothing was wrong with the splitter.
 
 **Upstream?** Yes. The template has the same `note()` and the same kind of strip. Any
 non-wrapping label with text the user controls, sitting in a tab, will do this.
+
+## 72. Out of plan: the notice bar moved to the foot of the content
+
+### `framework/main_window.py` — `NoticeBar` below the `PanelDock`, not above it
+
+**What.** The central column now adds the `PanelDock` first and the `NoticeBar` after it,
+so standing notices sit between the tabs and the status bar. The bar's hairline in
+`theme.qss` moved from `border-bottom` to `border-top`. The bar itself did not change.
+
+**Why.** Above the tabs, every notice that came or went pushed the whole content up or
+down, including the row under the pointer and the line being read. Once agent claims lapsed
+after three minutes of silence, a quiet agent's band came and went several times per task.
+At the foot, only the content's bottom edge moves. The band is still full width and washed
+in its tone, and that is what makes it hard to miss. `ARCHITECTURE.md`'s *The band stands
+at the foot of the content* has the reasoning.
+
+**Upstream?** Yes, if the template keeps `NoticeBar`. A bar that appears and disappears
+should never sit above the content it would move.

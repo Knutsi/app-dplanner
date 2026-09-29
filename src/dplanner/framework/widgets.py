@@ -426,7 +426,7 @@ class StatusBarButton(QToolButton):
     """Quiet words in the status bar that open what they summarise — the running tasks, the
     launched agents. Gone while there is nothing to say, so an idle window's status bar says
     nothing. A fact that *holds* rather than sums something up goes in the ``NoticeBar``
-    over the content instead (DESIGN.md's *Signalling*)."""
+    below the content instead (DESIGN.md's *Signalling*)."""
 
     def __init__(self, tip: str, parent: QWidget | None = None) -> None:
         super().__init__(parent)

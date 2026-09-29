@@ -58,16 +58,18 @@ class AppWindow(QMainWindow):
         self.dock = dock
         self.panels_changed: Signal[str] = dock.panels_changed
         self.areas_changed: Signal[PanelArea] = dock.areas_changed
-        # Standing notices sit over the content, not in the status bar: a fact that holds
-        # while the person works has to be where they are working. The bar is invisible
-        # while nothing stands, so an ordinary window is exactly as it was.
+        # Standing notices sit at the foot of the content, not in the status bar: a fact
+        # that holds while the person works is a band across the whole window, not quiet
+        # words. At the foot, a band coming or going moves only the content's bottom edge,
+        # where above the tabs it shifted everything the person was reading. The bar is
+        # invisible while nothing stands, so an ordinary window is exactly as it was.
         self.notices = NoticeBar(self)
         content = QWidget(self)
         column = QVBoxLayout(content)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
-        column.addWidget(self.notices)
         column.addWidget(dock, 1)
+        column.addWidget(self.notices)
         self.setCentralWidget(content)
         self.statusBar().showMessage("Ready")
 

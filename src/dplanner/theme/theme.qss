@@ -511,14 +511,14 @@ QSplitter::handle:vertical:pressed {
     background-color: $BG_ELEVATED;
 }
 
-/* Standing notices over the window's content (framework/notices.py): the elevated ground
+/* Standing notices below the window's content (framework/notices.py): the elevated ground
    the panels wear, parted from the tabs by one hairline — the same seam a splitter draws,
    because this is the same kind of edge and two vocabularies for one line is how a surface
    grows its own look. The rows on it carry the colour: each is a band painted in its tone,
    in code, because a semantic tint is a low-alpha constant and not a theme colour. */
 #NoticeBar {
     background-color: $BG_ELEVATED;
-    border-bottom: 1px solid $BORDER;
+    border-top: 1px solid $BORDER;
 }
 
 /* How far a notice's work has come, beside its verb. Full ink where the words beside it are

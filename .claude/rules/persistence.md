@@ -74,7 +74,7 @@ paths:
   announces itself — `dplanner agent-work start '<what I am doing>' [--step S7] [--of N]`,
   `agent-work set`, `agent-work end`, `agent-work show` — and `modules/agent_at_work/`
   polls the claims at the watcher's cadence and stands **one `Notice` for every claim**
-  over the window's content: an **amber band** across it (the `warn` tone — a caution about
+  below the window's content: an **amber band** across it (the `warn` tone — a caution about
   another writer, never the red an error owns), the turning arc, one agent's own line or a
   count of them with their step keys (`claims_words`), everything they counted filling the
   band with the percentage beside *Clear* (`combined_fraction`), and *Clear* ending every

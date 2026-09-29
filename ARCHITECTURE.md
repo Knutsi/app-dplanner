@@ -3149,7 +3149,7 @@ experience was of being ambushed by a tool that knew something it was not saying
 So the agent says it. `dplanner agent-work start '<what I am doing>'` writes a **claim** —
 project, optionally a step, one line of prose, optionally the agent's own count of what it
 is working through, when it started and when it was last heard from — and
-`modules/agent_at_work/` stands one notice for every claim over the window's content while
+`modules/agent_at_work/` stands one notice for every claim below the window's content while
 any stands. Six decisions carry it.
 
 **Silence lapses, and the next sign of life undoes it.** This was the whole design
@@ -3278,6 +3278,18 @@ row saying *0%* is plainly something that fills; a hairline is not. The strip ke
 other job it had (a fetch, a save over three repositories, always under the fact that leads
 it), because those are read inside a surface the person came to, and the notice is the
 surface that came to them.
+
+#### The band stands at the foot of the content
+
+The bar first stood above the tabs, on the reasoning that the top of the content is the one
+place a person cannot be looking away from. In use, placement mattered less than movement.
+A band that comes and goes above the tabs pushes everything below it up or down: the table
+row under the pointer, the canvas, the line being read. Once claims lapsed after three
+minutes of silence, a quiet agent's band dropped out and came back several times over one
+task, and each time it moved everything. At the foot of the content, between the tabs and
+the status bar, the band moves only the content's bottom edge. A full-width amber band is
+not missed there, because the band itself, not its position, is what makes it hard to read
+past.
 
 ### A branch switched underneath the window is taken in, and said
 
