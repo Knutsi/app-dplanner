@@ -46,12 +46,14 @@ BANDS: Final[dict[str, tuple[Band, ...]]] = {
     # What an arrow is: removed, or one of its ends moved.
     ARROW: (Band("Graph", "links"),),
     # Nothing is about both, so it leads with narrowing the pick and what acts on any of it —
-    # stacking it among them: a drag across a line picks its arrows too, and Make Stack acts
-    # on the steps — and offers each kind's own verbs one level down.
+    # stacking it and putting it on a branch among them: a drag across a stretch picks its
+    # arrows too, and Make Stack and Put on a Branch act on the steps — and offers each
+    # kind's own verbs one level down.
     MIXED: (
         Band("Graph", "narrow"),
         Band("Edit", "clipboard"),
         Band("Step", "stack", submenu="Stack"),
+        Band("Step", "branch"),
         Band("Step", STEP_ITSELF, child="Step"),
         Band("Graph", "links", child="Links"),
     ),

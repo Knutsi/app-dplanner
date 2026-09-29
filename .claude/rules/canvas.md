@@ -80,7 +80,7 @@ paths:
   clears it and notes the point — and the menu is then a function of the selection alone:
   `canvas_menus.py`'s `BANDS` row for a **card** (the Step menu's bands about the step
   itself, `STEP_ITSELF`), an **arrow** (Graph ▸ `links`), a **mixed** pick (Graph ▸
-  `narrow`, Edit ▸ `clipboard`, Make Stack, then `Step` and `Links` children) or the **background**
+  `narrow`, Edit ▸ `clipboard`, Make Stack, Put on a Branch, then `Step` and `Links` children) or the **background**
   (Graph ▸ `new` and `select`, Edit ▸ `selection`, Go ▸ `survey`), rendered by
   `fill_bands`. **A card is the step, not a table's Step menu**: its type and tests are set
   in Step Details, compiling is the Docs tab's, and a view the index lists as a row under

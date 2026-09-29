@@ -941,7 +941,8 @@ the item under the cursor means the verbs offered and the pick they act on are o
 mixed pick right-clicked on one of its cards is still a mixed pick. A mixed pick leads with
 narrowing it because nothing else is about steps and arrows at once — and with Make Stack
 beside what acts on any of it, because a drag across a line picks the line's arrows too, and
-stacking what was dragged across is the reason to drag (S18).
+stacking what was dragged across is the reason to drag (S18). Put on a Branch sits beside it
+for the same reason: a stretch dragged across comes with its arrows.
 
 **A card is the step, not a table's Step menu.** The first cut rendered the Step menu whole
 on a card, which took the canvas's verbs off it and left a table's: Type, Test and the test
