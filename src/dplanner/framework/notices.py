@@ -1,12 +1,14 @@
-"""A standing fact about the whole window, said over its content.
+"""A standing fact about the whole window, said across the foot of its content.
 
 The status bar carries what a gesture *came to*; a dialog's status slot carries where the
 work in that dialog stands. Neither can carry a fact that is true for as long as it is
 true and that the person must not miss — *an agent is editing this plan right now*, *these
-entries changed here and outside*. Those want the top of the content, which is the one
-place a person cannot be looking away from while they work.
+entries changed here and outside*. Those want a band across the whole window.
 
-So: one bar above the tab area, a row per standing notice, keyed by whoever owns it. A
+So: one bar below the tab area, a row per standing notice, keyed by whoever owns it. It
+sat above the tabs first, and every band that came or went pushed everything the person
+was reading up or down. At the foot it moves only the content's bottom edge, and a
+full-width band in its tone is not missed there. A
 row is DESIGN.md's *Signalling* vocabulary and nothing new — a :class:`StatusLine` in one
 of the tones, the same turning arc a working button turns when the notice is about
 something running, one quiet verb at the right — **and the row is a band in its tone**.
@@ -211,7 +213,7 @@ class _NoticeRow(QWidget):
 
 
 class NoticeBar(QWidget):
-    """Every standing notice, stacked over the window's content. Gone while there are none.
+    """Every standing notice, stacked below the window's content. Gone while there are none.
 
     ``show_notice`` adds or updates a row by its ``id``; ``clear_notice`` takes one away.
     Rows keep the order they first appeared in, so a notice that comes and goes does not

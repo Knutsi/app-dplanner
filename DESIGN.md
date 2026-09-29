@@ -36,7 +36,7 @@ styling one surface by name.
 | a table row's own verbs | `Column(menu=True)` last — a painted ⋮; `menu_requested` hands the host the row, which renders its menu with `fill_bands` | `framework/table.py` | the table tab: `table-*`, `f10-control-centre/` |
 | rows that each carry their own verbs and outlive a refresh | `RowWell`, `WellRow` | `framework/row_well.py` | `s15-tables-and-browsers/tasks-*`, `agents-*` |
 | words in the status bar that open what they sum up | `StatusBarButton` | `framework/widgets.py` | — |
-| a fact that holds until it stops holding, over the whole window | `Notice`, `NoticeBar` | `framework/notices.py` | the modal's *Signalling* block |
+| a fact that holds until it stops holding, across the whole window | `Notice`, `NoticeBar` | `framework/notices.py` | the modal's *Signalling* block |
 | a strip of verbs over a surface | `Toolbar` | `framework/toolbar.py` | the table tab's strip |
 | a strip that is a tool palette | `Toolbar.add_group` | `framework/toolbar.py` | the toolbars tab: `toolbars-*`, `toolbars-folded-*` |
 | a verb the registry owns, with an arrow | `Toolbar.add_action(menu=…, data_menu=…)` | `framework/toolbar.py` | the Documentation view's strip |
@@ -794,10 +794,12 @@ and one stylesheet rule for the progress bar:
   (`ESTIMATE_CAP`), because a bar that reads complete while the work goes on is worse than
   one that reads slow. With nothing remembered the bar is the count alone, which is the
   honest picture on a machine's first run.
-- **A fact that holds goes over the content, not in the status bar.** *An agent is editing
-  this plan right now*, *2 entries changed here and outside* — true until they stop being
-  true, and the person must not miss them while they work — are a `Notice` in the
-  `NoticeBar` above the tabs (`framework/notices.py`): a row per owner, the same
+- **A fact that holds is a band across the window, not words in the status bar.** *An agent
+  is editing this plan right now*, *2 entries changed here and outside* — true until they
+  stop being true, and the person must not miss them while they work — are a `Notice` in
+  the `NoticeBar` below the tabs (`framework/notices.py`). It stands at the foot because a
+  band that comes and goes there moves only the content's bottom edge, where above the
+  tabs it shifted everything the person was reading. It has a row per owner, the same
   vocabulary as a `StatusLine` (a tone, and the turning arc when it is about something
   running), one quiet verb at the right, and the bar gone while nothing stands. The status
   bar says what a gesture *came to*; this says what is *the case*.

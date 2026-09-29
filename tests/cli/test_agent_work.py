@@ -96,7 +96,7 @@ def test_any_verb_renews_the_claim(cli, project, at_work_board):
     """An agent that is working is already running verbs; it should not have to remember a
     heartbeat on top of them."""
     cli("agent-work", "start", "Cutting the graph", "--project", project)
-    backdate(at_work_board, 10)
+    backdate(at_work_board, FRESH_MINUTES - 1)
     assert quiet_seconds(at_work_board.claims()[0]) > 60
     cli("status", "set", "S1", "done", "--project", project)
     assert quiet_seconds(at_work_board.claims()[0]) < 60
@@ -114,7 +114,7 @@ def test_a_run_that_is_nobody_s_sign_of_life_renews_nothing(
     agent's shell, because renewing a claim says "that agent is still there" and only the
     agent can say it."""
     cli("agent-work", "start", "Cutting the graph", "--project", project)
-    backdate(at_work_board, 10)
+    backdate(at_work_board, FRESH_MINUTES - 1)
     code = run(
         registry,
         default_module_formats(),
@@ -129,7 +129,7 @@ def test_a_run_that_is_nobody_s_sign_of_life_renews_nothing(
 def test_a_silent_claim_lapses_until_the_agent_runs_a_verb(
     registry, cli, cli_library, project, at_work_board
 ):
-    """Half an hour without a word and nobody is told an agent is at work — read from the
+    """Three minutes without a word and nobody is told an agent is at work — read from the
     developer's side, whose own run is nobody's sign of life. The claim is not lost: the
     agent's next verb renews it, words and all."""
     cli("agent-work", "start", "Cutting the graph", "--project", project)

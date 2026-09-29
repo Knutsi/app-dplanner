@@ -97,7 +97,7 @@ you work. So:
   one plan each say which work is theirs — and then `status set S7 ready-for-review` (or
   `ready-to-merge`, `done`, `blocked`) takes it down for you, so set the status as soon as
   your PR is open. Every other `dplanner` command you run renews it, so you never need a
-  heartbeat; half an hour without one and the window stops showing it until your next.
+  heartbeat; three minutes without one and the window stops showing it until your next.
 - **Do not invent structure the user did not ask for.** A plan with twenty imagined steps is
   harder to correct than an empty one.
 - **Show the shape.** `dplanner project graph <project>` renders the step graph as a

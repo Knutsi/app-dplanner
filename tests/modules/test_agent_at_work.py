@@ -117,7 +117,7 @@ def test_several_agents_are_one_band_that_counts_them(session, services, project
 
 
 def test_a_silent_agent_is_not_said_at_all(session, project, at_work_board):
-    """Half an hour without a word and the claim lapses: a band nobody believes is worse
+    """Three minutes without a word and the claim lapses: a band nobody believes is worse
     than none, and the agent's next verb brings it back (``domain/at_work.py``)."""
     at_work_board.start(project.id, doing="Cutting the graph")
     module(session).refresh()

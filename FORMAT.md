@@ -152,7 +152,7 @@ only their own and no two can lose an update to each other.
 from inside an agent's shell — the agent needs no heartbeat of its own. Nothing derived is
 stored: how long ago that was, whether the claim still stands, and how far along the agent
 says it is are all computed on every read (`domain/at_work.py`). A claim whose `seen` is
-thirty minutes old has **lapsed** — no reader shows it — but its file is kept, so the next
+three minutes old has **lapsed** — no reader shows it — but its file is kept, so the next
 renewal makes it stand again.
 
 **It is never in the project directory**, and that is the whole reason it is a row of its

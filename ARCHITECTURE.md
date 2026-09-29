@@ -3239,7 +3239,7 @@ experience was of being ambushed by a tool that knew something it was not saying
 So the agent says it. `dplanner agent-work start '<what I am doing>'` writes a **claim** —
 project, optionally a step, one line of prose, optionally the agent's own count of what it
 is working through, when it started and when it was last heard from — and
-`modules/agent_at_work/` stands one notice for every claim over the window's content while
+`modules/agent_at_work/` stands one notice for every claim below the window's content while
 any stands. Six decisions carry it.
 
 **Silence lapses, and the next sign of life undoes it.** This was the whole design
@@ -3251,13 +3251,17 @@ heard 40 minutes ago*) and stood until somebody who knew something ended it. In 
 was the wrong way round. Agents finish and stop without a word far more often than they
 think for an hour, so the window collected bands from agents long gone, and a banner that
 is usually stale teaches the developer to read past the one surface they must not. So a
-claim not heard from in `FRESH_MINUTES` (thirty) **lapses**: `AtWorkBoard.claims()` stops
+claim not heard from in `FRESH_MINUTES` (three) **lapses**: `AtWorkBoard.claims()` stops
 returning it, and the window, `agent-work show` and the library watcher all stop saying it
 at once. What makes a lease safe here, where the usual objection is that it is too short,
 is that **a lapse deletes nothing**: the file stays until the day-old sweep, and the
 agent's next `dplanner` run renews it, so it stands again. That run is exactly the moment
 it matters — an agent that is not touching the CLI is not touching the plan either, and the
-banner exists to keep a person off the plan while an agent writes it. The tense went with
+banner exists to keep a person off the plan while an agent writes it. The lease began at
+thirty minutes and was still the wrong way round in use — bands stood long after the work
+had finished — so it is three: a quiet agent's band may drop out between two runs and come
+back with the next, which costs a person nothing, where a stale one teaches them to stop
+reading. The tense went with
 it: one threshold where there were two, and every standing claim reads *is at work*, with
 when it was last heard said in its own words. It goes for good four ways — the agent ends
 it, `status set` says its step is finished (below), a person clears it, or a claim made a
@@ -3364,6 +3368,18 @@ row saying *0%* is plainly something that fills; a hairline is not. The strip ke
 other job it had (a fetch, a save over three repositories, always under the fact that leads
 it), because those are read inside a surface the person came to, and the notice is the
 surface that came to them.
+
+#### The band stands at the foot of the content
+
+The bar first stood above the tabs, on the reasoning that the top of the content is the one
+place a person cannot be looking away from. In use, placement mattered less than movement.
+A band that comes and goes above the tabs pushes everything below it up or down: the table
+row under the pointer, the canvas, the line being read. Once claims lapsed after three
+minutes of silence, a quiet agent's band dropped out and came back several times over one
+task, and each time it moved everything. At the foot of the content, between the tabs and
+the status bar, the band moves only the content's bottom edge. A full-width amber band is
+not missed there, because the band itself, not its position, is what makes it hard to read
+past.
 
 ### A branch switched underneath the window is taken in, and said
 
