@@ -2322,7 +2322,7 @@ together — the one arrangement read twice, by the ruler and by `layout show`, 
 (`sorts.span_words`); *k of n
 done* is counted from the cards' own muted accent, so the ruler and the cards under it cannot
 disagree. The ruler is chrome (`ruler.py`, DESIGN.md's *Overlays on a canvas*): a child of the
-view like the minimap, following the plane across and never down; the faint band behind every
+view like the minimap, following the plane across and never down; the band behind every
 other column is painted with the ground in `GraphView.drawBackground`, never as items. The
 glide between the two views and a drag within a column are F30's, which replaces the still
 block drag at exactly the two seams in `modes.py`.

@@ -946,7 +946,7 @@ def render_stack_edits(app: QApplication, theme: Theme, out: Path, workspace: Pa
 
 def render_waves(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     """One plan as its author left it, then in Wave view: the ruler naming each wave and when
-    it runs, the faint band behind every other column, the stack one tall card in its wave,
+    it runs, the band behind every other column, the stack one tall card in its wave,
     and the strip's switch lit on Waves with the picker saying so."""
     QSettings().clear()
     apply_theme(app, theme)

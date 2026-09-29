@@ -196,9 +196,11 @@ it; no frame, no radius, since it is an edge of the canvas and not a thing on it
 heading stands over its column at every scroll and zoom and never moves down: the label in
 bold detail type and text ink (START, then WAVE 2…), the day range in the mono face at
 secondary ink, and *k of n done* in the good tint once any of it is. What does not fit its
-column drops from the end — done, then the range — never the label. It takes no clicks, and
-the faint band behind every other column (text ink at about 2 %) is painted with the ground,
-never as items, so nothing on the canvas can pick, frame or hit it.
+column drops from the end — done, then the range — never the label. It takes no clicks. The
+band behind every other column is text ink at about 12 % — plain to see at a glance in both
+house themes, where 2 % went unseen — painted with the ground, never as items, so nothing on
+the canvas can pick, frame or hit it; through the translucent ruler it tints its column's
+heading too.
 
 ## Cards on the canvas
 

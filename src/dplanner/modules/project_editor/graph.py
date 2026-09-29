@@ -94,8 +94,9 @@ ZOOM_MAX = 2.5
 ZOOM_READABLE = 0.75
 FRAME_PADDING = 40.0
 ZOOM_STEP = 1.15
-# Wave view's band behind every other column: text ink at about 2 %, there to be felt.
-BAND_ALPHA = 5
+# Wave view's band behind every other column: text ink at about 12 %, so the columns read at
+# a glance in both house themes — the guide's 2 % was too faint to see (N179).
+BAND_ALPHA = 30
 # The canvas is a plane, not a page: the scrollable area is this far out in every direction
 # from the origin and never moves, so panning stops nowhere anybody will reach and no graph
 # can change where the edges are. Large enough to be unbounded in practice, small enough
@@ -675,7 +676,7 @@ class GraphView(QGraphicsView):
         # The application's View ▸ Zoom is font size; a canvas zooms itself.
         install_ctrl_wheel_zoom(self, self.zoom_by)
         self.minimap = Minimap(self)
-        # Wave view's column headings, and the faint band behind every other column: both
+        # Wave view's column headings, and the band behind every other column: both
         # empty — the ruler off screen — in Free view.
         self.ruler = WaveRuler(self)
         self._bands: list[tuple[float, float]] = []
