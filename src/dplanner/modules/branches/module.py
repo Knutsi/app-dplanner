@@ -53,7 +53,7 @@ from dplanner.modules.branches.aspect import (
 )
 from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
 from dplanner.modules.branches.section import CutSection
-from dplanner.theme.icons import branch_icon
+from dplanner.theme.icons import branch_icon, merge_icon
 
 
 @dataclass(frozen=True)
@@ -143,6 +143,7 @@ class BranchesModule:
                 undo=deps.undo,
                 enabled=is_land,
                 fresh=lambda step, _project: write_land(self._open_cut(step)),
+                icon=merge_icon,
                 tip="Make this agent step the landing that merges a cut's branch back as a PR",
                 refusal=self._land_refusal,
             )

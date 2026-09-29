@@ -16,6 +16,8 @@
     uv run python scripts/render_graph_editor.py --review \
         --out docs/screenshots/f12-automatic-review
     uv run python scripts/render_graph_editor.py --flow --out docs/screenshots/f20-flow
+    uv run python scripts/render_graph_editor.py --branches \
+        --out docs/screenshots/branch-stretches
 
 What S7 reworked: the strip of verbs over the canvas as glyphs in named bands, folding
 whole bands into its ``…`` menu; the *Find* picker, which opens on the plan's landmarks
@@ -38,7 +40,10 @@ links, and the arrow's menu with the toggle on; since F12, with ``--review``, a 
 review, the link into the review doubled by rule and its menu's toggle ticked and greyed; since
 F20, with ``--flow``, where work moves on its own and where a person is next: the talk bubble
 on the link into a review, a collector's doubled links, and the steps a person moves next
-pulsing — at the height of a breath, at rest, and with the review picked. A
+pulsing — at the height of a breath, at rest, and with the review picked; and with
+``--branches``, a stretch put on a feature branch — the right-click that puts it there, then
+its cut and landing, the lane under its arrows and the strip under its cards, planned, in
+flight and landed. A
 whole application is built over a throwaway library — the tab is the tab host's, so nothing
 here hand-wires a surface the window would build differently — and torn down per theme.
 """
@@ -918,6 +923,112 @@ def render_stack_edits(app: QApplication, theme: Theme, out: Path, workspace: Pa
     discard(page)
 
 
+# The exploration's plan, for --branches: the menu on main, then the stacks work fanning out
+# and back in, put on a feature branch between a cut and a landing, and the release after.
+BRANCHED = (
+    ("Menu bar", (0, 160)),
+    ("Home page", (840, 0)),
+    ("A stack is one card", (560, 160)),
+    ("Editing a stack", (840, 100)),
+    ("Stacks on the canvas", (840, 240)),
+    ("Drag to reorder", (1120, 160)),
+    ("Changes 2", (1680, 80)),
+)
+BRANCHED_LINKS = ((1, 0), (2, 0), (3, 2), (4, 2), (5, 3), (5, 4), (6, 5), (6, 1))
+ON_BRANCH = (2, 3, 4, 5)
+# Where the plan stands in each shot: nothing started past the menu; the branch half done;
+# landed, and its lane gone.
+BRANCH_STATES = {
+    "planned": {0: "done"},
+    "in-flight": {0: "done", 1: "in-progress", 2: "done", 3: "done", 4: "ready-for-review"},
+    "landed": {0: "done", 1: "done", 2: "done", 3: "done", 4: "done", 5: "done", "land": "done"},
+}
+BRANCH_SIZE = (1980, 560)
+
+
+def render_branches(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
+    """A stretch on a feature branch: the cut and the landing bracketing it, the lane under
+    its arrows and the strip under its cards — planned, in flight (done work still on its
+    lane, since it is not on main yet) and landed (the lane gone, the strips quiet) — and
+    the right-click on the picked stretch offering Put on a Branch."""
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+    from dplanner.modules import _branch_births
+    from dplanner.modules.branches.edits import put_command
+
+    QSettings().clear()
+    apply_theme(app, theme)
+    library_file = workspace / f"branch-library-{theme.name}.json"
+    create_library(library_file)
+    init_repo(workspace)
+    session = new_session()
+    assert session.open_initial(library_file)
+    services = session.services
+    assert services is not None
+    services.debounce.set_immediate(True)
+    library = services.document
+
+    directory = seed_project(workspace / f"branch-{theme.name}", "Changes")
+    project = services.repo.attach(directory)
+    library.add_child(library.id, project)
+    made: list[StepId] = []
+    for title, (x, y) in BRANCHED:
+        step = Step(title=title)
+        AddNodeCommand(project.id, step).redo(library)
+        SetModuleDataCommand(step.id, POSITION_KEY, write_position(x, y)).redo(library)
+        SetModuleDataCommand(step.id, "estimation", estimate_write(0.25)).redo(library)
+        library.set_text(step.id, "step_description", f"{title}, in full.")
+        if title != "Changes 2":
+            SetModuleDataCommand(step.id, AGENT_ID, agent_write(True)).redo(library)
+        made.append(step.id)
+    SetModuleDataCommand(made[-1], MILESTONE_ID, milestone_write("Changes 2")).redo(library)
+    for waiter, source in BRANCHED_LINKS:
+        held = library.step(made[waiter]).edges.get("requires", [])
+        SetEdgesCommand(made[waiter], "requires", [*held, made[source]]).redo(library)
+
+    tab = services.tabs.open("project", project.id)
+    assert isinstance(tab, ProjectActivity)
+    page = tab.widget
+    page.resize(*BRANCH_SIZE)
+    page.show()
+    tab.frame()
+    settle(app)
+    # The right-click on the picked stretch, before it is on a branch.
+    picked = [made[index] for index in ON_BRANCH]
+    tab._scene.select_steps(picked)
+    node = tab._scene._nodes[made[3]]
+    menu = tab.context_menu(tab._view.mapFromScene(node.sceneBoundingRect().center()))
+    menu.popup(QPoint(0, 0))
+    save(menu, out, "menu", theme, app)
+    menu.hide()
+    discard(menu)
+    tab._scene.select_steps([])
+
+    cut, land = _branch_births(project, "feature/stacks")
+    seats = [
+        SetModuleDataCommand(cut.id, POSITION_KEY, write_position(280, 160)),
+        SetModuleDataCommand(land.id, POSITION_KEY, write_position(1400, 160)),
+    ]
+    put_command(library, picked, cut, land, carrying=seats).redo(library)
+    for name, states in BRANCH_STATES.items():
+        for index, step_id in enumerate(made):
+            word = states.get(index, "pending")
+            SetModuleDataCommand(step_id, STATUS_ID, status_write(word, today=DAY)).redo(library)
+        word = states.get("land", "pending")
+        SetModuleDataCommand(land.id, STATUS_ID, status_write(word, today=DAY)).redo(library)
+        page.setParent(None)
+        page.resize(*BRANCH_SIZE)
+        page.show()
+        settle(app)
+        tab.frame()
+        save(page, out, name, theme, app)
+    # And the right-click on a step already on the branch, offering to remove it whole.
+    member = Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", made[3])),)})
+    assert services.actions.spec("branch.remove").state(member).enabled
+    page.setParent(None)
+    session.close()
+    discard(page)
+
+
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, required=True, help="directory for the PNGs")
@@ -960,6 +1071,11 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="only the review bubble and the pulsing steps a person moves next (F20)",
     )
+    parser.add_argument(
+        "--branches",
+        action="store_true",
+        help="only a stretch on a feature branch: planned, in flight and landed",
+    )
     args = parser.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication.instance() or QApplication([])
@@ -998,6 +1114,9 @@ def main(argv: list[str]) -> int:
                 continue
             if args.flow:
                 render_flow(app, theme, args.out, Path(tmp))
+                continue
+            if args.branches:
+                render_branches(app, theme, args.out, Path(tmp))
                 continue
             render(app, theme, args.out, Path(tmp))
             render_cards(app, theme, args.out, Path(tmp))

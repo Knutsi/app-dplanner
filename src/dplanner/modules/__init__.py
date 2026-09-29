@@ -859,7 +859,7 @@ def default_modules(
                     "Landing",
                     frozenset({"agent.toggle", "land.toggle", "estimate.toggle"}),
                     tone="info",
-                    glyph="branch",
+                    glyph="merge",
                 ),
             ),
             library=library,
@@ -4178,9 +4178,10 @@ def _lint_checks() -> tuple["LintCheck", ...]:
         *description_cli.lint_checks(),
         *docs_cli.lint_checks(kinds=scopes),
         # An agent step is briefed by its description unless it carries a separate
-        # instruction, and a review by its aspect; the readers arrive here, not by import.
+        # instruction, and a review or a landing by its aspect; the readers arrive here, not
+        # by import.
         *agent_cli.lint_checks(
-            described=lambda step: bool(description_read(step)) or is_review(step)
+            described=lambda step: bool(description_read(step)) or is_review(step) or _is_land(step)
         ),
         *estimation_cli.lint_checks(counts_as_work=_counts_as_work),
         *spec_cli.lint_checks(),

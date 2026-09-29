@@ -4829,3 +4829,36 @@ so nothing was wrong with the splitter.
 
 **Upstream?** Yes. The template has the same `note()` and the same kind of strip. Any
 non-wrapping label with text the user controls, sitting in a tab, will do this.
+
+## 72. From branch stretches: a lane palette, two glyph keys and a Step menu group
+
+### `theme/palettes.py` — `LANES`, a qualitative set beside the sequential maps
+
+**What.** `LANES` and `lane(index)`: five hues dealt in order, wrapping, for a feature
+branch's lane under the arrows of its work. The sequential maps a milestone is shaded from
+stay as they were.
+
+**Why.** A milestone's shade is its place in a sequence; two branches side by side are
+peers, and a map would rank them. The set keeps clear of the status washes, the feature teal
+and the milestone maps, since a lane sits under arrows while those sit on cards.
+
+**Upstream?** No — it is this application's vocabulary. The template has no graph.
+
+### `theme/icons.py` — `merge_icon`, and `branch` and `merge` in `GLYPH_ICONS`
+
+**What.** A `merge_icon` over the vendored Tabler `git-merge`, and both glyphs added to the
+kind vocabulary templates and toggles draw from.
+
+**Why.** A cut wears the branch glyph and a landing the merge glyph, as every Type toggle
+wears its node's glyph.
+
+**Upstream?** No.
+
+### `menus.py` — a `branch` group in the Step menu
+
+**What.** Between `stacked` and `track`: Put on a Branch and Remove Branch.
+
+**Why.** A branch is not a stack, though both are drawn round steps already there; a group
+of its own rather than structure smuggled into `order`.
+
+**Upstream?** No — the menu structure is the application's own.

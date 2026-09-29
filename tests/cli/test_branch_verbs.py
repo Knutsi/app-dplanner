@@ -194,6 +194,15 @@ def test_a_cut_takes_no_status(cli):
     assert "is a branch cut: a branch cut has no status" in said
 
 
+def test_a_fresh_bracket_is_lint_clean(cli):
+    """The landing is briefed by the stretch it closes, as a review is by its subject, so
+    it needs no description of its own; the cut is nobody's work."""
+    said = data(cli("branch", "put", "Card", "Edit", "--branch", "feature/stacks", "--json"))
+    found = data(cli("project", "lint", "widget", "--json", expect=1))
+    ends = {said["cut"], said["land"]}
+    assert [row["check"] for row in found["findings"] if row["subject"] in ends] == []
+
+
 def test_step_show_and_the_graph_say_which_branch_a_step_is_on(cli):
     cli("branch", "put", "Card", "Edit", "--branch", "feature/stacks")
     shown = data(cli("step", "show", "Edit", "--json"))

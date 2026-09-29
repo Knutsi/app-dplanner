@@ -385,11 +385,11 @@ def paint_strip(
     glyph = QRectF(strip.left() + PAD_Y, strip.top() + 3.0, STRIP_H - 6.0, STRIP_H - 6.0)
     paint_glyph(painter, glyph, "branch", QColor(tone) if tone else faded)
     base = painter.font()
-    painter.setFont(mono_font(max(6.0, base.pointSizeF() - 2.0)))
+    painter.setFont(mono_font(max(6.0, base.pointSizeF() - 1.0)))
     text = QRectF(glyph.right() + GLYPH_GAP, strip.top(), 0.0, STRIP_H)
     text.setRight(strip.right() - PADDING)
     shown = painter.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, int(text.width()))
-    painter.setPen(faded)
+    painter.setPen(QColor(palette.text().color()) if tone else faded)
     painter.drawText(text, int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), shown)
     painter.setFont(base)
 

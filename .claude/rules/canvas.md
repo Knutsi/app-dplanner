@@ -387,7 +387,12 @@ paths:
   `MEDALLION_CLEAR` clear of the chevrons, which pass behind it; `shape()` takes in its disc
   and `boundingRect()` grows by it while the accent names one, and an arrow too short to hold
   it (`MEDALLION_ROOM`, a stack's own link) wears none. Auto-progress wears no medallion: the
-  rails already say it along the whole link (N65). Every look stays inside its margin and
+  rails already say it along the whole link (N65). **A *lane* is a colour laid under the
+  arrow** — `LANE_W` wide at `LANE_ALPHA`, inside the edge's margin, so its geometry never
+  changes and the ink on top keeps being lit, picked and faded: the root lays it on every
+  arrow of work on a feature branch not yet landed, in a colour dealt from
+  `theme/palettes.LANES` in the order the branches were cut, and takes it away once the
+  landing is done — colour means *not on main yet*. Every look stays inside its margin and
   keeps the lit, picked, hovered and dimmed rules. `ARCHITECTURE.md`'s *An auto-progress link
   is an aspect on the step that waits* and *An arrow into a review wears its talk bubble*
   have the reasoning.

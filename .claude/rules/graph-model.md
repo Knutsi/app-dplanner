@@ -82,3 +82,23 @@ paths:
   names one the CLI or a hand edit made.
   `ARCHITECTURE.md`'s *An auto-progress link is an aspect on the step that waits* weighs
   it against data on the edge and a new edge kind.
+- **A branch stretch is a cut and a landing, and what is on it is derived.**
+  `modules/branches/` holds two aspects: `branch_cut` (`{"branch": …}`) on a step nobody
+  works — no status of its own, done once what it waits on is (a wait of no days, composed
+  in the root's `_status_in`, never through the schedule's `wait_of`) — and `branch_land`
+  (`{"cut": id}`) on the agent step that merges it back, counted only while that cut is
+  upstream (auto-progress's rule: a stored id read through the graph). **Membership is
+  never stored**: `domain/branches.py` reads it forwards — everything after the cut, until
+  the landing — and nesting is derived (a stretch whose cut and landing are both members of
+  another is a branch off it; a step's base is the innermost *open* stretch holding it).
+  One reading, cached by the branches module and forgotten on every change, feeds Run
+  Agent's plan, the canvas's lanes and strips and the briefing; the CLI reads afresh.
+  **Put on a Branch** (`edits.put_command`) and **Remove Branch** (`remove_command`) are
+  one rewire each — outside inputs move to the cut and outside dependents to the landing,
+  and back — refused by `ordering.left_between`, the walk `stack make` shares, by a pick
+  that crosses another stretch, and by one that splits a stack (`_stacked_apart`, the
+  graph editor's fact handed in). Remove is never partial, so the window asks first. The
+  root's `_works_nobody` is what a wait and a cut share — "a wait", "a branch cut" — and
+  every module refusing such a step a status, an agent, a review or a test words its
+  refusal from it. `ARCHITECTURE.md`'s *A branch stretch is bracketed by a cut and a
+  landing* has the reasoning.

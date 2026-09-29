@@ -422,6 +422,11 @@ def review_icon(color: str | QColor) -> QIcon:
     return glyph_icon("review", color)
 
 
+def merge_icon(color: str | QColor) -> QIcon:
+    """Two lines meeting: a landing, which merges a feature branch back."""
+    return glyph_icon("merge", color)
+
+
 def layers_icon(color: str | QColor) -> QIcon:
     """Stacked sheets: a feature collects the work behind it."""
     return glyph_icon("layers", color)
@@ -593,6 +598,7 @@ GLYPH_ICONS: dict[str, Callable[[str | QColor], QIcon]] = {
     "ticket": ticket_icon,
     "clock": clock_icon,
     "branch": branch_icon,
+    "merge": merge_icon,
 }
 
 

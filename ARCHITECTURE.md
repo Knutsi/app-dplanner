@@ -2988,6 +2988,33 @@ must take both back. The pointer's resize arrows are the gesture's only announce
 by `IdleMode` on mouse moves with no button down — the one mode that can start a resize is
 the one that says where.
 
+### A card on a branch names it
+
+A branch stretch (*A branch stretch is bracketed by a cut and a landing*) has to be seen for
+what it is: which work goes on which branch. Two marks say it, each where nothing else
+already speaks. **The lane** is a translucent band of the branch's colour under the arrows
+of its work — under, because the arrow's own ink already means lit, picked, receding and
+flowing, and the rails already mean auto-progress; the colour is dealt from a qualitative
+set, since two branches side by side are peers where milestones are a sequence. **The
+strip** names the branch in words across the card's foot, and it is the one exception to
+*nothing in words*: a branch is a name a person has to read, and a medallion could say only
+*some* branch. Both stay after the work is done — done work on a branch is not on main
+yet — and the lane goes and the strip goes quiet once the landing is done.
+
+**The strip makes the card taller, and one rule says by how much.** A strip painted inside
+the stored card would have squeezed the title the card is sized for, and one painted outside
+it would have fallen through the hit shape, the lasso, the stack column and every sort's
+spacing. So the card *is* taller: `positions.footprint(step, strip, body=node_size)` is the
+one size rule, the canvas sizes its cards by it through the editor's `strips` seam, and every
+arranger — the sorts, the ambient layout, a stack's column, `free_spot`, the CLI's `layout
+sort` — is handed it as the `size_for` they already took. Because the pushed size is the
+whole card, the shadow, the ring, the selection, the hit shape, the lasso and the stack's
+frame follow without learning a thing; only three readers needed the body instead — where an
+arrow, the handle and the marks meet the card (the body's middle, so a card in a row with an
+unstriped one keeps its arrows level), what the painter lays the key block and the title
+into, and what a resize stores. A view that draws every card at the default size hands the
+rule its own `body` — the Wave view's case — so there is never a second size rule.
+
 ### The ground is a preference; snapping belongs to the gesture
 
 *Graph ▸ Background* (plain, dots, lines, crosses) and *Graph ▸ Snap to Grid* are two fields
@@ -4690,6 +4717,90 @@ honest setup is one machine that runs the agents.
 
 The rules are in `.claude/rules/agents.md` (the launcher) and `.claude/rules/schedule.md`
 (what is due, *Waits for you*).
+
+## A branch stretch is bracketed by a cut and a landing
+
+Every agent step used to land on main by accident rather than by design: the wrapper script
+forked each worktree from whatever the code checkout had checked out, and the agent opened
+its PR with no base, so it went to the repository's default. The request was for the plan
+to say *this stretch of steps goes onto a feature branch for a while — several PRs into it —
+and then the branch comes back as a PR of its own*, with the quality review there, and for
+the canvas to show which work goes on which branch.
+
+**What any answer had to keep.** A `requires` link already means *this step's worktree
+must contain that step's work*. On one branch that holds once the work is merged; across
+branches it holds only once the branch has landed. So work may enter a branch only where it
+is cut and leave only where it lands — a stack's one way in and one way out, one level up,
+around a subgraph instead of a line. Four shapes were weighed against that, drawn over one
+plan in an exploration the developer kept:
+
+| Shape | Why not |
+|---|---|
+| **The landing alone is the branch** — one aspect on a collector, the members its cone as `scope.py` walks it | No lower bound: main work the branch builds on falls into the cone and onto the branch, a branch off a branch lands in main (a cone excludes the inner landing), and no step orders *cut before work*. Its convenience came back as a verb. |
+| **Each step stores its branch**, as it stores its `workplace` | Stored membership drifts on the most ordinary edits — a `step add --after` a member lands on main without its work — and lint would have to derive membership anyway: two answers to one question, the reason regions were retired. |
+| **A stack that is a branch** | A stack is one line, so work on the branch could never run side by side; and git's meaning would ride on `project_editor`'s data, which an older build drops from a card it moves. |
+| **Cut and Land** — two steps bracketing the stretch (chosen) | Two cards per branch, and a pairing to keep. |
+
+**Two aspects on steps, not two node kinds.** *Status is an aspect, and step types are
+emergent* rules out a type field, and the bracket did not need one: a cut is a step
+carrying `branch_cut` (`{"branch": …}`), key `B`, nobody's work — no worker, no status of
+its own, done once what it waits on is, which is a wait of no days composed in the root's
+`_status_in` (never through the schedule's `wait_of`, or reports would name every cut a
+wait) — and a landing is an agent step carrying `branch_land` (`{"cut": id}`). The root's
+`_works_nobody` became the one predicate a wait and a cut share, and every module that
+refuses such a step a status, an agent, a review or a test words its refusal from the name
+it hands back, where each had a wait's sentence of its own.
+
+**The pairing is stored; membership is derived.** A landing names its cut, and the name
+counts only while the cut is upstream — auto-progress's rule, a stored id read through the
+graph — because the alternative, pairing each landing with the nearest open cut, silently
+re-paired two stretches running side by side the moment one link moved, and every member's
+PR would have gone into the other branch. Membership is `domain/branches.py`'s, read
+**forwards**: everything after the cut, until the landing. Read the other way — everything
+the landing waits on — main work the landing needs would have been swept onto the branch;
+read forwards, a step that builds on branch work is on the branch by construction, so
+nothing leaks onto main unlanded, and one that never reaches the landing is *named*
+(`branch.unlanded`) rather than quietly put back. The two shapes that break one way in and
+one way out are lint, not refusals, since a plan reshaped in several calls passes through
+both: `branch.late-entry` (a member waits on main work the cut came before — its worktree
+will not have it) and `branch.unlanded`. Nesting falls out: a stretch whose cut and landing
+are both another's members is a branch off it, and a step's base is the innermost *open*
+stretch holding it — so a cut inside a stretch cuts from that branch, and its landing opens
+its PR into it. Two stretches crossing without nesting is `branch.overlap`, and Run Agent
+refuses a step on both.
+
+**The plan decides the branches; the script carries them out; the agent is told the same.**
+`launcher.BranchPlan`, decided once by `Briefing.branch`, names the branch a run works on,
+where a new one starts, what the first run may cut and the PR's base, and the preamble, the
+epilogue and the wrapper all read it. **Every worktree now starts from the remote** — a
+stretch's branch, else the code row's `Location.ref` as the mainline, else the remote's
+default, looked up — because a checkout left on some other branch silently became every
+agent's base; that is a change in behaviour for every run, and the honest one. A new branch
+starts with no upstream, so a bare push from an agent's own branch reaches nothing shared; a
+landing works on the feature branch itself, tracking it, so the fixes a review asks for
+reach the PR it reviews. **The branch is cut lazily** by the first run in the stretch, as a
+pushed ref and never a checkout (a plan kept inside its code must not be switched under the
+window), and only while nothing on the stretch has recorded a branch or a PR: after that, a
+missing branch is one somebody deleted — landed, most likely — and re-cutting it from the
+mainline would put a member's work nowhere, so the script refuses with the recovery in
+words.
+
+**The review moves to the landing.** A member's PR merged into the branch of an open stretch
+accepts the step, from ready-for-review too (`record_merged(accepted_by_merge=)`): the
+branch's quality review is the ordinary Review step placed after the landing, which reads
+the landing's PR — nothing new was built for it. An agent still never merges its own work.
+A landing always opens a PR; landing directly would leave the review nothing to read, and a
+merge commit rather than a squash keeps a branch cut from this one on shared history. The
+GitHub aspect now records the base a PR merges into (format 2), so `branch.pr-base` can name
+a member whose PR was aimed at the mainline.
+
+**Put on a Branch and Remove Branch are one rewire each.** The first moves every outside
+input onto a new cut and every outside dependent onto a new landing — `stack make`'s own move
+to the ends, refused by the same `ordering.left_between` walk — and the second closes the
+links over the two again. Removing is never partial, so the window asks first. The canvas
+says the rest (*A card on a branch names it*, and the lane under an arrow, in
+`.claude/rules/canvas.md`). The rules are in `.claude/rules/graph-model.md` and
+`.claude/rules/agents.md`.
 
 ## Running an agent launches a peer, not a task
 
