@@ -16,7 +16,7 @@ import subprocess
 from pathlib import Path
 
 from dplanner.core.storage.git import DEFAULT_BRANCH, GitStorage, origin_url, remote_label
-from dplanner.core.storage.provider import StorageError
+from dplanner.core.storage.provider import DivergedError, StorageError
 
 
 def gh_path() -> str | None:
@@ -130,10 +130,7 @@ class GitHubStorage(GitStorage):
         result = self._git("rebase", "--autostash", f"origin/{branch}", check=False, timeout=120)
         if result.returncode != 0:
             self._git("rebase", "--abort", check=False)
-            raise StorageError(
-                f"{branch} and origin/{branch} changed the same lines — reconcile it in a "
-                "terminal; your workspace is unchanged"
-            )
+            raise DivergedError(self.repo_root, branch)
 
     # -- getting a workspace onto, and off, the machine ----------------------------------------
 

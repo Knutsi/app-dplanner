@@ -20,7 +20,12 @@ from dplanner.core.storage.git import GitStorage
 from dplanner.core.storage.github import GitHubStorage
 from dplanner.core.storage.local import LocalStorage
 from dplanner.core.storage.locations import repo_storage
-from dplanner.core.storage.provider import RemoteStorage, StorageProvider, VersionedStorage
+from dplanner.core.storage.provider import (
+    DivergedError,
+    RemoteStorage,
+    StorageProvider,
+    VersionedStorage,
+)
 
 
 def _git(*args: str, cwd) -> None:
@@ -407,8 +412,11 @@ def test_a_conflicting_save_is_refused_and_leaves_the_tree_as_it_was(remote, tmp
     remote.write_text("note.md", "from here, changed")
     remote.commit("two")
     remote.write_text("draft.md", "not yet committed")
-    with pytest.raises(Exception, match="same lines"):
+    with pytest.raises(DivergedError, match="same lines") as refused:
         remote.push()
+    # Which repository and branch, so the window can send somebody to reconcile them.
+    assert refused.value.repo_root == remote.repo_root
+    assert refused.value.branch == remote.current_branch()
     assert remote.read_text("note.md") == "from here, changed"
     assert remote.read_text("draft.md") == "not yet committed"  # The autostash came back.
     assert [rev.message for rev in remote.history(2)] == ["two", "one"]

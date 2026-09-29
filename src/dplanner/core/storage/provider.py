@@ -41,6 +41,20 @@ class StorageError(RuntimeError):
     """A storage operation failed. The message is shown to the user as-is."""
 
 
+class DivergedError(StorageError):
+    """The checkout and its remote changed the same lines, so neither could be laid on the
+    other. The local commits are intact; what failed is bringing the two together.
+
+    Typed, and carrying the repository, because the answer is not "try again": somebody has
+    to reconcile ``branch`` with ``origin/<branch>`` in ``repo_root``, and a window that
+    knows which repository can offer to send an agent there."""
+
+    def __init__(self, repo_root: Path, branch: str) -> None:
+        super().__init__(f"{branch} and origin/{branch} changed the same lines")
+        self.repo_root = repo_root
+        self.branch = branch
+
+
 @dataclass(frozen=True)
 class Revision:
     """One entry of a workspace's history."""

@@ -104,6 +104,7 @@ from dplanner.modules.step_agent_instruction.prompt import (
     conflict_prompt,
     handover_prompt,
     problems_prompt,
+    reconcile_prompt,
 )
 from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog, RunAnywayDialog
 from dplanner.modules.step_agent_instruction.section import (
@@ -1084,7 +1085,7 @@ class StepAgentInstructionModule:
         workdir: Path | None,
         profile: Profile,
         *,
-        project_id: NodeId,
+        project_id: NodeId | None,
         subject: str,
         key: str = "",
         note: str = "",
@@ -1132,7 +1133,7 @@ class StepAgentInstructionModule:
                 worktree=worktree,
                 directory=run_dir,
                 step_title=_window_title(subject, note),
-                project_id=project_id,
+                project_id=project_id or "",
                 harnesses=deps.harnesses,
                 branches=branches,
             )
@@ -1153,12 +1154,13 @@ class StepAgentInstructionModule:
 
     # -- fixing what is wrong with the plan ----------------------------------------------------
 
-    def problem_profiles(self) -> list[tuple[str, str]]:
+    def plan_profiles(self) -> list[tuple[str, str]]:
         """Every launch profile, and why it cannot open a terminal here ("" when it can).
 
-        Plain data, so the Problems panel can list and grey them without learning what a
+        For a run in a plan repository rather than on a step — fixing problems, reconciling
+        a save. Plain data, so a panel can list and grey them without learning what a
         profile is — the default first, as everywhere this list is shown. Nothing is shared
-        to refuse on: one agent, one plan, and no step to be wrong about.
+        to refuse on: one agent, one repository, and no step to be wrong about.
         """
         return _profiles_refused("")
 
@@ -1192,6 +1194,33 @@ class StepAgentInstructionModule:
         else:
             PromptFallbackDialog(
                 text, str(prepared.prompt_file), deps.parent, title="Fix Problems"
+            ).exec()
+        return spawned
+
+    def reconcile_remote(self, repo_root: Path, branch: str, profile_name: str) -> bool:
+        """Launch the named profile to rebase a plan repository's refused save and push it.
+
+        Like :meth:`fix_problems`, no worktree and the shell in the plan repository — this
+        one named by the save that failed, since a repository may hold several projects and
+        the run is about none of them in particular.
+        """
+        deps = self._deps
+        profile = profile_named(profile_name) or default_profile()
+        text = reconcile_prompt(str(repo_root), branch)
+        spawned, prepared = self._launch(
+            text,
+            launcher.new_run_dir(),
+            "",
+            repo_root,
+            profile,
+            project_id=None,
+            subject=f"Reconcile — {repo_root.name}",
+        )
+        if spawned:
+            deps.status.show_status(f"Agent launched to reconcile {repo_root.name}", 4000)
+        else:
+            PromptFallbackDialog(
+                text, str(prepared.prompt_file), deps.parent, title="Reconcile with Agent"
             ).exec()
         return spawned
 

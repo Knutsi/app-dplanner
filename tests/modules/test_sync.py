@@ -12,15 +12,24 @@ import subprocess
 import time
 
 import pytest
-from PySide6.QtWidgets import QInputDialog, QMessageBox
+from PySide6.QtWidgets import QInputDialog, QLabel, QMessageBox
 
 from dplanner.core.storage.locations import init_repo
 from dplanner.core.storage.pointer import POINTER_FILE
+from dplanner.core.storage.provider import DivergedError
 from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.seed import seed_project
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.framework.tasks import ESTIMATE_CAP
+from dplanner.modules.step_agent_instruction.module import StepAgentInstructionModule
+from dplanner.modules.step_agent_instruction.prompt import reconcile_prompt
 from dplanner.modules.sync import module as sync_module_mod
+from dplanner.modules.sync.diverged import (
+    RECONCILE_LABEL,
+    Divergence,
+    NotPushedDialog,
+    explanation,
+)
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
 from dplanner.modules.sync.save_progress import BAR_STEPS, SaveProgressDialog
 from dplanner.modules.sync.service import COMMITTING, NOTHING, PUBLISHING, SAVED
@@ -722,3 +731,102 @@ def test_an_extra_publication_is_its_own_scoped_commit_after_the_plans(
     assert committed_paths(reports) == ["site/index.html"]
     assert (1, PUBLISHING) in phases and (1, SAVED) in phases and (2, NOTHING) in phases
     assert notices[-1].startswith("Saved") and "reports not written" in notices[-1]
+
+
+def refuse_as_diverged(service, repo_root):
+    """A save_sync whose commit landed and whose push met a remote with the same lines."""
+
+    def save_sync(*_args, **_kwargs):
+        service.saving.emit(0, COMMITTING)
+        raise DivergedError(repo_root, "main")
+
+    return save_sync
+
+
+def reconcile_menu(button):
+    menu = button.menu()
+    menu.aboutToShow.emit()  # Filled as it opens, like the Problems panel's.
+    return menu
+
+
+def test_a_quit_time_push_the_remote_refused_is_explained_and_offered_to_an_agent(
+    services, make_project, monkeypatch, qapp, tmp_path
+):
+    """The long "reconcile it" sentence no longer squeezes into the status line: the row
+    says the commit landed, the body says what to do, and an agent can be sent to do it."""
+    project = make_project("Discovery")
+    edit_and_flush(services, project)
+    module = sync_module(services)
+    service = module.service
+    service.refresh()
+    launched = []
+
+    def reconcile(_self, repo_root, branch, profile):
+        launched.append((repo_root, branch, profile))
+        return True
+
+    monkeypatch.setattr(StepAgentInstructionModule, "reconcile_remote", reconcile)
+    monkeypatch.setattr(service, "save_sync", refuse_as_diverged(service, tmp_path))
+    monkeypatch.setattr(sync_module_mod, "ExitDialog", CommitEverything)
+    module._confirm_close(service)
+    wait_for(qapp, lambda: not services.tasks.active())
+    settle(qapp)
+
+    progress = module._exit_progress
+    assert progress is not None
+    assert progress._rows[0].words().endswith("committed here, not pushed")
+    assert progress.status.words() == ""  # The body says it all; the line would clip.
+    assert explanation(Divergence(tmp_path, "main")) in [
+        label.text() for label in progress.body.findChildren(QLabel)
+    ]
+    button = next(b for b in progress.footer_buttons() if b.text() == RECONCILE_LABEL)
+    entries = reconcile_menu(button).actions()
+    assert entries[0].text().endswith("(default)")
+    entries[0].trigger()
+    assert launched == [(tmp_path, "main", entries[0].text().removesuffix(" (default)"))]
+    settle(qapp)
+    # An agent at work is a reason to stay: the window keeps its changes.
+    assert module._exit_progress is None
+    assert module._exit_saved is False
+
+
+def test_a_save_the_remote_refused_opens_not_pushed_rather_than_a_message_box(
+    services, make_project, monkeypatch, qapp, tmp_path
+):
+    project = make_project("Discovery")
+    edit_and_flush(services, project)
+    service = sync_service(services)
+    service.refresh()
+    shown = []
+    warned = []
+    monkeypatch.setattr(service, "save_sync", refuse_as_diverged(service, tmp_path))
+
+    def exec_(dialog):
+        shown.append(dialog)
+        return 0
+
+    monkeypatch.setattr(NotPushedDialog, "exec", exec_)
+    monkeypatch.setattr(QMessageBox, "warning", staticmethod(lambda *a: warned.append(a)))
+    services.actions.run("sync.save", services.context.current())
+    wait_for(qapp, lambda: not services.tasks.active())
+    settle(qapp)
+
+    assert warned == []
+    assert len(shown) == 1
+    assert shown[0].reconcile_button is not None
+
+
+def test_not_pushed_offers_no_agent_when_none_is_wired(app, tmp_path):
+    dialog = NotPushedDialog(Divergence(tmp_path, "main"))
+    try:
+        assert dialog.reconcile_button is None
+        assert [button.text() for button in dialog.footer_buttons()] == ["Close"]
+    finally:
+        dialog.deleteLater()
+
+
+def test_the_reconcile_briefing_names_the_branch_and_forbids_a_force_push(tmp_path):
+    text = reconcile_prompt(str(tmp_path), "main")
+    assert str(tmp_path) in text
+    assert "git rebase origin/main" in text
+    assert "Never force-push" in text

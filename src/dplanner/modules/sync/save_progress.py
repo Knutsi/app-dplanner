@@ -32,6 +32,14 @@ from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.signalling import StatusLine, Tone
 from dplanner.framework.tasks import ESTIMATE_CAP
 from dplanner.framework.widgets import note
+from dplanner.modules.sync.diverged import (
+    RECONCILE_LABEL,
+    Divergence,
+    Profiles,
+    Reconcile,
+    add_explanation,
+    attach_reconcile_menu,
+)
 from dplanner.modules.sync.service import COMMITTING, NOTHING, PUBLISHING, SAVED
 
 # The bar is a fraction in thousandths: a time estimate must have somewhere smooth to go
@@ -98,21 +106,44 @@ class SaveProgressDialog(DialogFrame):
             self._done = max(self._done, index + 1)
             self._recount()
 
-    def stopped(self, error: str) -> None:
-        """The save ended badly: say so here rather than losing it, and offer both exits."""
+    def stopped(
+        self,
+        error: str,
+        divergence: Divergence | None = None,
+        *,
+        profiles: Profiles | None = None,
+        reconcile: Reconcile | None = None,
+    ) -> None:
+        """The save ended badly: say so here rather than losing it, and offer both exits.
+
+        A ``divergence`` is a push the remote refused after the commit landed, so that row
+        was recorded — only not sent — and what to do about it is too long for the status
+        line: it goes in the body, under the rows, with an agent offered to do it when
+        ``profiles`` and ``reconcile`` are given. Launching one answers Stay."""
         self._running = False
         self._tick.stop()
+        outcome = "committed here, not pushed" if divergence is not None else "not recorded"
         for row, label in zip(self._rows, self._labels, strict=True):
             if row.tone() == "busy":
                 # The stored label, never the row's words: a label carries an em dash of its
                 # own ("~/Code/widget · 3 files — Discovery") and splitting on it loses half.
-                row.say(f"{label} — not recorded", "error")
-        self.status.say(error, "error")
+                row.say(f"{label} — {outcome}", "error")
         # Quitting with the work uncommitted is a different exit that costs something, so it
         # takes the destructive slot; Stay is the dismiss, and the default, so Enter records
         # nothing by accident.
         self.add_button("Close Anyway", self.accept, destructive=True)
         self.add_dismiss("Stay")
+        if divergence is None:
+            self.status.say(error, "error")
+            return
+        add_explanation(self, divergence, at=len(self._rows) + 1)  # After note and rows.
+        if profiles is not None and reconcile is not None:
+            button = self.add_button(RECONCILE_LABEL, lambda: None)
+            attach_reconcile_menu(button, divergence, profiles, reconcile, self.reject)
+        # Already on screen, and a wrapped paragraph's minimum is one line: grow down to
+        # all of it at the width the footer now needs.
+        width = max(self.width(), self.minimumSizeHint().width())
+        self.resize(width, max(self.height(), self.heightForWidth(width)))
 
     def reject(self) -> None:
         """Escape is refused while the save runs — there is nothing to go back to."""

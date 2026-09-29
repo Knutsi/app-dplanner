@@ -5834,6 +5834,20 @@ ordering trap is worth naming: `TaskRunner` emits `busy_changed(False)` *before*
 `failed(...)` — deliberately, so a failure handler's modal cannot delay the autosave resume
 — so the outcome is settled one event-loop turn later, by which time the error has arrived.
 
+**A push the remote refused has a remedy, so it is explained and offered, not printed.**
+The rebase onto `origin/<branch>` that `push` and `pull` run is aborted on a conflict and
+raises `DivergedError` (`core/storage/provider.py`), which carries the repository and the
+branch. `SyncService._start` sees it on the way out and sends `diverged(root, branch)` just
+ahead of the failure. A commit that already landed is not "not recorded": the row says
+*committed here, not pushed*. The error's own words were the old message, and it did not fit
+the one-line footer status, so `modules/sync/diverged.py` says what happened and what to do
+in the body instead. The quit dialog shows it under its rows, and Save and Update from
+Remote show it in *Not Pushed* rather than a `QMessageBox`. Both offer *Reconcile with Agent*
+with every launch profile, and the agent runs in that plan repository, with no worktree and
+no step, like the Problems panel's run (`plan_profiles`, `reconcile_remote`). Launching from
+the quit dialog answers *Stay*, because an agent at work on the repository is a reason to
+keep the window.
+
 ## Progression is the status-aware frontier
 
 **The surface is named for the question; the derivation keeps the answer's name.** A person

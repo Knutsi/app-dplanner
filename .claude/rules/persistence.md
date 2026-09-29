@@ -28,7 +28,11 @@ paths:
   committing (`modules/sync/save_progress.py`) — with the **close deferred** until it ends:
   the guard starts the save and returns False, and the dialog closes the window. That is
   what retired the synchronous save-at-quit exception; a failure stands in that dialog
-  rather than being lost with the window. **Its bar reads the repositories recorded as a
+  rather than being lost with the window. **A push the remote refused for changing the same
+  lines is a `DivergedError`**, which carries the repository. It is explained in the dialog's
+  body, never in its status line or a `QMessageBox`, and offered to an agent in that plan
+  repository (`modules/sync/diverged.py`). `ARCHITECTURE.md`'s *Save spans repositories* has
+  the reasoning. **Its bar reads the repositories recorded as a
   floor and fills between them from how long the last save took** — `TaskService`'s
   duration memory, kept across sessions — never an estimate that could contradict what has
   landed. Never `exec()` a dialog from inside a close
