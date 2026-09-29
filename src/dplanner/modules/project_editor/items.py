@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 
 from dplanner.domain.model import StepId
 from dplanner.modules.project_editor.marks import Marks
-from dplanner.modules.project_editor.positions import NODE_H, NODE_W
+from dplanner.modules.project_editor.positions import NODE_H, NODE_W, STRIP_H
 from dplanner.modules.project_editor.renderers import (
     ICON_D,
     PAINT_MARGIN,
@@ -159,7 +159,9 @@ class StepNodeItem(QGraphicsItem):
     """One step. Movable and selectable; Qt does the dragging.
 
     Its size is the card's own — pushed by the scene from what the step stored, or the
-    default footprint — and every rect below is measured from it, never from ``NODE_W``.
+    default footprint, with a branch strip's height under it when the card wears one — and
+    every rect below is measured from it, never from ``NODE_W``. The body is the card less
+    that strip: arrows, the handle and the marks meet its middle, and a resize stores it.
     """
 
     def __init__(self, step_id: StepId) -> None:
@@ -200,14 +202,29 @@ class StepNodeItem(QGraphicsItem):
     def size(self) -> tuple[float, float]:
         return self._size
 
+    def body_size(self) -> tuple[float, float]:
+        """The card less its strip: what the step stores as its size."""
+        return self._size[0], self._size[1] - self._strip_h()
+
+    def _strip_h(self) -> float:
+        return STRIP_H if self._accent.strip else 0.0
+
+    def _middle_y(self) -> float:
+        """Where arrows, the handle and the marks meet the card: the body's middle."""
+        return (self._size[1] - self._strip_h()) / 2
+
     def name(self) -> str:
         """What a status line calls this card: its key, else its title."""
         return self._accent.key_text or self._title or "Untitled step"
 
     def set_accent(self, accent: NodeAccent) -> None:
         if accent != self._accent:
+            moved = bool(accent.strip) != bool(self._accent.strip)
             self._accent = accent
             self.update()
+            scene = self.scene()
+            if moved and scene is not None and hasattr(scene, "reflow_edges"):
+                scene.reflow_edges(self.step_id)  # A strip moves the body's middle.
 
     def wears_ring(self) -> bool:
         """Whether this node has a live agent run, and so wears the marching ring."""
@@ -299,7 +316,7 @@ class StepNodeItem(QGraphicsItem):
         return QRectF(0.0, 0.0, self._size[0], self._size[1])
 
     def handle_scene_pos(self) -> QPointF:
-        return self.mapToScene(QPointF(self._size[0], self._size[1] / 2))
+        return self.mapToScene(QPointF(self._size[0], self._middle_y()))
 
     def body_scene_rect(self) -> QRectF:
         """The card itself, in scene coordinates — what a lasso has to touch. Not the
@@ -334,9 +351,9 @@ class StepNodeItem(QGraphicsItem):
 
     def anchor_toward(self, other: QPointF) -> QPointF:
         """Where an edge should touch this node: the near edge, not the centre."""
-        w, h = self._size
-        centre = self.mapToScene(QPointF(w / 2, h / 2))
-        return self.mapToScene(QPointF(w if other.x() >= centre.x() else 0.0, h / 2))
+        w, middle = self._size[0], self._middle_y()
+        centre = self.mapToScene(QPointF(w / 2, middle))
+        return self.mapToScene(QPointF(w if other.x() >= centre.x() else 0.0, middle))
 
     def shape(self) -> QPainterPath:
         # What a press, a hover and a rubber band hit: the card and the outer half of its

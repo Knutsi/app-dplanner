@@ -195,3 +195,46 @@ def test_the_work_on_a_branch_lies_on_its_lane_until_it_lands(services, plan):
     assert "merge" in tab._scene._nodes[land.id]._accent.icons
     library.set_module_data(land.id, STATUS_ID, status_write("done", today=TODAY))
     assert not edge(tab, edit, card).accent().lane  # Landed: on main now.
+
+
+def test_a_card_on_a_branch_wears_its_name_underneath_and_stands_taller(services, plan):
+    """The strip is part of the card — its size, what a sort spaces by — while the arrows
+    still meet the middle of the body above it, and the step stores the body alone."""
+    from dplanner.modules import _branch_births
+    from dplanner.modules.branches.edits import put_command
+    from dplanner.modules.project_editor.positions import NODE_H, STRIP_H
+
+    library = services.document
+    chosen = [titled(plan, t).id for t in ("Card", "Edit", "Canvas", "Drag")]
+    cut, land = _branch_births(plan, "feature/stacks")
+    services.undo.push(put_command(library, chosen, cut, land))
+    tab = services.tabs.open("project", plan.id)
+    nodes = tab._scene._nodes
+    edit, menu = nodes[titled(plan, "Edit").id], nodes[titled(plan, "Menu").id]
+    assert edit._accent.strip == "feature/stacks" and edit._accent.strip_tone
+    assert nodes[land.id]._accent.strip == "feature/stacks"
+    assert not menu._accent.strip and not nodes[cut.id]._accent.strip  # Main says nothing.
+    assert edit.size()[1] == NODE_H + STRIP_H and menu.size()[1] == NODE_H
+    assert edit.body_size()[1] == NODE_H  # What a resize stores.
+    anchor = edit.anchor_toward(edit.scenePos() + edit.boundingRect().topRight())
+    assert anchor.y() == edit.scenePos().y() + NODE_H / 2
+
+
+def test_a_sort_leaves_a_card_on_a_branch_the_room_of_its_strip():
+    from dplanner.domain.commands import SetEdgesCommand
+    from dplanner.domain.model import Library, Project
+    from dplanner.modules.project_editor.positions import STRIP_H, footprints, node_size
+    from dplanner.modules.project_editor.sorts import layered_flow
+
+    library = Library()
+    project = Project(title="Sorted")
+    library.add_child(library.id, project)
+    for title in ("A", "B", "C"):
+        library.add_child(project.id, Step(title=title))
+    a, b, c = project.steps
+    SetEdgesCommand(b.id, "requires", [a.id]).redo(library)
+    SetEdgesCommand(c.id, "requires", [a.id]).redo(library)
+    plain = layered_flow(library, project, node_size)
+    stripped = layered_flow(library, project, footprints({b.id}))
+    gap = abs(plain[c.id][1] - plain[b.id][1])
+    assert abs(stripped[c.id][1] - stripped[b.id][1]) >= gap + STRIP_H

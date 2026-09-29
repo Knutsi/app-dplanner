@@ -15,7 +15,9 @@ dirtied the workspace, autosave would flush it 1.5 seconds later, and every step
 created through the CLI would grow a position file the next time a window happened to open.
 """
 
-from dplanner.domain.model import Library, Project, StepId
+from collections.abc import Callable
+
+from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.modules.project_editor.positions import (
     GRID,
     NODE_H,
@@ -29,17 +31,22 @@ from dplanner.modules.project_editor.stacks import member_seats, pack, read_stac
 
 type Box = tuple[float, float, float, float]  # x, y, w, h — a card as it is drawn.
 type Size = tuple[float, float]
+type SizeFor = Callable[[Step], Size]
 
 
-def auto_positions(library: Library, project: Project) -> dict[StepId, tuple[float, float]]:
+def auto_positions(
+    library: Library, project: Project, size_for: SizeFor = node_size
+) -> dict[StepId, tuple[float, float]]:
     """A position for every step, from the graph alone.
 
     A pure function of the graph, so it only moves a node when the graph itself changed.
     """
-    return layered_flow(library, project)
+    return layered_flow(library, project, size_for)
 
 
-def positions(library: Library, project: Project) -> dict[StepId, tuple[float, float]]:
+def positions(
+    library: Library, project: Project, size_for: SizeFor = node_size
+) -> dict[StepId, tuple[float, float]]:
     """Where every node goes: what was stored, falling back to the automatic layout.
 
     The layout is computed only when some step needs it. Every canvas sync asks this
@@ -49,6 +56,7 @@ def positions(library: Library, project: Project) -> dict[StepId, tuple[float, f
     A stack's members below the first are never asked: their seats are its column, under
     the first member's seat wherever that came from, and a seat one of them stored is
     ignored. So a stack whose first member was placed is as settled as a placed card.
+    ``size_for`` measures a card — :func:`~.positions.footprints` when some wear a strip.
     """
     stacks = read_stacks(project.steps)
     derived = {member for stack in stacks for member in stack.members[1:]}
@@ -56,12 +64,12 @@ def positions(library: Library, project: Project) -> dict[StepId, tuple[float, f
     if all(stored.values()):
         seats = {step_id: seat for step_id, seat in stored.items() if seat is not None}
     else:
-        automatic = auto_positions(library, project)
+        automatic = auto_positions(library, project, size_for)
         seats = {step_id: seat or automatic[step_id] for step_id, seat in stored.items()}
     if not stacks:
         return seats
     stacked = {member for stack in stacks for member in stack.members}
-    sizes = {step.id: node_size(step) for step in project.steps if step.id in stacked}
+    sizes = {step.id: size_for(step) for step in project.steps if step.id in stacked}
     for stack in stacks:
         seats.update(member_seats(stack, seats[stack.head], sizes.__getitem__))
     return {step.id: seats[step.id] for step in project.steps}
@@ -77,11 +85,11 @@ def below(x: float, y: float, height: float = NODE_H) -> tuple[float, float]:
     return (x, y + height + V_GAP)
 
 
-def boxes(library: Library, project: Project) -> list[Box]:
+def boxes(library: Library, project: Project, size_for: SizeFor = node_size) -> list[Box]:
     """Every card as the canvas would draw it now, at its own footprint — a stack as its
     frame, the one tall card it is."""
-    packing = pack(project)
-    blocks = packing.blocks(positions(library, project))
+    packing = pack(project, size_for)
+    blocks = packing.blocks(positions(library, project, size_for))
     return [(*seat, *packing.sizes[block]) for block, seat in blocks.items()]
 
 
@@ -90,6 +98,7 @@ def free_spot(
     project: Project,
     size: Size = (NODE_W, NODE_H),
     near: tuple[float, float] | None = None,
+    size_for: SizeFor = node_size,
 ) -> tuple[float, float]:
     """A grid-snapped top-left no card overlaps: a fresh column, right of everything.
 
@@ -104,7 +113,7 @@ def free_spot(
     a step placed by pointing earns one: the alternative is ``layered_flow`` computing a
     coordinate against an arrangement nobody chose, which lands on a hand-placed card.
     """
-    drawn = boxes(library, project)
+    drawn = boxes(library, project, size_for)
     if near is not None:
         x, top = snapped(near[0], GRID), snapped(near[1], GRID)
     elif not drawn:

@@ -214,7 +214,9 @@ A step on the graph is a card on a table, and the canvas is drawn to say so.
 - **The bottom line is a number, never a sentence**: the estimate at the right in full ink,
   bold only where the number is the point of the card (a milestone's days and date), with
   the PR pill and the branch glyph beside it. Every aspect a card wears is a medallion, a
-  badge, a bar or a pill; none is repeated as a phrase.
+  badge, a bar or a pill; none is repeated as a phrase. **The one name a card spells out
+  is the feature branch its work goes onto**, in a strip across its foot tinted with the
+  branch's lane colour — the card grows by the strip, and a card on the mainline has none.
 - **A stack is a frame, not a bigger card.** Its cards stand in a column on a quiet wash of
   ink (about 5 %) edged a shade lighter than a card, its corners rounder than a card's, with
   16 px of pad to take hold of and at least 24 between its cards. The chain runs down the

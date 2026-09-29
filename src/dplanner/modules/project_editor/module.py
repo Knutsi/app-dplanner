@@ -108,7 +108,7 @@ from dplanner.modules.project_editor.placement import below, positions
 from dplanner.modules.project_editor.positions import (
     DATA_FORMAT,
     centred_on,
-    node_size,
+    footprints,
     read_stack,
 )
 from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
@@ -145,6 +145,10 @@ def _no_edge_accents(_project_id: str) -> Mapping[Edge, EdgeAccent]:
     return {}
 
 
+def _no_strips(_project_id: str) -> frozenset[StepId]:
+    return frozenset()
+
+
 def _no_days(_step: Step) -> float | None:
     return None
 
@@ -175,6 +179,10 @@ class ProjectEditorDeps:
     # The same for the arrows, keyed (waiter, kind, source): which links auto-progress, and
     # which of those carry work that is being done right now. Absent means a plain arrow.
     edge_accents: Callable[[str], Mapping[Edge, EdgeAccent]] = field(default=_no_edge_accents)
+    # Which of a project's cards wear a branch strip under the body, and so stand
+    # ``STRIP_H`` taller — the same steps whose accent names one. The canvas sizes its cards
+    # by it and every sort spaces by it, through ``positions.footprints``.
+    strips: Callable[[str], frozenset[StepId]] = field(default=_no_strips)
 
     # How long a step takes, from whichever module owns estimates — the timeline sort reads
     # time through this, the same seam domain/schedule.py uses one level down.
@@ -439,7 +447,8 @@ class ProjectActivity(EntityActivity):
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         project = self._project()
-        placed = positions(self._product, project)
+        size_for = footprints(self._deps.strips(project.id))
+        placed = positions(self._product, project, size_for)
         connected = ports(project.steps)
         accents = self._deps.step_accents(project.id)
         nodes = [
@@ -450,7 +459,7 @@ class ProjectActivity(EntityActivity):
                 y=placed[step.id][1],
                 accent=accents.get(step.id) or NodeAccent(),
                 ports=connected[step.id],
-                size=node_size(step),
+                size=size_for(step),
             )
             for step in project.steps
         ]
@@ -751,6 +760,7 @@ class ProjectEditorModule:
             current_project=self._current_project,
             status=lambda text: deps.status.show_status(text, 4000),
             days_for=deps.days_for,
+            size_for=lambda project: footprints(deps.strips(project.id)),
         )
         self._canvas_verbs = CanvasVerbs(
             library=deps.library,

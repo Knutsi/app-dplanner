@@ -611,6 +611,7 @@ def default_modules(
         # size of a plan (66 ms at 300 steps) and this runs on every canvas sync.
         flagged = problems.flagged(project_id)
         status_for = _status_in(library, services.clock.today())
+        strips = _strips(branches.reading_of(project))
         return {
             step.id: step_accent(
                 step,
@@ -618,6 +619,7 @@ def default_modules(
                 colors.get(step.id, ""),
                 flagged=step.id in flagged,
                 pulse=_persons_turn(library, step, status_for),
+                strip=strips.get(step.id, ("", "")),
             )
             for step in project.steps
         }
@@ -656,6 +658,7 @@ def default_modules(
         *,
         flagged: bool = False,
         pulse: bool = False,
+        strip: tuple[str, str] = ("", ""),
     ) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
@@ -671,7 +674,9 @@ def default_modules(
         pill with its state as a tone and a branch the fork glyph; a live agent run is the
         chip on the bottom edge; a plain step's stat is its own estimate; a step a person
         moves next pulses (:func:`_persons_turn`). The card says nothing in words beyond its
-        title and its key: every aspect it wears is one of these, never a phrase.
+        title and its key — every aspect it wears is one of these, never a phrase — but for
+        the one name a person has to read: the feature branch its work goes onto, in a
+        strip under the body (``strip`` is the branch and its lane colour, :func:`_strips`).
         """
         refs = github_read(step)
 
@@ -730,6 +735,8 @@ def default_modules(
             pulse=pulse,
             stat_text=stat,
             stat_strong=bool(milestone),
+            strip=strip[0],
+            strip_tone=strip[1],
         )
 
     def step_schedule(project_id: str, order: "Sequence[Placed]") -> "list[Scheduled]":
@@ -974,6 +981,10 @@ def default_modules(
             step_accents=step_accents,
             accents_changed=problems.findings.flagged_changed,
             edge_accents=edge_accents,
+            # The cards that wear a branch strip, from the same reading their accents are.
+            strips=lambda project_id: frozenset(
+                _strips(branches.reading_of(library.project(project_id)))
+            ),
             # The timeline sort reads a step's length through this seam; estimation owns it.
             days_for=estimated_days,
             # What stands beside the canvas: what is wrong with this plan, where it is
@@ -2531,6 +2542,20 @@ def _branches_in(project: "Project") -> "dict[str, str]":
         if stretch is not None and not stretch.landed:
             on[step.id] = stretch.branch
     return on
+
+
+def _strips(found: "BranchReading") -> "dict[str, tuple[str, str]]":
+    """What each card on a branch wears under its body: the branch's name, and its lane
+    colour while the branch is open — "" once it has landed, when the strip goes quiet and
+    keeps the name. Every step on a stretch and its landing wear one; a step on a branch off
+    a branch wears the inner one's."""
+    colors = _lane_colors(found)
+    strips: dict[str, tuple[str, str]] = {}
+    for stretch in sorted(found.stretches, key=lambda stretch: -len(stretch.members)):
+        tone = "" if stretch.landed else colors[stretch.cut.id]
+        for step in (*stretch.members, stretch.land):
+            strips[step.id] = (stretch.branch, tone)
+    return strips
 
 
 def _lane_colors(found: "BranchReading") -> "dict[str, str]":
@@ -4513,6 +4538,8 @@ def default_cli_commands(
             paste_policies=_paste_policies(),
             file_modules=tuple(source.id for source in sources),
             key_of=_step_key,
+            # A sort leaves a card on a branch the room of its strip, as the window does.
+            strips=lambda project: _strips(_branch_reading(project)),
         ),
         # The staffing matrix reads estimates, agent-ness and the start date through the
         # owners' Qt-free readers — handed over here so no cli.py imports another module's.

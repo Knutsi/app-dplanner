@@ -200,6 +200,13 @@ paths:
   has room for, and the bottom line holds the estimate at the right in full ink — a
   wait's how long it holds, `until 21 Oct` or `3 wd` — and nothing in words: every aspect a
   card wears is a medallion, a badge, a bar or a pill, never a phrase. `ARCHITECTURE.md`'s *A card's size is the step's* has the reasoning.
+  **The one exception is the branch strip** (`NodeAccent.strip`): a card whose work is on a
+  feature branch names it in a `STRIP_H` band across its foot, and **the card is that much
+  taller** — `positions.footprint(step, strip, body=node_size)` is the one size rule, the
+  canvas sizes its cards by it and every arranger is handed it as `size_for` (the editor's
+  `strips` seam, the CLI's `strips` on `layout sort`); the arrows, the handle and the marks
+  meet the *body's* middle, and a resize stores the body. `ARCHITECTURE.md`'s *A card on a
+  branch names it* has the reasoning.
 - **The look is one per-user value, and snapping is the gesture's, never the write's.**
   `project_editor/look.py`: the marks, the background under the graph (plain, dots, lines,
   crosses — painted by `ground.py`) and *Snap to Grid* are one `Look`, kept under one key,

@@ -17,7 +17,7 @@ stack that is no longer one line.
 
 import math
 from argparse import ArgumentParser, Namespace
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Container, Sequence
 from typing import Any
 
 from dplanner.cli import CliCommand, CliContext, CliError
@@ -51,7 +51,7 @@ from dplanner.modules.project_editor.named_layouts import (
     snapshot,
 )
 from dplanner.modules.project_editor.placement import positions
-from dplanner.modules.project_editor.positions import GRID, snapped
+from dplanner.modules.project_editor.positions import GRID, footprints, snapped
 from dplanner.modules.project_editor.sorts import (
     DEFAULT_AIR,
     H_GAP,
@@ -100,9 +100,12 @@ def commands(
     paste_policies: Sequence[PastePolicy] = (),
     file_modules: Sequence[str] = (),
     key_of: Callable[[Step], str] = _no_key,
+    strips: Callable[[Project], Container[StepId]] = lambda _project: (),
 ) -> list[CliCommand]:
     """``key_of`` is the step's readable key (``S7``) — the letter is the composition
-    root's fact, handed over so the geometry report names steps the way every row does."""
+    root's fact, handed over so the geometry report names steps the way every row does.
+    ``strips`` names the cards that wear a branch strip, so a sort from the terminal leaves
+    them the room the window draws them with."""
 
     def _configure_duplicate(parser: ArgumentParser) -> None:
         parser.add_argument(
@@ -156,12 +159,13 @@ def commands(
             if args.algorithm != "radial":
                 raise CliError("--center only means something to the radial sort")
             center = find_step(context.library, args.center, context.current).id
+        sized = footprints(strips(project))
         placed = {
-            "flow": lambda: layered_flow(context.library, project),
-            "down": lambda: layered_down(context.library, project),
-            "spine": lambda: spine(context.library, project),
-            "timeline": lambda: timeline(context.library, project, days_for=days_for),
-            "radial": lambda: radial(context.library, project, center=center),
+            "flow": lambda: layered_flow(context.library, project, sized),
+            "down": lambda: layered_down(context.library, project, sized),
+            "spine": lambda: spine(context.library, project, sized),
+            "timeline": lambda: timeline(context.library, project, sized, days_for=days_for),
+            "radial": lambda: radial(context.library, project, sized, center=center),
         }[args.algorithm]()
         moves: list[Command] = position_commands(project, placed, label=f"Sort {args.algorithm}")
         for command in moves:
