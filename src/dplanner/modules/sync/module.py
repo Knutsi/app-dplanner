@@ -46,6 +46,7 @@ from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.window import StatusHost, UnsavedChangesHost
 from dplanner.framework.window_watch import POLL_MS
+from dplanner.modules.sync.diverged import Divergence, NotPushedDialog, Profiles, Reconcile
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
 from dplanner.modules.sync.save_progress import SaveProgressDialog
 from dplanner.modules.sync.service import (
@@ -91,6 +92,11 @@ class SyncDeps:
     # never waits on a clone — a person leaving must not — so it publishes such a
     # project beside its plan, as a save always did.
     prepare_save: Callable[[Callable[[], None]], None] = lambda go: go()
+    # A repository that could not be pushed because its remote changed the same lines is
+    # offered to an agent: the launch profiles, and the launch into that repository.
+    # Either None and the failure is explained with nobody offered.
+    reconcile_profiles: Profiles | None = None
+    reconcile: Reconcile | None = None
 
 
 class SyncModule:
@@ -107,6 +113,9 @@ class SyncModule:
         self._exit_progress: SaveProgressDialog | None = None
         self._exit_error = ""
         self._exit_saved = False
+        # The repository the running operation found diverged from its remote, if it did —
+        # sent just ahead of the failure it explains, and taken by whoever reports that.
+        self._divergence: Divergence | None = None
 
     def register(self) -> None:
         deps = self._deps
@@ -185,13 +194,28 @@ class SyncModule:
         service.busy_changed.connect(on_busy_changed)
         service.notice.connect(lambda text: deps.status.show_status(text, 5000))
 
+        def on_diverged(repo_root: str, branch: str) -> None:
+            self._divergence = Divergence(Path(repo_root), branch)
+
         def on_failed(text: str) -> None:
             if self._exit_progress is not None:
                 # Said where the person is looking, once: the progress dialog carries it.
                 self._exit_error = text
                 return
-            QMessageBox.warning(deps.parent, "Storage", text)
+            divergence, self._divergence = self._divergence, None
+            if divergence is None:
+                QMessageBox.warning(deps.parent, "Storage", text)
+                return
+            dialog = NotPushedDialog(
+                divergence,
+                deps.parent,
+                profiles=deps.reconcile_profiles,
+                reconcile=deps.reconcile,
+            )
+            dialog.exec()
+            dialog.deleteLater()
 
+        service.diverged.connect(on_diverged)
         service.failed.connect(on_failed)
         service.saving.connect(self._on_saving)
         # Files reach disk 1.5 s after the last keystroke; that is also the earliest moment
@@ -381,8 +405,15 @@ class SyncModule:
         if progress is None:
             return
         error, self._exit_error = self._exit_error, ""
+        divergence, self._divergence = self._divergence, None
         if error:
-            progress.stopped(error)  # Stays up: the person chooses Close Anyway or Stay.
+            # Stays up: the person chooses Close Anyway or Stay — or sends an agent.
+            progress.stopped(
+                error,
+                divergence,
+                profiles=self._deps.reconcile_profiles,
+                reconcile=self._deps.reconcile,
+            )
             return
         progress.accept()
 

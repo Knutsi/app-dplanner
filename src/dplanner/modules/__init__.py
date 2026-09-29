@@ -955,7 +955,7 @@ def default_modules(
             key_of=_step_key,
             # Handing the problems to an agent is the agent module's — resolved lazily,
             # since it is constructed further down and neither knows the other's name.
-            fix_profiles=lambda: agent_instruction.problem_profiles(),
+            fix_profiles=lambda: agent_instruction.plan_profiles(),
             fix=lambda project_id, findings, profile: agent_instruction.fix_problems(
                 project_id,
                 [(row.check, row.subject, row.message) for row in findings],
@@ -1645,6 +1645,10 @@ def default_modules(
                 publisher=publication_for,
                 extra_publications=extra_publications,
                 prepare_save=prepare_save,
+                reconcile_profiles=lambda: agent_instruction.plan_profiles(),
+                reconcile=lambda root, branch, profile: agent_instruction.reconcile_remote(
+                    root, branch, profile
+                ),
             )
         ),
         # Before the watcher: the banner that says an agent is at work is what makes the

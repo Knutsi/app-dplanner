@@ -496,6 +496,19 @@ project card's empty Repository field after a checkout is set.
 *workspace's* repository; asking about somebody else's checkout is a planner concern.
 Upstream would want it only if the template ever grows a "point at another repo" feature.
 
+### `core/storage/provider.py` grew `DivergedError(StorageError)`
+
+**What.** A rebase onto `origin/<branch>` that conflicts used to raise a plain
+`StorageError` whose message told the user to "reconcile it in a terminal". It now raises
+`DivergedError`, a subclass carrying `repo_root` and `branch`, with a short message. The
+sync module catches it by type, explains the conflict in the save dialog's body instead of
+its one-line status, and offers to open an agent in that repository to rebase and push.
+
+**Why it is typed.** A generic error is only good for printing. This one has a remedy, and
+the remedy needs to know which repository — the save spans several. It lives in
+`provider.py`, not `github.py`, so a feature can catch it without naming a concrete
+provider. Upstream would want it: any template with a remote meets the same conflict.
+
 ### `core/storage/pointer.py` — the workspace pointer file, and who may touch it
 
 **What.** `POINTER_FILE = ".dplanner"` and `write_pointer(workspace)`: drop a one-line

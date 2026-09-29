@@ -349,3 +349,45 @@ def problems_prompt(
     return handover_prompt(
         f"# Problems in the plan: {project_title}", project_title, preamble, "\n".join(lines)
     )
+
+
+def reconcile_prompt(repo_root: str, branch: str) -> str:
+    """The briefing for an agent sent to push a save the remote refused.
+
+    DPlanner's save committed, then rebasing onto ``origin/<branch>`` conflicted and was
+    aborted — so the checkout is clean, the commits are local, and what is left is exactly
+    the rebase, done by somebody who can read both sides. A plan repository, not a step's:
+    no project, no step and no preamble of the briefing's, since this run touches neither.
+    """
+    return "\n".join(
+        [
+            f"# Reconcile a plan repository with its remote: `{branch}`",
+            "",
+            "## What happened",
+            "",
+            f"You are in `{repo_root}`, a git repository holding DPlanner plans. A DPlanner"
+            f" save committed locally, but `origin/{branch}` has commits that change the same"
+            " lines, so rebasing onto it conflicted and was aborted. The working tree is as"
+            " the save left it.",
+            "",
+            "## Instructions",
+            "",
+            f"1. `git fetch origin`, then `git rebase origin/{branch}`.",
+            "2. Resolve each conflict so that nothing either side meant is lost. These are"
+            " plan files: a `.json` entry is one module's structured data, a `.md` entry its"
+            " prose, and `step.json` a step's title and links — keep every file valid JSON."
+            " Where two versions cannot be reconciled, keep both and say so in the entry.",
+            "3. `git add` what you resolved and `git rebase --continue` until it finishes.",
+            f"4. `git push origin {branch}`. Never force-push.",
+            "",
+            "Change nothing outside the conflicts, do not switch branches, and never kill a"
+            " process by name or pattern — other agents may be running with the same names."
+            " If a conflict needs a judgement only the developer can make, stop and ask.",
+            "",
+            "## When you are done",
+            "",
+            "Report what each conflict was and how you settled it. The DPlanner window takes"
+            " in the rewritten files by itself.",
+            "",
+        ]
+    )

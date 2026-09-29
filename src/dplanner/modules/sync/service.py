@@ -26,6 +26,7 @@ from PySide6.QtCore import QObject, Signal
 
 from dplanner.core.storage.pointer import POINTER_FILE
 from dplanner.core.storage.provider import (
+    DivergedError,
     RemoteStorage,
     StorageError,
     StorageProvider,
@@ -89,6 +90,10 @@ class SyncService(QObject):
     saving = Signal(int, str)
     # Files were rewritten under the running application: the library must be rebuilt.
     worktree_changed = Signal()
+    # A repository and its remote changed the same lines: (repository root, branch). Sent
+    # from the worker just before the operation fails, so it arrives ahead of `failed` and
+    # the failure can be explained — and handed to somebody — rather than only printed.
+    diverged = Signal(str, str)
     dirty_changed = Signal(bool, int)  # (any uncommitted changes, changed file count total)
 
     def __init__(
@@ -186,7 +191,15 @@ class SyncService(QObject):
             return False
         if self.before_operation is not None:
             self.before_operation()
-        return self._runner.run(label, body)
+
+        def run() -> None:
+            try:
+                body()
+            except DivergedError as exc:
+                self.diverged.emit(str(exc.repo_root), exc.branch)
+                raise
+
+        return self._runner.run(label, run)
 
     # -- operations ----------------------------------------------------------------------------
 
