@@ -37,7 +37,8 @@ site` writes it too): never write there yourself. Three rules follow:
   window, `project lint` (`repo.legacy`, `repo.colocated`) and every briefing say so. The
   way to keep it there on purpose is `project set <project> --accept-colocation`. While it
   stays there, do not touch anything under the plan's directory on your branch, and merge
-  or rebase `main` before opening a PR — planning commits land on `main` while you work.
+  or rebase your PR's base before opening it — `main`, or the feature branch your briefing
+  names — since planning commits land on `main` while you work.
   A project in a plan repository with no code recorded is *unset* (`repo.unset` naming
   `location add`): the plan repository is never its code, so ask which code it is.
 - **Moving a plan is yours to run when the developer asks, never unasked.** `dplanner
@@ -339,6 +340,13 @@ other, review the whole — and once a source's work has landed, `dplanner statu
 done` yourself: that is your job, and the CLI allows it. A step whose briefing names who
 collects it leaves its own done to them, so push everything and open the PR before `status
 set <step> ready-for-review`.
+
+**A step on a feature branch opens its PR there, and a landing brings the branch back.** A
+*cut* starts a branch and a *landing* merges it back; the steps between them work on it
+(`dplanner branch show`). Your briefing names the base: your worktree started from it, and
+`gh pr create --base <it>` — never into the mainline. A PR merged into the branch is what
+accepts the step. A landing's briefing has *Work you land*: merge the mainline into the
+branch as a merge commit, never a squash, then open the branch's own PR.
 
 **Other agents work beside you — same repository, same project, same process names.**
 Never kill a process by name or pattern: `pkill -f`, `killall`, `kill $(pgrep …)`. Every

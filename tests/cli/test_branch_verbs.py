@@ -124,6 +124,62 @@ def test_a_member_agent_is_briefed_onto_the_branch(cli, tmp_path):
     assert "gh pr create --base feature/stacks" in prompt["prompt"]
 
 
+def test_a_member_is_told_merged_into_the_branch_it_is_accepted(cli, tmp_path):
+    said = data(cli("branch", "put", "Card", "Edit", "--branch", "feature/stacks", "--json"))
+    cli("agent", "on", "Edit")
+    brief = tmp_path / "brief.md"
+    brief.write_text("Edit a stack.", encoding="utf-8")
+    cli("describe", "set", "Edit", "--file", str(brief))
+    prompt = data(cli("agent", "prompt", "Edit", "--json"))["prompt"]
+    assert (
+        "on the feature branch `feature/stacks`" in prompt and "never into the mainline" in prompt
+    )
+    assert said["cut"] and said["land"]
+
+
+def test_a_landing_is_briefed_to_bring_the_branch_back(cli):
+    said = data(
+        cli(
+            "branch",
+            "put",
+            "Card",
+            "Edit",
+            "Canvas",
+            "Drag",
+            "--branch",
+            "feature/stacks",
+            "--json",
+        )
+    )
+    prompt = data(cli("agent", "prompt", said["land"], "--json"))
+    assert prompt["branch"] == "feature/stacks"  # Its worktree is on the branch itself.
+    text = prompt["prompt"]
+    assert "Land the feature branch `feature/stacks`" in text
+    assert "## Work you land" in text and "Edit" in text and "Canvas" in text
+    assert "never a rebase or a squash" in text
+
+
+def test_a_nested_landing_opens_its_pr_into_the_branch_it_was_cut_from(cli):
+    outer = data(
+        cli(
+            "branch",
+            "put",
+            "Card",
+            "Edit",
+            "Canvas",
+            "Drag",
+            "--branch",
+            "feature/stacks",
+            "--json",
+        )
+    )
+    inner = data(cli("branch", "put", "Edit", "--branch", "feature/undo", "--json"))
+    prompt = data(cli("agent", "prompt", inner["land"], "--json"))
+    assert prompt["branch"] == "feature/undo" and prompt["base"] == "feature/stacks"
+    assert "gh pr create --base feature/stacks --head feature/undo" in prompt["prompt"]
+    assert outer["land"] != inner["land"]
+
+
 def test_lint_names_main_work_linked_into_the_middle(cli):
     cli("branch", "put", "Card", "Edit", "Canvas", "Drag", "--branch", "feature/stacks")
     cli("step", "link", "Edit", "Home")

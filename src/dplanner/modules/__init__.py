@@ -2289,8 +2289,22 @@ def _briefing_sections(
     collected = _collected_work(library, step, facts)
     if collected:
         sections.append(PromptPart(heading="Work you collect", body=collected))
+    landed = _landed_work(library, step, facts)
+    if landed:
+        sections.append(PromptPart(heading="Work you land", body=landed))
     sections += _conversation_parts(library, step)
     return sections
+
+
+def _landed_work(library: "Library", step: "Step", facts: "RepositoryFacts | None") -> str:
+    """What a landing is handed about the branch it lands: each step on it where it stands,
+    the line *Work you collect* prints. Empty for a step that lands nothing."""
+    if not _is_land(step):
+        return ""
+    stretch = _branch_reading(library.project_of(step.id)).of_land(step.id)
+    if stretch is None:
+        return ""
+    return "\n".join(_source_line(member, facts) for member in stretch.members)
 
 
 def _source_line(source: "Step", facts: "RepositoryFacts | None") -> str:
@@ -2495,7 +2509,52 @@ def _briefing_instruction(
         body, carried = description_read(step), (*description_files, *instruction_files)
     if is_review(step):
         body = _review_instruction(library, step, body)
+    elif _is_land(step):
+        body = _landing_instruction(library, step, body)
     return PromptPart(heading="Instructions", body=body, files=carried)
+
+
+def _is_land(step: "Step") -> bool:
+    from dplanner.modules.branches.aspect import is_land
+
+    return is_land(step)
+
+
+def _landing_instruction(library: "Library", land: "Step", look_for: str) -> str:
+    """A landing's instructions, generated from the stretch it closes, as a review's are
+    from its subject: the branch, what it merges into, the order it is done in — and its
+    own prose after, as what else to see to. A landing whose cut is gone is told to stop."""
+    found = _branch_reading(library.project_of(land.id))
+    stretch = found.of_land(land.id)
+    ref = _quoted(_step_key(land) or land.title)
+    if stretch is None:
+        return (
+            "This step lands a feature branch, but the cut that started it is gone or no longer"
+            " upstream of it — stop, and tell the developer: `dplanner land set"
+            f" {ref} --cut <cut>` names it again."
+        )
+    branch = stretch.branch
+    base = found.base_of(land.id, "")
+    into = f"`{base}`" if base else "the repository's default branch"
+    against = f"--base {base} " if base else ""
+    lines = [
+        f"Land the feature branch `{branch}` into {into}: every step on it has merged its work"
+        " into that branch, and this step brings the branch back as one pull request.",
+        "",
+        f"1. `git fetch origin`. Make sure every step under *Work you land* has merged into"
+        f" `origin/{branch}` — its PR reads merged into {branch}, or its branch is contained in"
+        " it. One that has not: stop, and tell the developer which.",
+        f"2. Merge `origin/{base or 'HEAD'}` into `{branch}` as a merge commit — never a rebase"
+        " or a squash, since a branch cut from this one keeps its history — settle every"
+        " conflict, and run the project's checks.",
+        f"3. `git push origin {branch}`, then `gh pr create {against}--head {branch}`, the"
+        " title opening with this step's key.",
+        f"4. Leave `{branch}` on the remote until this step is done: a step still working on it"
+        " would lose what it starts from.",
+    ]
+    if look_for.strip():
+        lines += ["", "Also see to this:", "", look_for.strip()]
+    return "\n".join(lines)
 
 
 def _review_instruction(library: "Library", review: "Step", look_for: str) -> str:
@@ -3580,6 +3639,15 @@ def _agent_epilogue(library: "Library", step: "Step", branches: "BranchPlan") ->
         if branches.pr_base
         else ""
     )
+    found = _branch_reading(library.project_of(step.id))
+    stretch = None if found.of_land(step.id) else found.innermost(step.id, open_only=True)
+    if stretch is not None:
+        cut, land = _step_key(stretch.cut), _step_key(stretch.land)
+        base += (
+            f" This step is on the feature branch `{stretch.branch}`, which {cut} cuts and"
+            f" {land} lands: its PR merges into that branch, never into the mainline, and merged"
+            " there it is accepted — the branch's own review comes when it lands."
+        )
     return (
         f"This step is {key}. Its branch and worktree carry that key; open the PR title"
         f" with it (`{key}: …`) and record the branch and the PR on the step as they"
