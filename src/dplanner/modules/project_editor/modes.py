@@ -830,7 +830,9 @@ class BlockDragMode(GestureMode):
         held: set[StepId] = set()
         for step_id in canvas.selection().steps:
             node = canvas.node(step_id)
-            stack = None if node is None else node.stack
+            if node is None or node.pinned:
+                continue  # A derived seat is nobody's to drag; a press on it is a click.
+            stack = node.stack
             anchors[step_id if stack is None else stack.head] = None
             held.update((step_id,) if stack is None else stack.members)
         self._held = held
@@ -1518,7 +1520,9 @@ class IdleMode(ModeBase):
     catches the rest: every right press, and a left press on a card's link handle, a stack's
     "+", a card's resize band, any card with Shift held or a loose card on its own, a card
     in a stack, and a stack's frame — in that order, each before the next may claim the
-    point. An arrow drawn over a frame is Qt's to pick."""
+    point. An arrow drawn over a frame is Qt's to pick. A pinned card — Wave view's, whose
+    seat is derived — is picked by the same presses and moved by none: it has no resize band,
+    nothing restacks it, and a block drag holds it still."""
 
     name = IDLE
 
@@ -1548,10 +1552,12 @@ class IdleMode(ModeBase):
                 return False  # Qt's toggle of one card in the pick.
             # The one card into, through or out of a stack: Shift on any card, and a loose
             # card the press leaves alone in the pick — a press outside the pick narrows it,
-            # as Qt's would. A press that never travels is a click, and picks it.
+            # as Qt's would. A press that never travels is a click, and picks it. Never a
+            # pinned card: its seat is derived, and nothing a drag did would be kept.
             picked = canvas.selection().steps
             alone = node.stack is None and (node.step_id not in picked or len(picked) == 1)
-            if alone or event.modifiers & Qt.KeyboardModifier.ShiftModifier:
+            restacks = alone or event.modifiers & Qt.KeyboardModifier.ShiftModifier
+            if restacks and not node.pinned:
                 canvas.select_steps([node.step_id])
                 return self._push(RestackMode(self.deps, event, node))
             return self._push(drag_the_pick(self.deps, event, node, None))
@@ -1574,8 +1580,9 @@ class IdleMode(ModeBase):
             elif node is not None:
                 edge = "" if node.is_over_handle(event.scene_pos) else node.edge_at(event.scene_pos)
                 cursor = RESIZE_CURSORS[edge] if edge else None
-            elif canvas.frame_at(event.scene_pos) is not None:
-                cursor = Qt.CursorShape.OpenHandCursor
+            elif (framed := canvas.frame_at(event.scene_pos)) is not None:
+                head = canvas.node(framed.head)
+                cursor = None if head is not None and head.pinned else Qt.CursorShape.OpenHandCursor
             viewport = self.deps.view.viewport()
             if cursor is not None:
                 if viewport.cursor().shape() != cursor:

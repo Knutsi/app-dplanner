@@ -139,6 +139,10 @@ def test_ctrl_enter_runs_the_primary_from_anywhere(frame, app):
     frame.show()
     app.processEvents()
     QTest.keyClick(frame, Qt.Key.Key_Return, Qt.KeyboardModifier.ControlModifier)
+    # QTest's click with a modifier never lets go of it: Qt believes Ctrl is held for the
+    # rest of the worker, and every later ``selectRow`` there extends the pick instead of
+    # replacing it (test_estimation_bulk's publishing test, whichever worker it shared).
+    QTest.keyRelease(frame, Qt.Key.Key_Control)
     assert ran == [True]
 
 

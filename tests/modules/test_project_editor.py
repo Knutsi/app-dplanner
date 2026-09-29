@@ -2058,7 +2058,7 @@ def test_the_face_wears_the_name_and_a_modified_dot_after_a_drag(services, proje
     from dplanner.modules.project_editor.positions import write_position
 
     save_layout(services, project, "release plan")
-    tab._layout_button._refresh_face()
+    tab._layout_button.refresh_face()
     assert tab._layout_button.text() == "release plan"
 
     step = project.steps[0]

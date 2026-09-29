@@ -369,3 +369,42 @@ def test_an_old_export_imports_without_its_regions(cli, cli_stdin, cli_library, 
     imported = next(p for p in reload(cli_library).projects if p.title == "Imported")
     assert_regionless(imported, workspace / "imported")
     assert_seated(imported.steps, [seat[:2] for seat in SEATS])
+
+
+# -- Wave view, headless ----------------------------------------------------------------------
+
+
+def estimated(cli, days):
+    for title, count in days.items():
+        cli("estimate", "set", title, "--days", str(count))
+
+
+def test_sorting_into_waves_writes_what_keep_this_arrangement_writes(cli, cli_library, stacked):
+    """The headless form of *Keep This Arrangement* (N41): the same function, the same
+    days, so the window and the terminal keep one arrangement."""
+    from dplanner.modules.estimation.aspect import read as days_for
+    from dplanner.modules.project_editor.placement import positions
+    from dplanner.modules.project_editor.sorts import waves
+
+    estimated(cli, {"Kick-off": 1, "Two": 2})
+    # Three seats: a stack's is its first member's, and its column is derived from it.
+    assert "waves: 3 steps arranged" in cli("layout", "sort", "Stacks", "waves")
+    library = reload(cli_library)
+    project = next(p for p in library.projects if p.title == "Stacks")
+    assert positions(library, project) == waves(library, project, days_for=days_for)
+
+
+def test_show_says_when_each_wave_runs(cli, stacked):
+    from dplanner.modules.project_editor.sorts import EN_DASH
+
+    estimated(cli, {"Kick-off": 1, "One": 1, "Two": 2, "Three": 0.5, "Wrap-up": 1})
+    said = cli("layout", "show", "Stacks")
+    # A stack runs its members one after another: One, Two and Three take 3.5 days.
+    assert f"  1 {EN_DASH} 4.5 d  S2 S3 S4\n" in said
+    assert f"  4.5 {EN_DASH} 5.5 d  S5\n" in said
+    data = json.loads(cli("layout", "show", "Stacks", "--json"))
+    assert [(w["wave"], w["start"], w["finish"]) for w in data["waves"]] == [
+        (1, 0.0, 1.0),
+        (2, 1.0, 4.5),
+        (3, 4.5, 5.5),
+    ]

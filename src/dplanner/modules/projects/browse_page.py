@@ -3,8 +3,8 @@
 The manual way into a project, and the one an existing library uses daily. A plan
 repository holds several projects for several people, so joining one is a browse, not a
 file dialog: the picker names the repository — one the library uses, another folder, a
-clone from GitHub — and the list shows every project it lists (or, with no index, holds)
-with who worked on each and when; rows already in this library are greyed. The rows come
+clone from GitHub — and the list shows every project it lists or holds with who worked
+on each and when; rows already in this library are greyed. The rows come
 from ``domain/plan_repo.list_projects`` on the spot; the activity behind each is one git
 log per project, read off the GUI thread and dropped when it arrives for a repository the
 page has since left. Every addable row starts selected: joining a plan repository usually

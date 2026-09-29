@@ -22,6 +22,14 @@ mechanism behind the toolbar's mode switch, and why there is no other one.
 whether gestures snap to its grid, one ``Look`` (``look.py``) — read from the per-user store
 once and pushed to every open canvas when it changes: a way of looking at graphs, not a fact about
 one project, so a tab opened later wears the same look and a second window would too.
+
+**Wave view is per project, and only the seats change.** Whether this user looks at a project
+in Wave view is kept beside the layout they applied (``layout_verbs.wave_view``); every tab on
+that project follows. In it, :meth:`ProjectActivity._sync` hands the scene the seats
+``sorts.arranged_in_waves`` derives instead of the stored ones — the same items, moved by the
+same diff sync — pins the cards so no hand moves them, and puts the ruler over the canvas.
+Nothing is written: *Keep This Arrangement* is the one way Wave view reaches the store
+(``ARCHITECTURE.md``'s *Wave view derives positions; only Free view saves them*).
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -67,6 +75,7 @@ from dplanner.framework.context import (
 )
 from dplanner.framework.debounce import Debounced, DebounceService
 from dplanner.framework.picker import PickerDialog
+from dplanner.framework.segmented import Segmented
 from dplanner.framework.side_panel import HostedSidePanel, SidePanel
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
@@ -82,7 +91,7 @@ from dplanner.modules.project_editor.find import find_rows
 from dplanner.modules.project_editor.geometry import CONTRACT_LABEL, DIVIDE_LABEL, divide_command
 from dplanner.modules.project_editor.graph import GraphScene, GraphView, NodeSpec
 from dplanner.modules.project_editor.layout_button import LayoutButton
-from dplanner.modules.project_editor.layout_verbs import LayoutVerbs
+from dplanner.modules.project_editor.layout_verbs import LayoutVerbs, set_wave_view, wave_view
 from dplanner.modules.project_editor.look import Look
 from dplanner.modules.project_editor.modes import (
     CONNECT,
@@ -104,15 +113,18 @@ from dplanner.modules.project_editor.modes import (
 )
 from dplanner.modules.project_editor.modes import mode_uri as canvas_mode_uri
 from dplanner.modules.project_editor.named_layouts import position_commands, resize_command
-from dplanner.modules.project_editor.placement import below, positions
+from dplanner.modules.project_editor.placement import below, free_spot, positions
 from dplanner.modules.project_editor.positions import (
     DATA_FORMAT,
     centred_on,
+    default_size,
     footprints,
     read_stack,
 )
 from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
+from dplanner.modules.project_editor.ruler import Heading, heading
 from dplanner.modules.project_editor.selection import EDGE_KIND, CanvasSelection, EdgeRef
+from dplanner.modules.project_editor.sorts import WaveArrangement, arranged_in_waves
 from dplanner.modules.project_editor.stack_verbs import StackVerbs
 from dplanner.modules.project_editor.stacks import read_stacks
 from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
@@ -219,7 +231,10 @@ class ProjectActivity(EntityActivity):
         self.project_id = project_id
 
         self._stack_verbs = stack_verbs
+        # Whether this user looks at this project in Wave view — see show_waves.
+        self._waves = wave_view(project_id)
         self._scene = GraphScene(self._link_refusal, self._redirection, stack_verbs.refusal)
+        self._scene.set_pinned(self._waves)
         self._view = GraphView(
             self._scene,
             base_mode=IdleMode,
@@ -336,6 +351,20 @@ class ProjectActivity(EntityActivity):
         elif self._view.modes.current().name == name:
             self._view.modes.pop()
 
+    def show_waves(self, on: bool) -> None:
+        """Enter or leave Wave view — the module's call, made to every tab on this project
+        when the user's choice changes. The cards move through the ordinary sync, the same
+        items to other seats; nothing is rebuilt and nothing is written. A gesture in flight
+        ends first: it was aimed at seats that are about to move."""
+        if on == self._waves:
+            return
+        self._waves = on
+        self._view.modes.pop_to_base()
+        self._scene.set_pinned(on)
+        self._sync()
+        self._view_switch.set_value(on)
+        self._layout_button.refresh_face()
+
     def set_look(self, look: Look) -> None:
         """The user changed how graphs look; every canvas hears it, this one here. The
         marks, the spotlight and the snapping are the scene's, the background the view's,
@@ -397,6 +426,16 @@ class ProjectActivity(EntityActivity):
             self._deps.context,
             self._layout_verbs,
         )
+        # Free or Waves, named at once with the one shown lit: a way of looking, so a pick runs
+        # the verb the menu and V run, and the switch only follows what that decided.
+        self._view_switch = Segmented(
+            [
+                (False, "Free", "Your own arrangement, as you left it"),
+                (True, "Waves", "Every step in the column of its dependency depth (V)"),
+            ]
+        )
+        self._view_switch.set_value(self._waves)
+        self._view_switch.picked.connect(self._on_view_picked)
         spec = self._deps.side_panel
         if spec is not None:
             # The panel is told which project to show by a context naming **this** tab's —
@@ -414,6 +453,7 @@ class ProjectActivity(EntityActivity):
             self._deps.context,
             page,
             picker=self._layout_button,
+            view_switch=self._view_switch,
             panel_button=None if self._side_panel is None else self._side_panel.button,
         )
         column.addWidget(toolbar)
@@ -447,8 +487,18 @@ class ProjectActivity(EntityActivity):
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         project = self._project()
-        size_for = footprints(self._deps.strips(project.id))
-        placed = positions(self._product, project, size_for)
+        # Either way a card is its body and the branch strip it wears — in Wave view the
+        # default body, whatever was stored, since stored sizes are Free view's.
+        strips = self._deps.strips(project.id)
+        size_for = footprints(strips, default_size) if self._waves else footprints(strips)
+        # Wave view substitutes the seats, and nothing else: the scene is handed the same
+        # kind of spec, and the diff sync moves the same items.
+        waves = (
+            arranged_in_waves(self._product, project, size_for, self._deps.days_for)
+            if self._waves
+            else None
+        )
+        placed = positions(self._product, project, size_for) if waves is None else waves.seats
         connected = ports(project.steps)
         accents = self._deps.step_accents(project.id)
         nodes = [
@@ -473,6 +523,7 @@ class ProjectActivity(EntityActivity):
             EdgeRef(*edge): accent for edge, accent in self._deps.edge_accents(project.id).items()
         }
         self._scene.sync(nodes, edges, edge_accents, read_stacks(project.steps))
+        self._view.show_waves(() if waves is None else _headings(waves, accents))
 
     def _on_structure(self, parent_id: NodeId, _origin: object = None) -> None:
         if not self._product.belongs_to(parent_id, self.project_id):
@@ -626,9 +677,23 @@ class ProjectActivity(EntityActivity):
             state = self._deps.actions.spec(action_id).state(context)
             self._deps.status.show_status(state.label or refused, 4000)
 
+    def _on_view_picked(self, value: object) -> None:
+        """The Free | Waves switch: the verb decides, and the switch shows what it did."""
+        if bool(value) != self._waves:
+            self.run_action("canvas.waves")
+        self._view_switch.set_value(self._waves)
+
     def _on_create(self, x: float, y: float) -> None:
-        """Double-click on empty space: the same creation New runs, at the point."""
-        self._verbs.create(self.project_id, NEW_STEP_TITLE, at=self._snapped(x, y))
+        """Double-click on empty space: the same creation New runs, at the point — or, in
+        Wave view, where a step born with no point goes."""
+        at = self._free_seat() if self._waves else self._snapped(x, y)
+        self._verbs.create(self.project_id, NEW_STEP_TITLE, at=at)
+
+    def _free_seat(self) -> tuple[float, float]:
+        """Somewhere free in Free view. A point on Wave view names a derived seat, which
+        means nothing to the arrangement the step will be stored in — so a step born there
+        is born where nobody pointed, and lands in its wave all the same."""
+        return free_spot(self._product, self._project())
 
     def note_placed(self, step_ids: list[StepId]) -> None:
         """Steps were just placed on this canvas — born here, or pasted.
@@ -662,8 +727,11 @@ class ProjectActivity(EntityActivity):
         """The top-left a new node should take: centred on wherever the user last pointed.
 
         None until this canvas has been clicked at all, which is what keeps New from a
-        freshly opened tab placing a node under the ambient layout's first slot.
+        freshly opened tab placing a node under the ambient layout's first slot. In Wave view,
+        a free spot — see :meth:`_free_seat`.
         """
+        if self._waves:
+            return self._free_seat()
         point = self._view.last_click
         return None if point is None else self._snapped(*centred_on(point.x(), point.y()))
 
@@ -708,6 +776,15 @@ class ProjectActivity(EntityActivity):
     def _on_context_menu(self, position: object) -> None:
         assert isinstance(position, QPoint)
         self.context_menu(position).exec(self._view.viewport().mapToGlobal(position))
+
+
+def _headings(waves: WaveArrangement, accents: Mapping[StepId, NodeAccent]) -> list[Heading]:
+    """The ruler's headings. Done is what the card says — a muted card is a done step —
+    so the ruler and the cards under it cannot disagree about what is finished."""
+    return [
+        heading(wave, sum(1 for s in wave.steps if (found := accents.get(s)) and found.muted))
+        for wave in waves.waves
+    ]
 
 
 def _redirect_label(count: int) -> str:
@@ -761,6 +838,7 @@ class ProjectEditorModule:
             status=lambda text: deps.status.show_status(text, 4000),
             days_for=deps.days_for,
             size_for=lambda project: footprints(deps.strips(project.id)),
+            set_waves=self._set_waves,
         )
         self._canvas_verbs = CanvasVerbs(
             library=deps.library,
@@ -868,6 +946,18 @@ class ProjectEditorModule:
         set_global(MODULE_ID, LOOK_KEY, look.to_json())
         for activity in self._activities():
             activity.set_look(look)
+        self._deps.context.refresh()
+
+    def _set_waves(self, project_id: NodeId, on: bool) -> None:
+        """Put a project in or out of Wave view for this user: remembered, shown by every tab
+        on it, and re-asked by every toggle. Never the plan's — nothing here is written to
+        it, so two people can look at one plan in two ways."""
+        if wave_view(project_id) == on:
+            return
+        set_wave_view(project_id, on)
+        for activity in self._activities():
+            if activity.project_id == project_id:
+                activity.show_waves(on)
         self._deps.context.refresh()
 
     def _select_steps(self, step_ids: list[StepId]) -> None:

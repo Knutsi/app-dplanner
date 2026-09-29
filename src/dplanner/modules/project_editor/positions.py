@@ -141,6 +141,12 @@ def node_size(step: Step) -> Size:
     return read_size(step) or (NODE_W, NODE_H)
 
 
+def default_size(_step: Step) -> Size:
+    """Every card at the default footprint, whatever was stored — Wave view's measure, where
+    a stored size applies only in Free view."""
+    return (NODE_W, NODE_H)
+
+
 # A card whose work is on a feature branch wears the branch's name in a strip under its
 # body, this tall. The strip is part of the card — its shadow, its ring, what a click and a
 # lasso hit, the room a sort leaves — while arrows still meet the body's middle.

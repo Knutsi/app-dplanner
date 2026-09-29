@@ -177,6 +177,8 @@ class StepNodeItem(QGraphicsItem):
         self._marks = Marks()
         # The frame of the stack this card stands in, set by the scene every sync.
         self._frame: StackItem | None = None
+        # Whether its seat is derived — Wave view's — so no hand may move or resize it.
+        self._pinned = False
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsSelectable, True)
         self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemSendsGeometryChanges, True)
@@ -278,8 +280,25 @@ class StepNodeItem(QGraphicsItem):
         if frame is not self._frame:
             self.prepareGeometryChange()  # Its shape reaches out on fewer sides in a stack.
             self._frame = frame
-            self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, frame is None)
+            self._settle_movable()
             self.update()
+
+    def set_pinned(self, pinned: bool) -> None:
+        """Whether this card's seat is derived rather than the hand's — Wave view's. A pinned
+        card is picked like any other but never dragged or resized: its seat would be
+        overwritten by the next sync, and nothing it did would be saved."""
+        if pinned != self._pinned:
+            self.prepareGeometryChange()  # A pinned card has no resize band to reach out to.
+            self._pinned = pinned
+            self._settle_movable()
+
+    @property
+    def pinned(self) -> bool:
+        return self._pinned
+
+    def _settle_movable(self) -> None:
+        loose = self._frame is None and not self._pinned
+        self.setFlag(QGraphicsItem.GraphicsItemFlag.ItemIsMovable, loose)
 
     @property
     def stack(self) -> Stack | None:
@@ -335,8 +354,11 @@ class StepNodeItem(QGraphicsItem):
         ``EDGE_REACH`` outside it; a point in two bands at once is at a corner.
 
         A card in a stack grows only right and down: its column keeps its left edge and its
-        order, and a member below the first stores no seat for a left or top drag to move.
+        order, and a member below the first stores no seat for a left or top drag to move. A
+        pinned card grows nowhere.
         """
+        if self._pinned:
+            return ""
         local = self.mapFromScene(scene_pos)
         w, h = self._size
         reach = QRectF(-EDGE_REACH, -EDGE_REACH, w + 2 * EDGE_REACH, h + 2 * EDGE_REACH)
@@ -360,10 +382,12 @@ class StepNodeItem(QGraphicsItem):
         # resize band — not the bounding rect, which reaches PAINT_MARGIN further out to
         # hold the shadow and the stat line, and would make empty canvas beside a card
         # select it. A card in a stack grows only right and down, so it reaches out only
-        # there, and the frame's pad on its other sides stays the frame's to grab.
-        reach = 0.0 if self._frame is not None else EDGE_REACH
+        # there, and the frame's pad on its other sides stays the frame's to grab. A pinned
+        # card has no band at all.
+        reach = 0.0 if self._frame is not None or self._pinned else EDGE_REACH
+        grows = 0.0 if self._pinned else EDGE_REACH
         path = QPainterPath()
-        path.addRect(self.body_rect().adjusted(-reach, -reach, EDGE_REACH, EDGE_REACH))
+        path.addRect(self.body_rect().adjusted(-reach, -reach, grows, grows))
         return path
 
     def boundingRect(self) -> QRectF:  # noqa: N802 - Qt override

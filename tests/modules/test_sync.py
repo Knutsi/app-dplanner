@@ -15,6 +15,7 @@ import pytest
 from PySide6.QtWidgets import QInputDialog, QMessageBox
 
 from dplanner.core.storage.locations import init_repo
+from dplanner.core.storage.pointer import POINTER_FILE
 from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.seed import seed_project
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
@@ -177,7 +178,8 @@ def test_one_save_commits_each_of_two_repositories_once(
 def test_two_projects_in_one_repo_are_one_commit_scoped_to_their_directories(
     services, make_project, library_repo
 ):
-    """The scoped-commit decision: a Save never sweeps up the user's own files."""
+    """The scoped-commit decision: a Save never sweeps up the user's own files — but it
+    does record the repository's index, which seeding wrote beside the plans."""
     first = make_project("Discovery")
     second = make_project("Billing")
     outside = library_repo / "notes.txt"
@@ -193,7 +195,8 @@ def test_two_projects_in_one_repo_are_one_commit_scoped_to_their_directories(
     paths = committed_paths(library_repo)
     assert any(path.startswith("discovery/") for path in paths)
     assert any(path.startswith("billing/") for path in paths)
-    assert all(path.startswith(("discovery/", "billing/")) for path in paths)
+    assert POINTER_FILE in paths  # Or the lines stay on the machine that wrote them.
+    assert all(path.startswith(("discovery/", "billing/", POINTER_FILE)) for path in paths)
 
     # The stray file is untouched: still on disk, still untracked.
     assert outside.read_text().startswith("the user's own file")

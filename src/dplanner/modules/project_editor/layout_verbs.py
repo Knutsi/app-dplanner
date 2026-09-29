@@ -8,7 +8,11 @@ bar, the palette and the picker's popup at once.
 **Which layout is currently applied is per-user presentation state**, kept in
 :mod:`~dplanner.framework.user_config` rather than the workspace: two people sharing a
 repository can be looking at different layouts of the same graph, and applying one must not
-dirty the plan for both.
+dirty the plan for both. **So is whether the graph is in Wave view**, per project: its seats
+are derived on every sync and never saved, and *Keep This Arrangement* is the one verb that
+writes them — a sort in kind, so one undo step (``ARCHITECTURE.md``'s *Wave view derives
+positions; only Free view saves them*). Applying a layout or a sort leaves Wave view first,
+since what it writes is what Free view shows.
 """
 
 from collections.abc import Callable
@@ -48,6 +52,7 @@ from dplanner.modules.project_editor.sorts import (
     spine,
     tidy,
     timeline,
+    waves,
 )
 from dplanner.theme.icons import sort_icon
 
@@ -61,6 +66,9 @@ SORT_ACTION_IDS: tuple[str, ...] = (
     "canvas.sort_radial",
     "canvas.sort_tidy",
 )
+# Wave view and its one way of writing: the picker's popup leads with them, since the picker
+# names the arrangement the canvas is showing.
+WAVE_ACTION_IDS: tuple[str, ...] = ("canvas.waves", "canvas.waves_keep")
 MANAGE_ACTION_IDS: tuple[str, ...] = (
     "canvas.layout_save",
     "canvas.layout_update",
@@ -79,6 +87,15 @@ def set_current_layout_name(project_id: NodeId, name: str | None) -> None:
     set_global(MODULE_ID, f"current_layout/{project_id}", name)
 
 
+def wave_view(project_id: NodeId) -> bool:
+    """Whether this user looks at this project's graph in Wave view — off unless turned on."""
+    return get_global(MODULE_ID, f"waves/{project_id}") is True
+
+
+def set_wave_view(project_id: NodeId, on: bool) -> None:
+    set_global(MODULE_ID, f"waves/{project_id}", on)
+
+
 @dataclass(frozen=True)
 class LayoutVerbs:
     library: Library
@@ -88,8 +105,11 @@ class LayoutVerbs:
     current_project: Callable[[], NodeId | None]
     status: Callable[[str], None]
     # How long a step takes, from whichever module owns estimates — the timeline sort's
-    # one outside fact, handed in so this module never learns whose it is.
+    # and Wave view's one outside fact, handed in so this module never learns whose it is.
     days_for: Callable[[Step], float | None]
+    # Put a project's tabs in or out of Wave view, remembered for this user: the module's,
+    # because every tab showing that project follows.
+    set_waves: Callable[[NodeId, bool], None]
     # How big each of a project's cards is — its body, and the branch strip some wear —
     # so a sort leaves every card the room it is drawn with.
     size_for: Callable[[Project], Callable[[Step], Size]] = lambda _project: node_size
@@ -100,6 +120,29 @@ class LayoutVerbs:
 
     def _specs(self) -> list[ActionSpec]:
         return [
+            ActionSpec(
+                id="canvas.waves",
+                label="&Waves",
+                menu="Graph",
+                group="arrange",
+                # Before the Sort, Layout and Divide child menus, which claim the 10s and up:
+                # a way of looking at the arrangement comes before the verbs that change it.
+                order=1,
+                tip="Every step in the column of its dependency depth, under a ruler of "
+                "when each wave runs — derived, never saved (V)",
+                state=self._waves_state,
+                run=self._toggle_waves,
+            ),
+            ActionSpec(
+                id="canvas.waves_keep",
+                label="Keep T&his Arrangement",
+                menu="Graph",
+                group="arrange",
+                order=2,
+                tip="Save Wave view's arrangement as the graph's own, and go back to Free view",
+                state=self._keep_state,
+                run=self._keep_waves,
+            ),
             ActionSpec(
                 id="canvas.sort_flow",
                 label="Layered &Flow",
@@ -228,6 +271,7 @@ class LayoutVerbs:
         project = self.library.project(project_id)
         if name not in read_layouts(project):
             return
+        self.set_waves(project_id, False)
         commands = apply_layout_commands(self.library, project, name)
         if commands:
             self.undo.push(CompositeCommand(f'Apply Layout "{name}"', commands))
@@ -270,6 +314,18 @@ class LayoutVerbs:
             return ActionState(enabled=False, label="&Update Layout — none applied")
         return ActionState(label=f'&Update Layout "{found[1]}"')
 
+    def _waves_state(self, _context: Context) -> ActionState:
+        project = self._project()
+        if project is None:
+            return ActionState(enabled=False, checked=False)
+        return ActionState(checked=wave_view(project.id))
+
+    def _keep_state(self, _context: Context) -> ActionState:
+        project = self._project()
+        if project is None or not wave_view(project.id):
+            return ActionState(enabled=False, label="Keep T&his Arrangement — not in Wave view")
+        return ENABLED
+
     def _delete_state(self, _context: Context) -> ActionState:
         found = self._applied()
         if found is None:
@@ -278,12 +334,32 @@ class LayoutVerbs:
 
     # -- the sorts -----------------------------------------------------------------------------
 
-    def _run_sort(self, project: Project, label: str, placed: dict[StepId, Point]) -> None:
+    def _run_sort(
+        self, project: Project, label: str, placed: dict[StepId, Point], said: str = ""
+    ) -> None:
         if not placed:
             return
+        self.set_waves(project.id, False)
         self.undo.push(CompositeCommand(label, position_commands(project, placed, label)))
         self.undo.break_coalescing()
-        self.status(f"Sorted: {label}")
+        self.status(said or f"Sorted: {label}")
+
+    # -- Wave view -----------------------------------------------------------------------------
+
+    def _toggle_waves(self, _context: Context) -> None:
+        project = self._project()
+        if project is not None:
+            self.set_waves(project.id, not wave_view(project.id))
+
+    def _keep_waves(self, _context: Context) -> None:
+        """Wave view's arrangement, written as the graph's own: the same columns and order,
+        spaced for each card's own size — exactly what was shown while no card is resized —
+        then Free view, showing it. ``dplanner layout sort <project> waves`` writes the same."""
+        project = self._project()
+        if project is None or not wave_view(project.id):
+            return
+        placed = waves(self.library, project, self.size_for(project), days_for=self.days_for)
+        self._run_sort(project, "Keep Wave Arrangement", placed, "Kept Wave view's arrangement")
 
     def _sort_flow(self, _context: Context) -> None:
         project = self._project()

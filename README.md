@@ -467,6 +467,9 @@ src/dplanner/
 │   │                        (geometry.py measures the graph for `dplanner layout show`, `--map`
 │   │                        draws it, `layout shift` is Divide as a verb, `layout contract` Contract,
 │   │                        `layout tidy` the sixth sort)
+│   │                        (Wave view: sorts.arranged_in_waves derives every card's column, never
+│   │                        saved; ruler.py is the band of column headings over it; Keep This
+│   │                        Arrangement and `layout sort waves` write it)
 │   │                        (stacks.py is a stack: a chain drawn as one tall card, the fold every
 │   │                        arrangement reads it through, and the rule for what may link to one;
 │   │                        stack_edits.py every edit of one — new, make, add, move, take out,

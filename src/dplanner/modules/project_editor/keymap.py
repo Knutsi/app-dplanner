@@ -55,6 +55,8 @@ CANVAS_KEYS: Final[dict[Binding, tuple[str, ...]]] = {
     (Qt.Key.Key_X, _NONE): ("canvas.contract_vertical",),
     (Qt.Key.Key_X, _SHIFT): ("canvas.contract_horizontal",),
     (Qt.Key.Key_F, _NONE): ("canvas.frame",),
+    # V for the *view*: Free or Waves, the one switch between the two ways of looking.
+    (Qt.Key.Key_V, _NONE): ("canvas.waves",),
     # "/" is what every list and every editor means by "find", and a graph is a list of
     # steps you cannot see all of at once.
     (Qt.Key.Key_Slash, _NONE): ("steps.find",),
