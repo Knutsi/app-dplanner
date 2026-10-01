@@ -4912,3 +4912,21 @@ wears its node's glyph.
 of its own rather than structure smuggled into `order`.
 
 **Upstream?** No — the menu structure is the application's own.
+
+## 75. From the Expenditure tab: a trap, no code change
+
+### `framework/table.py` — a `Table` built under a page already on screen keeps an unpadded header
+
+**What.** Swapping a page's `Table` for a new one (the Expenditure tab's *By model* switch,
+which changes the columns) gave the new table an 18-pixel header that `#Table
+QHeaderView::section`'s padding never reached, where every table built with its page sat at
+31. A repolish of the header did not help; neither did `show()`. A table built **parentless**
+and handed to the layout (`replaceWidget` reparents it) comes up styled. Measured offscreen
+on 2026-10-01; the cause inside Qt's stylesheet style was not found.
+
+**Why it matters.** Any surface that rebuilds a table with new columns will meet it. The
+workaround is one line at the construction site (`step_order/module.py`'s `_new_table`).
+
+**Upstream?** Yes, as a note in the table primitive's docstring until somebody finds the
+cause — or a `Table.with_columns()` that rebuilds the header in place, which would retire the
+swap altogether.

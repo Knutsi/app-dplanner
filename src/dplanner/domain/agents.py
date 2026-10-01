@@ -78,6 +78,15 @@ def summed(counts: Iterable[Tokens]) -> Tokens:
     return sum(counts, Tokens())
 
 
+def short_count(count: float) -> str:
+    """``12.3k``, ``4.1M`` — a token count at a glance, the same on every surface."""
+    if count >= 1_000_000:
+        return f"{count / 1_000_000:.1f}M"
+    if count >= 1_000:
+        return f"{count / 1_000:.1f}k"
+    return str(round(count))
+
+
 @dataclass(frozen=True)
 class AgentUsage:
     """One agent in a run's tree — the main one or a subagent — and what it consumed,

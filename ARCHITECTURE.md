@@ -5449,6 +5449,28 @@ record` adopts one); a `/clear` inside a Claude session, which starts a new sess
 record does not follow; a run never harvested before Claude Code deletes its transcript
 after thirty days.
 
+### Expenditure is the order, in tokens
+
+The question after *what did this run cost* is *how is the plan doing against what we
+thought* — read down the order, which is how the work will be done. So the answer is the
+Order tab with other columns, not a report of its own: the rows, the switches, the
+gestures and the milestone marks are `step_order/view.py`'s `StepTable`, which both tabs
+subclass, and the second tab lives in the same package because it *is* the order.
+
+**Expected is learned, and not from the steps it is compared with.** Nobody estimates
+tokens; people estimate days. A rate — tokens of work (fresh input and output) per
+estimated day over finished steps that have both — turns an estimate into an expectation.
+Learned from this project's own finished steps, the running offset at the last finished
+row is zero by construction, which says nothing; so the root learns it from the library's
+other projects first and from this one only when nothing else has history, and the tooltip
+says which. No history, no expected column: an invented number would be read as a budget.
+
+**Tokens, never money**, for the ledger's reason: the price depends on the plan, the tier,
+the mode and the region, and on a subscription nothing is spent. **By model** is a switch
+rather than the default because a pair of columns per model is too wide for every day and
+right for the day a playbook mixes three; the CSV is long (a row per step and model)
+because a spreadsheet pivots on rows, and a new model must add rows, never columns.
+
 ### What a run was handed
 
 A ledger of what runs *cost* left the other half unrecorded: how big the briefing was that

@@ -49,6 +49,7 @@ if TYPE_CHECKING:
     from dplanner.domain.branches import Reading as BranchReading
     from dplanner.domain.commands import Command
     from dplanner.domain.dictation import DictationProvider
+    from dplanner.domain.expenditure import Rate, Spent
     from dplanner.domain.locations import Location, LocationRole, ManagedFor
     from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
     from dplanner.domain.ordering import Placed
@@ -253,6 +254,7 @@ def default_modules(
         image_icon,
         list_icon,
         problem_icon,
+        spark_icon,
         spec_icon,
     )
     from dplanner.theme.tones import STEP_STATUS_TONES
@@ -1349,6 +1351,14 @@ def default_modules(
             # The same answer the canvas card's ✓ and the report's read: a wait is never
             # done here, whatever its day.
             step_done=lambda step_id: _card_status(library.step(step_id)) == DONE,
+            # The Expenditure tab: what each step's runs consumed, from the project's
+            # usage ledger, and a rate of tokens per estimated day learned from the
+            # library's finished steps — where ledgers live is the store's to know.
+            step_spent=lambda project_id: _step_spent(store, project_id),
+            token_rate=lambda project_id: _token_rate(
+                store, library, project_id, estimated_days, lambda step: _card_status(step) == DONE
+            ),
+            ledger_stamp=lambda project_id: _ledger_stamp(store, project_id),
         )
     )
 
@@ -1792,6 +1802,15 @@ def default_modules(
                         icon=list_icon,
                         menu="Project",
                         order=35,
+                    ),
+                    ProjectEntry(
+                        id="expenditure",
+                        label="Expenditure",
+                        open=step_order.open_expenditure,
+                        open_preview=lambda pid: step_order.open_expenditure(pid, preview=True),
+                        icon=spark_icon,
+                        menu="Project",
+                        order=37,
                     ),
                     ProjectEntry(
                         id="progression",
@@ -4566,6 +4585,49 @@ def _ledger_dir(store: "LibraryStore", project_id: str) -> "Path | None":
         return store.project_dir(project_id)
     except KeyError:
         return None
+
+
+def _step_spent(store: "LibraryStore", project_id: str) -> "dict[str, Spent]":
+    """What each step's agent runs consumed, per model, from the project's usage ledger."""
+    from dplanner.domain.expenditure import spent_by_step
+    from dplanner.domain.ledger import records
+
+    directory = _ledger_dir(store, project_id)
+    if directory is None:
+        return {}
+    return spent_by_step((record.step, record.models()) for record in records(directory))
+
+
+def _token_rate(
+    store: "LibraryStore",
+    library: "Library",
+    project_id: str,
+    days_for: "Callable[[Step], float | None]",
+    done_for: "Callable[[Step], bool]",
+) -> "Rate | None":
+    """Tokens of work per estimated day: learned from the library's *other* projects when
+    they have finished history, since a rate learned from the steps it is compared with
+    would make the offset end at nought; from this project only when nothing else has."""
+    from dplanner.domain.expenditure import ELSEWHERE, HERE, Spent, learned_rate
+
+    def over(project_ids: "list[str]", source: str) -> "Rate | None":
+        spent: dict[str, Spent] = {}
+        for other in project_ids:
+            spent.update(_step_spent(store, other))
+        steps = [step for other in project_ids for step in library.project(other).steps]
+        return learned_rate(
+            steps, lambda step: spent.get(step.id, Spent()), days_for, done_for, source
+        )
+
+    others = [project.id for project in library.projects if project.id != project_id]
+    return over(others, ELSEWHERE) or over([project_id], HERE)
+
+
+def _ledger_stamp(store: "LibraryStore", project_id: str) -> object:
+    from dplanner.domain.ledger import fingerprint
+
+    directory = _ledger_dir(store, project_id)
+    return None if directory is None else fingerprint(directory)
 
 
 def _step_usage_words(store: "LibraryStore", library: "Library", step_id: str) -> str:

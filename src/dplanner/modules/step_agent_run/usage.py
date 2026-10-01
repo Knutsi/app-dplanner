@@ -20,7 +20,7 @@ from typing import Any
 from dplanner.core.module_data import ModuleDataFormat
 from dplanner.core.repository import Repository
 from dplanner.domain import ledger
-from dplanner.domain.agents import Tokens, summed
+from dplanner.domain.agents import Tokens, short_count, summed
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.model import Library
 from dplanner.domain.store import LibraryStore
@@ -59,7 +59,8 @@ def spent(records: Iterable[LedgerRecord]) -> Tokens | None:
 
 def words(tokens: Tokens) -> str:
     """``12.3k in · 410k cached · 1.2k out`` — how a row or a chip says it."""
-    return f"{short(tokens.input)} in · {short(tokens.cached)} cached · {short(tokens.output)} out"
+    fresh, cached, out = (short_count(n) for n in (tokens.input, tokens.cached, tokens.output))
+    return f"{fresh} in · {cached} cached · {out} out"
 
 
 def record_words(record: LedgerRecord) -> str:
@@ -80,16 +81,7 @@ def brief_words(chars: int) -> str:
     """``briefed 18.4k chars`` — how every surface says what a run was handed, and "" when
     nobody measured. *Briefed* rather than a bare number because the count beside it is
     tokens: two quantities in one line must not be readable as the same one."""
-    return f"briefed {short(chars)} chars" if chars else ""
-
-
-def short(count: int) -> str:
-    """``12.3k``, ``4.1M`` — a token count at a glance."""
-    if count >= 1_000_000:
-        return f"{count / 1_000_000:.1f}M"
-    if count >= 1_000:
-        return f"{count / 1_000:.1f}k"
-    return str(count)
+    return f"briefed {short_count(chars)} chars" if chars else ""
 
 
 def summary(records: Iterable[LedgerRecord]) -> str:

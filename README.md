@@ -538,7 +538,9 @@ src/dplanner/
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
-│   ├── step_order/          the sorted table of steps, and `dplanner order show`
+│   ├── step_order/          the sorted table of steps, and `dplanner order show` — and the
+│   │                        Expenditure tab: the same order with what each step's agents
+│   │                        consumed, in tokens (`expenditure.py`, `domain/expenditure.py`)
 │   ├── progression/         the *Step statuses* tab, the *Control Centre* over every project,
 │   │                        and `dplanner progression show [--all]`
 │   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab

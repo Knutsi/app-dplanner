@@ -308,6 +308,21 @@ def find(project_dir: Path, run: str) -> LedgerRecord | None:
     return None
 
 
+def fingerprint(project_dir: Path) -> tuple[tuple[str, int], ...]:
+    """What the ledger looks like on disk, cheaply: a view polls this to notice a record
+    another process wrote, since nothing watches the directory."""
+    root = project_dir / LEDGER_DIR
+    if not root.is_dir():
+        return ()
+    stamps: list[tuple[str, int]] = []
+    for path in _files(root):
+        try:
+            stamps.append((path.name, path.stat().st_mtime_ns))
+        except OSError:
+            continue
+    return tuple(stamps)
+
+
 def _files(root: Path) -> list[Path]:
     # The dot excludes write_atomic's temporaries, which sit beside the file they become.
     return sorted(path for path in root.glob("*/*.json") if not path.name.startswith("."))
