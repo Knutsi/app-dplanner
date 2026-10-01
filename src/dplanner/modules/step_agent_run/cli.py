@@ -8,36 +8,38 @@ on one, ``needs-input`` when it has a question for the developer — and clears 
 run ends (``status set … done`` is the claim about the work; this is the claim about the
 shell).
 
-**usage** is what the runs consumed (``usage.py``). ``show`` prints a step's rows and
-their total; ``list`` prints a project's steps with a total each, most expensive first,
-and the project's sum; ``record`` writes a row for a run the window did not launch — by
-the harness's own record (``--session`` for a CLI that names one, else the earliest
-session started in ``--dir`` at or after ``--since``), or by hand with ``--input`` and
-``--output``. The window records the same row when the shell it launched ends, so the
-two surfaces keep one ledger.
+**usage** is what the runs consumed, read from the project's ledger (``domain/ledger.py``).
+``show`` prints a step's runs and their total; ``list`` prints a project's steps with a
+total each, most first, and the project's sum. ``harvest`` reads a run's consumption back
+from the agent CLI's own records into its ledger record — what the wrapper script runs
+when the agent exits, named by ``--run`` or ``$DPLANNER_RUN``; ``--all`` sweeps every run
+of this machine that is due, as the window does. ``record`` adopts a run nobody launched
+from here: by the harness's own record (``--session`` for a CLI that names one, else the
+earliest unclaimed session started in ``--dir`` at or after ``--since``), or by hand with
+``--input`` and ``--output``. None of them commits: the window's Save does.
 
 ``commands()`` takes the harnesses as a parameter, supplied by the composition root —
 the same shape as ``agent_cli.commands(briefing=…)``: a ``cli.py`` never imports another
 module, so what crosses modules arrives as an argument.
 """
 
+import os
 from argparse import ArgumentParser, Namespace
+from dataclasses import replace
+from pathlib import Path
 
 from dplanner.cli import CliCommand, CliContext, CliError
+from dplanner.cli.discovery import RUN_ENV
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
-from dplanner.domain.agents import AgentHarness, RunFacts, Usage, harness_by_id
+from dplanner.domain import ledger
+from dplanner.domain.agents import AgentHarness, AgentUsage, Tokens, harness_by_id, summed
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.ledger import LedgerRecord, new_run_id
 from dplanner.domain.model import Step, now_stamp
+from dplanner.modules.step_agent_run import harvest
 from dplanner.modules.step_agent_run.aspect import MODULE_ID, STATES, launched, read, write
-from dplanner.modules.step_agent_run.usage import MODULE_ID as USAGE_ID
-from dplanner.modules.step_agent_run.usage import (
-    row_for,
-    row_words,
-    rows,
-    totals,
-    with_row,
-    words,
-)
+from dplanner.modules.step_agent_run.harvest import launch_record
+from dplanner.modules.step_agent_run.usage import record_words, spent, words
 
 
 def commands(*, harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
@@ -104,6 +106,9 @@ def _usage_commands(harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
     def _record(context: CliContext, args: Namespace) -> int:
         return _record_with(context, args, harnesses)
 
+    def _harvest(context: CliContext, args: Namespace) -> int:
+        return _harvest_with(context, args, harnesses)
+
     def _configure_record(parser: ArgumentParser) -> None:
         step_arg(parser)
         parser.add_argument(
@@ -119,7 +124,8 @@ def _usage_commands(harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
         parser.add_argument(
             "--since", default="", help="ISO time the run started (default: today, midnight)"
         )
-        parser.add_argument("--input", type=int, help="input tokens, recorded by hand")
+        parser.add_argument("--input", type=int, help="fresh input tokens, recorded by hand")
+        parser.add_argument("--cached", type=int, default=0, help="cache reads, recorded by hand")
         parser.add_argument("--output", type=int, help="output tokens, recorded by hand")
 
     return [
@@ -138,9 +144,17 @@ def _usage_commands(harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
             examples=("dplanner usage list discovery",),
         ),
         CliCommand(
+            path=("usage", "harvest"),
+            summary="Read what a run consumed back from the agent's own records into the"
+            " ledger — one run, or every run of this machine that is due.",
+            configure=_configure_harvest,
+            run=_harvest,
+            examples=("dplanner usage harvest --all", "dplanner usage harvest --run 20261001T…"),
+        ),
+        CliCommand(
             path=("usage", "record"),
-            summary="Record a run's tokens on a step — read from the agent's own records,"
-            " or given by hand.",
+            summary="Adopt a run nobody launched from here — read from the agent's own"
+            " records, or given by hand.",
             configure=_configure_record,
             run=_record,
             examples=(
@@ -151,28 +165,62 @@ def _usage_commands(harnesses: tuple[AgentHarness, ...]) -> list[CliCommand]:
     ]
 
 
-def _row_json(row: dict[str, object]) -> dict[str, object]:
+def _configure_harvest(parser: ArgumentParser) -> None:
+    parser.add_argument("--run", default="", help=f"the run to read (default: ${RUN_ENV})")
+    parser.add_argument("--exit", type=int, help="the agent's exit status: the run has ended")
+    parser.add_argument("--all", action="store_true", help="every run of this machine that is due")
+
+
+def _ledger_dirs(context: CliContext) -> list[Path]:
+    dirs = []
+    for project in context.library.projects:
+        try:
+            dirs.append(context.store.project_dir(project.id))
+        except KeyError:
+            continue
+    return dirs
+
+
+def _step_records(context: CliContext, step: Step) -> list[LedgerRecord]:
+    project = context.library.project_of(step.id)
+    return [r for r in ledger.records(context.store.project_dir(project.id)) if r.step == step.id]
+
+
+def _record_json(record: LedgerRecord) -> dict[str, object]:
+    tokens = record.tokens
     return {
-        key: row.get(key)
-        for key in ("harness", "session", "input", "output", "details", "ended", "prompt_chars")
+        "run": record.run,
+        "harness": record.harness,
+        "session": record.session,
+        "launched": record.launched,
+        "ended": record.ended,
+        "measurement": record.measurement,
+        "models": {
+            model: {"in": t.input, "cached": t.cached, "out": t.output}
+            for model, t in record.models().items()
+        },
+        "agents": len(record.agents),
+        "input": tokens.input,
+        "cached": tokens.cached,
+        "output": tokens.output,
+        "prompt_chars": record.prompt_chars,
     }
+
+
+def _tokens_json(tokens: Tokens | None) -> dict[str, int]:
+    tokens = tokens or Tokens()
+    return {"input": tokens.input, "cached": tokens.cached, "output": tokens.output}
 
 
 def _usage_show(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step, context.current)
-    recorded = rows(step)
-    total = totals(step)
-    data = {
-        "step": step.id,
-        "runs": [_row_json(row) for row in recorded],
-        "input": total.input if total else 0,
-        "output": total.output if total else 0,
-    }
+    recorded = _step_records(context, step)
+    total = spent(recorded)
+    data = {"step": step.id, "runs": [_record_json(r) for r in recorded], **_tokens_json(total)}
     if total is None:
         context.report(data, f"{step.title}: no agent run recorded")
         return 0
-    lines = [row_words(row) for row in recorded]
-    # The total is tokens only: two briefings summed is not a quantity anybody spends.
+    lines = [record_words(record) for record in recorded]
     lines.append(
         f"total: {words(total)} over {len(recorded)} run{'s' if len(recorded) != 1 else ''}"
     )
@@ -182,54 +230,87 @@ def _usage_show(context: CliContext, args: Namespace) -> int:
 
 def _usage_list(context: CliContext, args: Namespace) -> int:
     project = find_project(context.library, args.project)
-    counted: list[tuple[Step, Usage]] = [
-        (step, total) for step in project.steps if (total := totals(step)) is not None
+    per_step = ledger.by_step(ledger.records(context.store.project_dir(project.id)))
+    counted: list[tuple[Step, Tokens]] = [
+        (step, total)
+        for step in project.steps
+        if (total := spent(per_step.get(step.id, []))) is not None
     ]
-    counted.sort(key=lambda pair: pair[1].total, reverse=True)
-    project_total = Usage(sum(u.input for _, u in counted), sum(u.output for _, u in counted))
+    counted.sort(key=lambda pair: pair[1].worked, reverse=True)
+    project_total = summed(total for _, total in counted)
     data = {
         "project": project.id,
         "steps": [
-            {"id": step.id, "title": step.title, "input": u.input, "output": u.output}
-            for step, u in counted
+            {"id": step.id, "title": step.title, **_tokens_json(total)} for step, total in counted
         ],
-        "input": project_total.input,
-        "output": project_total.output,
+        **_tokens_json(project_total),
     }
     if not counted:
         context.report(data, f"{project.title}: no agent run recorded")
         return 0
-    lines = [f"{words(u):24} {step.title}" for step, u in counted]
+    lines = [f"{words(total):36} {step.title}" for step, total in counted]
     lines.append(f"total: {words(project_total)}")
     context.report(data, "\n".join(lines))
     return 0
 
 
+def _harvest_with(context: CliContext, args: Namespace, harnesses: tuple[AgentHarness, ...]) -> int:
+    dirs = _ledger_dirs(context)
+    if args.all:
+        written = harvest.sweep(dirs, harnesses)
+        context.report({"written": written}, f"read back {written} run{'s' * (written != 1)}")
+        return 0
+    run = args.run or os.environ.get(RUN_ENV, "")
+    if not run:
+        raise CliError(f"name the run with --run (or ${RUN_ENV}), or sweep with --all")
+    record = harvest.harvest_run(dirs, run, harnesses, code=args.exit, ended=args.exit is not None)
+    if record is None:
+        raise CliError(f"no run {run} in this library's ledgers")
+    context.report(_record_json(record), f"{run}: {words(record.tokens)}")
+    return 0
+
+
 def _record_with(context: CliContext, args: Namespace, harnesses: tuple[AgentHarness, ...]) -> int:
     step = find_step(context.library, args.step, context.current)
+    project = context.library.project_of(step.id)
+    project_dir = context.store.project_dir(project.id)
     harness = harness_by_id(harnesses, args.agent)
     assert harness is not None  # argparse's choices already refused anything else.
-    session = args.session
+    now = now_stamp()
+    adopted = launch_record(
+        run=new_run_id(),
+        project=project.id,
+        step=step.id,
+        harness=harness.id,
+        directory=Path(args.dir or "."),
+        session=args.session,
+        launched=args.since or now[:10] + "T00:00:00+00:00",
+    ).ended_at(now, None)
     if args.input is not None or args.output is not None:
         if args.input is None or args.output is None:
             raise CliError("give both --input and --output, or neither")
-        usage = Usage(args.input, args.output)
+        tokens = Tokens(args.input, args.cached, args.output)
+        record = replace(
+            adopted,
+            measurement=ledger.MANUAL,
+            harvested=now,
+            agents=(AgentUsage("main", {ledger.UNKNOWN_MODEL: tokens}),),
+        )
     else:
         if harness.report is None:
             raise CliError(
                 f"{harness.label} keeps no record this build can read: give --input and --output"
             )
-        since = args.since or now_stamp()[:10] + "T00:00:00+00:00"
-        report = harness.report(RunFacts(session=session, directory=args.dir, launched=since))
-        if report is None or report.usage is None:
+        claimed = ledger.claimed(r for d in _ledger_dirs(context) for r in ledger.records(d))
+        record = harvest.harvest(adopted, harnesses, claimed)
+        if not record.agents:
             raise CliError(
                 f"no {harness.label} record found — name the session with --session,"
                 " or the directory the agent worked in with --dir"
             )
-        session, usage = report.session, report.usage
-    row = row_for(harness.id, session, usage)
-    context.apply(SetModuleDataCommand(step.id, USAGE_ID, with_row(step, row)))
+    ledger.write(project_dir, record)
     context.report(
-        {"step": step.id, "run": _row_json(row)}, f"{step.title}: recorded {words(usage)}"
+        {"step": step.id, "run": _record_json(record)},
+        f"{step.title}: recorded {words(record.tokens)}",
     )
     return 0

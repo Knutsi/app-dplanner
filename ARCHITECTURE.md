@@ -5395,32 +5395,59 @@ it asks the desktop for a window — `terminal.focus_reason`'s per-run rule, ext
 herdr, zellij and tmux sit last in every platform's list, marked `multiplexer`: Automatic
 still opens a window, and a multiplexer is what a profile picks on purpose.
 
-### What a run consumed is a ledger on the step
+### Usage is a ledger, harvested by anyone
 
 Which step cost how many tokens is the question a project's owner asks at the end of a
-week, and nothing recorded it. The run tracker already knows the moment a shell ends and
-which agent ran in it, so it asks the harness's `report` there and writes a row to the
-step's `agent_usage` aspect — the second aspect id in `step_agent_run/`, beside the run
-*state* that is cleared at exit: two different claims, and only this one outlives the
-shell. The write goes directly, off the undo stack, with an origin of its own — the exit's
-rule, for the exit's reason: the tokens were spent whether or not anybody presses Ctrl+Z.
+week. The first answer read the vendor's record once, from the window's poll, when it saw a
+shell end, and kept a row on the step. Measured on 2026-10-01
+(`docs/research/2026-10-01-agent-token-tracking.md`) it recorded 18 to 42% of what runs
+spent, and the ways it missed were structural, not bugs to patch one by one:
 
-**Rows, never a total.** A step is run more than once — a retry, a second agent picking
-up after the first — and a stored total would hide which run cost what and disagree with
-its rows the first time one was corrected. So the aspect holds one row per run (harness,
-session, input, output, the vendor's own finer split under `details`, when), a row is
-keyed by session so a record read twice is one row, and `usage.totals` sums on read.
-`dplanner usage show` prints the rows, `usage list` a project's steps by cost, and
-`usage record` writes a row for a run the window never saw — through the same harness
-readers, or by hand with `--input`/`--output` for a CLI nothing here can read.
+- **Subagents are separate records.** Claude Code writes each one beside the session, Codex
+  makes it a thread of its own, OpenCode a child session. A reader of one file sees the
+  main agent only.
+- **Nothing reliably sees a run end.** Agents run in a multiplexer the person closes by hand
+  once the PR is up; the window is often not running; `/tmp`, where the run directory and
+  its exit file live, is emptied by a reboot; the run list is QSettings, which only the
+  window reads. One missed moment was a run never counted.
+- **Two writers on one step file collide**, and a deleted step took its history with it.
 
-**One meaning of input and output.** Anthropic bills cache reads, cache writes and
-uncached input at three prices and reports all three; OpenAI counts cached tokens as a
-subset of input; OpenCode keeps reasoning apart from output. A ledger that copied each
-vendor's shape could not be added across a step that ran under two of them. So `input`
-is everything sent to the model and `output` everything it generated, whatever the CLI,
-and the vendor's split rides along under `details` in the vendor's words — the sum is
-honest and the breakdown is still there for whoever wants the price.
+So usage left the model. **A run is a record in the project's `ledger/`, written at launch
+and filled by a harvest that anybody may run at any time** (`domain/ledger.py`,
+`modules/step_agent_run/harvest.py`). The launch knows the step, the agent CLI, where it
+works and — for Claude — the session; everything after is a re-read of the vendor's own
+records into the same file. Because that read is idempotent, the triggers do not have to be
+reliable, only plentiful: the wrapper script runs `dplanner usage harvest` the moment the
+agent exits, with no window; the window does it when its poll sees the end; a sweep at start
+and every five minutes reads every run of this machine not read since it ended. Missing one
+costs nothing.
+
+**One file per run, one writer per file.** The run id is minted from the clock and a random
+suffix; only the machine that launched the run can read the vendor records, so only it
+writes. Nothing locks, nothing is lost, and two machines' files never conflict in git — the
+at-work claim's *one file per claim*, committed this time because what a run cost is the
+plan's history. Outside `PLAN_ENTRIES`, so recording usage never makes a window adopt
+anything and never trips the stale check; Save commits it because Save's scope is the whole
+project directory. A sweep's write that would change nothing is skipped, and a harvest that
+began before the wrapper wrote the exit re-reads the file before writing so the exit
+survives.
+
+**A session minted by the CLI is claimed once.** Codex and OpenCode cannot be told a session
+id; the run is the earliest session in its directory after its launch *that no other record
+owns*, and the harvest writes it into the record, so from then on it is read by id. Two runs
+in one checkout no longer take the same session.
+
+**Three counts, never a price.** `in` (fresh input and cache writes), `cached` (cache reads)
+and `out`, per model, per agent. Cache reads are their own number because they dwarf the
+rest — eleven million against half a million fresh in one measured session — and one
+"input" figure would mostly measure context size. Dollars are left out on purpose: the price
+of a token depends on the plan, the tier, the mode and the region, and on a subscription
+nothing is spent at all; a cost is a derivation somebody can add over the stored counts.
+
+**What is not covered, said out loud:** an agent started outside Run Agent (`dplanner usage
+record` adopts one); a `/clear` inside a Claude session, which starts a new session the
+record does not follow; a run never harvested before Claude Code deletes its transcript
+after thirty days.
 
 ### What a run was handed
 
@@ -5435,9 +5462,10 @@ reached `prompt.md`, rather than what some caller believed it was sending — an
 `LaunchFiles`, which `record_launch` already hands to the tracker, so no signature between
 the two moved.
 
-**The run is its home, and the usage row is a copy.** `AgentRun.prompt_chars` is what the
-Agents browser reads, because the two cases a row cannot cover are the two that matter most:
-a run still going has no usage row yet, and a harness with no token reader never gets one.
+**The run is its home, and the ledger record is a copy.** `AgentRun.prompt_chars` is what
+the Agents browser reads, and the launch writes it into the run's ledger record, which now
+exists from the first moment — a record with no agents yet says nothing was read, never
+that nothing was spent.
 The tempting fix — write a usage row at launch with zero tokens — is worse than it looks:
 `usage.totals` would then return `Usage(0, 0)` and the step would *claim it spent nothing*
 where it currently and correctly says nothing at all. A size is a fact about the run; tokens

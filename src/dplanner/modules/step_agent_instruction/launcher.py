@@ -124,7 +124,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from dplanner.cli.discovery import PROJECT_ENV
+from dplanner.cli.discovery import PROJECT_ENV, RUN_ENV
 from dplanner.core.fsio import slugify
 
 # Where a step's worktree lives, under the repository root: a sibling of the `.dplanner`
@@ -132,6 +132,7 @@ from dplanner.core.fsio import slugify
 # the plan repository scan has to know to skip it.
 from dplanner.core.storage.pointer import WORKTREES_DIR as WORKTREES_DIR
 from dplanner.domain.agents import AgentHarness, harness_for_command
+from dplanner.domain.ledger import new_run_id
 from dplanner.domain.locations import Placement
 from dplanner.domain.model import Step
 from dplanner.domain.repositories import RepositoryFacts
@@ -444,6 +445,15 @@ class LaunchFiles:
     prompt_chars: int = 0
     # Whether the agent starts in plan mode and waits for a person to approve its plan.
     plans_first: bool = False
+    # The run's name in the project's ledger, and where the agent works — the worktree when
+    # the run has one, else the checkout: what its usage is harvested by afterwards.
+    run: str = ""
+    workdir: Path = Path()
+
+
+# Reads the run's usage back into the ledger; `dplanner` is on the PATH the agent's own
+# calls use, and a machine without it leaves the window's sweep to do the same.
+HARVEST = "dplanner usage harvest"
 
 
 def new_run_dir() -> Path:
@@ -533,6 +543,7 @@ def prepare(
     project_id: str = "",
     harnesses: tuple[AgentHarness, ...] = (),
     branches: BranchPlan = DEFAULT_BRANCHES,
+    run: str = "",
 ) -> LaunchFiles:
     """Write the prompt and a wrapper script to ``directory``, or a fresh temp directory.
 
@@ -545,6 +556,9 @@ def prepare(
     the shell as ``$DPLANNER_PROJECT``, so every ``dplanner`` call the agent makes is
     scoped to its project — two projects may plan the code repository it works in.
     ``harnesses`` is what ``agent_command`` is read against: blank means the first one.
+    ``run`` is the run's name in the ledger, minted here when not given; with a project, it
+    is exported as ``$DPLANNER_RUN`` and the script harvests the run's usage the moment the
+    agent exits — with or without a window to notice.
 
     **An empty ``prompt_text`` is a run with nothing to hand over**: no ``prompt.md`` is
     written and the script gives the agent no opening line, so the CLI comes up on its own
@@ -572,6 +586,8 @@ def prepare(
         opening=opening_prompt(prompt_file) if prompt_text else "",
         prompt_chars=len(prompt_text),
         plans_first=plans_first(agent_command, harnesses),
+        run=run or new_run_id(),
+        workdir=worktree_path(workdir, worktree) if worktree else workdir,
     )
     # newline="": each builder already ends its lines the way its interpreter needs them —
     # CRLF for cmd, LF for sh — and the default translation turned _windows_script's "\r\n"
@@ -646,6 +662,7 @@ def _posix_script(
     ]
     if project_id:
         lines.append(f"export {PROJECT_ENV}={shlex.quote(project_id)}")
+        lines.append(f"export {RUN_ENV}={shlex.quote(files.run)}")
     if worktree:
         tree = worktree_path(workdir, worktree)
         branch = branches.branch_for(worktree)
@@ -730,6 +747,11 @@ def _posix_script(
         ),
         "code=$?",
         f'echo "$code" > {exit_file}',
+    ]
+    if project_id:
+        # What the run consumed, read back now: the window may not be running to notice.
+        lines.append(f'{HARVEST} --run {shlex.quote(files.run)} --exit "$code" >/dev/null 2>&1')
+    lines += [
         'if [ "$code" -ne 0 ]; then',
         "  printf '\\nThe agent exited with status %s.\\n' \"$code\"",
     ]
@@ -761,6 +783,7 @@ def _windows_script(
     lines = ["@echo off", f"title {files.title}", f'cd /d "{workdir}"']
     if project_id:
         lines.append(f"set {PROJECT_ENV}={project_id}")
+        lines.append(f"set {RUN_ENV}={files.run}")
     if worktree:
         tree = worktree_path(workdir, worktree)
         branch = branches.branch_for(worktree)
@@ -849,6 +872,11 @@ def _windows_script(
         "set code=%ERRORLEVEL%",
         # Redirection first: `echo 0> file` would read as redirecting handle 0.
         f'>"{files.exit_file}" echo %code%',
+    ]
+    if project_id:
+        # `call`: a launcher installed as a .cmd would otherwise end this script with it.
+        lines.append(f"call {HARVEST} --run {files.run} --exit %code% >nul 2>&1")
+    lines += [
         'if not "%code%"=="0" (',
         "  echo The agent exited with status %code%.",
     ]
