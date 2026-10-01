@@ -265,10 +265,23 @@ def _no_agent_shell(monkeypatch):
     from dplanner.modules import agent_harnesses
 
     monkeypatch.delenv("DPLANNER_PROJECT", raising=False)
+    monkeypatch.delenv("DPLANNER_RUN", raising=False)
     harnesses = agent_harnesses()
     for name in list(os.environ):
         if any(harness.marks(name) for harness in harnesses):
             monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _test_machine(monkeypatch):
+    """The ledger names the machine that launched a run, from an id minted once into the
+    user's config directory — which no test may write to. Every test is one machine."""
+    from dplanner.domain import ledger
+
+    monkeypatch.setattr(ledger, "machine_id", lambda directory=None: TEST_MACHINE)
+
+
+TEST_MACHINE = "test-machine"
 
 
 @pytest.fixture(autouse=True)

@@ -219,31 +219,30 @@ paths:
   the empty state names the switch that has the rest — an empty state per filter.
   `ARCHITECTURE.md`'s *The peer reports back through its run directory* has the
   reasoning.
-- **What a run consumed is read back when it ends, and kept on the step.** The run
-  remembers its harness and its session (`AgentRun.harness`, `.session`); when the
-  shell ends the tracker asks the harness's `report` and writes a row — harness,
-  session, input, output, the vendor's own breakdown under `details`, when — to the
-  step's `agent_usage` aspect (`step_agent_run/usage.py`, a second aspect id in that
-  package), directly, off the undo stack, with its own origin: tokens were spent
-  whether or not anybody presses Ctrl+Z. **Totals are derived** (`usage.totals`), a
-  session recorded twice is one row, and `input` means everything sent (cache reads
-  and writes included) and `output` everything generated, so two harnesses' numbers
-  add on one step. `dplanner usage show|list|record` is the terminal's half —
-  `record` reads through the same harness readers, or takes `--input`/`--output` by
-  hand; the Agents browser row and the Agent tab say the same words. Claude's
-  transcript is an internal format read tolerantly; the OpenTelemetry metrics are the
-  supported channel and need a collector, which is deliberately not built here.
+- **What a run consumed is a ledger record, harvested by anyone — never caught at the
+  end.** The launch writes the run's record into `<project>/ledger/YYYY-MM/<run id>.json`
+  (`domain/ledger.py`; `harvest.launch_record`, through the tracker's `project_dir` seam):
+  step, harness, the worktree it works in, the session when the harness names one. A
+  harvest (`step_agent_run/harvest.py`) re-reads the CLI's own records of the run's whole
+  tree — main agent and every subagent, per model, as `in`/`cached`/`out` — and rewrites the
+  record; it is idempotent, so the triggers are many and none is load-bearing: the wrapper's
+  `dplanner usage harvest --run` after the agent exits (`launcher.HARVEST`, no window
+  needed), the tracker on settle (`harvest.end`, then a sweep), and the sweep at start and
+  every five minutes through a `TaskRunner` — started only when `harvest.anything_due` finds
+  a run of this machine not read since it ended. **Never add a usage path that depends on
+  seeing the end.** One writer per file (only the launching machine can read the vendor
+  records), outside `PLAN_ENTRIES`, committed by Save, carried by Move Plan; a harness that
+  mints its session claims the earliest *unclaimed* one (`RunFacts.claimed`) and the record
+  keeps it. No dollars: tokens only. `agent_usage` on the step is retired, absorbed into
+  `legacy` records at open. `dplanner usage show|list|harvest|record` is the terminal's half.
+  `ARCHITECTURE.md`'s *Usage is a ledger, harvested by anyone* has the reasoning.
   **And what the run was *handed*:** `prompt_chars`, measured in `launcher.prepare` —
   the one place that knows what reached `prompt.md` — carried on `LaunchFiles` to the
-  tracker, kept on the **`AgentRun`** and copied onto the usage row when one is written.
-  The run is the home because a run still going has no row yet, and a harness with no
-  token reader never gets one; a faked zero-token row would have the step claim it spent
-  nothing rather than say nothing. **A size does not total** — two briefings added
-  together is not a quantity anybody spends — so `usage list`, `usage.totals` and the
-  step's own phrase stay tokens-only, and `brief_words` says the unit out loud
-  (*briefed 18.4k chars*) because the number beside it is tokens.
-  `ARCHITECTURE.md`'s *What a run was handed* has the reasoning, including why this
-  needed no format bump where `progress_history` did.
+  tracker, kept on the **`AgentRun`** and on the run's ledger record. **A size does not
+  total** — two briefings added together is not a quantity anybody spends — so `usage
+  show`'s total and the step's own phrase stay tokens-only, and `brief_words` says the unit
+  out loud (*briefed 18.4k chars*) because the number beside it is tokens.
+  `ARCHITECTURE.md`'s *What a run was handed* has the reasoning.
 - **An agent CLI is a harness, and a harness is a module.** `domain/agents.py` is the
   contract: an `AgentHarness` is the command (`{prompt}`, `{session}`, `{run_dir}`), how
   a run resumes, the texts it shipped earlier, the variables it sets in the shells it
@@ -254,10 +253,11 @@ paths:
   `usage` verbs and `entry.py`'s shell guard all read it — a fourth agent is a fourth
   module and no `if`. **Capabilities are derived, never declared**: `names_session`
   is `{session}` in the command, `resumes` is a resume template plus a way to the id,
-  `counts_tokens` is a reader; `capabilities()` words them for the dropdown. Codex and
-  OpenCode mint their own ids, so their `report` finds the run by the directory it
-  worked in and the launch time, and a found id is what makes such a run resumable
-  afterwards. `ARCHITECTURE.md`'s *An agent CLI is a harness* has the reasoning.
+  `counts_tokens` is a reader; `capabilities()` words them for the dropdown. A `report`
+  reads the run's whole tree, per model (`RunReport.agents`). Codex and OpenCode mint
+  their own ids, so their `report` finds the run by the directory it worked in, the
+  launch time and the sessions other runs have not claimed, and the found id, kept on
+  the ledger record, is what makes such a run resumable afterwards. `ARCHITECTURE.md`'s *An agent CLI is a harness* has the reasoning.
 - **Which terminal opens is a table, not a chain — and the multiplexers are its last
   rows.** `launcher.TERMINALS` is one row per known terminal *and multiplexer* per
   platform with a probe saying whether it is installed; *Automatic* is the first

@@ -320,6 +320,25 @@ def test_the_script_reports_the_shell_and_the_exit(tmp_path):
     assert "exec " not in script  # A replaced shell could not report the exit.
 
 
+def test_the_script_harvests_the_runs_usage_when_the_agent_exits(tmp_path):
+    """What a run consumed is read back the moment the agent exits, by the script itself:
+    the window may not be running to notice. Only a run on a project has a ledger record."""
+    files = prepare("p", tmp_path, platform="linux", project_id="p1", run="r-1")
+    script = files.script.read_text()
+    assert files.run == "r-1" and files.workdir == tmp_path
+    assert "export DPLANNER_RUN=r-1" in script
+    exit_line = f'echo "$code" > {shlex.quote(str(files.exit_file))}'
+    harvest_line = 'dplanner usage harvest --run r-1 --exit "$code" >/dev/null 2>&1'
+    assert script.index(exit_line) < script.index(harvest_line) < script.index("read -r _")
+    assert "usage harvest" not in prepare("p", tmp_path, platform="linux").script.read_text()
+    minted = prepare("p", tmp_path, platform="linux")
+    assert minted.run and minted.run != prepare("p", tmp_path, platform="linux").run
+    windows = prepare("p", tmp_path, platform="win32", project_id="p1", run="r-1")
+    text = windows.script.read_text()
+    assert "set DPLANNER_RUN=r-1" in text
+    assert "call dplanner usage harvest --run r-1 --exit %code% >nul 2>&1" in text
+
+
 def test_the_windows_script_reports_the_same_two_files(tmp_path):
     run_dir = tmp_path / "run"
     run_dir.mkdir()

@@ -8,6 +8,7 @@ import pytest
 
 from dplanner.core.storage.locations import canonical_remote, init_repo
 from dplanner.core.storage.pointer import POINTER_FILE, read_index, remove_from_index
+from dplanner.domain import ledger
 from dplanner.domain.library_file import read_library_file, write_library_file
 from dplanner.domain.model import Step
 from dplanner.domain.relocate import RelocateError, move_project
@@ -86,6 +87,19 @@ def test_the_plan_moves_with_its_files_index_lines_and_two_commits(colocated):
     assert _git(code, "status", "--porcelain") == ""
     assert _git(plans, "log", "-1", "--format=%s").strip() == "Add «Search rewrite»"
     assert (code / "src" / "main.py").is_file()
+
+
+def test_the_usage_ledger_moves_with_the_plan(colocated):
+    """The store never flushes the ledger, but it is the plan's history of what its agents
+    consumed: a move that left it behind would delete it with the source directory."""
+    store, library, _code, plans = colocated
+    project = library.projects[0]
+    record = ledger.LedgerRecord(
+        run="r1", project=project.id, step="s1", harness="claude", launched="2026-10-01T10:00Z"
+    )
+    ledger.write(store.project_dir(project.id), record)
+    moved = move_project(store, project.id, plans / "search-rewrite")
+    assert ledger.records(moved.target) == [record]
 
 
 def test_the_target_must_be_free_and_inside_a_repository(colocated, tmp_path):

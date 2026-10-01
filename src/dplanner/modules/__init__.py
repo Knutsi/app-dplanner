@@ -55,7 +55,7 @@ if TYPE_CHECKING:
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.schedule import Scheduled
     from dplanner.domain.scope import ScopeKind
-    from dplanner.domain.store import FilesFor, ModuleFileArea
+    from dplanner.domain.store import FilesFor, LibraryStore, ModuleFileArea
     from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
@@ -208,7 +208,6 @@ def default_modules(
     from dplanner.modules.step_agent_instruction.profiles import default_profile
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
-    from dplanner.modules.step_agent_run.usage import summary as usage_words
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.module import (
@@ -1382,6 +1381,17 @@ def default_modules(
             # cleared its state and the plan did not change. The agent module is built
             # below, and nothing ends before the build is up.
             ended=lambda: agent_instruction.settle_launches(),
+            # Where each run's ledger record lives, and every project's ledger for the
+            # sweep that reads what the runs consumed back into them.
+            project_dir=lambda step_id: (
+                _ledger_dir(store, library.project_of(step_id).id) if library.has(step_id) else None
+            ),
+            project_dirs=lambda: [
+                directory
+                for project in library.projects
+                if (directory := _ledger_dir(store, project.id)) is not None
+            ],
+            tasks=services.tasks,
         )
     )
 
@@ -1491,10 +1501,13 @@ def default_modules(
                 # A session that starts in plan mode waits for a person from the first
                 # moment, and says nothing until its plan is approved.
                 files.plans_first,
+                # Its record in the ledger, and where it works: what is harvested into it.
+                files.run,
+                files.workdir,
             ),
             harnesses=agent_harnesses(),
             # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.
-            usage_words=lambda step_id: usage_words(library.step(step_id)),
+            usage_words=lambda step_id: _step_usage_words(store, library, step_id),
             pick_assets=pick_assets,
             # Run Agent asks before launching on a step whose prerequisites are not
             # done — the same status reader the Step statuses tab's frontier uses.
@@ -3958,7 +3971,6 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     from dplanner.modules.branches.aspect import remap_for_paste as remap_landing
     from dplanner.modules.feature.aspect import drop_cites_for_paste
     from dplanner.modules.step_agent_run.aspect import forget_for_paste
-    from dplanner.modules.step_agent_run.usage import forget_for_paste as forget_usage
     from dplanner.modules.step_review.rounds import forget_for_paste as forget_rounds
     from dplanner.modules.step_status.aspect import forget_days_for_paste
     from dplanner.modules.testing.aspect import remint_for_paste
@@ -3966,7 +3978,6 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     return (
         remint_for_paste,
         forget_for_paste,
-        forget_usage,
         forget_rounds,
         forget_days_for_paste,
         drop_cites_for_paste,
@@ -4548,6 +4559,28 @@ def default_cli_commands(
     return [*commands, *skill, *installer, *checklist]
 
 
+def _ledger_dir(store: "LibraryStore", project_id: str) -> "Path | None":
+    """Where a project keeps its ledger: its directory, or None for one the store does
+    not hold."""
+    try:
+        return store.project_dir(project_id)
+    except KeyError:
+        return None
+
+
+def _step_usage_words(store: "LibraryStore", library: "Library", step_id: str) -> str:
+    """What the agent runs on a step consumed, as the Agent tab says it; "" for none."""
+    from dplanner.domain.ledger import records
+    from dplanner.modules.step_agent_run.usage import summary
+
+    if not library.has(step_id):
+        return ""
+    directory = _ledger_dir(store, library.project_of(step_id).id)
+    if directory is None:
+        return ""
+    return summary(record for record in records(directory) if record.step == step_id)
+
+
 def _names_session(harness_id: str) -> bool:
     from dplanner.domain.agents import harness_by_id
 
@@ -4651,7 +4684,6 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_agent_run import aspect as agent_run
-    from dplanner.modules.step_agent_run import usage as agent_usage
     from dplanner.modules.step_check import aspect as check
     from dplanner.modules.step_description import aspect as description
     from dplanner.modules.step_milestone import aspect as milestone
@@ -4666,7 +4698,6 @@ def aspect_specs() -> list["AspectSpec"]:
     return [
         agent.SPEC,
         agent_run.SPEC,
-        agent_usage.SPEC,
         auto_progress.SPEC,
         branches.CUT_SPEC,
         branches.LAND_SPEC,
@@ -4806,6 +4837,7 @@ def default_module_formats() -> list[ModuleDataFormat]:
     from dplanner.modules.notes import migrate as notes
     from dplanner.modules.project_assets import cli as project_assets
     from dplanner.modules.project_editor import positions
+    from dplanner.modules.step_agent_run import usage as agent_usage
     from dplanner.modules.time_estimates import progress as time_progress
     from dplanner.modules.time_estimates import schedule as time_schedule
 
@@ -4825,4 +4857,5 @@ def default_module_formats() -> list[ModuleDataFormat]:
         project_assets.DATA_FORMAT,
         shelf.DATA_FORMAT,
         notes.DATA_FORMAT,
+        agent_usage.DATA_FORMAT,
     ]
