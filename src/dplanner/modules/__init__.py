@@ -68,7 +68,6 @@ if TYPE_CHECKING:
     from dplanner.modules.step_agent_instruction.launcher import BranchPlan
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
     from dplanner.modules.step_review.rounds import TurnDue
-    from dplanner.modules.sync.service import Publication
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
     from dplanner.theme.providers import ThemeProvider
@@ -238,7 +237,6 @@ def default_modules(
     from dplanner.modules.step_wait.aspect import stat as wait_stat
     from dplanner.modules.step_wait.module import StepWaitDeps, StepWaitModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
-    from dplanner.modules.sync.service import ExtraPublication
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
     from dplanner.modules.testing.aspect import read as tests_read
     from dplanner.modules.testing.module import TestsDeps, TestsModule
@@ -1246,10 +1244,8 @@ def default_modules(
         )
     )
 
-    # Constructed before the list because Save publishes through it: the sync module is
-    # handed `publication_for` and never learns this module's name. The sources are the
-    # tuple `dplanner report` reads (`_report_sources`), so the page a Save writes and the
-    # page the terminal writes are one page.
+    # The sources are the tuple `dplanner report` reads (`_report_sources`), so the page the
+    # window exports and the page the terminal writes are one page.
     reporting = ReportingModule(
         ReportingDeps(
             library=library,
@@ -1257,7 +1253,6 @@ def default_modules(
             context=services.context,
             tasks=services.tasks,
             status=services.window,
-            settings_sections=services.settings_sections,
             parent=services.window,
             files=store.files,
             project_dir=store.project_dir,
@@ -1271,54 +1266,6 @@ def default_modules(
             reporting_site=reporting_site,
         )
     )
-
-    def publication_for(group: object) -> "Publication | None":
-        """Save's hook: the reports of every project a repository group covers, written
-        beside the plan in the same commit — or nothing, when the switch is off or every
-        one of them publishes at a reporting location elsewhere."""
-        members = [
-            project.id for project in library.projects if store.repo_for(project.id) is group
-        ]
-        root = find_repo_root(store.project_dir(members[0])) if members else None
-        if root is None:
-            return None
-        return reporting.prepare_publication(root, members)
-
-    def extra_publications() -> "list[ExtraPublication]":
-        """Save's other hook: one publication per reporting location on this machine in
-        a repository that is not the project's plan's — a provider over that repository
-        scoped to the site, so the commit records the site and nothing else there."""
-        found: list[ExtraPublication] = []
-        members = [project.id for project in library.projects]
-        for target, publish in reporting.prepare_location_publications(members):
-            storage = repo_storage(target.repo_root, scopes=(target.pathspec,))
-            assert isinstance(storage, GitStorage)
-            found.append(ExtraPublication(storage.label, storage, publish))
-        return found
-
-    def prepare_save(go: "Callable[[], None]") -> None:
-        """Before an in-window Save: clone the reporting repositories nobody has checked
-        out here, where the clone policy says, then start the save. A clone that fails
-        is logged and that project publishes beside its plan, as it always did."""
-        wanted: list[str] = []
-        for project in library.projects:
-            placement = facts_of(project.id).of_role(REPORTING_ROLE.id)
-            if (
-                placement is not None
-                and placement.root is None
-                and placement.location.repository not in wanted
-            ):
-                wanted.append(placement.location.repository)
-        if not wanted:
-            go()
-            return
-
-        def cloned(_landed: "dict[str, Path]", error: str) -> None:
-            if error:
-                logger.warning("a reporting repository could not be cloned: %s", error)
-            go()
-
-        checkouts.ensure_many(wanted, cloned)
 
     def pick_assets(node_id: str) -> "list[Payload]":
         """Insert from Assets…: the picker over the node's project's whole catalog.
@@ -1642,9 +1589,6 @@ def default_modules(
                 repo_for=store.repo_for,
                 focused_project=focused_project,
                 projects_in=projects_in,
-                publisher=publication_for,
-                extra_publications=extra_publications,
-                prepare_save=prepare_save,
                 reconcile_profiles=lambda: agent_instruction.plan_profiles(),
                 reconcile=lambda root, branch, profile: agent_instruction.reconcile_remote(
                     root, branch, profile
@@ -2962,9 +2906,9 @@ def _ordinal(place: int) -> str:
 def _milestone_colors(library: "Library", project: "Project") -> dict[str, str]:
     """Each milestone's hex — the one deal, handed to every surface that draws one.
 
-    The colour map is the *project's* assumption, not the user's: the window commits
-    ``reports/`` on every Save, so a per-user map would churn the published report per
-    committer and the Time tab's picker would name a map it was not painting.
+    The colour map is the *project's* assumption, not the user's: a report site exported
+    by any of a project's people should paint its milestones alike, and the Time tab's
+    picker would otherwise name a map it was not painting.
     ARCHITECTURE.md's *Colour is a place on one map* has the rest.
     """
     from dplanner.modules.step_milestone.aspect import read as milestone_read
@@ -3590,9 +3534,7 @@ def _locations_told(facts: "RepositoryFacts") -> str:
         elif placement.managed:
             where = "read-only, fetched by the window into the plan's spec documents"
         elif role is not None and role.writes and location.role != CODE.id:
-            where = (
-                f"DPlanner publishes there on Save (`{placement.directory}`) — do not write there"
-            )
+            where = f"DPlanner exports report sites to `{placement.directory}` — do not write there"
         elif placement.kept:
             where = (
                 f"`{placement.directory}` — a clone DPlanner keeps; work there as in any checkout"

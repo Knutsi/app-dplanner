@@ -4,7 +4,7 @@ The second clone door, beside :mod:`sparse`. That one fetches a folder of somebo
 repository to *read* — blobless, shallow, sparse, a cache that can be wiped. This one makes
 a **working checkout**: a plain, full ``git clone`` a person or an agent can commit and
 push in, kept under the per-user configuration directory so a verb that needs the
-repository on this machine (Run Agent, publishing a report) has one without anybody
+repository on this machine (Run Agent, exporting a report site) has one without anybody
 picking a destination. It lands in ``<root>/checkouts/<name>-<digest>``, one directory per
 repository whatever ref or position a project names, and **never inside a plan repository,
 a project directory or the person's repositories folder** — those are theirs, and a clone

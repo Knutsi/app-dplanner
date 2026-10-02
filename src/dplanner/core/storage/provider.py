@@ -140,8 +140,8 @@ class VersionedStorage(Protocol):
         """Record the current state. False when there was nothing to record. BLOCKING.
 
         ``also`` names extra root-relative paths to record in the same version, beside the
-        workspace the provider is scoped to — what a publication written next to the plan
-        needs. A provider without scopes may ignore it.
+        workspace the provider is scoped to — the repository's project index beside the plan.
+        A provider without scopes may ignore it.
         """
         ...
 

@@ -266,9 +266,8 @@ paths:
   bands and the report's graph. `theme/tones.py`'s `toned(name, hex)` is the one place a
   shade takes a tone's alphas — never re-derive them — and the maps live in
   **`theme/palettes.py`** (Qt-free, hex strings) because three consumers need them and
-  modules never import each other. **The map is the project's, never the user's**: the
-  window commits `reports/` on every Save, so a per-user map would churn the published
-  report per committer. *View ▸ Milestone Colours* is therefore a **second presenter** of
+  modules never import each other. **The map is the project's, never the user's**: a
+  report site exported by any of a project's people should paint its milestones alike. *View ▸ Milestone Colours* is therefore a **second presenter** of
   the choice the Time tab's picker and `dplanner schedule palette` already write — a
   sibling of Theme, never inside it, and greyed with its reason when no project is open.
   `ARCHITECTURE.md`'s *Colour is a place on one map* has the reasoning.

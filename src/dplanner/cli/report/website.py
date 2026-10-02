@@ -8,14 +8,15 @@
     └── <slug>/summary.js     that project's headline figures, one small script
 
 **Per-project state lives only in per-project files, and the index depends only on the
-set of projects.** A Save rewrites the reports of the projects in that repository and
+set of projects.** Writing a repository's site rewrites the reports of its projects and
 nothing of any other; the index is rendered from the sorted set of ``*/summary.js`` present
 on disk — a static page with one ``<script src>`` per project and a few lines of
 client-side rendering, which works from ``file://`` and from GitHub Pages alike where
 ``fetch()`` does not. Its bytes change only when a project joins or leaves, so two people
 saving two projects never both touch it, and a pull that brings a colleague's new project
-is picked up by the next run. That is what keeps a shared plan repository free of merge
-conflicts over a generated page.
+is picked up by the next run. Nothing commits a site, though: Save never writes one, because
+even per-project pages collide when two people save the same project (ARCHITECTURE.md's
+*Reports are written on request, never on Save*).
 
 **The directory is a constant, not a setting.** The window's preferences are QSettings,
 which ``dplanner report site`` cannot read; a per-user name would let the two surfaces
@@ -110,9 +111,9 @@ def slug_for(project_dir: Path, repo_root: Path) -> str:
 
 @dataclass(frozen=True)
 class SiteTarget:
-    """Where a site is written: the directory holding it, inside the repository whose
-    commit records it. The plan repository's ``reports/`` by default; a project's
-    *reporting* location — any repository, any folder — when it names one."""
+    """Where a site is written: the directory holding it, and the repository it sits in.
+    The plan repository's ``reports/`` by default; a project's *reporting* location — any
+    repository, any folder — when it names one; or any folder an export picks."""
 
     repo_root: Path
     site: Path

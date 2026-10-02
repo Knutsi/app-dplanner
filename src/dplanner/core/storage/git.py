@@ -300,10 +300,9 @@ class GitStorage(LocalStorage):
         moving a plan out of a repository commits its removal, which is only a change
         where the plan was tracked.
 
-        ``also`` is for what is written beside the plan on purpose (the reports directory)
-        and is deliberately not part of ``scopes``: the dirty count and the review diff
-        stay about the plan, and a publication that failed to write never reads as
-        unsaved work.
+        ``also`` is for what is written beside the plan on purpose (the repository's
+        project index) and is deliberately not part of ``scopes``: the dirty count and the
+        review diff stay about the plan.
         """
         scopes = [scope for scope in (*self._scopes, *also) if self._matches(scope)]
         if not scopes:

@@ -343,14 +343,17 @@ sees them:
 
 `<slug>` is the project directory's path relative to the repository root with separators
 folded (`plans/search` → `plans-search`); the repository directory's own name when the
-project *is* the root. Save writes the directory for each dirty repository and records it
-in the plan's commit (the window's Settings ▸ Reports switch, on by default);
-`dplanner report site` writes it from a terminal and never commits. The index is a
+project *is* the root. Save never writes it — generated pages committed by every Save
+collide between people sharing a plan repository — and nothing commits it: `dplanner report
+site` writes it from a terminal, and the window's *File ▸ Export ▸ Report Site (Folder)…*
+writes the same layout into any folder. A shared plan repository is best off ignoring
+`reports/` in its `.gitignore`. The index is a
 function of the set of `*/summary.js` present, so its bytes change only when a project
 joins or leaves — the rule that keeps two writers from conflicting over a generated page.
 The directory name is a constant, not a setting. Nothing in it is versioned or migrated:
-every Save rewrites it whole from the plan. `ARCHITECTURE.md`'s *A report is a
-publication, not a record* has the reasoning.
+every write rewrites it whole from the plan. `ARCHITECTURE.md`'s *A report is a
+publication, not a record* and *Reports are written on request, never on Save* have the
+reasoning.
 
 ### Changing it
 
