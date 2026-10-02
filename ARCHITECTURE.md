@@ -5549,7 +5549,7 @@ a folder for DPlanner. A *developer* has everything checked out and works with a
 those checkouts. A *team lead* reads specs and reports, has nothing checked out, and does
 not want to. So a row is **Code** (what agents change), **Spec** (what DPlanner reads) or
 **Reporting** (the one place DPlanner *writes* for people who read without it: the report
-site on Save, and where the tests export is offered). Docs and Tests as roles of their own
+site on export, and where the tests export is offered). Docs and Tests as roles of their own
 were a guess about filing; reporting is the act, and it is what they had in common.
 
 **Whether a location needs a working checkout follows from whether its role writes** —
@@ -5567,29 +5567,26 @@ working clone, hardened only while it is made, never inside a plan repository, a
 directory or the person's repositories folder) or into the repositories folder, asked
 once — and **never whether the verb runs**. That retired the *not checked out on this
 machine* dead end: Run Agent and Open Agent in Code read *clones acme/widget first* and
-clone before they launch; Save clones a reporting repository before it publishes; the Open
+clone before they launch; the Open
 Project wizard's Repositories page shows only under the folder policy, where a developer
 says *use a checkout I have* before anything lands among their own. A kept clone is a
 checkout like any other — `Placement.kept` changes the wording (*kept by DPlanner at …*)
 and nothing else — and a repository stored as a path is placed there only when a working
 tree is there, so a bare `file://` remote is cloned like any other.
 
-**A reporting location receives the report site in a commit of its own.** The site
-writer takes a *target* (`website.SiteTarget`: the repository whose commit records the
-site, and the directory the pages go in), so the plan's `reports/` and a reporting row's
-position are one layout. Save asks the reporting module for the plan repository's
-publication as before — now leaving out the projects that publish elsewhere — and for one
-*extra* publication per reporting site in another repository, each written, committed
-**scoped to the site** (`repo_storage(root, scopes=(pathspec,))`, so a reporting row on
-the code repository never sweeps up the developer's tree) and pushed, as further rows of
-the save progress. The quit-time save never waits on a clone — a person leaving must not
-— so a project whose reporting repository is not here publishes beside its plan, as it
-always did, and the next in-window Save moves it. `dplanner report site` writes to the same
-target, `--out DIR` anywhere. The flows this settles, end to end: a spec author adds their
-repository from the Specs tab (*Add Spec ▸ From Repository…*, below); a developer opens a
-shared plan with everything checked out and is asked nothing; a team lead opens the same
-plan on an empty machine, is asked nothing, and their first Save clones the reporting
-repository and publishes; Run Agent on code nobody checked out clones and launches.
+**A reporting location is where the report site is exported, never where Save commits.**
+The site writer takes a *target* (`website.SiteTarget`: the repository the site sits in,
+and the directory the pages go in), so the plan's `reports/`, a reporting row's position
+and any picked folder are one layout. *File ▸ Export ▸ Report Site (Folder)…* opens its
+folder picker at the focused project's reporting location when this machine has that
+repository; `dplanner report site` writes there by default, `--out DIR` anywhere. Neither
+commits — what lands in the reporting repository is its people's to record. Save used to
+clone a missing reporting repository, write the site there and commit it scoped to the
+site; it no longer writes reports at all (*Reports are written on request, never on Save*,
+below). The flows this settles, end to end: a spec author adds their repository from the
+Specs tab (*Add Spec ▸ From Repository…*, below); a developer opens a shared plan with
+everything checked out and is asked nothing; a team lead opens the same plan on an empty
+machine and is asked nothing; Run Agent on code nobody checked out clones and launches.
 
 `domain/repositories.py` is the one derivation over the three — `RepositoryFacts`, every
 row placed, with four states read off the code rows: **separated**, the shape the
@@ -8604,26 +8601,29 @@ Measured on a synthetic plan: 300 steps read in ~90 ms on the GUI thread and ren
 ~17 ms; 1,000 steps read in ~580 ms and render in ~50 ms. The read is the cost, and it is
 the same read the Time tab makes on its 500 ms debounce.
 
-**Save publishes before it commits.** The sync module asks the reporting module for a
-*publication* per dirty repository before its save task starts — the model is read then,
-on the GUI thread — and runs it inside the task, before `commit(message, also=paths)`, so
-the site lands in the same version as the plan and is never one commit behind. A project
-that names a **reporting location** publishes there instead, as an *extra* publication
-committed scoped to the site in that repository — *A project names its locations* above
-has the shape; the pages are the same, written to a `SiteTarget`. `also` is
-on the storage *protocol* (`VersionedStorage.commit`) because the sync module may not name
-`GitStorage`. The dirty count and the review diff stay scoped to the plan: a stale site is
-never unsaved work, and a publication that raises is logged and the plan saved without it
-— a report is never a reason to lose a save. The switch is per user and on by default.
+**Reports are written on request, never on Save.** Save used to publish before it committed:
+the sync module asked the reporting module for a publication per dirty repository and
+committed `reports/` in the same version as the plan, and a project's reporting location
+got a scoped commit of its own. Two people saving one shared plan repository then
+conflicted on every pair of concurrent saves — not over the plan, which merged cleanly, but
+over the generated pages: each Save re-renders a project's page with that day's schedule,
+so both sides rewrite the same lines of `<slug>/index.html` and `summary.js`. A rebase
+could only regenerate them, so they were never worth committing. Now Save records the plan
+alone (`commit(message, also=(POINTER_FILE,))`), and the site is written when someone
+wants it: *File ▸ Export ▸ Report Site (Folder)…* writes every project of the focused
+project's plan repository into a picked folder, on the reporting module's worker like any
+export, and `dplanner report site` writes it from a terminal. Neither commits. A shared plan
+repository is best off with `reports/` in its `.gitignore`; publishing the site for
+readers, for example to GitHub Pages, is a job for CI running `dplanner report site`, not
+for every person's Save.
 
 **The site's index is a function of the project set, never of any project's state.** Under
 `reports/` each project owns its own directory (`<slug>/index.html`, `<slug>/summary.js`);
 `index.html` is rendered from the sorted set of `*/summary.js` present on disk as a static
 page with one `<script src>` per project and a few lines of client-side rendering —
 `<script src>` works from `file://` and GitHub Pages alike, where `fetch()` does not. Its
-bytes change only when a project joins or leaves, so two people saving two projects in one
-shared plan repository never both touch it, and a pull that brings a colleague's project
-is picked up by the next run. The directory name is a constant, not a setting: the
+bytes change only when a project joins or leaves, so two writers of two projects never
+both touch it, and a pull that brings a colleague's project is picked up by the next run. The directory name is a constant, not a setting: the
 window's preferences are QSettings, which `dplanner report site` cannot read, and a
 per-user name would let the two surfaces write two sites into one repository.
 

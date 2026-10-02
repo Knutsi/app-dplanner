@@ -26,7 +26,7 @@ has a row's repository. `project show` prints the same, and its `--json` keeps
 by the window, never by you; a worked-in row (code, reporting) that is *not checked out
 on this machine* is one you must not look for — say so instead — and one *kept by
 DPlanner* is an ordinary checkout under its configuration directory, worked in like any.
-A reporting row is where DPlanner publishes the report site on Save (`dplanner report
+A reporting row is where DPlanner exports the report site on request (`dplanner report
 site` writes it too): never write there yourself. Three rules follow:
 
 - **`dplanner` writes to the plan wherever it is run from.** Status, notes, docs, tests,
@@ -480,8 +480,8 @@ then authored `step add`s.
   verb.
 - **The plan is also a page.** `dplanner report html --out plan.html` writes one self-contained
   HTML report of the current project for people who have no DPlanner, and `dplanner report
-  site` refreshes the plan repository's `reports/` site (the window does this on every Save;
-  from a terminal it is yours to run, and it never commits).
+  site` refreshes the plan repository's `reports/` site (Save never writes it; run it when
+  someone wants the pages, and it never commits).
 - **Names or ids.** Anywhere a project or step is named you may use its id, its folder name,
   or a unique part of its title. An ambiguous name is refused and the message lists the ids —
   use one of those rather than guessing.

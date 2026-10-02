@@ -51,8 +51,6 @@ from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
 from dplanner.modules.sync.save_progress import SaveProgressDialog
 from dplanner.modules.sync.service import (
     SAVE_TASK,
-    ExtraPublication,
-    Publication,
     RepoGroup,
     SyncService,
 )
@@ -81,17 +79,6 @@ class SyncDeps:
     focused_project: Callable[[Context], ProjectId | None]
     # The titles a repository group covers, for the diff picker and the quit dialog.
     projects_in: Callable[[RepoGroup], list[str]]
-    # What a repository publishes beside its plan when it is saved — the reports site —
-    # prepared on the GUI thread and run inside the save. None when there is nothing.
-    publisher: Callable[[RepoGroup], Publication | None] = lambda _group: None
-    # The publications into other repositories — the projects' reporting locations that
-    # are on this machine — prepared on the GUI thread, each one more row of the save.
-    extra_publications: Callable[[], Sequence[ExtraPublication]] = lambda: ()
-    # Run before the in-window save starts, handed the save to start: the root clones a
-    # reporting repository nobody has checked out here, then calls it. The quit-time save
-    # never waits on a clone — a person leaving must not — so it publishes such a
-    # project beside its plan, as a save always did.
-    prepare_save: Callable[[Callable[[], None]], None] = lambda go: go()
     # A repository that could not be pushed because its remote changed the same lines is
     # offered to an agent: the launch profiles, and the launch into that repository.
     # Either None and the failure is explained with nobody offered.
@@ -331,16 +318,6 @@ class SyncModule:
 
     # -- quitting ------------------------------------------------------------------------------
 
-    def _publications(self, service: SyncService) -> dict[int, Publication]:
-        """What each dirty repository publishes beside its plan, prepared now on the GUI
-        thread — the model is read here — for the save to run and record."""
-        found: dict[int, Publication] = {}
-        for group in service.dirty_groups():
-            publish = self._deps.publisher(group)
-            if publish is not None:
-                found[id(group)] = publish
-        return found
-
     def _confirm_close(self, service: SyncService) -> bool:
         deps = self._deps
         if self._exit_saved:
@@ -373,8 +350,7 @@ class SyncModule:
 
     def _begin_exit_save(self, service: SyncService, message: str, chosen: list[RepoGroup]) -> bool:
         """Start the quit-time save under its dialog; False when it could not be started."""
-        extra = self._deps.extra_publications()
-        labels = [self._group_label(group) for group in chosen] + [e.label for e in extra]
+        labels = [self._group_label(group) for group in chosen]
         # How long the last save took, if this machine has seen one: the bar fills smoothly
         # between commits instead of standing still through each one.
         progress = SaveProgressDialog(
@@ -384,7 +360,7 @@ class SyncModule:
         )
         self._exit_progress = progress  # Set first: _on_saving reads it, and it is queued.
         self._exit_error = ""
-        if not service.save(message, self._publications(service), only=chosen, extra=extra):
+        if not service.save(message, only=chosen):
             self._exit_progress = None
             progress.deleteLater()
             return False
@@ -447,13 +423,7 @@ class SyncModule:
         def run_save(_context: Context) -> None:
             deps.autosave.flush_now()  # Typing reaches disk before it is committed.
             service.refresh()
-
-            def go() -> None:
-                service.save(
-                    publications=self._publications(service), extra=deps.extra_publications()
-                )
-
-            deps.prepare_save(go)
+            service.save()
 
         def run_switch(context: Context) -> None:
             group = self._focused_group(service, context)

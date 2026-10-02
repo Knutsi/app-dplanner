@@ -1,7 +1,7 @@
 """What a save is doing, while the window waits for it: one row per repository.
 
 Quitting with uncommitted planning changes used to run the save on the GUI thread with
-nothing on screen — a frozen window for as long as publishing, committing and pushing took.
+nothing on screen — a frozen window for as long as committing and pushing took.
 It runs as an ordinary task now, and this is what watches it: a modal frame listing every
 repository being recorded, each row a :class:`StatusLine` saying where that one has got to,
 over a determinate bar — DESIGN.md's *Signalling* names this very case ("a save over 3
@@ -40,7 +40,7 @@ from dplanner.modules.sync.diverged import (
     add_explanation,
     attach_reconcile_menu,
 )
-from dplanner.modules.sync.service import COMMITTING, NOTHING, PUBLISHING, SAVED
+from dplanner.modules.sync.service import COMMITTING, NOTHING, SAVED
 
 # The bar is a fraction in thousandths: a time estimate must have somewhere smooth to go
 # between one repository landing and the next.
@@ -49,7 +49,6 @@ TICK_MS = 100  # Ten steps a second is smooth and costs nothing.
 
 # What each phase says on its repository's row. A row not yet reached says only its name.
 _PHRASES: dict[str, tuple[str, Tone]] = {
-    PUBLISHING: ("writing the report site", "busy"),
     COMMITTING: ("committing", "busy"),
     SAVED: ("recorded", "ok"),
     NOTHING: ("nothing to save", "info"),

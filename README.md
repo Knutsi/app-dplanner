@@ -247,9 +247,10 @@ has no DPlanner. Click a card, a row or a milestone anywhere on it and every vie
 workbook, beside the Order and Time tabs' CSVs. *Go ▸ Preview Report* opens the page
 in the browser.
 
-Every Save also writes the plan repository's site under `reports/` — a page per project and
-an index — into the same commit as the plan, so anyone with the repository has the plan as
-a website (turn it off under *Settings ▸ Reports*; *Write Now* writes it on demand).
+*File ▸ Export ▸ Report Site (Folder)…* writes the site of the focused project's plan
+repository — a page per project and an index — into a folder you pick, starting at the
+project's reporting location when it names one. Save never writes reports: generated pages
+committed by every Save collide between people sharing a plan repository.
 
 ```bash
 uv run dplanner report html search --out search.html   # one project's page
@@ -554,8 +555,8 @@ src/dplanner/
 │   │                        real aspect writers, the accuracy `scripts/time_accuracy.py` prints) and
 │   │                        debugger.py shows one in the real tab under Debug ▸ Time Simulation
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
-│   │                        Go ▸ Preview Report, the publisher that writes `reports/` on every Save,
-│   │                        Settings ▸ Reports; the `reporting` location role (roles.py)
+│   │                        the report site into a picked folder, Go ▸ Preview Report; the
+│   │                        `reporting` location role (roles.py)
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
 │   │                        deferrals — one labelled log (log.py), what reaches a step and the briefing's
 │   │                        capped index (reach.py), how the two retired modules reach it (migrate.py),

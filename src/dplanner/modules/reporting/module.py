@@ -1,4 +1,4 @@
-"""Reporting in the window: exports, a preview, the on-Save publisher, a settings page.
+"""Reporting in the window: exports and a preview.
 
 Every path here builds the same :class:`~dplanner.cli.report.assemble.Report` the terminal
 builds, **on the GUI thread** — that is the read of the model — and renders and writes it
@@ -11,12 +11,11 @@ the order list's CSV does and write there. **Project ▸ Preview Report** writes
 per-run temporary directory and opens the browser on it — the fast loop for looking at
 the plan as a bystander would.
 
-**Save publishes.** The sync module asks :meth:`ReportingModule.prepare_publication` for
-each dirty repository before it commits; the answer is a closure the save runs on its own
-worker, which writes the repository's site under ``reports/`` and hands back the paths to
-record in the same commit. The switch (Settings ▸ Reports, per user, on by default) is the
-only thing read here that is not the plan. A clean plan with a stale site publishes
-nothing on Save — the settings page's *Write Now* is for that.
+**File ▸ Export ▸ Report Site (Folder)…** writes the site — a page per project and an
+index — of every project in the focused project's plan repository into a folder the person
+picks, starting at the project's reporting location when this machine has one. Save never
+writes reports: generated pages committed by every Save collide between people sharing a
+plan repository (ARCHITECTURE.md's *Reports are written on request, never on Save*).
 """
 
 from __future__ import annotations
@@ -45,14 +44,12 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context, ContextService
-from dplanner.framework.settings_registry import SettingsSection, SettingsSectionRegistry
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
-from dplanner.framework.user_config import get_global
 from dplanner.framework.window import StatusHost
 from dplanner.modules.reporting import paper
-from dplanner.modules.reporting.settings_page import MODULE_ID, PUBLISH_KEY, build_page
 
+MODULE_ID = "reporting"
 BUSY_NOTICE = "Still writing the last report — try again in a moment"
 NOTICE_MS = 5000
 
@@ -66,7 +63,6 @@ class ReportingDeps:
     context: ContextService
     tasks: TaskService
     status: StatusHost
-    settings_sections: SettingsSectionRegistry
     parent: QWidget  # The export dialogs' window, and the runner's owner.
     files: FilesFor
     project_dir: Callable[[ProjectId], Path]
@@ -79,9 +75,9 @@ class ReportingDeps:
     status_for: Callable[[Step], str]
     # The day a report is of: the window's, which a test may pin.
     clock: Clock
-    # Where a project publishes instead of beside its plan — its reporting location, when
-    # it names one and this machine has that repository — wired by the root; this module
-    # never learns a role id. None means beside the plan, as always.
+    # The project's reporting location, when it names one and this machine has that
+    # repository — where Export Report Site's folder picker starts. Wired by the root; this
+    # module never learns a role id.
     reporting_site: Callable[[ProjectId], website.SiteTarget | None] = lambda _pid: None
 
 
@@ -96,10 +92,6 @@ class _Writer(QObject):
     def __init__(self, tasks: TaskService, parent: QObject) -> None:
         super().__init__(parent)
         self.runner = TaskRunner(tasks, parent=self)
-
-
-def publish_on_save() -> bool:
-    return bool(get_global(MODULE_ID, PUBLISH_KEY, True))
 
 
 def _same(one: Path, other: Path) -> bool:
@@ -138,6 +130,19 @@ class ReportingModule:
             )
         deps.actions.register(
             ActionSpec(
+                id="report.site",
+                label="Report &Site (Folder)…",
+                menu="File",
+                group="export",
+                submenu="Export",
+                order=25,
+                tip="Write the report site of this plan's repository into a folder",
+                state=self._on_a_project,
+                run=self._export_site,
+            )
+        )
+        deps.actions.register(
+            ActionSpec(
                 id="report.preview",
                 label="&Preview Report",
                 menu="Go",
@@ -146,17 +151,6 @@ class ReportingModule:
                 tip="Open the plan's report in the browser",
                 state=self._on_a_project,
                 run=self._preview,
-            )
-        )
-        deps.settings_sections.register(
-            SettingsSection(
-                id=MODULE_ID,
-                category=("Reports",),
-                factory=lambda parent: build_page(
-                    parent,
-                    write_now=self.write_site,
-                    busy_changed=self._writer.runner.busy_changed if self._writer else None,
-                ),
             )
         )
 
@@ -176,56 +170,6 @@ class ReportingModule:
             plan_remote=deps.plan_remote(project_id),
             today=deps.clock.today(),
         )
-
-    def prepare_publication(
-        self, repo_root: Path, project_ids: Sequence[ProjectId]
-    ) -> Publication | None:
-        """Save's hook for a plan repository: None when the switch is off or every project
-        publishes elsewhere, else the site to write beside the plan — and any reporting
-        site inside the same repository, recorded in the same commit."""
-        if not publish_on_save():
-            return None
-        targets = self._targets(repo_root, project_ids)
-        inside = [(t, ids) for t, ids in targets.items() if _same(t.repo_root, repo_root)]
-        if not inside:
-            return None
-        publications = [self._publication(target, ids) for target, ids in inside]
-
-        def publish() -> Sequence[str]:
-            return [spec for one in publications for spec in one()]
-
-        return publish
-
-    def prepare_location_publications(
-        self, project_ids: Sequence[ProjectId]
-    ) -> list[tuple[website.SiteTarget, Publication]]:
-        """Save's other hook: one publication per reporting site in a repository that is
-        not the project's plan's — committed there, scoped to the site."""
-        if not publish_on_save():
-            return []
-        found: list[tuple[website.SiteTarget, Publication]] = []
-        for target, ids in self._targets(None, project_ids).items():
-            plan_roots = {self._deps.repo_root(project_id) for project_id in ids}
-            if any(root is not None and _same(root, target.repo_root) for root in plan_roots):
-                continue
-            found.append((target, self._publication(target, ids)))
-        return found
-
-    def _targets(
-        self, repo_root: Path | None, project_ids: Sequence[ProjectId]
-    ) -> dict[website.SiteTarget, list[ProjectId]]:
-        """Where each project's pages go: its reporting site, else beside its plan."""
-        deps = self._deps
-        targets: dict[website.SiteTarget, list[ProjectId]] = {}
-        for project_id in project_ids:
-            target = deps.reporting_site(project_id)
-            if target is None:
-                root = repo_root if repo_root is not None else deps.repo_root(project_id)
-                if root is None:
-                    continue
-                target = website.plan_site(root)
-            targets.setdefault(target, []).append(project_id)
-        return targets
 
     def _publication(
         self, target: website.SiteTarget, project_ids: Sequence[ProjectId]
@@ -250,21 +194,38 @@ class ReportingModule:
 
         return publish
 
-    def write_site(self) -> None:
-        """Settings' Write Now: every site, whatever the switch says — beside each plan,
-        or at a project's reporting location when it has one here."""
+    def _export_site(self, context: Context) -> None:
+        """Report Site (Folder)…: every project sharing the focused project's plan
+        repository, written into a picked folder — the window's ``report site --out``."""
         deps = self._deps
-        targets = self._targets(None, [project.id for project in deps.library.projects])
-        publications = [(target, self._publication(target, ids)) for target, ids in targets.items()]
+        project_id = self._focused(context)
+        if project_id is None:
+            return
+        root = deps.repo_root(project_id)
+        ids = (
+            [
+                project.id
+                for project in deps.library.projects
+                if (other := deps.repo_root(project.id)) is not None and _same(other, root)
+            ]
+            if root is not None
+            else [project_id]
+        )
+        located = deps.reporting_site(project_id)
+        start = located.site if located is not None else Path.home()
+        chosen = QFileDialog.getExistingDirectory(deps.parent, "Export Report Site", str(start))
+        if not chosen:
+            return
+        folder = Path(chosen)
+        publish = self._publication(website.SiteTarget(folder, folder), ids)
         writer = self._writer
         assert writer is not None
 
         def body() -> None:
-            for target, publish in publications:
-                publish()
-                writer.written.emit("site", str(target.site))
+            publish()
+            writer.written.emit("site", str(folder))
 
-        self._run("Writing report sites", body, key="report.site")
+        self._run("Writing report site", body, key="report.site")
 
     # -- the verbs ---------------------------------------------------------------------------
 
