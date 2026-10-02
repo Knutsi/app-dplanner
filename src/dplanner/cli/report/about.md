@@ -35,7 +35,7 @@ plan an agent updates from a terminal is the plan a person sees in the window a 
 DPlanner is a Python application. With [uv](https://docs.astral.sh/uv/) installed:
 
 ```
-uv tool install dplanner
+uv tool install git+https://github.com/Knutsi/app-dplanner
 dplanner install all         # the applications-menu launcher and the agent skill too
 dpw                          # or open the window straight away
 ```

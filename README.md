@@ -27,23 +27,38 @@ checked off as it lands.*
 
 ## Installing
 
-The quickest way is to hand it to your coding agent: give it the skill that installs
-DPlanner, then ask it to. The skill says what the line above says before it touches
-anything, installs git and uv with this machine's package manager, clones the repository
-and runs the one install command.
+DPlanner needs **git** and **[uv](https://docs.astral.sh/uv/)**. uv fetches the Python
+DPlanner runs on by itself, so there is nothing else to install by hand.
 
-| Agent | Getting the skill |
+| System | git and uv |
 |---|---|
-| Claude Code | `/plugin marketplace add Knutsi/app-dplanner`, then `/plugin install dplanner@dplanner` |
-| Codex | ask `$skill-installer` for the `dplanner-install` skill from `github.com/Knutsi/app-dplanner` |
-| Any agent | tell it to read <https://raw.githubusercontent.com/Knutsi/app-dplanner/main/plugins/dplanner/skills/dplanner-install/SKILL.md> and follow it |
+| Windows (PowerShell) | `winget install --id Git.Git -e` and `winget install --id astral-sh.uv -e`, then open a **new** terminal |
+| macOS | `brew install git uv` |
+| Linux | git from your distribution (`sudo apt install git`, `sudo pacman -S git`, …), uv from `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
 
-(The community `npx skills add Knutsi/app-dplanner` finds the same file; nothing here
-depends on it.) By hand it is git and uv, a clone, and one command from inside it:
+Then install DPlanner itself straight from this repository:
+
+```bash
+uv tool install git+https://github.com/Knutsi/app-dplanner
+dplanner install all       # a launcher in the applications menu, and the skill your coding agent reads
+dplanner checklist show    # what else this machine needs, and the line to run for each
+```
+
+If `dplanner` is not found afterwards, run `uv tool update-shell` and open a new terminal.
+
+| | |
+|---|---|
+| Update | `uv tool upgrade dplanner`, then `dplanner install all` to refresh the launcher and the skill |
+| Remove | `dplanner install remove` (the launcher and the skill), then `uv tool uninstall dplanner` |
+
+Your plans are your own repositories, and neither command touches them.
+
+**To work on DPlanner**, install from a checkout instead. The command then tracks the
+checkout, so `git pull` is the update:
 
 ```bash
 git clone https://github.com/Knutsi/app-dplanner && cd app-dplanner
-uv run dplanner install all    # the `dplanner` command, a launcher in the applications menu, the agent skill
+uv run dplanner install all
 ```
 
 ## What a plan is
@@ -172,8 +187,7 @@ does not exist, and it is **written to every home an agent reads** — `SKILL.md
 format, so the one file serves Claude Code and OpenCode (`~/.claude/skills/dplanner/`) and
 Codex (`~/.agents/skills/dplanner/`) alike. `dplanner install status` says whether every
 installed copy matches the build, and *Tools ▸ Install DPlanner…* does the same from the
-window. The skill that installs DPlanner itself is the one hand-written exception, under
-`plugins/dplanner/` — see *Installing* above.
+window.
 
 Commands find the current project by walking up from the working directory for
 `project.dproj`, so an agent already sitting in the repository needs no configuration. A
@@ -344,7 +358,6 @@ src/dplanner/
 ├── scripts/windows/              what it drives — the throwaway box, the guest provisioning, and its README
 ├── dplanner.spec                 the frozen build: onedir, two executables, one analysis (LGPL — see the docstring)
 ├── freeze/                       what PyInstaller is handed: the entry point, and the manifest of shipped files
-├── plugins/dplanner/             the Claude Code plugin: the hand-written skill that installs DPlanner — .claude-plugin/marketplace.json lists it
 │
 ├── core/                  ── from the template. Qt-free, application-independent.
 │   ├── storage/             three providers behind one protocol: folder, git, GitHub — and two

@@ -98,16 +98,30 @@ def _which(name: str) -> str | None:
     return shutil.which(name)
 
 
+SOURCE = "git+https://github.com/Knutsi/app-dplanner"
+
+
+def source_checkout() -> Path | None:
+    """The source checkout this build runs from, or None for an installed build."""
+    root = Path(__file__).resolve().parents[3]
+    return root if (root / "pyproject.toml").is_file() else None
+
+
 def install_command() -> list[str]:
     """The command that puts ``dplanner`` on PATH, as argv.
 
     From a source checkout that is an editable tool install, which tracks the checkout
-    instead of freezing a copy.
+    instead of freezing a copy; otherwise it is the repository, since DPlanner is not on PyPI.
     """
-    root = Path(__file__).resolve().parents[3]
-    if (root / "pyproject.toml").is_file():
+    root = source_checkout()
+    if root is not None:
         return ["uv", "tool", "install", "--editable", str(root)]
-    return ["uv", "tool", "install", PROG]
+    return ["uv", "tool", "install", SOURCE]
+
+
+def upgrade_command() -> list[str]:
+    """The command that brings an installed build up to date, as argv."""
+    return ["uv", "tool", "upgrade", PROG]
 
 
 def tool_bin_command() -> list[str]:
@@ -273,6 +287,14 @@ def _install_command_piece(uv_bin: Path | None, which: Which, run: Runner) -> Ou
     refusal = command_refusal(Path(found) if found else None, uv_bin)
     if refusal is not None:
         return Outcome(COMMAND, True, f"{LABELS[COMMAND]}: {refusal}")
+    if found is not None and source_checkout() is None:
+        # Reinstalling would replace the source uv recorded (a git URL, a pinned ref) with
+        # whatever this build guesses, and `uv tool upgrade` would then have nothing to follow.
+        return Outcome(
+            COMMAND,
+            True,
+            f"{LABELS[COMMAND]}: installed — {shlex.join(upgrade_command())} updates it",
+        )
     argv = install_command()
     try:
         result = run(argv)
