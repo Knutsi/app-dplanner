@@ -158,6 +158,29 @@ def test_a_worktree_build_never_repoints_the_command(launcher, skill_dir, tmp_pa
     assert (skill_dir / SKILL_FILE).exists()
 
 
+def test_an_installed_build_keeps_the_source_uv_recorded(
+    launcher, skill_dir, tmp_path, monkeypatch, main_checkout
+):
+    """`uv tool install git+…` then `install all` must leave `uv tool upgrade` something to
+    follow: reinstalling by name rewrote uv's receipt to a PyPI package that does not exist."""
+    monkeypatch.setattr(installer, "source_checkout", lambda: None)
+    (tmp_path / executable_name("dpw")).write_text("")
+    runner = Recorder(stdout=f"{tmp_path}\n")
+
+    outcomes = apply(
+        FILES,
+        launcher=launcher,
+        directories=(skill_dir,),
+        run=runner,
+        which=lambda _name: str(tmp_path / PROG),
+    )
+
+    assert runner.calls == [tool_bin_command()]
+    command = next(outcome for outcome in outcomes if outcome.id == COMMAND)
+    assert command.ok and " ".join(installer.upgrade_command()) in command.line
+    assert install_command() == ["uv", "tool", "install", installer.SOURCE]
+
+
 def test_a_dplanner_uv_did_not_install_is_left_alone(launcher, skill_dir, tmp_path, main_checkout):
     """A pipx install, a system package or a venv is somebody's decision; a second copy
     beside it is a puzzle nobody asked for."""

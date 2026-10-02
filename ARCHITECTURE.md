@@ -305,20 +305,19 @@ machine would read this build, because one home current and the other three week
 exactly the drift the one act exists to make visible. A per-agent flag would have been a
 second question no surface asked.
 
-**The skill that installs DPlanner is hand-written, and it is the one such skill.** Nothing
-can generate it, because it runs before DPlanner exists on the machine. It lives in the
-Claude Code plugin at `plugins/dplanner/skills/dplanner-install/SKILL.md` — one home rather
-than three, because that is the one path a marketplace install (`/plugin marketplace add
-Knutsi/app-dplanner`), Codex's `$skill-installer` pointed at the repository, and any agent
-told to read the raw URL all reach. It opens by telling the user that DPlanner is a work in
-progress with no promise of file compatibility, and stops if they do not want that; then
-git and uv from this machine's package manager (the same families the checklist knows), a
-clone, and `install all`. `tests/test_bootstrap_skill.py` holds it to what the installer
-does — the verbs it names, the managers it covers, the window word it may not name. The
-plugin carries nothing else: the driving skill is generated per build and `install all`
-delivers it, and a committed copy would be a second writer of one file; and its `version`
-is `APP_VERSION`, because Claude Code updates a plugin when its version moves and the
-version is one string.
+**DPlanner is installed by a person through uv, not by a skill.** A hand-written bootstrap
+skill once did it: a Claude Code plugin an agent read and followed, installing git and uv,
+cloning, and running `install all`. On Windows it did not get the program onto the machine,
+and nothing here could catch that. The suite held the skill's *text* to the installer, but
+only an agent following it on a real machine tested the *act*. It was removed. The README
+now gives the route a person runs, `uv tool install git+https://github.com/Knutsi/app-dplanner`
+and then `dplanner install all`, which needs no checkout and updates with `uv tool upgrade`.
+That route had a bug of its own. `install all` from a build that is not a checkout reinstalled
+the command by name, which rewrote uv's receipt from the git URL to a bare `dplanner` that
+PyPI does not have, so an upgrade then followed nothing. An installed build now leaves its
+command alone and names the upgrade (`cli/install.py`'s `_install_command_piece`). A packaged
+installer that updates itself from GitHub releases is the next step, and it needs the CI
+this repository deliberately does not have.
 
 ### A checklist is a registry of probes, and every module owns its own
 
