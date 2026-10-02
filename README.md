@@ -8,6 +8,14 @@ with uv, running on Linux, macOS and Windows.
 It has two front doors, and they are equals: a desktop window, and a `dplanner` command that
 any coding agent can drive.
 
+<!-- The film: replace the placeholder line below with the user-attachments URL GitHub gives
+     dplanner-film-readme.mp4 when it is dropped into an issue or PR comment. Alone on its
+     line, GitHub renders it as a player. -->
+https://github.com/user-attachments/assets/FILM-PLACEHOLDER
+
+*Two minutes: an idea becomes a plan your agent writes, you stay in control, and the agents
+do the work — and where DPlanner is headed next.*
+
 ![The step graph beside the Step statuses tab: what is ready to start, what is waiting, and how much each unblocks](docs/screenshots/readme/graph-and-step-statuses.png)
 
 *A plan is a graph of steps. Beside it, Step statuses says what is ready to start and how
