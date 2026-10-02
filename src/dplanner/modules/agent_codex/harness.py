@@ -19,22 +19,36 @@ though nothing named it up front. A step's worktree is one directory per run; a 
 that works in the checkout itself shares it with other runs, and the start time tells
 them apart.
 
-**The tokens.** Each usage update is persisted as an ``event_msg`` line whose payload is
-``token_count`` with ``info.total_token_usage`` — the *cumulative* totals for the thread:
-``input_tokens`` (cached tokens are a subset of it, ``cached_input_tokens``),
-``output_tokens`` (reasoning is a subset, ``reasoning_output_tokens``) and
-``cache_write_input_tokens``. The last such line is the session's total. Codex's format
-is its own and unversioned here, so the reader answers ``None`` for anything it cannot
-read rather than raising.
+**The tokens, per thread and per model.** Each model response is persisted as a
+``token_usage_record`` line naming its ``thread_id`` and ``response_id`` with that
+response's ``usage`` — ``input_tokens`` (cached tokens are a subset of it,
+``cached_input_tokens``), ``cache_write_input_tokens``, ``output_tokens`` (reasoning is a
+subset) — and the model in force is the latest ``turn_context``'s. A thread's count is the
+sum over its own responses, so a child's file that replays its parent's history counts
+none of the parent's. A rollout from before those records falls back to its last
+cumulative ``token_count``.
+
+**Subagents are threads of their own**, each with its own rollout, and the edge from
+parent to child is a row in Codex's state index (``state_<n>.sqlite``, table
+``thread_spawn_edges``), read-only. The tree is the root and every descendant found there;
+an index that cannot be read leaves the root alone, said as a partial count.
+
+**A thread is found once and owned from then on.** When the launch named no session the
+run's thread is the earliest rollout in its directory that no other run has claimed
+(``RunFacts.claimed``); the harvest writes it into the ledger, and every later read goes
+straight to it by id. The account is the plan the rollout's rate limits name (``plus``).
+Codex's formats are its own and unversioned here, so every reader answers ``None`` or
+nothing for what it cannot read rather than raising.
 """
 
 import json
 import os
 import re
+import sqlite3
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from dplanner.domain.agents import AgentHarness, RunFacts, RunReport, Usage
+from dplanner.domain.agents import AgentHarness, AgentUsage, RunFacts, RunReport, Tokens
 
 ROLLOUT_NAME = re.compile(r"^rollout-.*-([0-9a-f-]{36})(?:_.*)?\.jsonl$")
 # How far before the launch stamp a rollout may start and still be this run's: the two
@@ -76,8 +90,11 @@ def _first_record(path: Path) -> dict[str, object] | None:
     return record if isinstance(record, dict) else None
 
 
-def find_rollout(directory: str, launched: str, home: Path | None = None) -> Path | None:
-    """The earliest rollout started in ``directory`` at or after ``launched``.
+def find_rollout(
+    directory: str, launched: str, home: Path | None = None, claimed: frozenset[str] = frozenset()
+) -> Path | None:
+    """The earliest rollout started in ``directory`` at or after ``launched`` that no other
+    run has claimed.
 
     Only the launch day and its neighbours are searched — the directories are named by
     local date, the stamp is UTC, and a run may straddle midnight.
@@ -98,14 +115,22 @@ def find_rollout(directory: str, launched: str, home: Path | None = None) -> Pat
             if record is None or record.get("type") != "session_meta":
                 continue
             payload = record.get("payload")
-            if not isinstance(payload, dict):
+            if not isinstance(payload, dict) or _spawned(payload):
                 continue
             begun = _stamp(payload.get("timestamp"))
             if begun is None or begun < started - CLOCK_SLACK:
                 continue
+            if thread_id(path) in claimed:
+                continue
             if _same_directory(payload.get("cwd"), directory):
                 candidates.append((begun, path))
     return min(candidates)[1] if candidates else None
+
+
+def _spawned(payload: dict[str, object]) -> bool:
+    """Whether a rollout is a subagent's — found through its parent, never as a run."""
+    source = payload.get("source")
+    return isinstance(source, dict) and "subagent" in source
 
 
 def thread_id(path: Path) -> str:
@@ -113,60 +138,146 @@ def thread_id(path: Path) -> str:
     record = _first_record(path)
     payload = record.get("payload") if record else None
     if isinstance(payload, dict):
-        for key in ("id", "session_id"):
-            value = payload.get(key)
-            if isinstance(value, str) and value:
-                return value
+        value = payload.get("id")
+        if isinstance(value, str) and value:
+            return value
     match = ROLLOUT_NAME.match(path.name)
     return match.group(1) if match else ""
 
 
-def read_rollout(path: Path) -> Usage | None:
-    """The last cumulative ``token_count`` the rollout persisted, or None."""
+def state_index(home: Path | None = None) -> Path | None:
+    """Codex's state index — the newest ``state_<n>.sqlite`` — or None."""
+    numbered = []
+    for path in (home or codex_home()).glob("state_*.sqlite"):
+        suffix = path.stem.removeprefix("state_")
+        if suffix.isdigit():
+            numbered.append((int(suffix), path))
+    return max(numbered)[1] if numbered else None
+
+
+def _query(index: Path, sql: str, args: tuple[str, ...]) -> list[tuple[object, ...]] | None:
+    try:
+        connection = sqlite3.connect(f"{index.as_uri()}?mode=ro", uri=True)
+        try:
+            return connection.execute(sql, args).fetchall()
+        finally:
+            connection.close()
+    except sqlite3.Error:
+        return None
+
+
+_DESCENDANTS = """
+WITH RECURSIVE tree(child, parent) AS (
+    SELECT child_thread_id, parent_thread_id FROM thread_spawn_edges WHERE parent_thread_id = ?
+    UNION
+    SELECT e.child_thread_id, e.parent_thread_id
+    FROM thread_spawn_edges e JOIN tree t ON e.parent_thread_id = t.child
+)
+SELECT child, parent FROM tree
+"""
+
+
+def descendants(thread: str, home: Path | None = None) -> list[tuple[str, str]] | None:
+    """Every thread spawned under ``thread``, as (child, parent); None when the index
+    cannot be read."""
+    index = state_index(home)
+    if index is None:
+        return None
+    rows = _query(index, _DESCENDANTS, (thread,))
+    if rows is None:
+        return None
+    return [(str(child), str(parent)) for child, parent in rows]
+
+
+def rollout_for(thread: str, home: Path | None = None) -> Path | None:
+    """A thread's rollout: where the index says it is, else by the id in its name."""
+    base = home or codex_home()
+    index = state_index(base)
+    if index is not None:
+        rows = _query(index, "SELECT rollout_path FROM threads WHERE id = ?", (thread,))
+        for (recorded,) in rows or []:
+            if isinstance(recorded, str) and Path(recorded).is_file():
+                return Path(recorded)
+    return next(iter(sorted((base / "sessions").glob(f"*/*/*/rollout-*-{thread}*.jsonl"))), None)
+
+
+def read_thread(path: Path) -> tuple[dict[str, Tokens], str]:
+    """A rollout's own consumption per model, and the plan its rate limits name."""
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return None
-    totals: dict[str, object] | None = None
+        return {}, ""
+    own = thread_id(path)
+    model, plan = "", ""
+    responses: dict[str, tuple[str, dict[str, object]]] = {}
+    last_total: tuple[str, dict[str, object]] | None = None
     for line in lines:
         try:
             record = json.loads(line)
         except ValueError:
             continue
-        if not isinstance(record, dict) or record.get("type") != "event_msg":
+        if not isinstance(record, dict) or not isinstance(record.get("payload"), dict):
             continue
-        payload = record.get("payload")
-        if not isinstance(payload, dict) or payload.get("type") != "token_count":
-            continue
-        info = payload.get("info")
-        usage = info.get("total_token_usage") if isinstance(info, dict) else None
-        if isinstance(usage, dict):
-            totals = usage
-    if totals is None:
-        return None
+        payload = record["payload"]
+        kind = record.get("type")
+        if kind == "turn_context" and isinstance(payload.get("model"), str):
+            model = payload["model"]
+        elif kind == "token_usage_record" and payload.get("thread_id") == own:
+            usage = payload.get("usage")
+            if isinstance(usage, dict):
+                responses[str(payload.get("response_id") or len(responses))] = (model, usage)
+        elif kind == "event_msg" and payload.get("type") == "token_count":
+            info = payload.get("info")
+            total = info.get("total_token_usage") if isinstance(info, dict) else None
+            if isinstance(total, dict):
+                last_total = (model, total)
+            limits = payload.get("rate_limits")
+            if isinstance(limits, dict) and isinstance(limits.get("plan_type"), str):
+                plan = limits["plan_type"]
+    counted = list(responses.values()) or ([last_total] if last_total else [])
+    totals: dict[str, Tokens] = {}
+    for used_model, usage in counted:
+        name = used_model or "unknown"
+        totals[name] = totals.get(name, Tokens()) + _tokens(usage)
+    return totals, plan
 
+
+def _tokens(usage: dict[str, object]) -> Tokens:
     def count(key: str) -> int:
-        value = totals.get(key)
+        value = usage.get(key)
         return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
-    return Usage(
-        input=count("input_tokens") + count("cache_write_input_tokens"),
+    cached = count("cached_input_tokens")
+    return Tokens(
+        input=max(count("input_tokens") - cached, 0) + count("cache_write_input_tokens"),
+        cached=cached,
         output=count("output_tokens"),
-        details={
-            "cached_input": count("cached_input_tokens"),
-            "cache_write": count("cache_write_input_tokens"),
-            "reasoning": count("reasoning_output_tokens"),
-        },
     )
 
 
 def report(facts: RunFacts, home: Path | None = None) -> RunReport | None:
-    if not facts.directory:
+    """The run's thread tree: its root — named, or the earliest unclaimed rollout in its
+    directory — and every thread spawned under it."""
+    if facts.session:
+        root = rollout_for(facts.session, home)
+    elif facts.directory:
+        root = find_rollout(facts.directory, facts.launched, home, facts.claimed)
+    else:
         return None
-    rollout = find_rollout(facts.directory, facts.launched, home)
-    if rollout is None:
+    if root is None:
         return None
-    return RunReport(session=thread_id(rollout), usage=read_rollout(rollout))
+    thread = thread_id(root)
+    models, plan = read_thread(root)
+    agents = [AgentUsage("main", models, session=thread)]
+    spawned = descendants(thread, home)
+    for child, parent in spawned or []:
+        path = rollout_for(child, home)
+        found, _ = read_thread(path) if path is not None else ({}, "")
+        agents.append(
+            AgentUsage(child, found, parent="main" if parent == thread else parent, session=child)
+        )
+    account = {"vendor": "openai", **({"plan": plan} if plan else {})}
+    return RunReport(session=thread, agents=tuple(agents), account=account, partial=spawned is None)
 
 
 HARNESS = AgentHarness(

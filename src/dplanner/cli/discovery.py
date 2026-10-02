@@ -39,6 +39,9 @@ from dplanner.domain.store import PROJECT_META, LibraryStore, StaleWorkspaceErro
 # Names the current project for every verb in a shell — what Run Agent's wrapper sets, so
 # an agent's calls are scoped without the briefing saying `--project` on each line.
 PROJECT_ENV = "DPLANNER_PROJECT"
+# Names the run a shell belongs to — its record in the project's ledger, which
+# ``dplanner usage harvest`` reads back into when it is given no ``--run``.
+RUN_ENV = "DPLANNER_RUN"
 
 
 def find_library(explicit: str | None = None) -> Path:

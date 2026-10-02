@@ -24,6 +24,11 @@ cannot express one number two ways.
 
 Rebuilt whenever the graph changes. A project holds tens of steps, so a whole redraw is
 cheaper to read than a diff and cannot go stale.
+
+**Two tables, one row look.** :class:`StepTable` is a step in order — its index, its glyph,
+the milestone's badge and shade, the done mark, the kind switches — and the columns after
+the title are its host's. :class:`OrderTable` follows with the wave, the estimate and the
+aspects; the Expenditure tab (``expenditure.py``) with what each step spent.
 """
 
 from collections.abc import Callable, Sequence
@@ -32,6 +37,7 @@ from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import QWidget
 
 from dplanner.domain.model import StepId
+from dplanner.domain.ordering import Placed
 from dplanner.domain.schedule import Scheduled, format_days
 from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.table import Cell, Column, Table
@@ -39,9 +45,12 @@ from dplanner.theme.icons import done_icon, key_badge_icon, layers_icon, step_ic
 from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import recoloured
 
-COLUMNS = (
+LEAD = (
     Column("#", numeric=True),
     Column("Step", glyph=True, resize="interactive"),
+)
+COLUMNS = (
+    *LEAD,
     Column("Wave"),
     Column("Estimate", numeric=True),
     # What the aspect modules say about the step; the last column takes the slack.
@@ -81,8 +90,9 @@ def _kind(kinds: tuple[str, ...], milestone: bool) -> str:
     return KIND_FEATURE if "layers" in kinds else KIND_STEP
 
 
-class OrderTable(Table):
-    """Steps in topological order: index, name, wave and what each one costs.
+class StepTable(Table):
+    """Steps in topological order: the index and the title, then whatever the host says
+    about each one.
 
     Every rule the design system has for a table comes from :class:`Table` — the header,
     the row height from the font, the hover wash, the picked row's edge, the glyph slot
@@ -93,8 +103,7 @@ class OrderTable(Table):
 
     def __init__(
         self,
-        wave_label: Callable[[int], str],
-        step_aspects: Callable[[StepId], list[str]],
+        trailing: Sequence[Column],
         milestone_label: Callable[[StepId], str] = lambda _step_id: "",
         step_icons: Callable[[StepId], tuple[str, ...]] = lambda _step_id: (),
         milestone_color: Callable[[StepId], str] = lambda _step_id: "",
@@ -102,9 +111,7 @@ class OrderTable(Table):
         step_done: Callable[[StepId], bool] = lambda _step_id: False,
         parent: QWidget | None = None,
     ) -> None:
-        super().__init__(COLUMNS, parent=parent)
-        self._wave_label = wave_label
-        self._step_aspects = step_aspects
+        super().__init__((*LEAD, *trailing), parent=parent)
         self._milestone_label = milestone_label
         self._step_icons = step_icons
         self._milestone_color = milestone_color
@@ -113,12 +120,17 @@ class OrderTable(Table):
         self._kinds: list[str] = []  # One per row, in row order.
         self._shown = {KIND_STEP: True, KIND_FEATURE: True}
 
-    def show_order(self, order: Sequence[Scheduled]) -> None:
+    def show_steps(
+        self,
+        places: Sequence[Placed],
+        trailing: Callable[[Placed, bool], Sequence[Cell]],
+    ) -> None:
+        """One row per step: the lead cells, then ``trailing(place, fixed)`` — ``fixed``
+        is whether the row is a milestone's, which carries the one weight in the table."""
         selected = self.selected_step()
         self.clear_rows()
         self._kinds = []
-        for scheduled in order:
-            place = scheduled.place
+        for place in places:
             milestone = self._milestone_label(place.step.id)
             kinds = self._step_icons(place.step.id)
             shade = self._milestone_color(place.step.id) if milestone else ""
@@ -135,13 +147,7 @@ class OrderTable(Table):
                     emphasis=fixed,
                     finished=done,
                 ),
-                Cell(self._wave_label(place.wave - 1), emphasis=fixed),
-                Cell(format_days(scheduled.days), emphasis=fixed),
-                Cell(
-                    " · ".join(self._step_aspects(place.step.id)),
-                    secondary=not fixed,
-                    emphasis=fixed,
-                ),
+                *trailing(place, fixed),
             )
             self.add_row(
                 cells,
@@ -207,3 +213,46 @@ class OrderTable(Table):
             if self.step_at(row) == step_id:
                 self.selectRow(row)
                 return
+
+
+class OrderTable(StepTable):
+    """The order: each step's wave, its estimate and what its aspects say."""
+
+    def __init__(
+        self,
+        wave_label: Callable[[int], str],
+        step_aspects: Callable[[StepId], list[str]],
+        milestone_label: Callable[[StepId], str] = lambda _step_id: "",
+        step_icons: Callable[[StepId], tuple[str, ...]] = lambda _step_id: (),
+        milestone_color: Callable[[StepId], str] = lambda _step_id: "",
+        step_key: Callable[[StepId], str] = lambda _step_id: "",
+        step_done: Callable[[StepId], bool] = lambda _step_id: False,
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(
+            COLUMNS[len(LEAD) :],
+            milestone_label,
+            step_icons,
+            milestone_color,
+            step_key,
+            step_done,
+            parent,
+        )
+        self._wave_label = wave_label
+        self._step_aspects = step_aspects
+
+    def show_order(self, order: Sequence[Scheduled]) -> None:
+        days = {scheduled.place.step.id: scheduled.days for scheduled in order}
+
+        def trailing(place: Placed, fixed: bool) -> Sequence[Cell]:
+            return (
+                Cell(self._wave_label(place.wave - 1), emphasis=fixed),
+                Cell(format_days(days[place.step.id]), emphasis=fixed),
+                Cell(
+                    " · ".join(self._step_aspects(place.step.id)),
+                    secondary=not fixed,
+                    emphasis=fixed,
+                ),
+            )
+
+        self.show_steps([scheduled.place for scheduled in order], trailing)

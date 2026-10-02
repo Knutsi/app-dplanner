@@ -22,7 +22,6 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from dplanner.domain.agents import RunFacts
 from dplanner.domain.model import now_stamp
 
 CLOSED = "closed"
@@ -46,6 +45,8 @@ class AgentRun:
     # on the step's usage row because a run that is still going has no usage row yet, and a
     # harness with no token reader never gets one.
     prompt_chars: int = 0
+    # The run's name in its project's ledger, where what it consumed is recorded.
+    run: str = ""
 
     @property
     def key(self) -> str:
@@ -68,6 +69,7 @@ class AgentRun:
             "harness": self.harness,
             "session": self.session,
             "prompt_chars": self.prompt_chars,
+            "run": self.run,
         }
 
     @classmethod
@@ -90,6 +92,7 @@ class AgentRun:
                 harness=str(raw.get("harness", "")),
                 session=str(raw.get("session", "")),
                 prompt_chars=briefed if isinstance(briefed, int) else 0,
+                run=str(raw.get("run", "")),
             )
         except (KeyError, TypeError, ValueError):
             return None
@@ -102,6 +105,7 @@ def new_run(
     harness: str = "",
     session: str = "",
     prompt_chars: int = 0,
+    run: str = "",
 ) -> AgentRun:
     return AgentRun(
         step_id,
@@ -111,18 +115,7 @@ def new_run(
         harness=harness,
         session=session,
         prompt_chars=prompt_chars,
-    )
-
-
-def run_facts(run: AgentRun) -> RunFacts:
-    """What a harness's ``report`` is handed: the session the launcher named (else the
-    one the shell recorded), where the agent worked, and when."""
-    shell = read_shell(run)
-    return RunFacts(
-        session=run.session or shell.get("session", ""),
-        directory=shell.get("dir", ""),
-        launched=run.launched,
-        ended=run.ended,
+        run=run,
     )
 
 

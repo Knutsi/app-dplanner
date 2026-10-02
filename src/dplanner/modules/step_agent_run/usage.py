@@ -1,120 +1,79 @@
-"""The agent-usage aspect: what the agent runs on a step have consumed, run by run.
+"""What the agent runs on a step consumed, in words — and the step aspect that kept it before.
 
-Where the run aspect (``aspect.py``) says where an agent *stands* and is cleared when the
-shell ends, this one is what stays behind: one row per run — the harness, the session it
-was, when it ended, and the tokens it consumed, read back from the harness's own records
-(:mod:`dplanner.domain.agents`). The totals are never stored: :func:`totals` sums the rows,
-so a step's cost is a derivation over a list a person can read, and a row recorded twice
-(a window that read the record at exit and a person who ran ``dplanner usage record`` for
-the same session) is one row, keyed by session, last write wins.
+The tokens live in the project's ledger (``domain/ledger.py``), a record per run, filled by
+the harvest (``harvest.py``); this file is how every surface *says* them — the Agent tab's
+"tokens so far", a row in the Agents browser, ``dplanner usage show`` — in the one
+vocabulary of :class:`~dplanner.domain.agents.Tokens`: fresh input, cache reads, output.
+Totals are never stored: they are summed over the records on every read.
 
-The **row is appended when the shell ends**, by the window that launched it — directly,
-off the undo stack, with its own origin, exactly as the exit is recorded: a token count is
-an external fact, and Ctrl+Z must not erase what an agent already consumed. From the
-terminal, ``dplanner usage record`` writes the same row, through the same harness
-readers, for a run the window did not launch; ``usage show`` and ``usage list`` read
-them back. Absence is the default — no agent has run here.
+**The retired aspect.** Until the ledger, a step kept its runs as rows on its own
+``agent_usage`` module data — one file per step, rewritten by whoever recorded a run, so
+two writers on one step collided and a deleted step took its history with it. The format
+survives only as an absorption (FORMAT.md's *Retiring a module*): at every open, each row
+still on a step becomes a ``legacy`` ledger record — named by its session, so an open that
+runs twice writes one file — and the step's entry is removed.
 """
 
-from collections.abc import Mapping, Sequence
-from typing import Any, Final
+from collections.abc import Iterable
+from typing import Any
 
-from dplanner.core.module_data import ModuleDataFormat, stamped
-from dplanner.domain.agents import Usage
-from dplanner.domain.aspects import AspectSpec
-from dplanner.domain.commands import SetModuleDataCommand
-from dplanner.domain.model import Library, Project, Step, StepId, now_stamp
+from dplanner.core.module_data import ModuleDataFormat
+from dplanner.core.repository import Repository
+from dplanner.domain import ledger
+from dplanner.domain.agents import Tokens, short_count, summed
+from dplanner.domain.ledger import LedgerRecord
+from dplanner.domain.model import Library
+from dplanner.domain.store import LibraryStore
 
 MODULE_ID = "agent_usage"
-DATA_FORMAT = ModuleDataFormat(MODULE_ID)
-
-# The origin a recorded row carries: no view claims it, so every surface treats the
-# write as foreign and repaints — the launch stamp's pattern.
-USAGE_ORIGIN: Final[object] = object()
 
 
-def rows(step: Step) -> list[dict[str, Any]]:
-    """The step's usage rows as stored: ``harness``, ``session``, ``input``, ``output``,
-    ``details``, ``ended``, and ``prompt_chars`` where the run was measured. A row this
-    build cannot read is skipped, never a crash."""
-    entry = step.module_data.get(MODULE_ID) or {}
-    stored = entry.get("runs")
-    if not isinstance(stored, list):
-        return []
-    return [row for row in stored if isinstance(row, dict) and _readable(row)]
+def absorb_rows(repo: Repository[Any], library: Library) -> list[str]:
+    """Every step's retired usage rows into its project's ledger; the steps changed."""
+    if not isinstance(repo, LibraryStore):
+        return []  # Only a store on disk has a project directory to write the ledger in.
+    changed: list[str] = []
+    for project in library.projects:
+        for step in project.steps:
+            entry = step.module_data.get(MODULE_ID)
+            if entry is None:
+                continue
+            rows = entry.get("runs") if isinstance(entry, dict) else None
+            kept = [row for row in rows if isinstance(row, dict)] if isinstance(rows, list) else []
+            for record in ledger.legacy(project.id, step.id, kept):
+                ledger.write(repo.project_dir(project.id), record)
+            repo.set_module_data(step.id, MODULE_ID, {})
+            changed.append(step.id)
+    return changed
 
 
-def _readable(row: dict[str, Any]) -> bool:
-    return all(isinstance(row.get(key), int) for key in ("input", "output"))
+DATA_FORMAT = ModuleDataFormat(MODULE_ID, absorb=absorb_rows)
 
 
-def totals(step: Step) -> Usage | None:
-    """Everything the step's runs consumed, or None when nothing has been recorded."""
-    recorded = rows(step)
-    if not recorded:
-        return None
-    return Usage(
-        input=sum(int(row["input"]) for row in recorded),
-        output=sum(int(row["output"]) for row in recorded),
-    )
+def spent(records: Iterable[LedgerRecord]) -> Tokens | None:
+    """What a set of runs consumed, or None when there are none — "nothing recorded" is not
+    "consumed nothing"."""
+    found = list(records)
+    return summed(record.tokens for record in found) if found else None
 
 
-def row_for(
-    harness: str, session: str, usage: Usage, ended: str = "", prompt_chars: int = 0
-) -> dict[str, Any]:
-    row: dict[str, Any] = {
-        "harness": harness,
-        "session": session,
-        "input": usage.input,
-        "output": usage.output,
-        "details": dict(usage.details),
-        "ended": ended or now_stamp(),
-    }
-    if prompt_chars:  # Absence is "nobody measured", FORMAT.md's rule, and it reads as none.
-        row["prompt_chars"] = prompt_chars
-    return row
+def words(tokens: Tokens) -> str:
+    """``12.3k in · 410k cached · 1.2k out`` — how a row or a chip says it."""
+    fresh, cached, out = (short_count(n) for n in (tokens.input, tokens.cached, tokens.output))
+    return f"{fresh} in · {cached} cached · {out} out"
 
 
-def with_row(step: Step, row: dict[str, Any]) -> dict[str, Any]:
-    """The step's entry with ``row`` added — replacing the row of the same session, so
-    a record read twice is one row."""
-    kept = [
-        existing
-        for existing in rows(step)
-        if not (row["session"] and existing.get("session") == row["session"])
-    ]
-    return stamped({"runs": [*kept, row]}, DATA_FORMAT.version)
-
-
-def record(library: Library, step_id: StepId, row: dict[str, Any]) -> bool:
-    """Append a run's row — directly, off the undo stack, with this aspect's origin.
-
-    The row records an external fact: the tokens were consumed whether or not anybody
-    presses Ctrl+Z. False, and no write, when the step is gone.
-    """
-    if not library.has(step_id):
-        return False
-    step = library.step(step_id)
-    SetModuleDataCommand(step_id, MODULE_ID, with_row(step, row), view_origin=USAGE_ORIGIN).redo(
-        library
-    )
-    return True
-
-
-def words(usage: Usage) -> str:
-    """``12.3k in · 1.2k out`` — how a row or a chip says it."""
-    return f"{_short(usage.input)} in · {_short(usage.output)} out"
-
-
-def row_words(row: dict[str, Any]) -> str:
-    """One recorded run as a line: the day, the harness, what it spent and — after that,
-    because it was known first and matters least — what it was handed. A row from before
-    anybody measured simply ends earlier, so the columns stay where they were."""
-    spent = words(Usage(int(row["input"]), int(row["output"])))
-    briefed = row.get("prompt_chars")
-    line = f"{str(row.get('ended', ''))[:10]}  {row.get('harness', '?')!s:9} {spent}"
-    if isinstance(briefed, int) and briefed:
-        line += f" · {brief_words(briefed)}"
+def record_words(record: LedgerRecord) -> str:
+    """One run as a line: the day, the agent CLI, what it spent, its models, and — last,
+    because it matters least — what it was handed."""
+    line = f"{record.launched[:10]}  {record.harness or '?':9} {words(record.tokens)}"
+    models = sorted(model for model in record.models() if model != ledger.UNKNOWN_MODEL)
+    if models:
+        line += f" · {', '.join(models)}"
+    if len(record.agents) > 1:
+        line += f" · {len(record.agents) - 1} subagent{'s' if len(record.agents) > 2 else ''}"
+    if record.prompt_chars:
+        line += f" · {brief_words(record.prompt_chars)}"
     return line
 
 
@@ -122,36 +81,10 @@ def brief_words(chars: int) -> str:
     """``briefed 18.4k chars`` — how every surface says what a run was handed, and "" when
     nobody measured. *Briefed* rather than a bare number because the count beside it is
     tokens: two quantities in one line must not be readable as the same one."""
-    return f"briefed {_short(chars)} chars" if chars else ""
+    return f"briefed {short_count(chars)} chars" if chars else ""
 
 
-def _short(count: int) -> str:
-    if count >= 1_000_000:
-        return f"{count / 1_000_000:.1f}M"
-    if count >= 1_000:
-        return f"{count / 1_000:.1f}k"
-    return str(count)
-
-
-def summary(step: Step) -> str:
-    """One short phrase for a step's row, or "" when no run has been recorded."""
-    total = totals(step)
+def summary(records: Iterable[LedgerRecord]) -> str:
+    """One short phrase for a step, or "" when no run has been recorded."""
+    total = spent(records)
     return "" if total is None else f"tokens: {words(total)}"
-
-
-def forget_for_paste(
-    _project: Project, steps: Sequence[Step], _remapped: Mapping[StepId, StepId]
-) -> None:
-    """A copied step carries no usage: the tokens were spent on the original."""
-    for step in steps:
-        step.module_data.pop(MODULE_ID, None)
-
-
-SPEC = AspectSpec(
-    id=MODULE_ID,
-    label="Agent usage",
-    summary="What the agent runs on a step consumed: input and output tokens per run,"
-    " read back from the agent CLI's own records when the shell ends.",
-    data_format=DATA_FORMAT,
-    phrase=summary,
-)

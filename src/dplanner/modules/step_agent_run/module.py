@@ -8,17 +8,19 @@ half of a launch — **the shell is a peer this window keeps an eye on**:
 - A two-second timer, running only while a run is live, reads each run's exit file and
   pid (``runs.settle``). When the shell has ended, the step's state is cleared the way the
   launch was stamped — directly, off the undo stack, with the launch origin — and the
-  status bar says how it ended. **The same tick reads what the run consumed**: the
-  harness that ran it is asked for its own record of the session (``deps.report``, the
-  composition root's reading of ``agent_harnesses()``), and the tokens land on the step's
-  ``agent_usage`` aspect (``usage.py``) the same way — a row per run, off the undo stack.
-  A harness that mints its own session id is found by directory and start time, which is
-  also what makes such a run resumable afterwards. Both writes are skipped while the
-  workspace has changed underneath: the library watcher adopts the change into the live
-  model first — or, when the store cannot reconcile it, falls back to a rebuild whose new
-  module re-adopts its runs from the per-user store — and the next tick checks again on a plan this
-  window has seen, so the exit is never written over an agent's own last ``dplanner``
-  call.
+  status bar says how it ended. That write is skipped while the workspace has changed
+  underneath: the library watcher adopts the change into the live model first — or, when
+  the store cannot reconcile it, falls back to a rebuild whose new module re-adopts its
+  runs from the per-user store — and the next tick checks again on a plan this window has
+  seen, so the exit is never written over an agent's own last ``dplanner`` call.
+- **What a run consumed is never this module's to catch.** The launch writes the run's
+  record into the project's ledger (``harvest.launch_record``), and the tokens are read
+  back into it by a harvest that anybody may run at any time (``harvest.py``): the wrapper
+  script does when the agent exits, this module does when it sees the shell end, and a
+  sweep — at start and every few minutes, through a ``TaskRunner`` since a transcript can
+  be megabytes — reads every run of this machine that has not been read since it ended.
+  A window that was closed, a terminal killed on the agent, a ``/tmp`` a reboot emptied:
+  the next sweep reads the same records.
 - A status-bar button ("Agent on “X”", "2 agents running") opens the Agents browser —
   View ▸ Agents… does the same — where every run this machine launched is a row with its
   state or outcome, *Show Terminal*, *Reveal* and a dismiss — and, once it has ended, the
@@ -39,12 +41,14 @@ pid are facts about this machine.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
+from pathlib import Path
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QMenu, QWidget
 
-from dplanner.domain.agents import AgentHarness, Usage, harness_by_id
+from dplanner.domain import ledger
+from dplanner.domain.agents import AgentHarness, harness_by_id
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, StepId
 from dplanner.framework.action_menu import append_action
@@ -57,12 +61,14 @@ from dplanner.framework.action_registry import (
     DataMenuSpec,
 )
 from dplanner.framework.context import Context, ContextService
+from dplanner.framework.task_runner import TaskRunner
+from dplanner.framework.tasks import TaskService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.widgets import StatusBarButton
 from dplanner.framework.window import StatusHost
 from dplanner.framework.window_watch import WatchableRepository
-from dplanner.modules.step_agent_run import terminal
+from dplanner.modules.step_agent_run import harvest, terminal
 from dplanner.modules.step_agent_run.aspect import (
     DATA_FORMAT,
     MODULE_ID,
@@ -75,13 +81,13 @@ from dplanner.modules.step_agent_run.runs import (
     describe,
     new_run,
     read_shell,
-    run_facts,
     settle,
 )
-from dplanner.modules.step_agent_run.usage import record, row_for, rows, words
+from dplanner.modules.step_agent_run.usage import words
 from dplanner.modules.step_agent_run.view import AgentBrowserDialog, button_text
 
 POLL_MS = 2000
+SWEEP_MS = 5 * 60 * 1000
 RUNS_KEY = "runs"
 
 
@@ -103,6 +109,12 @@ class StepAgentRunDeps:
     # Told once runs have ended: a slot is free, even when the agent had already cleared
     # its state and the plan did not change — what the window's launcher waits on.
     ended: Callable[[], None] = lambda: None
+    # Where a step's project keeps its ledger, None for a step or project this store does
+    # not hold; and every open project's, which is what the sweep reads.
+    project_dir: Callable[[StepId], Path | None] = lambda _step: None
+    project_dirs: Callable[[], list[Path]] = list
+    # Runs the sweep off the GUI thread; None reads nothing back (a test of the tracking).
+    tasks: TaskService | None = None
 
 
 class StepAgentRunModule:
@@ -115,6 +127,8 @@ class StepAgentRunModule:
         self._timer: QTimer | None = None
         self._button: StatusBarButton | None = None
         self._browser: AgentBrowserDialog | None = None
+        self._runner: TaskRunner | None = None
+        self._sweep_again = False
 
     def register(self) -> None:
         deps = self._deps
@@ -142,6 +156,13 @@ class StepAgentRunModule:
         self._timer.setInterval(POLL_MS)
         self._timer.timeout.connect(self.check)
         deps.library.module_data_changed.connect(lambda *_a: self._refresh())
+        if deps.tasks is not None:
+            self._runner = TaskRunner(deps.tasks, self._button)
+            self._runner.busy_changed.connect(self._on_sweep_busy)
+            sweep_timer = QTimer(self._button)
+            sweep_timer.setInterval(SWEEP_MS)
+            sweep_timer.timeout.connect(self.sweep)
+            sweep_timer.start()
 
         deps.actions.register(
             ActionSpec(
@@ -189,6 +210,7 @@ class StepAgentRunModule:
             )
         )
         self.check()
+        self.sweep()
 
     # -- tracking ----------------------------------------------------------------------------
 
@@ -208,10 +230,30 @@ class StepAgentRunModule:
         session: str = "",
         prompt_chars: int = 0,
         plans_first: bool = False,
+        run: str = "",
+        workdir: Path | None = None,
     ) -> None:
-        """A shell was just spawned on the step: stamp it, remember it, start watching."""
-        record_launch(self._deps.library, step_id, plans_first)
-        self._runs.append(new_run(step_id, shell_file, exit_file, harness, session, prompt_chars))
+        """A shell was just spawned on the step: stamp it, write its record into the
+        ledger, remember it, start watching."""
+        deps = self._deps
+        record_launch(deps.library, step_id, plans_first)
+        project_dir = deps.project_dir(step_id)
+        if run and workdir is not None and project_dir is not None:
+            ledger.write(
+                project_dir,
+                harvest.launch_record(
+                    run=run,
+                    project=deps.library.project_of(step_id).id,
+                    step=step_id,
+                    harness=harness,
+                    directory=workdir,
+                    session=session,
+                    prompt_chars=prompt_chars,
+                ),
+            )
+        self._runs.append(
+            new_run(step_id, shell_file, exit_file, harness, session, prompt_chars, run)
+        )
         self._store()
         self._refresh()
 
@@ -236,38 +278,41 @@ class StepAgentRunModule:
         if deps.repo.changed_underneath():
             return  # The watcher takes the change first; the next tick checks again.
         for index, settled in ended:
-            settled, usage_words = self._read_back(settled)
             self._runs[index] = settled
             record_exit(deps.library, settled.step_id)
+            project_dir = deps.project_dir(settled.step_id)
+            if settled.run and project_dir is not None:
+                harvest.end(project_dir, settled.run, settled.code, settled.ended)
             deps.status.show_status(
-                f"Agent on “{self._title_of(settled.step_id)}” {describe(settled, '')}"
-                + usage_words,
-                6000,
+                f"Agent on “{self._title_of(settled.step_id)}” {describe(settled, '')}", 6000
             )
         self._store()
         self._refresh()
+        self.sweep()  # Read what the ended runs consumed, off the GUI thread.
         deps.ended()
 
-    def _read_back(self, run: AgentRun) -> tuple[AgentRun, str]:
-        """The harness's own record of the ended run: the session it was, kept on the
-        run, and the tokens it consumed, recorded on the step. The words for the status
-        line come back beside the run; "" when there was nothing to read."""
-        harness = harness_by_id(self._deps.harnesses, run.harness)
-        if harness is None or harness.report is None:
-            return run, ""
-        report = harness.report(run_facts(run))
-        if report is None:
-            return run, ""
-        if report.session and not run.session:
-            run = replace(run, session=report.session)
-        if report.usage is None:
-            return run, ""
-        record(
-            self._deps.library,
-            run.step_id,
-            row_for(run.harness, run.session, report.usage, prompt_chars=run.prompt_chars),
-        )
-        return run, f" — {words(report.usage)}"
+    def sweep(self) -> None:
+        """Harvest every run of this machine that is due, in the background; a sweep asked
+        for while one runs goes again once it is done, never queued twice."""
+        if self._runner is None:
+            return
+        dirs, harnesses = self._deps.project_dirs(), self._deps.harnesses
+        if not harvest.anything_due(dirs):
+            return
+
+        def body() -> None:
+            harvest.sweep(dirs, harnesses)
+
+        if not self._runner.run("Reading agent usage", body, key="agent_run.sweep"):
+            self._sweep_again = True
+
+    def _on_sweep_busy(self, busy: bool) -> None:
+        if busy:
+            return
+        self._refresh()
+        if self._sweep_again:
+            self._sweep_again = False
+            self.sweep()
 
     def _forget(self, run: AgentRun) -> None:
         self._runs = [other for other in self._runs if other.key != run.key]
@@ -323,22 +368,28 @@ class StepAgentRunModule:
         if shell.get("resume"):
             return shell["resume"]
         harness = harness_by_id(self._deps.harnesses, run.harness)
-        if harness is None or not harness.resume or not run.session:
+        session = run.session or self._found_session(run)
+        if harness is None or not harness.resume or not session:
             return ""
-        command = harness.resume.replace("{session}", run.session)
+        command = harness.resume.replace("{session}", session)
         directory = shell.get("dir", "")
         return f'cd "{directory}" && {command}' if directory else command
 
+    def _record_of(self, run: AgentRun) -> ledger.LedgerRecord | None:
+        project_dir = self._deps.project_dir(run.step_id)
+        if not run.run or project_dir is None:
+            return None
+        return ledger.find(project_dir, run.run)
+
+    def _found_session(self, run: AgentRun) -> str:
+        """The session a harvest found for a CLI that mints its own ids, or ""."""
+        record = self._record_of(run)
+        return record.session if record is not None else ""
+
     def _usage_of(self, run: AgentRun) -> str:
-        """What the run consumed, as its step's row records it, or ""."""
-        library = self._deps.library
-        if not library.has(run.step_id):
-            return ""
-        step = library.step(run.step_id)
-        for row in rows(step):
-            if run.session and row.get("session") == run.session:
-                return words(Usage(int(row["input"]), int(row["output"])))
-        return ""
+        """What the run consumed, as its ledger record says, or "" before it was read."""
+        record = self._record_of(run)
+        return words(record.tokens) if record is not None and record.agents else ""
 
     # -- the verbs -----------------------------------------------------------------------------
 

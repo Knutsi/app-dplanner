@@ -174,6 +174,7 @@ nested exactly like the model:
 ├── .dplanner                  the index: one project directory per line, relative
 └── widget/                    the project directory — any folder in the repo
     ├── project.dproj          id, title, summary, repository, colocation, created, format, children
+    ├── ledger/                what its agent runs consumed, a file per run (below)
     ├── modules/               module data belonging to the project itself
     │   ├── notes.json         the notes the project made along the way
     │   └── notes/assets/      files those notes link
@@ -354,6 +355,53 @@ The directory name is a constant, not a setting. Nothing in it is versioned or m
 every write rewrites it whole from the plan. `ARCHITECTURE.md`'s *A report is a
 publication, not a record* and *Reports are written on request, never on Save* have the
 reasoning.
+
+### The `ledger` directory
+
+What every agent run on a project consumed, one file per run, beside `steps/`:
+
+```
+<project dir>/ledger/
+└── 2026-10/                                  the month the run was launched
+    └── 20261001T192149Z-1a2b3c4d.json        the run: launch to the second, UTC, and 8 hex
+```
+
+```json
+{
+  "format": 1, "run": "20261001T192149Z-1a2b3c4d", "project": "<id>", "step": "<id>",
+  "harness": "claude", "launched": "2026-10-01T19:21:49+00:00",
+  "machine": "<machine id>", "host": "knut-arch", "dir": "/abs/worktree",
+  "session": "<the main agent's>", "ended": "…", "exit": 0, "harvested": "…",
+  "measurement": "native", "account": {"vendor": "anthropic", "plan": "claude_max", "id": "<opaque>"},
+  "prompt_chars": 18412,
+  "agents": [
+    {"id": "main", "session": "…", "models": {"claude-opus-5-5": {"in": 115063, "cached": 2035193, "out": 24725}}},
+    {"id": "a6318…", "parent": "main", "kind": "Explore", "models": {"claude-opus-5-5": {"in": 120636, "cached": 5635747, "out": 8286}}}
+  ]
+}
+```
+
+- **One file, one writer.** The id is minted at launch; only the machine that launched the
+  run can read the vendor records it is filled from (`machine` is the id in
+  `config_dir()/machine-id`), so only that machine writes the file. Two machines add two
+  files and git never conflicts; nothing locks.
+- **A snapshot, rewritten whole.** Launch writes the record with no `agents`; every harvest
+  rewrites it from the vendor's records, larger while the run goes on. A write that would
+  change nothing is skipped. `ended` and `exit` are written once, never cleared.
+- **Three counts per model, one meaning across vendors:** `in` is fresh input and cache
+  writes, `cached` cache reads, `out` everything generated, reasoning included.
+  `measurement` is `native`, `partial` (part of the tree unreadable — a floor),
+  `manual` (`dplanner usage record --input/--output`) or `legacy` (absorbed from the
+  retired aspect; model `unknown`).
+- **No address.** `account` is a vendor, a plan and an opaque id — the file is committed
+  with the plan, which colleagues read.
+- **Outside `PLAN_ENTRIES`**, so the store's stale check and outside-change watch never
+  see it; Save commits it with the project, because Save's scope is the whole project
+  directory; `dplanner usage …` writes it and never commits; Move Plan carries it.
+- Absence encodes the default; a file this build cannot read is skipped; there is no
+  migration — the format is in every record. Totals are summed on read.
+
+`ARCHITECTURE.md`'s *Usage is a ledger, harvested by anyone* has the reasoning.
 
 ### Changing it
 
@@ -562,23 +610,14 @@ feature that was read from no specification, which is the whole answer — and i
 retired `step_feature` module wrote, so that marker needs nothing done to it beyond its
 stamp.
 
-**What a step's agent runs consumed is a ledger of rows, never a total.** `agent_usage`
-(a second aspect id in `step_agent_run/`) writes `{"runs": [{"harness": "claude",
-"session": "<id>", "input": 12345, "output": 678, "details": {"cache_read": …,
-"cache_creation": …}, "ended": "<ISO stamp>", "prompt_chars": 18412}]}` beside the step —
-`prompt_chars` is what the briefing came to, absent for a row `dplanner usage record`
-wrote or one recorded before it was measured, and absence reads as *nobody measured*.
-It needs no format bump, and the rule is worth stating because `progress_history` below
-looks like a precedent for one: **bump when an older writer would destroy the new key,
-not when it merely would not write it.** `usage.with_row` copies every kept row verbatim
-and `rows()` filters without rebuilding, so an older build cannot drop this one. One row per run,
-appended by the window when the shell ends and by `dplanner usage record` from the
-terminal, a row per session so a record read twice replaces itself. `input` is everything
-sent to the model and `output` everything it generated, whatever the CLI; the CLI's own
-finer split rides under `details` in its own words. Totals are summed on read
-(`usage.totals`); absence means no agent has run here. The run's *state* stays in
-`step_agent_run` and is cleared at exit — the two are different claims, and only this one
-outlives the shell.
+**What a step's agent runs consumed is not on the step.** It is the project's usage ledger
+(*The `ledger` directory*, below). `agent_usage` — the step aspect that kept rows of
+`{"harness", "session", "input", "output", "details", "ended", "prompt_chars"}` before the
+ledger — survives only as an absorption: each open moves what is left on a step into a
+`legacy` ledger record named by its session, and removes the entry. The rule its history
+taught is still worth stating, because `progress_history` below looks like a precedent for
+a bump: **bump when an older writer would destroy the new key, not when it merely would
+not write it.** The run's *state* stays in `step_agent_run` and is cleared at exit.
 
 **`step_agent_run` is where a launched agent stands**, absent when none is:
 `{"state": "launched", "launched": "<ISO stamp>"}`, format 1, `state` one of `launched`,

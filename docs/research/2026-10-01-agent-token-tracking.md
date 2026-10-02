@@ -3,6 +3,10 @@
 *Research note, 2026-10-01. A snapshot: it records what we found that day and is not kept
 current. Versions seen: Claude Code 2.1.280, Codex CLI 0.156.1, OpenCode 1.18.34.*
 
+*Follow-up, 2026-10-01: the ledger and the tree readers proposed here were built — see
+`domain/ledger.py`, `modules/step_agent_run/harvest.py` and ARCHITECTURE.md's *Usage is a
+ledger, harvested by anyone*. Dollars were left out on purpose: tokens only.*
+
 ## The question
 
 When a step in DPlanner is carried out by agents, we want to know:

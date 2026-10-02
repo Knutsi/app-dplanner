@@ -72,6 +72,20 @@ paths:
   Step statuses tab alone.
   The CSV export and the published report keep the day counts and the dates, because a
   spreadsheet is opened to sort and sum.
+- **Expenditure is the order read for what it consumed — tokens, never money.** A second tab
+  of `step_order/` (`ExpenditureActivity`; columns and words in `expenditure.py`, the walk in
+  `domain/expenditure.py`): the same rows as Order through `view.StepTable` — which is
+  where a row's look lives, so a third step table subclasses it rather than copying it —
+  then runs, models, **in / cached / out** (cache reads apart: they are context, not work),
+  the running total, *expected* and the running offset. Expected is the estimate × a rate
+  of tokens of work per estimated day **learned from the library's other projects first**
+  (from the same steps the offset would end at 0% by construction), and empty, never
+  invented, with no history. The offset's tone follows the number shown (`+0%` is `ok`).
+  *By model* rebuilds the table with an in/out pair per model; the export is long — a row
+  per step and model. The ledger is written by other processes, so the tab polls
+  `ledger.fingerprint` beside `follow_project`, into one `Debounced`. No dollars: a price is
+  a derivation somebody can add over the counts (`ARCHITECTURE.md`'s *Expenditure is the
+  order, in tokens*).
 - **Staffing what-ifs are derived; only the assumptions are stored.** `dplanner schedule
   matrix` and the Time tab are one derivation — `domain/schedule.py`'s `phases` over
   `parallel_finish`, a deterministic two-pool greedy simulation (longest remaining chain

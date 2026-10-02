@@ -75,6 +75,8 @@ HEADLESS_FILES = (
     "collect.py",
     "runs.py",
     "usage.py",
+    # Reads a run's usage back into the ledger: the wrapper script's `dplanner` call.
+    "harvest.py",
     "rounds.py",
     "terminal.py",
     "harness.py",

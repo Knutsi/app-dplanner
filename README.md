@@ -502,8 +502,9 @@ src/dplanner/
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or
 │   │                        pane again; the status-bar button and the Agents browser are
-│   │                        `view.py`) — and what its runs consumed (`usage.py`, the
-│   │                        `agent_usage` aspect; `dplanner usage show|list|record`)
+│   │                        `view.py`) — and what its runs consumed: harvested into the
+│   │                        project's ledger (`harvest.py`, `domain/ledger.py`), said by
+│   │                        `usage.py`; `dplanner usage show|list|harvest|record`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
 │   ├── step_wait/           a step that holds what requires it, until a day or for working days: the
@@ -537,7 +538,9 @@ src/dplanner/
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
-│   ├── step_order/          the sorted table of steps, and `dplanner order show`
+│   ├── step_order/          the sorted table of steps, and `dplanner order show` — and the
+│   │                        Expenditure tab: the same order with what each step's agents
+│   │                        consumed, in tokens (`expenditure.py`, `domain/expenditure.py`)
 │   ├── progression/         the *Step statuses* tab, the *Control Centre* over every project,
 │   │                        and `dplanner progression show [--all]`
 │   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab

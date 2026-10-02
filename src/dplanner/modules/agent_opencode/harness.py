@@ -10,14 +10,20 @@ nothing seeded into it — what *Open Agent in Code* opens.
 **Finding the run afterwards.** OpenCode keeps its sessions in one SQLite database —
 ``$OPENCODE_DB``, else ``$XDG_DATA_HOME/opencode/opencode.db``, else
 ``~/.local/share/opencode/opencode.db`` — whose ``session`` table records each session's
-``directory`` and ``time_created`` beside its token totals (``tokens_input``,
-``tokens_output``, ``tokens_reasoning``, ``tokens_cache_read``, ``tokens_cache_write``).
-The run's row is the earliest one created in the directory the agent worked in at or
-after the launch, read through the standard library's ``sqlite3`` in read-only mode so
-a running OpenCode is never disturbed. The schema is OpenCode's own; anything the query
-cannot read answers ``None``.
+``directory``, ``time_created``, ``model`` (``{"id", "providerID"}``), its ``parent_id``
+and its own token totals (``tokens_input``, ``tokens_output``, ``tokens_reasoning``,
+``tokens_cache_read``, ``tokens_cache_write``). The run's session is the one the ledger
+already names, else the earliest created in the run's directory at or after the launch that
+no other run has claimed (``RunFacts.claimed``); a subagent is a session whose
+``parent_id`` points back up the tree, and a parent's totals do not include its children's,
+so the tree is the session and every descendant. Read through the standard library's
+``sqlite3`` in read-only mode so a running OpenCode is never disturbed. The schema is
+OpenCode's own; anything the query cannot read answers ``None``. The account is the
+provider and whether ``auth.json`` holds a key or a login for it — its ``type`` and
+nothing else.
 """
 
+import json
 import os
 import sqlite3
 import sys
@@ -25,7 +31,7 @@ from collections.abc import Mapping
 from datetime import datetime, timedelta
 from pathlib import Path
 
-from dplanner.domain.agents import AgentHarness, RunFacts, RunReport, Usage
+from dplanner.domain.agents import AgentHarness, AgentUsage, RunFacts, RunReport, Tokens
 
 CLOCK_SLACK = timedelta(minutes=2)
 
@@ -64,59 +70,112 @@ def _seconds(value: object) -> float | None:
     return value / 1000 if value > 1e11 else float(value)
 
 
-def _usage(row: sqlite3.Row) -> Usage:
+def _tokens(row: sqlite3.Row) -> Tokens:
     def count(key: str) -> int:
         value = row[key]
         return value if isinstance(value, int) and not isinstance(value, bool) else 0
 
-    cache_read, cache_write = count("tokens_cache_read"), count("tokens_cache_write")
-    reasoning = count("tokens_reasoning")
-    return Usage(
-        input=count("tokens_input") + cache_read + cache_write,
-        output=count("tokens_output") + reasoning,
-        details={"cache_read": cache_read, "cache_write": cache_write, "reasoning": reasoning},
+    return Tokens(
+        input=count("tokens_input") + count("tokens_cache_write"),
+        cached=count("tokens_cache_read"),
+        output=count("tokens_output") + count("tokens_reasoning"),
     )
 
 
+def _model(row: sqlite3.Row) -> tuple[str, str]:
+    """The session's model and its provider, from the stored JSON."""
+    try:
+        model = json.loads(row["model"] or "{}")
+    except (TypeError, ValueError):
+        return "unknown", ""
+    if not isinstance(model, dict):
+        return "unknown", ""
+    return str(model.get("id") or "unknown"), str(model.get("providerID") or "")
+
+
 COLUMNS = (
-    "id, directory, time_created, tokens_input, tokens_output, tokens_reasoning,"
-    " tokens_cache_read, tokens_cache_write"
+    "id, parent_id, directory, time_created, model, tokens_input, tokens_output,"
+    " tokens_reasoning, tokens_cache_read, tokens_cache_write"
 )
 
+_TREE = f"""
+WITH RECURSIVE tree(id) AS (
+    SELECT id FROM session WHERE id = ?
+    UNION
+    SELECT s.id FROM session s JOIN tree t ON s.parent_id = t.id
+)
+SELECT {COLUMNS} FROM session WHERE id IN (SELECT id FROM tree) ORDER BY time_created
+"""
 
-def report(facts: RunFacts, database: Path | None = None) -> RunReport | None:
-    """The run's session row: by the id when one is known, else the earliest session
-    created in the run's directory at or after the launch."""
+
+def report(
+    facts: RunFacts, database: Path | None = None, auth: Path | None = None
+) -> RunReport | None:
+    """The run's session tree: by the id when one is known, else the earliest unclaimed
+    session created in the run's directory at or after the launch, and its descendants."""
     path = database or database_path()
     if not path.is_file():
         return None
     try:
-        started = datetime.fromisoformat(facts.launched.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    since = (started - CLOCK_SLACK).timestamp()
-    try:
         connection = sqlite3.connect(f"{path.as_uri()}?mode=ro", uri=True)
         try:
             connection.row_factory = sqlite3.Row
-            if facts.session:
-                rows = connection.execute(
-                    f"SELECT {COLUMNS} FROM session WHERE id = ?", (facts.session,)
-                ).fetchall()
-            else:
-                rows = connection.execute(
-                    f"SELECT {COLUMNS} FROM session WHERE directory = ? ORDER BY time_created",
-                    (facts.directory,),
-                ).fetchall()
+            root = facts.session or _first_session(connection, facts)
+            rows = connection.execute(_TREE, (root,)).fetchall() if root else []
         finally:
             connection.close()
     except sqlite3.Error:
         return None
+    if not rows:
+        return None
+    agents = []
+    provider = ""
+    for row in rows:
+        model, provider_of = _model(row)
+        is_root = row["id"] == root
+        provider = provider or (provider_of if is_root else "")
+        parent = str(row["parent_id"] or "")
+        agents.append(
+            AgentUsage(
+                "main" if is_root else str(row["id"]),
+                {model: _tokens(row)},
+                parent="" if is_root else ("main" if parent == root else parent),
+                session=str(row["id"]),
+            )
+        )
+    return RunReport(session=root, agents=tuple(agents), account=_account(provider, auth or path))
+
+
+def _first_session(connection: sqlite3.Connection, facts: RunFacts) -> str:
+    try:
+        started = datetime.fromisoformat(facts.launched.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    since = (started - CLOCK_SLACK).timestamp()
+    rows = connection.execute(
+        "SELECT id, time_created FROM session"
+        " WHERE directory = ? AND parent_id IS NULL ORDER BY time_created",
+        (facts.directory,),
+    ).fetchall()
     for row in rows:
         created = _seconds(row["time_created"])
-        if facts.session or (created is not None and created >= since):
-            return RunReport(session=str(row["id"]), usage=_usage(row))
-    return None
+        if created is not None and created >= since and str(row["id"]) not in facts.claimed:
+            return str(row["id"])
+    return ""
+
+
+def _account(provider: str, beside: Path) -> dict[str, str]:
+    """The provider, and whether OpenCode holds an API key or a login for it."""
+    words = {"vendor": provider} if provider else {}
+    auth = beside if beside.name == "auth.json" else beside.parent / "auth.json"
+    try:
+        entries = json.loads(auth.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return words
+    entry = entries.get(provider) if isinstance(entries, dict) else None
+    if isinstance(entry, dict) and isinstance(entry.get("type"), str):
+        words["plan"] = entry["type"]
+    return words
 
 
 HARNESS = AgentHarness(

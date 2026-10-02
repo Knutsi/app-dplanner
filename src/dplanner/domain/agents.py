@@ -20,13 +20,17 @@ that could disagree with the first.
 **What a run cost is read back, never reported.** No agent CLI tells a launcher what a
 session consumed; each keeps a record somewhere on disk — a transcript, a rollout file,
 a database — and the harness's ``report`` knows where to look for *one* run, given the
-facts the launcher recorded (:class:`RunFacts`: the session it named, the directory the
-agent worked in, when it started). The answer is a :class:`RunReport`: the session the
-record belongs to — found by directory and start time for a CLI that mints its own ids,
-which is also what makes such a run resumable after the fact — and a :class:`Usage`, or
-``None`` when the record is not there or not readable. That is an honest answer and
-never an error: the formats are the vendors' own, undocumented, and change between their
-releases, so a reader is tolerant by construction.
+facts the launch recorded (:class:`RunFacts`: the session it named, the directory the
+agent worked in, when it started, and the sessions other runs have already claimed). The
+answer is a :class:`RunReport`: the session the record belongs to — found by directory
+and start time for a CLI that mints its own ids, which is also what makes such a run
+resumable after the fact — and **one :class:`AgentUsage` per agent in the run's tree**,
+the main agent and every subagent it spawned, each per model. ``None`` when the record
+is not there or not readable. That is an honest answer and never an error: the formats
+are the vendors' own, undocumented, and change between their releases, so a reader is
+tolerant by construction. Reading is idempotent — the same record read twice gives the
+same answer, larger while the run goes on — which is what lets anybody harvest a run at
+any time (``modules/step_agent_run/harvest.py``).
 
 **A briefed run and a bare one are two invocations, and neither is derived from the
 other.** ``command`` opens a session on a briefing and carries whatever mode a hand-over
@@ -36,30 +40,67 @@ there are steps to brief. Dropping Claude's ``{prompt}`` from the first would le
 plan mode behind, and a launch that exists to open a *working* session must not open a
 planning one, so each is written down.
 
-**One meaning of input and output across harnesses**, so two agents' numbers can be
-added on one step: ``input`` is everything sent to the model — uncached, cache reads and
-cache writes alike — and ``output`` everything it generated, reasoning included. The
-vendor's own finer split goes under ``details`` in the vendor's words.
+**One meaning of the three counts across harnesses**, so two agents' numbers add on one
+step (:class:`Tokens`): ``input`` is what was sent fresh — uncached input and cache
+writes — ``cached`` what was read back from the prompt cache, and ``output`` everything
+generated, reasoning included. Cached is its own number because it dwarfs the rest: an
+agent re-reads its whole context on every request, and a session that sent half a million
+fresh tokens read eleven million from cache. One "input" figure would be mostly that.
 """
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
-class Usage:
-    """What one agent session consumed, as the harness could read it back."""
+class Tokens:
+    """What was consumed on one model: fresh input, cache reads, output."""
 
-    input: int
-    output: int
-    # The CLI's own finer breakdown, when it keeps one — ``cache_read``,
-    # ``cache_creation``, ``reasoning`` — keyed by the harness's words. Already counted
-    # in ``input`` or ``output``; a breakdown, never a third total.
-    details: Mapping[str, int] = field(default_factory=dict)
+    input: int = 0
+    cached: int = 0
+    output: int = 0
+
+    def __add__(self, other: "Tokens") -> "Tokens":
+        return Tokens(
+            self.input + other.input, self.cached + other.cached, self.output + other.output
+        )
 
     @property
-    def total(self) -> int:
+    def worked(self) -> int:
+        """Fresh input and output: what the work itself took, cache reads aside."""
         return self.input + self.output
+
+    def __bool__(self) -> bool:
+        return bool(self.input or self.cached or self.output)
+
+
+def summed(counts: Iterable[Tokens]) -> Tokens:
+    return sum(counts, Tokens())
+
+
+def short_count(count: float) -> str:
+    """``12.3k``, ``4.1M`` — a token count at a glance, the same on every surface."""
+    if count >= 1_000_000:
+        return f"{count / 1_000_000:.1f}M"
+    if count >= 1_000:
+        return f"{count / 1_000:.1f}k"
+    return str(round(count))
+
+
+@dataclass(frozen=True)
+class AgentUsage:
+    """One agent in a run's tree — the main one or a subagent — and what it consumed,
+    per model."""
+
+    id: str  # "main" for the agent the run launched; the vendor's id for a subagent.
+    models: Mapping[str, Tokens]
+    parent: str = ""  # The id of the agent that spawned it; "" for the main agent.
+    session: str = ""  # The vendor's session or thread id, when it has one of its own.
+    kind: str = ""  # What the vendor calls this agent ("Explore"), when it says.
+
+    @property
+    def tokens(self) -> Tokens:
+        return summed(self.models.values())
 
 
 @dataclass(frozen=True)
@@ -70,6 +111,9 @@ class RunFacts:
     directory: str  # Where the agent worked — the wrapper's ``dir`` fact.
     launched: str  # ISO stamp of the launch.
     ended: str = ""  # ISO stamp of the exit, "" while live.
+    # Sessions other runs already own: a CLI that mints its own ids is found by directory
+    # and time, and two runs in one checkout must not both take the first session there.
+    claimed: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -77,7 +121,17 @@ class RunReport:
     """What the CLI's own records say about one run."""
 
     session: str  # The id the CLI gave the session, "" when the record names none.
-    usage: Usage | None = None
+    agents: tuple[AgentUsage, ...] = ()
+    # Which account the vendor ran it on, in words safe to share — a plan and an opaque
+    # id, never an address: the ledger is committed with the plan.
+    account: Mapping[str, str] = field(default_factory=dict)
+    # Whether part of the tree could not be read (a subagent list, an index), so the
+    # counts are a floor rather than the whole.
+    partial: bool = False
+
+    @property
+    def tokens(self) -> Tokens:
+        return summed(agent.tokens for agent in self.agents)
 
 
 RunReader = Callable[[RunFacts], RunReport | None]
