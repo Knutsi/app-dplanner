@@ -8,10 +8,7 @@ with uv, running on Linux, macOS and Windows.
 It has two front doors, and they are equals: a desktop window, and a `dplanner` command that
 any coding agent can drive.
 
-<!-- The film: replace the placeholder line below with the user-attachments URL GitHub gives
-     dplanner-film-readme.mp4 when it is dropped into an issue or PR comment. Alone on its
-     line, GitHub renders it as a player. -->
-https://github.com/user-attachments/assets/FILM-PLACEHOLDER
+https://github.com/user-attachments/assets/b30588a5-0784-43a1-9a92-f4bf7d6e2647
 
 *Two minutes: an idea becomes a plan your agent writes, you stay in control, and the agents
 do the work — and where DPlanner is headed next.*
