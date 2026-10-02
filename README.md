@@ -8,6 +8,11 @@ with uv, running on Linux, macOS and Windows.
 It has two front doors, and they are equals: a desktop window, and a `dplanner` command that
 any coding agent can drive.
 
+https://github.com/user-attachments/assets/b30588a5-0784-43a1-9a92-f4bf7d6e2647
+
+*Two minutes: an idea becomes a plan your agent writes, you stay in control, and the agents
+do the work — and where DPlanner is headed next.*
+
 ![The step graph beside the Step statuses tab: what is ready to start, what is waiting, and how much each unblocks](docs/screenshots/readme/graph-and-step-statuses.png)
 
 *A plan is a graph of steps. Beside it, Step statuses says what is ready to start and how
