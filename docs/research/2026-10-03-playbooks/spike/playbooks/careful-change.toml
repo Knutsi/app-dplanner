@@ -1,0 +1,32 @@
+# Tests, a cross-vendor review, a security pass only where it matters, then a person.
+name = "Careful change"
+budget_usd = 12
+
+roles.implementer = { agent = "claude", model = "opus" }
+roles.reviewer    = { agent = "codex" }
+roles.security    = { agent = "codex" }
+
+[[stage]]
+id = "tests"
+kind = "criteria"
+run = ["uv run pytest -q", "uv run ruff check", "uv run mypy"]
+rounds = 3
+
+[[stage]]
+id = "review"
+kind = "judgement"
+by = "reviewer"
+lenses = ["correctness", "architecture"]
+rounds = 2
+
+[[stage]]
+id = "security"
+kind = "judgement"
+by = "security"
+lenses = ["security"]
+rounds = 1
+when = ["src/*/auth/*", "src/*/net/*", "*.lock"]
+
+[[stage]]
+id = "approve"
+kind = "person"

@@ -1,0 +1,32 @@
+{
+  "argv": [
+    "codex",
+    "exec",
+    "--json",
+    "--skip-git-repo-check",
+    "--ephemeral",
+    "--sandbox",
+    "read-only",
+    "Reply with the single word: ok"
+  ],
+  "cli": "codex",
+  "exit": 1,
+  "mode": "429",
+  "probe": "codex-429",
+  "requests_seen": 1,
+  "seconds": 0.1,
+  "signal_sent": null,
+  "stderr_tail": [
+    "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"$HOME/.codex\"))",
+    "Reading additional input from stdin..."
+  ],
+  "stdout_head": [
+    "{\"type\":\"thread.started\",\"thread_id\":\"01a1031e-73b9-7eb3-9ccc-711278d79055\"}",
+    "{\"type\":\"turn.started\"}",
+    "{\"type\":\"error\",\"message\":\"exceeded retry limit, last status: 429 Too Many Requests\"}",
+    "{\"type\":\"turn.failed\",\"error\":{\"message\":\"exceeded retry limit, last status: 429 Too Many Requests\"}}"
+  ],
+  "stdout_lines": 4,
+  "stdout_tail": [],
+  "timed_out_after_s": null
+}

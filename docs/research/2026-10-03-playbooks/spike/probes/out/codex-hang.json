@@ -1,0 +1,30 @@
+{
+  "argv": [
+    "codex",
+    "exec",
+    "--json",
+    "--skip-git-repo-check",
+    "--ephemeral",
+    "--sandbox",
+    "read-only",
+    "Reply with the single word: ok"
+  ],
+  "cli": "codex",
+  "exit": -15,
+  "mode": "hang",
+  "probe": "codex-hang",
+  "requests_seen": 0,
+  "seconds": 330.0,
+  "signal_sent": null,
+  "stderr_tail": [
+    "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"$HOME/.codex\"))",
+    "Reading additional input from stdin..."
+  ],
+  "stdout_head": [
+    "{\"type\":\"thread.started\",\"thread_id\":\"01a1031e-8b70-7420-b171-368f3df92e70\"}",
+    "{\"type\":\"turn.started\"}"
+  ],
+  "stdout_lines": 2,
+  "stdout_tail": [],
+  "timed_out_after_s": 330.0
+}

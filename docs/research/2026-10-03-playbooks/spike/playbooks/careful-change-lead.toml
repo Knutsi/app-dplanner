@@ -1,0 +1,6 @@
+# The same playbook, driven by a lead agent instead of DPlanner's engine.
+extends = "careful-change.toml"
+name = "Careful change (lead)"
+driver = "lead"
+
+roles.lead = { agent = "claude", model = "opus" }

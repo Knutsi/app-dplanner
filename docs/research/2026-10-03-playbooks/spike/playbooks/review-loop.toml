@@ -1,0 +1,10 @@
+# The 99% case: Claude does the step, Codex reviews it, back and forth, then done.
+name = "Review loop"
+budget_usd = 4
+
+roles.implementer = { agent = "claude" }
+roles.reviewer    = { agent = "codex" }
+
+[[stage]]
+id = "review"
+kind = "judgement"

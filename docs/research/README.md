@@ -9,10 +9,17 @@ changes, write a new note and link back.
   and cost tracking per agent and subagent for Claude Code, Codex and OpenCode; accounts and
   quota; a ledger format safe for many writers; what orchestrators such as Paperclip do; a
   live experiment.
+- [2026-10-01 — Orchestrating agents for playbooks and autonomous workers](2026-10-01-agent-orchestration/README.md):
+  how fifteen orchestrators run coding agents, headless CLI flags and auth, hand-back and review
+  economics, claims and leases, and a proposal for playbooks and a worker.
 - [2026-10-03 — Structural and entropy review](2026-10-03-structural-review/README.md): the
   composition root as the home of cross-module logic, alternatives to it compared on one
   example, renaming, and the persistence seams the daemon and multiplayer will hit;
   includes an independent Second opinion (Codex).
+- [2026-10-03 — Playbooks: a chain of agents around one step](2026-10-03-playbooks/README.md):
+  self-review against a second agent, the playbook's shape and presets, engine against lead
+  agent, failures probed for free against every CLI, and the factory floor; a spike and an
+  HTML report.
 - [2026-10-04 — Multiplayer: a ladder, coordinated, with git as the only authority](2026-10-04-multiplayer/README.md):
   discussed during the structural review and kept for when multiplayer work starts. Three
   layers (format, git, an advisory coordination service), one set of events with a local and

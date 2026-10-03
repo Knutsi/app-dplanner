@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "-m",
+    "anthropic/claude-sonnet-4-5",
+    "Reply with the single word: ok"
+  ],
+  "cli": "opencode",
+  "exit": 1,
+  "mode": "429",
+  "probe": "opencode-429",
+  "requests_seen": 9,
+  "seconds": 102.3,
+  "signal_sent": null,
+  "stderr_tail": [],
+  "stdout_head": [
+    "{\"type\":\"error\",\"timestamp\":1791053804860,\"sessionID\":\"ses_efce15564ffe5tXuiytpw1sGyS\",\"error\":{\"name\":\"APIError\",\"data\":{\"message\":\"Number of request tokens has exceeded your rate limit.\",\"statusCode\":429,\"isRetryable\":true,\"responseHeaders\":{\"content-length\":\"125\",\"content-type\":\"application/json\",\"date\":\"Sat, 03 Oct 2026 18:56:44 GMT\",\"retry-after\":\"20\",\"server\":\"BaseHTTP/0.6 Python/3.13.15\"},\"responseBody\":\"{\\\"type\\\": \\\"error\\\", \\\"error\\\": {\\\"type\\\": \\\"rate_limit_error\\\", \\\"message\\\": \\\"Number of request tokens has exceeded your rate limit.\\\"}}\",\"metadata\":{\"url\":\"http://127.0.0.1:53191/v1/messages\"}}}}"
+  ],
+  "stdout_lines": 1,
+  "stdout_tail": [],
+  "timed_out_after_s": null
+}

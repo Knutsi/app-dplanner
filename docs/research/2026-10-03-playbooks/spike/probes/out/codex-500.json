@@ -1,0 +1,37 @@
+{
+  "argv": [
+    "codex",
+    "exec",
+    "--json",
+    "--skip-git-repo-check",
+    "--ephemeral",
+    "--sandbox",
+    "read-only",
+    "Reply with the single word: ok"
+  ],
+  "cli": "codex",
+  "exit": 1,
+  "mode": "500",
+  "probe": "codex-500",
+  "requests_seen": 30,
+  "seconds": 24.5,
+  "signal_sent": null,
+  "stderr_tail": [
+    "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"$HOME/.codex\"))",
+    "Reading additional input from stdin..."
+  ],
+  "stdout_head": [
+    "{\"type\":\"thread.started\",\"thread_id\":\"01a1031e-7765-7932-9313-d7a4057e6ba2\"}",
+    "{\"type\":\"turn.started\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 1/5 (We\u2019re currently experiencing high demand, which may cause temporary errors.)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 2/5 (We\u2019re currently experiencing high demand, which may cause temporary errors.)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 3/5 (We\u2019re currently experiencing high demand, which may cause temporary errors.)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 4/5 (We\u2019re currently experiencing high demand, which may cause temporary errors.)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 5/5 (We\u2019re currently experiencing high demand, which may cause temporary errors.)\"}",
+    "{\"type\":\"error\",\"message\":\"We\u2019re currently experiencing high demand, which may cause temporary errors.\"}",
+    "{\"type\":\"turn.failed\",\"error\":{\"message\":\"We\u2019re currently experiencing high demand, which may cause temporary errors.\"}}"
+  ],
+  "stdout_lines": 9,
+  "stdout_tail": [],
+  "timed_out_after_s": null
+}
