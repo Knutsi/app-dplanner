@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Literal
 
-from dplanner.modules.time_estimates.simulation.frames import Frame, PlanState, StepState
-from dplanner.modules.time_estimates.simulation.rng import rng, seed_of
+from dplanner.modules.schedule.simulation.frames import Frame, PlanState, StepState
+from dplanner.modules.schedule.simulation.rng import rng, seed_of
 from dplanner.planning.schedule import SATURDAY
 
 

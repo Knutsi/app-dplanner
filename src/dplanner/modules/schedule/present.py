@@ -32,8 +32,9 @@ from datetime import date
 from math import floor, log10
 
 from dplanner.domain.model import Library, Project
-from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.progress import (
+from dplanner.modules.schedule.assumptions import REMAINDER_COLOR, WHOLE_COLOR, milestone_colors
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.progress import (
     Pick,
     Snapshot,
     Stretch,
@@ -44,7 +45,6 @@ from dplanner.modules.time_estimates.progress import (
     resolve,
     until,
 )
-from dplanner.modules.time_estimates.schedule import REMAINDER_COLOR, WHOLE_COLOR, milestone_colors
 from dplanner.planning.dates import short_date
 from dplanner.planning.schedule import format_days
 

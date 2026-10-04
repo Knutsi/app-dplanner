@@ -13,8 +13,8 @@ import math
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
 
-from dplanner.modules.time_estimates.simulation.frames import Plan, PlanState, StepState
-from dplanner.modules.time_estimates.simulation.rng import Rng, choose, rng
+from dplanner.modules.schedule.simulation.frames import Plan, PlanState, StepState
+from dplanner.modules.schedule.simulation.rng import Rng, choose, rng
 from dplanner.planning.status import Status
 
 SAMPLE_START = date(2026, 10, 5)  # A Monday.

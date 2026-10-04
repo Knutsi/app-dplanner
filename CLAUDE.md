@@ -119,7 +119,7 @@ a worker dying with SIGSEGV names an innocent one.
   `QLayoutItem` in Python** — `addStretch`/`addSpacing` instead.
 - **A widget whose height depends on its width implements `heightForWidth`** and lets the layout
   ask; it never resizes itself in `resizeEvent`, and its `minimumSizeHint` is the least it can
-  ever need — one row — never its `sizeHint` (`time_estimates/months.py`).
+  ever need — one row — never its `sizeHint` (`schedule/months.py`).
 - **A worker thread never holds the last reference to a Qt object**: any hand-written
   thread-plus-signal goes through `TaskRunner`.
 - **A test that builds a top-level widget of its own disposes it with `deleteLater`**, and a

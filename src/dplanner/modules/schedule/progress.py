@@ -65,7 +65,7 @@ from typing import Any, Literal
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.model import Library, Project, Step, local_day
 from dplanner.domain.ordering import cyclic
-from dplanner.modules.time_estimates.schedule import stretched
+from dplanner.modules.schedule.assumptions import stretched
 from dplanner.planning import estimate
 from dplanner.planning.dates import format_date
 from dplanner.planning.schedule import (

@@ -9,15 +9,15 @@ simulator plays; like *By the book* they size every step, so what they show is t
 
 from dataclasses import dataclass, replace
 
-from dplanner.modules.time_estimates.simulation.replay import SavedSpec
-from dplanner.modules.time_estimates.simulation.sample import (
+from dplanner.modules.schedule.simulation.replay import SavedSpec
+from dplanner.modules.schedule.simulation.sample import (
     SAMPLE_SHAPE,
     SAMPLE_START,
     SampleShape,
     sample_plan,
 )
-from dplanner.modules.time_estimates.simulation.timeline import Cadence, Timeline
-from dplanner.modules.time_estimates.simulation.world import (
+from dplanner.modules.schedule.simulation.timeline import Cadence, Timeline
+from dplanner.modules.schedule.simulation.world import (
     DEFAULT_WORLD,
     Block,
     BudgetChange,

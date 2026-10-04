@@ -29,7 +29,7 @@ from dplanner.domain.model import Library, Step
 from dplanner.framework.module_data_section import FIELD_GAP, ModuleDataSection
 from dplanner.framework.table import DATE_FORMAT
 from dplanner.framework.undo import UndoService
-from dplanner.modules.time_estimates.schedule import (
+from dplanner.modules.schedule.assumptions import (
     MODULE_ID,
     SWATCH_SHADES,
     WHOLE_COLOR,

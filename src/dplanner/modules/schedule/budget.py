@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QComboBox, QWidget
 from dplanner.framework.popover import PopoverButton
 from dplanner.framework.segmented import Segmented
 from dplanner.framework.widgets import caption, note
-from dplanner.modules.time_estimates.schedule import AGENTS, HUMANS
+from dplanner.modules.schedule.assumptions import AGENTS, HUMANS
 from dplanner.planning.dates import format_date
 
 FOCUS_STEP = 5  # Percent: the focus a person gives, as the list offers it.

@@ -85,7 +85,7 @@ paths:
 - **The step panel's first tab is Details, composed from blocks.** A module that wants its
   editor there instead of behind a tab of its own registers into `services.step_details` —
   the `InspectorSectionRegistry`'s third instantiation; estimate, a wait's hold
-  (`step_wait/section.py`), a milestone's schedule (`time_estimates/section.py`),
+  (`step_wait/section.py`), a milestone's schedule (`schedule/section.py`),
   description and the spec figures are the registrants, and
   `modules/step_properties/details.py` stacks them
   (`stretch` on the section says who gets the leftover height, `shown_for` hides a block

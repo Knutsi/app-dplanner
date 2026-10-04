@@ -17,8 +17,14 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Step, TextEdit
-from dplanner.modules.time_estimates.activity import NO_STEPS
-from dplanner.modules.time_estimates.progress import (
+from dplanner.modules.schedule.activity import NO_STEPS
+from dplanner.modules.schedule.assumptions import (
+    MODULE_ID,
+    read_efficiency,
+    read_palette,
+    stretched,
+)
+from dplanner.modules.schedule.progress import (
     HISTORY_ID,
     Landing,
     Pick,
@@ -29,13 +35,7 @@ from dplanner.modules.time_estimates.progress import (
     read_saved,
     write_history,
 )
-from dplanner.modules.time_estimates.schedule import (
-    MODULE_ID,
-    read_efficiency,
-    read_palette,
-    stretched,
-)
-from dplanner.modules.time_estimates.section import MilestoneScheduleSection
+from dplanner.modules.schedule.section import MilestoneScheduleSection
 from dplanner.planning.agent import MODULE_ID as AGENT_ID
 from dplanner.planning.agent import write_state
 from dplanner.planning.dates import format_date
@@ -628,8 +628,8 @@ def test_milestones_landing_on_one_day_share_one_mark_and_one_name(services, sta
     and name both."""
     from dplanner.cli.report.drawings import LIGHT, chart_svg
     from dplanner.cli.report.parts import Chart
-    from dplanner.modules.time_estimates.cli import Readers
-    from dplanner.modules.time_estimates.report import report_source
+    from dplanner.modules.schedule.cli import Readers
+    from dplanner.modules.schedule.report import report_source
 
     tab = services.tabs.open("time", staged.id)
     for step in staged.steps:
@@ -743,7 +743,7 @@ def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services
     """Save snapshot… keeps the plan as it stands under a title — one undoable write that
     leaves the recorder's day alone — and the picker then offers it, the page comparing
     against it. Forgetting it takes it out of the menu."""
-    from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog
+    from dplanner.modules.schedule.snapshot_dialog import SaveSnapshotDialog
 
     read, _draft, _docs, ship = staged.steps
     tab = services.tabs.open("time", staged.id)
@@ -851,7 +851,7 @@ def slow(services, make_project):
     two planned — then a 4d step to go, read on the Wednesday after: people run at
     two-thirds of the plan."""
     from dplanner.framework.user_config import set_global
-    from dplanner.modules.time_estimates.activity import ADJUST_KEY
+    from dplanner.modules.schedule.activity import ADJUST_KEY
 
     services.clock.pin(date(2026, 9, 16))
     library = services.document
@@ -925,8 +925,8 @@ def test_a_wait_is_hatched_on_the_work_page_and_the_calendar_and_named_in_its_mi
     Work page and the calendar say it where the pointer is, and v2's words name it."""
     from dplanner.cli.report.drawings import LIGHT, chart_svg
     from dplanner.cli.report.parts import Chart
-    from dplanner.modules.time_estimates.cli import Readers
-    from dplanner.modules.time_estimates.report import report_source
+    from dplanner.modules.schedule.cli import Readers
+    from dplanner.modules.schedule.report import report_source
     from dplanner.planning.wait import MODULE_ID as WAIT_ID
     from dplanner.planning.wait import Wait
     from dplanner.planning.wait import write as write_wait

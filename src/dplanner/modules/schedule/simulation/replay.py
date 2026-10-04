@@ -27,16 +27,16 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Library, Node, Project, Step
-from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.progress import (
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.progress import (
     HISTORY_ID,
     Snapshot,
     recorded,
     saved_with,
     write_history,
 )
-from dplanner.modules.time_estimates.simulation.frames import Frame, Writers, apply
-from dplanner.modules.time_estimates.simulation.timeline import Cadence, Timeline, recorder_ran
+from dplanner.modules.schedule.simulation.frames import Frame, Writers, apply
+from dplanner.modules.schedule.simulation.timeline import Cadence, Timeline, recorder_ran
 
 
 @dataclass(frozen=True)

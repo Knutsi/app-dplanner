@@ -19,7 +19,7 @@ from typing import Any
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.time_estimates.schedule import (
+from dplanner.modules.schedule.assumptions import (
     MODULE_ID,
     Assumptions,
     FocusChange,

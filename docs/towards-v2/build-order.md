@@ -11,7 +11,7 @@ Much of the execution track is already half built. The knowledge track is close 
 - **Review rounds:** an asker and a reviewer taking turns (`modules/step_review/aspect.py`).
 - **Auto-launch of due steps:** `agent_launch/auto_launch.py`, which only runs while a window is open.
 - **An advisory "who is working on what" record:** `domain/at_work.py`, `dplanner agent-work`.
-- **Schedule, budget, estimates and token usage:** `planning/schedule.py`, `modules/time_estimates/`, `agent_usage/aspect.py`.
+- **Schedule, budget, estimates and token usage:** `planning/schedule.py`, `modules/schedule/`, `agent_usage/aspect.py`.
 - **Reporting:** `dplanner report site --all`, which covers one plan repository.
 - **Assets:** these exist, but run output lives in temporary directories and is never shown.
 - **The knowledge track:** LLM plumbing exists but nothing uses it (`framework/llm_service.py`). `domain/plan_repo.py` is the only grouping above a project. There are no embeddings and no server.

@@ -8,13 +8,13 @@ from dataclasses import replace
 from datetime import date
 
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.schedule import stretched
-from dplanner.modules.time_estimates.simulation.frames import Plan, StepState, Writers
-from dplanner.modules.time_estimates.simulation.replay import Replay
-from dplanner.modules.time_estimates.simulation.sample import SAMPLE_START, sample_plan
-from dplanner.modules.time_estimates.simulation.timeline import Timeline
-from dplanner.modules.time_estimates.simulation.world import (
+from dplanner.modules.schedule.assumptions import stretched
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.simulation.frames import Plan, StepState, Writers
+from dplanner.modules.schedule.simulation.replay import Replay
+from dplanner.modules.schedule.simulation.sample import SAMPLE_START, sample_plan
+from dplanner.modules.schedule.simulation.timeline import Timeline
+from dplanner.modules.schedule.simulation.world import (
     DEFAULT_WORLD,
     WaitChange,
     insert_wait,

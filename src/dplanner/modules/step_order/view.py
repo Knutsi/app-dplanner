@@ -12,7 +12,7 @@ estimate and the aspects.
 **No calendar.** The table once ran the order out as dates — accumulated days, days since
 the last milestone, a landing date per row — one worker after another from a start date
 set on this page. That is not how the work happens and not how the plan is scheduled
-(``time_estimates`` simulates two pools of workers), so the tab states the volume instead
+(``schedule`` simulates two pools of workers), so the tab states the volume instead
 and leaves dating to ``dplanner schedule show``. The estimate stays: it is the step's own
 fact, rendered with ``planning/schedule.py``'s formatter so this table and the terminal
 cannot express one number two ways.

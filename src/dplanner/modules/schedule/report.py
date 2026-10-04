@@ -33,8 +33,9 @@ from dplanner.cli.report.parts import (
 from dplanner.domain.model import Library, Project
 from dplanner.domain.ordering import cyclic
 from dplanner.domain.store import FilesFor
-from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.present import (
+from dplanner.modules.schedule.assumptions import read_efficiency, read_start, read_team
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.present import (
     Presented,
     change_words,
     milestone_words,
@@ -42,8 +43,7 @@ from dplanner.modules.time_estimates.present import (
     names_of,
     present,
 )
-from dplanner.modules.time_estimates.progress import AT_START, read_history, read_saved
-from dplanner.modules.time_estimates.schedule import read_efficiency, read_start, read_team
+from dplanner.modules.schedule.progress import AT_START, read_history, read_saved
 from dplanner.planning import estimate
 from dplanner.planning.dates import format_date, short_date
 from dplanner.planning.estimate import start_of

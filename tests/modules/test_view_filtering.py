@@ -20,6 +20,7 @@ from dplanner.modules.docs.activity import DOCS_KIND, DocsActivity
 from dplanner.modules.estimation.bulk import ESTIMATE_KIND, BulkEstimateActivity
 from dplanner.modules.notes.activity import NOTES_KIND
 from dplanner.modules.project_assets.activity import ASSETS_KIND, AssetsActivity
+from dplanner.modules.schedule.activity import TIME_KIND, TimeEstimatesActivity
 from dplanner.modules.status_board.activity import (
     CONTROL_CENTRE_KIND,
     PROGRESSION_KIND,
@@ -29,7 +30,6 @@ from dplanner.modules.step_order.module import ORDER_KIND, OrderActivity
 
 # The module rather than the class: a name starting with "Test" bound here would be collected.
 from dplanner.modules.testing import activity as testing
-from dplanner.modules.time_estimates.activity import TIME_KIND, TimeEstimatesActivity
 
 VIEWS = [
     pytest.param(PROJECT_KIND, ProjectActivity, "_sync", id="canvas"),

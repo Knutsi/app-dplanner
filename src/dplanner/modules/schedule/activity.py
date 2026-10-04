@@ -16,7 +16,7 @@ looking — a per-user preference (``user_config``), never stored with the plan 
 reaches the page alone: the recorder, a saved snapshot and the report keep the plan as its
 stored focus dates it.
 
-Everything on the page is one :class:`~dplanner.modules.time_estimates.present.Presented`,
+Everything on the page is one :class:`~dplanner.modules.schedule.present.Presented`,
 read after a quiet spell from the plan dated for its stored team (``Readers.snapshot``, the
 recorder's own call) and the recorded history — the report draws the same. **History**
 (``history.py``) reads an earlier day's record in the live plan's place, and while it looks
@@ -71,22 +71,7 @@ from dplanner.framework.table import DATE_FORMAT
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.widgets import EmptyState, GlyphButton, caption, quiet
-from dplanner.modules.time_estimates.budget import BudgetButton
-from dplanner.modules.time_estimates.history import BACK_TO_TODAY, HistoryButton
-from dplanner.modules.time_estimates.months import Band, MonthsView
-from dplanner.modules.time_estimates.present import Presented, moved_words, names_of, present
-from dplanner.modules.time_estimates.progress import (
-    AT_START,
-    HISTORY_ID,
-    Pick,
-    Snapshot,
-    read_history,
-    read_saved,
-    saved_with,
-    saved_without,
-    write_history,
-)
-from dplanner.modules.time_estimates.schedule import (
+from dplanner.modules.schedule.assumptions import (
     MODULE_ID,
     PACE_AFTER,
     PACE_STEPS,
@@ -97,9 +82,25 @@ from dplanner.modules.time_estimates.schedule import (
     read_team,
     write_project,
 )
-from dplanner.modules.time_estimates.shift_view import ShiftView
-from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog, SnapshotPicker
-from dplanner.modules.time_estimates.work_view import WorkView
+from dplanner.modules.schedule.budget import BudgetButton
+from dplanner.modules.schedule.history import BACK_TO_TODAY, HistoryButton
+from dplanner.modules.schedule.months import Band, MonthsView
+from dplanner.modules.schedule.present import Presented, moved_words, names_of, present
+from dplanner.modules.schedule.progress import (
+    AT_START,
+    HISTORY_ID,
+    Pick,
+    Snapshot,
+    read_history,
+    read_saved,
+    saved_with,
+    saved_without,
+    write_history,
+)
+from dplanner.modules.schedule.shift_chart import ShiftView
+from dplanner.modules.schedule.snapshot_dialog import SaveSnapshotDialog
+from dplanner.modules.schedule.snapshots import SnapshotPicker
+from dplanner.modules.schedule.work_chart import WorkView
 from dplanner.planning import estimate
 from dplanner.planning.dates import format_date, short_date
 from dplanner.planning.estimate import start_of
@@ -111,7 +112,7 @@ from dplanner.theme.palettes import PALETTES, Palette
 from dplanner.theme.tokens import CAPTION_GAP, DENSE_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 if TYPE_CHECKING:
-    from dplanner.modules.time_estimates.module import TimeEstimatesDeps
+    from dplanner.modules.schedule.module import TimeEstimatesDeps
 
 TIME_KIND = "time"
 REFRESH_DELAY_MS = 500

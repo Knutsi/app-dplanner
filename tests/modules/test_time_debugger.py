@@ -1,17 +1,17 @@
 """Debug ▸ Time Simulation: the real Time tab over a simulated plan, in a world of its own."""
 
 from dplanner.framework.context import Context
-from dplanner.modules.time_estimates.activity import TimeEstimatesActivity
-from dplanner.modules.time_estimates.debugger import (
+from dplanner.modules.schedule.activity import TimeEstimatesActivity
+from dplanner.modules.schedule.module import TimeEstimatesDeps
+from dplanner.modules.schedule.progress import read_history
+from dplanner.modules.schedule.simulation.replay import keep
+from dplanner.modules.schedule.simulation.sample import SAMPLE_START
+from dplanner.modules.schedule.simulator_activity import (
     OPENS_AFTER,
     SIMULATED,
     SIMULATION_KIND,
     TimeSimulationActivity,
 )
-from dplanner.modules.time_estimates.module import TimeEstimatesDeps
-from dplanner.modules.time_estimates.progress import read_history
-from dplanner.modules.time_estimates.simulation.replay import keep
-from dplanner.modules.time_estimates.simulation.sample import SAMPLE_START
 
 
 def _opened(services) -> TimeSimulationActivity:
@@ -155,9 +155,9 @@ def test_a_wait_added_on_the_day_shown_holds_the_step_it_is_put_before(services)
 
 
 def test_nothing_is_simulated_until_the_tab_is_shown(services):
-    from dplanner.modules.time_estimates.cli import Readers
-    from dplanner.modules.time_estimates.debugger import TimeSimulationDeps
-    from dplanner.modules.time_estimates.simulation.frames import Writers
+    from dplanner.modules.schedule.cli import Readers
+    from dplanner.modules.schedule.simulation.frames import Writers
+    from dplanner.modules.schedule.simulator_activity import TimeSimulationDeps
 
     def refused(*_args: object) -> TimeEstimatesDeps:
         raise AssertionError("built before it was shown")

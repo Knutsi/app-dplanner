@@ -18,8 +18,8 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
-from dplanner.modules.time_estimates.schedule import (
+from dplanner.modules.schedule.assumptions import MODULE_ID as TIME_ID
+from dplanner.modules.schedule.assumptions import (
     milestone_colors,
     read_palette,
     write_milestone,

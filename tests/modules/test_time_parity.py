@@ -13,10 +13,10 @@ import pytest
 from tests.modules.time_helpers import frame_of, run_id, runs
 
 from dplanner.domain.model import Project
-from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.progress import Snapshot
-from dplanner.modules.time_estimates.simulation.frames import Writers
-from dplanner.modules.time_estimates.simulation.replay import Replay
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.progress import Snapshot
+from dplanner.modules.schedule.simulation.frames import Writers
+from dplanner.modules.schedule.simulation.replay import Replay
 from dplanner.planning.estimate import is_marker
 from dplanner.planning.status import Status, in_flight, read_started, work_since
 

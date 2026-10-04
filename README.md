@@ -520,7 +520,7 @@ src/dplanner/
 │   │   ── the fourteen aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
 │   │      `step_properties` are views of steps, not aspects:
-│   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule verbs
+│   ├── estimation/          estimates: the editor, the bulk Estimates tab, the `estimate` verbs
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
 │   ├── step_agent_instruction/   … this one also holds the project's standing instruction
@@ -590,20 +590,21 @@ src/dplanner/
 │   │                        are `framework/step_table.py`'s, which Expenditure shares)
 │   ├── status_board/        the *Step statuses* tab, the *Control Centre* over every project,
 │   │                        and `dplanner progression show [--all]`
-│   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab
-│   │                        (activity.py: four figures, then a page at a time — shift_view.py the
-│   │                        milestones against the plan compared with, work_view.py the scope and the
+│   ├── schedule/            when the plan lands with its team, and the work behind it: the Time tab
+│   │                        (activity.py: four figures, then a page at a time — shift_chart.py the
+│   │                        milestones against the plan compared with, work_chart.py the scope and the
 │   │                        work done, months.py the calendar — with budget.py's team and focus,
 │   │                        snapshots.py's pick of the plan compared with and history.py's look back
 │   │                        at an earlier day's record), what a page shows as data
 │   │                        (present.py, which report.py reads too), a milestone's start and colour on
-│   │                        its Details tab (section.py) — `dplanner schedule matrix`, `schedule palette`,
-│   │                        `schedule team`, `schedule milestone`; progress against the plan (progress.py
+│   │                        its Details tab (section.py) — the whole `dplanner schedule` noun
+│   │                        (landings.py dates each step: `schedule show`, `schedule start`, `schedule matrix`, `schedule palette`,
+│   │                        `schedule team`, `schedule milestone`); assumptions.py what reaches disk; progress against the plan (progress.py
 │   │                        derives it, recorder.py writes the day's history) —
 │   │                        `dplanner progress show|record|save|list|remove`; simulation/ plays the
 │   │                        HTML prototype's scenarios day by day (the world, the replay through the
 │   │                        real aspect writers, the accuracy `scripts/time_accuracy.py` prints) and
-│   │                        debugger.py shows one in the real tab under Debug ▸ Time Simulation
+│   │                        simulator_activity.py shows one in the real tab under Debug ▸ Time Simulation
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
 │   │                        the report site into a picked folder, Go ▸ Preview Report; the
 │   │                        `reporting` location role (roles.py)

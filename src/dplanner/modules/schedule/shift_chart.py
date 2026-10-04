@@ -7,7 +7,7 @@ recorded done. A click picks a milestone — the other rows fade, as the calenda
 a second click hands it back, and a double-click opens the milestone's step, the one gesture
 every surface answers. The words live in each row's tooltip.
 
-The axis holds the reach :class:`~dplanner.modules.time_estimates.present.Presented`
+The axis holds the reach :class:`~dplanner.modules.schedule.present.Presented`
 carries, so moving between days moves the rows and never the dates under them.
 """
 
@@ -27,7 +27,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
-from dplanner.modules.time_estimates.plotting import (
+from dplanner.modules.schedule.plotting import (
     CHECK_RADIUS,
     Axis,
     Inks,
@@ -37,7 +37,7 @@ from dplanner.modules.time_estimates.plotting import (
     paint_grid_dates,
     paint_verticals,
 )
-from dplanner.modules.time_estimates.present import Presented, Scope, milestone_words
+from dplanner.modules.schedule.present import Presented, Scope, milestone_words
 from dplanner.planning.dates import short_date
 from dplanner.theme.icons import ICON_SIZE, KEY_BADGE_W, key_badge_icon
 

@@ -9,8 +9,8 @@ history back: the world makes the change on that day, and the team really change
 from dataclasses import dataclass
 from datetime import date
 
-from dplanner.modules.time_estimates.simulation.frames import PlanState
-from dplanner.modules.time_estimates.simulation.world import BudgetChange, WaitChange
+from dplanner.modules.schedule.simulation.frames import PlanState
+from dplanner.modules.schedule.simulation.world import BudgetChange, WaitChange
 from dplanner.planning.wait import Wait
 
 

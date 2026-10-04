@@ -32,7 +32,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
-from dplanner.modules.time_estimates.plotting import (
+from dplanner.modules.schedule.plotting import (
     CHECK_RADIUS,
     COOL,
     FILL_ALPHA,
@@ -49,7 +49,7 @@ from dplanner.modules.time_estimates.plotting import (
     paint_triangle,
     paint_verticals,
 )
-from dplanner.modules.time_estimates.present import (
+from dplanner.modules.schedule.present import (
     Presented,
     change_words,
     milestone_words,

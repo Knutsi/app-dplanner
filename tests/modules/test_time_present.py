@@ -7,7 +7,7 @@ one.
 
 from datetime import date, timedelta
 
-from dplanner.modules.time_estimates.present import (
+from dplanner.modules.schedule.present import (
     Jump,
     Named,
     ScopeMark,
@@ -20,7 +20,7 @@ from dplanner.modules.time_estimates.present import (
     reach_of,
     scope_marks,
 )
-from dplanner.modules.time_estimates.progress import (
+from dplanner.modules.schedule.progress import (
     A_WEEK_AGO,
     AT_START,
     Landing,

@@ -9,7 +9,7 @@ from datetime import date, timedelta
 import pytest
 
 from dplanner.domain.model import Step
-from dplanner.modules.time_estimates.schedule import PACE_STEPS, as_planned, pace_so_far
+from dplanner.modules.schedule.assumptions import PACE_STEPS, as_planned, pace_so_far
 from dplanner.planning.status import Status
 
 MONDAY = date(2026, 9, 7)

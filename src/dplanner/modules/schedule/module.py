@@ -40,14 +40,14 @@ from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
-from dplanner.modules.time_estimates.activity import TIME_KIND, TimeEstimatesActivity
-from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.progress import DATA_FORMAT as HISTORY_FORMAT
-from dplanner.modules.time_estimates.progress import HISTORY_ID
-from dplanner.modules.time_estimates.recorder import ProgressRecorder
-from dplanner.modules.time_estimates.report import milestones_table
-from dplanner.modules.time_estimates.schedule import DATA_FORMAT, MODULE_ID
-from dplanner.modules.time_estimates.section import MilestoneScheduleSection
+from dplanner.modules.schedule.activity import TIME_KIND, TimeEstimatesActivity
+from dplanner.modules.schedule.assumptions import DATA_FORMAT, MODULE_ID
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.progress import DATA_FORMAT as HISTORY_FORMAT
+from dplanner.modules.schedule.progress import HISTORY_ID
+from dplanner.modules.schedule.recorder import ProgressRecorder
+from dplanner.modules.schedule.report import milestones_table
+from dplanner.modules.schedule.section import MilestoneScheduleSection
 
 __all__ = ["TIME_KIND", "ProgressHistoryModule", "TimeEstimatesDeps", "TimeEstimatesModule"]
 

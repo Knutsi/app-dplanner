@@ -29,8 +29,8 @@ from dplanner.core.clock import Clock
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
-from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.progress import (
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.progress import (
     HISTORY_ID,
     Snapshot,
     read_history,

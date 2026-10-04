@@ -6,7 +6,7 @@ this is the module's half — where the stored assumptions live, and the grid of
 report date the plan for the stored team through the same walk (``progress.take``), so the
 window and the terminal cannot answer "when does this team land it" two different ways.
 
-**Qt-free**, like ``estimation/schedule.py``: the CLI reaches this file and must start on a
+**Qt-free**, like ``schedule/landings.py``: the CLI reaches this file and must start on a
 machine with no graphics stack. ``tests/test_architecture.py``'s ``HEADLESS_FILES`` names it.
 
 **Five assumptions reach disk, all under this module's id, and nothing derived does.**
@@ -401,7 +401,7 @@ class Cell:
     """One staffing scenario: the cap, the makespan, and — when measured from a start
     date — where it lands, stretch by stretch. ``finish`` is None on parallel-adjusted
     cells, and on a calendar cell with no estimated work: a date on weightless work would
-    read as a promise (``estimation/schedule.py``'s ``critical_finish`` makes the same
+    read as a promise (``schedule/landings.py``'s ``critical_finish`` makes the same
     call). ``phases`` are the milestones in sequence; a parallel cell's carry days only."""
 
     humans: int
@@ -454,7 +454,7 @@ def milestone_colors(
     :func:`phase_colors` relies on and a test pins.
 
     One walk per project rather than one per milestone, the shape
-    :func:`~dplanner.modules.estimation.schedule.milestone_stats` has; a project with no
+    :func:`~dplanner.modules.schedule.landings.milestone_stats` has; a project with no
     milestones costs no walk at all. An override does not consume a slot differently — the
     dealt list is indexed by ordinal either way, so pinning one milestone leaves the others
     where they were.

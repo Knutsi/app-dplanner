@@ -6270,7 +6270,7 @@ The Order tab ran the plan out as a calendar once: an *Accumulated* column, a *S
 milestone* column and a *Date* per row, from a start date set on that page, one step after
 another with a single worker and weekends skipped. Every number in it was true and none of
 it was useful. Nobody works that way, and the application itself does not believe it —
-`time_estimates` simulates two pools of workers against milestone dates, and that is what
+`modules/schedule` simulates two pools of workers against milestone dates, and that is what
 the plan is scheduled on. Two surfaces answering *when* with different arithmetic is one
 surface too many, and the one to drop is the one nobody schedules on.
 
@@ -6343,7 +6343,7 @@ Time tab runs the one the project is staffed for. The decisions worth writing do
   total. An ILP would be tighter in contrived graphs and impossible to explain in a cell.
 - **Calendar time is the same walk over stretched estimates.** The focus factor — how much
   of a person's working day this project actually gets — divides human steps' days via a
-  wrapped `days_for` (`time_estimates/schedule.py`'s `stretched`), so the domain never
+  wrapped `days_for` (`schedule/assumptions.py`'s `stretched`), so the domain never
   learns an efficiency exists. Agent steps are not stretched: their human-in-the-loop cost
   is already inside the quarter-day estimate convention, and the factor prices the person's
   divided week, not the agent's.
@@ -6473,7 +6473,7 @@ reality matches them; otherwise the rest resumes from tomorrow, with work in fli
 credited.** `phases(…, facts=ScheduleFacts)` is that model, and
 `tests/modules/test_time_parity.py` holds it to the prototype's forecast on every day of
 every scenario, three seeds each — the prototype's fixture replayed through the real aspect
-writers (`time_estimates/simulation/frames.py`), so the stored `since` the model reads is the
+writers (`schedule/simulation/frames.py`), so the stored `since` the model reads is the
 one the status aspect stamped. The rule is `.claude/rules/schedule.md`'s *The plan re-dates
 itself*.
 
@@ -6489,7 +6489,7 @@ itself*.
   worker**: it goes first in `parallel_finish` (`running`), because the person on it does
   not drop it for a longer chain. It is credited with the working days since it started,
   from the middle of that day, and at least half a day is always left. The credit is
-  `ScheduleFacts.worked`, built in `time_estimates/schedule.py`, because a day worked under
+  `ScheduleFacts.worked`, built in `schedule/assumptions.py`, because a day worked under
   an earlier focus is worth what that focus made it (`efficiency_was`) and the domain never
   learns a focus exists.
 - **Facts beat the sequence.** A stretch whose work is all done is dated by when it was
@@ -6595,7 +6595,7 @@ the day:
 A forecast model is judged over days, not in a screenshot: whether it holds still while a
 plan is followed and moves the day it is not. The prototype was built around a simulator
 for that — a team working a synthetic plan while something happens to it, one scenario per
-broken assumption — and `time_estimates/simulation/` is that simulator in Python, Qt-free
+broken assumption — and `schedule/simulation/` is that simulator in Python, Qt-free
 and held to it: the seeded luck and the sample plan to the bit, the world frame for frame
 (`test_time_simulation.py` replays every exported run), and the model on top by the parity
 file. `scripts/time_accuracy.py` prints the prototype's accuracy table — its `resume`
@@ -6701,7 +6701,7 @@ what actually landed, and the plan as it stood on the day you compare against. T
 decisions that carry it:
 
 - **One measure: estimated days.** The days of done steps over the days of all of them,
-  `time_estimates/progress.py` over `status_for` — the status aspect's reader handed in
+  `schedule/progress.py` over `status_for` — the status aspect's reader handed in
   like `days_for`, so this module never learns where a status lives — and "toward a
   milestone" is **cumulative through its stretch**, because a milestone lands when
   everything before it has, not only what is new since the last one. A share by count
@@ -6789,7 +6789,7 @@ decisions that carry it:
   `present.py` (Qt-free) is the prototype's `present.ts` and `brief.ts` less what the
   resume model made redundant: re-dated from what has happened, a plan is never behind
   itself, so there is no lag, no projection at today's pace and no verdict. The tab and
-  `time_estimates/report.py` both read it, and `cli/report/parts.py`'s `Chart` of `Plot`s
+  `schedule/report.py` both read it, and `cli/report/parts.py`'s `Chart` of `Plot`s
   (`shift`, `scope`, `done`) and `Stretch`es is that page said as plain data, which
   `drawings.py` draws for the page and, through QtSvg, the PDF. Weekends and today's word
   are the renderer's own, facts of the calendar rather than of the plan. The report heads

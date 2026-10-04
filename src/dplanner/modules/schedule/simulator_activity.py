@@ -52,21 +52,21 @@ from dplanner.framework.table import DATE_FORMAT
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import note
-from dplanner.modules.time_estimates.activity import TimeEstimatesActivity
-from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.module import TimeEstimatesDeps
-from dplanner.modules.time_estimates.simulation.edits import (
+from dplanner.modules.schedule.activity import TimeEstimatesActivity
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.module import TimeEstimatesDeps
+from dplanner.modules.schedule.simulation.edits import (
     Budget,
     WaitEdit,
     budget_of,
     rebudget,
 )
-from dplanner.modules.time_estimates.simulation.frames import StepState, Writers
-from dplanner.modules.time_estimates.simulation.replay import Replay, restore
-from dplanner.modules.time_estimates.simulation.scenarios import SCENARIOS, scenario_by_id
-from dplanner.modules.time_estimates.simulation.simulate import Setup, Simulated, simulate
-from dplanner.modules.time_estimates.simulation.timeline import CADENCES
-from dplanner.modules.time_estimates.simulation.world import wait_title
+from dplanner.modules.schedule.simulation.frames import StepState, Writers
+from dplanner.modules.schedule.simulation.replay import Replay, restore
+from dplanner.modules.schedule.simulation.scenarios import SCENARIOS, scenario_by_id
+from dplanner.modules.schedule.simulation.simulate import Setup, Simulated, simulate
+from dplanner.modules.schedule.simulation.timeline import CADENCES
+from dplanner.modules.schedule.simulation.world import wait_title
 from dplanner.planning.dates import WEEKDAYS, format_date, short_date
 from dplanner.planning.status import Status
 from dplanner.planning.wait import Wait

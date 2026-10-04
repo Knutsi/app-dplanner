@@ -83,6 +83,8 @@ if TYPE_CHECKING:
     from dplanner.modules.projects.module import ProjectsModule
     from dplanner.modules.projects.repos import RepositoryServices
     from dplanner.modules.reporting.module import ReportingModule
+    from dplanner.modules.schedule.module import TimeEstimatesModule
+    from dplanner.modules.schedule.simulator_activity import TimeSimulationModule
     from dplanner.modules.settings.module import SettingsModule
     from dplanner.modules.spec.module import SpecModule
     from dplanner.modules.spec.source_kind import DocumentSourceKind
@@ -93,8 +95,6 @@ if TYPE_CHECKING:
     from dplanner.modules.step_order.module import StepOrderModule
     from dplanner.modules.step_properties.module import StepPropertiesModule
     from dplanner.modules.step_status.workflows import StatusWorkflow
-    from dplanner.modules.time_estimates.debugger import TimeSimulationModule
-    from dplanner.modules.time_estimates.module import TimeEstimatesModule
     from dplanner.planning.status import Reading, Status, Unknown
     from dplanner.theme.providers import ThemeProvider
 
@@ -121,8 +121,8 @@ def default_modules(
     """Every module, in registration order. The clusters are built first, in the order they
     hand each other what they need — the agents before the graph editor whose Problems panel
     hands them findings, the editor before the feature module that places steps in it."""
+    from dplanner.modules.schedule.module import ProgressHistoryModule
     from dplanner.modules.settings.module import SettingsDeps, SettingsModule
-    from dplanner.modules.time_estimates.module import ProgressHistoryModule
 
     root = _Root(services)
     # Built ahead of the list: Run Agent and dictation deep-link to their own settings pages
@@ -269,7 +269,7 @@ class _Root:
         return site.site if site is not None else None
 
     def milestone_colors(self, project: "Project") -> dict[str, str]:
-        from dplanner.modules.time_estimates.schedule import milestone_colors
+        from dplanner.modules.schedule.assumptions import milestone_colors
 
         return milestone_colors(self.library, project)
 
@@ -730,10 +730,10 @@ def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModul
     from dplanner.modules.branches.plan import strips as branch_strips
     from dplanner.modules.canvas.module import CanvasDeps, CanvasModule
     from dplanner.modules.canvas.renderers import EdgeAccent, NodeAccent
-    from dplanner.modules.estimation.schedule import card_stats
     from dplanner.modules.github.aspect import PR_CLOSED, PR_MERGED, pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.problems.module import ProblemsDeps, ProblemsModule
+    from dplanner.modules.schedule.landings import card_stats
     from dplanner.modules.step_agent_run.aspect import (
         LAUNCHED,
         NEEDS_INPUT,
@@ -1142,14 +1142,17 @@ def _project_tabs(root: _Root) -> _Tabs:
         ProjectAssetsModule,
     )
     from dplanner.modules.reporting.module import ReportingDeps, ReportingModule
+    from dplanner.modules.schedule.cli import Readers as TimeReaders
+    from dplanner.modules.schedule.module import TimeEstimatesDeps, TimeEstimatesModule
+    from dplanner.modules.schedule.simulation.frames import Writers as TimeWriters
+    from dplanner.modules.schedule.simulator_activity import (
+        TimeSimulationDeps,
+        TimeSimulationModule,
+    )
     from dplanner.modules.status_board.module import ProgressionDeps, ProgressionModule, StripVerb
     from dplanner.modules.step_agent_run.aspect import asks_person
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
-    from dplanner.modules.time_estimates.cli import Readers as TimeReaders
-    from dplanner.modules.time_estimates.debugger import TimeSimulationDeps, TimeSimulationModule
-    from dplanner.modules.time_estimates.module import TimeEstimatesDeps, TimeEstimatesModule
-    from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
     from dplanner.planning.agent import enabled as is_agent
     from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
     from dplanner.planning.estimate import write_start
@@ -1396,10 +1399,10 @@ def _shell(root: _Root, agents: _Agents) -> list["Module"]:
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.library.module import LibraryDeps, LibraryModule
     from dplanner.modules.library_watch.module import LibraryWatchDeps, LibraryWatchModule
+    from dplanner.modules.schedule.assumptions import MODULE_ID as TIME_ID
+    from dplanner.modules.schedule.assumptions import read_palette, write_project
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
-    from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
-    from dplanner.modules.time_estimates.schedule import read_palette, write_project
 
     services, library, store = root.services, root.library, root.store
 
@@ -1837,6 +1840,7 @@ def _aspects(
     from dplanner.modules.canvas.step_verbs import picked_edges
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.github.module import GithubDeps, GithubModule
+    from dplanner.modules.schedule.assumptions import read_palette
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
@@ -1856,7 +1860,6 @@ def _aspects(
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.step_wait.module import StepWaitDeps, StepWaitModule
     from dplanner.modules.testing.module import TestsDeps, TestsModule
-    from dplanner.modules.time_estimates.schedule import read_palette
     from dplanner.planning.agent import MODULE_ID as AGENT_INSTRUCTION_ID
     from dplanner.planning.agent import enabled as is_agent
     from dplanner.planning.agent import read as agent_instruction_read
@@ -2576,19 +2579,19 @@ def _report_sources() -> tuple["ReportSource", ...]:
     from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.modules.canvas.report import report_source as graph
     from dplanner.modules.estimation.report import report_source as estimates
-    from dplanner.modules.estimation.schedule import card_stats
     from dplanner.modules.feature.report import report_source as features
     from dplanner.modules.github.report import report_source as github
     from dplanner.modules.notes.report import report_source as notes
+    from dplanner.modules.schedule.assumptions import milestone_colors
+    from dplanner.modules.schedule.cli import Readers as TimeReaders
+    from dplanner.modules.schedule.landings import card_stats
+    from dplanner.modules.schedule.report import report_source as time_estimates
     from dplanner.modules.status_board.report import report_source as progression
     from dplanner.modules.step_description.report import report_source as descriptions
     from dplanner.modules.step_milestone.report import report_source as milestones
     from dplanner.modules.step_order.report import report_source as order
     from dplanner.modules.step_ticket.report import report_source as tickets
     from dplanner.modules.testing.report import report_source as tests
-    from dplanner.modules.time_estimates.cli import Readers as TimeReaders
-    from dplanner.modules.time_estimates.report import report_source as time_estimates
-    from dplanner.modules.time_estimates.schedule import milestone_colors
     from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
     from dplanner.planning.kinds import key_of, kind_word
     from dplanner.planning.milestone import read as milestone_read
@@ -2642,9 +2645,9 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
     from dplanner.modules.coverage.readers import readers
     from dplanner.modules.coverage.trace import build
     from dplanner.modules.docs.collect import sources_for, state_of
+    from dplanner.modules.schedule.assumptions import milestone_colors
     from dplanner.modules.spec.documents import anchor_sources, document_texts
     from dplanner.modules.testing.runs import latest_statuses
-    from dplanner.modules.time_estimates.schedule import milestone_colors
     from dplanner.planning.kinds import scope_kinds
 
     wired = readers(
@@ -2997,6 +3000,7 @@ def default_cli_commands(
     from dplanner.modules.project_assets import cli as assets_cli
     from dplanner.modules.project_assets.cli import read_titles
     from dplanner.modules.projects import cli as projects_cli
+    from dplanner.modules.schedule import cli as time_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.spec.aspect import read_topology
     from dplanner.modules.status_board import cli as progression_cli
@@ -3016,7 +3020,6 @@ def default_cli_commands(
     from dplanner.modules.testing import cli as testing_cli
     from dplanner.modules.testing.format import FORMAT_SUBJECT, FORMAT_VERB
     from dplanner.modules.testing.format import guide as test_format
-    from dplanner.modules.time_estimates import cli as time_cli
     from dplanner.planning.agent import enabled as is_agent
     from dplanner.planning.kinds import key_of, kind_word, scope_kinds, works_nobody
     from dplanner.planning.status import Status, stored
@@ -3203,7 +3206,7 @@ def default_cli_commands(
         ),
         # The staffing matrix reads estimates, agent-ness and the start date through the
         # owners' Qt-free readers — handed over here so no cli.py imports another module's.
-        *time_cli.commands(time_readers),
+        *time_cli.commands(time_readers, counts_as_work=_counts_as_work),
         *github_cli.commands(finish_merged=finish_merged),
         # A note names the step it was made on by id and prints it by key — the
         # same rule every row prints, handed over rather than imported.
@@ -3520,8 +3523,8 @@ def default_module_formats() -> list[ModuleDataFormat]:
     from dplanner.modules.canvas.layouts import positions
     from dplanner.modules.notes import migrate as notes
     from dplanner.modules.project_assets import cli as project_assets
-    from dplanner.modules.time_estimates import progress as time_progress
-    from dplanner.modules.time_estimates import schedule as time_schedule
+    from dplanner.modules.schedule import assumptions as time_schedule
+    from dplanner.modules.schedule import progress as time_progress
 
     # The aspects, plus the module data that is not an aspect: the graph's node positions,
     # the time report's focus factor and the asset browser's display titles. Deriving this

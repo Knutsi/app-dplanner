@@ -119,7 +119,7 @@ HEADLESS_FILES = (
     "present.py",
     "themes.py",
     "dictation.py",
-    # The Time tab's simulator (`time_estimates/simulation/`): a script and the tests play
+    # The Time tab's simulator (`schedule/simulation/`): a script and the tests play
     # it with no graphics stack.
     "frames.py",
     "rng.py",
@@ -810,7 +810,7 @@ def test_the_theme_package_imports_without_qt() -> None:
     there rather than trusting the layout.
 
     ``palettes`` is here for a second reason: the milestone colour maps are read by a
-    module's Qt-free half (``time_estimates``' ``schedule.py``, ``cli.py`` and
+    module's Qt-free half (``schedule``' ``assumptions.py``, ``cli.py`` and
     ``report.py``), so one ``QColor`` in that file would put a graphics stack in every
     ``dplanner`` invocation. ``glyph_source`` is here for the same one: the report draws a
     card's glyph from it, and the report is built by the CLI. ``theme/tones.py`` is

@@ -6,7 +6,7 @@ renders the same strings through ``QSvgRenderer``. QtSvg reads no CSS variables 
 — and a class beside them, so the page's stylesheet can restyle the same shapes for a dark
 theme, which wins over a presentation attribute.
 
-The grammar is the window's (``canvas/renderers.py``, ``time_estimates/work_view.py``):
+The grammar is the window's (``canvas/renderers.py``, ``schedule/work_chart.py``):
 cards with an 8 px radius, a 56 px key block carrying who works the step — its glyph, drawn
 from the vendored file the canvas paints — over the key, washed by status, the body tinted by
 kind — a milestone its own shade of the project's colour map, teal a feature, green a done
@@ -77,7 +77,7 @@ _TONES = {
     # The attention amber, the hex twin of ``theme/tones.py``'s CHIP_ATTENTION_TINT: a
     # change worth noticing that is not a problem.
     "attention": "#dcaa5a",
-    # The work plots' tints, the twins of ``time_estimates/plotting.py``'s WARM and COOL:
+    # The work plots' tints, the twins of ``schedule/plotting.py``'s WARM and COOL:
     # the plan holding more work than the plan compared with, and less.
     "warm": "#e89646",
     "cool": "#2fa0aa",
@@ -396,7 +396,7 @@ IDLE_OPACITY = 0.5
 _DOTTED = ' stroke-dasharray="0.1 4" stroke-linecap="round"'
 CHANGE_MARK = 7.0  # A day's ▲ or ▼ under the scope line.
 ARROW_HEAD = 5.0
-# The window's alphas (``time_estimates/plotting.py``), as opacities.
+# The window's alphas (``schedule/plotting.py``), as opacities.
 FILL_OPACITY = "0.19"
 WEEKEND_OPACITY = "0.05"
 DONE_OPACITY = "0.1"

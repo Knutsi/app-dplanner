@@ -84,7 +84,7 @@ def test_a_wait_takes_no_status_no_agent_and_no_tests_and_says_why(services, pro
 def test_a_wait_wears_its_letter_its_clock_and_how_long_it_holds(services, project):
     from dplanner.domain.commands import SetModuleDataCommand
     from dplanner.modules import _primary_glyph
-    from dplanner.modules.estimation.schedule import card_stats
+    from dplanner.modules.schedule.landings import card_stats
     from dplanner.planning.kinds import key_of, kind_word
     from dplanner.planning.wait import MODULE_ID as WAIT_ID
     from dplanner.planning.wait import write

@@ -12,7 +12,7 @@ from datetime import date
 import pytest
 
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.time_estimates.progress import (
+from dplanner.modules.schedule.progress import (
     AT_START,
     LIVE,
     Delta,
@@ -415,7 +415,7 @@ def test_a_milestone_whose_start_is_later_opens_a_gap_the_plan_holds_flat(plan):
     """D's own start date holds its stretch back past B's landing: the span is idle, and
     the expected line holds flat from B's landing to the day work resumes. A weekend
     between two stretches is not a gap."""
-    from dplanner.modules.time_estimates.progress import idle
+    from dplanner.modules.schedule.progress import idle
 
     library, project = plan
     later = date(2026, 9, 21)

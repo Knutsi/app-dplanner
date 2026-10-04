@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/dplanner/modules/{time_estimates,status_board,step_order,estimation,step_wait}/**"
+  - "src/dplanner/modules/{schedule,status_board,step_order,estimation,step_wait}/**"
   - "src/dplanner/domain/ordering.py"
   - "src/dplanner/planning/{schedule,progression,status,estimate,dates}.py"
   - "src/dplanner/cli/report/axis.py"
@@ -70,7 +70,7 @@ paths:
   `volume_words`: *62 days over 24 steps, 2 unestimated*, the sentence `order show`,
   `estimate rollup` and the Estimates tab's strip all print). It ran a serial calendar
   once — accumulated days, days since the last milestone, a landing date per row, from a
-  start date set on that page — and nobody schedules that way: `time_estimates` simulates
+  start date set on that page — and nobody schedules that way: `schedule` simulates
   two pools of workers and owns the start date, so the columns and the bar are gone and
   **wave 1 is called *Wave 1***, the words *Ready to start* now naming a group of the
   Step statuses tab alone.
@@ -87,9 +87,9 @@ paths:
   (`parallel_finish`'s `among`) from where the previous one lands — with what is left of
   that day — or from a date of its own, when it has one and that is later; an earlier
   date is *pushed* and reported, never silently overlapped. Calendar time is the same
-  walk over another `days_for` (`time_estimates/schedule.py`'s `stretched`), so the
+  walk over another `days_for` (`schedule/assumptions.py`'s `stretched`), so the
   planning tier never learns what an efficiency is — the one kind of caller `days_for`
-  survives for, with the simulator's world and a test's fakes. Five assumptions reach disk, all under `time_estimates`: the focus
+  survives for, with the simulator's world and a test's fakes. Five assumptions reach disk, all under the id `time_estimates`: the focus
   factor, the colour map and the **team** the calendar is dated for on the project node
   (one `Assumptions` record, `schedule.py`'s `read_assumptions`/`write_project` — a
   control changing one carries the others as stored), and a milestone's start date and
@@ -112,7 +112,7 @@ paths:
   so instead of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
   worker pools, one greedy simulation* has the reasoning.
 - **The plan re-dates itself from what has happened, and facts beat the sequence.**
-  `phases` handed `ScheduleFacts` — `time_estimates/schedule.py`'s `schedule_facts`: the
+  `phases` handed `ScheduleFacts` — `schedule/assumptions.py`'s `schedule_facts`: the
   stored statuses and their `since`, which steps are markers (estimate off), and work in
   flight credited at the focus it ran at — keeps the plan's own dates while every step is
   done exactly when they land it, and otherwise resumes the rest from tomorrow: done steps
@@ -175,7 +175,7 @@ paths:
   `create_step`.
   `ARCHITECTURE.md`'s *A wait is a step that holds* has the reasoning.
 - **The simulator is the prototype's, to the frame, and Debug ▸ Time Simulation shows it in
-  the real tab.** `time_estimates/simulation/` is Qt-free: `world.py` plays a scenario,
+  the real tab.** `schedule/simulation/` is Qt-free: `world.py` plays a scenario,
   `replay.py` writes each day through the owners' writers (`frames.Writers`, every one
   a `planning/` writer) and records it as the recorder would, and `test_time_simulation.py`
   holds the world to the prototype's exported frames — port a change to the world there
@@ -193,7 +193,7 @@ paths:
 - **Progress is derived; the past is a list of snapshots, and a comparison is two of
   them.** How far a milestone has come — by estimated days, everything through its
   stretch; the count of steps is tallied and worded, never the share — is
-  `time_estimates/progress.py` over the statuses (`status.in_flight` by default),
+  `schedule/progress.py` over the statuses (`status.in_flight` by default),
   and the plan's expected curve is the simulation's own per-step landings
   (`planning/schedule.py`'s `ParallelFinish.landings`, carried on each `Phase`). The one
   thing that cannot be derived is the past: a `Snapshot` — one row per stretch, steps,
@@ -235,7 +235,7 @@ paths:
   **milestones landing on one day share the mark**, a wedge each, and the name.
   Weekends are pale bands through both. **Both surfaces draw the same page**: the report's
   `Chart` of `Plot`s (`shift`, `scope`, `done`) and `Stretch`es is `present.py`'s output
-  said as plain data (`time_estimates/report.py`), drawn by `cli/report/drawings.py`.
+  said as plain data (`schedule/report.py`), drawn by `cli/report/drawings.py`.
   **History** (`history.py`) is the now side: a slider over the recorded days and today,
   followed as it moves (a 0 ms `Debounced`), reading an earlier day's record in the live
   plan's place with the axes held for the live plan too; **while it looks back every writer

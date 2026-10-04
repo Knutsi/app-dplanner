@@ -1,4 +1,4 @@
-"""Choosing which plan the page compares with, and saving one on purpose.
+"""Choosing which plan the page compares with (saving one is ``snapshot_dialog.py``).
 
 The page compares the plan now with a plan *then*, picked here in the strip over it,
 where the whole page's assumptions are set: a :class:`SnapshotPicker`, a button wearing
@@ -8,11 +8,6 @@ saved, by title and day, and *Day…*, which asks for any recorded day. The butt
 names the record that stood in for the pick, so which plans are compared is never a guess;
 the picker only reports a :class:`Pick`, and the hosting page resolves it and re-renders —
 the contract every input here keeps.
-
-:class:`SaveSnapshotDialog` asks for the title a saved snapshot is found by, and a note
-saying what the occasion was. A title already taken is refused *in the dialog*, with the
-reason where the finger is, because a saved snapshot is named exactly so that it can be
-told from the others.
 """
 
 from collections.abc import Sequence
@@ -20,12 +15,9 @@ from datetime import date
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QLineEdit, QMenu, QPlainTextEdit, QToolButton, QWidget
+from PySide6.QtWidgets import QMenu, QToolButton, QWidget
 
-from dplanner.framework.dialog import DialogFrame
-from dplanner.framework.signalling import StatusLine
-from dplanner.framework.widgets import block, caption
-from dplanner.modules.time_estimates.progress import (
+from dplanner.modules.schedule.progress import (
     A_WEEK_AGO,
     AT_START,
     Pick,
@@ -33,9 +25,6 @@ from dplanner.modules.time_estimates.progress import (
     find_saved,
 )
 from dplanner.planning.dates import format_date
-from dplanner.theme.tokens import SECTION_GAP
-
-NOTE_LINES = 4
 
 START_LABEL = "Plan at start"
 WEEK_LABEL = "Plan a week ago"
@@ -140,37 +129,3 @@ class SnapshotPicker(QToolButton):
         action.setToolTip(tip)
         action.triggered.connect(lambda _checked=False, chosen=pick: self.picked.emit(chosen))
         menu.addAction(action)
-
-
-class SaveSnapshotDialog(DialogFrame):
-    """A title the snapshot is found by, and a note on what the occasion was."""
-
-    def __init__(self, taken: Sequence[str], parent: QWidget | None = None) -> None:
-        super().__init__("Save Snapshot", parent)
-        self._taken = {title.strip().lower() for title in taken}
-        self.title = QLineEdit(self.body)
-        self.title.setPlaceholderText("What we thought on 1 November")
-        self.title.textChanged.connect(self._check)
-        # Under the field it is about, in the error tone, only while the title is taken.
-        self.reason = StatusLine(self.body)
-        block(self.body_layout, caption("Title", self.body), self.title, self.reason)
-        self.note = QPlainTextEdit(self.body)
-        self.note.setPlaceholderText("What the occasion was, for whoever compares against it")
-        self.note.setFixedHeight(self.note.fontMetrics().lineSpacing() * NOTE_LINES + SECTION_GAP)
-        block(self.body_layout, caption("Note", self.body), self.note)
-        self.add_dismiss()
-        self.set_primary("Save", self.accept)
-        self._check()
-
-    def values(self) -> tuple[str, str]:
-        return self.title.text().strip(), self.note.toPlainText().strip()
-
-    def _check(self) -> None:
-        """Save is offered only for a title that is new: the reason sits under the field
-        rather than arriving as a refusal after the click."""
-        title = self.title.text().strip()
-        taken = bool(title) and title.lower() in self._taken
-        self.reason.say(f"A snapshot called “{title}” is already saved." if taken else "", "error")
-        primary = self.primary()
-        if primary is not None:
-            primary.setEnabled(bool(title) and not taken)

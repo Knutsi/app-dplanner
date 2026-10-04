@@ -6,7 +6,7 @@ them end to end from a start date.
 
 **The estimate is read where it lives, in this tier** (``planning/estimate.py``), so every
 walk here reads it by default. ``days_for`` survives as a keyword only for the callers that
-mean other days: calendar days stretched by a focus (``time_estimates``), the simulator's
+mean other days: calendar days stretched by a focus (``modules/schedule``), the simulator's
 world, a test's fakes. Plain functions over the model, no Qt, which is what lets the order
 table, ``dplanner schedule show``, ``--json`` and every report after them read one
 implementation.

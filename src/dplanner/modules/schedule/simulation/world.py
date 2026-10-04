@@ -23,10 +23,10 @@ from datetime import date, timedelta
 
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.time_estimates.schedule import FocusChange
-from dplanner.modules.time_estimates.simulation.frames import Plan, StepState
-from dplanner.modules.time_estimates.simulation.rng import choose, lognormal, rng, seed_of
-from dplanner.modules.time_estimates.simulation.timeline import Played, Timeline
+from dplanner.modules.schedule.assumptions import FocusChange
+from dplanner.modules.schedule.simulation.frames import Plan, StepState
+from dplanner.modules.schedule.simulation.rng import choose, lognormal, rng, seed_of
+from dplanner.modules.schedule.simulation.timeline import Played, Timeline
 from dplanner.planning.dates import WEEKDAYS, short_date
 from dplanner.planning.schedule import (
     SATURDAY,

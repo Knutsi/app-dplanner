@@ -34,12 +34,12 @@ from dplanner.domain.seed import create_library, seed_project
 from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.notes.aspect import MODULE_ID as NOTES_ID
 from dplanner.modules.notes.aspect import Note, write_log
+from dplanner.modules.schedule.assumptions import write_project
 from dplanner.modules.step_ticket.aspect import Ticket
 from dplanner.modules.step_ticket.aspect import write as ticket
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.aspect import write as tests
-from dplanner.modules.time_estimates.schedule import write_project
 from dplanner.planning.estimate import write as estimate
 from dplanner.planning.estimate import write_start
 from dplanner.planning.feature import FeatureSource

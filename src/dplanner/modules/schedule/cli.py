@@ -1,4 +1,5 @@
-"""``dplanner schedule matrix``, ``schedule focus``, ``schedule palette``, ``schedule
+"""``dplanner schedule start``, ``schedule show`` — when the work begins and when each step
+lands — ``schedule matrix``, ``schedule focus``, ``schedule palette``, ``schedule
 team``, ``schedule milestone`` — staffing the plan — and ``dplanner progress show``,
 ``progress record``, ``progress save``, ``progress list`` and ``progress remove`` — how
 far it has come, and the snapshots that say how far it said it would.
@@ -7,7 +8,7 @@ far it has come, and the snapshots that say how far it said it would.
 between them: the makespan for every staffing in a small grid of people by coding agents,
 in project working days and in calendar days once a person's divided focus is priced in —
 and, for the project's team, the milestones in sequence with the dates they land. One
-derivation — ``time_estimates/schedule.py``'s ``time_report`` — feeds this verb, the tab
+derivation — ``schedule/assumptions.py``'s ``time_report`` — feeds this verb, the tab
 and ``--json``, so the three can never disagree. ``focus``, ``palette``, ``team`` and
 ``milestone`` store the assumptions behind the calendar half — the same writes the tab's
 controls push.
@@ -45,7 +46,36 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.time_estimates.progress import (
+from dplanner.modules.schedule.assumptions import (
+    DEFAULT_EFFICIENCY,
+    DEFAULT_TEAM,
+    MODULE_ID,
+    Cell,
+    TimeReport,
+    as_planned,
+    cell_for,
+    is_color,
+    milestone_colors,
+    pace_so_far,
+    phase_colors,
+    read_color,
+    read_efficiency,
+    read_palette,
+    read_start,
+    read_team,
+    schedule_facts,
+    stretched,
+    time_report,
+    write_milestone,
+    write_project,
+)
+from dplanner.modules.schedule.landings import (
+    critical_finish,
+    finish_date,
+    project_critical_path,
+    project_schedule,
+)
+from dplanner.modules.schedule.progress import (
     A_WEEK_AGO,
     AT_START,
     HISTORY_ID,
@@ -73,35 +103,13 @@ from dplanner.modules.time_estimates.progress import (
     volume,
     write_history,
 )
-from dplanner.modules.time_estimates.schedule import (
-    DEFAULT_EFFICIENCY,
-    DEFAULT_TEAM,
-    MODULE_ID,
-    Cell,
-    TimeReport,
-    as_planned,
-    cell_for,
-    is_color,
-    milestone_colors,
-    pace_so_far,
-    phase_colors,
-    read_color,
-    read_efficiency,
-    read_palette,
-    read_start,
-    read_team,
-    schedule_facts,
-    stretched,
-    time_report,
-    write_milestone,
-    write_project,
-)
 from dplanner.planning.agent import enabled as agent_enabled
 from dplanner.planning.dates import format_date
-from dplanner.planning.estimate import start_of
+from dplanner.planning.estimate import MODULE_ID as ESTIMATE_ID
+from dplanner.planning.estimate import start_of, write_start
 from dplanner.planning.kinds import key_of as planning_key_of
 from dplanner.planning.milestone import read as milestone_read
-from dplanner.planning.schedule import Phase, ScheduleFacts, format_days
+from dplanner.planning.schedule import CriticalPath, Phase, Scheduled, ScheduleFacts, format_days
 from dplanner.theme.palettes import PALETTES, palette, shades
 
 
@@ -180,7 +188,12 @@ class Readers:
         )
 
 
-def commands(readers: Readers) -> list[CliCommand]:
+def commands(readers: Readers, *, counts_as_work: Callable[[Step], bool]) -> list[CliCommand]:
+    """``counts_as_work`` says a wait is no work: ``schedule show`` never counts one unestimated."""
+
+    def show(context: CliContext, args: Namespace) -> int:
+        return _show(context, args, counts_as_work)
+
     def matrix(context: CliContext, args: Namespace) -> int:
         return _matrix(context, args, readers)
 
@@ -197,6 +210,26 @@ def commands(readers: Readers) -> list[CliCommand]:
         return _progress_save(context, args, readers)
 
     return [
+        CliCommand(
+            path=("schedule", "start"),
+            summary="Set the date a project's work begins, or clear it.",
+            configure=_configure_start,
+            run=_start,
+            examples=(
+                "dplanner schedule start discovery --date 2026-09-01",
+                "dplanner schedule start discovery --clear",
+            ),
+        ),
+        CliCommand(
+            path=("schedule", "show"),
+            summary="When each step lands, in the order the work can be done.",
+            configure=project_arg,
+            run=show,
+            examples=(
+                "dplanner schedule show discovery",
+                "dplanner schedule show discovery --json",
+            ),
+        ),
         CliCommand(
             path=("schedule", "matrix"),
             summary="How long the project takes with 1-3 people and 1-4 coding agents "
@@ -1025,3 +1058,117 @@ def _progress_line(
     elif then is not None:
         said += "; not in the plan compared with"
     return said
+
+
+def _configure_start(parser: ArgumentParser) -> None:
+    project_arg(parser)
+    parser.add_argument("--date", help="ISO-8601, e.g. 2026-09-01")
+    parser.add_argument(
+        "--clear", action="store_true", help="remove the start date, so it starts today"
+    )
+
+
+def _start(context: CliContext, args: Namespace) -> int:
+    if args.clear == bool(args.date):
+        raise CliError("give either --date or --clear")
+    start = None
+    if args.date:
+        try:
+            start = date.fromisoformat(args.date)
+        except ValueError as error:
+            raise CliError(f"{args.date!r} is not an ISO-8601 date, e.g. 2026-09-01") from error
+    project = find_project(context.library, args.project)
+    context.apply(SetModuleDataCommand(project.id, ESTIMATE_ID, write_start(start)))
+    today = context.clock.today()
+    said = (
+        f"starts today, {format_date(today, today)}"
+        if start is None
+        else f"starts {format_date(start, today)}"
+    )
+    written = "" if start is None else start.isoformat()
+    context.report({"project": project.id, "start": written}, f"{project.title}: {said}")
+    return 0
+
+
+def _show(context: CliContext, args: Namespace, counts_as_work: Callable[[Step], bool]) -> int:
+    """The schedule: the order walk carrying estimates, under both honest assumptions.
+
+    The serial total and the critical path bracket every real staffing, so both are
+    always printed, each labelled with the assumption it makes — a single number here
+    would be a guess wearing a date.
+    """
+    project = find_project(context.library, args.project)
+    rows = project_schedule(context.library, project)
+    start = start_of(project)
+    unestimated = sum(1 for row in rows if row.days is None and counts_as_work(row.place.step))
+    landing = finish_date(rows)
+    path = project_critical_path(context.library, project)
+    path_landing = critical_finish(project, path) if path is not None else None
+    data: dict[str, Any] = {
+        "project": project.id,
+        "start": start.isoformat(),
+        "finish": landing.isoformat() if landing else "",
+        "days": rows[-1].accumulated if rows else 0.0,
+        "assumption": "serial",  # What the finish/days/accumulated keys mean.
+        "unestimated": unestimated,
+        "critical_path": None
+        if path is None
+        else {
+            "days": path.days,
+            "finish": path_landing.isoformat() if path_landing else "",
+            "steps": [{"id": step.id, "title": step.title} for step in path.steps],
+            "unestimated": path.unestimated,
+        },
+        "steps": [
+            {
+                "index": row.place.index,
+                "id": row.place.step.id,
+                "title": row.place.step.title,
+                "days": row.days,
+                "accumulated": row.accumulated,
+                "date": row.finish.isoformat() if row.finish else "",
+            }
+            for row in rows
+        ],
+    }
+    context.report(
+        data, _show_report(project.title, rows, landing, unestimated, path, path_landing)
+    )
+    return 0
+
+
+def _show_report(
+    title: str,
+    rows: list[Scheduled],
+    landing: date | None,
+    unestimated: int,
+    path: CriticalPath | None,
+    path_landing: date | None,
+) -> str:
+    """The same columns the order table shows, through the same formatter."""
+    if not rows:
+        return "No steps yet."
+    width = max(len(row.place.step.title or "Untitled step") for row in rows)
+    lines = [
+        f"{row.place.index:>3}  {(row.place.step.title or 'Untitled step'):<{width}}  "
+        f"{format_days(row.days):>6}  {format_days(row.accumulated):>6}  "
+        f"{format_date(row.finish) if row.finish else ''}"
+        for row in rows
+    ]
+    tail = f"{format_days(rows[-1].accumulated)} of work"
+    if landing is not None:
+        tail += f", landing {format_date(landing)}"
+    tail += " (serial: one worker, steps end to end)"
+    if unestimated:
+        tail += f", {unestimated} unestimated"
+    summary = [f"{title}: {tail}"]
+    if path is not None:
+        chain = " → ".join(step.title or "Untitled step" for step in path.steps)
+        second = f"critical path: {format_days(path.days)}"
+        if path_landing is not None:
+            second += f", landing {format_date(path_landing)}"
+        second += f" (dependency-aware: unlimited workers) — {chain}"
+        if path.unestimated:
+            second += f", {path.unestimated} unestimated on the path"
+        summary.append(second)
+    return "\n".join([*lines, "", *summary])

@@ -13,31 +13,31 @@ from typing import Any
 import pytest
 from tests.modules.time_helpers import frame_of, run_id, runs
 
-from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.progress import read_history, read_saved
-from dplanner.modules.time_estimates.simulation.accuracy import timeline_accuracy
-from dplanner.modules.time_estimates.simulation.edits import (
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.progress import read_history, read_saved
+from dplanner.modules.schedule.simulation.accuracy import timeline_accuracy
+from dplanner.modules.schedule.simulation.edits import (
     Budget,
     BudgetEdit,
     rebudget,
     world_budgets,
 )
-from dplanner.modules.time_estimates.simulation.frames import Writers
-from dplanner.modules.time_estimates.simulation.replay import (
+from dplanner.modules.schedule.simulation.frames import Writers
+from dplanner.modules.schedule.simulation.replay import (
     Replay,
     SavedSpec,
     keep,
     record,
     restore,
 )
-from dplanner.modules.time_estimates.simulation.sample import SAMPLE_START, sample_plan
-from dplanner.modules.time_estimates.simulation.scenarios import (
+from dplanner.modules.schedule.simulation.sample import SAMPLE_START, sample_plan
+from dplanner.modules.schedule.simulation.scenarios import (
     SAVED_BY_DEFAULT,
     SCENARIOS,
     scenario_by_id,
 )
-from dplanner.modules.time_estimates.simulation.timeline import Timeline, recorder_ran
-from dplanner.modules.time_estimates.simulation.world import run
+from dplanner.modules.schedule.simulation.timeline import Timeline, recorder_ran
+from dplanner.modules.schedule.simulation.world import run
 from dplanner.planning.schedule import next_working_day
 from dplanner.planning.status import Status
 
@@ -230,7 +230,7 @@ def test_time_reads_a_step_under_review_as_work_still_in_flight():
     it from in progress to ready for review on a later day moves no landing — the root's
     fold reads it in progress since it started — and that day still counts a change.
     Played through the simulator's own writers and readers."""
-    from dplanner.modules.time_estimates.simulation.frames import Frame
+    from dplanner.modules.schedule.simulation.frames import Frame
 
     plan = sample_plan(1)  # Dated from Monday: a step begun on Wednesday would be late.
     assert plan.state.start == MONDAY

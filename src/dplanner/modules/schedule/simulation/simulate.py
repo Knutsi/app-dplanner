@@ -9,23 +9,23 @@ comes back, so what it shows is also what a test or a script can compute without
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 
-from dplanner.modules.time_estimates.cli import Readers
-from dplanner.modules.time_estimates.schedule import milestone_colors
-from dplanner.modules.time_estimates.simulation.edits import (
+from dplanner.modules.schedule.assumptions import milestone_colors
+from dplanner.modules.schedule.cli import Readers
+from dplanner.modules.schedule.simulation.edits import (
     BudgetEdit,
     WaitEdit,
     world_budgets,
     world_waits,
 )
-from dplanner.modules.time_estimates.simulation.frames import Writers
-from dplanner.modules.time_estimates.simulation.replay import Recorded, Replay, record
-from dplanner.modules.time_estimates.simulation.sample import SAMPLE_START
-from dplanner.modules.time_estimates.simulation.scenarios import (
+from dplanner.modules.schedule.simulation.frames import Writers
+from dplanner.modules.schedule.simulation.replay import Recorded, Replay, record
+from dplanner.modules.schedule.simulation.sample import SAMPLE_START
+from dplanner.modules.schedule.simulation.scenarios import (
     SAVED_BY_DEFAULT,
     SCENARIOS,
     scenario_by_id,
 )
-from dplanner.modules.time_estimates.simulation.timeline import Cadence, Timeline
+from dplanner.modules.schedule.simulation.timeline import Cadence, Timeline
 
 
 @dataclass(frozen=True)

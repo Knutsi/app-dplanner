@@ -712,7 +712,7 @@ for a card somebody resized, its size, absent for the default footprint — as
 an aspect is a fact about the work that an agent may want to write, and a layout is
 presentation. It is per step rather than one map on the project so that moving a node is a
 one-file diff — the same reasoning as ordering living in the parent's list. The time
-report's assumptions are the second instance: `modules/time_estimates.json` beside the
+report's assumptions are the second instance: `modules/schedule.json` beside the
 project (format 2), `{"efficiency": 0.5, "palette": "mako", "team": [2, 3],
 "efficiency_was": {"until": "2026-09-22", "efficiency": 0.6}}` — the focus factor, the
 colour map and the team the calendar is dated for, each absent on its default, and the

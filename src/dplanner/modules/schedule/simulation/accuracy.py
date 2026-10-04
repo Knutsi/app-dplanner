@@ -16,9 +16,9 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date
 
-from dplanner.modules.time_estimates.progress import landing_shift
-from dplanner.modules.time_estimates.simulation.replay import Replay
-from dplanner.modules.time_estimates.simulation.timeline import Timeline
+from dplanner.modules.schedule.progress import landing_shift
+from dplanner.modules.schedule.simulation.replay import Replay
+from dplanner.modules.schedule.simulation.timeline import Timeline
 from dplanner.planning.schedule import SATURDAY
 
 
