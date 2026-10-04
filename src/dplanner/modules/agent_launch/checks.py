@@ -21,7 +21,7 @@ from collections.abc import Callable, Mapping, Sequence
 
 from dplanner.cli.checklist import MachineCheck, Reading, Remedy
 from dplanner.domain.agents import AgentHarness
-from dplanner.modules.step_agent_instruction.launcher import is_installed, terminals_for
+from dplanner.modules.agent_launch.launcher import is_installed, terminals_for
 
 Which = Callable[[str], str | None]
 

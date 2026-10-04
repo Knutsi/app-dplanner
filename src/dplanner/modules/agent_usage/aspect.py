@@ -26,7 +26,7 @@ from dplanner.domain import ledger
 from dplanner.domain.agents import Tokens, short_count, summed
 from dplanner.domain.expenditure import ELSEWHERE, HERE, Rate, Spent, learned_rate, spent_by_step
 from dplanner.domain.ledger import LedgerRecord
-from dplanner.domain.model import Library, Step
+from dplanner.domain.model import Library, Step, now_stamp
 from dplanner.domain.store import LibraryStore
 from dplanner.planning.estimate import read as days_for
 
@@ -53,6 +53,44 @@ def absorb_rows(repo: Repository[Any], library: Library) -> list[str]:
 
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID, absorb=absorb_rows)
+
+
+def launch_record(
+    *,
+    run: str,
+    project: str,
+    step: str,
+    harness: str,
+    directory: Path,
+    session: str = "",
+    prompt_chars: int = 0,
+    launched: str = "",
+    machine: str = "",
+) -> LedgerRecord:
+    """What the launch knows about a run, before anything has been consumed."""
+    return LedgerRecord(
+        run=run,
+        project=project,
+        step=step,
+        harness=harness,
+        launched=launched or now_stamp(),
+        machine=machine or ledger.machine_id(),
+        host=ledger.host_name(),
+        directory=str(directory.expanduser().resolve()),
+        session=session,
+        prompt_chars=prompt_chars,
+    )
+
+
+def end(project_dir: Path, run: str, code: int | None, ended: str = "") -> LedgerRecord | None:
+    """Say the run's shell ended — cheap, no reading — so the next harvest knows to read it
+    once more and the sweep knows when to stop."""
+    record = ledger.find(project_dir, run)
+    if record is None:
+        return None
+    record = record.ended_at(ended or now_stamp(), code)
+    ledger.write(project_dir, record)
+    return record
 
 
 def spent(records: Iterable[LedgerRecord]) -> Tokens | None:

@@ -177,6 +177,12 @@ def asset_source() -> AssetSource:
     return AssetSource(id=MODULE_ID, label="Agent instructions", scan=scan)
 
 
+def no_agent(kind: str) -> str:
+    """Why a step nobody works — ``kind`` is what it is called, "a wait" — has no agent: the
+    Agent toggle's refusal and Run Agent's."""
+    return f"{kind} has no work for an agent"
+
+
 def summary(step: Step) -> str:
     """One short phrase for a step's row — that an agent will do it, and how much extra
     direction there is. The text itself is instructions to a machine and rarely reads well

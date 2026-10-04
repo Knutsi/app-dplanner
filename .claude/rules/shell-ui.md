@@ -1,7 +1,7 @@
 ---
 paths:
   - "src/dplanner/menus.py"
-  - "src/dplanner/framework/{action_registry,action_menu,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,main_window,window,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service,user_config,zoom}.py"
+  - "src/dplanner/framework/{action_registry,action_menu,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,main_window,window,dialog,table,step_table,row_well,widgets,signalling,notices,index_panel,theme_service,user_config,zoom}.py"
   - "src/dplanner/framework/motion/**"
   - "src/dplanner/theme/**"
   - "src/dplanner/modules/{appshell,appearance,theme_omarchy,theme_system,reopen_tabs,home,settings,debug}/**"

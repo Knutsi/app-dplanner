@@ -326,7 +326,7 @@ def test_clear_agent_run_is_an_undoable_edit(services, step, tmp_path):
 
 def test_run_agent_hands_the_shell_to_the_tracker(services, step, monkeypatch):
     """End to end through the real action: the wrapper's two files are what gets tracked."""
-    from dplanner.modules.step_agent_instruction import launcher
+    from dplanner.modules.agent_launch import launcher
     from dplanner.planning.agent import MODULE_ID, write_state
 
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True)))
@@ -350,7 +350,7 @@ def test_run_agent_hands_the_shell_to_the_tracker(services, step, monkeypatch):
 def test_a_launch_is_a_span_saying_what_it_handed_over(services, step, monkeypatch):
     """One gesture can open a shell per chosen step, so the size cannot be a detail on the
     action's own span — each launch opens one of its own under it."""
-    from dplanner.modules.step_agent_instruction import launcher
+    from dplanner.modules.agent_launch import launcher
     from dplanner.planning.agent import MODULE_ID, write_state
 
     journal = services.telemetry  # The build's journal is the process's.

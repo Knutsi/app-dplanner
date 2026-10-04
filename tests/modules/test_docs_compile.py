@@ -24,6 +24,8 @@ from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.framework.list_rows import DETAIL_ROLE, TRAILING_ROLE
 from dplanner.framework.user_config import set_global
+from dplanner.modules.agent_launch import launcher
+from dplanner.modules.agent_launch import module as agent_module
 from dplanner.modules.docs import module as docs_module
 from dplanner.modules.docs.activity import DOCS_KIND
 from dplanner.modules.docs.aspect import COMPILED_ID, MODULE_ID, write_state
@@ -35,8 +37,6 @@ from dplanner.modules.docs.module import (
     NOTHING_REASON,
     STALE_ACTION,
 )
-from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction import module as agent_module
 from dplanner.modules.step_agent_run.aspect import read as run_state
 from dplanner.planning.feature import write as feature_write
 from dplanner.planning.milestone import write as milestone_write

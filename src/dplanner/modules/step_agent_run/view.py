@@ -32,8 +32,8 @@ from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.row_well import RowWell, WellRow
 from dplanner.framework.signalling import Tone
 from dplanner.framework.widgets import EmptyState
+from dplanner.modules.agent_usage.aspect import brief_words
 from dplanner.modules.step_agent_run.runs import CLOSED, AgentRun, describe
-from dplanner.modules.step_agent_run.usage import brief_words
 
 BROWSER_SIZE = (560, 400)
 NO_RUNS = "No agent has been launched from this window."

@@ -23,7 +23,7 @@ machines, which never conflict. It is the at-work claim's *one file per claim*
 the plan's history, where a heartbeat is not.
 
 **A record is a snapshot, rewritten whole.** The launch writes it with no tokens; every
-harvest (``modules/step_agent_run/harvest.py``) re-reads the vendor's records and writes
+harvest (``modules/agent_usage/harvest.py``) re-reads the vendor's records and writes
 the whole record again — larger while the run goes on, the same once it has ended. Any
 number of harvests, in any order, from the wrapper script, the window or a terminal, give
 one file with the latest answer. A write that would change nothing is skipped, so a sweep

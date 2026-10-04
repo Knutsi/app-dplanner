@@ -4925,7 +4925,7 @@ and handed to the layout (`replaceWidget` reparents it) comes up styled. Measure
 on 2026-10-01; the cause inside Qt's stylesheet style was not found.
 
 **Why it matters.** Any surface that rebuilds a table with new columns will meet it. The
-workaround is one line at the construction site (`step_order/module.py`'s `_new_table`).
+workaround is one line at the construction site (`agent_usage/module.py`'s `_new_table`).
 
 **Upstream?** Yes, as a note in the table primitive's docstring until somebody finds the
 cause — or a `Table.with_columns()` that rebuilds the header in place, which would retire the
@@ -4984,3 +4984,22 @@ console and its Ctrl+C. The flags are spelled as Win32 values rather than read o
 
 **Upstream?** Yes. Any desktop application that opens a second window of itself, or a
 terminal, meets the same Windows trap, and the template has no seam for it.
+
+## 79. From the structural review (S20): a step table two features host
+
+### `framework/step_table.py` — new: `StepTable`, moved from `modules/step_order/view.py`
+
+**What.** The table of steps in order — the index and the title, the milestone's badge and
+shade, the done mark, the Steps/Features switches, then whatever columns the host adds —
+moved out of the Order tab's package unchanged, with its row roles (`STEP_ROLE`,
+`MILESTONE_ROLE`, `COLOR_ROLE`) and kinds. `step_order/view.py` keeps `OrderTable`, which
+subclasses it.
+
+**Why.** Expenditure moved from `step_order` to `agent_usage`, and a module may reach another
+only through its headless `aspect.py`/`workflows.py`, never its widgets. A consumer-owned
+Protocol over a Qt table (its signals, rows and selection) was the alternative, and heavier
+than the move: the row look is one look whichever feature hosts it.
+
+**Upstream?** No — it knows steps, milestones and the kind vocabulary. The lesson is
+general: a widget two features host belongs below both of them.
+

@@ -523,13 +523,14 @@ src/dplanner/
 │   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule verbs
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
-│   ├── step_agent_instruction/   … this one also holds the project's standing instruction,
-│   │                             the step's worktree choice, and launches Run Agent
-│   │                             (`launcher.py`: the terminal and multiplexer table, the
-│   │                             wrapper script that prepares the worktree and reports
-│   │                             back; `profiles.py`:
-│   │                             the named agent-and-terminal pairs Run Agent offers, seeded once;
-│   │                             `detect_dialog.py`: the installed pairings, ticked and added)
+│   ├── step_agent_instruction/   … this one also holds the project's standing instruction
+│   │                             and the step's worktree choice
+│   ├── agent_launch/        Run Agent: the verbs and *Open Agent in Code* (module.py),
+│   │                        `launcher.py` the terminal and multiplexer table and the wrapper
+│   │                        script that prepares the worktree and reports back, `profiles.py`
+│   │                        the named agent-and-terminal pairs, seeded once, `settings_page.py`
+│   │                        and `detect_dialog.py` their page, `due.py` what the plan made due
+│   │                        and `auto_launch.py` the window launching it
 │   ├── agent_briefing/      what an agent is told — no module.py, headless all through:
 │   │                        the preflight and the report-back protocol (protocol.py), the
 │   │                        step's and project's facts (sections.py), the instructions
@@ -542,10 +543,12 @@ src/dplanner/
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or
 │   │                        pane again; the status-bar button and the Agents browser are
-│   │                        `view.py`) — and what its runs consumed: harvested into the
-│   │                        project's ledger (`harvest.py`, `domain/ledger.py`), said by
-│   │                        `usage.py`, which also reads the ledger per project; `dplanner
-│   │                        usage show|list|harvest|record`)
+│   │                        `view.py`)
+│   ├── agent_usage/         what agent runs consumed: the per-project ledger's words and
+│   │                        readers (`aspect.py`, over `domain/ledger.py`), the harvest that
+│   │                        fills it and the window's sweep, `dplanner usage show|list|harvest|record`,
+│   │                        and the Expenditure tab — the order with what each step consumed,
+│   │                        in tokens (`expenditure.py`, `domain/expenditure.py`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab, and `status …`;
 │   │                        the vocabulary and format are `planning/status.py`'s; setting one is
 │   │                        `workflows.py`, which the window and the CLI both call
@@ -583,9 +586,8 @@ src/dplanner/
 │   ├── github/              the branch and PR a step lands in: refs, pickers, PR-state refresh, where
 │   │                        they stand now (the tab's standing line, `dplanner github show`), the missing-gh notice
 │   │
-│   ├── step_order/          the sorted table of steps, and `dplanner order show` — and the
-│   │                        Expenditure tab: the same order with what each step's agents
-│   │                        consumed, in tokens (`expenditure.py`, `domain/expenditure.py`)
+│   ├── step_order/          the sorted table of steps, and `dplanner order show` (its rows
+│   │                        are `framework/step_table.py`'s, which Expenditure shares)
 │   ├── progression/         the *Step statuses* tab, the *Control Centre* over every project,
 │   │                        and `dplanner progression show [--all]`
 │   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab

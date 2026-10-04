@@ -13,9 +13,9 @@ from tests.platforms import POSIX_MODE_BITS, SH, SYMLINKS
 from dplanner.modules import agent_harnesses, default_location_roles
 from dplanner.modules.agent_briefing.prompt import PromptPart, assemble
 from dplanner.modules.agent_briefing.protocol import epilogue, preamble
-from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.launcher import LaunchFiles, resolve_command
-from dplanner.modules.step_agent_instruction.launcher import prepare as _prepare
+from dplanner.modules.agent_launch import launcher
+from dplanner.modules.agent_launch.launcher import LaunchFiles, resolve_command
+from dplanner.modules.agent_launch.launcher import prepare as _prepare
 from dplanner.planning.branches import DEFAULT_BRANCHES, BranchPlan
 from dplanner.planning.status import Status
 
@@ -634,7 +634,7 @@ def test_the_claude_preset_names_the_session_and_the_script_says_how_to_resume(t
     """A session id minted per launch is what `claude --resume` takes back: the facts
     carry it with the directory the agent works in, and a failed run's window prints
     the command before it waits for Enter."""
-    from dplanner.modules.step_agent_instruction.launcher import resume_command
+    from dplanner.modules.agent_launch.launcher import resume_command
 
     run_dir = tmp_path / "run"
     run_dir.mkdir()
@@ -701,7 +701,7 @@ def test_a_run_directory_is_made_resolved(tmp_path, monkeypatch):
     resolved path, so the flag and the pointer carry the resolved one."""
     import tempfile
 
-    from dplanner.modules.step_agent_instruction import launcher
+    from dplanner.modules.agent_launch import launcher
 
     real = tmp_path / "real"
     real.mkdir()
@@ -734,7 +734,7 @@ def test_the_spawned_environment_carries_no_session_markers(monkeypatch, tmp_pat
     The person's own configuration under the same prefix stays."""
     import subprocess
 
-    from dplanner.modules.step_agent_instruction import launcher
+    from dplanner.modules.agent_launch import launcher
 
     # What Claude Code 2.1 sets in every shell it runs, and what it scrubs itself before a
     # standalone session — read off the binary, so the list is not a guess.
@@ -798,7 +798,7 @@ def test_picking_a_terminal_prefills_its_command(app):
     terminals, marked when not installed, and Automatic is the empty template."""
     from PySide6.QtWidgets import QComboBox, QLineEdit
 
-    from dplanner.modules.step_agent_instruction.settings_page import build_page, launch_command
+    from dplanner.modules.agent_launch.settings_page import build_page, launch_command
 
     page = build_page(None, platform="darwin")
     combo = page.findChild(QComboBox, "AgentTerminalCombo")
@@ -818,7 +818,7 @@ def test_picking_a_terminal_prefills_its_command(app):
 def test_picking_a_preset_prefills_the_command(app):
     from PySide6.QtWidgets import QComboBox, QLineEdit
 
-    from dplanner.modules.step_agent_instruction.settings_page import agent_command, build_page
+    from dplanner.modules.agent_launch.settings_page import agent_command, build_page
 
     page = build_page(None, harnesses=HARNESSES)
     combo = page.findChild(QComboBox, "AgentPresetCombo")
@@ -839,9 +839,9 @@ def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_
     from PySide6.QtWidgets import QComboBox
 
     from dplanner.framework.user_config import set_global
-    from dplanner.modules.step_agent_instruction.launcher import current_command, resume_command
-    from dplanner.modules.step_agent_instruction.profiles import AGENT_COMMAND_KEY
-    from dplanner.modules.step_agent_instruction.settings_page import agent_command, build_page
+    from dplanner.modules.agent_launch.launcher import current_command, resume_command
+    from dplanner.modules.agent_launch.profiles import AGENT_COMMAND_KEY
+    from dplanner.modules.agent_launch.settings_page import agent_command, build_page
     from dplanner.planning.agent import MODULE_ID
 
     claude = HARNESSES[0]
@@ -943,7 +943,7 @@ def test_macos_opens_terminal_app(tmp_path):
 
 
 def test_the_terminal_table_is_one_per_platform_and_probes_installs():
-    from dplanner.modules.step_agent_instruction.launcher import is_installed, terminals_for
+    from dplanner.modules.agent_launch.launcher import is_installed, terminals_for
 
     assert [p.label for p in terminals_for("darwin")] == [
         "Terminal",
@@ -1205,7 +1205,7 @@ def test_a_code_repository_not_checked_out_here_is_cloned_before_the_agent(
         services.repo.set_checkout("https://github.com/acme/widget", kept)
         done({"https://github.com/acme/widget": kept}, "")
 
-    module = next(m for m in services.modules if m.id == "step_agent_instruction")
+    module = next(m for m in services.modules if m.id == "agent_launch")
     monkeypatch.setattr(module, "_deps", replace(module._deps, ensure_checkouts=ensure))
     calls: list[tuple[list[str], Path]] = []
     monkeypatch.setattr(launcher, "spawn", lambda cmd, cwd, **_kw: calls.append((cmd, cwd)))
@@ -1317,7 +1317,7 @@ def _fake_terminal(monkeypatch):
 def _silence_fallback(monkeypatch):
     """The prompt fallback dialog without the blocking: what a launch that opens no shell
     shows instead of a terminal."""
-    import dplanner.modules.step_agent_instruction.module as agent_module
+    import dplanner.modules.agent_launch.module as agent_module
 
     class SilentDialog:
         def __init__(self, *args, **kwargs):
@@ -1334,7 +1334,7 @@ def _record_boxes(monkeypatch, *, click):
     words); ``click`` is True for Run Anyway, None for Escape."""
     from PySide6.QtWidgets import QDialog
 
-    from dplanner.modules.step_agent_instruction.run_dialog import RunAnywayDialog
+    from dplanner.modules.agent_launch.run_dialog import RunAnywayDialog
 
     shown = []
 
@@ -1500,7 +1500,7 @@ def test_a_successful_launch_claims_the_step_is_in_progress(services, step, monk
 def test_the_launch_claim_can_be_switched_off(services, step, monkeypatch):
     """The person keeping statuses by hand switches it off, and a launch writes nothing."""
     from dplanner.framework.user_config import set_global
-    from dplanner.modules.step_agent_instruction.settings_page import START_IN_PROGRESS_KEY
+    from dplanner.modules.agent_launch.settings_page import START_IN_PROGRESS_KEY
     from dplanner.planning.agent import MODULE_ID as AGENT_ID
     from dplanner.planning.status import stored as status_of
 
@@ -1517,7 +1517,7 @@ def test_the_settings_switch_round_trips(app):
     """The page reflects the stored preference and writes the person's answer back."""
     from PySide6.QtWidgets import QCheckBox
 
-    from dplanner.modules.step_agent_instruction.settings_page import (
+    from dplanner.modules.agent_launch.settings_page import (
         build_page,
         start_in_progress,
     )
@@ -1680,7 +1680,7 @@ def test_a_run_over_a_selection_claims_each_step_whose_shell_opened(services, st
 def test_a_selection_past_the_limit_greys_the_verb_and_says_the_limit(services, step):
     """The count itself is the refusal: a lasso is one flick, and five terminals is not
     what it meant. Disabled with the reason, never hidden and never a partial launch."""
-    from dplanner.modules.step_agent_instruction.settings_page import DEFAULT_MAX_AGENTS
+    from dplanner.modules.agent_launch.settings_page import DEFAULT_MAX_AGENTS
 
     project = services.document.project_of(step.id)
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
@@ -1710,7 +1710,7 @@ def test_nothing_launches_past_the_limit_even_if_the_verb_is_run_anyway(
 def test_the_limit_is_a_setting(services, step, app):
     """Four is a default, not a rule: the Agent settings page writes the number and the
     verb reads it back."""
-    from dplanner.modules.step_agent_instruction.settings_page import build_page
+    from dplanner.modules.agent_launch.settings_page import build_page
 
     project = services.document.project_of(step.id)
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
@@ -2184,7 +2184,7 @@ def test_the_run_anyway_dialog_is_a_frame_with_run_anyway_as_the_primary(app):
     """DESIGN.md's first flow: the count in the title, the step and what it waits on in
     the body, Run Anyway the accent — it discards nothing — and Cancel Escape's."""
     from dplanner.framework.dialog import DialogFrame
-    from dplanner.modules.step_agent_instruction.run_dialog import RunAnywayDialog
+    from dplanner.modules.agent_launch.run_dialog import RunAnywayDialog
 
     dialog = RunAnywayDialog(
         3,
@@ -2213,7 +2213,7 @@ def test_the_prompt_fallback_is_a_frame_that_says_when_the_prompt_was_copied(app
     from PySide6.QtGui import QGuiApplication
 
     from dplanner.framework.dialog import DialogFrame
-    from dplanner.modules.step_agent_instruction.run_dialog import PromptFallbackDialog
+    from dplanner.modules.agent_launch.run_dialog import PromptFallbackDialog
 
     dialog = PromptFallbackDialog("# Step\n\nDo the thing.", "/tmp/run/prompt.md", None)
     try:
@@ -2376,7 +2376,7 @@ def test_a_custom_agent_command_cannot_be_opened_bare_and_the_entry_says_why(
 ):
     """Nothing here knows which of a hand-written command's flags are about its briefing,
     and guessing is how an "open a session" verb would open a planning one instead."""
-    from dplanner.modules.step_agent_instruction.profiles import Profile, write_profiles
+    from dplanner.modules.agent_launch.profiles import Profile, write_profiles
 
     write_profiles([Profile("Mine", "my-agent {prompt}")])
     focus_project(services, services.document.project_of(step.id))
@@ -2394,7 +2394,7 @@ def test_no_terminal_says_so_rather_than_offering_a_prompt_nobody_wrote(
 ):
     """Every briefed launch ends in the prompt fallback; this one has no prompt to hand
     over, so the refusal is a notice."""
-    import dplanner.modules.step_agent_instruction.module as agent_module
+    import dplanner.modules.agent_launch.module as agent_module
 
     said: list[tuple[str, str]] = []
     monkeypatch.setattr(agent_module, "notice", lambda _p, title, text: said.append((title, text)))

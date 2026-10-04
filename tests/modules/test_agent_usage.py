@@ -18,7 +18,9 @@ from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules import agent_harnesses
 from dplanner.modules.agent_claude import harness as claude
-from dplanner.modules.step_agent_run import aspect, harvest, usage
+from dplanner.modules.agent_usage import aspect as usage
+from dplanner.modules.agent_usage import harvest
+from dplanner.modules.step_agent_run import aspect
 
 HARNESSES = agent_harnesses()
 NOW = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
@@ -44,7 +46,7 @@ def _launched(
     machine: str = "",
     launched: datetime = NOW - timedelta(hours=1),
 ) -> ledger.LedgerRecord:
-    record = harvest.launch_record(
+    record = usage.launch_record(
         run=run,
         project="p1",
         step="s1",
@@ -81,7 +83,7 @@ def test_a_harvest_never_writes_away_an_end_another_process_wrote(tmp_path):
     write keeps the exit."""
     plan = tmp_path / "plan"
     stale = _launched(plan, "r1", "claude", tmp_path)
-    harvest.end(plan, "r1", 0, "2026-10-01T11:30:00+00:00")
+    usage.end(plan, "r1", 0, "2026-10-01T11:30:00+00:00")
     harvest.store(plan, stale)
     stored = ledger.find(plan, "r1")
     assert stored is not None and stored.ended == "2026-10-01T11:30:00+00:00"
@@ -94,7 +96,7 @@ def test_the_sweep_reads_this_machines_due_runs_and_nothing_else(tmp_path, monke
         _transcript(tmp_path / "claude", session, tree, input_tokens=1, output_tokens=1)
     _launched(plan, "live", "claude", tree, session="live")
     _launched(plan, "ended", "claude", tree, session="ended")
-    harvest.end(plan, "ended", 0, (NOW - timedelta(minutes=5)).isoformat())
+    usage.end(plan, "ended", 0, (NOW - timedelta(minutes=5)).isoformat())
     _launched(plan, "elsewhere", "claude", tree, session="elsewhere", machine="another")
     old = NOW - timedelta(days=harvest.SWEEP_DAYS + 1)
     _launched(plan, "ancient", "claude", tree, session="ancient", launched=old)
@@ -275,6 +277,29 @@ def test_usage_rows_kept_on_a_step_move_into_the_ledger_at_the_next_open(cli, wo
     assert not old.exists()
     cli("usage", "show", "S1")  # A second open finds nothing left to move.
     assert len(list(workspace.rglob("legacy-s1.json"))) == 1
+
+
+def test_a_window_opened_over_kept_usage_rows_moves_them_into_the_ledger(
+    app, cli, cli_library, workspace, at_work_board, launch_locks
+):
+    """The window absorbs the retired aspect as the CLI does: ``AgentUsageModule`` declares
+    its format, so the builder's migration moves the rows before any module reads."""
+    from dplanner.app import new_session
+
+    cli("project", "create", "Discovery")
+    cli("step", "add", "Discovery", "Deploy")
+    (step_file,) = list(workspace.rglob("step.json"))
+    old = step_file.parent / "modules" / f"{usage.MODULE_ID}.json"
+    old.parent.mkdir(exist_ok=True)
+    old.write_text(json.dumps({"runs": [{"harness": "claude", "session": "s1", "input": 9}]}))
+
+    session = new_session(at_work=at_work_board, launch_locks=launch_locks)
+    try:
+        assert session.open_initial(cli_library)
+        assert not old.exists()
+        assert len(list(workspace.rglob("legacy-s1.json"))) == 1
+    finally:
+        session.close()
 
 
 # -- the CLI -------------------------------------------------------------------------------------

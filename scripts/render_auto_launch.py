@@ -32,14 +32,14 @@ from dplanner.core.storage.pointer import remove_from_index
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.framework.user_config import set_global
+from dplanner.modules.agent_launch import launcher
+from dplanner.modules.agent_launch.auto_launch import LaunchLocks
+from dplanner.modules.agent_launch.settings_page import AUTO_LAUNCH_KEY
 from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
 from dplanner.modules.auto_progress.aspect import write as write_flags
 from dplanner.modules.progression.module import PROGRESSION_KIND
 from dplanner.modules.settings.dialog import DIALOG_SIZE as SETTINGS_SIZE
 from dplanner.modules.settings.module import SettingsModule
-from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
-from dplanner.modules.step_agent_instruction.settings_page import AUTO_LAUNCH_KEY
 from dplanner.planning.agent import MODULE_ID as AGENT_ID
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status

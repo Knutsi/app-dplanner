@@ -65,6 +65,9 @@ if TYPE_CHECKING:
     from dplanner.framework.services import AppServices
     from dplanner.framework.undo import UndoService
     from dplanner.modules.agent_at_work.module import AgentAtWorkModule
+    from dplanner.modules.agent_launch.auto_launch import LaunchLocks
+    from dplanner.modules.agent_launch.module import AgentLaunchModule
+    from dplanner.modules.agent_usage.module import AgentUsageModule
     from dplanner.modules.branches.module import BranchesModule
     from dplanner.modules.canvas.clipboard.clip import PastePolicy
     from dplanner.modules.canvas.module import CanvasModule
@@ -85,7 +88,6 @@ if TYPE_CHECKING:
     from dplanner.modules.spec.module import SpecModule
     from dplanner.modules.spec.source_kind import DocumentSourceKind
     from dplanner.modules.spec_confluence.module import SecretStore, SpecConfluenceModule
-    from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
     from dplanner.modules.step_agent_instruction.module import StepAgentInstructionModule
     from dplanner.modules.step_agent_run.module import StepAgentRunModule
     from dplanner.modules.step_order.module import StepOrderModule
@@ -141,15 +143,13 @@ def default_modules(
     agents = _agents(
         root, branches=branches, settings=settings, board=board, launch_locks=launch_locks
     )
-    graph = _graph(root, branches=branches, agent_instruction=agents.instruction)
+    graph = _graph(root, branches=branches, launch=agents.launch)
     knowledge = _knowledge(root, editor=graph.editor)
     tabs = _project_tabs(root)
     return [
         *_shell(root, agents),
         *_assistants(root, settings),
-        _projects(
-            root, editor=graph.editor, knowledge=knowledge, tabs=tabs, checkouts=agents.checkouts
-        ),
+        _projects(root, editor=graph.editor, knowledge=knowledge, tabs=tabs, agents=agents),
         _project_archive(root),
         # Before spec: the Specs tab's + menu lists its kinds, and its settings section
         # must exist before the settings dialog is built.
@@ -172,6 +172,7 @@ def default_modules(
         _step_properties(root),
         graph.editor,
         tabs.step_order,
+        agents.usage,
         tabs.progression,
         tabs.time,
         # After every module whose report_source it renders; before Settings, whose dialog
@@ -499,6 +500,8 @@ class _Agents(NamedTuple):
     at_work: "AgentAtWorkModule"
     checkouts: "CheckoutService"
     instruction: "StepAgentInstructionModule"
+    launch: "AgentLaunchModule"
+    usage: "AgentUsageModule"
 
 
 def _agents(
@@ -519,20 +522,19 @@ def _agents(
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
     from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
     from dplanner.modules.agent_briefing.worktree import mainline
-    from dplanner.modules.auto_progress.aspect import auto_progresses
+    from dplanner.modules.agent_launch.due import Due, due_in, has_run
+    from dplanner.modules.agent_launch.module import AgentLaunchDeps, AgentLaunchModule
+    from dplanner.modules.agent_usage.aspect import ledger_dir, step_usage_words
+    from dplanner.modules.agent_usage.module import AgentUsageDeps, AgentUsageModule
     from dplanner.modules.branches.plan import branch_plan
     from dplanner.modules.projects.checkouts import CheckoutService
-    from dplanner.modules.step_agent_instruction.due import Due, due_in, has_run
     from dplanner.modules.step_agent_instruction.module import (
         StepAgentInstructionDeps,
         StepAgentInstructionModule,
     )
-    from dplanner.modules.step_agent_run.aspect import asks_person
-    from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
-    from dplanner.modules.step_agent_run.usage import ledger_dir, step_usage_words
-    from dplanner.planning.kinds import key_of, works_nobody
-    from dplanner.planning.status import record_started
+    from dplanner.planning.kinds import key_of
+    from dplanner.planning.status import Status
 
     services, library, store = root.services, root.library, root.store
 
@@ -547,6 +549,13 @@ def _agents(
             "steps.reveal",
             Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
         )
+
+    def ended() -> None:
+        """A run ended: a slot is free for what is due — even when the agent had cleared
+        its state and the plan did not change — and what it consumed is due a harvest.
+        Both modules are built below, and nothing ends before the build is up."""
+        launch.settle_launches()
+        usage.sweep()
 
     # Every launch is handed here, and this is the one place that keeps an eye on the shell
     # afterwards.
@@ -564,21 +573,29 @@ def _agents(
             reveal=reveal_step,
             # Which CLI ran a step, and how to read its record back when the shell ends.
             harnesses=agent_harnesses(),
-            # A run that ended frees a slot for what is due — even when the agent had
-            # cleared its state and the plan did not change. The agent module is built
-            # below, and nothing ends before the build is up.
-            ended=lambda: instruction.settle_launches(),
-            # Where each run's ledger record lives, and every project's ledger for the
-            # sweep that reads what the runs consumed back into them.
+            ended=ended,
+            # Where each run's ledger record lives.
             project_dir=lambda step_id: (
                 ledger_dir(store, library.project_of(step_id).id) if library.has(step_id) else None
             ),
-            project_dirs=lambda: [
-                directory
-                for project in library.projects
-                if (directory := ledger_dir(store, project.id)) is not None
-            ],
+        )
+    )
+    # The ledger's sweep and the Expenditure tab, whose rows look as the Order tab's do.
+    usage = AgentUsageModule(
+        AgentUsageDeps(
+            library=library,
+            store=store,
+            actions=services.actions,
+            context=services.context,
+            parent=services.window,
+            debounce=services.debounce,
+            tabs=services.tabs,
+            harnesses=agent_harnesses(),
             tasks=services.tasks,
+            swept=runs.refresh,
+            step_icons=lambda step_id: _step_type_icons(library.step(step_id)),
+            milestone_color=root.milestone_color,
+            step_done=lambda step_id: _card_status(library.step(step_id)) is Status.DONE,
         )
     )
 
@@ -613,21 +630,15 @@ def _agents(
         root.repos, services.tasks, kept_root=config_dir(), parent=services.window
     )
 
-    instruction = StepAgentInstructionModule(
-        StepAgentInstructionDeps(
-            works_nobody=works_nobody,
-            dictation=services.dictation,
+    launch = AgentLaunchModule(
+        AgentLaunchDeps(
             library=library,
             debounce=services.debounce,
-            undo=services.undo,
-            sections=services.inspector_sections,
             actions=services.actions,
             context=services.context,
             settings_sections=services.settings_sections,
             status=services.window,
             parent=services.window,
-            # Its Project ▸ Settings… tab: the standing instruction every briefing opens with.
-            project_settings=services.project_settings,
             files=store.files,
             # How staged assets are read at launch — bytes by absolute path.
             read_asset=read_absolute,
@@ -665,27 +676,10 @@ def _agents(
                 files.workdir,
             ),
             harnesses=agent_harnesses(),
-            # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.
-            usage_words=lambda step_id: step_usage_words(store, library, step_id),
-            pick_assets=root.pick_assets,
-            # Run Agent asks before launching on a step whose prerequisites are not
-            # done — the same status reader the Step statuses tab's frontier uses.
-            status_for=_wait_aware(library, services.clock.today),
-            # A source under review does not hold a step that collects it.
-            auto_progresses=auto_progresses,
-            # And says so on the step when the shell opens: the status aspect's own
-            # writer, applied off the undo stack the way the launch stamp is. The
-            # agent module holds the preference; the word is the status module's.
-            mark_started=lambda step_id: record_started(library, step_id, services.clock.today()),
-            # The key that heads the run's terminal title and its subject line.
-            step_key=key_of,
             # Manage Agent Profiles… lands on the module's own settings page.
             open_settings=settings.open,
             # What the window launches with nobody clicking, when this machine says so.
             due=due_here,
-            preferred_agent=_preferred_agent,
-            asks_person=asks_person,
-            run_state=agent_run_state,
             live_runs=runs.live,
             repo=store,
             notices=services.window,
@@ -696,7 +690,28 @@ def _agents(
             ),
         )
     )
-    return _Agents(runs, at_work, checkouts, instruction)
+    instruction = StepAgentInstructionModule(
+        StepAgentInstructionDeps(
+            dictation=services.dictation,
+            library=library,
+            debounce=services.debounce,
+            undo=services.undo,
+            sections=services.inspector_sections,
+            actions=services.actions,
+            context=services.context,
+            # Its Project ▸ Settings… tab: the standing instruction every briefing opens with.
+            project_settings=services.project_settings,
+            files=store.files,
+            read_asset=read_absolute,
+            facts_for=root.facts_for,
+            # The Prompt view shows exactly what Run Agent launches with.
+            assembled=launch.assembled,
+            # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.
+            usage_words=lambda step_id: step_usage_words(store, library, step_id),
+            pick_assets=root.pick_assets,
+        )
+    )
+    return _Agents(runs, at_work, checkouts, instruction, launch, usage)
 
 
 class _Graph(NamedTuple):
@@ -704,9 +719,7 @@ class _Graph(NamedTuple):
     editor: "CanvasModule"
 
 
-def _graph(
-    root: _Root, *, branches: "BranchesModule", agent_instruction: "StepAgentInstructionModule"
-) -> _Graph:
+def _graph(root: _Root, *, branches: "BranchesModule", launch: "AgentLaunchModule") -> _Graph:
     """The graph editor, the Problems panel it stands beside the canvas, and the canvas's
     reading of every aspect a card or an arrow wears."""
     from dataclasses import replace
@@ -879,8 +892,8 @@ def _graph(
             facts_of=root.facts_of,
             key_of=key_of,
             # Handing the problems to an agent is Run Agent's.
-            fix_profiles=agent_instruction.plan_profiles,
-            fix=lambda project_id, findings, profile: agent_instruction.fix_problems(
+            fix_profiles=launch.plan_profiles,
+            fix=lambda project_id, findings, profile: launch.fix_problems(
                 project_id,
                 [(row.check, row.subject, row.message) for row in findings],
                 profile,
@@ -1120,6 +1133,7 @@ def _project_tabs(root: _Root) -> _Tabs:
     from dplanner.domain.commands import SetModuleDataCommand
     from dplanner.framework.context import ContextService
     from dplanner.framework.undo import UndoService
+    from dplanner.modules.agent_launch.module import RUN_MENU_ID
     from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.notes.module import NotesDeps, NotesModule
@@ -1133,9 +1147,7 @@ def _project_tabs(root: _Root) -> _Tabs:
         ProjectAssetsModule,
     )
     from dplanner.modules.reporting.module import ReportingDeps, ReportingModule
-    from dplanner.modules.step_agent_instruction.module import RUN_MENU_ID
     from dplanner.modules.step_agent_run.aspect import asks_person
-    from dplanner.modules.step_agent_run.usage import ledger_stamp, step_spent, token_rate
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
@@ -1375,17 +1387,6 @@ def _project_tabs(root: _Root) -> _Tabs:
             # The same answer the canvas card's ✓ and the report's read: a wait is never
             # done here, whatever its day.
             step_done=lambda step_id: _card_status(library.step(step_id)) is Status.DONE,
-            # The Expenditure tab: what each step's runs consumed, from the project's
-            # usage ledger, and a rate of tokens per estimated day learned from the
-            # library's finished steps — where ledgers live is the store's to know.
-            step_spent=lambda project_id: step_spent(store, project_id),
-            token_rate=lambda project_id: token_rate(
-                store,
-                library,
-                project_id,
-                lambda step: _card_status(step) is Status.DONE,
-            ),
-            ledger_stamp=lambda project_id: ledger_stamp(store, project_id),
         )
     )
     return _Tabs(progression, estimation, notes, time, simulation, assets, reporting, step_order)
@@ -1515,8 +1516,8 @@ def _shell(root: _Root, agents: _Agents) -> list["Module"]:
                 repo_for=store.repo_for,
                 focused_project=focused_project,
                 projects_in=projects_in,
-                reconcile_profiles=lambda: agents.instruction.plan_profiles(),
-                reconcile=lambda root, branch, profile: agents.instruction.reconcile_remote(
+                reconcile_profiles=lambda: agents.launch.plan_profiles(),
+                reconcile=lambda root, branch, profile: agents.launch.reconcile_remote(
                     root, branch, profile
                 ),
             )
@@ -1540,14 +1541,14 @@ def _shell(root: _Root, agents: _Agents) -> list["Module"]:
                 library=library,
                 # An entry both writers changed goes to Run Agent's launcher with both
                 # versions; the run is tracked on the step like any other.
-                hand_to_agent=agents.instruction.hand_conflicts,
-                agent_refusal=agents.instruction.conflict_refusal,
+                hand_to_agent=agents.launch.hand_conflicts,
+                agent_refusal=agents.launch.conflict_refusal,
                 # Whether an agent says it is at work on a project: the modal stands down
                 # while one is, and the dialog says so when it does open.
                 agent_at_work=agents.at_work.at_work_words,
                 # Every settle of an outside change — even one that changed nothing the
                 # model heard, like Keep Mine — lets the launcher look again.
-                settled=agents.instruction.settle_launches,
+                settled=agents.launch.settle_launches,
             )
         ),
         TaskCenterModule(
@@ -1676,7 +1677,7 @@ def _projects(
     editor: "CanvasModule",
     knowledge: _Knowledge,
     tabs: _Tabs,
-    checkouts: "CheckoutService",
+    agents: _Agents,
 ) -> "ProjectsModule":
     """The projects in the index, and the rows under each that open what a project has."""
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
@@ -1712,7 +1713,7 @@ def _projects(
             # The Project dialog's tabs after Repositories: whatever other modules
             # registered about a project, read when the dialog is first built.
             project_settings=services.project_settings,
-            checkouts=checkouts,
+            checkouts=agents.checkouts,
             repos=root.repos,
             # The index opens a project without knowing what an activity is: *Show
             # Steps* and the Steps row open the graph; the project's row only selects.
@@ -1777,8 +1778,8 @@ def _projects(
                 ProjectEntry(
                     id="expenditure",
                     label="Expenditure",
-                    open=tabs.step_order.open_expenditure,
-                    open_preview=lambda pid: tabs.step_order.open_expenditure(pid, preview=True),
+                    open=agents.usage.open_expenditure,
+                    open_preview=lambda pid: agents.usage.open_expenditure(pid, preview=True),
                     icon=spark_icon,
                     menu="Project",
                     order=37,
@@ -1833,13 +1834,13 @@ def _aspects(
         SetModuleDataCommand,
     )
     from dplanner.domain.model import TextEdit
+    from dplanner.modules.agent_launch.profiles import default_profile
     from dplanner.modules.auto_progress.module import AutoProgressDeps, AutoProgressModule
     from dplanner.modules.branches.module import LandingModule
     from dplanner.modules.branches.plan import merged_into_its_branch
     from dplanner.modules.canvas.step_verbs import picked_edges
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.github.module import GithubDeps, GithubModule
-    from dplanner.modules.step_agent_instruction.profiles import default_profile
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
@@ -1991,6 +1992,7 @@ def _aspects(
         ),
         # Run Agent; the library watcher borrows its launcher.
         agents.instruction,
+        agents.launch,
         # The shells Run Agent spawns; the canvas reads the aspect through its accents.
         agents.runs,
         DocsModule(
@@ -2020,8 +2022,8 @@ def _aspects(
                 # Compiling is a launch: the briefing is the docs module's words, the
                 # terminal and the desk's limit are Run Agent's, and neither imports the
                 # other. The run is tracked on the collector like any other agent run.
-                compile_profiles=agents.instruction.compile_profiles,
-                compile_with_agent=agents.instruction.compile_documentation,
+                compile_profiles=agents.launch.compile_profiles,
+                compile_with_agent=agents.launch.compile_documentation,
                 # Whether an agent is already at work on a collector — the run aspect's own
                 # reader, so the words are the status module's and not a second copy.
                 run_state=lambda step_id: (
@@ -2445,19 +2447,11 @@ def _always_progresses(step: "Step") -> str:
     return TAKES_FROM_REVIEW if is_review(step) else ""
 
 
-def _preferred_agent(step: "Step") -> str:
-    """The agent a step asks to be run by — a review's own choice, a harness id — or "" for
-    the default profile."""
-    from dplanner.planning.review import is_review, settings
-
-    return settings(step).agent if is_review(step) else ""
-
-
 def _due_steps(
     library: "Library", project: "Project", status_for: "Callable[[Step], Status]"
 ) -> "list[Step]":
     """The due steps alone — what the terminal marks and names."""
-    from dplanner.modules.step_agent_instruction.due import due_now
+    from dplanner.modules.agent_launch.due import due_now
 
     return [each.step for each in due_now(library, project, status_for)]
 
@@ -2743,13 +2737,13 @@ def _machine_checks(*, files: "Callable[[], dict[str, str]]") -> tuple["MachineC
     ``files`` is the generated skill the installer's rows compare against — the same
     closure the Install dialog is handed.
     """
+    from dplanner.modules.agent_launch import checks as agent_checks
     from dplanner.modules.checklist import checks as generic
     from dplanner.modules.dictation import checks as dictation_checks
     from dplanner.modules.github import checks as github_checks
     from dplanner.modules.install import checks as install_checks
     from dplanner.modules.llm import checks as llm_checks
     from dplanner.modules.spec_confluence import checks as confluence_checks
-    from dplanner.modules.step_agent_instruction import checks as agent_checks
 
     return (
         *install_checks.checks(files=files),
@@ -2917,7 +2911,7 @@ def at_work_board() -> "AtWorkBoard":
 def launch_locks_in(directory: "Path") -> "LaunchLocks":
     """The launch locks a session holds, one per library, under ``directory`` — built once
     per session so a reload's window keeps the hold (``auto_launch.py``)."""
-    from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
+    from dplanner.modules.agent_launch.auto_launch import LaunchLocks
 
     return LaunchLocks(directory)
 
@@ -2982,6 +2976,7 @@ def default_cli_commands(
     from dplanner.domain.workflow import AgentRun, Person
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.agent_usage import cli as usage_cli
     from dplanner.modules.auto_progress import cli as auto_progress_cli
     from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.modules.branches import cli as branches_cli
@@ -3131,7 +3126,8 @@ def default_cli_commands(
         ),
         # What a run consumed is read through the harness that ran it, so the verbs are
         # handed the same tuple the window's tracker reads.
-        *agent_state_cli.commands(harnesses=agent_harnesses()),
+        *agent_state_cli.commands(),
+        *usage_cli.commands(harnesses=agent_harnesses()),
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
         *at_work_cli.commands(board=board, key_of=key_of),
@@ -3524,10 +3520,10 @@ def default_module_formats() -> list[ModuleDataFormat]:
     format missing here is data the CLI silently declines to bring forward.
     """
     from dplanner.domain import shelf
+    from dplanner.modules.agent_usage import aspect as agent_usage
     from dplanner.modules.canvas.layouts import positions
     from dplanner.modules.notes import migrate as notes
     from dplanner.modules.project_assets import cli as project_assets
-    from dplanner.modules.step_agent_run import usage as agent_usage
     from dplanner.modules.time_estimates import progress as time_progress
     from dplanner.modules.time_estimates import schedule as time_schedule
 

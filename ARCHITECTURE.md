@@ -4757,7 +4757,7 @@ verbs, generalised rather than joined by a second one), and `progression show` m
 rows. `--json` keeps its one document — the line is text for whoever reads the terminal,
 and `progression show --json` carries `due` for a caller that parses.
 
-**What is due is one derivation, read by every surface.** `step_agent_instruction/due.py`'s
+**What is due is one derivation, read by every surface.** `agent_launch/due.py`'s
 `due_now` joins two owners' halves and never stores the answer — headless, so that a process
 with no window can one day launch by the same rule; the root only widens *running* with the
 runs the window watches, and `due.claim` is the claim either would write:
@@ -4775,7 +4775,7 @@ runs the window watches, and `due.claim` is the claim either would write:
   in the ledger so the terminal, a second window and a second machine all read the same
   answer. It covers a collector's upstream conversations too, since the ledger is shared.
 
-**Level-triggered, never edge-triggered.** The launcher (`step_agent_instruction/
+**Level-triggered, never edge-triggered.** The launcher (`agent_launch/
 auto_launch.py`) does not react to "A3 moved to review": the window may have been closed
 when it happened, or adopt three such moves in one tick, and an edge missed is a collector
 never started. It re-derives what is due after every change of any origin — adopted
@@ -5377,7 +5377,7 @@ that: a Claude run in a Ghostty window for the step under the cursor, and four C
 side by side in a multiplexer for the four the lasso caught, are not one setting with a
 different value; they are two ways of working a person switches between all day.
 
-A **profile** (`step_agent_instruction/profiles.py`) is the two answers under a name,
+A **profile** (`agent_launch/profiles.py`) is the two answers under a name,
 and the list of them is the setting. The first is the default — what `agent.run` itself
 runs, so the Agent tab's button and the palette need no picker — and the whole list is
 *Step ▸ Run Agent*, a data child menu rebuilt on open so a profile added in Settings is
@@ -5484,7 +5484,7 @@ spent, and the ways it missed were structural, not bugs to patch one by one:
 
 So usage left the model. **A run is a record in the project's `ledger/`, written at launch
 and filled by a harvest that anybody may run at any time** (`domain/ledger.py`,
-`modules/step_agent_run/harvest.py`). The launch knows the step, the agent CLI, where it
+`modules/agent_usage/harvest.py`). The launch knows the step, the agent CLI, where it
 works and — for Claude — the session; everything after is a re-read of the vendor's own
 records into the same file. Because that read is idempotent, the triggers do not have to be
 reliable, only plentiful: the wrapper script runs `dplanner usage harvest` the moment the
@@ -5524,8 +5524,12 @@ after thirty days.
 The question after *what did this run cost* is *how is the plan doing against what we
 thought* — read down the order, which is how the work will be done. So the answer is the
 Order tab with other columns, not a report of its own: the rows, the switches, the
-gestures and the milestone marks are `step_order/view.py`'s `StepTable`, which both tabs
-subclass, and the second tab lives in the same package because it *is* the order.
+gestures and the milestone marks are `framework/step_table.py`'s `StepTable`, which both
+tabs host. The tab lived in `step_order` at first, because it *is* the order; it moved to
+`agent_usage`, because what it reads is the ledger — its Deps were three callbacks that
+existed only to hand the order module the ledger's facts, and a package named for the order
+held the one view of what agents spent. Two packages may not import each other's widgets, so
+the shared row look went down to `framework/`, where both can reach it.
 
 **Expected is learned, and not from the steps it is compared with.** Nobody estimates
 tokens; people estimate days. A rate — tokens of work (fresh input and output) per

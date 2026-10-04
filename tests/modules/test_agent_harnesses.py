@@ -10,8 +10,8 @@ from PySide6.QtWidgets import QComboBox, QLineEdit
 from dplanner.domain.agents import AgentHarness, harness_by_id, harness_for_command
 from dplanner.modules import agent_harnesses
 from dplanner.modules.agent_codex import harness as codex
-from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.launcher import LaunchFiles
+from dplanner.modules.agent_launch import launcher
+from dplanner.modules.agent_launch.launcher import LaunchFiles
 
 HARNESSES = agent_harnesses()
 
@@ -143,7 +143,7 @@ def test_the_wrapper_records_the_multiplexers_own_names_for_the_pane(tmp_path):
 
 def test_the_two_old_settings_read_as_the_default_profile(app):
     from dplanner.framework.user_config import set_global
-    from dplanner.modules.step_agent_instruction.profiles import (
+    from dplanner.modules.agent_launch.profiles import (
         AGENT_COMMAND_KEY,
         LAUNCH_COMMAND_KEY,
         Profile,
@@ -166,8 +166,8 @@ def test_the_known_pairings_are_seeded_once_and_never_doubled(app):
     pairing already there by its choices is skipped whatever it is named, the stored
     default stays first, and a second seed (or a removal) is honoured by the flag."""
     from dplanner.framework.user_config import get_global
-    from dplanner.modules.step_agent_instruction.launcher import HERDR_COMMAND
-    from dplanner.modules.step_agent_instruction.profiles import (
+    from dplanner.modules.agent_launch.launcher import HERDR_COMMAND
+    from dplanner.modules.agent_launch.profiles import (
         SEEDED_KEY,
         Profile,
         read_profiles,
@@ -204,7 +204,7 @@ def test_the_known_pairings_are_seeded_once_and_never_doubled(app):
 
 def test_a_fresh_machine_is_seeded_around_its_default_and_no_harness_seeds_nothing(app):
     from dplanner.framework.user_config import get_global
-    from dplanner.modules.step_agent_instruction.profiles import (
+    from dplanner.modules.agent_launch.profiles import (
         SEEDED_KEY,
         read_profiles,
         seed_profiles,
@@ -222,14 +222,14 @@ def test_a_fresh_machine_is_seeded_around_its_default_and_no_harness_seeds_nothi
 
 
 def test_the_window_seeds_the_profiles_when_it_is_built(services):
-    from dplanner.modules.step_agent_instruction.profiles import read_profiles
+    from dplanner.modules.agent_launch.profiles import read_profiles
 
     assert len(read_profiles()) == 9
 
 
 def test_manage_agent_profiles_opens_settings_on_the_profiles_page(services, monkeypatch):
+    from dplanner.modules.agent_launch.module import SETTINGS_SECTION
     from dplanner.modules.settings.module import SettingsModule
-    from dplanner.modules.step_agent_instruction.module import SETTINGS_SECTION
 
     settings = next(m for m in services.modules if isinstance(m, SettingsModule))
     monkeypatch.setattr(settings.dialog, "show", lambda: None)
@@ -244,8 +244,8 @@ def test_manage_agent_profiles_opens_settings_on_the_profiles_page(services, mon
 def test_detection_pairs_what_this_machine_has_and_says_what_it_lacks(app):
     """Every harness in every terminal row and Automatic: the agent by its command on
     PATH, the terminal by its row's probe, a stored pairing marked present."""
-    from dplanner.modules.step_agent_instruction.launcher import HERDR_COMMAND
-    from dplanner.modules.step_agent_instruction.profiles import (
+    from dplanner.modules.agent_launch.launcher import HERDR_COMMAND
+    from dplanner.modules.agent_launch.profiles import (
         Profile,
         detect_pairings,
         write_profiles,
@@ -273,11 +273,11 @@ def test_detection_pairs_what_this_machine_has_and_says_what_it_lacks(app):
 def test_the_detected_profiles_dialog_ticks_the_runnable_and_adds_the_ticked(app):
     from PySide6.QtCore import Qt
 
-    from dplanner.modules.step_agent_instruction.detect_dialog import (
+    from dplanner.modules.agent_launch.detect_dialog import (
         NOTHING_TICKED,
         DetectedProfilesDialog,
     )
-    from dplanner.modules.step_agent_instruction.profiles import (
+    from dplanner.modules.agent_launch.profiles import (
         Profile,
         add_profiles,
         read_profiles,
@@ -307,9 +307,9 @@ def test_the_detected_profiles_dialog_ticks_the_runnable_and_adds_the_ticked(app
 def test_the_settings_page_adds_the_detected_profiles(app, monkeypatch):
     from PySide6.QtWidgets import QDialog
 
-    from dplanner.modules.step_agent_instruction import settings_page
-    from dplanner.modules.step_agent_instruction.detect_dialog import DetectedProfilesDialog
-    from dplanner.modules.step_agent_instruction.profiles import (
+    from dplanner.modules.agent_launch import settings_page
+    from dplanner.modules.agent_launch.detect_dialog import DetectedProfilesDialog
+    from dplanner.modules.agent_launch.profiles import (
         Profile,
         read_profiles,
         write_profiles,
@@ -335,7 +335,7 @@ def test_the_settings_page_adds_the_detected_profiles(app, monkeypatch):
 
 
 def test_a_profile_is_named_by_its_choices():
-    from dplanner.modules.step_agent_instruction.profiles import Profile, suggested_name
+    from dplanner.modules.agent_launch.profiles import Profile, suggested_name
 
     def named(agent, terminal):
         return suggested_name(Profile("", agent, terminal), HARNESSES, platform="linux")
@@ -348,7 +348,7 @@ def test_a_profile_is_named_by_its_choices():
 
 
 def test_a_name_nobody_typed_follows_the_choices_and_a_typed_one_stays(app):
-    from dplanner.modules.step_agent_instruction.profiles import (
+    from dplanner.modules.agent_launch.profiles import (
         Profile,
         read_profiles,
         update_profile,
@@ -370,8 +370,8 @@ def test_a_name_nobody_typed_follows_the_choices_and_a_typed_one_stays(app):
 
 def test_the_settings_page_adds_removes_and_promotes_profiles(app):
     from dplanner.framework.list_rows import EMPHASIS_ROLE
-    from dplanner.modules.step_agent_instruction.profiles import read_profiles
-    from dplanner.modules.step_agent_instruction.settings_page import ProfileList, build_page
+    from dplanner.modules.agent_launch.profiles import read_profiles
+    from dplanner.modules.agent_launch.settings_page import ProfileList, build_page
 
     page = build_page(None, platform="linux", harnesses=HARNESSES)
     profiles = page.findChild(ProfileList)
@@ -419,8 +419,8 @@ def test_the_settings_page_adds_removes_and_promotes_profiles(app):
 def test_the_settings_page_renames_a_profile_as_its_choices_change(app):
     """Add, then pick a terminal, then an agent: the name keeps up, and the list shows
     it. Type a name and it is yours through every later change."""
-    from dplanner.modules.step_agent_instruction.profiles import read_profiles
-    from dplanner.modules.step_agent_instruction.settings_page import ProfileList, build_page
+    from dplanner.modules.agent_launch.profiles import read_profiles
+    from dplanner.modules.agent_launch.settings_page import ProfileList, build_page
 
     page = build_page(None, platform="linux", harnesses=HARNESSES)
     profiles = page.findChild(ProfileList)
@@ -476,7 +476,7 @@ def test_run_agent_with_lists_the_profiles_and_launches_through_the_picked_one(
     """The child menu is rebuilt on open with one entry per profile — the default marked,
     a profile whose terminal is missing greyed with that reason — and an entry runs the
     same launch as Run Agent, through that profile's agent and terminal."""
-    from dplanner.modules.step_agent_instruction.profiles import Profile, write_profiles
+    from dplanner.modules.agent_launch.profiles import Profile, write_profiles
 
     write_profiles(
         [
@@ -547,7 +547,7 @@ def test_run_agent_records_the_harness_and_the_session_it_named(services, step, 
 
 def test_a_multiplexer_that_refuses_is_no_shell_at_all(services, step, monkeypatch):
     """A workspace herdr could not create stamps nothing: the fallback hands the prompt over."""
-    import dplanner.modules.step_agent_instruction.module as agent_module
+    import dplanner.modules.agent_launch.module as agent_module
     from dplanner.modules.step_agent_run.aspect import read as run_state
 
     monkeypatch.setattr(launcher, "resolve_command", lambda *a, **k: ["herdr", "x", "&&", "y"])
@@ -572,7 +572,7 @@ def test_open_agent_in_code_offers_the_same_profiles_over_the_project(services, 
     project's questions instead of the step's, and the entry launches through that
     profile's agent and terminal exactly as Run Agent's does."""
     from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-    from dplanner.modules.step_agent_instruction.profiles import Profile, write_profiles
+    from dplanner.modules.agent_launch.profiles import Profile, write_profiles
 
     write_profiles(
         [

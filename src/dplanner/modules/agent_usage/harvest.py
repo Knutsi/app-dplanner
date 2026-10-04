@@ -42,33 +42,6 @@ from dplanner.domain.model import now_stamp
 SWEEP_DAYS = 30
 
 
-def launch_record(
-    *,
-    run: str,
-    project: str,
-    step: str,
-    harness: str,
-    directory: Path,
-    session: str = "",
-    prompt_chars: int = 0,
-    launched: str = "",
-    machine: str = "",
-) -> LedgerRecord:
-    """What the launch knows about a run, before anything has been consumed."""
-    return LedgerRecord(
-        run=run,
-        project=project,
-        step=step,
-        harness=harness,
-        launched=launched or now_stamp(),
-        machine=machine or ledger.machine_id(),
-        host=ledger.host_name(),
-        directory=str(directory.expanduser().resolve()),
-        session=session,
-        prompt_chars=prompt_chars,
-    )
-
-
 def harvest(
     record: LedgerRecord, harnesses: Sequence[AgentHarness], claimed: frozenset[str] = frozenset()
 ) -> LedgerRecord:
@@ -100,17 +73,6 @@ def store(project_dir: Path, record: LedgerRecord) -> bool:
     if current is not None and current.ended and not record.ended:
         record = record.ended_at(current.ended, current.exit)
     return ledger.write(project_dir, record)
-
-
-def end(project_dir: Path, run: str, code: int | None, ended: str = "") -> LedgerRecord | None:
-    """Say the run's shell ended — cheap, no reading — so the next harvest knows to read it
-    once more and the sweep knows when to stop."""
-    record = ledger.find(project_dir, run)
-    if record is None:
-        return None
-    record = record.ended_at(ended or now_stamp(), code)
-    ledger.write(project_dir, record)
-    return record
 
 
 def harvest_run(

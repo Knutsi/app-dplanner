@@ -12,7 +12,7 @@ from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, activity_uri, selection_uri
 from dplanner.framework.list_rows import TINT_ROLE
 from dplanner.framework.signalling import tone_colour
-from dplanner.modules.step_order import expenditure as tab_words
+from dplanner.modules.agent_usage import expenditure as tab_words
 
 COLUMN = {
     title: index

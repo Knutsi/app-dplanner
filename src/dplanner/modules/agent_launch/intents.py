@@ -22,7 +22,7 @@ from typing import Any
 from dplanner.core.fsio import write_atomic
 from dplanner.domain.model import StepId
 from dplanner.domain.workflow import Actor, AgentRun, Daemon, Person
-from dplanner.modules.step_agent_instruction.launcher import SHELL_FILE
+from dplanner.modules.agent_launch.launcher import SHELL_FILE
 
 FORMAT = 1
 

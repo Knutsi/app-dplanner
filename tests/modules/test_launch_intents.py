@@ -1,8 +1,8 @@
 """A launch's intent on disk: written whole, read back, and never a crash over a stranger's."""
 
 from dplanner.domain.workflow import Daemon
-from dplanner.modules.step_agent_instruction.intents import LaunchIntent, LaunchIntents
-from dplanner.modules.step_agent_instruction.launcher import SHELL_FILE
+from dplanner.modules.agent_launch.intents import LaunchIntent, LaunchIntents
+from dplanner.modules.agent_launch.launcher import SHELL_FILE
 
 
 def an_intent(tmp_path, run="20261004T120000Z-0000beef"):
