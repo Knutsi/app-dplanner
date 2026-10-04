@@ -4967,3 +4967,20 @@ the interleaving without threads.
 
 **Upstream?** Yes. The template's `write_atomic` has the same shared name, and any
 application with a second writer (a CLI, a sync) meets it.
+
+## 78. From the structural review (S6): one detached spawn
+
+### `core/process.py` — new: `spawn_detached()` and `detached_flags()`
+
+**What.** One function starts a process the user owns — `start_new_session` on POSIX, and
+`DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP` on Windows, output to `DEVNULL`. The flags and
+`detached_flags(platform)` moved here from the agent launcher; the launcher, *Library ▸ New
+Library*'s second window and the debug module's RDP launcher all call it.
+
+**Why.** There were three detached spawns and only the launcher's was Windows-safe: the other
+two relied on `start_new_session`, which Windows ignores, so the child kept the parent's
+console and its Ctrl+C. The flags are spelled as Win32 values rather than read off
+`subprocess` so `detached_flags("win32")` is checkable from Linux.
+
+**Upstream?** Yes. Any desktop application that opens a second window of itself, or a
+terminal, meets the same Windows trap, and the template has no seam for it.

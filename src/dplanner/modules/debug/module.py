@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from PySide6.QtWidgets import QWidget
 
+from dplanner.core.process import spawn_detached
 from dplanner.core.telemetry import Telemetry
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec, ActionState
 from dplanner.framework.context import Context, ContextService
@@ -42,9 +43,7 @@ def launch_desktop(argv: tuple[str, ...]) -> None:
     Detached because the session is the developer's, not the application's: closing DPlanner
     must not take the RDP window down with it.
     """
-    subprocess.Popen(
-        list(argv), start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
-    )
+    spawn_detached(argv)
 
 
 @dataclass(frozen=True)

@@ -30,7 +30,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, StepId
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
-from dplanner.modules.github.aspect import MODULE_ID, read, refreshed, write
+from dplanner.modules.github.aspect import MODULE_ID, PR_MERGED, PR_OPEN, read, refreshed, write
 from dplanner.modules.github.gh import GhError, PrInfo, gh_refusal, parse_repo, view_pr
 
 logger = logging.getLogger(__name__)
@@ -64,7 +64,7 @@ def adopt(
         SetModuleDataCommand(
             step_id, MODULE_ID, write(fresh), view_origin=REFRESH_ORIGIN, label=""
         ).redo(library)
-    if fresh.pr_state == "merged":
+    if fresh.pr_state == PR_MERGED:
         finish_merged(step_id)
 
 
@@ -117,7 +117,7 @@ class PrRefresher(QObject):
         # library's repository.
         for project in self._product.projects:
             for step in project.steps:
-                if (refs := read(step)) is not None and refs.pr_state == "merged":
+                if (refs := read(step)) is not None and refs.pr_state == PR_MERGED:
                     self._finish_merged(step.id)
         targets = [
             (step.id, refs.pr_number, repo)
@@ -125,7 +125,7 @@ class PrRefresher(QObject):
             for step in project.steps
             if (refs := read(step)) is not None
             and refs.pr_number is not None
-            and refs.pr_state in ("open", "")
+            and refs.pr_state in (PR_OPEN, "")
             and (repo := parse_repo(self._repository_for(step.id))) is not None
         ]
         if not targets:

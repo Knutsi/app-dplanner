@@ -27,6 +27,9 @@ from dplanner.domain.repositories import repository_facts
 from dplanner.domain.shelf import turn_off
 from dplanner.modules.github.aspect import (
     MODULE_ID,
+    PR_CLOSED,
+    PR_MERGED,
+    PR_OPEN,
     GithubRefs,
     branch_url,
     pr_label,
@@ -224,7 +227,7 @@ def _show(context: CliContext, args: Namespace, finish_merged: FinishMerged) -> 
     else:
         data["branch_on_remote"] = None
         lines.append("(stored state only — gh or a GitHub remote is missing)")
-    data["finished"] = refs.pr_state == "merged" and finish_merged(context, step)
+    data["finished"] = refs.pr_state == PR_MERGED and finish_merged(context, step)
     if data["finished"]:
         lines.append(f"{step.title} was waiting on this merge: it is done")
     for link in (data["pr_link"], data["branch_link"]):
@@ -244,12 +247,12 @@ def _refresh(context: CliContext, args: Namespace, finish_merged: FinishMerged) 
     checked = updated = finished = 0
     for step in steps:
         refs = read(step)
-        if refs is not None and refs.pr_state == "merged":
+        if refs is not None and refs.pr_state == PR_MERGED:
             # Terminal, so never fetched again — but a step can reach ready-to-merge after
             # its PR did, and it is finished here.
             finished += finish_merged(context, step)
             continue
-        if refs is None or refs.pr_number is None or refs.pr_state == "closed":
+        if refs is None or refs.pr_number is None or refs.pr_state == PR_CLOSED:
             continue
         repo = _step_repo(context, step)
         if repo is None:
@@ -264,7 +267,7 @@ def _refresh(context: CliContext, args: Namespace, finish_merged: FinishMerged) 
         if fresh != refs:
             context.apply(SetModuleDataCommand(step.id, MODULE_ID, write(fresh)))
             updated += 1
-        if fresh.pr_state == "merged":
+        if fresh.pr_state == PR_MERGED:
             finished += finish_merged(context, context.library.step(step.id))
     context.report(
         {"checked": checked, "updated": updated, "finished": finished},
@@ -278,7 +281,7 @@ def _prs(context: CliContext, args: Namespace) -> int:
     repo = _scope_repo(context)
     prs = _gh(lambda: list_prs(repo))
     if not args.all:
-        prs = [pr for pr in prs if pr.state == "open"]
+        prs = [pr for pr in prs if pr.state == PR_OPEN]
     rows = [
         {"number": pr.number, "state": pr.state, "title": pr.title, "branch": pr.head_ref}
         for pr in prs

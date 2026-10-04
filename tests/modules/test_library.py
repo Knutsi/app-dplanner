@@ -27,7 +27,7 @@ def spawned(monkeypatch):
     def fake_popen(command, **kwargs):
         launched.append((list(command), kwargs))
 
-    monkeypatch.setattr("dplanner.modules.library.module.subprocess.Popen", fake_popen)
+    monkeypatch.setattr("dplanner.core.process.subprocess.Popen", fake_popen)
     return launched
 
 

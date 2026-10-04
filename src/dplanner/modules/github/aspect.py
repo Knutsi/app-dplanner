@@ -27,7 +27,10 @@ def _to_format_2(entry: dict[str, Any]) -> dict[str, Any]:
 
 DATA_FORMAT = ModuleDataFormat(MODULE_ID, 2, (_to_format_2,))
 
-PR_STATES = ("open", "merged", "closed", "")  # "" = never checked, e.g. recorded gh-less.
+PR_OPEN = "open"
+PR_MERGED = "merged"
+PR_CLOSED = "closed"
+PR_STATES = (PR_OPEN, PR_MERGED, PR_CLOSED, "")  # "" = never checked, e.g. recorded gh-less.
 
 
 @dataclass(frozen=True)
@@ -147,7 +150,7 @@ def summary(step: Step) -> str:
         return ""
     if refs.has_pr():
         name = pr_label(refs)
-        return f"{name} {refs.pr_state}".strip() if refs.pr_state != "open" else name
+        return f"{name} {refs.pr_state}".strip() if refs.pr_state != PR_OPEN else name
     return refs.branch
 
 
