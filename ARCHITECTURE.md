@@ -4085,7 +4085,12 @@ finished with somebody — a person or a reviewing agent — to look next, and
 review*, below, has why an agent stops there). The words are the progression walk's
 (`domain/progression.py`), and the aspect imports them rather than keeping a copy that a
 test had to pin. They cost **no format bump**: an older build reads a word it does not know
-as pending and leaves the entry on disk, which is what `read` has always done. `started` is
+as `unknown` and leaves the entry on disk. It once read such a word as pending, and the
+structural review's probe showed what that costs: an otherwise eligible agent step became
+due again, so a window on an older build would relaunch work a newer one had claimed.
+Unknown holds the step instead — `progression.due` and `rounds.due_turns` skip it, the board
+lists it with Blocked, and Run Agent refuses it, so no launch writes `in-progress` over the
+word. Absent data is the only thing that reads as pending. `started` is
 stamped the first time a step enters any *worked* status — in progress, under review or
 waiting on its merge — because a step an agent ran without the claim still began when it
 came back. And **a status verb acts on every chosen step as one undo step** (`chosen_steps`,

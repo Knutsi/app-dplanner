@@ -42,10 +42,18 @@ def test_pending_writes_nothing():
     assert write("pending", today=date(2026, 9, 21)) == {}
 
 
-def test_an_unknown_word_reads_as_pending_not_an_error():
-    """A newer build may know states this one does not; reading must not crash over one."""
+def test_an_unknown_word_reads_as_unknown_and_stays_on_disk():
+    """A newer build may know states this one does not: reading must neither crash over one
+    nor guess pending, which would make the step due again — and must not touch it."""
     step = Step(title="A")
     step.module_data[MODULE_ID] = {"status": "paused", "format": 1}
+    assert read(step) == "unknown"
+    assert step.module_data[MODULE_ID] == {"status": "paused", "format": 1}
+
+
+def test_an_entry_with_days_but_no_word_reads_as_pending():
+    step = Step(title="A")
+    step.module_data[MODULE_ID] = {"since": "2026-09-21", "format": 2}
     assert read(step) == "pending"
 
 

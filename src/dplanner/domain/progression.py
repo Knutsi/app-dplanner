@@ -15,6 +15,11 @@ aspect stores exactly these, importing them from here; anything else — includi
 a wilder function returns — reads as pending, because a derivation must not crash on a
 claim it does not recognise.
 
+**Except ``unknown``, which holds a step.** A source that stores a word this build cannot
+read — one a newer build wrote — says :data:`UNKNOWN` rather than guessing pending, and the
+walk treats it like ``blocked``: never due, in ``attention`` for a person to look at, and
+not done, so nothing waits past it. Reading it as pending would launch the step again.
+
 **Review and merge are on the board, and not done.** A step whose agent has finished waits
 for a person (``ready-for-review``) or for its merge (``ready-to-merge``): it is claimed out
 of the graph like a running step, counts as one move away for the lookahead, and frees
@@ -77,6 +82,8 @@ READY_TO_MERGE = "ready-to-merge"
 # Finished work a person has yet to land — its review, then its merge: past in progress, not done.
 REVIEW_AND_MERGE = (READY_FOR_REVIEW, READY_TO_MERGE)
 BLOCKED = "blocked"
+# A stored word this build cannot read — perhaps a newer build's. It holds the step.
+UNKNOWN = "unknown"
 # A wait that is not over yet — a derived reading (``schedule.wait_status``), never stored.
 WAITING = "waiting"
 
@@ -144,7 +151,7 @@ def due(
     for step in project.steps:
         if not counts_as_work(step) or not is_agent(step) or running(step):
             continue
-        if status_for(step) in (DONE, IN_PROGRESS, BLOCKED, WAITING, *REVIEW_AND_MERGE):
+        if status_for(step) in (DONE, IN_PROGRESS, BLOCKED, UNKNOWN, WAITING, *REVIEW_AND_MERGE):
             continue
         if outstanding(library, step, status_for, auto_progresses):
             continue
@@ -256,9 +263,9 @@ def progression(
 ) -> Progression:
     """One walk in project order, so the answer is deterministic — ``ordering.py``'s rule.
 
-    Each step lands in the first partition that claims it: a stored status first
-    (done, blocked, in-progress, ready-for-review, ready-to-merge), then the graph (ready,
-    upcoming, waiting). A blocked prerequisite still counts towards ``upcoming`` — it sits
+    Each step lands in the first partition that claims it: a stored status first (done,
+    blocked or unknown, in-progress, ready-for-review, ready-to-merge), then the graph
+    (ready, upcoming, waiting). A blocked prerequisite still counts towards ``upcoming`` — it sits
     visibly on the board with a warning, and a step must not churn out of the queue when
     its prerequisite flips between in-progress and blocked. A step that is no work
     (``counts_as_work``) lands in none of them, but what it reads still gates what waits
@@ -271,7 +278,7 @@ def progression(
     status = {step.id: status_for(step) for step in project.steps}
     work = [step for step in project.steps if counts_as_work(step)]
     # Claimed by a stored status and not done: on the board, one move from what waits on it.
-    on_board = {IN_PROGRESS, BLOCKED, READY_FOR_REVIEW, READY_TO_MERGE}
+    on_board = {IN_PROGRESS, BLOCKED, UNKNOWN, READY_FOR_REVIEW, READY_TO_MERGE}
 
     def claiming(word: str) -> list[Step]:
         return [step for step in work if status[step.id] == word]
@@ -328,7 +335,7 @@ def progression(
         review=ranked([step for step in under_review if step.id not in handed_on]),
         taken=tuple(step for step in under_review if step.id in handed_on),
         merge=ranked(claiming(READY_TO_MERGE)),
-        attention=ranked(claiming(BLOCKED)),
+        attention=ranked(claiming(BLOCKED) + claiming(UNKNOWN)),
         ready=ranked(frontier),
         upcoming=tuple(upcoming),
         waiting=tuple(waiting),
