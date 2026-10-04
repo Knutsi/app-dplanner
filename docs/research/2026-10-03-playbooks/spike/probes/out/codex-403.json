@@ -1,0 +1,37 @@
+{
+  "argv": [
+    "codex",
+    "exec",
+    "--json",
+    "--skip-git-repo-check",
+    "--ephemeral",
+    "--sandbox",
+    "read-only",
+    "Reply with the single word: ok"
+  ],
+  "cli": "codex",
+  "exit": 1,
+  "mode": "403",
+  "probe": "codex-403",
+  "requests_seen": 6,
+  "seconds": 6.1,
+  "signal_sent": null,
+  "stderr_tail": [
+    "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"$HOME/.codex\"))",
+    "Reading additional input from stdin..."
+  ],
+  "stdout_head": [
+    "{\"type\":\"thread.started\",\"thread_id\":\"01a1031e-70af-7dc3-bb98-463cbc495704\"}",
+    "{\"type\":\"turn.started\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 1/5 (unexpected status 403 Forbidden: Your plan does not include access (subscription expired)., url: http://127.0.0.1:59619/v1/responses)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 2/5 (unexpected status 403 Forbidden: Your plan does not include access (subscription expired)., url: http://127.0.0.1:59619/v1/responses)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 3/5 (unexpected status 403 Forbidden: Your plan does not include access (subscription expired)., url: http://127.0.0.1:59619/v1/responses)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 4/5 (unexpected status 403 Forbidden: Your plan does not include access (subscription expired)., url: http://127.0.0.1:59619/v1/responses)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 5/5 (unexpected status 403 Forbidden: Your plan does not include access (subscription expired)., url: http://127.0.0.1:59619/v1/responses)\"}",
+    "{\"type\":\"error\",\"message\":\"unexpected status 403 Forbidden: Your plan does not include access (subscription expired)., url: http://127.0.0.1:59619/v1/responses\"}",
+    "{\"type\":\"turn.failed\",\"error\":{\"message\":\"unexpected status 403 Forbidden: Your plan does not include access (subscription expired)., url: http://127.0.0.1:59619/v1/responses\"}}"
+  ],
+  "stdout_lines": 9,
+  "stdout_tail": [],
+  "timed_out_after_s": null
+}

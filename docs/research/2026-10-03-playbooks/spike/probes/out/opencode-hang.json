@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "-m",
+    "anthropic/claude-sonnet-4-5",
+    "Reply with the single word: ok"
+  ],
+  "cli": "opencode",
+  "exit": -15,
+  "mode": "hang",
+  "probe": "opencode-hang",
+  "requests_seen": 0,
+  "seconds": 330.0,
+  "signal_sent": null,
+  "stderr_tail": [],
+  "stdout_head": [],
+  "stdout_lines": 0,
+  "stdout_tail": [],
+  "timed_out_after_s": 330.0
+}

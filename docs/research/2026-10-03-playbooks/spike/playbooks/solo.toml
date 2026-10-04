@@ -1,0 +1,24 @@
+# The cheapest preset, and the control a careful one must beat: tests, then the same agent
+# reviewing in a fresh session against a checklist. No second vendor.
+name = "Solo"
+budget_usd = 2
+
+roles.implementer = { agent = "claude" }
+roles.self        = { agent = "claude", fresh = true }
+
+[[stage]]
+id = "tests"
+kind = "criteria"
+run = ["uv run pytest -q", "uv run ruff check"]
+rounds = 3
+
+[[stage]]
+id = "self-check"
+kind = "checklist"
+by = "self"
+rounds = 1
+items = [
+  "Does every acceptance criterion in the step's description have a test that exercises it?",
+  "Is any test deleted, skipped or weakened by this diff?",
+  "Does the diff touch a file outside what the step describes?",
+]

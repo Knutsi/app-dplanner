@@ -1,0 +1,1131 @@
+<title>DPlanner Playbooks</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+:root {
+  --ground: #f3f5f2;
+  --surface: #ffffff;
+  --sunk: #e8ece7;
+  --ink: #18201c;
+  --muted: #56625c;
+  --faint: #8a958f;
+  --line: #d3dad4;
+  --accent: #0b6e5f;
+  --accent-ink: #ffffff;
+  --accent-soft: #d8ece6;
+  --summary: #e4efe9;
+  --good: #2c7a3f;     --good-bg: #e0f0e3;
+  --retry: #9a6411;    --retry-bg: #f6ead2;
+  --park: #2f5f9a;     --park-bg: #dde8f6;
+  --person: #6d4597;   --person-bg: #ebe1f5;
+  --abandon: #a83a33;  --abandon-bg: #f6dfdc;
+  --changes: #3f4f48;  --changes-bg: #e2e7e4;
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --cond: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ground: #121715; --surface: #1a201d; --sunk: #222a26; --ink: #e3e9e5; --muted: #a2afa8; --faint: #6f7c75;
+    --line: #2f3833; --accent: #4fc2ab; --accent-ink: #0b1a16; --accent-soft: #1d3a33; --summary: #1b2c26;
+    --good: #7cc98d; --good-bg: #1d3323; --retry: #e0b25e; --retry-bg: #382d17; --park: #8db6ea; --park-bg: #1b2a3d;
+    --person: #c3a3e6; --person-bg: #2e2340; --abandon: #ef8f86; --abandon-bg: #3d211e; --changes: #bfcac4; --changes-bg: #27302c;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ground: #121715; --surface: #1a201d; --sunk: #222a26; --ink: #e3e9e5; --muted: #a2afa8; --faint: #6f7c75;
+  --line: #2f3833; --accent: #4fc2ab; --accent-ink: #0b1a16; --accent-soft: #1d3a33; --summary: #1b2c26;
+  --good: #7cc98d; --good-bg: #1d3323; --retry: #e0b25e; --retry-bg: #382d17; --park: #8db6ea; --park-bg: #1b2a3d;
+  --person: #c3a3e6; --person-bg: #2e2340; --abandon: #ef8f86; --abandon-bg: #3d211e; --changes: #bfcac4; --changes-bg: #27302c;
+}
+* { box-sizing: border-box; }
+body { background: var(--ground); color: var(--ink); font: 15px/1.6 var(--sans); padding-inline: 16px; padding-block: 0 4rem; }
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+code { font: 0.86em var(--mono); background: var(--sunk); padding: 0.05em 0.3em; border-radius: 3px; }
+h1, h2, h3, h4 { font-family: var(--cond); line-height: 1.2; text-wrap: balance; margin: 0; }
+p { margin: 0; }
+.shell { max-width: 1240px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 3rem; }
+@media (max-width: 900px) { .shell { grid-template-columns: minmax(0, 1fr); gap: 1rem; } }
+
+/* table of contents */
+.toc { position: sticky; top: env(safe-area-inset-top, 0px); align-self: start; padding-top: 2.2rem; max-height: 100vh; overflow-y: auto; }
+.toc .cap { margin-bottom: 0.6rem; }
+.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: s; }
+.toc li { counter-increment: s; }
+.toc a { display: grid; grid-template-columns: 1.6rem 1fr; padding: 0.3rem 0.5rem; border-radius: 5px; color: var(--muted); text-decoration: none; font-size: 0.9rem; line-height: 1.35; }
+.toc a::before { content: counter(s); font: 500 0.8rem var(--mono); color: var(--faint); padding-top: 0.1rem; }
+.toc a:hover { background: var(--sunk); color: var(--ink); }
+.toc a.on { background: var(--accent-soft); color: var(--ink); }
+@media (max-width: 900px) {
+  .toc { position: static; max-height: none; padding-top: 1.2rem; }
+  .toc ol { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+}
+
+/* masthead */
+.mast { padding-top: 2.2rem; padding-bottom: 1.6rem; border-bottom: 1px solid var(--line); display: grid; gap: 0.9rem; }
+.mast .kicker { font: 500 0.78rem var(--mono); letter-spacing: 0.04em; color: var(--muted); }
+.mast h1 { font-size: clamp(2rem, 4.5vw, 3rem); font-weight: 700; letter-spacing: -0.01em; }
+.mast .lede { font-size: 1.08rem; color: var(--muted); max-width: 66ch; }
+.mast .lede strong { color: var(--ink); font-weight: 600; }
+.ringdemo { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-top: 0.3rem; }
+.ringdemo .card { display: inline-flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0.75rem 0.4rem 0.45rem; border: 2px solid var(--accent); border-radius: 999px; background: var(--surface); font: 500 0.85rem var(--sans); }
+.ringdemo .card .num { font: 500 0.75rem var(--mono); background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 0.1rem 0.45rem; }
+.ringdemo .arrow { color: var(--faint); font-family: var(--mono); }
+
+/* sections */
+main { min-width: 0; }
+section.part { padding-top: 2.6rem; display: grid; gap: 1.1rem; scroll-margin-top: 1rem; }
+section.part > h2 { font-size: 1.65rem; font-weight: 600; display: flex; gap: 0.7rem; align-items: baseline; }
+section.part > h2 .n { font: 500 0.95rem var(--mono); color: var(--faint); }
+.prose { max-width: 70ch; display: grid; gap: 0.75rem; }
+.prose ul, .prose ol { margin: 0; padding-left: 1.2rem; display: grid; gap: 0.35rem; }
+h3 { font-size: 1.2rem; font-weight: 600; margin-top: 0.6rem; }
+h4 { font-size: 1.02rem; font-weight: 600; }
+.cap { font: 500 0.72rem var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+.short { background: var(--summary); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.2rem 1.1rem; max-width: 78ch; display: grid; gap: 0.55rem; }
+.short > .cap { color: var(--accent); }
+.short ul { margin: 0; padding-left: 1.15rem; display: grid; gap: 0.4rem; }
+.short p { font-size: 1.02rem; }
+
+/* answers grid */
+.answers { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 0.9rem; }
+.answer { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.1rem; display: grid; gap: 0.45rem; align-content: start; }
+.answer h3 { margin: 0; font-size: 1.05rem; }
+.answer .q { font: 500 0.78rem var(--mono); color: var(--muted); }
+.answer p { color: var(--ink); font-size: 0.95rem; }
+.answer a.more { font-size: 0.85rem; }
+
+/* tables */
+.scroll { overflow-x: auto; max-width: 100%; }
+table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+th, td { text-align: left; vertical-align: top; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--line); }
+thead th { font: 600 0.82rem var(--cond); color: var(--muted); border-bottom: 1.5px solid var(--ink); white-space: nowrap; }
+.data { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+table.mini td { padding: 0.25rem 0.4rem; border: none; font-size: 0.85rem; }
+
+/* pills */
+.pill { display: inline-block; font: 500 0.74rem var(--mono); padding: 0.1rem 0.5rem; border-radius: 999px; white-space: nowrap; background: var(--sunk); color: var(--muted); }
+.pill.retry { background: var(--retry-bg); color: var(--retry); }
+.pill.park { background: var(--park-bg); color: var(--park); }
+.pill.person { background: var(--person-bg); color: var(--person); }
+.pill.abandon { background: var(--abandon-bg); color: var(--abandon); }
+.pill.changes { background: var(--changes-bg); color: var(--changes); }
+.pill.refused { background: var(--abandon-bg); color: var(--abandon); }
+.pill.good, .pill.ok { background: var(--good-bg); color: var(--good); }
+.nopill { color: var(--faint); }
+.scn { font: 0.78rem var(--mono); color: var(--accent); white-space: nowrap; }
+
+/* class legend */
+.classes { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 0.6rem; }
+.classes div { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0.7rem 0.85rem; font-size: 0.86rem; line-height: 1.5; }
+.classes .pill { display: table; margin-bottom: 0.4rem; }
+
+/* probes */
+table.probes { min-width: 820px; }
+table.probes th[scope=row] { font: 500 0.85rem var(--sans); white-space: nowrap; }
+td.probe { display: table-cell; }
+td.probe .took { display: block; font: 0.78rem var(--mono); color: var(--muted); margin-top: 0.3rem; font-variant-numeric: tabular-nums; }
+td.probe.slow .took { color: var(--retry); font-weight: 500; }
+td.probe .why { display: block; font-size: 0.78rem; color: var(--faint); margin-top: 0.15rem; line-height: 1.35; }
+
+/* failure filter */
+.filter { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.filter button { font: 500 0.8rem var(--mono); border: 1px solid var(--line); background: var(--surface); color: var(--ink); border-radius: 999px; padding: 0.3rem 0.8rem; cursor: pointer; }
+.filter button[aria-pressed="true"] { background: var(--ink); color: var(--ground); border-color: var(--ink); }
+.fgroup { margin-top: 1.1rem; margin-bottom: 0.4rem; }
+table.cases { min-width: 760px; background: var(--surface); }
+table.cases td:first-child { width: 24%; font-weight: 500; }
+table.cases td:nth-child(3) { width: 7.5rem; }
+table.cases tr[hidden] { display: none; }
+
+/* prototypes */
+.tabs { display: flex; flex-wrap: wrap; gap: 0.3rem; border-bottom: 1px solid var(--line); }
+.tab { font: 500 0.88rem var(--sans); border: 1px solid transparent; border-bottom: none; background: none; color: var(--muted); padding: 0.5rem 0.85rem; border-radius: 7px 7px 0 0; cursor: pointer; margin-bottom: -1px; }
+.tab[aria-selected="true"] { background: var(--surface); border-color: var(--line); color: var(--ink); }
+[role=tabpanel] { background: var(--surface); border: 1px solid var(--line); border-top: none; border-radius: 0 0 8px 8px; padding: 1rem; display: grid; gap: 0.9rem; }
+.pbgrid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.4fr); gap: 1.2rem; }
+@media (max-width: 1000px) { .pbgrid { grid-template-columns: minmax(0, 1fr); } }
+.pbgrid > div { display: grid; gap: 0.5rem; align-content: start; min-width: 0; }
+pre.code, pre.talk { font: 0.8rem/1.5 var(--mono); background: var(--sunk); border-radius: 6px; padding: 0.8rem 0.9rem; margin: 0; overflow-x: auto; white-space: pre; }
+pre.talk { white-space: pre-wrap; }
+pre.talk.dim { color: var(--muted); }
+ul.checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; font-size: 0.88rem; }
+ul.checks li { padding-left: 1.4rem; position: relative; }
+ul.checks li::before { position: absolute; left: 0; font: 600 0.8rem var(--mono); }
+ul.checks li.ok::before { content: "✓"; color: var(--good); }
+ul.checks li.err::before { content: "✕"; color: var(--abandon); }
+ul.checks li.warn::before { content: "!"; color: var(--retry); left: 0.25rem; }
+.brief summary { cursor: pointer; font-weight: 500; }
+.brief pre { margin-top: 0.6rem; }
+.repro { font-size: 0.82rem; color: var(--muted); }
+
+svg.star { display: block; font-family: var(--sans); }
+svg.star .node { stroke-width: 1.5; }
+svg.star .node.work { fill: var(--accent); stroke: var(--accent); }
+svg.star .node.gate { fill: var(--surface); stroke: var(--ink); }
+svg.star .node.person { stroke-dasharray: 4 3; stroke: var(--person); }
+svg.star .node.criteria { fill: var(--sunk); }
+svg.star .node.done { fill: var(--good-bg); stroke: var(--good); }
+svg.star .nlabel { font: 600 13px var(--cond); text-anchor: middle; fill: var(--ink); }
+svg.star .nsub { font: 10.5px var(--mono); text-anchor: middle; fill: var(--muted); }
+svg.star .inv { fill: var(--accent-ink); }
+svg.star .fwd { stroke: var(--muted); stroke-width: 1.5; }
+svg.star .back { fill: none; stroke: var(--accent); stroke-width: 1.3; stroke-dasharray: 5 3; }
+svg.star .blabel { font: 10.5px var(--mono); fill: var(--accent); }
+svg.star .arrowhead { fill: var(--muted); }
+
+.scenarios { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 1rem; }
+@media (max-width: 1000px) { .scenarios { grid-template-columns: minmax(0, 1fr); } }
+.scpick { display: grid; gap: 0.9rem; align-content: start; }
+.scgroup { display: grid; gap: 2px; }
+.scgroup .cap { margin-bottom: 0.25rem; }
+.scbtn { display: flex; gap: 0.5rem; align-items: center; text-align: left; font: 0.84rem var(--mono); border: none; background: none; color: var(--muted); padding: 0.28rem 0.5rem; border-radius: 5px; cursor: pointer; }
+.scbtn:hover { background: var(--sunk); color: var(--ink); }
+.scbtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--ink); }
+.dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; flex: none; background: var(--faint); }
+.dot.good { background: var(--good); } .dot.person { background: var(--person); } .dot.warn { background: var(--retry); }
+@media (max-width: 1000px) { .scpick { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); } }
+.scenario { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 1rem 1.1rem; display: grid; gap: 1rem; }
+.schead { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0.8rem; }
+.schead h4 { font: 600 1.05rem var(--mono); }
+.schead p { color: var(--muted); font-size: 0.92rem; }
+.schead .meta { font-size: 0.8rem; margin-top: 0.2rem; }
+.verdict { display: grid; gap: 0.1rem; padding: 0.5rem 0.8rem; border-radius: 7px; align-self: start; font-size: 0.82rem; background: var(--sunk); }
+.verdict b { font: 600 0.95rem var(--cond); }
+.verdict.good { background: var(--good-bg); color: var(--good); }
+.verdict.person { background: var(--person-bg); color: var(--person); }
+.verdict.warn { background: var(--retry-bg); color: var(--retry); }
+.verdict span { font-family: var(--mono); font-size: 0.76rem; }
+.layers { display: grid; gap: 0.8rem; }
+.layer { display: grid; gap: 0.35rem; }
+ol.ring { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.2rem; font-size: 0.84rem; }
+ol.ring li { display: grid; grid-template-columns: 3.4rem 8.6rem minmax(0, 1fr); gap: 0.5rem; align-items: baseline; }
+@media (max-width: 560px) { ol.ring li { grid-template-columns: 3rem minmax(0, 1fr); } ol.ring .what { grid-column: 2; } }
+ol.ring .t { font: 0.78rem var(--mono); color: var(--faint); font-variant-numeric: tabular-nums; }
+ol.ring .pill { justify-self: start; background: var(--accent-soft); color: var(--accent); }
+ol.ring .pill.person { background: var(--person-bg); color: var(--person); }
+ol.ring .pill.park { background: var(--park-bg); color: var(--park); }
+ol.ring .pill.retry { background: var(--retry-bg); color: var(--retry); }
+ol.ring .pill.good { background: var(--good-bg); color: var(--good); }
+ol.ring .what { color: var(--muted); }
+.side3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+.side3 section { display: grid; gap: 0.35rem; align-content: start; }
+ul.inbox, ul.refused { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.35rem; font-size: 0.85rem; }
+ul.inbox li { display: grid; gap: 0.15rem; }
+ul.inbox .kind { font: 500 0.72rem var(--mono); color: var(--person); text-transform: uppercase; letter-spacing: 0.05em; }
+ul.refused li { color: var(--abandon); }
+li.none { color: var(--faint) !important; }
+
+/* questions */
+ol.questions { margin: 0; padding-left: 1.6rem; display: grid; gap: 0.9rem; }
+ol.questions li { display: grid; gap: 0.3rem; padding-left: 0.2rem; }
+ol.questions li::marker { font: 500 0.85rem var(--mono); color: var(--faint); }
+ol.questions .q { font-weight: 600; }
+ol.questions .rec { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: baseline; }
+ol.questions .rec .cap { color: var(--accent); }
+ol.questions .why { color: var(--muted); font-size: 0.9rem; max-width: 80ch; }
+
+.files { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.5rem 1.2rem; font-size: 0.9rem; }
+.files div { display: grid; }
+.files code { justify-self: start; }
+.files span { color: var(--muted); font-size: 0.85rem; }
+footer { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--faint); font-size: 0.82rem; }
+@media (prefers-reduced-motion: no-preference) { html { scroll-behavior: smooth; } }
+</style>
+
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <div class="cap">Contents</div>
+  <ol>
+    <li><a href="#answers">The answers</a></li>
+    <li><a href="#evidence">Self-review or a second agent?</a></li>
+    <li><a href="#shape">The shape: a list, not a graph</a></li>
+    <li><a href="#drivers">Who drives it</a></li>
+    <li><a href="#pleasant">What makes it pleasant</a></li>
+    <li><a href="#floor">The factory floor</a></li>
+    <li><a href="#failures">Failures and edge cases</a></li>
+    <li><a href="#prototypes">Prototypes</a></li>
+    <li><a href="#questions">Questions for you</a></li>
+    <li><a href="#files">Files and sources</a></li>
+  </ol>
+</nav>
+
+<main>
+<header class="mast">
+  <div class="kicker">docs/research/2026-10-03-playbooks · research report · 3 October 2026</div>
+  <h1>Playbooks: a chain of agents around one step</h1>
+  <p class="lede">Can a plan step run a <strong>playbook</strong>, where Claude implements, Codex reviews the worktree, the verdict travels back and a gate decides <em>finish</em>? This report weighs the evidence, settles the shape, compares two ways to drive it, and works through what fails. The failures were probed for real against <code>claude</code>, <code>codex</code> and <code>opencode</code>, at no cost. Every prototype output below is generated by the spike in <code>spike/</code>.</p>
+  <div class="ringdemo" aria-label="How the step's ring reads as a playbook runs">
+    <span class="card"><span class="num">#14</span>Working</span><span class="arrow">→</span>
+    <span class="card"><span class="num">#14</span>Review 1/2</span><span class="arrow">→</span>
+    <span class="card"><span class="num">#14</span>Fixing (round 1)</span><span class="arrow">→</span>
+    <span class="card"><span class="num">#14</span>Waits for you</span><span class="arrow">→</span>
+    <span class="card"><span class="num">#14</span>Done</span>
+  </div>
+</header>
+
+<section class="part" id="answers">
+  <h2><span class="n">1</span>The answers</h2>
+  <div class="short"><span class="cap">In short</span>
+    <p><strong>A playbook is a list of gates around the step's own work, driven by DPlanner's engine. Its stages are kept in the rounds ledger the step already has. A second agent earns its cost through the tests it runs and the fresh context it brings, not through being a different model.</strong> The hard part is failure handling and what people see, not the happy path.</p>
+  </div>
+  <div class="answers">
+    <div class="answer"><div class="q">Better than self-review?</div><h3>Partly, and mostly because of the tests</h3><p>Tests and execution give most of the gain. A fresh context adds a little. A different vendor helps only if it is at least as strong. An agent spawning a reviewer subagent with its own context is the <em>worst</em> option measured.</p><a class="more" href="#evidence">Evidence →</a></div>
+    <div class="answer"><div class="q">Is a graph overkill?</div><h3>Yes. A list of gates is enough.</h3><p>Every gate sends <em>changes</em> back to the work, so the "graph" is a star you write as a list. The 99% case, A ⇄ B → done, is six lines of TOML.</p><a class="more" href="#shape">Shape →</a></div>
+    <div class="answer"><div class="q">Who drives it?</div><h3>The engine. A lead agent works a level up.</h3><p>A level-triggered <code>due()</code> over the ledger is bounded, replayable and recovers from a crash. The lead agent suits splitting a region of the plan, and stays available as an experiment on the same ledger.</p><a class="more" href="#drivers">Drivers →</a></div>
+    <div class="answer"><div class="q">What do we not protect against yet?</div><h3>The CLIs' own failures</h3><p>No CLI times out a hung API. opencode loops forever on a malformed reply. Claude spends 3 minutes retrying a dead login. Each harness needs its own classifier, a stall detector and a runaway detector.</p><a class="more" href="#failures">Failures →</a></div>
+    <div class="answer"><div class="q">What makes it pleasant?</div><h3>What you see, and when you're asked</h3><p>A ring on the card, the round conversation and transcripts one click away. A <em>Needs you</em> inbox of typed interrupts, raised only at stage boundaries. Pause and take over. A cost estimate before <em>Run</em>.</p><a class="more" href="#pleasant">Pleasant →</a></div>
+    <div class="answer"><div class="q">The floor?</div><h3>Steps are claimed; a person's stage is assigned</h3><p>Review time is the bottleneck, not PR count. Put the human gate on branch landings, and lead it with the gates' evidence, not the diff.</p><a class="more" href="#floor">Floor →</a></div>
+  </div>
+</section>
+
+<section class="part" id="evidence">
+  <h2><span class="n">2</span>Self-review or a second agent?</h2>
+  <div class="short"><span class="cap">In short</span>
+    <ul>
+      <li><strong>An external signal does most of the work.</strong> Self-correction with nothing outside to check against mostly fails: one study fixed 7.6% of wrong answers and broke 8.8% of right ones.</li>
+      <li><strong>A fresh context is a small, real gain.</strong> A subagent that carries the implementer's context is the worst of four conditions tested.</li>
+      <li><strong>A different model helps only when its feedback is better.</strong> A weaker cross-vendor reviewer made code worse (13 regressions for 3 fixes).</li>
+      <li><strong>Debate is mostly cost.</strong> Majority voting explains most of what it gains.</li>
+    </ul>
+  </div>
+  <div class="prose">
+    <p>No study measures fresh context, a different model and an external signal against each other in one experiment, so this is pieced together from separate studies. Full citations are in <code>evidence.md</code>.</p>
+  </div>
+  <div class="scroll data"><table>
+    <thead><tr><th>What was varied</th><th>Finding</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td>Self-correction, no outside signal</td><td>Fixes 7.6% of wrong answers, breaks 8.8% of right ones; the bottleneck is producing good feedback</td><td><a href="https://arxiv.org/abs/2310.01798">Huang 2023</a>, <a href="https://aclanthology.org/2024.tacl-1.78/">Kamoi 2024</a></td></tr>
+      <tr><td>Repair with execution feedback</td><td>Reflexion 80→91% on HumanEval; AlphaCodium 19→44%</td><td><a href="https://arxiv.org/abs/2303.11366">Reflexion</a>, <a href="https://arxiv.org/abs/2401.08500">AlphaCodium</a></td></tr>
+      <tr><td>Repair at matched cost</td><td>"Modest… sometimes not present at all"; a stronger reviewer's feedback is what helps</td><td><a href="https://arxiv.org/abs/2306.09896">Olausson 2024</a></td></tr>
+      <tr><td>Seeing your own failed attempt</td><td>Reproduces nearly the same program 33–68% of the time, against 2–14% without it</td><td><a href="https://arxiv.org/abs/2607.26117">Blind resampling 2026</a></td></tr>
+      <tr><td>Fresh session vs same session vs subagent</td><td>F1 28.6% fresh · 27.1% self once · 23.8% subagent with context · 21.7% second same-session look</td><td><a href="https://arxiv.org/html/2603.12123">Cross-Context Review 2026</a></td></tr>
+      <tr><td>Running vs reading verifier</td><td>Each plateaus around 43%; together they reach 51%</td><td><a href="https://arxiv.org/abs/2504.07164">R2E-Gym</a></td></tr>
+      <tr><td>Checklist vs open judgement</td><td>Yes/no items raise agreement between judges by 0.45; a rule taxonomy reaches 75% precision</td><td><a href="https://aclanthology.org/2025.emnlp-main.796/">CheckEval</a>, <a href="https://arxiv.org/abs/2501.15134">BitsAI-CR</a></td></tr>
+      <tr><td>AI review in practice</td><td>56% of CodeRabbit comments rejected; asking for explanations <em>raises</em> misjudgement</td><td><a href="https://arxiv.org/abs/2607.03316">2607.03316</a>, <a href="https://arxiv.org/abs/2508.12358">2508.12358</a></td></tr>
+      <tr><td>Debate</td><td>Voting explains most of the gain; accuracy can fall over rounds under conformity</td><td><a href="https://arxiv.org/abs/2508.17536">Debate or Vote</a>, <a href="https://arxiv.org/abs/2509.05396">Talk Isn't Always Cheap</a></td></tr>
+    </tbody>
+  </table></div>
+  <div class="prose">
+    <h3>What it means for a playbook</h3>
+    <ul>
+      <li>The <strong>criteria gate (tests) comes first and decides</strong>. DPlanner records it from exit codes.</li>
+      <li>The reviewer is <strong>fresh, read-only, can run the tests</strong>, and never sees the implementer's justification.</li>
+      <li>Findings carry evidence and pass a falsification step. The implementer <strong>fixes or declines with a reason</strong>, never argues back in a loop.</li>
+      <li><strong>The cheapest preset is the control</strong>: the same agent, a fresh session, a checklist and the tests. A careful preset has to beat it on our own steps before it is the default.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="part" id="shape">
+  <h2><span class="n">3</span>The shape: a list, not a graph</h2>
+  <div class="short"><span class="cap">In short</span>
+    <ul>
+      <li>The plan step stays <strong>one card</strong>. It is the <code>work</code> stage: the slot the template wraps.</li>
+      <li>Every other stage is a <strong>gate</strong>, and <em>changes</em> sends the work back. So the stage graph is a star, written as a list. The one escape hatch is <code>on_changes</code>.</li>
+      <li><strong>The gates:</strong> <em>criteria</em> (exit codes, run by DPlanner), <em>checklist</em> (yes/no with evidence), <em>judgement</em> (open review by lenses). A <em>person</em> gate comes last.</li>
+      <li><strong>Roles are portable</strong> (harness + model) and live with the playbook. Profiles stay per machine; a role maps to the first profile for its harness, as <code>_profile_for</code> already does.</li>
+      <li><strong>Presets:</strong> <em>Solo</em> ($2), <em>Review loop</em> ($4), <em>Careful change</em> ($12). Solo per step, Careful on branch landings. Edited through a form, kept as a file.</li>
+    </ul>
+  </div>
+  <div class="prose">
+    <p>The 99% case you described, A ⇄ B → done, is the <em>Review loop</em> playbook in the Prototypes section. <code>check()</code> accepts it, with one warning: <em>no criteria gate: nothing runs the tests, so every gate is opinion.</em> That warning is the evidence talking, so the shipped preset puts a <code>tests</code> gate before the review. It costs no tokens.</p>
+    <p><strong>When a pass stands.</strong> A criteria pass counts only for the commit it ran on. An agent's or a person's pass stands once given, even after another gate's fix. Re-reviewing everything after every fix doubles the cost. The <span class="scn">careful/person-sends-back</span> scenario shows it: the person sends the work back, the tests re-run on the new commit, and the review's pass stands.</p>
+    <p><strong><code>rounds</code></strong> is how many times a gate may see the work. <em>Changes</em> on the last round escalates to a person; there is no extra round (<span class="scn">review-loop/cap</span>).</p>
+    <p><strong>A fix resumes the implementer while it is warm</strong> (inside the cache TTL, under ~100k context) and goes fresh otherwise. In <span class="scn">careful/person-sends-back</span> the person took 50 minutes, so the fix went fresh.</p>
+  </div>
+</section>
+
+<section class="part" id="drivers">
+  <h2><span class="n">4</span>Who drives it</h2>
+  <div class="short"><span class="cap">In short</span>
+    <p><strong>One definition, two drivers.</strong> DPlanner's engine runs a pure, level-triggered <code>due(playbook, ledger, facts)</code>. A lead agent gets the same playbook as its briefing (<code>lead_briefing()</code>). The evidence favours the engine for a step: a fixed review pipeline beat an agentic one 2.2× at 5–15× fewer tokens, and multi-agent setups did 39–70% worse on sequential tasks. <strong>Either way, DPlanner records the facts</strong> (criteria results, which run holds the stage, the SHA judged, spend), so a lead agent can only propose.</p>
+  </div>
+  <div class="scroll data"><table>
+    <thead><tr><th></th><th>Engine (<code>due()</code>)</th><th>Lead agent</th></tr></thead>
+    <tbody>
+      <tr><td>Determinism</td><td>Same ledger → same decision; testable with no agent running</td><td>None; MAST's top failure modes are repetition (15.7%) and not knowing when to stop (12.4%)</td></tr>
+      <tr><td>Bounds</td><td>Round caps, error caps, backoff, budget in code</td><td>Only what DPlanner enforces underneath</td></tr>
+      <tr><td>Crash recovery</td><td>Re-derive from the ledger; reconcile orphans, never relaunch blind</td><td>Children orphaned, context lost; the next lead must rebuild from the ledger anyway</td></tr>
+      <tr><td>A person mid-run</td><td><code>NeedsPerson</code> is just an answer; waiting costs nothing</td><td>Holds a session open, burning cache TTL</td></tr>
+      <tr><td>Cost</td><td>No orchestrator tokens</td><td>~15k tokens per decision turn: about +15% on a careful run in the simulation</td></tr>
+      <tr><td>Good at</td><td>Bookkeeping</td><td>Judgement about the process: splitting work, writing the validation contract, choosing a playbook</td></tr>
+    </tbody>
+  </table></div>
+  <div class="prose">
+    <p><strong>A third form</strong>: compile the playbook into a Claude Code workflow script (deterministic and resumable). Its own docs say "no mid-run user input", it ties every stage to Claude Code, and DPlanner's ledger would become a copy. Useful as a reference design, not as a driver.</p>
+    <p>The scenario <span class="scn">lead/lies-about-tests</span> shows why the facts are DPlanner's. The lead reports the tests green. DPlanner refuses that report, because a criteria gate is recorded from exit codes, and its own run says red.</p>
+  </div>
+</section>
+
+<section class="part" id="pleasant">
+  <h2><span class="n">5</span>What makes it pleasant</h2>
+  <div class="short"><span class="cap">In short</span>
+    <p>The mechanics are the easy half. A playbook feels broken without these: <strong>three layers of chatter</strong>, a <strong>Needs you inbox</strong> of typed interrupts raised only at stage boundaries, <strong>acting mid-run</strong> (pause, take over, re-run a stage, a version pinned per run), <strong>cost before and during</strong>, and <strong>reasons to trust it</strong> (criteria before work, a cleaned-up list of findings, outcome statistics per playbook).</p>
+  </div>
+  <div class="scroll data"><table>
+    <thead><tr><th>Layer</th><th>Where</th><th>What</th></tr></thead>
+    <tbody>
+      <tr><td><strong>The ring</strong></td><td>the step's card on the canvas</td><td>One phrase: <em>Review 1/2</em>, <em>Fixing (round 1)</em>, <em>Parked</em>, <em>Waits for you</em>. Every scenario below shows it.</td></tr>
+      <tr><td><strong>Round conversation</strong></td><td>a <em>Playbook</em> tab in Step Details; the existing conversation dialog, live</td><td>Verdicts, findings with evidence, fixes, declines, a person's word</td></tr>
+      <tr><td><strong>Transcripts</strong></td><td>one click from a round</td><td>Each run's raw stream, kept as run output. The same file feeds the stall detector and the usage harvest.</td></tr>
+    </tbody>
+  </table></div>
+  <div class="scroll data"><table>
+    <thead><tr><th>Interrupt</th><th>Example</th><th>The person's verbs</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill person">approve</span></td><td>the person gate</td><td>approve · send back with a note</td></tr>
+      <tr><td><span class="pill person">respond</span></td><td>the reviewer asks a question</td><td>answer (the stage re-runs with it)</td></tr>
+      <tr><td><span class="pill person">login</span></td><td>codex's login is gone</td><td>log in · switch the role to another profile</td></tr>
+      <tr><td><span class="pill person">decide</span></td><td>escalation at the cap</td><td>accept · take over · one more round · drop the finding</td></tr>
+      <tr><td><span class="pill person">budget</span></td><td>spend reached the ceiling</td><td>raise · stop</td></tr>
+      <tr><td><span class="pill person">stuck</span></td><td>three failures in a row</td><td>retry · take over · abandon</td></tr>
+      <tr><td><span class="pill park">notify</span></td><td>quota parked until 21:30</td><td>none (informational)</td></tr>
+    </tbody>
+  </table></div>
+  <div class="prose">
+    <p>Interrupting a person costs 10–15 minutes before they are back in their code, and an interruption mid-task causes about twice the errors of one at a boundary. So the inbox is <strong>pull, not push</strong>, batched, and fed only at stage boundaries. The budget's hard stop must be the CLI's own cap: a check before launch overshoots by one run (<span class="scn">fail/budget</span>).</p>
+  </div>
+</section>
+
+<section class="part" id="floor">
+  <h2><span class="n">6</span>The factory floor</h2>
+  <div class="short"><span class="cap">In short</span>
+    <ul>
+      <li><strong>A step is claimed whole; a person's stage is assigned</strong> to a role or a named person, and answering it does not take the step from the worker.</li>
+      <li><strong>Review time is the bottleneck</strong>: teams heavy on AI merged +98% PRs, took +91% review time, and saw no gain in delivery (Faros). So there is one person gate per branch landing, and it leads with evidence.</li>
+      <li><strong>People own the work; agents are delegates.</strong> Take over fences the worker's run. Hand back sets the outcome, and the next tick carries on.</li>
+    </ul>
+  </div>
+  <div class="scroll data"><table>
+    <thead><tr><th>Actor</th><th>Claims</th><th>Runs</th><th>Answers</th></tr></thead>
+    <tbody>
+      <tr><td>Worker (daemon)</td><td>steps, by lease</td><td>agent stages; criteria gates through DPlanner</td><td>nothing; never approves</td></tr>
+      <tr><td>Person at a window</td><td>steps worked by hand</td><td>their own work, or a taken-over stage</td><td>person stages for them or their role; <em>decide</em>, <em>login</em>, <em>budget</em> on steps they own</td></tr>
+      <tr><td>Product owner</td><td>—</td><td>—</td><td>budget raises; escalations they own; reads cost per stage and per playbook</td></tr>
+    </tbody>
+  </table></div>
+  <div class="prose">
+    <p>A quota park is capacity a plan must not assume. Resource planning counts a worker's concurrent runs and its accounts' quota windows next to people's hours.</p>
+  </div>
+</section>
+
+<section class="part" id="failures">
+  <h2><span class="n">7</span>Failures and edge cases</h2>
+  <div class="short"><span class="cap">In short</span>
+    <ul>
+      <li><strong>The ledger is the truth; processes are disposable.</strong> Every ending is classified, and <strong>only a real verdict spends a round</strong>. The simulation asserts this in every scenario, along with "never two runs live at once".</li>
+      <li><strong>The probes found four things the plan did not know:</strong>
+        <ul>
+          <li>no CLI times out a hung API;</li>
+          <li><code>opencode</code> loops forever on a malformed reply (3,698 requests in 330 s) <em>while still emitting events</em>, so a stall detector is blind to it;</li>
+          <li>Claude retries a dead login for 3 minutes, and Codex gives up on a 429 at once without honouring <code>retry-after</code>;</li>
+          <li>Claude's error result says <code>"subtype":"success"</code>, and only <code>is_error</code> tells the truth.</li>
+        </ul>
+      </li>
+      <li><strong>A subscription expiring mid-run</strong> trips a circuit breaker on that account. Every stage on it waits for a <em>login</em> interrupt, the others go on, and the dead agent's worktree is resumed after login (<span class="scn">fail/auth</span>).</li>
+    </ul>
+  </div>
+  <div class="classes">
+    <div><span class="pill retry">retry</span>transient: crash, hang, 5xx, malformed output. Backoff 30 s → 2 min → 10 min; three in a row → a person.</div>
+    <div><span class="pill park">park</span>a quota or rate limit with a reset time. The <em>account</em> waits; the person is told.</div>
+    <div><span class="pill person">person</span>a login gone, billing, a question, a retired model. A typed interrupt; other accounts go on.</div>
+    <div><span class="pill abandon">abandon</span>will not improve by waiting: a runaway loop, a broken config. Stop, then a person.</div>
+    <div><span class="pill changes">changes</span>a real verdict from a gate. The only class that spends a round.</div>
+  </div>
+
+  <h3>What the CLIs actually do: the probes</h3>
+  <div class="prose">
+    <p>Each cell is one real run of the CLI in a throwaway <code>HOME</code>, pointed at <code>fake_api.py</code> serving that failure. No model was called and nothing was spent. The pill is <code>classify.py</code>'s verdict on the run's own output, and it matches the expected class in all 36 fixtures. Amber times mark runs that took over a minute to fail.</p>
+  </div>
+  <div class="scroll"><table class="probes"><thead><tr><th>fake API serves</th><th>claude -p 2.1.280</th><th>codex exec 0.156.1</th><th>opencode run 1.18.34</th></tr></thead><tbody><tr><th scope='row'>not logged in</th><td class="probe person"><span class="pill person">person · login</span><span class="took">exit 1 · 0.5 s</span><span class="why">log in again: Not logged in · Please run /login</span></td><td class="probe person"><span class="pill person">person · login</span><span class="took">exit 1 · 14.5 s</span><span class="why">log in again: unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https</span></td><td class="probe person"><span class="pill person">person · unknown</span><span class="took">exit 1 · 1.4 s</span><span class="why">the CLI failed before any model call; check its login and config</span></td></tr><tr><th scope='row'>401 bad key</th><td class="probe person slow"><span class="pill person">person · login</span><span class="took">exit 1 · 179.0 s · 11 req</span><span class="why">log in again: Invalid API key · Fix external API key</span></td><td class="probe person"><span class="pill person">person · login</span><span class="took">exit 1 · 6.6 s · 6 req</span><span class="why">log in again: unexpected status 401 Unauthorized: Incorrect API key provided: bogus., url: http://127.0.0.1:55</span></td><td class="probe person"><span class="pill person">person · login</span><span class="took">exit 1 · 1.9 s · 2 req</span><span class="why">log in again: APIError: invalid x-api-key</span></td></tr><tr><th scope='row'>403 subscription lapsed</th><td class="probe person"><span class="pill person">person · login</span><span class="took">exit 1 · 0.9 s · 1 req</span><span class="why">log in again: Failed to authenticate. API Error: 403 Your account does not have access (subscription expired).</span></td><td class="probe person"><span class="pill person">person · login</span><span class="took">exit 1 · 6.1 s · 6 req</span><span class="why">log in again: unexpected status 403 Forbidden: Your plan does not include access (subscription expired)., url:</span></td><td class="probe person"><span class="pill person">person · login</span><span class="took">exit 1 · 1.9 s · 2 req</span><span class="why">log in again: APIError: Your account does not have access (subscription expired).</span></td></tr><tr><th scope='row'>credit too low</th><td class="probe person"><span class="pill person">person · billing</span><span class="took">exit 1 · 0.9 s · 2 req</span><span class="why">billing: Credit balance is too low</span></td><td class="probe person"><span class="pill person">person · billing</span><span class="took">exit 1 · 0.1 s · 1 req</span><span class="why">billing: Quota exceeded. Check your plan and billing details.</span></td><td class="probe person"><span class="pill person">person · billing</span><span class="took">exit 1 · 2.2 s · 2 req</span><span class="why">billing: APIError: Your credit balance is too low to access the Anthropic API.</span></td></tr><tr><th scope='row'>429 rate limit</th><td class="probe park slow"><span class="pill park">park · quota</span><span class="took">exit 1 · 270.4 s · 11 req</span><span class="why">rate or usage limit; park until it resets: API Error: Request rejected (429) · Number of request tokens has ex</span></td><td class="probe park"><span class="pill park">park · quota</span><span class="took">exit 1 · 0.1 s · 1 req</span><span class="why">rate or usage limit; park until it resets: exceeded retry limit, last status: 429 Too Many Requests</span></td><td class="probe park slow"><span class="pill park">park · quota</span><span class="took">exit 1 · 102.3 s · 9 req</span><span class="why">rate or usage limit; park until it resets: APIError: Number of request tokens has exceeded your rate limit.</span></td></tr><tr><th scope='row'>529/503 overloaded</th><td class="probe retry"><span class="pill retry">retry · transient</span><span class="took">exit 1 · 2.7 s · 3 req</span><span class="why">the provider is failing; retry later: API Error: Repeated 529 Overloaded errors. The API is at capacity — this</span></td><td class="probe retry"><span class="pill retry">retry · transient</span><span class="took">exit 1 · 24.8 s · 30 req</span><span class="why">the provider is failing; retry later: unexpected status 503 Service Unavailable: The server is overloaded., ur</span></td><td class="probe retry slow"><span class="pill retry">retry · transient</span><span class="took">exit 1 · 68.9 s · 9 req</span><span class="why">the provider is failing; retry later: APIError: Overloaded</span></td></tr><tr><th scope='row'>500 server error</th><td class="probe retry slow"><span class="pill retry">retry · transient</span><span class="took">exit 1 · 178.1 s · 11 req</span><span class="why">the provider is failing; retry later: API Error: 500 Internal server error. This is a server-side issue, usual</span></td><td class="probe retry"><span class="pill retry">retry · transient</span><span class="took">exit 1 · 24.5 s · 30 req</span><span class="why">the provider is failing; retry later: We’re currently experiencing high demand, which may cause temporary erro</span></td><td class="probe retry slow"><span class="pill retry">retry · transient</span><span class="took">exit 1 · 75.0 s · 9 req</span><span class="why">the provider is failing; retry later: APIError: Internal server error</span></td></tr><tr><th scope='row'>404 model retired</th><td class="probe person"><span class="pill person">person · model</span><span class="took">exit 1 · 0.9 s · 2 req</span><span class="why">the role&#x27;s model is not available: There&#x27;s an issue with the selected model (claude-opus-5-5[1m]). It may not </span></td><td class="probe person"><span class="pill person">person · model</span><span class="took">exit 1 · 6.3 s · 6 req</span><span class="why">the role&#x27;s model is not available: unexpected status 404 Not Found: The model `gpt-retired-1` does not exist.,</span></td><td class="probe person"><span class="pill person">person · model</span><span class="took">exit 1 · 2.1 s · 2 req</span><span class="why">the role&#x27;s model is not available: APIError: model: claude-retired-1</span></td></tr><tr><th scope='row'>malformed 200</th><td class="probe retry"><span class="pill retry">retry · malformed</span><span class="took">exit 1 · 0.9 s · 2 req</span><span class="why">the API answered with something unreadable: API Error: API returned an empty or malformed response (HTTP 200) </span></td><td class="probe retry"><span class="pill retry">retry · malformed</span><span class="took">exit 1 · 6.2 s · 6 req</span><span class="why">the API answered with something unreadable: stream disconnected before completion: stream closed before respon</span></td><td class="probe abandon slow"><span class="pill abandon">abandon · runaway</span><span class="took">no exit in 330 s · 3698 req</span><span class="why">3696 events with no token progress: a retry loop</span></td></tr><tr><th scope='row'>API hangs</th><td class="probe retry slow"><span class="pill retry">retry · hang</span><span class="took">no exit in 330 s</span><span class="why">no exit and no progress: killed by the stall detector</span></td><td class="probe retry slow"><span class="pill retry">retry · hang</span><span class="took">no exit in 330 s</span><span class="why">no exit and no progress: killed by the stall detector</span></td><td class="probe retry slow"><span class="pill retry">retry · hang</span><span class="took">no exit in 330 s</span><span class="why">no exit and no progress: killed by the stall detector</span></td></tr><tr><th scope='row'>SIGTERM after 8 s</th><td class="probe retry"><span class="pill retry">retry · killed</span><span class="took">exit 143 · 8.5 s</span><span class="why">killed by a signal (exit 143); no result was written</span></td><td class="probe retry"><span class="pill retry">retry · killed</span><span class="took">exit -15 · 8.0 s</span><span class="why">killed by a signal (exit -15); no result was written</span></td><td class="probe retry"><span class="pill retry">retry · killed</span><span class="took">exit -15 · 8.0 s</span><span class="why">killed by a signal (exit -15); no result was written</span></td></tr><tr><th scope='row'>SIGKILL after 8 s</th><td class="probe retry"><span class="pill retry">retry · killed</span><span class="took">exit -9 · 8.0 s</span><span class="why">killed by a signal (exit -9); no result was written</span></td><td class="probe retry"><span class="pill retry">retry · killed</span><span class="took">exit -9 · 8.0 s</span><span class="why">killed by a signal (exit -9); no result was written</span></td><td class="probe retry"><span class="pill retry">retry · killed</span><span class="took">exit -9 · 8.0 s</span><span class="why">killed by a signal (exit -9); no result was written</span></td></tr></tbody></table></div>
+  <p class="repro">Reproduce: <code>uv run python probes/run_probes.py &lt;scratch dir&gt;</code> (about 6 minutes, no cost), then <code>uv run python classify.py</code>. Note: Codex with no config contacted the real <code>api.openai.com</code> (no key was sent; a 401 is free). A worker must pin its provider explicitly.</p>
+
+  <h3>Everything we could think of</h3>
+  <div class="filter" role="group" aria-label="Filter cases by class">
+    <span class="cap">show</span>
+    <button type="button" data-filter="all" aria-pressed="true">all</button>
+    <button type="button" data-filter="retry" aria-pressed="false">retry</button>
+    <button type="button" data-filter="park" aria-pressed="false">park</button>
+    <button type="button" data-filter="person" aria-pressed="false">person</button>
+    <button type="button" data-filter="abandon" aria-pressed="false">abandon</button>
+    <button type="button" data-filter="changes" aria-pressed="false">changes</button>
+    <button type="button" data-filter="refused" aria-pressed="false">refused</button>
+  </div>
+  <h4 class="fgroup">The agent process</h4><div class="scroll"><table class="cases"><thead><tr><th>Case</th><th>Detected by</th><th>Class</th><th>What happens</th></tr></thead><tbody><tr data-class="retry"><td>Crashes (non-zero exit, OOM kill, segfault)</td><td>exit code, no verdict</td><td><span class="pill retry">retry</span></td><td>backoff, relaunch fresh; three in a row → person <span class="scn">fail/crash</span></td></tr><tr data-class="retry"><td>Hangs (no events)</td><td>time since the last stream event, monotonic clock, &gt; the harness&#x27;s stall threshold</td><td><span class="pill retry">retry</span></td><td>kill the process group, relaunch <span class="scn">fail/hang</span></td></tr><tr data-class="none"><td>A long tool call that is not a hang (a 20-minute test run)</td><td>stream shows a tool <em>started</em> and not finished</td><td><span class="nopill">—</span></td><td>the stall clock pauses while a tool runs, up to the stage&#x27;s wall-clock limit</td></tr><tr data-class="retry"><td>Overruns the wall clock</td><td>stage limit (work 45 min, review 20 min)</td><td><span class="pill retry">retry</span></td><td>kill, relaunch; three in a row → person: the step is probably too big <span class="scn">fail/timeout</span></td></tr><tr data-class="abandon"><td>Loops: repeats steps, burns tokens</td><td>runaway detector: events without progress, repeated identical tool calls</td><td><span class="pill abandon">abandon</span></td><td>kill, person; <code>--max-turns</code> / <code>--max-budget-usd</code> as the CLI&#x27;s own cap</td></tr><tr data-class="none"><td>Exits 0 without a verdict</td><td>exit 0, no verdict in the ledger</td><td><span class="nopill">—</span></td><td>resume it once with &quot;give your verdict only&quot; (a nudge, 5k tokens); still none → person <span class="scn">fail/no-verdict</span> <span class="scn">fail/no-verdict-twice</span></td></tr><tr data-class="retry"><td>Malformed verdict</td><td>schema check on the final message (<code>--json-schema</code> / <code>--output-schema</code>)</td><td><span class="pill retry">retry</span></td><td><strong>never</strong> read as changes; three in a row → person <span class="scn">fail/garbled</span></td></tr><tr data-class="refused"><td>Posts a verdict after it was killed</td><td>the verdict&#x27;s run id ≠ the run holding the stage</td><td><span class="pill refused">refused</span></td><td>fencing: the late verdict is logged and ignored <span class="scn">fail/late-verdict</span></td></tr><tr data-class="none"><td>Posts twice</td><td>idempotent verb keyed by run id</td><td><span class="nopill">—</span></td><td>the second post is a no-op</td></tr><tr data-class="person"><td>Stops at a permission prompt</td><td><code>--permission-prompts none</code> makes it a <code>permission_denied</code> event</td><td><span class="pill person">person</span></td><td>&quot;the reviewer needed X; allow it for this playbook?&quot;</td></tr><tr data-class="person"><td>Asks a question</td><td>the agent&#x27;s own <code>needs-input</code> state, or a verdict of kind <em>question</em></td><td><span class="pill person">person</span></td><td><em>respond</em> in the inbox; the stage re-runs with the answer <span class="scn">fail/question</span></td></tr><tr data-class="none"><td>Background subagents keep <code>-p</code> alive</td><td>process alive after the final result event</td><td><span class="nopill">—</span></td><td>grace of 10 min (the CLI&#x27;s own idle limit), then kill; the verdict already counts</td></tr></tbody></table></div><h4 class="fgroup">The provider and the account</h4><div class="scroll"><table class="cases"><thead><tr><th>Case</th><th>Detected by</th><th>Class</th><th>What happens</th></tr></thead><tbody><tr data-class="retry"><td>5xx, overloaded</td><td>probe-observed messages (table above)</td><td><span class="pill retry">retry</span></td><td>the CLI already retried; DPlanner backs off on top</td></tr><tr data-class="park"><td>Rate limit (429)</td><td>as above</td><td><span class="pill park">park</span></td><td>until <code>retry-after</code> or the provider&#x27;s reset; never a round</td></tr><tr data-class="park"><td>Subscription usage window or weekly cap</td><td>the CLI&#x27;s usage-limit message with its reset time</td><td><span class="pill park">park</span></td><td>park the <strong>account</strong>, not the step: every stage on that account waits; tell the person; offer another profile only if it is at least as strong <span class="scn">fail/quota</span></td></tr><tr data-class="person"><td>Programmatic credit exhausted (since 2026-06-15, secondary)</td><td>&quot;credit balance too low&quot; / &quot;quota exceeded&quot;</td><td><span class="pill person">person</span></td><td>billing is a person&#x27;s job; stages on other accounts go on</td></tr><tr data-class="person"><td><strong>Logged out / OAuth expired / subscription lapsed / payment failed</strong></td><td>401/403 message; preflight auth check</td><td><span class="pill person">person</span></td><td><strong>circuit breaker on the account</strong>: no launch on it until a login is seen; a <code>login</code> interrupt; stages on other accounts continue <span class="scn">fail/auth</span></td></tr><tr data-class="none"><td>…and the agent died mid-edit</td><td>the run ended in auth failure with a dirty worktree</td><td><span class="nopill">—</span></td><td>after login: <strong>resume</strong> if the session survived (it is on disk), else <strong>fresh</strong> with &quot;a previous run left these uncommitted changes&quot; and the diff</td></tr><tr data-class="person"><td>Model retired or renamed</td><td>404 &quot;model&quot; message</td><td><span class="pill person">person</span></td><td>the playbook names a model the account cannot use: fix the role</td></tr><tr data-class="none"><td>CLI upgraded mid-playbook</td><td>harness version differs from the run&#x27;s recorded version</td><td><span class="nopill">—</span></td><td>warning; the prompt cache is invalid anyway (a version change resets it)</td></tr><tr data-class="none"><td>Context window exhausted / auto-compaction</td><td>the stream&#x27;s compaction event; context over the warm limit</td><td><span class="nopill">—</span></td><td>next run goes fresh with a written handoff instead of resuming</td></tr><tr data-class="none"><td>Prompt cache expired</td><td>time since the last event &gt; TTL</td><td><span class="nopill">—</span></td><td>not a failure: the fix runs fresh, and costs more <span class="scn">careful/person-sends-back</span></td></tr></tbody></table></div><h4 class="fgroup">The host and the orchestrator</h4><div class="scroll"><table class="cases"><thead><tr><th>Case</th><th>Detected by</th><th>Class</th><th>What happens</th></tr></thead><tbody><tr data-class="retry"><td>Window closed / worker killed / reboot mid-stage</td><td>on start: a run record says live, but no process holds it</td><td><span class="pill retry">retry</span></td><td><strong>reconcile</strong>: pid alive and stream growing → adopt; else mark lost and relaunch after backoff, never blind <span class="scn">fail/lost-host</span></td></tr><tr data-class="none"><td>Laptop suspend: timers jump</td><td>monotonic clock jumps past the stall limit on wake</td><td><span class="nopill">—</span></td><td>re-check liveness once on wake before killing anything</td></tr><tr data-class="none"><td>Two launchers (window + worker, two machines)</td><td>the shared lock file (one machine); leases + turn stamps (several)</td><td><span class="nopill">—</span></td><td>the <em>coordination note</em>; never two live runs on one step (the spike asserts it at every launch)</td></tr><tr data-class="retry"><td>Plan-repo sync fails (pull or push rejected, ledger conflict)</td><td>git exit</td><td><span class="pill retry">retry</span></td><td>the ledger rows are append-only per run, so a merge never conflicts on the same row; a rejected push is retried after a pull</td></tr><tr data-class="person"><td>Disk full, run dir cleaned, worktree pruned</td><td>write errors; worktree missing on resume</td><td><span class="pill person">person</span></td><td>resume is impossible → fresh with the ledger&#x27;s findings; tell the person the worktree is gone</td></tr><tr data-class="none"><td>Clock skew between machines</td><td>—</td><td><span class="nopill">—</span></td><td>turn stamps name the turn, not the time (as today); leases use the server&#x27;s or ref&#x27;s clock</td></tr></tbody></table></div><h4 class="fgroup">The repository and the work</h4><div class="scroll"><table class="cases"><thead><tr><th>Case</th><th>Detected by</th><th>Class</th><th>What happens</th></tr></thead><tbody><tr data-class="refused"><td><strong>Stale SHA</strong>: someone pushed while the reviewer ran</td><td>verdict SHA ≠ head</td><td><span class="pill refused">refused</span></td><td>the verdict is ignored and the gate re-runs on the new head <span class="scn">fail/stale</span></td></tr><tr data-class="none"><td>Implementer writes during review</td><td>(should not happen: one live run per step)</td><td><span class="nopill">—</span></td><td>the reviewer works on a read-only snapshot at the SHA anyway</td></tr><tr data-class="none"><td>Base branch moved / merge conflict</td><td>the landing&#x27;s own checks</td><td><span class="nopill">—</span></td><td>the branch-landing stage, as today</td></tr><tr data-class="none"><td><strong>Flaky tests</strong></td><td>the failing test passes on one re-run inside the gate</td><td><span class="nopill">—</span></td><td>pass, with the flake recorded on the step; never a round <span class="scn">solo/flaky</span></td></tr><tr data-class="retry"><td>Test environment missing</td><td>the command cannot start (exit 127, import error before collection)</td><td><span class="pill retry">retry → person</span></td><td><strong>an error, not changes</strong>: the implementer cannot fix a missing toolchain <span class="scn">fail/env-missing</span></td></tr><tr data-class="none"><td>Sandbox blocks the reviewer from running tests</td><td>permission-denied events</td><td><span class="nopill">—</span></td><td>falls back to reading; the verdict says so</td></tr><tr data-class="refused"><td>A &quot;read-only&quot; reviewer edits files</td><td>the worktree&#x27;s diff changes during the review</td><td><span class="pill refused">refused</span></td><td>discard the edits; enforce with the sandbox, not the prompt (ccswarm&#x27;s lesson)</td></tr><tr data-class="changes"><td><strong>The implementer games the gate</strong>: deletes/skips tests, edits protected paths</td><td>test count below base; skip markers added; protected-path globs</td><td><span class="pill changes">changes</span></td><td>the criteria gate says no, with the reason <span class="scn">solo/gamed</span></td></tr><tr data-class="person"><td>The diff is too big for the reviewer&#x27;s context</td><td>token estimate of the diff</td><td><span class="pill person">person</span></td><td>split the step, or review per file group; never truncate silently</td></tr><tr data-class="changes"><td>The diff is empty but the agent says done</td><td><code>git diff --stat</code> empty</td><td><span class="pill changes">changes</span></td><td>sent back: &quot;no changes were made&quot;</td></tr></tbody></table></div><h4 class="fgroup">The conversation</h4><div class="scroll"><table class="cases"><thead><tr><th>Case</th><th>Detected by</th><th>Class</th><th>What happens</th></tr></thead><tbody><tr data-class="person"><td>A and B never converge</td><td>the gate&#x27;s rounds reach the cap</td><td><span class="pill person">person</span></td><td>escalate with both positions <span class="scn">review-loop/cap</span></td></tr><tr data-class="none"><td><strong>The goalposts move</strong>: new findings every round (Yegge&#x27;s &quot;two more things&quot;)</td><td>findings in round n &gt; 1 not linked to round n−1</td><td><span class="nopill">—</span></td><td>after round 1 the briefing says: verify the earlier findings, and raise only <em>high</em> severity new ones</td></tr><tr data-class="none"><td>Implementer declines a finding</td><td>a <em>decline</em> reply with a reason</td><td><span class="nopill">—</span></td><td>recorded; if the gate insists at the cap, a person decides</td></tr><tr data-class="none"><td>The reviewer rubber-stamps</td><td>its approval rate vs. the person&#x27;s send-back rate (statistics per playbook)</td><td><span class="nopill">—</span></td><td>visible on the playbook page; no automatic action</td></tr><tr data-class="none"><td>Prompt injection in the repository tells the reviewer to approve</td><td>—</td><td><span class="nopill">—</span></td><td>the reviewer never sees the implementer&#x27;s justification; criteria gates are exit codes; a person gate on careful work</td></tr></tbody></table></div><h4 class="fgroup">Specific to a lead agent</h4><div class="scroll"><table class="cases"><thead><tr><th>Case</th><th>Detected by</th><th>Class</th><th>What happens</th></tr></thead><tbody><tr data-class="retry"><td>The lead dies</td><td>its process exits</td><td><span class="pill retry">retry</span></td><td>a fresh lead rebuilds from the ledger; children it started are reconciled like any orphan</td></tr><tr data-class="refused"><td><strong>The lead says a gate passed when it did not</strong></td><td>a criteria verdict whose source is not DPlanner</td><td><span class="pill refused">refused</span></td><td>criteria are recorded by DPlanner from exit codes <span class="scn">lead/lies-about-tests</span></td></tr><tr data-class="person"><td>The lead overruns budget or context</td><td>spend per launch; its own context size</td><td><span class="pill person">person</span></td><td>the same budget gate as the engine</td></tr></tbody></table></div><h4 class="fgroup">The person</h4><div class="scroll"><table class="cases"><thead><tr><th>Case</th><th>Detected by</th><th>Class</th><th>What happens</th></tr></thead><tbody><tr data-class="none"><td>A person gate is never answered</td><td>age of the open interrupt</td><td><span class="nopill">—</span></td><td>a reminder after a day; it never times out into an approval</td></tr><tr data-class="none"><td>The step, its description or the playbook is edited mid-run</td><td>the run pins the playbook version and the description&#x27;s hash</td><td><span class="nopill">—</span></td><td>the run continues on what it started with; a notice says so; the next run uses the new text</td></tr><tr data-class="none"><td>A person takes over a running stage</td><td><em>Take Over</em></td><td><span class="nopill">—</span></td><td>fence and stop the run, then hand the lease to the person (<em>floor.md</em>)</td></tr><tr data-class="none"><td>Cancel</td><td><em>Cancel Playbook</em></td><td><span class="nopill">—</span></td><td>kill, keep the worktree, offer cleaning</td></tr><tr data-class="none"><td>The step is deleted, relinked or moved mid-run</td><td>the model&#x27;s change signal on the step</td><td><span class="nopill">—</span></td><td>stop and keep the worktree; a deleted step&#x27;s runs end as <em>abandoned</em></td></tr><tr data-class="none"><td>Undo</td><td>—</td><td><span class="nopill">—</span></td><td>a playbook&#x27;s own status changes are external facts, off the undo stack (as auto-launch is today)</td></tr></tbody></table></div><h4 class="fgroup">Budget</h4><div class="scroll"><table class="cases"><thead><tr><th>Case</th><th>Detected by</th><th>Class</th><th>What happens</th></tr></thead><tbody><tr data-class="person"><td>Spend reaches the ceiling</td><td>spend checked before each launch</td><td><span class="pill person">person</span></td><td>a <code>budget</code> interrupt; criteria gates and a person&#x27;s approval still go on — only spending launches are held <span class="scn">fail/budget</span></td></tr><tr data-class="none"><td>The last run overshoots</td><td>—</td><td><span class="nopill">—</span></td><td>a pre-launch check cannot stop a run halfway; the CLI&#x27;s own cap (<code>--max-budget-usd &lt;remaining&gt;</code>) or a token kill must [<code>fail/budget</code> overshoots $1.20 by $0.13]</td></tr><tr data-class="none"><td>Usage only known at the end</td><td>—</td><td><span class="nopill">—</span></td><td>stream usage events give a running count; the ledger is written at the end</td></tr></tbody></table></div>
+</section>
+
+<section class="part" id="prototypes">
+  <h2><span class="n">8</span>Prototypes</h2>
+  <div class="short"><span class="cap">In short</span>
+    <ul>
+      <li><code>playbook.py</code>: the loader, <code>check()</code>, the pure <code>due()</code> engine, fencing at intake (<code>accept()</code>), the ring label, the lead briefing and the diagrams. About 600 lines; mypy-strict and ruff clean.</li>
+      <li><code>simulate.py</code>: 22 scripted scenarios through the engine, rendered as the three chatter layers plus the inbox, refusals, cost and invariants. <strong>All invariants hold.</strong> Writing it caught two bugs in the engine: a fix launched twice, and a budget that blocked a person's approval.</li>
+      <li><code>classify.py</code> + <code>probes/</code>: the failure classifier, built and tested on real CLI output.</li>
+      <li><strong>Not run:</strong> the live experiment with real agents. It spends subscription quota and waits for your go-ahead (question 10).</li>
+    </ul>
+  </div>
+  <h3>The playbooks</h3>
+  <div class="tabs" role="tablist" aria-label="Playbooks"><button role="tab" id="tab-pb-review-loop" aria-controls="pb-review-loop" aria-selected="true" class="tab">Review loop</button><button role="tab" id="tab-pb-solo" aria-controls="pb-solo" aria-selected="false" class="tab">Solo</button><button role="tab" id="tab-pb-careful-change" aria-controls="pb-careful-change" aria-selected="false" class="tab">Careful change</button><button role="tab" id="tab-pb-careful-change-lead" aria-controls="pb-careful-change-lead" aria-selected="false" class="tab">Careful change (lead)</button><button role="tab" id="tab-pb-broken" aria-controls="pb-broken" aria-selected="false" class="tab">Broken</button></div><div role="tabpanel" id="pb-review-loop" aria-labelledby="tab-pb-review-loop" ><div class="pbgrid"><div><div class="cap">playbooks/review-loop.toml</div><pre class="code"># The 99% case: Claude does the step, Codex reviews it, back and forth, then done.
+name = &quot;Review loop&quot;
+budget_usd = 4
+
+roles.implementer = { agent = &quot;claude&quot; }
+roles.reviewer    = { agent = &quot;codex&quot; }
+
+[[stage]]
+id = &quot;review&quot;
+kind = &quot;judgement&quot;
+</pre></div><div><div class="cap">check()</div><ul class="checks"><li class="warn">no criteria gate: nothing runs the tests, so every gate is opinion</li></ul><div class="cap">the stage graph, drawn from the list</div><div class="scroll"><svg viewBox="0 0 380 138" width="380" height="138" role="img" aria-label="Stage diagram of Review loop" class="star"><defs><marker id="ah-review-loop" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" class="arrowhead"/></marker></defs><line x1="134" y1="40.0" x2="165" y2="40.0" class="fwd" marker-end="url(#ah-review-loop)"/><rect x="16" y="18" width="118" height="44" rx="7" class="node work"/><text x="75.0" y="37" class="nlabel inv">work</text><text x="75.0" y="52" class="nsub inv">work · claude</text><line x1="286" y1="40.0" x2="317" y2="40.0" class="fwd" marker-end="url(#ah-review-loop)"/><rect x="168" y="18" width="118" height="44" rx="7" class="node gate judgement"/><text x="227.0" y="37" class="nlabel ">review</text><text x="227.0" y="52" class="nsub ">judgement · codex</text><circle cx="342" cy="40.0" r="20" class="node done"/><text x="342" y="44.0" class="nlabel">done</text><path d="M227.0,62 L227.0,84 L85.0,84 L85.0,65" class="back" marker-end="url(#ah-review-loop)"/><text x="233.0" y="79" class="blabel">changes ×2</text></svg></div></div></div><p class="repro">Reproduce: <code>uv run python playbook.py playbooks/review-loop.toml</code></p></div><div role="tabpanel" id="pb-solo" aria-labelledby="tab-pb-solo" hidden><div class="pbgrid"><div><div class="cap">playbooks/solo.toml</div><pre class="code"># The cheapest preset, and the control a careful one must beat: tests, then the same agent
+# reviewing in a fresh session against a checklist. No second vendor.
+name = &quot;Solo&quot;
+budget_usd = 2
+
+roles.implementer = { agent = &quot;claude&quot; }
+roles.self        = { agent = &quot;claude&quot;, fresh = true }
+
+[[stage]]
+id = &quot;tests&quot;
+kind = &quot;criteria&quot;
+run = [&quot;uv run pytest -q&quot;, &quot;uv run ruff check&quot;]
+rounds = 3
+
+[[stage]]
+id = &quot;self-check&quot;
+kind = &quot;checklist&quot;
+by = &quot;self&quot;
+rounds = 1
+items = [
+  &quot;Does every acceptance criterion in the step&#x27;s description have a test that exercises it?&quot;,
+  &quot;Is any test deleted, skipped or weakened by this diff?&quot;,
+  &quot;Does the diff touch a file outside what the step describes?&quot;,
+]
+</pre></div><div><div class="cap">check()</div><ul class="checks"><li class="ok">check() accepts it with no warnings</li></ul><div class="cap">the stage graph, drawn from the list</div><div class="scroll"><svg viewBox="0 0 532 164" width="532" height="164" role="img" aria-label="Stage diagram of Solo" class="star"><defs><marker id="ah-solo" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" class="arrowhead"/></marker></defs><line x1="134" y1="40.0" x2="165" y2="40.0" class="fwd" marker-end="url(#ah-solo)"/><rect x="16" y="18" width="118" height="44" rx="7" class="node work"/><text x="75.0" y="37" class="nlabel inv">work</text><text x="75.0" y="52" class="nsub inv">work · claude</text><line x1="286" y1="40.0" x2="317" y2="40.0" class="fwd" marker-end="url(#ah-solo)"/><rect x="168" y="18" width="118" height="44" rx="7" class="node gate criteria"/><text x="227.0" y="37" class="nlabel ">tests</text><text x="227.0" y="52" class="nsub ">criteria · DPlanner</text><line x1="438" y1="40.0" x2="469" y2="40.0" class="fwd" marker-end="url(#ah-solo)"/><rect x="320" y="18" width="118" height="44" rx="7" class="node gate checklist"/><text x="379.0" y="37" class="nlabel ">self-check</text><text x="379.0" y="52" class="nsub ">checklist · claude</text><circle cx="494" cy="40.0" r="20" class="node done"/><text x="494" y="44.0" class="nlabel">done</text><path d="M227.0,62 L227.0,84 L85.0,84 L85.0,65" class="back" marker-end="url(#ah-solo)"/><text x="233.0" y="79" class="blabel">fail</text><path d="M379.0,62 L379.0,110 L91.0,110 L91.0,65" class="back" marker-end="url(#ah-solo)"/><text x="385.0" y="105" class="blabel">changes ×1</text></svg></div></div></div><p class="repro">Reproduce: <code>uv run python playbook.py playbooks/solo.toml</code></p></div><div role="tabpanel" id="pb-careful-change" aria-labelledby="tab-pb-careful-change" hidden><div class="pbgrid"><div><div class="cap">playbooks/careful-change.toml</div><pre class="code"># Tests, a cross-vendor review, a security pass only where it matters, then a person.
+name = &quot;Careful change&quot;
+budget_usd = 12
+
+roles.implementer = { agent = &quot;claude&quot;, model = &quot;opus&quot; }
+roles.reviewer    = { agent = &quot;codex&quot; }
+roles.security    = { agent = &quot;codex&quot; }
+
+[[stage]]
+id = &quot;tests&quot;
+kind = &quot;criteria&quot;
+run = [&quot;uv run pytest -q&quot;, &quot;uv run ruff check&quot;, &quot;uv run mypy&quot;]
+rounds = 3
+
+[[stage]]
+id = &quot;review&quot;
+kind = &quot;judgement&quot;
+by = &quot;reviewer&quot;
+lenses = [&quot;correctness&quot;, &quot;architecture&quot;]
+rounds = 2
+
+[[stage]]
+id = &quot;security&quot;
+kind = &quot;judgement&quot;
+by = &quot;security&quot;
+lenses = [&quot;security&quot;]
+rounds = 1
+when = [&quot;src/*/auth/*&quot;, &quot;src/*/net/*&quot;, &quot;*.lock&quot;]
+
+[[stage]]
+id = &quot;approve&quot;
+kind = &quot;person&quot;
+</pre></div><div><div class="cap">check()</div><ul class="checks"><li class="ok">check() accepts it with no warnings</li></ul><div class="cap">the stage graph, drawn from the list</div><div class="scroll"><svg viewBox="0 0 836 216" width="836" height="216" role="img" aria-label="Stage diagram of Careful change" class="star"><defs><marker id="ah-careful-change" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" class="arrowhead"/></marker></defs><line x1="134" y1="40.0" x2="165" y2="40.0" class="fwd" marker-end="url(#ah-careful-change)"/><rect x="16" y="18" width="118" height="44" rx="7" class="node work"/><text x="75.0" y="37" class="nlabel inv">work</text><text x="75.0" y="52" class="nsub inv">work · claude</text><line x1="286" y1="40.0" x2="317" y2="40.0" class="fwd" marker-end="url(#ah-careful-change)"/><rect x="168" y="18" width="118" height="44" rx="7" class="node gate criteria"/><text x="227.0" y="37" class="nlabel ">tests</text><text x="227.0" y="52" class="nsub ">criteria · DPlanner</text><line x1="438" y1="40.0" x2="469" y2="40.0" class="fwd" marker-end="url(#ah-careful-change)"/><rect x="320" y="18" width="118" height="44" rx="7" class="node gate judgement"/><text x="379.0" y="37" class="nlabel ">review</text><text x="379.0" y="52" class="nsub ">judgement · codex</text><line x1="590" y1="40.0" x2="621" y2="40.0" class="fwd" marker-end="url(#ah-careful-change)"/><rect x="472" y="18" width="118" height="44" rx="7" class="node gate judgement"/><text x="531.0" y="37" class="nlabel ">security</text><text x="531.0" y="52" class="nsub ">judgement · codex</text><line x1="742" y1="40.0" x2="773" y2="40.0" class="fwd" marker-end="url(#ah-careful-change)"/><rect x="624" y="18" width="118" height="44" rx="7" class="node gate person"/><text x="683.0" y="37" class="nlabel ">approve</text><text x="683.0" y="52" class="nsub ">person · a person</text><circle cx="798" cy="40.0" r="20" class="node done"/><text x="798" y="44.0" class="nlabel">done</text><path d="M227.0,62 L227.0,84 L85.0,84 L85.0,65" class="back" marker-end="url(#ah-careful-change)"/><text x="233.0" y="79" class="blabel">fail</text><path d="M379.0,62 L379.0,110 L91.0,110 L91.0,65" class="back" marker-end="url(#ah-careful-change)"/><text x="385.0" y="105" class="blabel">changes ×2</text><path d="M531.0,62 L531.0,136 L97.0,136 L97.0,65" class="back" marker-end="url(#ah-careful-change)"/><text x="537.0" y="131" class="blabel">changes ×1 · only on src/*/auth/*, src/*/net/*, *.lock</text><path d="M683.0,62 L683.0,162 L103.0,162 L103.0,65" class="back" marker-end="url(#ah-careful-change)"/><text x="689.0" y="157" class="blabel">send back</text></svg></div></div></div><p class="repro">Reproduce: <code>uv run python playbook.py playbooks/careful-change.toml</code></p></div><div role="tabpanel" id="pb-careful-change-lead" aria-labelledby="tab-pb-careful-change-lead" hidden><div class="pbgrid"><div><div class="cap">playbooks/careful-change-lead.toml</div><pre class="code"># The same playbook, driven by a lead agent instead of DPlanner&#x27;s engine.
+extends = &quot;careful-change.toml&quot;
+name = &quot;Careful change (lead)&quot;
+driver = &quot;lead&quot;
+
+roles.lead = { agent = &quot;claude&quot;, model = &quot;opus&quot; }
+</pre></div><div><div class="cap">check()</div><ul class="checks"><li class="ok">check() accepts it with no warnings</li></ul><div class="cap">the stage graph, drawn from the list</div><div class="scroll"><svg viewBox="0 0 836 216" width="836" height="216" role="img" aria-label="Stage diagram of Careful change (lead)" class="star"><defs><marker id="ah-careful-change-lead" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" class="arrowhead"/></marker></defs><line x1="134" y1="40.0" x2="165" y2="40.0" class="fwd" marker-end="url(#ah-careful-change-lead)"/><rect x="16" y="18" width="118" height="44" rx="7" class="node work"/><text x="75.0" y="37" class="nlabel inv">work</text><text x="75.0" y="52" class="nsub inv">work · claude</text><line x1="286" y1="40.0" x2="317" y2="40.0" class="fwd" marker-end="url(#ah-careful-change-lead)"/><rect x="168" y="18" width="118" height="44" rx="7" class="node gate criteria"/><text x="227.0" y="37" class="nlabel ">tests</text><text x="227.0" y="52" class="nsub ">criteria · DPlanner</text><line x1="438" y1="40.0" x2="469" y2="40.0" class="fwd" marker-end="url(#ah-careful-change-lead)"/><rect x="320" y="18" width="118" height="44" rx="7" class="node gate judgement"/><text x="379.0" y="37" class="nlabel ">review</text><text x="379.0" y="52" class="nsub ">judgement · codex</text><line x1="590" y1="40.0" x2="621" y2="40.0" class="fwd" marker-end="url(#ah-careful-change-lead)"/><rect x="472" y="18" width="118" height="44" rx="7" class="node gate judgement"/><text x="531.0" y="37" class="nlabel ">security</text><text x="531.0" y="52" class="nsub ">judgement · codex</text><line x1="742" y1="40.0" x2="773" y2="40.0" class="fwd" marker-end="url(#ah-careful-change-lead)"/><rect x="624" y="18" width="118" height="44" rx="7" class="node gate person"/><text x="683.0" y="37" class="nlabel ">approve</text><text x="683.0" y="52" class="nsub ">person · a person</text><circle cx="798" cy="40.0" r="20" class="node done"/><text x="798" y="44.0" class="nlabel">done</text><path d="M227.0,62 L227.0,84 L85.0,84 L85.0,65" class="back" marker-end="url(#ah-careful-change-lead)"/><text x="233.0" y="79" class="blabel">fail</text><path d="M379.0,62 L379.0,110 L91.0,110 L91.0,65" class="back" marker-end="url(#ah-careful-change-lead)"/><text x="385.0" y="105" class="blabel">changes ×2</text><path d="M531.0,62 L531.0,136 L97.0,136 L97.0,65" class="back" marker-end="url(#ah-careful-change-lead)"/><text x="537.0" y="131" class="blabel">changes ×1 · only on src/*/auth/*, src/*/net/*, *.lock</text><path d="M683.0,62 L683.0,162 L103.0,162 L103.0,65" class="back" marker-end="url(#ah-careful-change-lead)"/><text x="689.0" y="157" class="blabel">send back</text></svg></div></div></div><details class="brief"><summary>The same playbook as a lead agent's briefing (<code>lead_briefing()</code>)</summary><pre class="code">You are the lead for one plan step, running the playbook &quot;Careful change (lead)&quot;.
+You do not write code. You start the other agents, read what they report, and decide
+what runs next, following the stages below exactly.
+
+Rules that DPlanner enforces whatever you say:
+- Report every verdict with `dplanner review post|approve --run &lt;your run id&gt;`. A verdict
+  from a run that no longer holds the stage is refused.
+- Criteria gates are run and recorded by DPlanner (`dplanner playbook check-gate &lt;stage&gt;`);
+  your report of a test result is not accepted as one.
+- Budget: $12 for the whole step. Check `dplanner playbook spend` before each
+  launch; at the limit, stop and run `dplanner review escalate`.
+- An agent that fails to start, times out or hits a quota is not a round. Never count it.
+
+Roles (start each as its own headless process; never reuse a reviewer&#x27;s session):
+- implementer: `claude` (opus)
+- reviewer: `codex`, fresh session
+- security: `codex`, fresh session
+
+Stages, in order:
+1. work — the implementer does the step, then reports ready.
+2. tests — DPlanner runs: uv run pytest -q; uv run ruff check; uv run mypy. Any failure is changes.
+3. review — reviewer reviews (correctness, architecture), up to 2 rounds.
+4. security — security reviews (security), up to 1 round. Only when the diff touches src/*/auth/*, src/*/net/*, *.lock.
+5. approve — wait for a person&#x27;s approval. Do nothing until it arrives.
+
+When a gate asks for changes, send its findings back to the implementer (resume its session
+if it ended under an hour ago, else start it fresh with the findings), then run that gate
+again. Earlier criteria gates run again on the new commit; earlier agent passes stand.
+When a gate&#x27;s rounds are used up and it still asks for changes, escalate. Never approve
+on a gate&#x27;s behalf, and never approve for the person.</pre></details><p class="repro">Reproduce: <code>uv run python playbook.py playbooks/careful-change-lead.toml</code></p></div><div role="tabpanel" id="pb-broken" aria-labelledby="tab-pb-broken" hidden><div class="pbgrid"><div><div class="cap">playbooks/broken.toml</div><pre class="code"># Deliberately wrong, so check() has something to refuse.
+name = &quot;Broken&quot;
+
+roles.implementer = { agent = &quot;claude&quot; }
+roles.reviewer    = { agent = &quot;gemini-free-tier&quot; }
+
+[[stage]]
+id = &quot;approve&quot;
+kind = &quot;person&quot;
+
+[[stage]]
+id = &quot;review&quot;
+kind = &quot;judgement&quot;
+rounds = 0
+
+[[stage]]
+id = &quot;tests&quot;
+kind = &quot;criteria&quot;
+on_changes = &quot;deploy&quot;
+</pre></div><div><div class="cap">check()</div><ul class="checks"><li class="err">no budget_usd: a playbook nobody watches needs a ceiling</li><li class="err">stage &#x27;review&#x27; comes after a person&#x27;s approval: it would change work the person never saw</li><li class="err">stage &#x27;review&#x27;: unknown agent &#x27;gemini-free-tier&#x27; (known: claude, codex, opencode)</li><li class="err">stage &#x27;review&#x27;: rounds = 0; a loop must be bounded at 1–5</li><li class="err">stage &#x27;tests&#x27; comes after a person&#x27;s approval: it would change work the person never saw</li><li class="err">stage &#x27;tests&#x27; is a criteria gate with nothing to run</li><li class="err">stage &#x27;tests&#x27;: on_changes = &#x27;deploy&#x27; must name an earlier stage</li></ul></div></div><p class="repro">Reproduce: <code>uv run python playbook.py playbooks/broken.toml</code></p></div>
+  <h3>The scenarios</h3>
+  <div class="prose"><p>Pick a scenario. Times are simulated. Costs use stated assumptions: effective tokens per run kind, $6/MTok for Claude and $4/MTok for Codex, blended, with cache reads discounted.</p></div>
+  <div class="scenarios"><nav class="scpick" aria-label="Scenarios"><div class="scgroup"><div class="cap">The 99% case</div><button class="scbtn" data-target="sc-review-loop-first-pass" aria-pressed="true"><span class="dot good"></span>first-pass</button><button class="scbtn" data-target="sc-review-loop-changes-then-pass" aria-pressed="false"><span class="dot good"></span>changes-then-pass</button><button class="scbtn" data-target="sc-review-loop-cap" aria-pressed="false"><span class="dot person"></span>cap</button></div><div class="scgroup"><div class="cap">Careful change</div><button class="scbtn" data-target="sc-careful-full" aria-pressed="false"><span class="dot good"></span>full</button><button class="scbtn" data-target="sc-careful-person-sends-back" aria-pressed="false"><span class="dot good"></span>person-sends-back</button></div><div class="scgroup"><div class="cap">Solo</div><button class="scbtn" data-target="sc-solo-flaky" aria-pressed="false"><span class="dot good"></span>flaky</button><button class="scbtn" data-target="sc-solo-gamed" aria-pressed="false"><span class="dot good"></span>gamed</button></div><div class="scgroup"><div class="cap">Failures</div><button class="scbtn" data-target="sc-fail-crash" aria-pressed="false"><span class="dot good"></span>crash</button><button class="scbtn" data-target="sc-fail-hang" aria-pressed="false"><span class="dot good"></span>hang</button><button class="scbtn" data-target="sc-fail-timeout" aria-pressed="false"><span class="dot person"></span>timeout</button><button class="scbtn" data-target="sc-fail-quota" aria-pressed="false"><span class="dot good"></span>quota</button><button class="scbtn" data-target="sc-fail-auth" aria-pressed="false"><span class="dot good"></span>auth</button><button class="scbtn" data-target="sc-fail-no-verdict" aria-pressed="false"><span class="dot good"></span>no-verdict</button><button class="scbtn" data-target="sc-fail-no-verdict-twice" aria-pressed="false"><span class="dot person"></span>no-verdict-twice</button><button class="scbtn" data-target="sc-fail-garbled" aria-pressed="false"><span class="dot person"></span>garbled</button><button class="scbtn" data-target="sc-fail-stale" aria-pressed="false"><span class="dot good"></span>stale</button><button class="scbtn" data-target="sc-fail-lost-host" aria-pressed="false"><span class="dot good"></span>lost-host</button><button class="scbtn" data-target="sc-fail-late-verdict" aria-pressed="false"><span class="dot good"></span>late-verdict</button><button class="scbtn" data-target="sc-fail-question" aria-pressed="false"><span class="dot good"></span>question</button><button class="scbtn" data-target="sc-fail-env-missing" aria-pressed="false"><span class="dot person"></span>env-missing</button><button class="scbtn" data-target="sc-fail-budget" aria-pressed="false"><span class="dot person"></span>budget</button></div><div class="scgroup"><div class="cap">Lead agent</div><button class="scbtn" data-target="sc-lead-lies-about-tests" aria-pressed="false"><span class="dot good"></span>lies-about-tests</button></div></nav><div><article class="scenario" id="sc-review-loop-first-pass" >
+<header class="schead"><div><h4>review-loop/first-pass</h4><p>The reviewer is happy at once.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +0:34 · $1.18 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:34</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:34  reviewer (codex) on review, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review (fresh) @ c1 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.28</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py review-loop/first-pass</code></p>
+</article><article class="scenario" id="sc-review-loop-changes-then-pass" hidden>
+<header class="schead"><div><h4>review-loop/changes-then-pass</h4><p>One round of findings; the fix resumes Claude while warm.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=changes,pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +0:53 · $1.61 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:34</span><span class="pill ">Fixing (round 1)</span><span class="what">launch work as implementer (resume) — round 1 findings from &#x27;review&#x27;</span></li><li><span class="t">+0:44</span><span class="pill ">Review 2/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:53</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:34  reviewer (codex) on review, round 1: changes
+          · [high] src/app/cache.py:42 — the cache key ignores the user, so one user&#x27;s rows leak to another
+          · [medium] src/app/cache.py:77 — an expired entry is returned once before eviction
+ +0:44  implementer (claude) fixed round 1 (resume: round 1 findings from &#x27;review&#x27;) → c2, ready for review
+ +0:53  reviewer (codex) on review, round 2: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review (fresh) @ c1 → changes, 70k tokens
+r4 codex review (fresh) @ c2 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$1.05</td></tr><tr><td>review</td><td class='num'>$0.56</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 1 round(s) spent, 1 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py review-loop/changes-then-pass</code></p>
+</article><article class="scenario" id="sc-review-loop-cap" hidden>
+<header class="schead"><div><h4>review-loop/cap</h4><p>Still changes on the last round: escalate to a person, no third round.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=changes,changes</code></p></div>
+<div class="verdict person"><b>escalated at review</b><span>after +0:53 · $1.61 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:34</span><span class="pill ">Fixing (round 1)</span><span class="what">launch work as implementer (resume) — round 1 findings from &#x27;review&#x27;</span></li><li><span class="t">+0:44</span><span class="pill ">Review 2/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:53</span><span class="pill person">Escalated</span><span class="what">escalate review — 2 of 2 rounds used and still changes requested</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:34  reviewer (codex) on review, round 1: changes
+          · [high] src/app/cache.py:42 — the cache key ignores the user, so one user&#x27;s rows leak to another
+          · [medium] src/app/cache.py:77 — an expired entry is returned once before eviction
+ +0:44  implementer (claude) fixed round 1 (resume: round 1 findings from &#x27;review&#x27;) → c2, ready for review
+ +0:53  reviewer (codex) on review, round 2: changes
+          · [medium] src/app/cache.py:77 — an expired entry is returned once before eviction
+          · [low] tests/test_cache.py:12 — the test asserts on a repr, not the value</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review (fresh) @ c1 → changes, 70k tokens
+r4 codex review (fresh) @ c2 → changes, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">decide</span>review: 2 of 2 rounds used and still changes requested. Both positions are in the conversation.</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$1.05</td></tr><tr><td>review</td><td class='num'>$0.56</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 2 round(s) spent, 2 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py review-loop/cap</code></p>
+</article><article class="scenario" id="sc-careful-full" hidden>
+<header class="schead"><div><h4>careful/full</h4><p>Tests fail once, review asks once, the diff touches auth so security runs.</p>
+<p class="meta"><code>careful-change.toml</code> · driver engine · script <code>tests=fail,pass,pass review=changes,pass security=pass approve=pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +2:11 · $2.04 of $12</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:28</span><span class="pill ">Fixing (round 1)</span><span class="what">launch work as implementer (resume) — round 1 findings from &#x27;tests&#x27;</span></li><li><span class="t">+0:38</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:41</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:50</span><span class="pill ">Fixing (round 1)</span><span class="what">launch work as implementer (resume) — round 1 findings from &#x27;review&#x27;</span></li><li><span class="t">+1:00</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+1:03</span><span class="pill ">Review 2/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+1:12</span><span class="pill ">Security 1/1</span><span class="what">launch security as security (fresh) — judgement gate</span></li><li><span class="t">+1:21</span><span class="pill person">Waits for you</span><span class="what">needs a person (approve) — every agent gate has passed; a person approves the work</span></li><li><span class="t">+2:11</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:28  tests: changes
+          · tests/test_cache.py::test_isolation FAILED: assert rows == []
+ +0:38  implementer (claude) fixed round 1 (resume: round 1 findings from &#x27;tests&#x27;) → c2, ready for review
+ +0:41  tests: pass
+ +0:50  reviewer (codex) on review, round 1: changes
+          · [high] src/app/cache.py:42 — the cache key ignores the user, so one user&#x27;s rows leak to another
+          · [medium] src/app/cache.py:77 — an expired entry is returned once before eviction
+ +1:00  implementer (claude) fixed round 1 (resume: round 1 findings from &#x27;review&#x27;) → c3, ready for review
+ +1:03  tests: pass
+ +1:12  reviewer (codex) on review, round 2: pass
+ +1:21  security (codex) on security, round 1: pass
+ +2:11  a person on approve: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 dplanner `uv run pytest -q &amp;&amp; uv run ruff check &amp;&amp; uv run mypy` @ c1 → changes
+r4 dplanner `uv run pytest -q &amp;&amp; uv run ruff check &amp;&amp; uv run mypy` @ c2 → pass
+r5 codex review (fresh) @ c2 → changes, 70k tokens
+r7 dplanner `uv run pytest -q &amp;&amp; uv run ruff check &amp;&amp; uv run mypy` @ c3 → pass
+r8 codex review (fresh) @ c3 → pass, 70k tokens
+r9 codex security (fresh) @ c3 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">approve</span>approve: the diff, every gate&#x27;s verdict and the cost so far</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$1.20</td></tr><tr><td>review</td><td class='num'>$0.56</td></tr><tr><td>security</td><td class='num'>$0.28</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">tests: 1 round(s) spent, 1 asked for by a real verdict, cap 3</li><li class="ok">review: 1 round(s) spent, 1 asked for by a real verdict, cap 2</li><li class="ok">security: 0 round(s) spent, 0 asked for by a real verdict, cap 1</li><li class="ok">approve: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py careful/full</code></p>
+</article><article class="scenario" id="sc-careful-person-sends-back" hidden>
+<header class="schead"><div><h4>careful/person-sends-back</h4><p>Security skipped (no auth paths). The person asks for a change: tests re-run on the new commit, the review&#x27;s pass stands.</p>
+<p class="meta"><code>careful-change.toml</code> · driver engine · script <code>tests=pass,pass review=pass approve=changes,pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +2:30 · $1.72 of $12</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:28</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:37</span><span class="pill person">Waits for you</span><span class="what">needs a person (approve) — every agent gate has passed; a person approves the work</span></li><li><span class="t">+1:27</span><span class="pill ">Fixing (round 1)</span><span class="what">launch work as implementer (fresh) — round 1 findings from &#x27;approve&#x27;</span></li><li><span class="t">+1:37</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+1:40</span><span class="pill person">Waits for you</span><span class="what">needs a person (approve) — every agent gate has passed; a person approves the work</span></li><li><span class="t">+2:30</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:28  tests: pass
+ +0:37  reviewer (codex) on review, round 1: pass
+ +1:27  a person on approve: changes
+          · Rename the setting to cache_ttl_s; the docs call it that
+ +1:37  implementer (claude) fixed round 1 (fresh: round 1 findings from &#x27;approve&#x27;) → c2, ready for review
+ +1:40  tests: pass
+ +2:30  a person on approve: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 dplanner `uv run pytest -q &amp;&amp; uv run ruff check &amp;&amp; uv run mypy` @ c1 → pass
+r3 codex review (fresh) @ c1 → pass, 70k tokens
+r5 dplanner `uv run pytest -q &amp;&amp; uv run ruff check &amp;&amp; uv run mypy` @ c2 → pass</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">approve</span>approve: the diff, every gate&#x27;s verdict and the cost so far</li><li><span class="kind">approve</span>approve: the diff, every gate&#x27;s verdict and the cost so far</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$1.44</td></tr><tr><td>review</td><td class='num'>$0.28</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">tests: 0 round(s) spent, 0 asked for by a real verdict, cap 3</li><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">security: 0 round(s) spent, 0 asked for by a real verdict, cap 1</li><li class="ok">approve: 1 round(s) spent, 1 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py careful/person-sends-back</code></p>
+</article><article class="scenario" id="sc-solo-flaky" hidden>
+<header class="schead"><div><h4>solo/flaky</h4><p>A flaky test fails, is re-run once inside the gate, passes, and is recorded.</p>
+<p class="meta"><code>solo.toml</code> · driver engine · script <code>tests=flaky self-check=pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +0:33 · $1.14 of $2</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:28</span><span class="pill ">Self-check 1/1</span><span class="what">launch self-check as self (fresh) — checklist gate</span></li><li><span class="t">+0:33</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:28  tests: pass
+          · tests/test_net.py::test_retry failed, passed on the one re-run: recorded as a flake
+ +0:33  self (claude) on self-check, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 dplanner `uv run pytest -q &amp;&amp; uv run ruff check` @ c1 → pass (tests/test_net.py::test_retry failed, passed on the one re-run: recorded as a flake)
+r3 claude self-check (fresh) @ c1 → pass, 40k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>self-check</td><td class='num'>$0.24</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">tests: 0 round(s) spent, 0 asked for by a real verdict, cap 3</li><li class="ok">self-check: 0 round(s) spent, 0 asked for by a real verdict, cap 1</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py solo/flaky</code></p>
+</article><article class="scenario" id="sc-solo-gamed" hidden>
+<header class="schead"><div><h4>solo/gamed</h4><p>The implementer skipped a failing test; the gate counts tests and says no.</p>
+<p class="meta"><code>solo.toml</code> · driver engine · script <code>tests=gamed,pass self-check=pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +0:46 · $1.29 of $2</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:28</span><span class="pill ">Fixing (round 1)</span><span class="what">launch work as implementer (resume) — round 1 findings from &#x27;tests&#x27;</span></li><li><span class="t">+0:38</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:41</span><span class="pill ">Self-check 1/1</span><span class="what">launch self-check as self (fresh) — checklist gate</span></li><li><span class="t">+0:46</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:28  tests: changes
+          · 312 tests collected, 315 on the base: three tests disappeared; tests/test_cache.py::test_isolation is now marked skip
+ +0:38  implementer (claude) fixed round 1 (resume: round 1 findings from &#x27;tests&#x27;) → c2, ready for review
+ +0:41  tests: pass
+ +0:46  self (claude) on self-check, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 dplanner `uv run pytest -q &amp;&amp; uv run ruff check` @ c1 → changes
+r4 dplanner `uv run pytest -q &amp;&amp; uv run ruff check` @ c2 → pass
+r5 claude self-check (fresh) @ c2 → pass, 40k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$1.05</td></tr><tr><td>self-check</td><td class='num'>$0.24</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">tests: 1 round(s) spent, 1 asked for by a real verdict, cap 3</li><li class="ok">self-check: 0 round(s) spent, 0 asked for by a real verdict, cap 1</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py solo/gamed</code></p>
+</article><article class="scenario" id="sc-fail-crash" hidden>
+<header class="schead"><div><h4>fail/crash</h4><p>The reviewer crashes; retried after a backoff, no round spent.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=crash,pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +0:35 · $1.21 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:25</span><span class="pill retry">Retrying</span><span class="what">wait — review failed (exited 1 after 40 s (the CLI crashed)); retrying after a backoff (until +0:26)</span></li><li><span class="t">+0:26</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:35</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:35  reviewer (codex) on review, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review → crash: exited 1 after 40 s (the CLI crashed)
+r3 codex review (fresh) @ c1 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.31</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/crash</code></p>
+</article><article class="scenario" id="sc-fail-hang" hidden>
+<header class="schead"><div><h4>fail/hang</h4><p>The reviewer goes silent; killed after 5 min without an event, retried.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=hang,pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +0:41 · $1.32 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:27</span><span class="pill ">Running</span><span class="what">wait — review is running (r2)</span></li><li><span class="t">+0:32</span><span class="pill retry">Recovering</span><span class="what">reconcile r2 — no stream event for 301 s: a hang</span></li><li><span class="t">+0:32</span><span class="pill retry">Retrying</span><span class="what">wait — review failed (killed: no stream event for 301 s: a hang); retrying after a backoff (until +0:32)</span></li><li><span class="t">+0:32</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:41</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:41  reviewer (codex) on review, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review → hang
+r2 reconciled → killed (stall); nothing relaunched blind
+r3 codex review (fresh) @ c1 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.42</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/hang</code></p>
+</article><article class="scenario" id="sc-fail-timeout" hidden>
+<header class="schead"><div><h4>fail/timeout</h4><p>The work overruns its wall clock three times: a person is asked.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>work=timeout,timeout,timeout</code></p></div>
+<div class="verdict person"><b>waiting for a person (stuck)</b><span>after +2:17 · $2.16 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:45</span><span class="pill retry">Retrying</span><span class="what">wait — work failed (ran past its wall-clock limit; killed); retrying after a backoff (until +0:45)</span></li><li><span class="t">+0:45</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+1:30</span><span class="pill retry">Retrying</span><span class="what">wait — work failed (ran past its wall-clock limit; killed); retrying after a backoff (until +1:32)</span></li><li><span class="t">+1:32</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+2:17</span><span class="pill person">Needs you</span><span class="what">needs a person (stuck) — work failed 3 times in a row: ran past its wall-clock limit; killed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk">—</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r1 claude work → timeout: ran past its wall-clock limit; killed
+r2 claude work → timeout: ran past its wall-clock limit; killed
+r3 claude work → timeout: ran past its wall-clock limit; killed</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">stuck</span>work failed 3 times in a row: ran past its wall-clock limit; killed</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$2.16</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/timeout</code></p>
+</article><article class="scenario" id="sc-fail-quota" hidden>
+<header class="schead"><div><h4>fail/quota</h4><p>Codex hits its usage limit; the stage parks until the reset, then goes on.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=quota,pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +2:35 · $1.26 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:26</span><span class="pill park">Parked</span><span class="what">wait — codex is out of quota; parked until its reset (until +2:26)</span></li><li><span class="t">+2:26</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+2:35</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +2:35  reviewer (codex) on review, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review → quota: usage limit reached; resets at +2:26
+r3 codex review (fresh) @ c1 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">notify</span>codex is out of quota; parked until its reset (+2:26); nothing to do unless you want to switch the stage to another profile</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.36</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/quota</code></p>
+</article><article class="scenario" id="sc-fail-auth" hidden>
+<header class="schead"><div><h4>fail/auth</h4><p>Codex&#x27;s login is gone mid-playbook: everything on Codex waits for a login.</p>
+<p class="meta"><code>careful-change.toml</code> · driver engine · script <code>tests=pass review=auth,pass approve=pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +2:27 · $1.18 of $12</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:28</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:28</span><span class="pill person">Needs you</span><span class="what">needs a person (login) — codex is logged out or its subscription lapsed; every stage on it waits (others go on)</span></li><li><span class="t">+1:28</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+1:37</span><span class="pill person">Waits for you</span><span class="what">needs a person (approve) — every agent gate has passed; a person approves the work</span></li><li><span class="t">+2:27</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:28  tests: pass
+ +1:28  (a person logged in again; the waiting stages go on)
+ +1:37  reviewer (codex) on review, round 1: pass
+ +2:27  a person on approve: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 dplanner `uv run pytest -q &amp;&amp; uv run ruff check &amp;&amp; uv run mypy` @ c1 → pass
+r3 codex review → auth: 401 authentication_failed: logged out or subscription lapsed
+r4 codex review (fresh) @ c1 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">login</span>codex is logged out or its subscription lapsed; every stage on it waits (others go on)</li><li><span class="kind">approve</span>approve: the diff, every gate&#x27;s verdict and the cost so far</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.28</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">tests: 0 round(s) spent, 0 asked for by a real verdict, cap 3</li><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">security: 0 round(s) spent, 0 asked for by a real verdict, cap 1</li><li class="ok">approve: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/auth</code></p>
+</article><article class="scenario" id="sc-fail-no-verdict" hidden>
+<header class="schead"><div><h4>fail/no-verdict</h4><p>The reviewer exits 0 without a verdict; nudged once for the verdict only.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=none,pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +0:35 · $1.2 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:34</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (nudge) — finished without a verdict: asked for the verdict only</span></li><li><span class="t">+0:35</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:35  reviewer (codex) on review, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review (fresh) → exited 0, posted no verdict
+r3 codex review (nudge) @ c1 → pass, 5k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.30</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/no-verdict</code></p>
+</article><article class="scenario" id="sc-fail-no-verdict-twice" hidden>
+<header class="schead"><div><h4>fail/no-verdict-twice</h4><p>Nudged and still no verdict: a person is asked.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=none,none</code></p></div>
+<div class="verdict person"><b>waiting for a person (stuck)</b><span>after +0:35 · $1.2 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:34</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (nudge) — finished without a verdict: asked for the verdict only</span></li><li><span class="t">+0:35</span><span class="pill person">Needs you</span><span class="what">needs a person (stuck) — review finished twice without a verdict</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review (fresh) → exited 0, posted no verdict
+r3 codex review (nudge) → exited 0, posted no verdict</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">stuck</span>review finished twice without a verdict</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.30</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/no-verdict-twice</code></p>
+</article><article class="scenario" id="sc-fail-garbled" hidden>
+<header class="schead"><div><h4>fail/garbled</h4><p>Three malformed verdicts in a row: error, not changes, then a person.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=garbled,garbled,garbled</code></p></div>
+<div class="verdict person"><b>waiting for a person (stuck)</b><span>after +0:54 · $1.74 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:34</span><span class="pill retry">Retrying</span><span class="what">wait — review failed (its final message did not match the verdict schema); retrying after a backoff (until +0:34)</span></li><li><span class="t">+0:34</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:43</span><span class="pill retry">Retrying</span><span class="what">wait — review failed (its final message did not match the verdict schema); retrying after a backoff (until +0:45)</span></li><li><span class="t">+0:45</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:54</span><span class="pill person">Needs you</span><span class="what">needs a person (stuck) — review failed 3 times in a row: its final message did not match the verdict schema</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review → garbled: its final message did not match the verdict schema
+r3 codex review → garbled: its final message did not match the verdict schema
+r4 codex review → garbled: its final message did not match the verdict schema</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">stuck</span>review failed 3 times in a row: its final message did not match the verdict schema</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.84</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/garbled</code></p>
+</article><article class="scenario" id="sc-fail-stale" hidden>
+<header class="schead"><div><h4>fail/stale</h4><p>Someone pushes during the review; the verdict on the old commit is ignored.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=stale,pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +0:43 · $1.46 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:34</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — the head moved while it ran: judge the new work</span></li><li><span class="t">+0:43</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:32  (a person pushed c2 to the branch while review ran)
+ +0:43  reviewer (codex) on review, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review (fresh) @ c1 → pass, 70k tokens
+r3 codex review (fresh) @ c2 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li>ignored a pass on &#x27;review&#x27; for c1: the head is c2 now, so it judged stale work</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.56</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/stale</code></p>
+</article><article class="scenario" id="sc-fail-lost-host" hidden>
+<header class="schead"><div><h4>fail/lost-host</h4><p>The machine reboots mid-work; on restart the run is reconciled, not relaunched blind.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>work=lost,ok</code></p></div>
+<div class="verdict good"><b>done</b><span>after +0:44 · $1.63 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:10</span><span class="pill retry">Recovering</span><span class="what">reconcile r1 — no process holds this run any more (host restarted, or it was killed)</span></li><li><span class="t">+0:10</span><span class="pill retry">Retrying</span><span class="what">wait — work failed (lost: no process holds this run any more (host restarted, or it was killed)); retrying after a backoff (until +0:10)</span></li><li><span class="t">+0:10</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:35</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:44</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:35  implementer (claude) did the step → c1, ready for review
+ +0:44  reviewer (codex) on review, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r1 claude work → lost
+r1 reconciled → marked lost; nothing relaunched blind
+r3 codex review (fresh) @ c1 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$1.35</td></tr><tr><td>review</td><td class='num'>$0.28</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/lost-host</code></p>
+</article><article class="scenario" id="sc-fail-late-verdict" hidden>
+<header class="schead"><div><h4>fail/late-verdict</h4><p>A hung reviewer is killed, then posts its verdict anyway: fenced out.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=late,pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +0:41 · $1.35 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:27</span><span class="pill ">Running</span><span class="what">wait — review is running (r2)</span></li><li><span class="t">+0:32</span><span class="pill retry">Recovering</span><span class="what">reconcile r2 — no stream event for 301 s: a hang</span></li><li><span class="t">+0:32</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:41</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:41  reviewer (codex) on review, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review → late
+r2 reconciled → killed (stall); nothing relaunched blind
+r3 codex review (fresh) @ c1 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li>refused r2&#x27;s pass on &#x27;review&#x27;: that run no longer holds the stage (killed or superseded)</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.45</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/late-verdict</code></p>
+</article><article class="scenario" id="sc-fail-question" hidden>
+<header class="schead"><div><h4>fail/question</h4><p>The reviewer stops to ask something only a person can answer.</p>
+<p class="meta"><code>review-loop.toml</code> · driver engine · script <code>review=question,pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +1:08 · $1.29 of $4</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:29</span><span class="pill person">Needs you</span><span class="what">needs a person (stuck) — review: asks: should a cached row expire per user or per tenant?</span></li><li><span class="t">+0:59</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+1:08</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:59  a person answered: per tenant. review runs again with the answer
+ +1:08  reviewer (codex) on review, round 1: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 codex review → question: asks: should a cached row expire per user or per tenant?
+r3 codex review (fresh) @ c1 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">respond</span>review: asks: should a cached row expire per user or per tenant?</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr><tr><td>review</td><td class='num'>$0.39</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/question</code></p>
+</article><article class="scenario" id="sc-fail-env-missing" hidden>
+<header class="schead"><div><h4>fail/env-missing</h4><p>The test command cannot even start: an error, never &#x27;changes&#x27;.</p>
+<p class="meta"><code>solo.toml</code> · driver engine · script <code>tests=envmissing,envmissing,envmissing</code></p></div>
+<div class="verdict person"><b>waiting for a person (stuck)</b><span>after +0:36 · $0.9 of $2</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:28</span><span class="pill retry">Retrying</span><span class="what">wait — tests failed (the test command could not start: `uv` found no project environment); retrying after a backoff (until +0:28)</span></li><li><span class="t">+0:28</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:31</span><span class="pill retry">Retrying</span><span class="what">wait — tests failed (the test command could not start: `uv` found no project environment); retrying after a backoff (until +0:33)</span></li><li><span class="t">+0:33</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:36</span><span class="pill person">Needs you</span><span class="what">needs a person (stuck) — tests failed 3 times in a row: the test command could not start: `uv` found no project environment</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 dplanner `uv run pytest -q &amp;&amp; uv run ruff check` → exit 127 before any test ran (error, not changes)
+r3 dplanner `uv run pytest -q &amp;&amp; uv run ruff check` → exit 127 before any test ran (error, not changes)
+r4 dplanner `uv run pytest -q &amp;&amp; uv run ruff check` → exit 127 before any test ran (error, not changes)</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">stuck</span>tests failed 3 times in a row: the test command could not start: `uv` found no project environment</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$0.90</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">tests: 0 round(s) spent, 0 asked for by a real verdict, cap 3</li><li class="ok">self-check: 0 round(s) spent, 0 asked for by a real verdict, cap 1</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/env-missing</code></p>
+</article><article class="scenario" id="sc-fail-budget" hidden>
+<header class="schead"><div><h4>fail/budget</h4><p>The budget runs out before the second review round: a person decides. The last run overshoots: a pre-launch check alone cannot stop a run mid-way; the CLI&#x27;s own cap must.</p>
+<p class="meta"><code>careful-change.toml</code> · driver engine · script <code>tests=pass,pass,pass,pass review=changes,changes</code></p></div>
+<div class="verdict person"><b>waiting for a person (budget)</b><span>after +0:50 · $1.33 of $1.2</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:28</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:37</span><span class="pill ">Fixing (round 1)</span><span class="what">launch work as implementer (resume) — round 1 findings from &#x27;review&#x27; (warning: $1.18 of $1.20 spent)</span></li><li><span class="t">+0:47</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:50</span><span class="pill person">Needs you</span><span class="what">needs a person (budget) — spent $1.33 of $1.20; raise it or stop</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:28  tests: pass
+ +0:37  reviewer (codex) on review, round 1: changes
+          · [high] src/app/cache.py:42 — the cache key ignores the user, so one user&#x27;s rows leak to another
+          · [medium] src/app/cache.py:77 — an expired entry is returned once before eviction
+ +0:47  implementer (claude) fixed round 1 (resume: round 1 findings from &#x27;review&#x27; (warning: $1.18 of $1.20 spent)) → c2, ready for review
+ +0:50  tests: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 dplanner `uv run pytest -q &amp;&amp; uv run ruff check &amp;&amp; uv run mypy` @ c1 → pass
+r3 codex review (fresh) @ c1 → changes, 70k tokens
+r5 dplanner `uv run pytest -q &amp;&amp; uv run ruff check &amp;&amp; uv run mypy` @ c2 → pass</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">budget</span>spent $1.33 of $1.20; raise it or stop</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li class='none'>nothing</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$1.05</td></tr><tr><td>review</td><td class='num'>$0.28</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">tests: 0 round(s) spent, 0 asked for by a real verdict, cap 3</li><li class="ok">review: 1 round(s) spent, 1 asked for by a real verdict, cap 2</li><li class="ok">security: 0 round(s) spent, 0 asked for by a real verdict, cap 1</li><li class="ok">approve: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py fail/budget</code></p>
+</article><article class="scenario" id="sc-lead-lies-about-tests" hidden>
+<header class="schead"><div><h4>lead/lies-about-tests</h4><p>The lead agent reports the tests green; DPlanner&#x27;s own run says red.</p>
+<p class="meta"><code>careful-change-lead.toml</code> · driver lead · script <code>tests=lie,pass review=pass approve=pass</code></p></div>
+<div class="verdict good"><b>done</b><span>after +1:40 · $1.6 of $12</span></div></header>
+<div class="layers">
+<section class="layer"><div class="cap">1 · the ring, as the canvas mark reads it</div><ol class="ring"><li><span class="t">+0:00</span><span class="pill ">Working</span><span class="what">launch work as implementer (fresh) — the work has not been done</span></li><li><span class="t">+0:25</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:28</span><span class="pill ">Fixing (round 1)</span><span class="what">launch work as implementer (resume) — round 1 findings from &#x27;tests&#x27;</span></li><li><span class="t">+0:38</span><span class="pill ">Tests</span><span class="what">launch tests as dplanner (fresh) — criteria gate</span></li><li><span class="t">+0:41</span><span class="pill ">Review 1/2</span><span class="what">launch review as reviewer (fresh) — judgement gate</span></li><li><span class="t">+0:50</span><span class="pill person">Waits for you</span><span class="what">needs a person (approve) — every agent gate has passed; a person approves the work</span></li><li><span class="t">+1:40</span><span class="pill good">Done</span><span class="what">done — every gate passed</span></li></ol></section>
+<section class="layer"><div class="cap">2 · the round conversation</div><pre class="talk"> +0:25  implementer (claude) did the step → c1, ready for review
+ +0:28  tests: changes
+          · tests/test_cache.py::test_isolation FAILED: assert rows == []
+ +0:38  implementer (claude) fixed round 1 (resume: round 1 findings from &#x27;tests&#x27;) → c2, ready for review
+ +0:41  tests: pass
+ +0:50  reviewer (codex) on review, round 1: pass
+ +1:40  a person on approve: pass</pre></section>
+<section class="layer"><div class="cap">3 · transcripts — one line per run's stream log</div><pre class="talk dim">r2 dplanner `uv run pytest -q &amp;&amp; uv run ruff check &amp;&amp; uv run mypy` @ c1 → changes
+r4 dplanner `uv run pytest -q &amp;&amp; uv run ruff check &amp;&amp; uv run mypy` @ c2 → pass
+r5 codex review (fresh) @ c2 → pass, 70k tokens</pre></section>
+</div>
+<div class="side3">
+<section><div class="cap">needs you</div><ul class="inbox"><li><span class="kind">approve</span>approve: the diff, every gate&#x27;s verdict and the cost so far</li></ul></section>
+<section><div class="cap">refused or ignored by the engine</div><ul class="refused"><li>refused a pass on &#x27;tests&#x27; from the lead: a criteria gate is recorded by DPlanner from exit codes, never reported</li></ul></section>
+<section><div class="cap">cost by stage (assumed prices)</div><table class="mini"><tr><td>work</td><td class='num'>$1.05</td></tr><tr><td>lead</td><td class='num'>$0.27</td></tr><tr><td>review</td><td class='num'>$0.28</td></tr></table>
+<div class="cap" style="margin-top:.8rem">invariants</div><ul class="checks"><li class="ok">tests: 1 round(s) spent, 1 asked for by a real verdict, cap 3</li><li class="ok">review: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">security: 0 round(s) spent, 0 asked for by a real verdict, cap 1</li><li class="ok">approve: 0 round(s) spent, 0 asked for by a real verdict, cap 2</li><li class="ok">never two runs live at once (asserted at every launch)</li></ul></section>
+</div>
+<p class="repro">Reproduce: <code>uv run python simulate.py lead/lies-about-tests</code></p>
+</article></div></div>
+</section>
+
+<section class="part" id="questions">
+  <h2><span class="n">9</span>Questions for you</h2>
+  <div class="short"><span class="cap">In short</span>
+    <p>Twelve decisions, each with a recommendation, so a one-word answer per line is enough. The ones that unblock building are <strong>1</strong> (list, not graph), <strong>2</strong> (the file format), <strong>5</strong> (engine first) and <strong>10</strong> (run the live experiment).</p>
+  </div>
+  <ol class="questions"><li><div class="q"><strong>A list of gates (a star around the work), or a free stage graph?</strong></div><div class="rec"><span class="cap">recommend</span><strong>The list</strong>, with <code>on_changes</code> as the one escape hatch</div><div class="why">Every case we could name fits it. A graph editor is the &quot;squeezed from both directions&quot; builder. Add a graph only when a real playbook needs one.</div></li><li><div class="q"><strong>The file format for a playbook definition?</strong></div><div class="rec"><span class="cap">recommend</span><strong>TOML</strong> in <code>&lt;plan repo&gt;/playbooks/</code>, edited through a form</div><div class="why">A person authors it and wants comments in it; the standard library reads it. It is the first hand-authored config in a JSON codebase, so FORMAT.md needs a line on why. The alternative is JSON written only by the form.</div></li><li><div class="q"><strong>Where do playbooks live?</strong></div><div class="rec"><span class="cap">recommend</span>Built-in presets, shadowed by the plan repo&#x27;s <code>playbooks/</code>, and later the <strong>system</strong> level (v2 idea 1)</div><div class="why">Versioned with the plan, shared by everyone who opens it. Project wins over personal, as Factory droids and Claude workflows do.</div></li><li><div class="q"><strong>Does an agent&#x27;s pass stand after another gate&#x27;s fix?</strong></div><div class="rec"><span class="cap">recommend</span><strong>Yes</strong>, unless the fix touches a file the earlier gate flagged</div><div class="why">Re-reviewing after every fix doubles the cost. The exception catches the case that matters.</div></li><li><div class="q"><strong>Build the lead-agent driver?</strong></div><div class="rec"><span class="cap">recommend</span><strong>Engine first; the lead later, as an experiment on the same ledger</strong></div><div class="why">The evidence favours the engine. The lead is cheap to add once the engine enforces criteria, fencing and budget, and only running both measures the claim.</div></li><li><div class="q"><strong>Must a careful playbook have acceptance criteria before it starts?</strong></div><div class="rec"><span class="cap">recommend</span>**Yes for <em>Careful change</em>; offered for the others**</div><div class="why">Without criteria every gate is opinion, and opinion over-flags. A drafted validation contract a person accepts in one click is the Factory pattern.</div></li><li><div class="q"><strong>The default playbook for a new project?</strong></div><div class="rec"><span class="cap">recommend</span>***Solo* per step, <em>Careful change</em> on branch landings**</div><div class="why">The person gate goes where it is paid for once (<em>floor.md</em>).</div></li><li><div class="q"><strong>Who answers a person gate?</strong></div><div class="rec"><span class="cap">recommend</span><strong>A role, defaulting to the step&#x27;s owner</strong></div><div class="why">Named people for small teams, roles for the floor, with the same field.</div></li><li><div class="q">**When only one vendor&#x27;s CLI is installed, should <em>Review loop</em> fall back to a same-vendor fresh review, or refuse?**</div><div class="rec"><span class="cap">recommend</span><strong>Fall back, and say so on the ring</strong></div><div class="why">It is still the &quot;fresh context + tests&quot; control. Refusing teaches nothing.</div></li><li><div class="q"><strong>Run the live experiment</strong> (<code>claude -p</code> implements, <code>codex exec --sandbox read-only</code> reviews, one fix round, on a toy repo in the scratchpad)?</div><div class="rec"><span class="cap">recommend</span><strong>Yes, once.</strong> It costs roughly $1–3 of subscription usage.</div><div class="why">It turns the simulation&#x27;s assumed tokens and minutes into measured ones, and records a real stream for the transcript viewer. It was not run tonight, because it spends quota and needed your go-ahead.</div></li><li><div class="q"><strong>Add a harness <code>classify()</code> and stall threshold to <code>AgentHarness</code>?</strong></div><div class="rec"><span class="cap">recommend</span><strong>Yes, with the probe fixtures as its tests</strong></div><div class="why">The probes showed each CLI fails differently (Claude&#x27;s 3-minute 401 retries, opencode&#x27;s endless loop). A shared classifier would need to know every CLI&#x27;s quirks; one per harness keeps each quirk with its CLI.</div></li><li><div class="q"><strong>Keep the probe runner as a maintained script</strong> (<code>scripts/probe_harnesses.py</code>) to re-run when a CLI updates?</div><div class="rec"><span class="cap">recommend</span><strong>Yes</strong></div><div class="why">CLI error behaviour changes monthly, and a classifier built on last month&#x27;s shapes fails silently.</div></li></ol>
+</section>
+
+<section class="part" id="files">
+  <h2><span class="n">10</span>Files and sources</h2>
+  <div class="short"><span class="cap">In short</span>
+    <p>The Markdown notes are the durable source; this report is their readable front, rebuilt by <code>spike/export.py</code>. They build on the <a href="../2026-10-01-agent-orchestration/README.md">1 October orchestration research</a>, which covers headless flags, warm-resume economics, two rounds then a person, branch-level review and leases. Every external claim carries its URL in the notes, and secondary sources are marked.</p>
+  </div>
+  <div class="files">
+    <div><code>evidence.md</code><span>self-review vs a second agent; gates; drivers; debate</span></div>
+    <div><code>shape.md</code><span>the template, gates, verdicts, roles, presets, editor</span></div>
+    <div><code>orchestration.md</code><span>engine vs lead agent vs workflow script</span></div>
+    <div><code>pleasant.md</code><span>chatter layers, the inbox, mid-run actions, cost, trust</span></div>
+    <div><code>floor.md</code><span>claims vs assignment, the review bottleneck, hand-over</span></div>
+    <div><code>failures.md</code><span>every case, its detection, class and recovery</span></div>
+    <div><code>questions.md</code><span>the twelve decisions</span></div>
+    <div><code>spike/</code><span>playbook.py, simulate.py, classify.py, export.py, probes/</span></div>
+  </div>
+  <footer>Generated 2026-10-03 from the spike in this directory. CLI versions probed: Claude Code 2.1.280, codex-cli 0.156.1, opencode 1.18.34. The field moves monthly; re-probe before relying on an error shape.</footer>
+</section>
+</main>
+</div>
+
+<script>
+(() => {
+  // playbook tabs
+  const tabs = [...document.querySelectorAll('.tabs .tab')];
+  tabs.forEach(tab => tab.addEventListener('click', () => {
+    tabs.forEach(t => {
+      const on = t === tab;
+      t.setAttribute('aria-selected', String(on));
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
+    });
+  }));
+  // scenario picker
+  const picks = [...document.querySelectorAll('.scbtn')];
+  picks.forEach(btn => btn.addEventListener('click', () => {
+    picks.forEach(b => {
+      const on = b === btn;
+      b.setAttribute('aria-pressed', String(on));
+      document.getElementById(b.dataset.target).hidden = !on;
+    });
+  }));
+  // failure filter
+  const filters = [...document.querySelectorAll('.filter button')];
+  filters.forEach(btn => btn.addEventListener('click', () => {
+    filters.forEach(b => b.setAttribute('aria-pressed', String(b === btn)));
+    const want = btn.dataset.filter;
+    document.querySelectorAll('table.cases tbody tr').forEach(tr => {
+      tr.hidden = want !== 'all' && tr.dataset.class !== want;
+    });
+    document.querySelectorAll('h4.fgroup').forEach(h => {
+      const table = h.nextElementSibling;
+      const any = [...table.querySelectorAll('tbody tr')].some(tr => !tr.hidden);
+      h.hidden = !any; table.hidden = !any;
+    });
+  }));
+  // contents: mark the section in view
+  const links = new Map([...document.querySelectorAll('.toc a')].map(a => [a.getAttribute('href').slice(1), a]));
+  if ('IntersectionObserver' in window) {
+    const seen = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          links.forEach(a => a.classList.remove('on'));
+          links.get(e.target.id)?.classList.add('on');
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    document.querySelectorAll('section.part').forEach(s => seen.observe(s));
+  }
+})();
+</script>

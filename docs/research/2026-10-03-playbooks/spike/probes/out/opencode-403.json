@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "-m",
+    "anthropic/claude-sonnet-4-5",
+    "Reply with the single word: ok"
+  ],
+  "cli": "opencode",
+  "exit": 1,
+  "mode": "403",
+  "probe": "opencode-403",
+  "requests_seen": 2,
+  "seconds": 1.9,
+  "signal_sent": null,
+  "stderr_tail": [],
+  "stdout_head": [
+    "{\"type\":\"error\",\"timestamp\":1791053702044,\"sessionID\":\"ses_efce15faeffel0GUAjX19FV4in\",\"error\":{\"name\":\"APIError\",\"data\":{\"message\":\"Your account does not have access (subscription expired).\",\"statusCode\":403,\"isRetryable\":false,\"responseHeaders\":{\"content-length\":\"128\",\"content-type\":\"application/json\",\"date\":\"Sat, 03 Oct 2026 18:55:02 GMT\",\"server\":\"BaseHTTP/0.6 Python/3.13.15\"},\"responseBody\":\"{\\\"type\\\": \\\"error\\\", \\\"error\\\": {\\\"type\\\": \\\"permission_error\\\", \\\"message\\\": \\\"Your account does not have access (subscription expired).\\\"}}\",\"metadata\":{\"url\":\"http://127.0.0.1:41499/v1/messages\"}}}}"
+  ],
+  "stdout_lines": 1,
+  "stdout_tail": [],
+  "timed_out_after_s": null
+}

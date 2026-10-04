@@ -1,0 +1,19 @@
+# Deliberately wrong, so check() has something to refuse.
+name = "Broken"
+
+roles.implementer = { agent = "claude" }
+roles.reviewer    = { agent = "gemini-free-tier" }
+
+[[stage]]
+id = "approve"
+kind = "person"
+
+[[stage]]
+id = "review"
+kind = "judgement"
+rounds = 0
+
+[[stage]]
+id = "tests"
+kind = "criteria"
+on_changes = "deploy"

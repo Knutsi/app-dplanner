@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "-m",
+    "anthropic/claude-sonnet-4-5",
+    "Reply with the single word: ok"
+  ],
+  "cli": "opencode",
+  "exit": 1,
+  "mode": "noauth",
+  "probe": "opencode-noauth",
+  "requests_seen": 0,
+  "seconds": 1.4,
+  "signal_sent": null,
+  "stderr_tail": [],
+  "stdout_head": [
+    "{\"type\":\"error\",\"timestamp\":1791053697315,\"sessionID\":\"ses_efce17080ffe4ij8np1vbDtokJ\",\"error\":{\"name\":\"UnknownError\",\"data\":{\"message\":\"Unexpected server error. Check server logs for details.\",\"ref\":\"err_72a55367\"}}}"
+  ],
+  "stdout_lines": 1,
+  "stdout_tail": [],
+  "timed_out_after_s": null
+}

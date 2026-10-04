@@ -1,0 +1,37 @@
+{
+  "argv": [
+    "codex",
+    "exec",
+    "--json",
+    "--skip-git-repo-check",
+    "--ephemeral",
+    "--sandbox",
+    "read-only",
+    "Reply with the single word: ok"
+  ],
+  "cli": "codex",
+  "exit": 1,
+  "mode": "529",
+  "probe": "codex-529",
+  "requests_seen": 30,
+  "seconds": 24.8,
+  "signal_sent": null,
+  "stderr_tail": [
+    "WARNING: proceeding, even though we could not create PATH aliases: Refusing to create helper binaries under temporary dir \"/tmp\" (codex_home: AbsolutePathBuf(\"$HOME/.codex\"))",
+    "Reading additional input from stdin..."
+  ],
+  "stdout_head": [
+    "{\"type\":\"thread.started\",\"thread_id\":\"01a1031e-7627-7c32-abb6-100b05556cce\"}",
+    "{\"type\":\"turn.started\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 1/5 (unexpected status 503 Service Unavailable: The server is overloaded., url: http://127.0.0.1:50219/v1/responses)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 2/5 (unexpected status 503 Service Unavailable: The server is overloaded., url: http://127.0.0.1:50219/v1/responses)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 3/5 (unexpected status 503 Service Unavailable: The server is overloaded., url: http://127.0.0.1:50219/v1/responses)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 4/5 (unexpected status 503 Service Unavailable: The server is overloaded., url: http://127.0.0.1:50219/v1/responses)\"}",
+    "{\"type\":\"error\",\"message\":\"Reconnecting... 5/5 (unexpected status 503 Service Unavailable: The server is overloaded., url: http://127.0.0.1:50219/v1/responses)\"}",
+    "{\"type\":\"error\",\"message\":\"unexpected status 503 Service Unavailable: The server is overloaded., url: http://127.0.0.1:50219/v1/responses\"}",
+    "{\"type\":\"turn.failed\",\"error\":{\"message\":\"unexpected status 503 Service Unavailable: The server is overloaded., url: http://127.0.0.1:50219/v1/responses\"}}"
+  ],
+  "stdout_lines": 9,
+  "stdout_tail": [],
+  "timed_out_after_s": null
+}

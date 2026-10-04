@@ -1,0 +1,39 @@
+{
+  "argv": [
+    "claude",
+    "-p",
+    "Reply with the single word: ok",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--bare",
+    "--max-turns",
+    "1"
+  ],
+  "cli": "claude",
+  "exit": 1,
+  "mode": "500",
+  "probe": "claude-500",
+  "requests_seen": 11,
+  "seconds": 178.1,
+  "signal_sent": null,
+  "stderr_tail": [],
+  "stdout_head": [
+    "{\"type\":\"system\",\"subtype\":\"init\",\"cwd\":\"$HOME\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"tools\":[\"Bash\",\"Edit\",\"Read\"],\"mcp_servers\":[],\"model\":\"claude-opus-5-5[1m]\",\"permissionMode\":\"default\",\"slash_commands\":[\"deep-research\",\"design\",\"design-sync\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\",\"advisor\",\"agents\",\"auto-mode-setup\",\"autocompact\",\"clear\",\"color\",\"compact\",\"config\",\"output-style\",\"context\",\"effort\",\"fast\",\"heapdump\",\"init\",\"mcp\",\"import\",\"model\",\"__remote-workflow\",\"workflow-launch-exec\",\"reload-plugins\",\"reload-skills\",\"rename\",\"security-review\",\"usage\",\"insights\",\"recap\",\"skill-doctor\",\"goal\",\"design-consent\",\"design-revoke\",\"list-agents\",\"team-onboarding\"],\"terminal_slash_commands\":[\"doctor\",\"color\",\"reload-plugins\"],\"apiKeySource\":\"ANTHROPIC_API_KEY\",\"claude_code_version\":\"2.1.280\",\"output_style\":\"default\",\"agents\":[\"claude\",\"Explore\",\"general-purpose\",\"Plan\",\"statusline-setup\"],\"skills\":[\"deep-research\",\"design\",\"design-sync\",\"dataviz\",\"update-config\",\"verify\",\"debug\",\"code-review\",\"simplify\",\"batch\",\"fewer-permission-prompts\",\"doctor\",\"loop\",\"claude-api\",\"workflow-authoring\",\"run\",\"run-skill-generator\"],\"plugins\":[{\"name\":\"telemetry\",\"path\":\"builtin\",\"source\":\"telemetry@builtin\"}],\"capabilities\":[\"interrupt_receipt_v1\",\"interrupt_cancel_queued_v1\",\"msg_lifecycle_v1\",\"mcp_read_resource_v1\",\"mcp_tool_ui_meta_v1\"],\"analytics_disabled\":false,\"product_feedback_disabled\":false,\"uuid\":\"c1114ae5-1360-4b01-a7e9-0140a7f6a739\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\"}",
+    "{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":1,\"max_retries\":10,\"retry_delay_ms\":590,\"error_status\":500,\"error\":\"server_error\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"bc0f4f7a-f293-4cc3-9fa1-8c3aefbaf305\"}",
+    "{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":2,\"max_retries\":10,\"retry_delay_ms\":1148,\"error_status\":500,\"error\":\"server_error\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"cc007742-e884-43c7-b0af-792798aa1d57\"}",
+    "{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":3,\"max_retries\":10,\"retry_delay_ms\":2426,\"error_status\":500,\"error\":\"server_error\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"32fb7cf4-c303-4e22-9a4d-7096108e7204\"}",
+    "{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":4,\"max_retries\":10,\"retry_delay_ms\":4922,\"error_status\":500,\"error\":\"server_error\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"62ca0465-d080-414a-a79c-39a62ca4a0f7\"}",
+    "{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":5,\"max_retries\":10,\"retry_delay_ms\":8968,\"error_status\":500,\"error\":\"server_error\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"00922eff-fac2-45f3-b9bf-a6de493b174d\"}",
+    "{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":6,\"max_retries\":10,\"retry_delay_ms\":17812,\"error_status\":500,\"error\":\"server_error\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"2bce1fdb-e856-4b2c-8d27-093a3b9e32d1\"}",
+    "{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":7,\"max_retries\":10,\"retry_delay_ms\":35378,\"error_status\":500,\"error\":\"server_error\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"5848ae57-eebf-4209-b00c-777a2d2a4763\"}",
+    "{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":8,\"max_retries\":10,\"retry_delay_ms\":33577,\"error_status\":500,\"error\":\"server_error\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"abca2e60-9a35-4f7c-aa27-a1999cae7e5c\"}",
+    "{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":9,\"max_retries\":10,\"retry_delay_ms\":33833,\"error_status\":500,\"error\":\"server_error\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"74ee60ec-2013-4a08-8f4d-7e0fd4155f1e\"}",
+    "{\"type\":\"system\",\"subtype\":\"api_retry\",\"attempt\":10,\"max_retries\":10,\"retry_delay_ms\":38537,\"error_status\":500,\"error\":\"server_error\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"f3c761af-5609-4249-b063-01cf8feba372\"}",
+    "{\"type\":\"assistant\",\"message\":{\"diagnostics\":null,\"id\":\"4ed5622e-2d55-4015-b41c-7430f983f302\",\"container\":null,\"model\":\"<synthetic>\",\"role\":\"assistant\",\"stop_details\":null,\"stop_reason\":\"stop_sequence\",\"stop_sequence\":\"\",\"type\":\"message\",\"usage\":{\"output_tokens_details\":null,\"input_tokens\":0,\"output_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":null,\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":null,\"iterations\":null,\"speed\":null},\"content\":[{\"type\":\"text\",\"text\":\"API Error: 500 Internal server error. This is a server-side issue, usually temporary \u2014 try again in a moment. If it persists, check your inference gateway (127.0.0.1:60349).\"}],\"context_management\":null},\"parent_tool_use_id\":null,\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"uuid\":\"c17a5626-72f1-48ac-b19c-b2e7a0d8c7fc\",\"timestamp\":\"2026-10-03T19:04:05.278Z\",\"error\":\"server_error\",\"is_api_error_message\":true}",
+    "{\"duration_api_ms\":0,\"stop_reason\":\"stop_sequence\",\"session_id\":\"2c391eb7-f5ab-4c30-91a8-a77421e549eb\",\"total_cost_usd\":0,\"usage\":{\"output_tokens_details\":{\"thinking_tokens\":0},\"input_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"output_tokens\":0,\"server_tool_use\":{\"web_search_requests\":0,\"web_fetch_requests\":0},\"service_tier\":\"standard\",\"cache_creation\":{\"ephemeral_1h_input_tokens\":0,\"ephemeral_5m_input_tokens\":0},\"inference_geo\":\"\",\"iterations\":[],\"speed\":\"standard\"},\"modelUsage\":{},\"permission_denials\":[],\"terminal_reason\":\"api_error\",\"fast_mode_state\":\"off\",\"fast_mode_disabled_reason\":\"sdk_opt_in_required\",\"subagent_stats\":{\"spawned\":0,\"requested\":{\"background\":0,\"foreground\":0,\"unset\":0},\"started_in_background\":0,\"max_depth\":0,\"spawned_by_subagents\":0,\"completed\":0,\"failed\":0,\"killed\":{\"parent\":0,\"user\":0,\"system\":0},\"refused\":{\"depth_limit\":0,\"concurrency_limit\":0,\"budget\":0},\"by_type\":{}},\"is_error\":true,\"num_turns\":1,\"subtype\":\"success\",\"api_error_status\":500,\"result\":\"API Error: 500 Internal server error. This is a server-side issue, usually temporary \u2014 try again in a moment. If it persists, check your inference gateway (127.0.0.1:60349).\",\"type\":\"result\",\"duration_ms\":177270,\"uuid\":\"82152afe-db9d-4535-ba04-66657ffc4a78\",\"queued_turn_count\":0,\"result_index\":0}"
+  ],
+  "stdout_lines": 13,
+  "stdout_tail": [],
+  "timed_out_after_s": null
+}

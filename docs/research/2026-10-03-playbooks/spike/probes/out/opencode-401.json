@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "opencode",
+    "run",
+    "--format",
+    "json",
+    "-m",
+    "anthropic/claude-sonnet-4-5",
+    "Reply with the single word: ok"
+  ],
+  "cli": "opencode",
+  "exit": 1,
+  "mode": "401",
+  "probe": "opencode-401",
+  "requests_seen": 2,
+  "seconds": 1.9,
+  "signal_sent": null,
+  "stderr_tail": [],
+  "stdout_head": [
+    "{\"type\":\"error\",\"timestamp\":1791053699680,\"sessionID\":\"ses_efce168d9ffeZOrJY5MLULeTi4\",\"error\":{\"name\":\"APIError\",\"data\":{\"message\":\"invalid x-api-key\",\"statusCode\":401,\"isRetryable\":false,\"responseHeaders\":{\"content-length\":\"92\",\"content-type\":\"application/json\",\"date\":\"Sat, 03 Oct 2026 18:54:59 GMT\",\"server\":\"BaseHTTP/0.6 Python/3.13.15\"},\"responseBody\":\"{\\\"type\\\": \\\"error\\\", \\\"error\\\": {\\\"type\\\": \\\"authentication_error\\\", \\\"message\\\": \\\"invalid x-api-key\\\"}}\",\"metadata\":{\"url\":\"http://127.0.0.1:56623/v1/messages\"}}}}"
+  ],
+  "stdout_lines": 1,
+  "stdout_tail": [],
+  "timed_out_after_s": null
+}
