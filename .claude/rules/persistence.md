@@ -25,13 +25,13 @@ paths:
   Quitting with dirty repos asks once, listing them
   (`modules/sync/exit_dialog.py`, on the dialog frame), and **the save that follows is an
   ordinary task under a modal progress dialog** — a row per repository, publishing then
-  committing (`modules/sync/save_progress.py`) — with the **close deferred** until it ends:
+  committing (`modules/sync/save_progress_dialog.py`) — with the **close deferred** until it ends:
   the guard starts the save and returns False, and the dialog closes the window. That is
   what retired the synchronous save-at-quit exception; a failure stands in that dialog
   rather than being lost with the window. **A push the remote refused for changing the same
   lines is a `DivergedError`**, which carries the repository. It is explained in the dialog's
   body, never in its status line or a `QMessageBox`, and offered to an agent in that plan
-  repository (`modules/sync/diverged.py`). `ARCHITECTURE.md`'s *Save spans repositories* has
+  repository (`modules/sync/not_pushed_dialog.py`). `ARCHITECTURE.md`'s *Save spans repositories* has
   the reasoning. **Its bar reads the repositories recorded as a
   floor and fills between them from how long the last save took** — `TaskService`'s
   duration memory, kept across sessions — never an estimate that could contradict what has
@@ -93,7 +93,7 @@ paths:
   count of them with their step keys (`claims_words`), everything they counted filling the
   band with the percentage beside *Clear* (`combined_fraction`), and *Clear* ending every
   claim it stands for. **A click on the band opens *Agents at Work*** (`Notice.open`;
-  `view.py`, a `DialogFrame` over a `RowWell`, non-modal like the Agents browser): a row
+  `conflict_dialog.py`, a `DialogFrame` over a `RowWell`, non-modal like the Agents browser): a row
   per claim with its words, its count as a bar, when it was last heard, *Reveal* and a ✕
   that clears that one. Never a notice per claim again — four agents were four bands to
   read past. **A silent claim lapses** (`domain/at_work.py`): not heard from in

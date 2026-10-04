@@ -21,7 +21,7 @@ from dplanner.modules.spec.documents import (
     import_document,
     write_index,
 )
-from dplanner.modules.spec.viewer import PdfPageView
+from dplanner.modules.spec.pdf_page import PdfPageView
 
 
 def one_pixel_png(tmp_path: Path) -> bytes:

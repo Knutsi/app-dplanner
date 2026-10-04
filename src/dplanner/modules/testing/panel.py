@@ -55,14 +55,14 @@ from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import note
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test, find, read, test_ids
-from dplanner.modules.testing.preview_dialog import preview
-from dplanner.modules.testing.references import mentions
-from dplanner.modules.testing.view import (
+from dplanner.modules.testing.cards import (
     RESULT_ORDER,
     TestBody,
     TestHead,
     test_images,
 )
+from dplanner.modules.testing.preview_dialog import preview
+from dplanner.modules.testing.references import mentions
 from dplanner.theme.icons import chevron_left_icon, chevron_right_icon, step_icon
 from dplanner.theme.tokens import PANEL_MARGIN, SECTION_GAP
 

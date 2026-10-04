@@ -1,7 +1,8 @@
 """Debug ▸ Design Examples ▸ Modal, Table and Toolbars: the design system built from its
 primitives, to be looked at and copied from.
 
-Three surfaces over sample data, nothing saved. The *modal* is a :class:`DialogFrame` —
+Three surfaces over sample data (``design_sample.py``), nothing saved. The *modal*
+(``design_example_dialog.py``) is a :class:`DialogFrame` —
 title in the body, a footer band — carrying a form (captions over fields, a hint glyph, a
 validation note), a :class:`Table` (a glyph column, a two-line cell, a numeric column, a
 heading, a milestone row wearing its key badge) and every signalling state: an *Updating…*
@@ -16,23 +17,18 @@ that answers a question rather than offering verbs.
 
 A developer bringing a surface up (DESIGN.md's *Bringing a surface up*) opens these beside
 their own and copies what differs; ``docs/screenshots/f1-design-example/`` holds them
-rendered in both themes. None reads the model, so none follows a project. ``design_rows.py``
-is the fourth page, and the one that also shows a defect on purpose.
+rendered in both themes. None reads the model, so none follows a project.
+``design_rows_activity.py`` is the fourth page, and the one that also shows a defect on purpose.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass
 
-from PySide6.QtCore import QPoint, QSize, Qt
+from PySide6.QtCore import QPoint
 from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
-    QCheckBox,
     QComboBox,
     QHBoxLayout,
-    QLineEdit,
     QMenu,
-    QProgressBar,
-    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -40,26 +36,28 @@ from PySide6.QtWidgets import (
 from dplanner.framework.activity import ActivityBase
 from dplanner.framework.context import SCOPE_ACTIVITY, ContextNode, ContextService, activity_uri
 from dplanner.framework.debounce import SETTLE_MS, Debounced, DebounceService
-from dplanner.framework.dialog import DialogFrame
-from dplanner.framework.notices import Notice, NoticeBar
 from dplanner.framework.popover import PopoverButton
 from dplanner.framework.segmented import Segmented
-from dplanner.framework.signalling import Spinner, StatusLine, UpdatingIndicator
+from dplanner.framework.signalling import Spinner, UpdatingIndicator
 from dplanner.framework.slider_row import SliderRow
-from dplanner.framework.table import Cell, Column, Table
+from dplanner.framework.table import Table
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.toolbar import FilterButton, Toolbar
-from dplanner.framework.widgets import EmptyState, caption, captioned, ink_of, note
+from dplanner.framework.widgets import EmptyState, caption, ink_of, note
+from dplanner.modules.debug.design_sample import (
+    KEY_ROLE,
+    TICKED_COLUMNS,
+    SampleRow,
+    fill_sample,
+    sample_groups,
+)
 from dplanner.theme.icons import (
-    ICON_SIZE,
     beaker_icon,
     connect_icon,
-    done_icon,
     edit_icon,
     find_icon,
     frame_icon,
     isolate_icon,
-    key_badge_icon,
     layers_icon,
     list_icon,
     options_icon,
@@ -67,36 +65,19 @@ from dplanner.theme.icons import (
     refresh_icon,
     shield_icon,
     spark_icon,
-    step_icon,
     tag_icon,
     ticket_icon,
     trash_icon,
     unlink_icon,
 )
-from dplanner.theme.palettes import PALETTES, shades
 from dplanner.theme.themes import Theme
-from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
-from dplanner.theme.tones import HIGHLIGHT_FILL, recoloured
+from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
 DESIGN_TABLE_KIND = "design_table"
 DESIGN_TOOLBARS_KIND = "design_toolbars"
 # What a palette is cut down to, to show a band folding rather than describe it.
 NO_ROOM = 300
-# The sample's milestones wear real shades of the default map, dealt by place in the
-# sequence, because that is what a milestone wears everywhere in the application now —
-# a reference that showed one constant purple would teach the rule that was replaced.
-SAMPLE_SHADES = shades(PALETTES[0], 3)
-DEMO_DELAY_MS = 1500  # Long enough to see the indicator; a real view settles in 300.
 NO_ROWS = "No steps match. Every row is sample data; Add Rows puts them back."
-COLUMNS = (
-    Column("Step", glyph=True, detail=True, resize="interactive"),
-    Column("Days", numeric=True),
-    Column("Status"),
-)
-# The table tab's roster is ticked for its verbs: a check column is the selection, drawn —
-# and each row ends in the ⋮ that drops what that one row can be told.
-TICKED_COLUMNS = (Column("", check=True), *COLUMNS, Column("", menu=True))
-ROW_MENU_TIP = "What you can do with this step"
 FILTERS = (("agent", "Agent steps"), ("milestone", "Milestones"), ("done", "Done"))
 GROUPINGS = ("Grouped by milestone", "Folding groups", "Flat")
 
@@ -119,269 +100,6 @@ TOGGLES: tuple[tuple[str, GlyphPainter], ...] = (
     ("Check", shield_icon),
     ("Ticket", ticket_icon),
 )
-
-
-@dataclass(frozen=True)
-class SampleRow:
-    kind: str  # "milestone" | "feature" | "step" | "test" — decides the glyph and the tint.
-    key: str
-    title: str
-    days: str
-    status: str
-    agent: bool = False
-
-
-SAMPLE: tuple[tuple[str, tuple[SampleRow, ...]], ...] = (
-    (
-        "Improvements #1",
-        (
-            SampleRow(
-                "feature",
-                "F1",
-                "Design system: guidelines and primitives",
-                "2 d",
-                "in progress",
-                True,
-            ),
-            SampleRow(
-                "step", "S6", "Step details: toggles left, templates right", "1 d", "pending", True
-            ),
-            SampleRow(
-                "test",
-                "S9",
-                "Boards: Ready to start launches every ready agent",
-                "1.5 d",
-                "pending",
-                True,
-            ),
-            SampleRow("milestone", "M2", "Improvements #1", "", "pending"),
-        ),
-    ),
-    (
-        "Improvements #2",
-        (
-            SampleRow(
-                "step", "S12", "Specs tab as CRUD with markdown tools", "2 d", "pending", True
-            ),
-            SampleRow("step", "S11", "Documentation compiled by an agent", "1 d", "done"),
-            SampleRow("milestone", "M3", "Improvements #2", "", "pending"),
-        ),
-    ),
-)
-_GLYPHS = {"milestone": tag_icon, "feature": layers_icon, "step": step_icon, "test": beaker_icon}
-# The sample's milestones, in roadmap order — what ``sample_shade`` deals along.
-_MILESTONES = tuple(row for _heading, rows in SAMPLE for row in rows if row.kind == "milestone")
-
-
-def sample_shade(row: SampleRow) -> str:
-    """A sample milestone's shade — ``M1`` the deepest, in the order the roadmap runs."""
-    place = [found.key for found in _MILESTONES].index(row.key)
-    return SAMPLE_SHADES[place]
-
-
-def sample_cells(row: SampleRow, ink: QColor) -> list[Cell]:
-    done = row.status == "done"
-    milestone = row.kind == "milestone"
-    # A milestone is known by its key, so the key badge stands where the glyph would and
-    # the second line says what the row gathers rather than the key again — in that
-    # milestone's own shade of the project's colour map. Finished work trades its glyph for
-    # the done mark and sets its title in italic; a milestone keeps both.
-    finished = done and not milestone
-    if milestone:
-        glyph = key_badge_icon(row.key, sample_shade(row))
-    else:
-        glyph = done_icon() if finished else _GLYPHS[row.kind](ink)
-    detail = "gathers every step above it" if milestone else row.key
-    return [
-        Cell(row.title, detail=detail, glyph=glyph, emphasis=milestone, finished=finished),
-        Cell(row.days, secondary=done),
-        Cell(row.status, secondary=done),
-    ]
-
-
-KEY_ROLE = int(Qt.ItemDataRole.UserRole) + 60  # The host's own role: which sample row.
-Groups = list[tuple[str, list[SampleRow]]]
-
-
-def sample_groups() -> Groups:
-    """A mutable copy of the sample, for a surface whose verbs add and remove rows."""
-    return [(heading, list(rows)) for heading, rows in SAMPLE]
-
-
-def matches(row: SampleRow, active: set[str]) -> bool:
-    """No filter on shows everything; several on show what matches any of them."""
-    return (
-        not active
-        or ("agent" in active and row.agent)
-        or ("milestone" in active and row.kind == "milestone")
-        or ("done" in active and row.status == "done")
-    )
-
-
-def fill_sample(
-    table: Table,
-    ink: QColor,
-    active: set[str] = frozenset(),  # type: ignore[assignment]
-    groups: Groups | None = None,
-    *,
-    grouped: bool = True,
-    folding: bool = False,
-    ticked: bool = False,
-) -> None:
-    """The sample rows, narrowed by the active ``FILTERS`` keys, under their headings or flat.
-
-    ``ticked`` fills a table whose first column is a check column (``TICKED_COLUMNS``): it
-    holds nothing but the box, which the table draws from the row's selection — and whose
-    last is the row's ⋮, which holds nothing but the glyph the table draws.
-
-    ``folding`` gives each heading a ``key``, which is what makes it collapsible: a chevron,
-    the whole row as the target, and what is shut remembered by key across this very
-    rebuild. A long roster is read by folding the groups you are not in.
-    """
-    table.clear_rows()
-    for heading, rows in groups if groups is not None else sample_groups():
-        shown = [row for row in rows if matches(row, active)]
-        if not shown:
-            continue
-        if grouped:
-            table.add_heading(heading, key=heading if folding else "")
-        for row in shown:
-            tint = (
-                recoloured(HIGHLIGHT_FILL, sample_shade(row)) if row.kind == "milestone" else None
-            )
-            cells = sample_cells(row, ink)
-            table.add_row(
-                [Cell(), *cells, Cell(tooltip=ROW_MENU_TIP)] if ticked else cells,
-                tint=tint,
-                data={KEY_ROLE: row.key},
-            )
-    table.fit_columns()
-
-
-class DesignExampleDialog(DialogFrame):
-    """The modal: a form, a table and every signalling state on one frame."""
-
-    def __init__(self, debounce: DebounceService, parent: QWidget | None = None) -> None:
-        super().__init__("Design Example", parent, size=(760, 760))
-        body = self.body_layout
-
-        form = QVBoxLayout()
-        form.setSpacing(CAPTION_GAP)
-        body.addLayout(form)  # Added before it is filled: a parentless layout leaks items.
-        form.addWidget(
-            captioned("Name", self.body, "A step's name is what its card shows; the key is dealt.")
-        )
-        self.name = QLineEdit("Build the modal", self.body)
-        form.addWidget(self.name)
-        form.addSpacing(FIELD_GAP)
-        form.addWidget(captioned("Branch", self.body))
-        self.branch = QLineEdit("agent/f7-build-the-modal", self.body)
-        form.addWidget(self.branch)
-        self.problem = StatusLine(self.body)
-        self.problem.say("A branch of that name already exists on the remote", "error")
-        form.addWidget(self.problem)
-        form.addSpacing(FIELD_GAP)
-        form.addWidget(captioned("Summary", self.body))
-        self.summary = QLineEdit(self.body)
-        self.summary.setPlaceholderText("What this step delivers (optional)")
-        form.addWidget(self.summary)
-
-        body.addWidget(captioned("Steps", self.body))
-        self.table = Table(COLUMNS, parent=self.body)
-        fill_sample(self.table, ink_of(self.body))
-        body.addWidget(self.table, 1)
-
-        signals = QVBoxLayout()
-        signals.setSpacing(CAPTION_GAP)
-        body.addLayout(signals)
-        signals.addWidget(captioned("Signalling", self.body))
-        strip = QHBoxLayout()
-        strip.setSpacing(FIELD_GAP)
-        signals.addLayout(strip)
-        # A button that starts work carries a glyph, and the glyph turns while the work
-        # runs: the slot is always there, so nothing moves.
-        self.change_button = QToolButton(self.body)
-        self.change_button.setObjectName("ToolbarButton")
-        self.change_button.setText("Change something")
-        self.change_button.setIcon(spark_icon(ink_of(self.body)))
-        self.change_button.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
-        self.change_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        strip.addWidget(self.change_button)
-        strip.addStretch(1)
-        self.updating = UpdatingIndicator(self.body)
-        strip.addWidget(self.updating)
-        self._recompute_soon = Debounced(
-            self._recompute, DEMO_DELAY_MS, parent=self, service=debounce
-        )
-        self.updating.follow(self._recompute_soon)
-        self.spinner = Spinner(self.body).attach(self.change_button)
-        self.spinner.follow(self._recompute_soon)
-        self.change_button.clicked.connect(self._recompute_soon.trigger)
-        self.lines = [StatusLine(self.body) for _ in range(5)]
-        for line, (words, tone) in zip(
-            self.lines,
-            (
-                ("12 pages, fetched today", "info"),
-                ("Reading the repository…", "busy"),
-                ("Connected — this account can read the space", "ok"),
-                ("An agent is rewriting this step — leave it be", "warn"),
-                ("gh is not installed — branches and PRs are typed, not picked", "error"),
-            ),
-            strict=True,
-        ):
-            line.say(words, tone)  # type: ignore[arg-type]
-            signals.addWidget(line)
-        signals.addWidget(note("Publishing 2 of 5 repositories", self.body))
-        self.progress = QProgressBar(self.body)
-        self.progress.setRange(0, 5)
-        self.progress.setValue(2)
-        self.progress.setTextVisible(False)
-        signals.addWidget(self.progress)
-        # Standing notices: a fact that holds until it stops holding. In the application
-        # this bar sits over the whole window's content (framework/main_window.py) — it is
-        # here so the two shapes can be compared with the lines above them. Two: the one
-        # band every agent at work shares, filled by everything they counted and opening
-        # the list of them on a click, and a fact that is owed.
-        self.notices = NoticeBar(self.body)
-        self.notices.show_notice(
-            Notice(
-                id="demo.agents",
-                words="2 agents are at work on Payments · S3, S7",
-                tone="warn",
-                busy=True,
-                fraction=0.4,
-                action="Clear",
-                open=lambda: None,
-                open_tip="Show every agent at work",
-            )
-        )
-        self.notices.show_notice(
-            Notice(
-                id="demo.conflict",
-                words="2 entries changed here and outside — this window is not saving"
-                " until settled",
-                tone="error",
-                action="Settle…",
-            )
-        )
-        signals.addWidget(self.notices)
-        self.refuse_switch = QCheckBox(
-            "Refuse the primary, with the reason in the footer", self.body
-        )
-        self.refuse_switch.toggled.connect(
-            lambda on: self.refuse("Pick a repository first" if on else None)
-        )
-        signals.addWidget(self.refuse_switch)
-
-        self.add_button("Delete Sample", self._delete, destructive=True)
-        self.add_dismiss()
-        self.set_primary("Apply", self.accept)
-
-    def _recompute(self) -> None:
-        fill_sample(self.table, ink_of(self.body))
-
-    def _delete(self) -> None:
-        self.status.say("Nothing was deleted — this is sample data", "info")
 
 
 class DesignExampleActivity(ActivityBase):
@@ -706,20 +424,3 @@ class DesignExampleToolbars(ActivityBase):
             toggle = bar.add_verb(label, glyph, lambda: None, checkable=True)
             toggle.setChecked(label in ("Milestone", "Agent"))
         return bar
-
-
-def glyph_for(kind: str, ink: QColor) -> QIcon:
-    return _GLYPHS[kind](ink)
-
-
-__all__ = [
-    "COLUMNS",
-    "DESIGN_TABLE_KIND",
-    "DESIGN_TOOLBARS_KIND",
-    "FILTERS",
-    "DesignExampleActivity",
-    "DesignExampleDialog",
-    "DesignExampleToolbars",
-    "fill_sample",
-    "glyph_for",
-]

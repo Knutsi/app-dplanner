@@ -2,7 +2,7 @@
 
 DESIGN.md's *A machine without gh* names this surface and its shape — "The Checklist is
 where this machine's facts live, one status line each with its remedy" — so a row is a
-:class:`StatusLine`, the same one ``modules/sync/save_progress.py`` puts one of per
+:class:`StatusLine`, the same one ``modules/sync/save_progress_dialog.py`` puts one of per
 repository — and **not** a fourth copy of the framed, hairlined well the task browser, the
 agent browser and the install dialog each hand-rolled, which DESIGN.md's audit warns
 against. Nothing here sets a style name of its own: the frame, the caption and the status

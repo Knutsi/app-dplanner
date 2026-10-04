@@ -32,7 +32,7 @@ from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.signalling import StatusLine, Tone
 from dplanner.framework.tasks import ESTIMATE_CAP
 from dplanner.framework.widgets import note
-from dplanner.modules.sync.diverged import (
+from dplanner.modules.sync.not_pushed_dialog import (
     RECONCILE_LABEL,
     Divergence,
     Profiles,

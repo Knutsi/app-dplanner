@@ -8,7 +8,7 @@ into, so each test clears it first and records exactly what it then asserts on.
 import pytest
 
 from dplanner.framework.context import Context
-from dplanner.modules.debug.telemetry_view import TELEMETRY_KIND, render_detail
+from dplanner.modules.debug.telemetry_activity import TELEMETRY_KIND, render_detail
 
 
 @pytest.fixture
@@ -114,7 +114,7 @@ def test_the_selection_survives_a_refresh(services, journal):
 def example(services, monkeypatch):
     """The modal, captured instead of run: exec() is patched, so the action returns at once
     and the test holds the dialog it built."""
-    from dplanner.modules.debug.design_example import DesignExampleDialog
+    from dplanner.modules.debug.design_example_dialog import DesignExampleDialog
 
     opened = []
 
@@ -177,7 +177,7 @@ def test_the_design_table_tab_opens_and_empty_trades_the_table_for_the_state(ser
 
 
 def test_the_filter_narrows_the_table_and_a_theme_change_repaints_it(services):
-    from dplanner.modules.debug.design_example import DESIGN_TABLE_KIND
+    from dplanner.modules.debug.design_example_activity import DESIGN_TABLE_KIND
 
     activity = services.tabs.open(DESIGN_TABLE_KIND)
     everything = activity.table.rowCount()
@@ -202,7 +202,7 @@ def test_the_filter_narrows_the_table_and_a_theme_change_repaints_it(services):
 def test_the_strip_words_delete_with_the_count_and_add_appends(services):
     from PySide6.QtCore import QItemSelectionModel
 
-    from dplanner.modules.debug.design_example import DESIGN_TABLE_KIND
+    from dplanner.modules.debug.design_example_activity import DESIGN_TABLE_KIND
 
     activity = services.tabs.open(DESIGN_TABLE_KIND)
     table = activity.table
@@ -224,7 +224,7 @@ def test_the_toolbars_example_shows_every_shape_a_strip_comes_in(services):
     """DESIGN.md's *Toolbars*, built rather than described: a developer bringing a surface
     up opens this beside their own."""
     from dplanner.framework.toolbar import _Group
-    from dplanner.modules.debug.design_example import NO_ROOM, DesignExampleToolbars
+    from dplanner.modules.debug.design_example_activity import NO_ROOM, DesignExampleToolbars
 
     services.actions.run("debug.design_toolbars", services.context.current())
     (tab,) = [a for a in services.tabs.activities() if isinstance(a, DesignExampleToolbars)]
@@ -336,7 +336,7 @@ def test_the_rows_example_shows_a_picked_row_and_the_block_that_is_not_one(servi
     from PySide6.QtCore import QPoint
     from PySide6.QtWidgets import QStyle, QStyleOptionViewItem
 
-    from dplanner.modules.debug.design_rows import DesignExampleRows, _FocusFramedRow
+    from dplanner.modules.debug.design_rows_activity import DesignExampleRows, _FocusFramedRow
     from dplanner.theme.tokens import ROW_PADDING_V
 
     services.actions.run("debug.design_rows", services.context.current())

@@ -14,7 +14,7 @@ from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.project_archive import module as archive_module
 from dplanner.modules.project_archive import verbs
-from dplanner.modules.project_archive.archive_tab import (
+from dplanner.modules.project_archive.activity import (
     ARCHIVE_KIND,
     NOTHING_ARCHIVED,
     ArchiveActivity,

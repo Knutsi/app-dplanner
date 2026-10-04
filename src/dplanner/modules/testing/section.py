@@ -71,8 +71,8 @@ from dplanner.modules.testing.aspect import (
     replace,
     write,
 )
+from dplanner.modules.testing.cards import StatusChip, outcome_line, tint, word
 from dplanner.modules.testing.filing import UNCATEGORISED, catalog, sort_keys
-from dplanner.modules.testing.view import StatusChip, outcome_line, tint, word
 from dplanner.planning.scope import ScopeKind, handoffs, kind_of, leaders, stops_for
 
 BLOCK_GAP = 12

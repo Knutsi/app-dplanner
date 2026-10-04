@@ -11,7 +11,7 @@ from dplanner.framework.context import SCOPE_SELECTION
 from dplanner.framework.list_rows import EMPHASIS_ROLE, FINISHED_ROLE, TINT_ROLE
 from dplanner.framework.step_table import MILESTONE_ROLE
 from dplanner.framework.table import row_height
-from dplanner.modules.step_order.view import ASPECTS_COLUMN, ESTIMATE_COLUMN, TITLE_COLUMN
+from dplanner.modules.step_order.activity import ASPECTS_COLUMN, ESTIMATE_COLUMN, TITLE_COLUMN
 
 
 @pytest.fixture

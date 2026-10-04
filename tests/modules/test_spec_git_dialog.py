@@ -7,7 +7,7 @@ from tests.modules.spec_git_helpers import clean_git, make_remote, wait_for  # n
 
 from dplanner.core.storage import sparse
 from dplanner.domain.document_source import SourceUnavailableError
-from dplanner.modules.spec_git.connect import GitSourceDialog
+from dplanner.modules.spec_git.connect_dialog import GitSourceDialog
 from dplanner.modules.spec_git.module import NO_GIT, SpecGitDeps, SpecGitKind
 from dplanner.modules.spec_git.source import Folder, Probe
 

@@ -54,7 +54,7 @@ button planted in a cell, so the row keeps its height, its hover and its selecti
 
 Three tables were written by hand before this one and disagreed on nine settings; the
 ``#OrderTable`` rules four widgets borrowed by name are what this replaces, one migration
-at a time. ``modules/debug/design_example.py`` is the reference to copy from.
+at a time. ``modules/debug/design_example_activity.py`` is the reference to copy from.
 """
 
 import math

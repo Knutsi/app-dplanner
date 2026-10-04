@@ -190,7 +190,7 @@ def test_the_feature_tab_follows_the_marker(services, step, step_editor):
 
 
 def test_the_feature_tab_edits_the_steps_own_passages(services, step, step_editor):
-    from dplanner.modules.feature.editor import FeatureEditor
+    from dplanner.modules.feature.section import FeatureEditor
 
     select(services, step)
     services.actions.run("feature.toggle", services.context.current())

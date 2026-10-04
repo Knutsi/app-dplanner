@@ -1,7 +1,7 @@
 # Debug ▸ Design Examples, rendered
 
-The design system's reference surfaces (`src/dplanner/modules/debug/design_example.py` and
-`design_rows.py`), rendered offscreen in the dark and the light theme by
+The design system's reference surfaces (`src/dplanner/modules/debug/design_example_activity.py` and
+`design_rows_activity.py`), rendered offscreen in the dark and the light theme by
 `scripts/render_design_example.py`:
 
 ```

@@ -27,7 +27,7 @@ from dplanner.domain.document_source import (
     SourceUnavailableError,
 )
 from dplanner.framework.tasks import TaskService
-from dplanner.modules.spec_git.connect import GitSourceDialog
+from dplanner.modules.spec_git.connect_dialog import GitSourceDialog
 from dplanner.modules.spec_git.source import (
     KIND,
     Probe,

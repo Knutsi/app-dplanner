@@ -11,10 +11,10 @@ from dplanner.domain.locations import LocationRole
 from dplanner.domain.model import Library, Step
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import FilesFor
+from dplanner.modules.agent_briefing.blocks import note_parts, project_sections, step_sections
 from dplanner.modules.agent_briefing.instructions import instruction
 from dplanner.modules.agent_briefing.prompt import AssembledPrompt, PromptPart, assemble
 from dplanner.modules.agent_briefing.protocol import epilogue, preamble
-from dplanner.modules.agent_briefing.sections import note_parts, project_sections, step_sections
 from dplanner.modules.agent_briefing.worktree import worktree
 from dplanner.planning.agent import asset_paths, read_project
 from dplanner.planning.branches import BranchPlan

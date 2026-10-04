@@ -607,7 +607,7 @@ reason to spend a core. Somebody who would rather not have it turns it off in *S
 Home* — a global preference, since it is about the person and not the library. It has no
 close button of its own: a ✕ in the corner was one more control on a page that is otherwise
 only the guide, and the developer's call was to leave the garden clean. `garden.py` is what
-happens and `garden_view.py` how it looks; the first version,
+happens and `garden_widget.py` how it looks; the first version,
 a cloud over nine identical stems, taught that the look is most of the message.
 
 ## Motion is a library
@@ -1458,7 +1458,7 @@ or an unsplit window would keep an accent edge on the pane that survived.
 ## A primitive carries the rule; a dialog's stylesheet does not
 
 (`DESIGN.md`'s *Dialogs*, *Tables*, *Signalling* and *Bringing a surface up* are the
-standard this settled; `modules/debug/design_example.py` is the living reference.)
+standard this settled; `modules/debug/design_example_activity.py` is the living reference.)
 
 For a year the rules lived in two places that could not see each other: DESIGN.md said
 what a dialog looked like, and `theme.qss` said which dialogs looked like it. The accent
@@ -4683,7 +4683,7 @@ is in `.claude/rules/agents.md`, and the edge rule in `.claude/rules/graph-model
 Review tab lists each message as a heading and its first line, which says where a review
 stands but not what it said, and a finding is prose. *Step ▸ Review Conversation…* — and
 the tab's *Open Conversation…*, and a double-click on one of its rows — opens
-`step_review/conversation.py`:
+`step_review/conversation_dialog.py`:
 - the messages on the left, each wearing who said it: the review's glyph for the step that
   asks, the agent's for the step that answers;
 - the picked message rendered in full on the right;
@@ -5961,7 +5961,7 @@ raises `DivergedError` (`core/storage/provider.py`), which carries the repositor
 branch. `SyncService._start` sees it on the way out and sends `diverged(root, branch)` just
 ahead of the failure. A commit that already landed is not "not recorded": the row says
 *committed here, not pushed*. The error's own words were the old message, and it did not fit
-the one-line footer status, so `modules/sync/diverged.py` says what happened and what to do
+the one-line footer status, so `modules/sync/not_pushed_dialog.py` says what happened and what to do
 in the body instead. The quit dialog shows it under its rows, and Save and Update from
 Remote show it in *Not Pushed* rather than a `QMessageBox`. Both offer *Reconcile with Agent*
 with every launch profile, and the agent runs in that plan repository, with no worktree and
@@ -7267,7 +7267,7 @@ under and scrolls to it. Opening the fold is deliberately *not* part of `select_
 which runs on every rebuild to keep the selection: unfolding there would spring a group
 open the moment the reader shut one holding the row they had picked.
 
-**The preview and the panel are the same two widgets.** `view.py`'s `TestHead` and
+**The preview and the panel are the same two widgets.** `cards.py`'s `TestHead` and
 `TestBody` are the test as it is *read* — what it is called, where it is filed, how it last
 did, and its body rendered. The Test panel puts its verb strip between them and the preview
 puts nothing there, and that is the whole difference; written twice, one of them would have
@@ -7861,7 +7861,7 @@ A whole-codebase review (2026-08) found the architecture holding; these are the 
 where growth has a known cost curve, written down so the feature that crosses the line
 recognises the moment. None needs action today.
 
-- **`agent_briefing/sections.py`'s `step_sections()` grows one hand-rolled block per aspect**
+- **`agent_briefing/blocks.py`'s `step_sections()` grows one hand-rolled block per aspect**
   with a briefing presence, each with its own empty-check — nine today, past the six this
   note once named as the line. The exit is the shape `cli/lint.py` and `cli/authoring.py`
   already use: each module exports a Qt-free block builder and the list is assembled once;
@@ -8586,7 +8586,7 @@ snapshot. The Order table is linear in rows (11 → 126 ms, a `QTableWidget` reb
 Three tabs are expensive to open cold and get worse faster than the project grows: the
 Tests tab and the Coverage tab (about *N*^1.2 and *N*^1.4, both walking every collector's
 cone and building a widget per row), and the Estimates tab (linear, a `QWidget` editor
-per row, **2.4 s at 400 steps** — the journal's 448 ms stall at `bulk.py:285` is the same
+per row, **2.4 s at 400 steps** — the journal's 448 ms stall at `bulk.py:285` (now `bulk_activity.py`) is the same
 table at a hundred). Painting is small headless — 3 to 11 ms a frame at a 280 000-pixel
 viewport, the dots and crosses grounds costing a few ms over a plain one — but a 4K
 display has thirty times the pixels, and the journal sampled two `steps.details` stalls
@@ -8622,10 +8622,10 @@ cost goes from 0.4 ms to **6 ms at 25 steps, 15 ms at 100 and 62 ms at 400**, an
 `foreign_edit` scenario — a title edit in the *sibling* project — costs exactly the same,
 which names the view: *All tests* (`modules/testing/activity.py`, `AllTestsActivity`)
 walks every project and rebuilds its whole table on any structure, field or module-data
-change, synchronously, in the signal. The Estimates tab (`modules/estimation/bulk.py`) is
+change, synchronously, in the signal. The Estimates tab (`modules/estimation/bulk_activity.py`) is
 the other: its `_on_structure` rebuilds the table with an editor widget per row on any
 `structure_changed`, so **one new step costs 121 ms at 25 steps, 368 ms at 100 and
-1.4 s at 400** while that tab is open — the journal's 448 ms stall at `bulk.py:285` is
+1.4 s at 400** while that tab is open — the journal's 448 ms stall at `bulk.py:285` (now `bulk_activity.py`) is
 this, on the real project — and it rewrites every row's text on any `field_changed` in
 the library (4 ms at 400). The Coverage tab is filtered and coalesced, and still costs
 **690 ms at 400 steps** once per burst; a click on a step reaches 113 ms with every
@@ -8661,7 +8661,7 @@ above are what to re-measure after each.
    Removes twenty git subprocesses from a paste.
 6. **An action state never leaves the process.** `LLMService.status()` caches until
    `config_changed` — the seam *An LLM call is a task* already names.
-7. **Every subscriber follows a project and coalesces.** Convert `estimation/bulk.py`,
+7. **Every subscriber follows a project and coalesces.** Convert `estimation/bulk_activity.py`,
    `AllTestsActivity` and `framework/project_list_segment.py` to `follow_project` +
    `Debounced`, and add the rule to `tests/test_architecture.py`: a `library.*_changed
    .connect` outside `framework/activity.py` and the store is a finding.

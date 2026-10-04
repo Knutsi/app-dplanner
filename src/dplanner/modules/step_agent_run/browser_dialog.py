@@ -1,4 +1,4 @@
-"""Agent-run widgets: the status-bar words and the Agents browser.
+"""The Agents browser, and the words the status-bar button wears (``button_text``).
 
 Pure widgets, on the task centre's pattern: the module feeds them the run list and the
 callbacks; they only render. The browser is a ``DialogFrame`` over a ``RowWell``, rows kept by

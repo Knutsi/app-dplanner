@@ -6,7 +6,7 @@ import pytest
 from PySide6.QtWidgets import QToolButton
 
 from dplanner.framework.context import Context
-from dplanner.modules.taskcenter import view
+from dplanner.modules.taskcenter import browser_dialog
 from dplanner.modules.taskcenter.module import TaskCenterModule
 
 
@@ -50,7 +50,7 @@ def test_cancel_asks_its_question_first_when_the_task_has_one(services, centre, 
         asked.append(question)
         return answers.pop(0)
 
-    monkeypatch.setattr(view, "confirm", ask)
+    monkeypatch.setattr(browser_dialog, "confirm", ask)
     copyedit = services.tasks.start(
         "Copyedit", cancellable=True, cancel_prompt="Stop the copyedit?"
     )

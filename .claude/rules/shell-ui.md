@@ -194,7 +194,7 @@ paths:
   What moves is Qt-free state (`curves` for easings, tweens, springs and the breeze;
   `particles`) so it is tested without a window, and it is drawn with `draw`'s batched
   shapes — a glow is a gradient never a blur, a particle system one fill per tone. Layers
-  that change slowly are cached pictures redrawn a few times a second (`garden_view.py`'s
+  that change slowly are cached pictures redrawn a few times a second (`garden_widget.py`'s
   `_slow_layers`). `ARCHITECTURE.md`'s *Motion is a library* has the reasoning, and what
   the canvas would use it for.
 - **A panel inside a tab is a `SidePanel`, hosted through `HostedSidePanel`**
@@ -274,7 +274,7 @@ paths:
   through `fill_menu`'s `group` filter and wears the layout picker's look, because a
   hairline down its middle would say two halves do different things.
 - **What DPlanner is built on is asked of the installation, never written down.**
-  Help ▸ *About DPlanner…* (`modules/appshell/about.py`) is a `DialogFrame` over a `Table`:
+  Help ▸ *About DPlanner…* (`modules/appshell/about_dialog.py`) is a `DialogFrame` over a `Table`:
   the list of components and what each *does here* is written — no package's metadata can
   say that — and every version and licence beside it comes from the installed
   distribution's own metadata, asked in the order the answers got vaguer

@@ -29,7 +29,7 @@ from dplanner.app import configure_application, new_session, set_early_attribute
 from dplanner.domain.commands import SetFieldCommand
 from dplanner.modules.schedule.module import TIME_KIND
 from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
-from dplanner.modules.sync.save_progress import SaveProgressDialog
+from dplanner.modules.sync.save_progress_dialog import SaveProgressDialog
 from dplanner.modules.sync.service import COMMITTING, PUBLISHING, SAVED
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme

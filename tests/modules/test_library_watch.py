@@ -22,7 +22,7 @@ from dplanner.domain.store import LibraryStore, StaleWorkspaceError
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.agent_launch import launcher
 from dplanner.modules.library_watch import module as watch_module
-from dplanner.modules.library_watch.view import AGENT, LATER, MINE, THEIRS
+from dplanner.modules.library_watch.conflict_dialog import AGENT, LATER, MINE, THEIRS
 from dplanner.planning.status import Status
 
 
@@ -401,7 +401,7 @@ def test_the_conflict_dialog_is_on_the_frame_and_a_refused_agent_keeps_its_name(
     """Four ways out in the frame's slots; the reason an agent cannot run is in the
     footer's status slot, not appended to the button (DESIGN.md's *Dialogs*)."""
     from dplanner.framework.dialog import DialogFrame
-    from dplanner.modules.library_watch.view import MINE, ConflictDialog
+    from dplanner.modules.library_watch.conflict_dialog import MINE, ConflictDialog
 
     dialog = ConflictDialog(["Typed here · title and summary"], "", None)
     refused = ConflictDialog(["S7 · description"], "no agent profile is set up", None)
@@ -478,7 +478,7 @@ def test_the_dialog_names_the_other_writer_when_one_said_so(app):
     be asking the developer to guess."""
     from PySide6.QtWidgets import QLabel
 
-    from dplanner.modules.library_watch.view import ConflictDialog
+    from dplanner.modules.library_watch.conflict_dialog import ConflictDialog
 
     said = "An agent is at work on Discovery — Rewriting the graph · heard just now"
     dialog = ConflictDialog(["Typed here · title and summary"], "", None, at_work=said)

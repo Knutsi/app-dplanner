@@ -45,6 +45,9 @@ The rules, in prose (see also CLAUDE.md):
     or applied directly outside a ``workflows.py``. They are ceilings, lowered by hand.
 13. The ids a module stores its data under are pinned: a package may move, its ids may not.
 14. The aspects ``planning/`` interprets are listed: admitting one is a reviewed diff.
+15. A file's name says what it holds: a tab is in ``activity.py`` (or ``<x>_activity.py``), a
+    modal in ``dialog.py`` (or ``<x>_dialog.py``), a ``QGraphicsScene`` in ``scene.py``, and
+    no file in a module package is called ``view.py`` or ``<x>_view.py``.
 
 ARCHITECTURE.md's *What holds the tier and the workflows in place* has the reasoning for
 rules 4 and 11 to 13.
@@ -555,9 +558,78 @@ def declared_module_ids(root: Path = SRC) -> set[str]:
     return ids
 
 
+# Rule 15: the base classes that make a class a tab, a modal or a scene, and the file stem
+# that must say so. A subclass of a subclass counts — StatusBoard's two tabs are tabs.
+ROLE_BASES = {
+    "activity": ("ActivityBase", "EntityActivity"),
+    "dialog": ("DialogFrame", "QDialog"),
+    "scene": ("QGraphicsScene",),
+}
+ROLE_WORDS = {"activity": "tab", "dialog": "modal", "scene": "scene"}
+
+
+def role_breaches(root: Path = SRC) -> list[str]:
+    """Every module-package class held in a file whose name does not say its role (rule 15)."""
+    files = sorted((root / "modules").rglob("*.py"))
+    breaches = [
+        f"{path.relative_to(root)}: view.py is retired — name the file for what it holds"
+        for path in files
+        if path.stem == "view" or path.stem.endswith("_view")
+    ]
+    classes = [
+        (path, node)
+        for path in files
+        for node in ast.parse(path.read_text(), filename=str(path)).body
+        if isinstance(node, ast.ClassDef)
+    ]
+    role_of = {base: role for role, bases in ROLE_BASES.items() for base in bases}
+    grew = True
+    while grew:  # Subclasses of subclasses, across files, until nothing new is learnt.
+        grew = False
+        for _path, node in classes:
+            if node.name in role_of:
+                continue
+            for base in node.bases:
+                name = base.id if isinstance(base, ast.Name) else getattr(base, "attr", None)
+                if name in role_of:
+                    role_of[node.name] = role_of[name]
+                    grew = True
+                    break
+    for path, node in classes:
+        role = role_of.get(node.name)
+        if role is not None and path.stem != role and not path.stem.endswith(f"_{role}"):
+            breaches.append(
+                f"{path.relative_to(root)}: {node.name} is a {ROLE_WORDS[role]}, so its file is "
+                f"{role}.py or <x>_{role}.py"
+            )
+    return breaches
+
+
 def test_layering_rules_hold() -> None:
     violations = collect_violations()
     assert not violations, "architecture violations:\n" + "\n".join(violations)
+
+
+def test_a_file_name_says_what_it_holds() -> None:
+    breaches = role_breaches()
+    assert not breaches, "file roles (rule 15):\n" + "\n".join(breaches)
+
+
+def test_the_role_rule_sees_a_tab_a_modal_and_a_view(tmp_path) -> None:
+    """Self-check for rule 15 over a throwaway tree: a tab two subclasses deep in module.py,
+    a modal in a plain file and a ``view.py`` are each named."""
+    package = tmp_path / PACKAGE / "modules" / "probe"
+    package.mkdir(parents=True)
+    (package / "module.py").write_text(
+        "class Board(EntityActivity): ...\nclass OneBoard(Board): ...\n"
+    )
+    (package / "about.py").write_text("class AboutDialog(DialogFrame): ...\n")
+    (package / "view.py").write_text("")
+    (package / "activity.py").write_text("class Fine(Board): ...\n")
+    breaches = "\n".join(role_breaches(tmp_path / PACKAGE))
+    assert "Board is a tab" in breaches and "OneBoard is a tab" in breaches
+    assert "AboutDialog is a modal" in breaches and "view.py is retired" in breaches
+    assert "Fine" not in breaches
 
 
 def test_the_rules_can_see_real_imports() -> None:

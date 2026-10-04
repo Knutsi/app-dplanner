@@ -167,7 +167,7 @@ def test_an_unsized_step_is_counted_and_the_figure_opens_the_estimates_on_it(
 ):
     """The count says what runs as zero, and a click opens the Estimates tab on exactly
     those rows, the keyboard already on the first one's estimate."""
-    from dplanner.modules.estimation.bulk import ESTIMATE_COLUMN, BulkEstimateActivity
+    from dplanner.modules.estimation.bulk_activity import ESTIMATE_COLUMN, BulkEstimateActivity
 
     read, _draft, _docs = project.steps
     services.undo.push(SetModuleDataCommand(read.id, ESTIMATION_ID, {}))

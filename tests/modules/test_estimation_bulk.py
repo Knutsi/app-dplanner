@@ -20,7 +20,7 @@ from dplanner.domain.commands import (
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, activity_uri, selection_uri
 from dplanner.framework.list_rows import VALUE_ROLE
-from dplanner.modules.estimation.bulk import (
+from dplanner.modules.estimation.bulk_activity import (
     ESTIMATE_COLUMN,
     ESTIMATE_KIND,
     NONE_SIZED,

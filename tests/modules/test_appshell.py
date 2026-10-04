@@ -190,7 +190,7 @@ def test_the_acknowledgements_are_asked_of_the_installation(app):
     distribution's own answer."""
     from importlib.metadata import version as dist_version
 
-    from dplanner.modules.appshell.about import BUILT_ON, MISSING, acknowledgements
+    from dplanner.modules.appshell.about_dialog import BUILT_ON, MISSING, acknowledgements
 
     rows = acknowledgements()
     assert [row[0] for row in rows] == [part.name for part in BUILT_ON]
@@ -208,7 +208,7 @@ def test_about_says_what_dplanner_is_built_on(session, monkeypatch):
     """Help ▸ About is a DialogFrame over that list, not a QMessageBox — which prints a
     platform icon and arranges its sentences the platform's way."""
     from dplanner.identity import APP_NAME
-    from dplanner.modules.appshell.about import AboutDialog, acknowledgements
+    from dplanner.modules.appshell.about_dialog import AboutDialog, acknowledgements
 
     services = session.services
     spec = services.actions.spec("appshell.about")

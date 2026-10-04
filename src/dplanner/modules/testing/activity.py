@@ -78,6 +78,7 @@ from dplanner.modules.testing.aspect import (
     covered,
     project_tests,
 )
+from dplanner.modules.testing.cards import RESULT_ORDER, word
 from dplanner.modules.testing.filing import (
     UNCATEGORISED,
     catalog,
@@ -87,7 +88,6 @@ from dplanner.modules.testing.filing import (
 )
 from dplanner.modules.testing.panel import TestPanel, Walk
 from dplanner.modules.testing.table import Heading, Row, TestsTable
-from dplanner.modules.testing.view import RESULT_ORDER, word
 from dplanner.planning.scope import ScopeKind, gatherers, kind_of
 from dplanner.theme.cards import title_font
 from dplanner.theme.icons import archive_icon, beaker_icon, sort_icon

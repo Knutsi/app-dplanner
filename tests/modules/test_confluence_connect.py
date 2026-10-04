@@ -12,7 +12,7 @@ from dplanner.framework.dialog import LinePrompt
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.spec_confluence import module as module_mod
 from dplanner.modules.spec_confluence.client import Credentials
-from dplanner.modules.spec_confluence.connect import TOKENS_URL, ConnectDialog
+from dplanner.modules.spec_confluence.connect_dialog import TOKENS_URL, ConnectDialog
 from dplanner.modules.spec_confluence.module import (
     MODULE_ID,
     SpecConfluenceDeps,

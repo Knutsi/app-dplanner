@@ -23,7 +23,7 @@ from dplanner.framework.context import ContextService
 from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry, SurfaceSegment
 from dplanner.framework.settings_registry import SettingsSection, SettingsSectionRegistry
 from dplanner.framework.tabs import TabHost
-from dplanner.modules.home.page import HOME_KIND, HomeActivity
+from dplanner.modules.home.activity import HOME_KIND, HomeActivity
 from dplanner.modules.home.settings_page import MODULE_ID, build_page
 from dplanner.theme.icons import home_icon
 

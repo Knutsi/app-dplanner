@@ -24,14 +24,14 @@ from dplanner.framework.tasks import ESTIMATE_CAP
 from dplanner.modules.agent_briefing.prompt import reconcile_prompt
 from dplanner.modules.agent_launch.module import AgentLaunchModule
 from dplanner.modules.sync import module as sync_module_mod
-from dplanner.modules.sync.diverged import (
+from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
+from dplanner.modules.sync.not_pushed_dialog import (
     RECONCILE_LABEL,
     Divergence,
     NotPushedDialog,
     explanation,
 )
-from dplanner.modules.sync.exit_dialog import DirtyRepoRow, ExitDialog
-from dplanner.modules.sync.save_progress import BAR_STEPS, SaveProgressDialog
+from dplanner.modules.sync.save_progress_dialog import BAR_STEPS, SaveProgressDialog
 from dplanner.modules.sync.service import COMMITTING, NOTHING, SAVED
 
 
@@ -667,7 +667,7 @@ def test_the_diff_dialog_is_on_the_frame_with_save_now_as_the_primary(app):
     """The picker's block — caption and combo — shows only when the library spans more
     than one repository, and Save Now is asked for, never run, by the dialog."""
     from dplanner.framework.dialog import DialogFrame
-    from dplanner.modules.sync.view import DiffDialog
+    from dplanner.modules.sync.diff_dialog import DiffDialog
 
     dialog = DiffDialog(None)
     asked = []

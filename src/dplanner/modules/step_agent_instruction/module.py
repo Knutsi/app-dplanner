@@ -26,8 +26,8 @@ from dplanner.framework.inspector import InspectorSection, InspectorSectionRegis
 from dplanner.framework.mime_files import Payload
 from dplanner.framework.undo import UndoService
 from dplanner.modules.agent_briefing import worktree as where
+from dplanner.modules.agent_briefing.blocks import note_parts, step_sections
 from dplanner.modules.agent_briefing.prompt import AssembledPrompt, PromptPart
-from dplanner.modules.agent_briefing.sections import note_parts, step_sections
 from dplanner.modules.step_agent_instruction.section import (
     AgentSection,
     ProjectInstructionSection,

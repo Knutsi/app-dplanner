@@ -77,7 +77,7 @@ paths:
   suite never depends on being run by an agent. `ARCHITECTURE.md`'s *An agent finishes at
   Ready for review* has the reasoning.
 - **A step that collects is briefed with what it collects, and its sources are told.**
-  `agent_briefing/sections.py`'s `step_sections` adds *Work you collect* for a step with auto-progress links: each
+  `agent_briefing/blocks.py`'s `step_sections` adds *Work you collect* for a step with auto-progress links: each
   source's key, title, status, branch, PR and worktree — `agent_briefing.worktree.workdir(facts, source)`
   under the source's run name, said as a path only when the directory is on this machine —
   then the duty to land that work, the right to `status set <source> done`, and the way to
@@ -254,7 +254,7 @@ paths:
   out loud (*briefed 18.4k chars*) because the number beside it is tokens.
   `ARCHITECTURE.md`'s *What a run was handed* has the reasoning.
 - **Expenditure is the order read for what it consumed — tokens, never money.** The ledger's
-  tab, in `agent_usage/` (`ExpenditureActivity`; columns and words in `expenditure.py`, the
+  tab, in `agent_usage/` (`ExpenditureActivity`; columns, words and the tab in `expenditure_activity.py`, the
   walk in `domain/expenditure.py`): the same rows as Order through
   `framework/step_table.py`'s `StepTable` — which is where a row's look lives, so a third
   step table subclasses it rather than copying it —
@@ -343,7 +343,7 @@ paths:
   - **The window posts nothing, and reads all of it** — its one write to the ledger is a
     turn's launch stamp (below): the Review tab is the settings and a
     read-only list, and *Step ▸ Review Conversation…* (`review.conversation`; the tab's
-    *Open Conversation…* and a row's double-click) opens `conversation.py`'s dialog — every
+    *Open Conversation…* and a row's double-click) opens `conversation_dialog.py`'s dialog — every
     message beside the picked one in full, live on the ledger. It is **enabled by the ledger,
     never by the aspect** (`rounds(step)`), so a collector's upstream conversation opens
     too, and the tab and the dialog build their rows with one `message_rows`.
@@ -351,7 +351,7 @@ paths:
     generated (`agent_briefing/instructions.py`) from its aspect and its subject — whom, each lens's
     `Lens.asks` (an id this build does not name is a skill to use), the round protocol and
     the cap — and its own prose rides inside as what to look for. *Work you review* says
-    where the subject's work is (`sections.py`'s `_source_line`, *Work you collect*'s line), and the run
+    where the subject's work is (`blocks.py`'s `_source_line`, *Work you collect*'s line), and the run
     gets no worktree. A step a review `reviews()` is told to set `pending-approval`, `review
     wait`, take and reply, and when to stop waiting; a review's epilogue is its verdicts.
     A conversation still going is a *Review rounds with …* section on both sides, so a

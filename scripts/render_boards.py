@@ -35,7 +35,7 @@ from dplanner.modules.status_board.activity import (
     PROGRESSION_KIND,
     ControlCentreActivity,
 )
-from dplanner.modules.step_order.module import ORDER_KIND
+from dplanner.modules.step_order.activity import ORDER_KIND
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status
 from dplanner.planning.status import write as write_status

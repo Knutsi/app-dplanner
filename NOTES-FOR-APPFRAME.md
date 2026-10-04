@@ -5003,3 +5003,21 @@ than the move: the row look is one look whichever feature hosts it.
 **Upstream?** No — it knows steps, milestones and the kind vocabulary. The lesson is
 general: a widget two features host belongs below both of them.
 
+
+## 80. From the structural review (S21): one meaning per file name
+
+### `framework/{dialog,signalling,table,tasks}.py` — docstring paths only
+
+**What.** Four docstrings and a comment named module files that S21 renamed: the design
+example's modal is `modules/debug/design_example_dialog.py`, its table and toolbars tabs
+`design_example_activity.py`, and sync's progress dialog `save_progress_dialog.py`. No code
+changed.
+
+**Why.** S21 gave each file-role name one meaning and checks it (architecture rule 15):
+a tab lives in `activity.py` or `<x>_activity.py`, a modal in `dialog.py` or `<x>_dialog.py`,
+a `QGraphicsScene` in `scene.py`, and `view.py` is retired because it meant a tab body, a
+status-bar widget and a modal list in different packages.
+
+**Upstream?** The convention is worth carrying back: the template's example modules can
+follow it, and its architecture test can read base classes the same way. The paths
+themselves are DPlanner's.

@@ -36,7 +36,7 @@ from dplanner.domain.assets import attach
 from dplanner.framework.palette import CommandPalette
 from dplanner.framework.services import AppServices
 from dplanner.modules.coverage.activity import COVERAGE_KIND
-from dplanner.modules.estimation.bulk import ESTIMATE_KIND
+from dplanner.modules.estimation.bulk_activity import ESTIMATE_KIND
 from dplanner.modules.notes.activity import NOTES_KIND
 from dplanner.modules.project_assets.activity import ASSETS_KIND
 from dplanner.modules.schedule.module import TIME_KIND

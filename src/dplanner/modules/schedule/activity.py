@@ -4,8 +4,8 @@
 it was done — how far that moved against the plan compared with, how much of the work is
 done, and how many steps nobody has sized (a click opens the Estimates tab on them). Under
 them a strip holds, in the order they are reached for: the **pages** — *Milestones* (where
-each lands against the plan compared with, ``shift_view.py``), *Work* (the scope and the
-work done on one scale, ``work_view.py``) and *Calendar* (six months with the stretches lit,
+each lands against the plan compared with, ``shift_chart.py``), *Work* (the scope and the
+work done on one scale, ``work_chart.py``) and *Calendar* (six months with the stretches lit,
 ``months.py``); what the plan is **compared with**; **History**; the **Budget** — who
 works on it and how much of their day, from today on (``budget.py``); **Adjust for
 Efficiency**; *Save Snapshot…*, ⋯ for the milestone colours, and Export.

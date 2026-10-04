@@ -43,8 +43,8 @@ from dplanner.domain.model import Step, StepId
 from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.table import Cell, Column, Selection, Table
 from dplanner.modules.testing.aspect import Test, audience_words
+from dplanner.modules.testing.cards import FAILED_ROW_TINT, tint, word
 from dplanner.modules.testing.filing import category_of
-from dplanner.modules.testing.view import FAILED_ROW_TINT, tint, word
 from dplanner.theme.icons import glyph_icon
 from dplanner.theme.tokens import SECONDARY_ALPHA
 

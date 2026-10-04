@@ -2933,7 +2933,7 @@ def start_window(services: "AppServices") -> None:
     whose last tab they closed stays blank — ARCHITECTURE.md's *Home is where a window
     starts*.
     """
-    from dplanner.modules.home.page import HOME_KIND
+    from dplanner.modules.home.activity import HOME_KIND
 
     if not services.tabs.activities():
         services.tabs.open(HOME_KIND)

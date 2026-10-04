@@ -10,7 +10,7 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.notes.activity import NOTES_KIND
+from dplanner.modules.notes.activity import FRESH_TITLE, NOTES_KIND
 from dplanner.modules.notes.aspect import (
     LABEL_IDS,
     MODULE_ID,
@@ -23,7 +23,6 @@ from dplanner.modules.notes.aspect import (
     write_log,
 )
 from dplanner.modules.notes.editor import NoteEditor
-from dplanner.modules.notes.view import FRESH_TITLE
 
 
 def build(edges):
@@ -378,7 +377,7 @@ def test_a_reading_s_row_stands_for_its_project(services, project):
 
 
 def test_the_label_filter_narrows_the_log_and_says_how_much_it_shows(view):
-    from dplanner.modules.notes.view import NO_MATCH
+    from dplanner.modules.notes.activity import NO_MATCH
 
     view.filter.set_active({"handoff"})
     assert [title for title, _line in view.rows()] == ["Keys in vault"]

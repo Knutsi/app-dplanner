@@ -31,7 +31,7 @@ from dplanner.framework.signalling import StatusLine
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import EmptyState, block, caption, ink_of, quiet
 from dplanner.modules.step_review.aspect import MODULE_ID as ROUNDS_ID
-from dplanner.modules.step_review.conversation import (
+from dplanner.modules.step_review.conversation_dialog import (
     KEY_ROLE,
     NO_ROUNDS,
     message_rows,

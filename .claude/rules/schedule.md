@@ -179,7 +179,7 @@ paths:
   `replay.py` writes each day through the owners' writers (`frames.Writers`, every one
   a `planning/` writer) and records it as the recorder would, and `test_time_simulation.py`
   holds the world to the prototype's exported frames — port a change to the world there
-  first, like one to the model. `debugger.py` embeds `TimeEstimatesActivity` built from
+  first, like one to the model. `simulator_activity.py` embeds `TimeEstimatesActivity` built from
   the root's own `time_deps` recipe over a scratch library, undo stack, context, clock and
   debounce service — never `dataclasses.replace` over the window's deps — and scrubs by
   `replay.restore`, never by rebuilding the tab; the embedded tab's writers are greyed
@@ -225,9 +225,9 @@ paths:
   the prototype's `present.ts`): the figures, each milestone's landing then and now, and
   the work over the recorded days (`Burnup`), with **the axes holding the reach of every
   record** (`reach_of`) so moving between days moves only the lines. *Milestones*
-  (`shift_view.py`) is a row per milestone — the landing then hollow, now filled, a check
+  (`shift_chart.py`) is a row per milestone — the landing then hollow, now filled, a check
   once done, an arrow between, each mark dated (`row_dates`'s rule) and a hairline to the
-  axis. *Work* (`work_view.py`) is two plots on **one scale in days**
+  axis. *Work* (`work_chart.py`) is two plots on **one scale in days**
   (`Presented.scale`): the scope against the plan compared with, warm where it holds more
   and cool where less, a ▲ or ▼ each day it changed (`scope_marks`, by the day's sum);
   and the work done, **dotted, paler, across a day no step changed status** (`Burnup.active`),

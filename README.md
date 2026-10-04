@@ -485,7 +485,7 @@ src/dplanner/
 │   │                        repository on this machine from (checkouts.py), and Share Project…
 │   ├── project_archive/     leaving the library: Archive/Restore Project and Remove from Library
 │   │                        (verbs.py), the index's Archive folder (archive_index.py) and the
-│   │                        Archive tab (archive_tab.py)
+│   │                        Archive tab (activity.py)
 │   ├── steps/               the `step …` verbs and the graph's lint (cli.py; no module.py, so
 │   │                        headless all through) — `step duplicate` runs the canvas's clone
 │   ├── canvas/              a project in a tab (activity.py): the canvas (scene.py), its modes (connect, redirect,
@@ -533,7 +533,7 @@ src/dplanner/
 │   │                        and `auto_launch.py` the window launching it
 │   ├── agent_briefing/      what an agent is told — no module.py, headless all through:
 │   │                        the preflight and the report-back protocol (protocol.py), the
-│   │                        step's and project's facts (sections.py), the instructions
+│   │                        step's and project's facts (blocks.py), the instructions
 │   │                        (instructions.py), assembled once by compose.brief; and where
 │   │                        a run works (worktree.py: its run name, checkout and worktree)
 │   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
@@ -542,13 +542,12 @@ src/dplanner/
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or
-│   │                        pane again; the status-bar button and the Agents browser are
-│   │                        `view.py`)
+│   │                        pane again; the Agents browser is `browser_dialog.py`)
 │   ├── agent_usage/         what agent runs consumed: the per-project ledger's words and
 │   │                        readers (`aspect.py`, over `domain/ledger.py`), the harvest that
 │   │                        fills it and the window's sweep, `dplanner usage show|list|harvest|record`,
 │   │                        and the Expenditure tab — the order with what each step consumed,
-│   │                        in tokens (`expenditure.py`, `domain/expenditure.py`)
+│   │                        in tokens (`expenditure_activity.py`, `domain/expenditure.py`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab, and `status …`;
 │   │                        the vocabulary and format are `planning/status.py`'s; setting one is
 │   │                        `workflows.py`, which the window and the CLI both call
@@ -576,7 +575,7 @@ src/dplanner/
 │   │                        toggle, the Review template and tab, `dplanner review` (the
 │   │                        conversation both sides drive, `review wait` included) and its
 │   │                        lint — the settings in `planning/review.py`, the rounds in `aspect.py`,
-│   │                        the conversation read in full in `conversation.py`
+│   │                        the conversation read in full in `conversation_dialog.py`
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll
@@ -611,7 +610,7 @@ src/dplanner/
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
 │   │                        deferrals — one labelled log, what reaches a step and the briefing's capped
 │   │                        index (aspect.py), how the two retired modules reach it (migrate.py),
-│   │                        `dplanner note`, and the Implementation notes tab (activity.py, view.py)
+│   │                        `dplanner note`, and the Implementation notes tab (activity.py)
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor); and the
@@ -646,7 +645,7 @@ src/dplanner/
 │   │                        window half — click a row and the graph lands on its step, or
 │   │                        hand the lot to an agent
 │   ├── home/                where a window starts: the getting-started guide (guide.py, data naming
-│   │                        action ids) over the garden — garden.py its Qt-free seasons, garden_view.py
+│   │                        action ids) over the garden — garden.py its Qt-free seasons, garden_widget.py
 │   │                        the painting — a tab, the index's top row, and what the program opens
 │   │                        when there is nothing to reopen
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
@@ -657,7 +656,8 @@ src/dplanner/
 │   ├── appshell/  sync/  settings/  taskcenter/
 │   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Examples,
 │   │                        the design system built from the primitives, to be looked at and copied from:
-│   │                        design_example.py is the modal, the table and the toolbars; design_rows.py
+│   │                        design_example_dialog.py is the modal, design_example_activity.py the table and
+│   │                        the toolbars (over design_sample.py's rows); design_rows_activity.py
 │   │                        is what a picked row wears, beside the block that is not one
 │   ├── llm/  openai/  anthropic/  — the LLM picker, and the two vendor modules: each an LLM
 │   │                        provider, a settings page and the *Add API key…* wizard; openai's

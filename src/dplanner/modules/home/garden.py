@@ -9,7 +9,7 @@ rests, lets its petals go, and the next season is planted.
 
 Plain data and arithmetic, so the rules are tested without a window: places are fractions
 of the garden's width and height (``y`` down, 0 at the top), time is seconds, and
-``garden_view.py`` is the only thing that knows pixels, colours or a clock. ``advance``
+``garden_widget.py`` is the only thing that knows pixels, colours or a clock. ``advance``
 returns what *happened* — a bloom, a sprout — for the painter's bursts; everything that
 *is* can be read straight off the state.
 """

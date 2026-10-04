@@ -27,11 +27,8 @@ from dplanner.core.storage.sparse import GitError, refusal
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.modules.projects.repos import RepositoryServices, shown_path
-from dplanner.modules.projects.repositories_folder import (
-    KEPT,
-    clone_policy,
-    ensure_repositories_folder,
-)
+from dplanner.modules.projects.repositories_folder import KEPT, clone_policy
+from dplanner.modules.projects.repositories_folder_dialog import ensure_repositories_folder
 
 # The answer: the checkout's root, or None with why not.
 Done = Callable[[Path | None, str], None]

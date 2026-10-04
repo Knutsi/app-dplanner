@@ -9,7 +9,7 @@ needs a project greys in its own words until one is picked in the index.
 
 **The garden is the one ornament in the application that moves** (DESIGN.md's *Focus and
 motion*): the plan told as a garden, where agents rain on what is ready and it blooms
-(``garden.py`` is what happens, ``garden_view.py`` how it looks). *Settings ▸ Home* turns
+(``garden.py`` is what happens, ``garden_widget.py`` how it looks). *Settings ▸ Home* turns
 it off and on.
 """
 
@@ -24,7 +24,7 @@ from dplanner.framework.context import SCOPE_ACTIVITY, ContextNode, activity_uri
 from dplanner.framework.row_well import RowWell, WellRow
 from dplanner.framework.toolbar import action_words
 from dplanner.framework.widgets import EDITOR_MEASURE, caption, centered_column
-from dplanner.modules.home.garden_view import GardenView
+from dplanner.modules.home.garden_widget import GardenView
 from dplanner.modules.home.guide import GUIDE, GuideStep
 from dplanner.modules.home.settings_page import garden_wanted
 from dplanner.theme.tokens import CAPTION_GAP, PANEL_MARGIN

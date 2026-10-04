@@ -22,7 +22,7 @@ from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.context import ContextNode, ContextService, selection_uri
 from dplanner.framework.index_panel import restore_selection, selection_of
 from dplanner.framework.theme_service import ThemeService
-from dplanner.modules.project_archive.archive_tab import archived_label
+from dplanner.modules.project_archive.activity import archived_label
 from dplanner.modules.project_archive.verbs import ARCHIVED_KIND
 from dplanner.theme.icons import project_icon
 

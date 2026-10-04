@@ -84,6 +84,7 @@ from dplanner.modules.spec.documents import (
     save_body,
     write_index,
 )
+from dplanner.modules.spec.pdf_page import PdfPageView
 from dplanner.modules.spec.refresh import SourceRefresher
 from dplanner.modules.spec.source_kind import DocumentSourceKind
 from dplanner.modules.spec.sourced import (
@@ -96,7 +97,6 @@ from dplanner.modules.spec.sourced import (
     tree,
     updates_words,
 )
-from dplanner.modules.spec.viewer import PdfPageView
 from dplanner.theme.icons import (
     close_icon,
     connect_icon,

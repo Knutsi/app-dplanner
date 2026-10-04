@@ -25,7 +25,7 @@ from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.undo import UndoService
-from dplanner.modules.feature.editor import FeatureEditor
+from dplanner.modules.feature.section import FeatureEditor
 from dplanner.planning.feature import (
     MODULE_ID,
     SPEC,

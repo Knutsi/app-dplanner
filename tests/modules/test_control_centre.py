@@ -194,7 +194,7 @@ def test_a_step_behind_a_dated_wait_joins_the_board_on_its_day(services, project
 
 def test_show_in_order_from_a_row_opens_that_row_s_project(services, projects):
     """The board names no project, so the verbs about one read the picked step's own."""
-    from dplanner.modules.step_order.module import ORDER_KIND
+    from dplanner.modules.step_order.activity import ORDER_KIND
 
     _alpha, beta = projects
     tab = board(services)

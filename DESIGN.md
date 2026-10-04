@@ -21,8 +21,8 @@ entry per surface.
 ## Primitives
 
 What a surface is made of, where the primitive lives, and where to see it. The example
-surfaces are **Debug ▸ Design Examples** (`modules/debug/design_example.py` and
-`design_rows.py`); `scripts/render_design_example.py` renders them in both themes into
+surfaces are **Debug ▸ Design Examples** (`modules/debug/design_example_activity.py` and
+`design_rows_activity.py`); `scripts/render_design_example.py` renders them in both themes into
 `docs/screenshots/f1-design-example/` (its `README.md` names each image). Improving the
 system means changing the primitive and its rule together, then re-rendering — never
 styling one surface by name.
@@ -460,7 +460,7 @@ reasoning, including why the count of fields was the symptom rather than the dis
 - One warm accent, used sparingly: the primary button, the checked state, focus.
 - Semantic region tints (diff added/removed, status colours) are low-alpha constant
   `QColor`s that read on every theme (deliberate exception #2 — see the diff highlighter
-  in `modules/sync/view.py`); never opaque theme-specific backgrounds.
+  in `modules/sync/diff_dialog.py`); never opaque theme-specific backgrounds.
 - Every other colour comes from a `Theme` field, through `theme.qss` or the palette.
 - **A milestone wears its place in the sequence, not one purple.** The project picks a
   colour map (`theme/palettes.py`; *View ▸ Milestone Colours* and the Time tab's picker set

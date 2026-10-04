@@ -3,7 +3,7 @@
 Two facts, both per user and per machine like every settings page. The **clone policy**
 first — what happens to a repository a verb needs that this machine lacks: DPlanner keeps
 a clone of its own, or clones into the repositories folder — and the **folder** under it,
-asked the first time a clone is needed (``repositories_folder.ensure_repositories_folder``)
+asked the first time a clone is needed (``repositories_folder_dialog.ensure_repositories_folder``)
 and changed here afterwards. The folder stays whatever the policy: an explicit *Clone into
 Repositories Folder* and the Open Project wizard's plan clone land there either way.
 """

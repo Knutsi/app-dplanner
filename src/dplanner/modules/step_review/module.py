@@ -29,7 +29,7 @@ from dplanner.framework.undo import UndoService
 from dplanner.modules.step_review.aspect import DATA_FORMAT as ROUNDS_FORMAT
 from dplanner.modules.step_review.aspect import MODULE_ID as ROUNDS_ID
 from dplanner.modules.step_review.aspect import rounds
-from dplanner.modules.step_review.conversation import open_conversation
+from dplanner.modules.step_review.conversation_dialog import open_conversation
 from dplanner.modules.step_review.section import ReviewSection
 from dplanner.planning.review import (
     DATA_FORMAT,

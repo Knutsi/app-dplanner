@@ -28,6 +28,7 @@ from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_u
 from dplanner.framework.dialog import LinePrompt
 from dplanner.modules.projects import project_dialog
 from dplanner.modules.projects import repositories_folder as folders
+from dplanner.modules.projects import repositories_folder_dialog as folder_dialog
 from dplanner.modules.projects.project_dialog import CREATE, ProjectDialog
 from dplanner.modules.projects.repo_picker import menu_of
 from dplanner.modules.projects.repos import (
@@ -615,18 +616,18 @@ def test_the_repositories_folder_is_asked_once_then_remembered(app, tmp_path, mo
         asked.append([self.list.item(i).text() for i in range(self.list.count())])
         return 1
 
-    monkeypatch.setattr(folders.RepositoriesFolderDialog, "exec", accept)
+    monkeypatch.setattr(folder_dialog.RepositoriesFolderDialog, "exec", accept)
     (tmp_path / "src").mkdir()
-    first = folders.ensure_repositories_folder(None, home=tmp_path)
+    first = folder_dialog.ensure_repositories_folder(None, home=tmp_path)
     assert first == tmp_path / "src" and len(asked) == 1
-    again = folders.ensure_repositories_folder(None, home=tmp_path)
+    again = folder_dialog.ensure_repositories_folder(None, home=tmp_path)
     assert again == first and len(asked) == 1  # Remembered: not asked twice.
     assert folders.repositories_folder() == first
 
 
 def test_cancelling_the_folder_question_remembers_nothing(app, tmp_path, monkeypatch):
-    monkeypatch.setattr(folders.RepositoriesFolderDialog, "exec", lambda self: 0)
-    assert folders.ensure_repositories_folder(None, home=tmp_path) is None
+    monkeypatch.setattr(folder_dialog.RepositoriesFolderDialog, "exec", lambda self: 0)
+    assert folder_dialog.ensure_repositories_folder(None, home=tmp_path) is None
     assert folders.repositories_folder() is None
 
 

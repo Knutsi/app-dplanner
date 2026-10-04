@@ -1,4 +1,4 @@
-"""Task-centre widgets: the status-bar words and the task browser.
+"""The task browser, and the words the status-bar button wears (``button_text``).
 
 Pure widgets: the module feeds them the task lists; they only render them. The browser is a
 ``DialogFrame`` over a ``RowWell``: rows are kept by task id across every tick, so a pressed

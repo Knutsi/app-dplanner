@@ -25,7 +25,7 @@ from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.widgets import note
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import find_in_project, test_ids
-from dplanner.modules.testing.view import TestBody, TestHead, test_images
+from dplanner.modules.testing.cards import TestBody, TestHead, test_images
 from dplanner.theme.tokens import SECTION_GAP
 
 # Framed (DESIGN.md's *Dialogs*): a preferred size, resizable, clamped to the screen's
