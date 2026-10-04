@@ -33,6 +33,10 @@ it ended.*
 | 4 Oct | Knut | Asked Claude to assess Codex's opinion on performance, v2, modularity, scaling, ease of refactoring and debugging, and not over-engineering. |
 | 4 Oct | Knut | Follow-up: how would the planning tier and the units of work scale over time and fit with the modules? Rely on Python type checks and architecture checks as far as possible, because missing them causes creeping issues and entropy. |
 | 4 Oct | Claude | Agrees with about 80% of the second opinion and accepts its corrections. Actions should be a per-module `actions.py` pattern rather than a layer. Facts are imported and effects are injected. Proposes enforcement by mypy (`Enum` statuses, `Unknown` as its own type, a `PlanView` protocol) and by architecture tests. Gives a reconciled order. |
+| 4 Oct | Knut | "Multiplayer is not designed yet." The aim is a ladder: one person, then two people, a person and a worker, worker and worker, and "a little bit more, but not too much". The person at the window is the director, with authority over the worker. Asked what the `actions.py` pattern means. |
+| 4 Oct | Claude | Proposed git as the only authority and the director rule as the collision policy. Explained the pattern as one function per thing a person or agent does. |
+| 4 Oct | Knut | His design: a coordination service, linked from the plan repo, that broadcasts presence, area claims and pushes. The data format stays merge-friendly so plain git works. It starts at two people and also covers a worker with a person locally. The workflow pattern is fine as long as the context system stays. |
+| 4 Oct | Claude | Agreed. Three layers: format, git, coordination. One set of events with a local and a remote transport. Claims are leases on areas the graph already names. The JSON is already one key per line; `project.dproj` and step numbers are what still collide. Renamed the pattern `workflows.py`, under the context system. Recorded in [decisions-2026-10-04.md](decisions-2026-10-04.md). |
 
 ## Where each of us stands on 4 October
 
@@ -55,9 +59,16 @@ it ended.*
   - No message bus, no microservices.
   - On-disk ids stay stable.
 
-## Open questions, as of 4 October
+## Decided on 4 October
 
-1. **Multiplayer authority.** Should the server only coordinate (presence, claims,
-   messages), or own plan edits?
-2. **The GUI's *Set Status*.** Should it release an agent's claim, as the CLI does?
-3. **The `actions.py` pattern.** Should it go into CLAUDE.md once the pilot has landed?
+1. **Multiplayer coordinates, and git is the only authority.** A service linked from the
+   plan repo broadcasts presence, area claims and pushes. It holds no plan data.
+2. **The director has authority over the worker.** When the window sets a step done, the
+   agent's claim ends.
+3. **`workflows.py` sits under the context system**, which stays. It was renamed from
+   `actions.py`.
+
+## Still open
+
+- The step-number design, which is the first thing rung 2 hits.
+- Whether `workflows.py` goes into CLAUDE.md after the pilot.

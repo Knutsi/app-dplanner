@@ -23,6 +23,7 @@ notes are its durable source. Every number here was measured on `main` at `04721
 | [second-opinion-codex.md](second-opinion-codex.md) | added 2026-10-04: independent checks, qualifications, and an application boundary for continued growth and multiplayer |
 | [response-claude.md](response-claude.md) | added 2026-10-04: Claude's assessment of the second opinion, per-module actions, enforcement by types and tests, the reconciled order |
 | [how-this-review-was-made.md](how-this-review-was-made.md) | who asked what, what each of us thought, and the open questions on 4 October |
+| [decisions-2026-10-04.md](decisions-2026-10-04.md) | Knut's decisions: multiplayer as a ladder with git as the only authority, the director rule, `workflows.py` under the context system |
 
 ## The next move
 
@@ -30,11 +31,14 @@ Both reviews agree on the first step: fix the reproduced correctness bugs. Then 
 complete workflow, *set status*, end to end:
 
 - `planning/` owns the status vocabulary as an `Enum`, with `Unknown` as its own type.
-- `step_status/actions.py` is called by both the GUI and the CLI; the GUI gains the claim
-  release it lacks today.
+- `step_status/workflows.py` is called by both the GUI and the CLI, underneath the context
+  system. Under the director rule, the GUI gains the claim release it lacks today.
 - The first architecture tests land with it.
 
-The reasoning is in [response-claude.md](response-claude.md).
+The reasoning is in [response-claude.md](response-claude.md). Knut's decisions of 4 October
+are in [decisions-2026-10-04.md](decisions-2026-10-04.md). In short: multiplayer is a ladder,
+git is the only authority, and an advisory coordination service broadcasts presence, area
+claims and pushes.
 
 ## Second opinion (Codex) — summary
 

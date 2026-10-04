@@ -11,6 +11,10 @@ DPlanner:*
 - *ease of refactoring, debugging and understanding*
 - *not over-engineering*
 
+> **Renamed after this was written:** the pattern is `workflows.py`, returning a `Change`,
+> because "action" already means `ActionSpec` in this codebase. Read `actions.py` and
+> `Action` below as those names. See [decisions-2026-10-04.md](decisions-2026-10-04.md).
+
 ## Verdict
 
 A strong second opinion. I agree with roughly 80% of it:

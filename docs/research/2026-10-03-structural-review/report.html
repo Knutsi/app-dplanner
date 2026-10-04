@@ -151,6 +151,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     <li><a href="#second-opinion-codex">Second opinion (Codex)</a></li>
     <li><a href="#response-claude">Response (Claude)</a></li>
     <li><a href="#how-made">How this review was made</a></li>
+    <li><a href="#decisions">Decisions, 4 October</a></li>
   </ol>
 </nav>
 
@@ -158,7 +159,7 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
 <aside class="nextmove" id="next-move" aria-label="The next move">
   <span class="label">The next move · as of 4 October 2026</span>
   <h2>Fix what's broken, then prove the shape on one workflow</h2>
-  <p>This is where the three passes ended up: the review, Codex's second opinion, and my response. The rest of the page is the reasoning (<a href="#response-claude">§12</a> reconciles it).</p>
+  <p>This is where the three passes ended up: the review, Codex's second opinion, and my response, plus Knut's decisions of 4 October. The rest of the page is the reasoning: <a href="#response-claude">§12</a> reconciles the reviews and <a href="#decisions">§14</a> records the decisions.</p>
   <ol>
     <li><strong>Correctness first: small PRs, no design decisions.</strong>
       <ul>
@@ -173,23 +174,24 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     <li><strong>Pilot one complete workflow, <em>set status</em>, end to end.</strong>
       <ul>
         <li><code>planning/status.py</code> owns the vocabulary as an <code>Enum</code>, with <code>Unknown</code> as its own type, plus the readiness rules. There's no state machine; out-of-order recording stays.</li>
-        <li><code>step_status/actions.py: set_status(...) -&gt; Action</code> is called by both the window and <code>dplanner status set</code>. The window gains the claim release it lacks today.</li>
+        <li><code>step_status/workflows.py: set_status(...) -&gt; Change</code> is called by both the window and <code>dplanner status set</code>, underneath the context system, which stays as it is. Under the director rule, the window gains the claim release it lacks today.</li>
         <li>The first architecture tests:
           <ul>
             <li><code>planning/</code> imports only <code>core</code> and <code>domain</code>.</li>
-            <li>One module reaches another only through <code>aspect.py</code> or <code>actions.py</code>.</li>
+            <li>One module reaches another only through <code>aspect.py</code> or <code>workflows.py</code>.</li>
             <li>The module graph is acyclic.</li>
           </ul></li>
       </ul>
       <p class="done-when">Done when the GUI and CLI give the same outcome for every status change, the literal-<code>"done"</code> comparisons are type errors, and a status change touches measurably fewer places than today.</p></li>
   </ol>
-  <p>After the pilot, extend the same pattern: the kind facts, then the root's clusters, then launch as an external effect before the daemon. The multiplayer design waits for the decision below.</p>
-  <div class="decisions"><strong>Waiting on Knut:</strong>
+  <p>After the pilot, extend the same pattern: the kind facts, then the root's clusters, then launch as an external effect before the daemon. <strong>Multiplayer is now a ladder</strong> (<a href="#decisions">§14</a>): git stays the only authority, and an advisory coordination service broadcasts presence, area claims and pushes. Before the second rung, two things are needed: <code>project.dproj</code> must stop colliding on step adds, and step numbers need a small design of their own.</p>
+  <div class="decisions"><strong>Decided on 4 October:</strong>
     <ol>
-      <li>Should the multiplayer server only <em>coordinate</em> (presence, claims, messages), or be the <em>authority</em> over plan edits?</li>
-      <li>Should the GUI's <em>Set Status</em> release an agent's claim, as the CLI does?</li>
-      <li>Should the <code>actions.py</code> pattern go into CLAUDE.md once the pilot has landed?</li>
-    </ol></div>
+      <li><strong>Multiplayer coordinates; git is the authority.</strong> A service linked from the plan repo broadcasts presence, area claims and pushes. It holds no plan data.</li>
+      <li><strong>The director has authority over the worker.</strong> When the window sets a step done, the agent's claim ends.</li>
+      <li><strong><code>workflows.py</code> sits under the context system</strong>, which stays. It was renamed from <code>actions.py</code>, because "action" already means <code>ActionSpec</code>.</li>
+    </ol>
+    <strong>Still open:</strong> the step-number design for rung 2, and whether <code>workflows.py</code> goes into CLAUDE.md after the pilot.</div>
 </aside>
 <header class="masthead">
   <div class="eyebrow">main @ 0472101 · 3 October 2026 · review, no code changed</div>
@@ -212,9 +214,9 @@ footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-si
     <div><span class="who">Second opinion (Codex)</span><span class="when">4 October · §11</span>
       <p><strong>The diagnosis largely holds; the remediation needs a stronger application boundary.</strong> Headless actions for complete workflows, shared by every writer. Reproduced the bugs and found two more. Decide what multiplayer is the authority for before redesigning storage.</p></div>
     <div><span class="who">Response (Claude)</span><span class="when">4 October · §12</span>
-      <p>Agrees with about 80% of it and takes three corrections. Actions should be a per-module <code>actions.py</code>, not a layer. Import facts, inject effects. Enforce all of it with mypy and architecture tests.</p></div>
+      <p>Agrees with about 80% of it and takes three corrections. Units of work should be a per-module <code>workflows.py</code> (renamed from <code>actions.py</code>), not a layer. Import facts, inject effects. Enforce all of it with mypy and architecture tests.</p></div>
   </div>
-  <p style="font-size:14px;color:var(--muted)">§13 records how the three of us worked on this and the open questions. The original review below is unchanged.</p>
+  <p style="font-size:14px;color:var(--muted)">§13 records how the three of us worked on this; §14 records Knut's decisions. The original review below is unchanged.</p>
 </div>
 
 <!-- 1 -->
@@ -1149,6 +1151,7 @@ class Op:
   <div class="inshort"><span class="label">In short</span>
     <p>It's a strong second opinion and I agree with roughly 80% of it. It corrects three overreaches in my review, adds two real defects, and names the decision my report assumed without asking: what the multiplayer server is the authority for. Its central proposal is application actions ("units of work"). That idea is right, and the code proves the need. But it should be a <strong>per-module pattern</strong>, an <code>actions.py</code> of plain builder functions next to <code>aspect.py</code>, not a central application layer, which would become the next composition root. All of it is kept honest by <strong>mypy and architecture tests</strong>, not by convention.</p>
   </div>
+  <div class="callout"><p><strong>Renamed after this section was written:</strong> the pattern below is <code>workflows.py</code>, returning a <code>Change</code>. "Action" already means <code>ActionSpec</code> in this codebase. Read <code>actions.py</code> and <code>Action</code> in this section as those names. <a href="#decisions">§14</a> has the decision.</p></div>
   <p class="eyebrow">Assessed for performance, readiness for v2, modularity, scaling with features, ease of refactoring and debugging, and the risk of over-engineering · same source, <code>0472101</code></p>
 
   <h3>The code proves the case for actions</h3>
@@ -1352,6 +1355,10 @@ def set_status(view: PlanView, step: Step, status: Status, *,
       <tr><td>4 Oct</td><td>Codex</td><td>Second opinion: reproduced the bugs with probes and found two more. Argued for headless application actions and an explicit multiplayer authority. Qualified the kind ranking, the state machine and "fixed".</td></tr>
       <tr><td>4 Oct</td><td>Knut</td><td>Asked Claude to assess Codex on performance, v2, modularity, scaling, ease of refactoring and debugging, and over-engineering. Then: how would the planning tier and units of work scale and fit with the modules? Rely on type checks and architecture checks to stop creeping entropy.</td></tr>
       <tr><td>4 Oct</td><td>Claude</td><td>Agreed with about 80% and accepted three corrections. Proposed actions as a per-module <code>actions.py</code>; importing facts and injecting effects; enforcement by types and tests; and the reconciled order with the next move at the top of this page.</td></tr>
+      <tr><td>4 Oct</td><td>Knut</td><td>"Multiplayer is not designed yet." The aim is a ladder from one person to two people, a person and a worker, worker and worker, and "a little bit more, but not too much". The person at the window is the director, with authority over the worker. Asked what the <code>actions.py</code> pattern means.</td></tr>
+      <tr><td>4 Oct</td><td>Claude</td><td>Proposed git as the only authority, the director rule as the collision policy, and explained the pattern as one function per thing a person or agent does.</td></tr>
+      <tr><td>4 Oct</td><td>Knut</td><td>His own design: a coordination service linked from the plan repo that broadcasts presence, area claims and pushes, with a data format kept merge-friendly so plain git still works. It should start at two people and also cover one worker with a person locally. The workflow pattern is fine, as long as the context system stays.</td></tr>
+      <tr><td>4 Oct</td><td>Claude</td><td>Agreed, and laid out three layers: format, git, coordination. One set of events, with a local and a remote transport. Claims are leases on areas the graph already names. The JSON is already one key per line; <code>project.dproj</code> and step numbers are what still collide. The pattern was renamed <code>workflows.py</code>, under the context system. Recorded in §14.</td></tr>
     </tbody>
   </table></div>
   <h3>Where each of us stands on 4 October</h3>
@@ -1370,18 +1377,123 @@ def set_status(view: PlanView, step: Step, status: Status, *,
         <li>Should the facts refactor wait for the transaction and authority boundaries (Codex), or go ahead independently (Claude)?</li>
         <li>Should actions be a small application layer (Codex's phrasing), or a per-module pattern (Claude)?</li>
       </ul></li>
-    <li><strong>Waiting on Knut:</strong>
+    <li><strong>Decided by Knut</strong> (<a href="#decisions">§14</a>):
       <ul>
-        <li>the multiplayer authority</li>
-        <li>whether the GUI's <em>Set Status</em> releases claims</li>
-        <li>whether <code>actions.py</code> goes into CLAUDE.md after the pilot</li>
+        <li>multiplayer coordinates and git is the authority</li>
+        <li>the director has authority over the worker</li>
+        <li><code>workflows.py</code> sits under the context system</li>
+      </ul></li>
+    <li><strong>Still open:</strong>
+      <ul>
+        <li>the step-number design</li>
+        <li>whether <code>workflows.py</code> goes into CLAUDE.md after the pilot</li>
       </ul></li>
   </ul>
   <p>The durable source is <a href="how-this-review-was-made.md">how-this-review-was-made.md</a>.</p>
 </section>
 
+<!-- 14 -->
+<section id="decisions">
+  <h2><span class="num">14</span>Decisions, 4 October</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>Knut settled the three open questions.</p>
+    <ul>
+      <li><strong>Multiplayer is a ladder</strong> from one person to "a little bit more, but not too much". git is the only authority, and a <strong>coordination service</strong> linked from the plan repo broadcasts presence, area claims and pushes, holding no plan data.</li>
+      <li><strong>The director at the window has authority over the worker.</strong></li>
+      <li><strong>The workflow pattern goes ahead under the context system</strong>, renamed <code>workflows.py</code>.</li>
+    </ul>
+    <p>With nothing on the ladder accepting plan edits, the heavy operations work drops out of the plan.</p>
+  </div>
+
+  <h3>Multiplayer: three layers, one authority</h3>
+  <p>Knut's design is a service that just broadcasts presence ("worker XX present"), claims on areas of the graph, and pushes ("others need to pull"). The data format is kept merge-friendly so the simple git structure still works. It is the minimal design for the ladder, and each layer has one job:</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Layer</th><th>Job</th><th>Authority</th></tr></thead>
+    <tbody>
+      <tr><td>The data format</td><td>make concurrent edits merge on their own</td><td>git merges it</td></tr>
+      <tr class="rec"><td>git</td><td>source of truth, and the transport for plan changes</td><td><strong>yes: the only one</strong></td></tr>
+      <tr><td>The coordination service</td><td>awareness: presence, area claims, "pushed, please pull"</td><td>none: advisory</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><strong>The service never holds plan data.</strong> If it's down, everything still works through git, with less awareness.</li>
+    <li><strong>Claims are leases</strong> that expire unless renewed, so a crashed worker frees its area by itself.</li>
+    <li><strong>What drops out</strong>, because nothing on the ladder accepts plan edits: commands as operations, version logs, and merge rules per data type. Authorship (<code>Actor</code>) and a finer format remain.</li>
+  </ul>
+
+  <h4>One mechanism, two transports</h4>
+  <div class="mermaid-wrap"><pre class="mermaid">
+flowchart LR
+  W["window&lt;br/&gt;(director)"] -- "presence · claim · release · pushed" --> T{{"coordination events"}}
+  A["worker / agent"] -- "presence · claim · release · pushed" --> T
+  T --> L["local transport&lt;br/&gt;files (domain/at_work.py, fixed)&lt;br/&gt;no service linked"]
+  T --> R["remote transport&lt;br/&gt;the small service&lt;br/&gt;linked from .dplanner"]
+  W -. "plan data" .-> G[("git: the only authority")]
+  A -. "plan data" .-> G
+  </pre></div>
+  <p>The events are defined once and the transport is chosen per plan repo. That is how one mechanism covers two people and also a person with a worker on one machine. The <em>data</em> path differs honestly:</p>
+  <ul>
+    <li><strong>On one machine</strong>, the window and the worker write the same files in one checkout, so collisions are concurrent writes the store adopts. That needs the flush lock and the <code>write_atomic</code> fix.</li>
+    <li><strong>Across machines</strong>, collisions meet at git merge.</li>
+  </ul>
+  <p>Both paths were already in the plan.</p>
+
+  <h4>Areas of the graph</h4>
+  <p>The graph already names its areas:</p>
+  <ul>
+    <li>a branch stretch, from cut to land</li>
+    <li>a feature or milestone cone (<code>domain/scope.py</code>)</li>
+    <li>a single step</li>
+  </ul>
+  <p>A claim carries a set of step ids and a label. The service broadcasts ids and never needs to understand the graph.</p>
+
+  <h4>The format: the lever that matters most</h4>
+  <div class="scroll"><table>
+    <thead><tr><th>File</th><th>Today</th><th>Merges?</th></tr></thead>
+    <tbody>
+      <tr><td><code>step.json</code>, <code>modules/&lt;id&gt;.json</code></td><td>written with <code>indent=2, sort_keys=True</code> (<code>store.py:1286</code>): one key per line, one list item per line</td><td><span class="tag good">mostly</span> edits on different lines merge</td></tr>
+      <tr><td><code>modules/&lt;id&gt;.md</code></td><td>prose</td><td><span class="tag good">yes</span> by line</td></tr>
+      <tr><td><code>project.dproj</code></td><td>the <code>children</code> order and <code>last_number</code></td><td><span class="tag crack">no</span> two step adds append to the same place and bump the same counter. Fix: derive the order, or store it per step, and drop the stored counter.</td></tr>
+      <tr><td>step numbers</td><td>minted locally (<code>model.py:113</code>)</td><td><span class="tag caution">open design</span> two writers mint S8, and S8 is a public name. One option: the service hands out numbers while connected, with an offline fallback. It is the first thing rung 2 hits.</td></tr>
+    </tbody>
+  </table></div>
+  <p>With area claims reducing overlap and the format absorbing the rest, real conflicts should be rare. When one happens, git shows it the usual way.</p>
+
+  <h4>The ladder</h4>
+  <div class="scroll"><table>
+    <thead><tr><th>Rung</th><th>New</th><th>Needs</th></tr></thead>
+    <tbody>
+      <tr><td>One person</td><td>—</td><td>today, plus the correctness fixes</td></tr>
+      <tr><td>Two people, one repo</td><td>edits meet at pull and merge</td><td><code>project.dproj</code> stops colliding on adds; the step-number design; the service, or claims pushed through git</td></tr>
+      <tr><td>Person + worker, one machine</td><td>two processes, one checkout</td><td>the flush lock, <code>write_atomic</code>, claims with identity, run intent before launch; the local transport</td></tr>
+      <tr><td>Worker + worker, across machines</td><td>claims visible to others</td><td>the remote transport</td></tr>
+      <tr><td>"A little bit more"</td><td>—</td><td>the same</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>The director has authority over the worker</h3>
+  <p>"A person operating the window is the director, and has authority over the worker or agent." That settles the claim question: <strong>when the director sets a step done or blocked in the window, the agent's at-work claim ends</strong>, and the agent finds out at its next CLI call. It also gives the ladder its collision policy:</p>
+  <ul>
+    <li><strong>Director against worker:</strong> the director wins and the worker stands down.</li>
+    <li><strong>Worker against worker:</strong> whoever holds the claim wins.</li>
+  </ul>
+  <p>In code it is one typed branch on <code>Actor</code>: a <code>Person</code> may set a step done directly, while an <code>AgentRun</code> goes through review.</p>
+
+  <h3><code>workflows.py</code>, under the context system</h3>
+  <p>"Reasonable, as long as we keep the underlying context system. I believe that has kept the UI clean and easy to shape." It stays exactly as it is, and the workflow functions sit <em>under</em> it:</p>
+  <div class="code"><div class="src"><span>the chain</span></div><pre><code>today:  ActionSpec(context) → command → model → signal → views
+with:   ActionSpec(context) → set_status(view, the context's steps, …) → change.command → undo → model → signal → views
+                               ↑ the ActionSpec's state calls refusal() to grey the entry and say why</code></pre></div>
+  <p>The context still decides which steps a verb acts on, whether it is enabled, and the menus, the palette and the right-click bands. Only the middle step, building the command, moves into one shared function, which the CLI and a future worker call too.</p>
+  <ul>
+    <li><strong>Renamed.</strong> "Action" already means <code>ActionSpec</code> here, so the file is <code>workflows.py</code> and it returns a <code>Change</code>: the command plus its follow-ups.</li>
+    <li><strong><code>refusal()</code> runs in an action state</strong>, so it inherits CLAUDE.md's rule: no walk over a whole project, only the steps the context names.</li>
+  </ul>
+  <p>The durable source is <a href="decisions-2026-10-04.md">decisions-2026-10-04.md</a>. The multiplayer direction is also kept on its own, for when that work starts, with the failure modes to work through: <a href="../2026-10-04-multiplayer/README.md">docs/research/2026-10-04-multiplayer/</a>.</p>
+</section>
+
 <footer>
-  This page is <code>docs/research/2026-10-03-structural-review/report.html</code>. Source notes in the same folder: README, alternatives, planning-tier, renaming, seams, waves, second-opinion-codex, response-claude, how-this-review-was-made. Updated 4 October 2026 with the planning tier (§5), Second opinion (Codex) (§11), the response (§12), how the review was made (§13) and the next move at the top. Original measurements on <code>main</code> at <code>0472101</code>; the second opinion records its own validation baseline. Code excerpts are quoted from the tree with their <code>file:line</code>. Sketches are marked as sketches.
+  This page is <code>docs/research/2026-10-03-structural-review/report.html</code>. Source notes in the same folder: README, alternatives, planning-tier, renaming, seams, waves, second-opinion-codex, response-claude, how-this-review-was-made, decisions-2026-10-04. Updated 4 October 2026 with the planning tier (§5), Second opinion (Codex) (§11), the response (§12), how the review was made (§13), the decisions (§14) and the next move at the top. Original measurements on <code>main</code> at <code>0472101</code>; the second opinion records its own validation baseline. Code excerpts are quoted from the tree with their <code>file:line</code>. Sketches are marked as sketches.
 </footer>
 </main>
 </div>

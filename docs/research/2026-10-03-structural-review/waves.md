@@ -26,12 +26,18 @@ response ([response-claude.md](response-claude.md)), the order both reviews supp
    - A stale undo is refused.
 2. **Pilot *set status* end to end.**
    - `planning/` owns the status vocabulary, readers and readiness.
-   - `step_status/actions.py` serves both surfaces.
+   - `step_status/workflows.py` serves both surfaces, under the context system.
    - The first architecture tests land with it.
 3. **Planning facts, and a narrower root.**
    - Kind predicates and one key ranking, with the policies kept separate.
-   - Cross-module imports go only through `aspect.py` and `actions.py`.
+   - Cross-module imports go only through `aspect.py` and `workflows.py`.
 4. **Launch as an external effect.** Durable run intent and reconciliation, before the daemon.
-5. **Decide the multiplayer authority.** Then design operations and versions.
+5. **Multiplayer, as a ladder** (decided 4 October; see
+   [decisions-2026-10-04.md](decisions-2026-10-04.md)). git stays the only authority, so no
+   operations or version logs are needed. Before the second rung:
+   - `project.dproj` stops colliding on step adds.
+   - Step numbers get a small design of their own.
+   - Coordination events (presence, claims, pushes) get a local transport first and a
+     remote one when two machines need it.
 6. **Renames and docs**, as responsibilities settle.
 
