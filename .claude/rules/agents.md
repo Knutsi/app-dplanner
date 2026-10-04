@@ -168,8 +168,8 @@ paths:
   *Open Terminal in Worktree|Checkout*, the Agent tab (its box unticked and greyed with the
   reason) and `agent worktree … on` (refused). `ARCHITECTURE.md`'s *A worktree is the
   step's decision* has the reasoning.
-- **A run starts from the remote, and the plan names its base.** `launcher.BranchPlan` —
-  decided once by `Briefing.branch`, the root's `_branch_plan` — is the branch a worktree is
+- **A run starts from the remote, and the plan names its base.** `planning.branches.BranchPlan` —
+  decided once by `Briefing.branch`, `branches/plan.py`'s `branch_plan` — is the branch a worktree is
   on (its own `agent/<run name>`, or the feature branch for a landing), where a new one
   starts, what the first run in a stretch may cut on the remote, and the PR's base. The
   wrapper script **fetches and starts the branch from the plan's start** — a stretch's

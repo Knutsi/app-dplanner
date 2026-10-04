@@ -117,6 +117,7 @@ from dplanner.planning.agent import (
     workplace,
     write_state,
 )
+from dplanner.planning.branches import DEFAULT_BRANCHES, BranchPlan
 from dplanner.planning.progression import outstanding
 from dplanner.planning.status import Reading, Status, Unknown, phrase, readiness_of
 from dplanner.theme.icons import spark_icon, typewriter_icon
@@ -1093,7 +1094,7 @@ class StepAgentInstructionModule:
         key: str = "",
         note: str = "",
         step_id: StepId | None = None,
-        branches: launcher.BranchPlan = launcher.DEFAULT_BRANCHES,
+        branches: BranchPlan = DEFAULT_BRANCHES,
     ) -> tuple[bool, launcher.LaunchFiles]:
         """Open the profile's terminal on ``text`` in ``workdir``; the run is recorded only
         when a shell was actually spawned, and only when it is *a step's*.
@@ -1264,7 +1265,7 @@ class StepAgentInstructionModule:
         text = conflict_prompt(
             step_title=_titled(step),
             project_title=library.project_of(step_id).title or "Untitled project",
-            preamble=deps.briefing.preamble(step, False, facts, launcher.DEFAULT_BRANCHES),
+            preamble=deps.briefing.preamble(step, False, facts, DEFAULT_BRANCHES),
             entries=entries,
         )
         spawned, prepared = self._launch(
@@ -1350,9 +1351,7 @@ class StepAgentInstructionModule:
             text = handover_prompt(
                 f"# Documentation: {_titled(step)}",
                 project.title or "Untitled project",
-                deps.briefing.preamble(
-                    step, False, deps.facts_for(step_id), launcher.DEFAULT_BRANCHES
-                ),
+                deps.briefing.preamble(step, False, deps.facts_for(step_id), DEFAULT_BRANCHES),
                 body,
             )
             run_dir = launcher.new_run_dir()

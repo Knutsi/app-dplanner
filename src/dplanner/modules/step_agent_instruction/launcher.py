@@ -138,8 +138,7 @@ from dplanner.domain.locations import Placement
 from dplanner.domain.model import Step
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.planning.agent import workplace
-
-BRANCH_PREFIX = "agent/"
+from dplanner.planning.branches import DEFAULT_BRANCHES, DEFAULT_START, BranchPlan
 
 # The names the wrapper script reports under, beside the prompt. The exit file holds the
 # agent's status, or the word ``closed`` when the terminal was shut on it (the POSIX
@@ -196,44 +195,8 @@ def worktree_path(workdir: Path, name: str) -> Path:
     return workdir / WORKTREES_DIR / name
 
 
-def branch_name(name: str) -> str:
-    return f"{BRANCH_PREFIX}{name}"
-
-
-@dataclass(frozen=True)
-class BranchPlan:
-    """Which git branches a run of a step works between — decided by the plan, carried out
-    by the wrapper script and told to the agent, so the two cannot disagree.
-
-    ``work_branch`` is the branch its worktree is on, "" for the step's own
-    ``agent/<run name>``; a landing names the feature branch it lands. ``start`` is where a
-    new branch starts — ``origin/<branch>`` — and "" is the remote's default branch, looked
-    up by the script. ``create`` is the branch this run may create on the remote from
-    ``create_from`` when it is not there yet: the first run in a stretch cuts it, and no
-    later one ever cuts it again. ``pr_base`` is the branch the step's PR opens against, ""
-    for the repository's default. ``refusal`` is why no agent may run on the step now, ""
-    when one may. Every field names a branch the plan wrote, so each is checked with
-    :func:`dplanner.core.storage.sparse.valid_ref` before it reaches a script.
-    """
-
-    work_branch: str = ""
-    start: str = ""
-    create: str = ""
-    create_from: str = ""
-    pr_base: str = ""
-    refusal: str = ""
-
-    def branch_for(self, run: str) -> str:
-        """The branch a worktree named ``run`` is on."""
-        return self.work_branch or branch_name(run)
-
-
-# A run nothing narrows: its own branch, started from the remote's default, its PR opened
-# against the same — and every run that has no worktree, which reads none of it.
-DEFAULT_BRANCHES = BranchPlan()
-# The remote's default branch, as a start a plan can name when its mainline names none.
-DEFAULT_START = "origin/HEAD"
-DEFAULT_START_REF = "refs/remotes/origin/HEAD"
+# The same start as the ref the script asks git about.
+DEFAULT_START_REF = f"refs/remotes/{DEFAULT_START}"
 
 
 def mainline(facts: RepositoryFacts | None, step: Step | None = None) -> str:

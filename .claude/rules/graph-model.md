@@ -97,7 +97,7 @@ paths:
   **Put on a Branch** (`edits.put_command`) and **Remove Branch** (`remove_command`) are
   one rewire each — outside inputs move to the cut and outside dependents to the landing,
   and back — refused by `ordering.left_between`, the walk `stack make` shares, by a pick
-  that crosses another stretch, and by one that splits a stack (`_stacked_apart`, the
+  that crosses another stretch, and by one that splits a stack (`stacks.stack_split`, the
   graph editor's fact handed in). Remove is never partial, so the window asks first.
   `planning.kinds.works_nobody` is what a wait and a cut share — "a wait", "a branch cut" — and
   every module refusing such a step a status, an agent, a review or a test words its

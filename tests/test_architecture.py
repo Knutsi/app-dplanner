@@ -102,6 +102,9 @@ HEADLESS_FILES = (
     "convert.py",
     "source.py",
     "trace.py",
+    # Where the coverage trace's facts come from, and a branch stretch's run plan.
+    "readers.py",
+    "plan.py",
     "reach.py",
     "references.py",
     "migrate.py",
@@ -137,7 +140,7 @@ CONCRETE_STORAGE = (
 
 # Ceilings (rule 12), recorded on 4 October 2026. Lower one by hand when its count falls;
 # never raise it.
-ROOT_LINES = 4806
+ROOT_LINES = 4490
 DIRECT_COMMANDS = 141
 
 # Every id a module stores data, settings or files under (rule 13). Stored ids are public:

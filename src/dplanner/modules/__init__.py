@@ -49,11 +49,10 @@ if TYPE_CHECKING:
     from dplanner.domain.branches import Reading as BranchReading
     from dplanner.domain.commands import Command
     from dplanner.domain.dictation import DictationProvider
-    from dplanner.domain.expenditure import Rate, Spent
     from dplanner.domain.locations import Location, LocationRole, ManagedFor
     from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
     from dplanner.domain.repositories import RepositoryFacts
-    from dplanner.domain.store import FilesFor, LibraryStore, ModuleFileArea
+    from dplanner.domain.store import FilesFor, ModuleFileArea
     from dplanner.domain.workflow import Actor, EndClaim, PlanView
     from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
@@ -63,12 +62,12 @@ if TYPE_CHECKING:
     from dplanner.modules.spec.source_kind import DocumentSourceKind
     from dplanner.modules.spec_confluence.module import SecretStore
     from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
-    from dplanner.modules.step_agent_instruction.launcher import BranchPlan
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
     from dplanner.modules.step_review.rounds import TurnDue
     from dplanner.modules.step_status.workflows import StatusWorkflow
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
+    from dplanner.planning.branches import BranchPlan
     from dplanner.planning.feature import FeatureSource
     from dplanner.planning.scope import ScopeKind
     from dplanner.planning.status import Reading, Status, Unknown
@@ -132,12 +131,14 @@ def default_modules(
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
     from dplanner.modules.auto_progress.module import AutoProgressDeps, AutoProgressModule
     from dplanner.modules.branches.module import BranchesDeps, BranchesModule, LandingModule
+    from dplanner.modules.branches.plan import merged_into_its_branch
     from dplanner.modules.checklist.module import ChecklistDeps, ChecklistModule
     from dplanner.modules.coverage.activity import CoverageDeps
     from dplanner.modules.coverage.module import CoverageModule
     from dplanner.modules.debug.module import DebugDeps, DebugModule
     from dplanner.modules.dictation.module import DictationDeps, DictationModule
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
+    from dplanner.modules.estimation import schedule as estimation_schedule
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.feature.module import FeatureDeps, FeatureModule
     from dplanner.modules.github.aspect import PR_CLOSED, PR_MERGED, PR_OPEN, pr_label
@@ -162,6 +163,7 @@ def default_modules(
     )
     from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
     from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
+    from dplanner.modules.project_editor.stacks import stack_split
     from dplanner.modules.project_editor.verbs import picked_edges
     from dplanner.modules.projects.checkouts import CheckoutService
     from dplanner.modules.projects.location_dialog import ask_location
@@ -201,6 +203,13 @@ def default_modules(
     )
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
+    from dplanner.modules.step_agent_run.usage import (
+        ledger_dir,
+        ledger_stamp,
+        step_spent,
+        step_usage_words,
+        token_rate,
+    )
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_description.module import (
@@ -227,6 +236,7 @@ def default_modules(
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
     from dplanner.modules.testing.aspect import read as tests_read
     from dplanner.modules.testing.module import TestsDeps, TestsModule
+    from dplanner.modules.time_estimates import schedule as time_schedule
     from dplanner.modules.time_estimates.debugger import TimeSimulationDeps, TimeSimulationModule
     from dplanner.modules.time_estimates.module import (
         ProgressHistoryModule,
@@ -492,10 +502,10 @@ def default_modules(
         return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
 
     def milestone_stats(project: "Project") -> dict[str, str]:
-        return _milestone_stats(library, project)
+        return estimation_schedule.milestone_stats(library, project)
 
     def milestone_colors(project: "Project") -> dict[str, str]:
-        return _milestone_colors(library, project)
+        return time_schedule.milestone_colors(library, project)
 
     def milestone_color(step_id: str) -> str:
         """One milestone's shade, for a surface that draws a row at a time. A surface that
@@ -783,10 +793,8 @@ def default_modules(
             undo=services.undo,
             actions=services.actions,
             details=services.step_details,
-            is_done=_is_done,
             is_agent=is_agent,
-            stacked_apart=_stacked_apart,
-            born=_branch_births,
+            stacked_apart=stack_split,
             seats=branch_seats,
             key_of=key_of,
             parent=services.window,
@@ -1005,7 +1013,7 @@ def default_modules(
     scopes = _scope_kinds()
 
     # Constructed before the list because the projects index opens it and the Specs tab
-    # jumps into it. Its picture is every module's Qt-free half read once (_coverage_trace);
+    # jumps into it. Its picture is every module's Qt-free half read once (coverage/readers.py);
     # the surfaces a double-click reaches arrive as callables, and the Specs tab's is
     # resolved lazily because the two modules point at each other.
     def _step_passages(step_id: str) -> list[tuple[str, str]]:
@@ -1360,14 +1368,14 @@ def default_modules(
             # The Expenditure tab: what each step's runs consumed, from the project's
             # usage ledger, and a rate of tokens per estimated day learned from the
             # library's finished steps — where ledgers live is the store's to know.
-            step_spent=lambda project_id: _step_spent(store, project_id),
-            token_rate=lambda project_id: _token_rate(
+            step_spent=lambda project_id: step_spent(store, project_id),
+            token_rate=lambda project_id: token_rate(
                 store,
                 library,
                 project_id,
                 lambda step: _card_status(step) is Status.DONE,
             ),
-            ledger_stamp=lambda project_id: _ledger_stamp(store, project_id),
+            ledger_stamp=lambda project_id: ledger_stamp(store, project_id),
         )
     )
 
@@ -1403,12 +1411,12 @@ def default_modules(
             # Where each run's ledger record lives, and every project's ledger for the
             # sweep that reads what the runs consumed back into them.
             project_dir=lambda step_id: (
-                _ledger_dir(store, library.project_of(step_id).id) if library.has(step_id) else None
+                ledger_dir(store, library.project_of(step_id).id) if library.has(step_id) else None
             ),
             project_dirs=lambda: [
                 directory
                 for project in library.projects
-                if (directory := _ledger_dir(store, project.id)) is not None
+                if (directory := ledger_dir(store, project.id)) is not None
             ],
             tasks=services.tasks,
         )
@@ -1528,7 +1536,7 @@ def default_modules(
             ),
             harnesses=agent_harnesses(),
             # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.
-            usage_words=lambda step_id: _step_usage_words(store, library, step_id),
+            usage_words=lambda step_id: step_usage_words(store, library, step_id),
             pick_assets=pick_assets,
             # Run Agent asks before launching on a step whose prerequisites are not
             # done — the same status reader the Step statuses tab's frontier uses.
@@ -2075,9 +2083,7 @@ def default_modules(
                     step_id,
                     services.clock.today(),
                     accepted_by_merge=library.has(step_id)
-                    and _merged_into_its_branch(
-                        library, library.step(step_id), branches.reading_of
-                    ),
+                    and merged_into_its_branch(library, library.step(step_id), branches.reading_of),
                 ),
             )
         ),
@@ -2313,11 +2319,12 @@ def _briefing_sections(
 def _landed_work(library: "Library", step: "Step", facts: "RepositoryFacts | None") -> str:
     """What a landing is handed about the branch it lands: each step on it where it stands,
     the line *Work you collect* prints. Empty for a step that lands nothing."""
+    from dplanner.modules.branches.plan import branch_reading
     from dplanner.planning.branches import is_land
 
     if not is_land(step):
         return ""
-    stretch = _branch_reading(library.project_of(step.id)).of_land(step.id)
+    stretch = branch_reading(library.project_of(step.id)).of_land(step.id)
     if stretch is None:
         return ""
     return "\n".join(_source_line(member, facts) for member in stretch.members)
@@ -2536,7 +2543,9 @@ def _briefing_instruction(
 def _branches_in(project: "Project") -> "dict[str, str]":
     """The feature branch each step's work is on, for the steps a stretch not yet landed
     holds — and each landing, whose work is on the branch it brings back."""
-    found = _branch_reading(project)
+    from dplanner.modules.branches.plan import branch_reading
+
+    found = branch_reading(project)
     on: dict[str, str] = {}
     for step in project.steps:
         stretch = found.of_land(step.id) or found.innermost(step.id, open_only=True)
@@ -2590,9 +2599,10 @@ def _landing_instruction(library: "Library", land: "Step", look_for: str) -> str
     """A landing's instructions, generated from the stretch it closes, as a review's are
     from its subject: the branch, what it merges into, the order it is done in — and its
     own prose after, as what else to see to. A landing whose cut is gone is told to stop."""
+    from dplanner.modules.branches.plan import branch_reading
     from dplanner.planning.kinds import key_of
 
-    found = _branch_reading(library.project_of(land.id))
+    found = branch_reading(library.project_of(land.id))
     stretch = found.of_land(land.id)
     ref = _quoted(key_of(land) or land.title)
     if stretch is None:
@@ -2694,6 +2704,8 @@ def _default_briefing(read: "Callable[[Project], BranchReading] | None" = None) 
     verb prints are the same text by construction. ``read`` is how the window reads a
     project's branch stretches — cached, since Run Agent's state asks on every announce —
     and the CLI, with none, reads them afresh."""
+    from dplanner.modules.branches.plan import branch_plan
+    from dplanner.modules.step_agent_instruction.launcher import mainline
     from dplanner.modules.step_agent_instruction.prompt import Briefing
 
     return Briefing(
@@ -2704,50 +2716,7 @@ def _default_briefing(read: "Callable[[Project], BranchReading] | None" = None) 
         preamble=_agent_preamble,
         instruction=_briefing_instruction,
         no_worktree=_no_worktree,
-        branch=lambda library, step, facts: _branch_plan(library, step, facts, read),
-    )
-
-
-def _branch_plan(
-    library: "Library",
-    step: "Step",
-    facts: "RepositoryFacts | None",
-    read: "Callable[[Project], BranchReading] | None" = None,
-) -> "BranchPlan":
-    """Which branches a run of ``step`` works between, from the stretches that hold it.
-
-    A step on a branch starts its own from that branch and opens its PR against it; a
-    landing works on the branch itself and opens its PR against the branch its stretch was
-    cut from; anything else starts from the mainline its code location names — the remote's
-    default when it names none — and opens against the same. The first run in a stretch may
-    cut its branch on the remote: while nothing on it has recorded a branch or a PR, a
-    missing branch is one nobody made yet, and after that it is one somebody deleted.
-    """
-    from dplanner.modules.step_agent_instruction.launcher import (
-        DEFAULT_START,
-        BranchPlan,
-        mainline,
-    )
-
-    found = (read or _branch_reading)(library.project_of(step.id))
-    base = mainline(facts, step)
-    if found.overlaps(step.id):
-        named = " and ".join(stretch.branch for stretch in found.holding(step.id))
-        return BranchPlan(refusal=f"it is on {named}, and neither is inside the other")
-    landing = found.of_land(step.id)
-    stretch = landing or found.innermost(step.id, open_only=True)
-    if stretch is None:
-        return BranchPlan(start=f"origin/{base}" if base else "", pr_base=base)
-    cut_from = found.base_of(stretch.cut.id, base)
-    fresh = not stretch.landed and not any(
-        _recorded_work(member) for member in (*stretch.members, stretch.land)
-    )
-    return BranchPlan(
-        work_branch=stretch.branch if landing is not None else "",
-        start=f"origin/{stretch.branch}",
-        create=stretch.branch if fresh else "",
-        create_from=(f"origin/{cut_from}" if cut_from else DEFAULT_START) if fresh else "",
-        pr_base=found.base_of(step.id, base) if landing is not None else stretch.branch,
+        branch=lambda library, step, facts: branch_plan(library, step, mainline(facts, step), read),
     )
 
 
@@ -2759,84 +2728,6 @@ def _pr_base(step: "Step") -> str:
     return refs.pr_base if refs is not None else ""
 
 
-def _recorded_work(step: "Step") -> bool:
-    """Whether a step has recorded a branch or a PR — that its work was carried out."""
-    from dplanner.modules.github.aspect import read as github_read
-
-    return github_read(step) is not None
-
-
-def _branch_reading(project: "Project") -> "BranchReading":
-    """The project's branch stretches, read afresh — the CLI's; the window reads the
-    branches module's cached one."""
-    from dplanner.planning.branches import reading
-
-    return reading(project, _is_done)
-
-
-def _is_done(step: "Step") -> bool:
-    """Whether a step's own status says done — for a landing, that its branch landed."""
-    from dplanner.planning.status import Status, stored
-
-    return stored(step) is Status.DONE
-
-
-def _branch_births(project: "Project", branch: str) -> "tuple[Step, Step]":
-    """The two ends of a new stretch, dressed as the templates dress them: the cut named for
-    its branch with no estimate and no description, since nobody works it; the landing an
-    agent step of a quarter day, briefed by the stretch it closes rather than by a
-    description of its own."""
-    from dplanner.domain.model import Step
-    from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
-    from dplanner.modules.step_description.aspect import write_state as description_state
-    from dplanner.planning.agent import MODULE_ID as AGENT_ID
-    from dplanner.planning.agent import write_state as agent_state
-    from dplanner.planning.branches import CUT_ID, LAND_ID, write_cut, write_land
-    from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
-    from dplanner.planning.estimate import write as estimate_write
-
-    cut = Step(title=branch)
-    cut.module_data[CUT_ID] = write_cut(branch)
-    cut.module_data[ESTIMATION_ID] = estimate_write(None, on=False)
-    cut.module_data[DESCRIPTION_ID] = description_state(False)
-    land = Step(title=f"Land {branch}")
-    land.module_data[LAND_ID] = write_land(cut.id)
-    land.module_data[AGENT_ID] = agent_state(True)
-    land.module_data[ESTIMATION_ID] = estimate_write(0.25)
-    land.module_data[DESCRIPTION_ID] = description_state(False)
-    return cut, land
-
-
-def _stacked_apart(project: "Project", chosen: "set[StepId]") -> str:
-    """Why a pick would put part of a stack on a branch: a stack is one way in and one way
-    out, and a bracket through its middle would link into it."""
-    from dplanner.modules.project_editor.stacks import read_stacks
-
-    for stack in read_stacks(project.steps):
-        members = set(stack.members)
-        if members & chosen and not members <= chosen:
-            first = next(step for step in project.steps if step.id == stack.members[0])
-            return f"it would split the stack {first.title!r} — pick all of it, or none"
-    return ""
-
-
-def _merged_into_its_branch(
-    library: "Library",
-    step: "Step",
-    read: "Callable[[Project], BranchReading] | None" = None,
-) -> bool:
-    """Whether a step's PR merged into the branch of an open stretch holding it — the merge
-    that accepts it, the branch's own review coming when the branch lands."""
-    from dplanner.modules.github.aspect import read as github_read
-
-    refs = github_read(step)
-    if refs is None or not refs.pr_base:
-        return False
-    project = library.project_of(step.id)
-    stretch = (read or _branch_reading)(project).innermost(step.id, open_only=True)
-    return stretch is not None and stretch.branch == refs.pr_base
-
-
 def _no_worktree(step: "Step") -> str:
     """Why a run of ``step`` gets no worktree whatever its agent aspect says, or "" — the
     review's rule: it reads the work it reviews where that work is, and commits none."""
@@ -2845,67 +2736,23 @@ def _no_worktree(step: "Step") -> str:
     return NO_WORKTREE_FOR_A_REVIEW if is_review(step) else ""
 
 
-def _milestone_stats(library: "Library", project: "Project") -> dict[str, str]:
-    """What each milestone answers with: the schedule's accumulated days and landing date
-    at its row — the same pair the order table's milestone row highlights.
-
-    A milestone closes the block of work above it, so its number is the walk's total at
-    that row. One walk per project rather than one per milestone, because a canvas sync
-    asks for every milestone at once and the order is the same for all of them. A
-    milestone the project cannot date is absent; so is every step when nothing is a
-    milestone, which costs the sync no walk at all.
-    """
-    from dplanner.modules.estimation.schedule import project_schedule
-    from dplanner.planning.dates import format_date
-    from dplanner.planning.milestone import is_milestone
-    from dplanner.planning.schedule import format_days
-
-    if not any(is_milestone(step) for step in project.steps):
-        return {}
-    stats: dict[str, str] = {}
-    for scheduled in project_schedule(library, project):
-        step = scheduled.place.step
-        if not is_milestone(step):
-            continue
-        if scheduled.finish is not None:
-            stats[step.id] = (
-                f"{format_days(scheduled.accumulated)} · {format_date(scheduled.finish)}"
-            )
-        elif scheduled.accumulated:
-            stats[step.id] = format_days(scheduled.accumulated)
-    return stats
-
-
 def _ordinal(place: int) -> str:
     """``1st``, ``2nd``, ``3rd``, ``4th`` — the teens are the exception every table forgets."""
     suffix = "th" if 10 <= place % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(place % 10, "th")
     return f"{place}{suffix}"
 
 
-def _milestone_colors(library: "Library", project: "Project") -> dict[str, str]:
-    """Each milestone's hex — the one deal, handed to every surface that draws one.
-
-    The colour map is the *project's* assumption, not the user's: a report site exported
-    by any of a project's people should paint its milestones alike, and the Time tab's
-    picker would otherwise name a map it was not painting.
-    ARCHITECTURE.md's *Colour is a place on one map* has the rest.
-    """
-    from dplanner.modules.time_estimates.schedule import milestone_colors
-    from dplanner.planning.milestone import is_milestone
-
-    return milestone_colors(library, project, is_milestone)
-
-
 def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
     """The figure at each card's bottom right: a milestone's total and landing, how long a
     wait holds, any other step's estimate — what the canvas paints, read once for the
     report's graph."""
+    from dplanner.modules.estimation.schedule import milestone_stats
     from dplanner.planning.estimate import read as estimated_days
     from dplanner.planning.schedule import format_days
     from dplanner.planning.wait import read as wait_read
     from dplanner.planning.wait import stat as wait_stat
 
-    stats = _milestone_stats(library, project)
+    stats = milestone_stats(library, project)
     for step in project.steps:
         if step.id in stats:
             continue
@@ -3294,6 +3141,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
     from dplanner.modules.step_ticket.report import report_source as tickets
     from dplanner.modules.testing.report import report_source as tests
     from dplanner.modules.time_estimates.report import report_source as time_estimates
+    from dplanner.modules.time_estimates.schedule import milestone_colors
     from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
     from dplanner.planning.kinds import key_of, kind_word
     from dplanner.planning.milestone import read as milestone_read
@@ -3319,7 +3167,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
             badge_of=milestone_read,
             # The report's picture of the graph wears the same shades the window does, and
             # the same glyph in each card's key block.
-            colors_of=_milestone_colors,
+            colors_of=milestone_colors,
             glyph_of=_primary_glyph,
         ),
         order(
@@ -3520,6 +3368,7 @@ def _agent_epilogue(library: "Library", step: "Step", branches: "BranchPlan") ->
     review: it answers the rounds.
     """
     from dplanner.modules.auto_progress.aspect import collectors
+    from dplanner.modules.branches.plan import branch_reading
     from dplanner.modules.notes.reach import project_ref
     from dplanner.planning.kinds import key_of
     from dplanner.planning.review import is_review, reviews, settings
@@ -3576,7 +3425,7 @@ def _agent_epilogue(library: "Library", step: "Step", branches: "BranchPlan") ->
         if branches.pr_base
         else ""
     )
-    found = _branch_reading(library.project_of(step.id))
+    found = branch_reading(library.project_of(step.id))
     stretch = None if found.of_land(step.id) else found.innermost(step.id, open_only=True)
     if stretch is not None:
         cut, land = key_of(stretch.cut), key_of(stretch.land)
@@ -3730,130 +3579,29 @@ def _flows_into(library: "Library", project: "Project", step_id: str) -> list["S
 def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -> "Trace":
     """The coverage picture: milestones → features → spec passages → steps → tests and docs.
 
-    The one place the spec, the feature steps, the collectors, the tests and the docs
-    meet; each answers through its own Qt-free reader and ``coverage/trace.py`` only
-    arranges them. Derived on every read, like everything the graph could contradict.
+    ``coverage/readers.py`` reads every owner and ``coverage/trace.py`` arranges them; what
+    the coverage package may not import arrives here, as functions. Derived on every read,
+    like everything the graph could contradict.
     """
-    from dplanner.modules.coverage.trace import (
-        Citation,
-        Document,
-        Feature,
-        Readers,
-        TestRow,
-        build,
+    from dplanner.modules.coverage.readers import readers
+    from dplanner.modules.coverage.trace import build
+    from dplanner.modules.docs.collect import sources_for, state_of
+    from dplanner.modules.spec.documents import anchor_sources, document_texts
+    from dplanner.modules.testing.runs import latest_statuses
+    from dplanner.modules.time_estimates.schedule import milestone_colors
+
+    wired = readers(
+        kinds=_scope_kinds(),
+        anchor=anchor_sources,
+        documents=document_texts,
+        results=latest_statuses,
+        docs_state=state_of,
+        docs_sources=sources_for,
+        status=_card_status,
+        glyph=_primary_glyph,
+        milestone_colors=milestone_colors,
     )
-    from dplanner.modules.docs.aspect import read as docs_read
-    from dplanner.modules.docs.collect import sources_for
-    from dplanner.modules.docs.collect import state_of as docs_state
-    from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
-    from dplanner.modules.spec.cli import anchor_sources
-    from dplanner.modules.spec.documents import document_text, read_index
-    from dplanner.modules.testing.aspect import covered
-    from dplanner.modules.testing.runs import latest_results
-    from dplanner.modules.testing.runs import read as read_runs
-    from dplanner.planning.feature import is_feature
-    from dplanner.planning.feature import read as feature_read
-    from dplanner.planning.kinds import key_of
-    from dplanner.planning.milestone import read as milestone_read
-
-    scopes = _scope_kinds()
-    kinds = {kind.id: kind for kind in scopes}
-
-    def features(library: "Library", project: "Project", files: "FilesFor") -> list[Feature]:
-        steps = [step for step in project.steps if is_feature(step)]
-        cited = {step.id: feature_read(step) or () for step in steps}
-        refs = [(s.document, s.quote, s.digest) for step in steps for s in cited[step.id]]
-        anchors = iter(anchor_sources(files, project, refs))
-        return [
-            Feature(
-                step.id,
-                step.title,
-                step.id,
-                tuple(Citation(s.document, s.quote, s.page, next(anchors)) for s in cited[step.id]),
-            )
-            for step in steps
-        ]
-
-    def documents(project: "Project", files: "FilesFor") -> list[Document]:
-        try:
-            area = files(project.id, SPEC_ID)
-        except KeyError:
-            area = None
-        return [
-            Document(doc.name, doc.kind, document_text(area, doc) if area is not None else None)
-            for doc in read_index(project).documents
-        ]
-
-    def tests(
-        library: "Library",
-        project: "Project",
-        step_id: str,
-        stops_at: "Callable[[Step], bool] | None",
-    ) -> list[TestRow]:
-        return [
-            TestRow(test.id, test.title, step.id, step.title)
-            for step, test in covered(library, project, step_id, stops_at=stops_at)
-        ]
-
-    def results(project: "Project") -> dict[str, str]:
-        outcomes = latest_results(read_runs(project))
-        return {test_id: outcome.result.status for test_id, outcome in outcomes.items()}
-
-    def docs(library: "Library", project: "Project", step_id: str) -> str:
-        step = project.step(step_id)
-        if step is None:
-            return ""
-        state = docs_state(scopes, library, project, step_id)
-        if state != "never":
-            return state
-        # Never compiled, but there is something to compile — or a note of its own.
-        has_notes = bool(docs_read(step)) or bool(sources_for(scopes, library, project, step_id))
-        return "never" if has_notes else ""
-
-    return build(
-        Readers(
-            features=features,
-            documents=documents,
-            feature_kind=kinds["feature"],
-            milestone_kind=kinds["step_milestone"],
-            milestone_label=milestone_read,
-            step_key=key_of,
-            status=_card_status,
-            tests=tests,
-            results=results,
-            docs=docs,
-            # The milestone lane wears the same shades the canvas and the calendar do, and a
-            # card that is a step the canvas's glyph in its key block.
-            milestone_colors=_milestone_colors,
-            glyph=_primary_glyph,
-        ),
-        library,
-        project,
-        files,
-    )
-
-
-def _covered_tests(
-    library: "Library",
-    project: "Project",
-    step_id: str,
-    stops_at: "Callable[[Step], bool] | None" = None,
-) -> list[tuple[str, str, str]]:
-    """What a collector stands for: (test id, test title, owning step's title).
-
-    The one place the collector aspects and the tests aspect meet. None imports another; the
-    walk is the domain's and the filtering is testing's, and this hands the pair over as the
-    tuple a report can print. ``stops_at`` is where that walk gives way to the next collector
-    — passed through rather than interpreted here. Derived on every read: a stored coverage
-    list could disagree with the graph the moment ``dplanner step link`` runs with no window
-    open to notice.
-    """
-    from dplanner.modules.testing.aspect import covered
-
-    return [
-        (test.id, test.title, step.title)
-        for step, test in covered(library, project, step_id, stops_at=stops_at)
-    ]
+    return build(wired, library, project, files)
 
 
 def _paste_policies() -> tuple["PastePolicy", ...]:
@@ -4001,6 +3749,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     from dplanner.cli.scopes import lint_checks as scope_lint
     from dplanner.modules.auto_progress import cli as auto_progress_cli
     from dplanner.modules.branches import cli as branches_cli
+    from dplanner.modules.coverage.readers import covered_tests
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.feature import cli as feature_cli
@@ -4028,7 +3777,6 @@ def _lint_checks() -> tuple["LintCheck", ...]:
         *auto_progress_cli.lint_checks(is_agent=is_agent, key_of=key_of),
         # A branch is one way in and one way out; what it says is its PRs' bases.
         *branches_cli.lint_checks(
-            is_done=_is_done,
             is_agent=is_agent,
             is_milestone=is_milestone,
             pr_base_of=_pr_base,
@@ -4052,7 +3800,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
         # Qt-free reader answers it, handed over rather than imported.
         *scope_lint(
             kinds=scopes,
-            covered_by=_covered_tests,
+            covered_by=covered_tests,
             carries_tests=test_enabled,
         ),
     )
@@ -4198,7 +3946,9 @@ def default_cli_commands(
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.auto_progress import cli as auto_progress_cli
     from dplanner.modules.branches import cli as branches_cli
+    from dplanner.modules.branches.plan import branch_reading, merged_into_its_branch
     from dplanner.modules.coverage import cli as coverage_cli
+    from dplanner.modules.coverage.readers import covered_tests
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.feature import cli as feature_cli
@@ -4210,6 +3960,7 @@ def default_cli_commands(
     from dplanner.modules.project_assets.cli import read_titles
     from dplanner.modules.project_editor import cli as layout_cli
     from dplanner.modules.project_editor.stack_edits import bridged_removal
+    from dplanner.modules.project_editor.stacks import stack_split
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.spec.aspect import read_topology
@@ -4267,7 +4018,7 @@ def default_cli_commands(
         accepted by its PR merging into that branch, whether or not it was under review."""
         status = stored(step)
         accepted = status is Status.READY_TO_MERGE or (
-            status is Status.READY_FOR_REVIEW and _merged_into_its_branch(context.library, step)
+            status is Status.READY_FOR_REVIEW and merged_into_its_branch(context.library, step)
         )
         if not accepted:
             return False
@@ -4337,9 +4088,7 @@ def default_cli_commands(
         *auto_progress_cli.commands(is_agent=is_agent, status_for=stored, key_of=key_of),
         # A branch's two ends are born dressed as the window's Put on a Branch makes them.
         *branches_cli.commands(
-            born=_branch_births,
-            is_done=_is_done,
-            stacked_apart=_stacked_apart,
+            stacked_apart=stack_split,
             key_of=key_of,
         ),
         # A review talks to whoever it takes work from review on — the root's one answer —
@@ -4372,7 +4121,7 @@ def default_cli_commands(
         # What any collector gathers is one derivation asked three ways, so it is one verb
         # rather than one per aspect. The kinds and the coverage walk arrive as arguments,
         # so cli/scopes.py imports no module and no module imports it.
-        *scope_commands(kinds=scopes, covered_by=_covered_tests),
+        *scope_commands(kinds=scopes, covered_by=covered_tests),
         # The coverage picture is every module's Qt-free half read once and arranged;
         # assembled here, so neither the verbs nor the tab import any of them.
         *coverage_cli.commands(trace_of=_coverage_trace),
@@ -4397,7 +4146,7 @@ def default_cli_commands(
             file_modules=tuple(source.id for source in sources),
             key_of=key_of,
             # A sort leaves a card on a branch the room of its strip, as the window does.
-            strips=lambda project: _strips(_branch_reading(project)),
+            strips=lambda project: _strips(branch_reading(project)),
         ),
         # The staffing matrix reads estimates, agent-ness and the start date through the
         # owners' Qt-free readers — handed over here so no cli.py imports another module's.
@@ -4457,71 +4206,6 @@ def default_cli_commands(
     checklist = checklist_commands(_machine_checks(files=lambda: generate(described, specs)))
     described.register_all(checklist)
     return [*commands, *skill, *installer, *checklist]
-
-
-def _ledger_dir(store: "LibraryStore", project_id: str) -> "Path | None":
-    """Where a project keeps its ledger: its directory, or None for one the store does
-    not hold."""
-    try:
-        return store.project_dir(project_id)
-    except KeyError:
-        return None
-
-
-def _step_spent(store: "LibraryStore", project_id: str) -> "dict[str, Spent]":
-    """What each step's agent runs consumed, per model, from the project's usage ledger."""
-    from dplanner.domain.expenditure import spent_by_step
-    from dplanner.domain.ledger import records
-
-    directory = _ledger_dir(store, project_id)
-    if directory is None:
-        return {}
-    return spent_by_step((record.step, record.models()) for record in records(directory))
-
-
-def _token_rate(
-    store: "LibraryStore",
-    library: "Library",
-    project_id: str,
-    done_for: "Callable[[Step], bool]",
-) -> "Rate | None":
-    """Tokens of work per estimated day: learned from the library's *other* projects when
-    they have finished history, since a rate learned from the steps it is compared with
-    would make the offset end at nought; from this project only when nothing else has."""
-    from dplanner.domain.expenditure import ELSEWHERE, HERE, Spent, learned_rate
-    from dplanner.planning.estimate import read as days_for
-
-    def over(project_ids: "list[str]", source: str) -> "Rate | None":
-        spent: dict[str, Spent] = {}
-        for other in project_ids:
-            spent.update(_step_spent(store, other))
-        steps = [step for other in project_ids for step in library.project(other).steps]
-        return learned_rate(
-            steps, lambda step: spent.get(step.id, Spent()), days_for, done_for, source
-        )
-
-    others = [project.id for project in library.projects if project.id != project_id]
-    return over(others, ELSEWHERE) or over([project_id], HERE)
-
-
-def _ledger_stamp(store: "LibraryStore", project_id: str) -> object:
-    from dplanner.domain.ledger import fingerprint
-
-    directory = _ledger_dir(store, project_id)
-    return None if directory is None else fingerprint(directory)
-
-
-def _step_usage_words(store: "LibraryStore", library: "Library", step_id: str) -> str:
-    """What the agent runs on a step consumed, as the Agent tab says it; "" for none."""
-    from dplanner.domain.ledger import records
-    from dplanner.modules.step_agent_run.usage import summary
-
-    if not library.has(step_id):
-        return ""
-    directory = _ledger_dir(store, library.project_of(step_id).id)
-    if directory is None:
-        return ""
-    return summary(record for record in records(directory) if record.step == step_id)
 
 
 def _names_session(harness_id: str) -> bool:

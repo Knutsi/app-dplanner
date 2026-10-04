@@ -17,8 +17,8 @@ from dataclasses import dataclass, field
 from dplanner.domain.model import Library, Step
 from dplanner.domain.repositories import RepositoryFacts
 from dplanner.domain.store import FilesFor
-from dplanner.modules.step_agent_instruction.launcher import BranchPlan
 from dplanner.planning.agent import asset_paths, read, uses_worktree
+from dplanner.planning.branches import BranchPlan
 
 
 @dataclass(frozen=True)

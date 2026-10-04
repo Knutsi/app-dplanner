@@ -533,7 +533,8 @@ src/dplanner/
 │   │                        pane again; the status-bar button and the Agents browser are
 │   │                        `view.py`) — and what its runs consumed: harvested into the
 │   │                        project's ledger (`harvest.py`, `domain/ledger.py`), said by
-│   │                        `usage.py`; `dplanner usage show|list|harvest|record`)
+│   │                        `usage.py`, which also reads the ledger per project; `dplanner
+│   │                        usage show|list|harvest|record`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab, and `status …`;
 │   │                        the vocabulary and format are `planning/status.py`'s; setting one is
 │   │                        `workflows.py`, which the window and the CLI both call
@@ -554,7 +555,9 @@ src/dplanner/
 │   ├── branches/            a stretch on a feature branch: the cut that starts it and the
 │   │                        landing that merges it back (two aspects), Step ▸ Put on a Branch…
 │   │                        and Remove Branch…, `dplanner branch|cut|land`, `branch.*` lint;
-│   │                        what is on a branch is `domain/branches.py`'s derivation
+│   │                        what is on a branch is `domain/branches.py`'s derivation, and
+│   │                        what it means for a run — its branches, a merge that accepts — is
+│   │                        `plan.py`'s
 │   ├── step_review/         a step whose agent reviews the step it waits on: the Type ▸ Review
 │   │                        toggle, the Review template and tab, `dplanner review` (the
 │   │                        conversation both sides drive, `review wait` included) and its
@@ -611,7 +614,8 @@ src/dplanner/
 │   │                        the locator, the blobless shallow sparse fetch and the size guard
 │   │                        (source.py), and the dialog that lists the remote's folders
 │   ├── coverage/            the plan against the spec: milestones → features → passages →
-│   │                        steps → tests and docs (trace.py, one derived picture), the
+│   │                        steps → tests and docs (trace.py, one derived picture, read from
+│   │                        every owner by readers.py), the
 │   │                        Coverage tab's lanes as a drill-down (scene.py), and `dplanner
 │   │                        coverage show|spec|review`
 │   ├── project_assets/      every asset a project carries and what uses each — the Assets
