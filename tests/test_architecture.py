@@ -56,6 +56,7 @@ QT_PACKAGES = ("PySide6", "shiboken6")
 # composition root imports a file at CLI time, it belongs in this tuple.
 HEADLESS_FILES = (
     "cli.py",
+    "workflows.py",
     "roles.py",
     "checks.py",
     "aspect.py",

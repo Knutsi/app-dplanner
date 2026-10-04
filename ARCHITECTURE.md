@@ -4496,6 +4496,30 @@ The same `status set` also takes the agent's banner down: a status that says nob
 working the step ends the at-work claim on it — *An agent at work says so, and the window
 says it back* has why.
 
+### A workflow is one function under both surfaces
+
+Sharing the command did not share the verb. The window's *Set Status* pushed
+`status_command` and nothing else, while `status set` refused a wait, held an agent at
+review, kept a `--because` note and ended the claim — so a director marking a step done in
+the window left the agent's banner standing, and "neither surface can grow a behaviour the
+other lacks" was quietly false. The fix moves the shared object up one level, from the
+command to the workflow: `modules/step_status/workflows.py`'s `StatusWorkflow.set_status`
+returns a `Change` (`domain/workflow.py`) — one command, and the follow-ups to perform once
+it is accepted (`EndClaim`). The window pushes the command as one undo gesture, the CLI
+applies it and flushes, and both run `perform`; `refusal()` is the same function behind the
+menu's greyed label and the CLI's error, and because it runs in an action state it reads only
+the steps it is handed. The context system is untouched: the `ActionSpec` still decides which
+steps a verb acts on.
+
+Three types carry rules the code used to keep by habit. **`Actor = Person | AgentRun |
+Daemon`**: the director rule is one `match` — a person may finish a step, an agent run goes
+through review — and mypy fails a branch that forgets a kind. **`PlanView`** is `Library`'s
+queries alone, so a workflow that tried to mutate does not type-check. **`FollowUp`** is a
+union every performer matches with `assert_never`, so a new kind of effect cannot be
+silently dropped by one surface. A follow-up is an external fact, performed after the
+change and never undone: undoing the director's done brings the status back, not the
+agent's claim (*Syncing an external fact* is the same rule from the other side).
+
 **Time reads review and merge as work in flight, and dates it from when it started.** Not
 landed — the percent, the Step statuses tab and `requires` all say so — so the Time tab, the
 recorder, the matrix, the report and the simulator read both words as *in progress*, through

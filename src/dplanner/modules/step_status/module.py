@@ -9,15 +9,20 @@ table's, the menu bar and the command palette at once, because that is what regi
 read), as one undo step: a lasso on the canvas, or the rows ticked in the Step statuses
 tab, all move at once. It reads as checked only when every one of them already stands
 there, and a wait among them greys it, saying why — a wait has no status to set.
+
+**The verb is the workflow's, not this module's.** Whether it applies and what it writes come
+from ``workflows.py``, the same calls ``dplanner status set`` makes; the window's actor is
+the director, so a status that says the work stopped ends the agent's claim on the step.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from PySide6.QtGui import QColor, QIcon
 
 from dplanner.core.clock import Clock
 from dplanner.domain.model import Library, Step
+from dplanner.domain.workflow import EndClaim, Person
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -27,16 +32,8 @@ from dplanner.framework.action_registry import (
 from dplanner.framework.context import Context
 from dplanner.framework.step_selection import chosen_steps
 from dplanner.framework.undo import UndoService
-from dplanner.planning.status import (
-    DATA_FORMAT,
-    MODULE_ID,
-    Status,
-    label,
-    no_status,
-    phrase,
-    status_command,
-    stored,
-)
+from dplanner.modules.step_status.workflows import LABEL, StatusWorkflow, perform
+from dplanner.planning.status import DATA_FORMAT, MODULE_ID, Status, label, phrase, stored
 from dplanner.theme.icons import (
     check_icon,
     eye_icon,
@@ -63,9 +60,8 @@ class StepStatusDeps:
     undo: UndoService[Library]
     actions: ActionRegistry
     clock: Clock  # The day a status change is stamped with.
-    # A wait has no status of its own — it is over when its day comes — so the verbs grey
-    # on one. The composition root knows what marks a wait.
-    works_nobody: Callable[[Step], str] = field(default=lambda _step: "")
+    workflow: StatusWorkflow
+    end_claim: Callable[[EndClaim], bool]  # The at-work board's; answers whether one stood.
 
 
 class StepStatusModule:
@@ -103,8 +99,8 @@ class StepStatusModule:
             steps = self._chosen(context)
             if not steps:
                 return DISABLED
-            if kind := next(filter(None, map(self._deps.works_nobody, steps)), ""):
-                return ActionState(enabled=False, label=f"{label(status)} — {no_status(kind)}")
+            if why := self._deps.workflow.refusal(steps, status, Person()):
+                return ActionState(enabled=False, label=f"{label(status)} — {why}")
             return ActionState(checked=all(stored(step) is status for step in steps))
 
         return state
@@ -112,15 +108,19 @@ class StepStatusModule:
     def _setter(self, status: Status) -> Callable[[Context], None]:
         def run(context: Context) -> None:
             steps = self._chosen(context)
-            if any(self._deps.works_nobody(step) for step in steps):
+            if self._deps.workflow.refusal(steps, status, Person()):
                 return
             today = self._deps.clock.today()
-            with self._deps.undo.gesture("Set Status"):
-                for step in steps:
-                    if stored(step) is status:
-                        continue
-                    self._deps.undo.push(
-                        status_command(step, status, today=today, label="Set Status")
-                    )
+            library = self._deps.library
+            changes = [
+                self._deps.workflow.set_status(library, step, status, actor=Person(), today=today)
+                for step in steps
+            ]
+            with self._deps.undo.gesture(LABEL):
+                for change in changes:
+                    if change.command is not None:
+                        self._deps.undo.push(change.command)
+            for change in changes:
+                perform(change, self._deps.end_claim)
 
         return run

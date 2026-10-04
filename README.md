@@ -389,6 +389,7 @@ src/dplanner/
 │   ├── branches.py          which steps are on a feature branch: after a cut, until its landing
 │   ├── short_titles.py      what a project is called on a tab: its initials, unique in the library
 │   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
+│   ├── workflow.py          what a workflow hands back (Change, its follow-ups), who asks (Actor), what it reads (PlanView)
 │   ├── shelf.py             where a turned-off aspect's data waits: turn_off / turn_on, and the migration into it
 │   ├── fields.py            bindable prose, keyed by the module that owns it
 │   ├── assets.py            attaching files to a module's file area, and listing them
@@ -528,7 +529,8 @@ src/dplanner/
 │   │                        project's ledger (`harvest.py`, `domain/ledger.py`), said by
 │   │                        `usage.py`; `dplanner usage show|list|harvest|record`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab, and `status …`;
-│   │                        the vocabulary and format are `planning/status.py`'s
+│   │                        the vocabulary and format are `planning/status.py`'s; setting one is
+│   │                        `workflows.py`, which the window and the CLI both call
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
 │   ├── step_wait/           a step that holds what requires it, until a day or for working days: the
 │   │                        Type ▸ Wait toggle, the Wait template, its Details block, `dplanner wait`
