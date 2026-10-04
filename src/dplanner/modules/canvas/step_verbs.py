@@ -3,7 +3,7 @@
 **Linking is here, and it is here rather than in the canvas on purpose.** A drop on the canvas
 runs :data:`steps.link` exactly as the menu does, so the verb is in the command palette too,
 its refusals come from one place, and it can be tested by handing it a constructed ``Context``
-with no widget in sight. See ``ARCHITECTURE.md`` for the chain this is one link of.
+with no widget in sight. See ``docs/architecture/core.md`` for the chain this is one link of.
 
 It reads **two selected steps, in the order they were selected: the second waits on the
 first.** That is the drag written down — dragging from A's handle onto B means "A, then B" —

@@ -17,12 +17,18 @@ paths:
 
 # Step panel — aspect toggles, the shelf, Details blocks, prose editors and assets
 
+- **Double-clicking a step anywhere runs `steps.details`.** It is the one gesture across
+  canvas, order, progression and estimates; a table runs it against a context naming exactly
+  the row's step. Reveal-in-graph is `steps.reveal` in the Step menu, not a double-click.
+  **The one exception is a table whose row is not a step**: in the Tests tabs a row *is* a
+  test and its step is a column, so a double-click runs `test.details` and reveals the Test
+  panel beside that tab's roster — `docs/architecture/collectors.md`'s *A test is run from a panel*.
 - **The panel has one host: the `steps.details` modal.** It is not anchored in a window area
   and does not follow the selection — nine tabs do not fit a 360 px column, and an editor
   that appeared on a selection sat above whichever panel the reader had opened. It is driven
   by `show_step`, so it stays on the step it was opened about; a test reaches it through the
-  `step_editor` fixture, which is the application's own path. `ARCHITECTURE.md`'s *The step
-  editor is a modal* has the reasoning.
+  `step_editor` fixture, which is the application's own path. `docs/architecture/step-panel.md`'s
+  *The step editor is a modal* has the reasoning.
 - **A toggleable aspect's tab follows the aspect.** Milestone, Feature, Agent, Review,
   Ticket, Test, Check and Start are Step ▸ Type toggles (independent, never a radio group),
   and each that has a tab registers its `InspectorSection` with a `shown_for` predicate so
@@ -30,8 +36,8 @@ paths:
   `## Instructions` block, decided by `agent_briefing/instructions.py`'s `instruction`; a
   *separate* instruction (the checkbox in the Details tab's Description block,
   `dplanner agent set`; dropped atomically with `agent set --clear`) is the opt-out for a
-  step whose how-to-execute differs from what-it-is. `ARCHITECTURE.md`'s *The description
-  is the instructions* has the reasoning.
+  step whose how-to-execute differs from what-it-is. `docs/architecture/agents.md`'s *The
+  description is the instructions* has the reasoning.
 - **Every step tab follows a toggle, and absence encodes the default — in both directions.**
   Estimate, Description and GitHub are toggles too now. For most aspects absence
   means *off* and the stored `{"on": true}` marker records the claim; for **Estimate and
@@ -49,7 +55,7 @@ paths:
   the module hands over `enabled`, a `fresh` entry and (for the two opt-out aspects) what
   to `leave` — and every CLI `clear`/`off` verb applies the same `turn_off`. The migration
   pass reaches into the shelf (`migrate_shelved`) and the asset catalog counts a shelved
-  prose's links as uses. `FORMAT.md` has the shape; `ARCHITECTURE.md`'s *Turning an
+  prose's links as uses. `FORMAT.md` has the shape; `docs/architecture/step-panel.md`'s *Turning an
   aspect off shelves it* has the reasoning.
 - **The aspect bar across the panel's top renders the Type verbs, never a copy of them** —
   and it is their only seat: they are `in_menus=False`, the palette finding them under
@@ -96,12 +102,12 @@ paths:
   expanding when the widget's *own* layout does, so without the cap every block is
   expansive whatever its section declared; the cap is what makes `stretch` authoritative,
   and the stretch is zero or it splits the leftover with the block that asked for it.
-  `ARCHITECTURE.md`'s *The Details tab hosts the same contract, as
+  `docs/architecture/step-panel.md`'s *The Details tab hosts the same contract, as
   blocks* has the reasoning — including why a host is a registry instance, never a flag.
 - **A large text field expands into a modal editor** — `framework/text_dialog.py`: a
   second `TextBinding` over the same `TextField`, live-synced through the foreign-change
   path, opened from the corner button `attach_expand` pins onto the editor.
-  `ARCHITECTURE.md`'s *Expanding an editor is a second binding, not a copy* has the
+  `docs/architecture/step-panel.md`'s *Expanding an editor is a second binding, not a copy* has the
   reasoning; never copy text out into a dialog and back.
 - **Every prose editor wears the markdown strip, and a verb on it is one splice.**
   `framework/markdown_toolbar.py` over any `ProseEdit`: dense and un-banded, because a
@@ -125,8 +131,8 @@ paths:
   because a test's body is keyed by the test while its images belong to the step. What counts
   as an arriving file is `framework/mime_files.py`, shared with the spec module's rich-text
   editor so the two cannot disagree about a drop. Every prose editor in the application has
-  it. `ARCHITECTURE.md`'s *A pasted image is an attachment and a link, not an embed* has the
-  reasoning.
+  it. `docs/architecture/step-panel.md`'s *A pasted image is an attachment and a link, not an embed*
+  has the reasoning.
 - **The asset library is a derived union, and reuse is a copy.** Every file-carrying module
   exports an `asset_source()` from its Qt-free half saying what its areas hold and what
   still uses each file; `domain/assets.catalog()` is one derivation with three readers —
@@ -140,8 +146,8 @@ paths:
   metadata (`{"titles": …}`), never part of a link — renaming cannot break a reference.
   Agent-instruction files are used *by existence* (briefings carry the area wholesale)
   and a note's file while a note links it; the pool (`asset attach`) is `prunable=False`; `asset prune` is dry-run by
-  default and never enters a directory no source scanned. `ARCHITECTURE.md`'s *An asset
-  library is a view, not a store* and *Inserting an existing asset is a paste with a
+  default and never enters a directory no source scanned. `docs/architecture/step-panel.md`'s *An
+  asset library is a view, not a store* and *Inserting an existing asset is a paste with a
   different source* have the reasoning.
 - **Renaming a module is a `Takeover`, not a migration.** The on-disk id is the contract
   between the old module and the new one, so the successor's package carries the retired
@@ -170,5 +176,5 @@ paths:
   `hint` as the tab's tooltip, and aims them only when the dialog moves to another project
   — a prose tab rebinds whenever it is aimed. The dialog is built on first use, so there is
   no position to keep in `default_modules()`. Leaving the dialog seals the undo step a tab
-  was growing. The agent instruction's tab is the example; `ARCHITECTURE.md`'s *A
+  was growing. The agent instruction's tab is the example; `docs/architecture/persistence.md`'s *A
   project's forms live in its dialog* has the reasoning.

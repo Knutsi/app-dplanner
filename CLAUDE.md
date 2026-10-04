@@ -20,7 +20,7 @@ by the module that writes it, so a feature arrives without the model learning an
 Built from [app-framework](https://github.com/Knutsi/app-framework). The architecture — what
 a module is, how features cooperate without importing each other, where state lives — is
 documented in that repo's `docs/index.html`. Read it once before adding a feature; it is
-worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on top.
+worth the twenty minutes. `ARCHITECTURE.md` here indexes what DPlanner added on top.
 
 ## Engineering principles
 
@@ -53,11 +53,12 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
   empty page — to the primitive in `framework/` and the render to compare against; build
   from those, never by styling a surface by name, and run its *Bringing a surface up* over
   any surface you touch. `FORMAT.md` is the standard for
-  anything that reaches disk. `ARCHITECTURE.md` is where a rule's *reasoning* lives — when
-  you settle an architectural question, write the rule here (or in the
-  `.claude/rules/` file whose paths cover it) and the why there, and have each point at the
-  other. A decision that lives only in a commit message is one the next
-  feature rediscovers.
+  anything that reaches disk. `docs/architecture/<area>.md` is where a rule's *reasoning*
+  lives, one file per rules area (`ARCHITECTURE.md` is their index) — when you settle an
+  architectural question, write the rule here (or in the `.claude/rules/` file whose paths
+  cover it) and the why there, in the present tense, and have each point at the other. What
+  it replaced goes in `docs/architecture/decisions.md`, dated. A decision that lives only in
+  a commit message is one the next feature rediscovers.
 
 ## Checks — run all four before finishing any task
 
@@ -166,7 +167,7 @@ application. The framework is still ours to evolve — see *Deliberate divergenc
 1. `core/` imports no Qt and nothing from the rest of the application.
 2. `domain/` imports no Qt, and imports `core` only. It is tested with plain pytest.
 3. `planning/` imports `core` and `domain` only. A status is a `planning.status.Status`,
-   never a word — ARCHITECTURE.md's *Planning owns status*.
+   never a word — `docs/architecture/core.md`'s *Planning owns status*.
 4. `cli/` imports no Qt and nothing above `planning/`. A module's `cli.py` and `aspect.py` are
    the same: importable without a graphics stack. The CLI is how an agent drives DPlanner,
    and it has to start in milliseconds on a machine with no GUI libraries at all.
@@ -174,7 +175,7 @@ application. The framework is still ours to evolve — see *Deliberate divergenc
 6. A module reaches another only through its headless `aspect.py` (facts) or `workflows.py`
    (a verb returning a `Change`) — or any file of a package with no `module.py`, which is
    headless all through (`modules/agent_briefing`). Only `modules/__init__.py` imports the
-   rest. ARCHITECTURE.md's *What holds the tier and the workflows in place*.
+   rest. `docs/architecture/core.md`'s *What holds the tier and the workflows in place*.
 7. Modules never import `AppServices`, the builder, or the concrete window. Window
    capabilities come through the protocols in `framework/window.py`.
 8. `app.py` and `entry.py` import the composition root and nothing deeper.
@@ -192,7 +193,7 @@ and neither can grow a behaviour the other lacks without somebody editing that f
 **A whole verb is a workflow**: a `workflows.py` function returns a `Change`; each surface
 applies its command as one command, persists it, and only then performs the follow-ups
 (`CliContext.after_flush`; after the gesture) — each attempted, failures reported, never
-rolled back (ARCHITECTURE.md's *A workflow is one function under both surfaces*).
+rolled back (`docs/architecture/core.md`'s *A workflow is one function under both surfaces*).
 
 It follows that a feature has two halves in one package:
 
@@ -212,7 +213,8 @@ modules/<name>/
 **A Qt file's name says its role** (architecture rule 15): `activity.py` or `<x>_activity.py`
 holds a tab, `dialog.py` or `<x>_dialog.py` a modal, `scene.py` a `QGraphicsScene`,
 `panel.py` a side panel, `status_widget.py` a status-bar widget, `settings_page.py` a
-settings page — and nothing is `view.py`. ARCHITECTURE.md's *A file name has one meaning*.
+settings page — and nothing is `view.py`. `docs/architecture/core.md`'s *A file name has one
+meaning*.
 
 The Qt-free files are checked by **path** — `HEADLESS_ROLES`, and per package
 `HEADLESS_FILES`, in `tests/test_architecture.py`. If the composition root reaches a new file
@@ -289,8 +291,8 @@ what reaches them:
 **A new rule goes in the area file whose paths cover what it governs**, and in this file only
 when it binds edits no one area's paths reach — so adding to the core means trimming it:
 `tests/test_rules.py` holds it under 32 KiB, and claims every module package for an area.
-`ARCHITECTURE.md`'s *The rulebook is loaded by where you work* has the measurements and the
-reasoning.
+`docs/architecture/core.md`'s *The rulebook is loaded by where you work* has the measurements and
+the reasoning.
 
 | Area file | What it covers |
 |---|---|
@@ -306,133 +308,18 @@ reasoning.
 | `runtime.md` | telemetry, diagnostics, discarding a build, LLM calls and dictation |
 | `graph-model.md` | edges, auto-progress links, step numbers and isolation |
 
-## Mechanical facts worth knowing
+## The one chain every change follows
 
-- **Every change follows one chain: `action(context) → command → model → signal → views`.**
-  A gesture is not a special case — a canvas drop runs the same `ActionSpec` the menu does, so
-  the verb exists in the palette too and can be tested by handing it a constructed `Context`
-  with no widget in sight. Nothing pushes an update at a view: the model emits, each view
-  decides what to redraw, and the `origin` is how the view that caused the change knows to
-  ignore its own echo. **`ARCHITECTURE.md` has the diagram and why each link is there** — read
-  it before adding a surface that changes anything.
-- **Only the active pane speaks for the user.** The window can show two or three tab groups
-  side by side, and there is still exactly one context. An activity that publishes a
-  selection must do it only while it is the current one — see `ProjectActivity._is_active`.
-- **One dock panel per window, one side panel per tab — and a page of tabs is a modal.** A
-  dock panel is anchored in a window area and follows the window by reading the context:
-  one instance however many tabs are open. A side panel is built by the tab and follows
-  *that* tab's rows (Problems beside the canvas, the Test panel beside a roster), so two
-  Tests tabs each carry one. The step editor left the areas entirely — `steps.details` is
-  the *only* place a step's aspects are edited, since nine tabs do not fit a 360 px column
-  — and a project's forms are the tabs of **Project ▸ Settings…**, a dialog aimed at one
-  project like the modal about one step. The areas hold the index alone, and an area no
-  panel stands in hides its View toggle. `ARCHITECTURE.md`'s *Where a panel goes* and the
-  sections it points at have the rest.
-- **Double-clicking a step anywhere runs `steps.details`.** It is the one gesture across
-  canvas, order, progression and estimates; a table runs it against a context naming exactly
-  the row's step. Reveal-in-graph is `steps.reveal` in the Step menu, not a double-click.
-  **The one exception is a table whose row is not a step**: in the Tests tabs a row *is* a
-  test and its step is a column, so a double-click runs `test.details` and reveals the Test
-  panel beside that tab's roster — `ARCHITECTURE.md`'s *A test is run from a panel*.
-- **A canvas key names action ids; it is never an `ActionSpec.shortcut`.** A bare `h` on a
-  menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
-  `modules/canvas/keymap.py`, where a key names the verbs it means in order and the
-  first the context allows runs — that is how one Delete key covers links and steps.
-- **A painter never trusts `option.palette`.** Qt fills `QStyleOptionGraphicsItem.palette`
-  once, when the scene is created, and never refreshes it, so every canvas item kept the
-  colours of whatever theme its tab opened in. `items.live_palette()` is the only source of
-  colour on the canvas. Its cousin: **a colour copied out of the palette onto a widget goes
-  stale** — `TabHost` tints its tab titles, so it re-tints on `QEvent.PaletteChange`. If a
-  surface stores a colour, it owes that hook.
-- **Work may leave the GUI thread; mutation may not.** `core.signals.Signal` is synchronous
-  and has no thread affinity, so the model is only ever changed on the GUI thread. Anything
-  computed off it returns through `TaskRunner`, the one place that uses real Qt signals.
-- **A view of one project hears that project's changes, and a rebuild is coalesced.** A tab
-  subscribes through `follow_project(library, project_id, changed)` (`framework/activity.py`;
-  `follow_target` for a panel section whose step moves), which asks the model's
-  `belongs_to` about the node each signal names — a rename in project B is nothing for
-  project A's table to redraw for. What it calls is a `Debounced` (`framework/debounce.py`):
-  `trigger()` restarts a single-shot timer, so a burst runs the rebuild once, over the latest
-  state, and nothing queues — the canvas at 0 ms (prose after a settle), tables and lists after
-  `SETTLE_MS` (300 ms), the Time tab after 500 ms. **Tests run in immediate mode**: the `session` fixture sets
-  `services.debounce.set_immediate(True)`, so every trigger runs inline and a test asserts on
-  a view the line after a push exactly as before; the deferred path is tested once with real
-  timers and once per view by switching it off and calling `flush_all()`. Never
-  `qtbot.wait` for a rebuild. **A settle behind a modal waits for it**: one owned outside
-  the active modal re-arms rather than runs, so typing in Step Details rebuilds nothing
-  behind it; a 0 ms run never waits (`ARCHITECTURE.md`'s *A settle behind a modal waits
-  for it*).
-  **And a coalesced view says that a rebuild is owed**: an
-  `UpdatingIndicator` (`framework/signalling.py`) at the right end of the strip — the
-  caption row, in a view with no strip — `follow()`ing the view's one `Debounced`, whose
-  `pending_changed` settles on a rebuild that raised as much as one that returned. Wire it
-  where the `Debounced` is built; never show and hide a label by hand. **It is a turning
-  arc and no words** — the same `Spinner` a working button turns. Never move a derivation
-  to a worker thread for speed: it is pure Python competing for the GIL, and a thread alive
-  at teardown is the suite's SIGSEGV shape — `ARCHITECTURE.md`'s *A view refresh is coalesced, and hears one project* has the
-  measurements.
-- **The context is announced once per event-loop turn, and a gesture changes the
-  selection once.** `ContextService.set_scope`/`clear_scope`/`refresh` update the snapshot
-  synchronously — `current()` is always true, which is all a verb run right after a
-  publish reads — but the fan-out to every action state, toolbar, panel and the menu bar
-  goes through `announce`, a 0 ms `Debounced` the builder wires, so a gesture that
-  publishes seven times costs one re-evaluation over the final state and never shows a
-  panel a selection that was empty for a microsecond. Three rules keep it that way:
-  `GraphScene.select_steps` announces once; a verb that needs a selection the user did not make is
-  handed a **constructed `Context`** (`_on_link_requested`) rather than having the canvas
-  select for it; and **a panel that steps aside keeps its content** (a side panel is fed
-  while hidden). **No subprocess in an action state or a structure
-  listener**: `origin_url` is memoised on the config file's mtime, and the sync module
-  asks git about membership only when the *library's* children change. **And no walk
-  over a project in an action state**: a state runs on every announce, so a derivation
-  over every step is paid per keystroke. The pattern
-  is the Problems count's: the module settles the answer once per burst in a `Debounced`
-  and the state *reads* it (`DocsModule._frontier_of`), with the settle announcing the
-  context so the label catches up; the gesture itself computes fresh.
-  `scripts/measure_scaling.py --scenarios connect,paste` is the number to quote.
-  `ARCHITECTURE.md`'s *The context is announced once per turn* has the reasoning.
-- **Every model change goes through a command** on the single undo stack, and carries an
-  `origin` so the view that made the edit can ignore its own echo. Two kinds of change
-  bypass the stack, never the vocabulary: an external fact (the bullet below) and
-  **reading disk** — `load`, membership, and the store adopting another writer's change —
-  which apply the library's mutators directly with an origin of their own.
-- **A background sync of an external fact applies its command directly, off the undo
-  stack, with its own origin** — undoing the user's edit must never restore a stale PR
-  state instead. `modules/github/refresh.py` is the example; `ARCHITECTURE.md`'s *Syncing
-  an external fact* has the reasoning.
-- **Blocking work runs through `TaskRunner`**, never on the GUI thread: storage operations,
-  LLM calls, anything that touches the network. It appears in the task centre for free.
-  The one documented exception — storage operations that rewrite the working tree, which
-  must complete before the app touches anything else — is `ARCHITECTURE.md`'s *Storage
-  operations that rewrite the working tree are synchronous*.
-- **`Library.link_refusal()` is the only authority on a legal edge.** `set_edges` asks it
-  before writing, and `steps.link`'s state asks it to decide whether the menu entry is enabled
-  and what a greyed one says. Never write a second reachability check in a view (ARCHITECTURE.md
-  has the fortnight it cost).
-- **An action that exists but does not apply right now is DISABLED, never HIDDEN.** A greyed
-  entry teaches the precondition — its `label` carries the reason where there is one. HIDDEN
-  is reserved for a capability absent from this build (a feature flag, a storage provider
-  without history) and for a verb whose opposite occupies its slot (`steps.link` stands down
-  while Unlink is offered). The palette filters on runnable; every other presenter — menu
-  bar, toolbars, `build_menu` popups — shows the greyed entry. `ARCHITECTURE.md`'s *Hidden
-  means absent; disabled means not now* has the reasoning.
-- **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
-  `MENU_STRUCTURE` — the index tree has `Project`, the tab bar View's Tabs submenu (the
-  `submenu` filter) — and `fill_bands` composes bands of them: the canvas's by what is under
-  the cursor (`menus.py`). Make the thing under the cursor current *first*, then
-  build; the menu then reads the same context every other presenter does.
-  **A text widget's own standard menu is the exception**: `ProseEdit` appends *Insert
-  Image…* to `createStandardContextMenu()`, because a verb acting on one widget's caret
-  belongs in no menu bar and would be greyed everywhere else.
-- **Derived facts are computed, never stored** — the topological order in
-  `domain/ordering.py` is the reference, and `planning/schedule.py` is the same walk carrying
-  estimates. Storing one means it can disagree with what it came from, and the CLI is what
-  catches you out: `dplanner step link` changes a graph with no window running to notice.
-  Availability comes from exposing the function everywhere — the view, `dplanner order show`,
-  `--json` — not from writing the answer down.
-- **Planning reads its own facts; a function is handed in only where it varies.**
-  `planning/schedule.py` reads `planning/estimate.py` by default — `days_for` stays a keyword
-  for stretched days and the simulator — and an aspect a module still owns is handed in.
+**`action(context) → command → model → signal → views`.** A gesture is not a special case — a
+canvas drop runs the same `ActionSpec` the menu does, so the verb exists in the palette too and
+can be tested by handing it a constructed `Context` with no widget in sight. Every model change
+is a command on the single undo stack carrying an `origin`; nothing pushes an update at a view —
+the model emits, each view decides what to redraw, and the `origin` is how the view that caused
+the change ignores its own echo. `docs/architecture/core.md`'s *How a gesture becomes a change
+on screen* has the diagram and why each link is there — read it before adding a surface that
+changes anything. The mechanics of each link are area rules now: the context and its
+announcing (`shell-ui.md`), commands and legal edges (`graph-model.md`), threads, `TaskRunner`
+and coalesced views (`runtime.md`), derived facts (`schedule.md`).
 
 ## Deliberate divergences from the template
 
@@ -441,10 +328,12 @@ to evolve — but every change to them is a divergence somebody will one day dif
 upstream, and one nobody wrote down gets merged away by accident.
 
 **If you change anything under `framework/` or `core/`, record it in `NOTES-FOR-APPFRAME.md`
-in the same commit** — what you changed, why, and whether you think it belongs upstream. That
-file is also where to put anything the framework taught us that is not a code change here:
-a trap, a missing assumption, a number worth knowing. The point is that a later pass can carry
-the good ones back to app-framework instead of rediscovering them.
+in the same commit, under that file's own heading** (`` ## `framework/tabs.py` ``; a new file
+gets a new heading in path order) — what differs from the template *now*, why, and whether it
+belongs upstream. Rewrite the entry rather than appending to it: the file answers "what differs
+in this file?", and its history is git's. A trap, a missing assumption or a number worth
+knowing that is not a code change goes under *Lessons*. The point is that a later pass can
+carry the good ones back to app-framework instead of rediscovering them.
 
 `.appframe` records the commit we forked from, so `git -C ../app-framework diff <revision> --
 template/` still shows what changed upstream since.

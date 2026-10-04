@@ -778,7 +778,7 @@ class TestsActivity(EntityActivity):
         The one deliberate exception to *double-clicking a step anywhere runs
         `steps.details`* (``CLAUDE.md``), and the reason is that in this table a row **is**
         a test — the step is not even a column here. The Test panel's *Show Step* is the
-        door to it. ``ARCHITECTURE.md``'s *A test is run from a panel* has the rest.
+        door to it. ``docs/architecture/collectors.md``'s *A test is run from a panel* has the rest.
         """
         table = self.page.table
         if table.test_at(row) is None:
@@ -816,7 +816,8 @@ class TestsActivity(EntityActivity):
 
         A result is recorded from the strip and the Test panel beside the roster, and a
         test is filed on its step's Tests tab, so the row offers what acts on its step.
-        ``ARCHITECTURE.md``'s *A right-click on a test is its step's* has the history.
+        ``docs/architecture/collectors.md``'s *A right-click on a test is its step's* has the
+        history.
         """
         return build_menu(self._deps.actions, self._deps.context, "Step", parent)
 

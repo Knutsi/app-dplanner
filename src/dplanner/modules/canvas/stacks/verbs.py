@@ -14,8 +14,8 @@ picked steps say alone — how many, which project, which stack — and past tha
 :class:`_Reading` of the project, built the first time it is asked for and forgotten when the
 graph or the canvas's data changes. Typing never rebuilds it; a drag or a link rebuilds it
 once. The gesture itself always builds its command fresh, and a builder that refuses says so
-on the status line. ``ARCHITECTURE.md``'s *A stack's frame is the stack's handle* has why a
-reading built on first read, rather than a settle after a pause.
+on the status line. ``docs/architecture/canvas.md``'s *A stack's frame is the stack's handle* has
+why a reading built on first read, rather than a settle after a pause.
 """
 
 from collections.abc import Callable

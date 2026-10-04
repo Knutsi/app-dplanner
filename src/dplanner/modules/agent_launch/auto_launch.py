@@ -29,8 +29,8 @@ under the config directory, taken while *Agent profiles ▸ When a step becomes 
 The lock belongs to the session rather than the window, because a reload builds the new
 window before it discards the old one, and the new one must not find itself locked out.
 
-``ARCHITECTURE.md``'s *Auto-progress is launched by the window* has the reasoning, including
-what two machines can still race on.
+``docs/architecture/agents.md``'s *Auto-progress is launched by the window* has the reasoning,
+including what two machines can still race on.
 """
 
 from collections.abc import Callable

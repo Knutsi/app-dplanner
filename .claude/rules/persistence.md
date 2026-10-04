@@ -14,6 +14,10 @@ paths:
 
 # Persistence — save, two writers, outside changes, reload and repositories
 
+- **A background sync of an external fact applies its command directly, off the undo
+  stack, with its own origin** — undoing the user's edit must never restore a stale PR
+  state instead. `modules/github/refresh.py` is the example; `docs/architecture/persistence.md`'s
+  *Syncing an external fact* has the reasoning.
 - **There is no Save-file action.** Autosave writes 1.5 s after the last change; *Save*
   means recording a version: **one commit per dirty repository, scoped to that repository's
   project directories and its `.dplanner` index** — several projects in one repo save as one
@@ -30,8 +34,8 @@ paths:
   rather than being lost with the window. **A push the remote refused for changing the same
   lines is a `DivergedError`**, which carries the repository. It is explained in the dialog's
   body, never in its status line or a `QMessageBox`, and offered to an agent in that plan
-  repository (`modules/sync/not_pushed_dialog.py`). `ARCHITECTURE.md`'s *Save spans repositories* has
-  the reasoning. **Its bar reads the repositories recorded as a
+  repository (`modules/sync/not_pushed_dialog.py`). `docs/architecture/persistence.md`'s *Save spans
+  repositories* has the reasoning. **Its bar reads the repositories recorded as a
   floor and fills between them from how long the last save took** — `TaskService`'s
   duration memory, kept across sessions — never an estimate that could contradict what has
   landed. Never `exec()` a dialog from inside a close
@@ -41,8 +45,8 @@ paths:
   nothing if the verb failed. **What a run owes outside the plan waits for that flush** —
   ending an agent's claim is appended to `CliContext.after_flush`, which `open_library`
   runs only once everything is written, and the verb's report goes with it, so a refused
-  flush has released nothing and claimed no success. `ARCHITECTURE.md`'s *Save spans
-  repositories; the exit dialog says what it records* and *A workflow is one function under
+  flush has released nothing and claimed no success. `docs/architecture/persistence.md`'s *Save
+  spans repositories; the exit dialog says what it records* and *A workflow is one function under
   both surfaces* have the reasoning.
 - **Two writers are expected.** An agent runs `dplanner` against a project a window has
   open. The store records what each project directory last looked like and **refuses to
@@ -50,7 +54,7 @@ paths:
   project**, so one project's outside edit never blocks saving another; the library file
   has its own stamp — **taken before the read, and never over a change this store did not
   take in** (`set_checkout` writes one key and re-stamps only a file it had seen;
-  `ARCHITECTURE.md`'s *Two writers, one folder*). That one check also makes a lock
+  `docs/architecture/persistence.md`'s *Two writers, one folder*). That one check also makes a lock
   between CLI runs unnecessary. **What it looks at is the plan, not the directory**:
   `PLAN_ENTRIES` (`project.dproj`,
   `modules/`, `steps/`) — a project directory is often the repository root, and counting
@@ -79,7 +83,7 @@ paths:
   (`LibraryWatchDeps.settled`, after every settle and every answer), because some settles
   change nothing the model announces — *Keep Mine*, an identical rewrite, a project still
   unreadable — and whoever stood down while the plan changed underneath must look again:
-  the auto-launcher is (`agents.md`). `ARCHITECTURE.md`'s *Adopting the
+  the auto-launcher is (`agents.md`). `docs/architecture/persistence.md`'s *Adopting the
   other writer's changes in place* has the reasoning.
 - **An agent at work says so, and the window says it back.** The other writer is
   invisible, which is the whole problem: a developer editing a step an agent is rewriting
@@ -113,7 +117,7 @@ paths:
   ever** — its only write is the clear. **And while an agent is at work the collision
   waits rather than interrupts**: `library_watch` leaves its question in the notice bar
   and the status bar instead of raising the modal, and names the agent in the dialog when
-  the person does open it. `ARCHITECTURE.md`'s *An agent at work says so* has the
+  the person does open it. `docs/architecture/persistence.md`'s *An agent at work says so* has the
   reasoning.
 - **A branch switched underneath the window is taken in, and said.** The sync module
   asks every repository's branch at the workspace watcher's cadence (`POLL_MS`) and
@@ -122,8 +126,8 @@ paths:
   the same `_take_worktree` as the window's own switch (tree into the model, undo history
   dropped when anything was taken, autosave resumed) and then a warning names the
   repository and both branches. The window's own operations re-baseline when they end,
-  so only a switch from outside is ever reported. `ARCHITECTURE.md`'s *A branch switched
-  underneath the window* has the reasoning.
+  so only a switch from outside is ever reported. `docs/architecture/persistence.md`'s *A branch
+  switched underneath the window* has the reasoning.
 - **Reloading the library is a full rebuild — and the fallback, not the rule.**
   `SessionControl.refresh()` adopts; `reload()` is what it falls back to when the store
   cannot read what it found (a pending format migration, a failure halfway), and what *File
@@ -152,7 +156,7 @@ paths:
   repository>`, which skips archived projects rather than un-archive them in bulk. Never
   put an archived flag on the plan. An archived project is `selection/archived_project/<dir>`,
   never `project`, and Remove from Library forgets one; the Project menu's `membership`
-  band is the whole of its right-click. `ARCHITECTURE.md`'s *An archive is Remove from
+  band is the whole of its right-click. `docs/architecture/core.md`'s *An archive is Remove from
   Library that remembers* has the reasoning.
 - **There are two ways into a library and a project link is what makes the second one
   possible.** *Open Project…* is a wizard (`modules/projects/open_dialog.py`) over a
@@ -171,7 +175,7 @@ paths:
   resolves against known clones and otherwise refuses with the `git clone` line, the rule
   `library add` already set. The link **carries no access**, and the Share dialog says so
   in a sentence rather than leaving somebody to assume otherwise. `FORMAT.md`'s *The
-  project link* is the format; `ARCHITECTURE.md`'s *Why membership changes bypass the undo
+  project link* is the format; `docs/architecture/core.md`'s *Why membership changes bypass the undo
   stack* has the reasoning.
 - **The GitHub tab's standing line is the picker fetch.** Showing a step fetches the
   repository's branches and PRs (again past `LISTS_TTL_S`), and the answer says where
@@ -187,7 +191,8 @@ paths:
   refresher (each tick also offers the steps whose stored state already reads merged), the
   tab (both through `refresh.adopt`) and `github refresh|show` — through a root callback:
   `record_merged` off the undo stack with `MERGED_ORIGIN` in the window, `status set`'s
-  writer in the CLI. `ARCHITECTURE.md`'s *Syncing an external fact* has the reasoning.
+  writer in the CLI. `docs/architecture/persistence.md`'s *Syncing an external fact* has the
+  reasoning.
 - **A project names its locations; the plan repository stays derived.** *Where does the
   plan live?* — the **plan repository** — is `find_repo_root(project dir)`, never stored.
   *Which places is it about?* — its **locations** (`domain/locations.py`: a role, a
@@ -253,7 +258,7 @@ paths:
   project move` is the same function from the terminal; the briefing and the skill tell an
   agent to run it when the developer asks and never unasked. Never store a plan root, and
   never compare paths where `RepositoryFacts` already answers.
-  `ARCHITECTURE.md`'s *A project names its locations* has the reasoning.
+  `docs/architecture/persistence.md`'s *A project names its locations* has the reasoning.
 - **The Project dialog is the Locations table over two log columns.** They are its
   Repositories tab, the first of *Project ▸ Settings…*'s tabs (the others are
   `services.project_settings`', `step-panel.md`). A location answers two questions —
@@ -282,5 +287,6 @@ paths:
   `repositories_page.py` lists the worked-in repositories the joined plan names that this
   machine lacks — clone into the repositories folder, use a checkout I have, or later;
   read-only rows are not listed — so the link page names nothing but the plan; under the
-  kept policy nothing is asked and the verb that first needs a repository clones it. `ARCHITECTURE.md`'s *The Project dialog is
-  the Locations table* has the reasoning.
+  kept policy nothing is asked and the verb that first needs a repository clones it.
+  `docs/architecture/persistence.md`'s *The Project dialog is the Locations table* has the
+  reasoning.

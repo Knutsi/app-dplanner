@@ -12,7 +12,8 @@ how Auto-progress (``modules/auto_progress/``) reaches the arrow and the mixed p
 *Links* by registering into Graph ▸ ``links``. It is a table rather than an entry of its own
 in ``MENU_STRUCTURE`` because an entry there is a place verbs are *registered into*, and
 nothing registers here.
-``ARCHITECTURE.md``'s *A right-click is composed by what is under it* has the reasoning.
+``docs/architecture/shell-ui.md``'s *A right-click is composed by what is under it* has the
+reasoning.
 """
 
 from collections.abc import Sequence

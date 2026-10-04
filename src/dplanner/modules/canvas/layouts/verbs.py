@@ -10,7 +10,7 @@ bar, the palette and the picker's popup at once.
 repository can be looking at different layouts of the same graph, and applying one must not
 dirty the plan for both. **So is whether the graph is in Wave view**, per project: its seats
 are derived on every sync and never saved, and *Keep This Arrangement* is the one verb that
-writes them — a sort in kind, so one undo step (``ARCHITECTURE.md``'s *Wave view derives
+writes them — a sort in kind, so one undo step (``docs/architecture/canvas.md``'s *Wave view derives
 positions; only Free view saves them*). Applying a layout or a sort leaves Wave view first,
 since what it writes is what Free view shows.
 """

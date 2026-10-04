@@ -14,6 +14,15 @@ paths:
 
 # Graph model — edges, auto-progress links, step numbers and isolation
 
+- **Every model change goes through a command** on the single undo stack, and carries an
+  `origin` so the view that made the edit can ignore its own echo. Two kinds of change
+  bypass the stack, never the vocabulary: an external fact (`persistence.md`'s sync bullet) and
+  **reading disk** — `load`, membership, and the store adopting another writer's change —
+  which apply the library's mutators directly with an origin of their own.
+- **`Library.link_refusal()` is the only authority on a legal edge.** `set_edges` asks it
+  before writing, and `steps.link`'s state asks it to decide whether the menu entry is enabled
+  and what a greyed one says. Never write a second reachability check in a view
+  (`docs/architecture/graph-model.md`'s *The graph, and what it stores* has why).
 - **Isolate is one domain question and one domain command.** `Library.boundary_edges()`
   names every edge with exactly one end in a set (both kinds, skipping edges to a deleted
   step, as the canvas skips them) and `remove_edges_command()` turns edges into one
@@ -47,7 +56,7 @@ paths:
   membership, a seat, a node born or removed), then every addition, so each graph on the
   way is a part of the one before or the one after and the cycle check cannot trip
   halfway; `remove_edges_command` and `remove_steps_command` are built on it. Never judge a
-  rule anywhere but `link_refusal`. `ARCHITECTURE.md`'s *One in, one out is a rule the
+  rule anywhere but `link_refusal`. `docs/architecture/canvas.md`'s *One in, one out is a rule the
   domain asks* has the reasoning and the proof.
 - **A step has a number, and the key is how it is named everywhere.** `Step.number` is
   dealt by `Library.add_child` from the project's `last_number` high-water mark — one
@@ -79,8 +88,8 @@ paths:
   lint — because that duty is only ever given by flagging. Only an agent step collects: the
   Edge menu's *Auto-progress* greys on any other waiter, and lint `auto-progress.waiter`
   names one the CLI or a hand edit made.
-  `ARCHITECTURE.md`'s *An auto-progress link is an aspect on the step that waits* weighs
-  it against data on the edge and a new edge kind.
+  `docs/architecture/graph-model.md`'s *An auto-progress link is an aspect on the step that waits*
+  weighs it against data on the edge and a new edge kind.
 - **A branch stretch is a cut and a landing, and what is on it is derived.**
   `modules/branches/` holds two aspects: `branch_cut` (`{"branch": …}`) on a step nobody
   works — no status of its own, done once what it waits on is (a wait of no days, composed
@@ -99,5 +108,5 @@ paths:
   graph editor's fact handed in). Remove is never partial, so the window asks first.
   `planning.kinds.works_nobody` is what a wait and a cut share — "a wait", "a branch cut" — and
   every module refusing such a step a status, an agent, a review or a test words its
-  refusal from it. `ARCHITECTURE.md`'s *A branch stretch is bracketed by a cut and a
-  landing* has the reasoning.
+  refusal from it. `docs/architecture/graph-model.md`'s *A branch stretch is bracketed by a cut and
+  a landing* has the reasoning.

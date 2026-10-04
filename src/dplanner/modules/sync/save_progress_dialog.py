@@ -17,8 +17,8 @@ that reads complete while the work goes on is worse than one that reads slow.
 
 The close is *deferred*, not blocked: the close guard starts the save, returns "not yet",
 and the window closes when this dialog ends. So nothing is tearing down while the save runs,
-which is what made the old synchronous exception necessary — ``ARCHITECTURE.md``'s *Save
-spans repositories; the exit dialog says what it records* has the reasoning. While the save
+which is what made the old synchronous exception necessary — ``docs/architecture/persistence.md``'s
+*Save spans repositories; the exit dialog says what it records* has the reasoning. While the save
 runs the dialog cannot be dismissed: a save nobody can see is exactly what this replaced.
 """
 

@@ -89,8 +89,8 @@ def discard_build(window: AppWindow | None, services: AppServices | None) -> Non
     suite most of its running time. **A closed ``QWidget`` is still alive.** Qt keeps it in
     ``topLevelWidgets()``, that keeps its entire build reachable, and every later
     ``gc.collect()`` then has to walk it — so a suite that builds an application per test got
-    steadily slower at nothing. ``ARCHITECTURE.md``'s *Closing a window is not discarding it*
-    has the measurements.
+    steadily slower at nothing. ``docs/architecture/persistence.md``'s *Closing a window is not
+    discarding it* has the measurements.
 
     ``deleteLater`` rather than dropping the reference: the window's close hooks are still
     unwinding on the stack here, and deleting it under them is a crash. The deletion happens

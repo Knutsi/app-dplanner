@@ -4,8 +4,8 @@ These are ordinary ``ActionSpec``s registered by the graph editor, not a dispatc
 the "current" surface plugs into. The context already says what is selected and whether a
 canvas is in front of the user, the state gate greys a verb that cannot run, and a greyed
 menu-bar action's shortcut does not fire — so one registrant gets the "takes over when
-active" behaviour for free. ``ARCHITECTURE.md``'s *Edit verbs belong to the surface whose
-things they act on* says when that stops being enough.
+active" behaviour for free. ``docs/architecture/shell-ui.md``'s *Edit verbs belong to the surface
+whose things they act on* says when that stops being enough.
 
 **What they act on is the steps Delete acts on** —
 :func:`~dplanner.framework.step_selection.chosen_steps`, so Cut and Copy work wherever

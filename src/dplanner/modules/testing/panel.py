@@ -27,8 +27,8 @@ and a double-click on a row is what puts it on screen (``test.details`` — see
 ``module.py``).
 
 **Next and Previous move the *table's* selection, never the panel's own.** A panel may not
-publish a selection (``section.py``'s rule; ``ARCHITECTURE.md``'s *Where a panel goes*), so
-these ask the tab to pick the neighbouring row and then simply follow what it feeds back.
+publish a selection (``section.py``'s rule; ``docs/architecture/shell-ui.md``'s *Where a panel
+goes*), so these ask the tab to pick the neighbouring row and then simply follow what it feeds back.
 It is the tab's own order they walk, and at either end of it they are greyed saying so —
 which is also honest: "next" has no meaning past the end of the list.
 

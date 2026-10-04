@@ -446,9 +446,9 @@ def step_editor(services, monkeypatch):
     """A step's editor, as the application offers it: ``steps.details``, briefly modal.
 
     There is no anchored step panel to reach for — the editor has one seat and it is this
-    dialog (``ARCHITECTURE.md``'s *The step editor is a modal*) — so a test that drives an
-    aspect editor opens it the way a double-click does and reads ``.panel``. It is opened on
-    a **constructed** context naming one step, which is the documented way to run a verb on
+    dialog (``docs/architecture/step-panel.md``'s *The step editor is a modal*) — so a test that
+    drives an aspect editor opens it the way a double-click does and reads ``.panel``. It is opened
+    on a **constructed** context naming one step, which is the documented way to run a verb on
     something nobody selected, and leaves the window's own selection alone for the tests
     that assert on it.
 

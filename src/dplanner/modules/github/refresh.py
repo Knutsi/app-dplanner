@@ -10,8 +10,8 @@ restore a *stale* PR state instead of undoing the user's last edit. The command 
 — every model change goes through one — with this module's own origin, exactly as the CLI
 and the format migrations apply theirs. Autosave flushes on the store's dirty signal, so
 the write reaches disk without the stack's help, and the stale-workspace guard already
-covers an agent writing concurrently. ``ARCHITECTURE.md``'s *Syncing an external fact* has
-the reasoning.
+covers an agent writing concurrently. ``docs/architecture/persistence.md``'s *Syncing an external
+fact* has the reasoning.
 
 **A merged PR finishes a step waiting on its merge** — *ready to merge* means exactly that
 the PR is what is left — through ``finish_merged``, the status aspect's writer handed over by

@@ -1,8 +1,8 @@
 """What testing says in a report: each step's tests with their latest result, and one
 table of every test for the person who runs them.
 
-A test result is not a step status (``ARCHITECTURE.md``), so the table shows the result's
-own words — ok, failed, skipped, or nothing yet — beside the step the test belongs to.
+A test result is not a step status (``docs/architecture/collectors.md``), so the table shows the
+result's own words — ok, failed, skipped, or nothing yet — beside the step the test belongs to.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """

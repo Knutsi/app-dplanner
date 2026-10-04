@@ -26,8 +26,8 @@ paths:
   asked, never enforced**: no aspect says whether a product has concurrent users, so the
   document tells the agent to raise it and propose — a lint check would fire on plans that
   are right. Edit the document, not a copy: the skill carries the concern in two lines and
-  the shape in none. `ARCHITECTURE.md`'s *The test format is read before a test is written*
-  has the reasoning.
+  the shape in none. `docs/architecture/collectors.md`'s *The test format is read before a test is
+  written* has the reasoning.
 - **Tests can be read grouped, and one selector holds every way of grouping them.** By
   category, by feature, by milestone or by check are four answers to *what is this test one
   of*, so they are four entries in one box. `_Grouping` (`TestsActivity`) is two functions
@@ -57,7 +57,7 @@ paths:
   In the window: the step panel's editable combo on the Tests tab, offering the keys in use
   so one view is not spelled three ways, and typed to mint a new one because there is no
   editor to send anybody to — a test is filed where it is written, one at a time, and `test
-  file` is the batch. `ARCHITECTURE.md`'s *The sort key is an ergonomic* has the
+  file` is the batch. `docs/architecture/collectors.md`'s *The sort key is an ergonomic* has the
   reasoning.
 - **A test is run from the Test panel beside the roster, and a double-click in a Tests tab
   opens it.** `modules/testing/panel.py`, hosted inside each Tests tab and the roll call
@@ -74,8 +74,8 @@ paths:
   from anywhere else. **Next and Previous move the table's selection**, never the panel's
   own (a panel publishes no selection), by offset over *this tab's* rows, greyed with the
   reason at either end. The tab builds its panel when it opens, long after every spec is
-  registered — nothing in `register()` orders on it. `ARCHITECTURE.md`'s *A test is run
-  from a panel* has the reasoning.
+  registered — nothing in `register()` orders on it. `docs/architecture/collectors.md`'s *A test is
+  run from a panel* has the reasoning.
 - **A test body's reference to another test is a link, and a link opens a preview.** A body
   that says *after T101 passes* is pointing somewhere, and picking that test in the table
   loses the one being read with nothing to go back to. So `modules/testing/references.py`
@@ -89,8 +89,9 @@ paths:
   `TestsActivity.reveal`, which widens the tab's scope, audience filter and archived switch
   **only** when they are what is hiding the test, and opens the category it is folded under.
   The preview and the panel are the same two widgets (`cards.py`'s `TestHead` and
-  `TestBody`), so a test read in one reads as it does in the other. `ARCHITECTURE.md`'s
-  *A reference is a link, and a link is a preview* has the reasoning.
+  `TestBody`), so a test read in one reads as it does in the other.
+  `docs/architecture/collectors.md`'s *A reference is a link, and a link is a preview* has the
+  reasoning.
 - **A test is always named with its step, never on its own.** Ids are minted per *project*
   (`aspect.py`), so `T101` names a different test in every project in the library and a
   lookup by id alone answers with whichever project sorts first — which is exactly what the
@@ -118,9 +119,9 @@ paths:
   in the index's right-click, which renders the Project menu) and the step panel's picker
   beside the audience boxes — no menu files a test, since what a step's tests are is set on
   its Tests tab (`shell-ui.md`'s *The menu bar is sorted by subject*), and a right-click in
-  a Tests tab renders its step's Step menu, as every table's does. `ARCHITECTURE.md`'s *A
-  test is filed under a category* has the reasoning, including why two writers share one
-  project entry.
+  a Tests tab renders its step's Step menu, as every table's does.
+  `docs/architecture/collectors.md`'s *A test is filed under a category* has the reasoning,
+  including why two writers share one project entry.
 - **The category editor is a modal that writes on Save.** `categories_dialog.py` edits a
   copy — each row remembering the name it started with — and lands the whole refactor as one
   undo step when it closes, because renaming per keystroke would rebuild the Tests tab under
@@ -148,8 +149,8 @@ paths:
   pictures.
 - **What reaches a step is computed, never stored** — `notes/aspect.py`'s `reaching` is one function
   with three readers (the Agent tab's Notes pane, `dplanner note index`, the briefing).
-  Same rule as the ordering, and the reasoning is in `ARCHITECTURE.md`'s *What reaches a
-  step is derived at read time*. **The graph says who a note is for**: every label reaches
+  Same rule as the ordering, and the reasoning is in `docs/architecture/collectors.md`'s *What
+  reaches a step is derived at read time*. **The graph says who a note is for**: every label reaches
   the steps after the one it was made on, so reach is not a column on `Label`; a note made
   on no step, or on one since deleted, has nothing to be downstream of and reaches the
   project, and `--reach project` is the one stored exception. **And the index has a
@@ -174,8 +175,8 @@ paths:
   — the bullet above — and the index stops at twenty a label and says so. **Adding a title
   already on the same step is that
   note**, reported and not duplicated, so an agent's retry never leaves two; a reversal is
-  a new record `--supersedes` the old, never an edit. `ARCHITECTURE.md`'s *A note is a
-  record with a label, and the briefing carries an index* has the reasoning.
+  a new record `--supersedes` the old, never an edit. `docs/architecture/collectors.md`'s *A note is
+  a record with a label, and the briefing carries an index* has the reasoning.
 - **A test belongs to a step, and a step carries several.** A description says what a step
   *is*; a test says how you would prove it, and it outlives the step. A test is **not a
   node** — it is a record in the step's `testing` aspect with its own id, title, markdown
@@ -186,7 +187,7 @@ paths:
   quotable, and a rename never detach a test's history. The tab is **master-detail** — a list of tests
   and an editor for the selected one, side by side where the width allows and stacked in the
   narrow dock — because a stack of equal cards stops working at the third test.
-  `ARCHITECTURE.md`'s *A test belongs to a step, and a step carries several* has the
+  `docs/architecture/collectors.md`'s *A test belongs to a step, and a step carries several* has the
   reasoning, including the diff trade the string body accepts.
 - **A test says who it is for, and the list is closed.** `qa`, `technical`, `other` —
   `AUDIENCES` in `modules/testing/aspect.py`, owned there rather than by the composition
@@ -204,7 +205,7 @@ paths:
   list`, `test show`) and a **filter** everywhere (the `FilterButton` on both Tests tabs,
   `test list --audience`, `test-run start --audience`, and a pick on the published page). A
   run records only the ids it was opened over, so it needs no audience of its own.
-  `ARCHITECTURE.md`'s *A test says who it is for* has the reasoning.
+  `docs/architecture/collectors.md`'s *A test says who it is for* has the reasoning.
 - **A test goes stale when the step under it settles and then moves.** `dplanner test
   review` reports a live test on a **done** step that has not been run since a standing
   `decision` or `spec-change` note landed on that step — the shape `coverage review` has
@@ -219,7 +220,8 @@ paths:
   reason `planning.kinds.scope_kinds()` names its predicates literally. Notes arrive as a neutral
   `(id, label, title, made)` by step (`cli/scopes.py`'s `CoveredTest` hand-over, one
   layer down), superseded ones dropped so a reversal names a test once rather than twice.
-  `ARCHITECTURE.md`'s *A test goes stale when the step under it moves* has the reasoning.
+  `docs/architecture/collectors.md`'s *A test goes stale when the step under it moves* has the
+  reasoning.
 - **Documentation is a fragment per step and a document per collector, and an agent
   compiles it.** The `docs` aspect is a step's **documentation fragment**; `docs_compiled` is
   a collector's **documentation**, made of everything it gathers — the words on every
@@ -242,8 +244,8 @@ paths:
   *Compile Out of Date…* takes the **frontier** — never a milestone beside the features whose
   documents it reads. Who compiled a document is the launching window's record, per user; the
   plan's stamp says when and from what (`docs_compiled` format 2 dropped `provider`/`model`
-  with the LLM call). `ARCHITECTURE.md`'s *Documentation is fragments, and a collector
-  compiles them* has the reasoning.
+  with the LLM call). `docs/architecture/collectors.md`'s *Documentation is fragments, and a
+  collector compiles them* has the reasoning.
 - **A collector is a cone truncated at the next collector.** `domain/ordering.py`'s `cone()`
   walks `requires` backwards and refuses to pass through a step the `stops_at` predicate
   claims — so a **check** stops at nothing and stands for everything behind it, a
@@ -263,8 +265,8 @@ paths:
   switch read `planning/scope.py`'s `handoffs()`, never `Cone.boundaries`, and
   `scope.ungathered` skips the start (no link could hand it to a feature). Its own lint is
   `graph.start` — a start that waits on something, a plan with two. The card wears no mark
-  of its own and the key stays `S`. `ARCHITECTURE.md`'s *The origin is nobody's* has the
-  reasoning.
+  of its own and the key stays `S`. `docs/architecture/collectors.md`'s *The origin is nobody's* has
+  the reasoning.
 - **A `ScopeKind` is wired, never inferred.** `planning/kinds.py`'s `scope_kinds()` writes
   the three predicates literally: what carries a kind, where its cone stops, and — a
   separate question — which kind it is *read as a list of* (`gathers`). A milestone is read
@@ -275,7 +277,7 @@ paths:
   the other. `step_check` is a bare marker with no tab of its own; a feature step's tab
   edits the spec passages it was read from; `modules/testing/` renders what any of them
   gathers, because a list of tests is testing's business. That keeps the wiring
-  one-directional. `ARCHITECTURE.md`'s *A check is a scope over the graph* has the
+  one-directional. `docs/architecture/collectors.md`'s *A check is a scope over the graph* has the
   reasoning, including why exclusivity is a predicate rather than a stored list.
 - **A feature is a step.** There is no catalogue and no verb that creates one: `step add
   --feature` is the door in — carrying `--document`/`--quote`/`--page`/`--strict` for a
@@ -289,7 +291,7 @@ paths:
   carries no link of its own. The project's old catalogue moves onto its steps at open
   (`planning/feature_migrate.py`, an `absorb` pass) — **a step it creates gets its data
   before `add_child` and its id is never returned**, or the flush raises inside the store.
-  `ARCHITECTURE.md`'s *A feature is a step* has the reasoning.
+  `docs/architecture/collectors.md`'s *A feature is a step* has the reasoning.
 - **A citation is a quote and a digest; its place is derived, and the trace is feature
   membership.** A feature cites N passages (`FeatureSource`: document, quote, page,
   digest — on the step, feature format 3), maintained by `feature cite`/`uncite`/`reanchor`
@@ -300,7 +302,8 @@ paths:
   whole document**, so a reader of many makes one `anchor_sources` call for the project —
   never one per feature, never `anchor_in` in a loop — and that pass normalises each
   document once (`fold`); the lint asking per feature cost the Problems panel 570 ms after
-  every pause in typing on a 262-citation plan (`NOTES-FOR-APPFRAME.md` §46). `coverage/trace.py` arranges
+  every pause in typing on a 262-citation plan (the framework diary in
+  `docs/history/`, §46). `coverage/trace.py` arranges
   milestones → features → passages → tests and docs from every module's Qt-free half
   (read by `coverage/readers.py`, the rest handed in by the root), and **the path rule is feature
   membership**: every item carries the features it serves, so what an item reaches is
@@ -309,8 +312,8 @@ paths:
   tab washes passages (`show_passages`) and offers *Cited*, *Coverage* and *Cite…*;
   `steps.details` lands on a test or a feature through `FocusableExtension`. Uncovered
   text is a report (`coverage spec --uncovered`), never a lint; it is also how an old
-  project is retrofitted. `ARCHITECTURE.md`'s *A citation is a quote and a digest* has
-  the reasoning.
+  project is retrofitted. `docs/architecture/collectors.md`'s *A citation is a quote and a digest*
+  has the reasoning.
 - **The Coverage tab is a drill-down, and its lanes stand only what the picks stand up.**
   *Milestones · Features · Spec · Tests & Docs*, with *Steps* before the last while the
   strip's *Show steps* is on: every milestone always, the features the picked milestones
@@ -332,7 +335,7 @@ paths:
   the view, the scene and then the hint again, which is what pushed the index panel off the
   window and made the seam jump. Lane widths are whole numbers (a rounding error flickers
   the scroll bar through a drag) and a relayout for a size the scene already has returns at
-  once. `ARCHITECTURE.md`'s *A citation is a quote and a digest* has the reasoning.
+  once. `docs/architecture/collectors.md`'s *A citation is a quote and a digest* has the reasoning.
 - **What a collector gathers is one verb: `dplanner scope show`.** In `cli/scopes.py`, the
   cross-feature home — a check, a feature and a milestone are one derivation asked three
   ways, so three near-copies of the report is exactly what that file prevents. It also owns
@@ -342,11 +345,12 @@ paths:
   blocked` is where the *work* stands; `ok/failed/skipped`/absent is what happened when
   somebody *ran* a test. No word is shared, on purpose. A failing test does not block a
   milestone and does not reach `progression()` — folding it in would make `dplanner
-  progression show` answer a different question. `ARCHITECTURE.md`'s *A test result is not a
-  step status* has the why.
+  progression show` answer a different question. `docs/architecture/collectors.md`'s *A test result
+  is not a step status* has the why.
 - **A project has at most one open test run, and a run freezes its membership.** Starting one
   closes the last, which is what makes "mark these twelve ok" a pure function of the context
   — no hidden "which run", and a greyed verb that says *"start a test run first"*. A run
   stores the ids it was opened over, so a closed run cannot change meaning when the graph
   does; a missing result reads as pending, and the latest result is the newest run that
-  actually recorded one. `ARCHITECTURE.md`'s *One open run per project* has the reasoning.
+  actually recorded one. `docs/architecture/collectors.md`'s *One open run per project* has the
+  reasoning.

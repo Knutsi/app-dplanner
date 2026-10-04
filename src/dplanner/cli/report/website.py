@@ -15,8 +15,8 @@ client-side rendering, which works from ``file://`` and from GitHub Pages alike 
 ``fetch()`` does not. Its bytes change only when a project joins or leaves, so two people
 saving two projects never both touch it, and a pull that brings a colleague's new project
 is picked up by the next run. Nothing commits a site, though: Save never writes one, because
-even per-project pages collide when two people save the same project (ARCHITECTURE.md's
-*Reports are written on request, never on Save*).
+even per-project pages collide when two people save the same project (`docs/architecture/cli.md`'s
+*A report is a publication, not a record*).
 
 **The directory is a constant, not a setting.** The window's preferences are QSettings,
 which ``dplanner report site`` cannot read; a per-user name would let the two surfaces

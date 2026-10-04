@@ -19,8 +19,8 @@ Time tab's picker already write, pushed through the same undoable command — so
 choice with three ways in rather than a fourth place a colour could come from, and the
 published report can never disagree with the window. It is not a theme and must not read as
 one, which is why it is a sibling child menu; and because it acts on a project it is greyed
-with its reason when none is open, never hidden. ARCHITECTURE.md's *Colour is a place on one
-map* has the reasoning.
+with its reason when none is open, never hidden. `docs/architecture/schedule.md`'s *Colour is a
+place on one map* has the reasoning.
 """
 
 from collections.abc import Callable
@@ -193,8 +193,8 @@ class AppearanceModule:
                 tip=f"Shade this project's milestones along {found.name}",
                 # A square at glyph size: the command palette's slot is ICON_SIZE, and a
                 # 56 px strip scaled into it renders as a sliver. The menu bar paints no
-                # glyph at all (ARCHITECTURE.md's *The palette a painter is handed is a
-                # snapshot*) — this is for the palette and any pop-up rendering of View.
+                # glyph at all (`docs/architecture/canvas.md`'s *The palette a painter is handed is
+                # a snapshot*) — this is for the palette and any pop-up rendering of View.
                 icon=lambda _ink, found=found: palette_strip_icon(  # type: ignore[misc]
                     found, QSize(ICON_SIZE, ICON_SIZE)
                 ),

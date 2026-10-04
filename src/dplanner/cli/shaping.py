@@ -14,7 +14,7 @@ verbs refuse until — so it is run by every agent that is about to shape a grap
 agent that is not. Printing the default there reaches Codex and OpenCode as readily as
 Claude, which a file bundled with the skill would not.
 
-``ARCHITECTURE.md``'s *The topology is read before the graph is edited* has the reasoning.
+``docs/architecture/cli.md``'s *The topology is read before the graph is edited* has the reasoning.
 """
 
 from pathlib import Path

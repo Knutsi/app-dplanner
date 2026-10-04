@@ -5,8 +5,8 @@ the owning module's ``workflows.py``. Every surface calls it: the window's ``Act
 pushes the ``Change``'s command as one undo gesture and a CLI verb applies it; each performs
 the follow-ups once the change is accepted — the window once the push has succeeded, the CLI
 once the whole invocation has been written. That is the rule that both surfaces build the
-same object, moved up from the command to the whole workflow. ARCHITECTURE.md's *A workflow
-is one function under both surfaces* has the reasoning.
+same object, moved up from the command to the whole workflow. `docs/architecture/core.md`'s *A
+workflow is one function under both surfaces* has the reasoning.
 """
 
 from dataclasses import dataclass

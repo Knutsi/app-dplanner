@@ -218,7 +218,8 @@ def in_flight(step: Step) -> Status:
     its ``since`` moved when it went to review, and the schedule credits in-flight work from
     ``since``, so the raw day would re-cost the step at its whole estimate the moment an
     agent finished it. :func:`read_since` keeps the raw day for what a recorded day counts
-    as a change. ARCHITECTURE.md's *An agent finishes at Ready for review* has the reasoning.
+    as a change. `docs/architecture/agents.md`'s *An agent finishes at Ready for review* has the
+    reasoning.
     """
     status = held(stored(step))
     return Status.IN_PROGRESS if status in REVIEW_AND_MERGE else status
@@ -280,7 +281,7 @@ def record_merged(
     library: Library, step_id: StepId, today: date, *, accepted_by_merge: bool = False
 ) -> bool:
     """The step's PR reads merged: a step waiting on its merge is ``done`` — directly, off
-    the undo stack, like the PR state it follows (``ARCHITECTURE.md``'s *Syncing an
+    the undo stack, like the PR state it follows (``docs/architecture/persistence.md``'s *Syncing an
     external fact*): Ctrl+Z must not file a merged step as still waiting on its merge. False,
     and no write, when the step is gone or is not waiting on its merge — a merged PR says
     nothing about a step nobody has accepted — unless ``accepted_by_merge``: a PR merged
