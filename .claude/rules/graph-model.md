@@ -16,7 +16,7 @@ paths:
 
 - **Every model change goes through a command** on the single undo stack, and carries an
   `origin` so the view that made the edit can ignore its own echo. Two kinds of change
-  bypass the stack, never the vocabulary: an external fact (the bullet below) and
+  bypass the stack, never the vocabulary: an external fact (`persistence.md`'s sync bullet) and
   **reading disk** — `load`, membership, and the store adopting another writer's change —
   which apply the library's mutators directly with an origin of their own.
 - **`Library.link_refusal()` is the only authority on a legal edge.** `set_edges` asks it
