@@ -7,8 +7,8 @@ says.
 
 from dplanner.domain.model import Library, Step
 from dplanner.domain.store import FilesFor
+from dplanner.modules.agent_briefing.blocks import module_asset_paths
 from dplanner.modules.agent_briefing.prompt import PromptPart, listed, quoted
-from dplanner.modules.agent_briefing.sections import module_asset_paths
 from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
 from dplanner.modules.step_description.aspect import read as description_read
 from dplanner.planning.agent import asset_paths

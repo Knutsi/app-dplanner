@@ -2,7 +2,7 @@
 
 Archiving moves a project's directory to the library file's ``archived`` list, per user,
 and the project is no longer loaded. The index's Archive folder (``archive_index.py``) and
-the Archive tab (``archive_tab.py``) list it, and restoring is ``connect_project`` again —
+the Archive tab (``activity.py``) list it, and restoring is ``connect_project`` again —
 the store's attach takes the directory off the list. The Project menu's membership band
 (``verbs.py``) is this module's, Remove from Library included, because it acts on an
 archived row as readily as on a live project.
@@ -27,8 +27,8 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.widgets import notice
 from dplanner.framework.window import StatusHost
+from dplanner.modules.project_archive.activity import ARCHIVE_KIND, ArchiveActivity
 from dplanner.modules.project_archive.archive_index import ArchiveSegment
-from dplanner.modules.project_archive.archive_tab import ARCHIVE_KIND, ArchiveActivity
 from dplanner.modules.project_archive.verbs import MembershipVerbs
 from dplanner.theme.icons import archive_icon
 

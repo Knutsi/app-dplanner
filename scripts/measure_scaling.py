@@ -87,12 +87,12 @@ from dplanner.modules.canvas.layouts.positions import default_size, write_positi
 from dplanner.modules.canvas.layouts.sorts import arranged_in_waves
 from dplanner.modules.canvas.layouts.verbs import wave_view
 from dplanner.modules.canvas.look import BACKGROUNDS, Look
-from dplanner.modules.estimation.schedule import project_schedule
+from dplanner.modules.schedule.assumptions import read_efficiency, read_start, time_report
+from dplanner.modules.schedule.landings import project_schedule
+from dplanner.modules.schedule.module import TimeEstimatesModule
 from dplanner.modules.spec import aspect as spec_aspect
 from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
-from dplanner.modules.time_estimates.module import TimeEstimatesModule
-from dplanner.modules.time_estimates.schedule import read_efficiency, read_start, time_report
 from dplanner.planning import feature as feature_aspect
 from dplanner.planning.agent import enabled as is_agent
 from dplanner.planning.estimate import read as estimated_days

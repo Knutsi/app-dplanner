@@ -292,7 +292,7 @@ def _no_greeting(monkeypatch):
     once the modal is open, a network request — so a suite that let it fire would be asking
     the developer's PATH what it should be asserting, and would open a modal over whatever
     build a test had just made. The surface itself is tested with fake probes in
-    ``tests/modules/test_checklist_dialog.py``, which turns this off deliberately.
+    ``tests/modules/checklist/test_checklist_dialog.py``, which turns this off deliberately.
     """
     from dplanner.modules.checklist import module as checklist
 

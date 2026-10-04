@@ -47,7 +47,7 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
 - Only add comments that carry durable value for future developers and agents. Otherwise,
   make the code self-documenting.
 - `DESIGN.md` is the standard for all UI work here, and **Debug ▸ Design Examples**
-  (`modules/debug/design_example.py` and `design_rows.py`, rendered under
+  (`modules/debug/design_example_activity.py` and `design_rows_activity.py`, rendered under
   `docs/screenshots/f1-design-example/`) is what it looks like. Its *Primitives* table maps
   what you are building — a dialog, a table, a strip of verbs, a filter, a busy state, an
   empty page — to the primitive in `framework/` and the render to compare against; build
@@ -69,9 +69,8 @@ uv run mypy --platform win32   # the same tree as Windows sees it
 ```
 
 **`--platform win32` is a check, not a curiosity.** The application ships on Windows, and
-almost none of the suite can run there from here, so the type checker is the only reader we
-have of the Windows half — mypy skips a `sys.platform == "win32"` branch entirely on Linux,
-so that code is otherwise read by nobody until somebody runs it.
+almost none of the suite can run there from here, so the type checker is the only reader of
+the Windows half — on Linux mypy skips a `sys.platform == "win32"` branch entirely.
 Keeping it clean costs one habit: **compare `sys.platform` inline where you branch on the
 platform**, never through a module constant, because mypy narrows on the comparison and a
 constant is opaque to it (`core/storage/sparse.py` is the worked example).
@@ -80,10 +79,9 @@ On a machine whose shell already presets `QT_QPA_PLATFORM` (Arch with a tiling W
 `setdefault` in `tests/conftest.py` does not kick in and a bare `pytest` opens real
 windows. Always prefix it. The same shell usually presets
 `QT_QPA_PLATFORMTHEME=gtk3`, which `conftest.py` blanks for an offscreen run: with it every
-worker initialises GTK — eight threads and a live compositor connection — and an offscreen
-window becomes active one event round late, so a focus-dependent test
-(`test_the_editor_ignores_the_echo_of_its_own_write_while_editing`) passed one evening and
-failed every run the next morning. A headless suite must not depend on the desktop's state.
+worker initialises GTK and an offscreen window becomes active one event round late, so a
+focus-dependent test passed one evening and failed every run the next morning. A headless
+suite must not depend on the desktop's state.
 
 The suite runs on every core (`-n auto` in `pyproject.toml`) — about **two minutes** for the
 whole thing, so run the whole thing; there is nothing to be saved by not. Two flags are worth
@@ -119,7 +117,7 @@ a worker dying with SIGSEGV names an innocent one.
   `QLayoutItem` in Python** — `addStretch`/`addSpacing` instead.
 - **A widget whose height depends on its width implements `heightForWidth`** and lets the layout
   ask; it never resizes itself in `resizeEvent`, and its `minimumSizeHint` is the least it can
-  ever need — one row — never its `sizeHint` (`time_estimates/months.py`).
+  ever need — one row — never its `sizeHint` (`schedule/months.py`).
 - **A worker thread never holds the last reference to a Qt object**: any hand-written
   thread-plus-signal goes through `TaskRunner`.
 - **A test that builds a top-level widget of its own disposes it with `deleteLater`**, and a
@@ -211,9 +209,14 @@ modules/<name>/
 └── section.py   the editor it puts in the step detail panel (Step Details…)
 ```
 
-The Qt-free files are checked by **name** — see `HEADLESS_FILES` in
-`tests/test_architecture.py`. If the composition root reaches a new file at CLI time, add it
-to that tuple; a file the rule cannot see is a rule that is only a habit.
+**A Qt file's name says its role** (architecture rule 15): `activity.py` or `<x>_activity.py`
+holds a tab, `dialog.py` or `<x>_dialog.py` a modal, `scene.py` a `QGraphicsScene`,
+`panel.py` a side panel, `status_widget.py` a status-bar widget, `settings_page.py` a
+settings page — and nothing is `view.py`. ARCHITECTURE.md's *A file name has one meaning*.
+
+The Qt-free files are checked by **path** — `HEADLESS_ROLES`, and per package
+`HEADLESS_FILES`, in `tests/test_architecture.py`. If the composition root reaches a new file
+at CLI time, list it there; a file the rule cannot see is a rule that is only a habit.
 
 ## How to add a feature module
 
@@ -251,7 +254,7 @@ to that tuple; a file the rule cannot see is a rule that is only a habit.
 7. If it has verbs, add `cli.py` with a `commands()` function returning `CliCommand`s, and
    list it in `default_cli_commands()`. Keep it Qt-free. When `commands()` needs a
    cross-module fact, take it as a **keyword-only parameter and close over it in one inner
-   wrapper** — `modules/progression/cli.py` is the worked example; don't invent a fifth
+   wrapper** — `modules/status_board/cli.py` is the worked example; don't invent a fifth
    injection style.
 8. Construct it in the root's builder for its cluster (`_agents`, `_graph`, `_aspects`, …) and
    list it in `default_modules()`. **List order is registration order and it matters** —
@@ -260,7 +263,7 @@ to that tuple; a file the rule cannot see is a rule that is only a habit.
 9. Leave the package `__init__.py` as a docstring — the composition root imports
    `from dplanner.modules.<name>.module import <Name>Deps, <Name>Module`. Re-exporting the
    Qt half there would make the package's Qt-free files unreachable without loading Qt, and
-   the CLI reaches them through this package. Add tests under `tests/modules/`; keep
+   the CLI reaches them through this package. Add tests under `tests/modules/<name>/`; keep
    `README.md`'s layout map current.
 
 If you find yourself needing to edit a file outside your own package and the composition
@@ -364,11 +367,9 @@ reasoning.
   caption row, in a view with no strip — `follow()`ing the view's one `Debounced`, whose
   `pending_changed` settles on a rebuild that raised as much as one that returned. Wire it
   where the `Debounced` is built; never show and hide a label by hand. **It is a turning
-  arc and no words** — the same `Spinner` a working button turns, which drives a button's
-  glyph slot or a bare `QLabel` that is one; *something is running here* is one motion to
-  recognise, not a word in one place and a glyph in another. Never move a derivation to a worker thread for speed: it is
-  pure Python competing for the GIL, and a thread alive at teardown is the suite's SIGSEGV
-  shape — `ARCHITECTURE.md`'s *A view refresh is coalesced, and hears one project* has the
+  arc and no words** — the same `Spinner` a working button turns. Never move a derivation
+  to a worker thread for speed: it is pure Python competing for the GIL, and a thread alive
+  at teardown is the suite's SIGSEGV shape — `ARCHITECTURE.md`'s *A view refresh is coalesced, and hears one project* has the
   measurements.
 - **The context is announced once per event-loop turn, and a gesture changes the
   selection once.** `ContextService.set_scope`/`clear_scope`/`refresh` update the snapshot

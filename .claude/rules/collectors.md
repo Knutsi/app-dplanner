@@ -6,7 +6,9 @@ paths:
   - "src/dplanner/cli/scopes.py"
   - "tests/planning/test_scope.py"
   - "tests/core/test_anchors.py"
-  - "tests/modules/test_{testing,docs,notes,feature,coverage,spec_passages,focus_seams}*.py"
+  - "tests/modules/{testing,docs,notes,feature,coverage,step_start}/**"
+  - "tests/modules/spec/test_spec_passages.py"
+  - "tests/modules/test_focus_seams.py"
   - "tests/cli/test_{scopes,feature_verbs,coverage_verbs,note_verbs,start_verbs}.py"
   - "scripts/render_documentation.py"
 ---
@@ -86,7 +88,7 @@ paths:
   putting you back where you were, and *Show in Tests* the one deliberate move —
   `TestsActivity.reveal`, which widens the tab's scope, audience filter and archived switch
   **only** when they are what is hiding the test, and opens the category it is folded under.
-  The preview and the panel are the same two widgets (`view.py`'s `TestHead` and
+  The preview and the panel are the same two widgets (`cards.py`'s `TestHead` and
   `TestBody`), so a test read in one reads as it does in the other. `ARCHITECTURE.md`'s
   *A reference is a link, and a link is a preview* has the reasoning.
 - **A test is always named with its step, never on its own.** Ids are minted per *project*
@@ -160,7 +162,7 @@ paths:
   **label** from the closed `LABELS` list — `decision`, `handoff`, `spec-change`, `later`,
   `post-project` — a title, markdown body, the day, the step it was made on, the steps it
   is `for`, what it supersedes), `dplanner note add|set|remove|list|show|attach|index`,
-  and the **Implementation notes** tab (`activity.py` around `view.py`: the log as
+  and the **Implementation notes** tab (`activity.py`, `NotesView` inside `NotesActivity`: the log as
   delegate-painted rows, newest first, beside the picked note's editor, never a widget
   per note), opened from the row the notes module puts under each project in the index's
   Docs folder beside *Documentation* (`index_row`, handed to the docs module as

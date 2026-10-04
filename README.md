@@ -485,7 +485,7 @@ src/dplanner/
 │   │                        repository on this machine from (checkouts.py), and Share Project…
 │   ├── project_archive/     leaving the library: Archive/Restore Project and Remove from Library
 │   │                        (verbs.py), the index's Archive folder (archive_index.py) and the
-│   │                        Archive tab (archive_tab.py)
+│   │                        Archive tab (activity.py)
 │   ├── steps/               the `step …` verbs and the graph's lint (cli.py; no module.py, so
 │   │                        headless all through) — `step duplicate` runs the canvas's clone
 │   ├── canvas/              a project in a tab (activity.py): the canvas (scene.py), its modes (connect, redirect,
@@ -520,7 +520,7 @@ src/dplanner/
 │   │   ── the fourteen aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
 │   │      `step_properties` are views of steps, not aspects:
-│   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule verbs
+│   ├── estimation/          estimates: the editor, the bulk Estimates tab, the `estimate` verbs
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
 │   ├── step_agent_instruction/   … this one also holds the project's standing instruction
@@ -533,7 +533,7 @@ src/dplanner/
 │   │                        and `auto_launch.py` the window launching it
 │   ├── agent_briefing/      what an agent is told — no module.py, headless all through:
 │   │                        the preflight and the report-back protocol (protocol.py), the
-│   │                        step's and project's facts (sections.py), the instructions
+│   │                        step's and project's facts (blocks.py), the instructions
 │   │                        (instructions.py), assembled once by compose.brief; and where
 │   │                        a run works (worktree.py: its run name, checkout and worktree)
 │   ├── agent_claude/        ── one module per agent CLI, each a Qt-free `harness.py`: the
@@ -542,13 +542,12 @@ src/dplanner/
 │   ├── step_agent_run/      where a launched agent stands — stamped at launch, moved by
 │   │                        `dplanner agent-state`, cleared when the shell ends (`runs.py`
 │   │                        reads the wrapper's report; `terminal.py` finds the window or
-│   │                        pane again; the status-bar button and the Agents browser are
-│   │                        `view.py`)
+│   │                        pane again; the Agents browser is `browser_dialog.py`)
 │   ├── agent_usage/         what agent runs consumed: the per-project ledger's words and
 │   │                        readers (`aspect.py`, over `domain/ledger.py`), the harvest that
 │   │                        fills it and the window's sweep, `dplanner usage show|list|harvest|record`,
 │   │                        and the Expenditure tab — the order with what each step consumed,
-│   │                        in tokens (`expenditure.py`, `domain/expenditure.py`)
+│   │                        in tokens (`expenditure_activity.py`, `domain/expenditure.py`)
 │   ├── step_status/         where a step stands — a Status submenu, no tab, and `status …`;
 │   │                        the vocabulary and format are `planning/status.py`'s; setting one is
 │   │                        `workflows.py`, which the window and the CLI both call
@@ -576,7 +575,7 @@ src/dplanner/
 │   │                        toggle, the Review template and tab, `dplanner review` (the
 │   │                        conversation both sides drive, `review wait` included) and its
 │   │                        lint — the settings in `planning/review.py`, the rounds in `aspect.py`,
-│   │                        the conversation read in full in `conversation.py`
+│   │                        the conversation read in full in `conversation_dialog.py`
 │   ├── testing/             what a step must keep passing: the tests it carries, the runs over
 │   │                        them, how they are filed (a category and a sort key, with the
 │   │                        category editor), the project's Tests tab, the library-wide roll
@@ -588,29 +587,30 @@ src/dplanner/
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show` (its rows
 │   │                        are `framework/step_table.py`'s, which Expenditure shares)
-│   ├── progression/         the *Step statuses* tab, the *Control Centre* over every project,
+│   ├── status_board/        the *Step statuses* tab, the *Control Centre* over every project,
 │   │                        and `dplanner progression show [--all]`
-│   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab
-│   │                        (activity.py: four figures, then a page at a time — shift_view.py the
-│   │                        milestones against the plan compared with, work_view.py the scope and the
+│   ├── schedule/            when the plan lands with its team, and the work behind it: the Time tab
+│   │                        (activity.py: four figures, then a page at a time — shift_chart.py the
+│   │                        milestones against the plan compared with, work_chart.py the scope and the
 │   │                        work done, months.py the calendar — with budget.py's team and focus,
 │   │                        snapshots.py's pick of the plan compared with and history.py's look back
 │   │                        at an earlier day's record), what a page shows as data
 │   │                        (present.py, which report.py reads too), a milestone's start and colour on
-│   │                        its Details tab (section.py) — `dplanner schedule matrix`, `schedule palette`,
-│   │                        `schedule team`, `schedule milestone`; progress against the plan (progress.py
+│   │                        its Details tab (section.py) — the whole `dplanner schedule` noun
+│   │                        (landings.py dates each step: `schedule show`, `schedule start`, `schedule matrix`, `schedule palette`,
+│   │                        `schedule team`, `schedule milestone`); assumptions.py what reaches disk; progress against the plan (progress.py
 │   │                        derives it, recorder.py writes the day's history) —
 │   │                        `dplanner progress show|record|save|list|remove`; simulation/ plays the
 │   │                        HTML prototype's scenarios day by day (the world, the replay through the
 │   │                        real aspect writers, the accuracy `scripts/time_accuracy.py` prints) and
-│   │                        debugger.py shows one in the real tab under Debug ▸ Time Simulation
+│   │                        simulator_activity.py shows one in the real tab under Debug ▸ Time Simulation
 │   ├── reporting/           the window's half of the report: File ▸ Export's HTML, PDF (paper.py) and Excel,
 │   │                        the report site into a picked folder, Go ▸ Preview Report; the
 │   │                        `reporting` location role (roles.py)
 │   ├── notes/               what a project records along the way — decisions, handoffs, spec changes,
 │   │                        deferrals — one labelled log, what reaches a step and the briefing's capped
 │   │                        index (aspect.py), how the two retired modules reach it (migrate.py),
-│   │                        `dplanner note`, and the Implementation notes tab (activity.py, view.py)
+│   │                        `dplanner note`, and the Implementation notes tab (activity.py)
 │   ├── spec/                spec documents beside a project, their figures, and the project's
 │   │                        topology — `dplanner spec`, `dplanner topology` (pdf.py: text layers
 │   │                        and page rendering; editor.py: the in-app markdown editor); and the
@@ -645,7 +645,7 @@ src/dplanner/
 │   │                        window half — click a row and the graph lands on its step, or
 │   │                        hand the lot to an agent
 │   ├── home/                where a window starts: the getting-started guide (guide.py, data naming
-│   │                        action ids) over the garden — garden.py its Qt-free seasons, garden_view.py
+│   │                        action ids) over the garden — garden.py its Qt-free seasons, garden_widget.py
 │   │                        the painting — a tab, the index's top row, and what the program opens
 │   │                        when there is nothing to reopen
 │   ├── reopen_tabs/         the tabs this library had last time, and the switch for it
@@ -656,7 +656,8 @@ src/dplanner/
 │   ├── appshell/  sync/  settings/  taskcenter/
 │   ├── debug/               diagnostics — the LLM Calls and Telemetry tabs — and Debug ▸ Design Examples,
 │   │                        the design system built from the primitives, to be looked at and copied from:
-│   │                        design_example.py is the modal, the table and the toolbars; design_rows.py
+│   │                        design_example_dialog.py is the modal, design_example_activity.py the table and
+│   │                        the toolbars (over design_sample.py's rows); design_rows_activity.py
 │   │                        is what a picked row wears, beside the block that is not one
 │   ├── llm/  openai/  anthropic/  — the LLM picker, and the two vendor modules: each an LLM
 │   │                        provider, a settings page and the *Add API key…* wizard; openai's

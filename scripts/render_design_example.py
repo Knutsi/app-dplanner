@@ -25,12 +25,12 @@ from PySide6.QtWidgets import QApplication, QWidget
 from dplanner.framework.context import ContextService
 from dplanner.framework.debounce import DebounceService
 from dplanner.framework.theme_service import ThemeService
-from dplanner.modules.debug.design_example import (
+from dplanner.modules.debug.design_example_activity import (
     DesignExampleActivity,
-    DesignExampleDialog,
     DesignExampleToolbars,
 )
-from dplanner.modules.debug.design_rows import DesignExampleRows
+from dplanner.modules.debug.design_example_dialog import DesignExampleDialog
+from dplanner.modules.debug.design_rows_activity import DesignExampleRows
 from dplanner.theme import apply_theme
 from dplanner.theme.providers import BUILTIN
 from dplanner.theme.themes import DARK, LIGHT, Theme

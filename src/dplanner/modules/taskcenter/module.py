@@ -17,7 +17,7 @@ from dplanner.framework.context import Context
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.widgets import StatusBarButton
 from dplanner.framework.window import StatusHost
-from dplanner.modules.taskcenter.view import TaskBrowserDialog, button_text
+from dplanner.modules.taskcenter.browser_dialog import TaskBrowserDialog, button_text
 
 TICK_MS = 250
 

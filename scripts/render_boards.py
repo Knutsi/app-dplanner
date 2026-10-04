@@ -30,12 +30,12 @@ from dplanner.app import configure_application, new_session, set_early_attribute
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.framework.services import AppServices
-from dplanner.modules.progression.module import (
+from dplanner.modules.status_board.activity import (
     CONTROL_CENTRE_KIND,
     PROGRESSION_KIND,
     ControlCentreActivity,
 )
-from dplanner.modules.step_order.module import ORDER_KIND
+from dplanner.modules.step_order.activity import ORDER_KIND
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status
 from dplanner.planning.status import write as write_status

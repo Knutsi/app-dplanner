@@ -21,8 +21,8 @@ that gesture already said what this is.
 The frame names its *parts* — ``#DialogBody``, ``#DialogFooter`` — and leaves its own
 object name to the subclass, so the stylesheet reaches every dialog through two constant
 names and no dialog is ever added to a selector list. ``ARCHITECTURE.md``'s *A primitive
-carries the rule* has the reasoning; ``modules/debug/design_example.py`` is the reference
-to copy from.
+carries the rule* has the reasoning; ``modules/debug/design_example_dialog.py`` is the
+reference to copy from.
 """
 
 from collections.abc import Callable

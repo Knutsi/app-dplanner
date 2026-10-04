@@ -19,7 +19,7 @@ os.environ["QT_QPA_PLATFORMTHEME"] = ""
 from PySide6.QtCore import QCoreApplication, QEvent
 from PySide6.QtWidgets import QApplication, QWidget
 
-from dplanner.modules.appshell.about import ABOUT_SIZE, AboutDialog
+from dplanner.modules.appshell.about_dialog import ABOUT_SIZE, AboutDialog
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 

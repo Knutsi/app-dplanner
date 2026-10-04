@@ -40,13 +40,13 @@ from dplanner.modules.canvas.layouts.positions import write_position
 from dplanner.modules.canvas.layouts.sorts import layered_flow
 from dplanner.modules.notes.aspect import MODULE_ID as NOTES_ID
 from dplanner.modules.notes.aspect import Note, write_log
+from dplanner.modules.schedule.assumptions import write_project
 from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
 from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.aspect import write as tests
 from dplanner.modules.testing.filing import Category, write_catalog
-from dplanner.modules.time_estimates.schedule import write_project
 from dplanner.planning.agent import write_state as agent_state
 from dplanner.planning.check import write as check
 from dplanner.planning.estimate import write as estimate

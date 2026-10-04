@@ -45,10 +45,8 @@ from dplanner.framework.widgets import block, caption, note
 from dplanner.modules.projects.checkouts import repo_folder_name
 from dplanner.modules.projects.repo_picker import field_row, tool_button
 from dplanner.modules.projects.repos import Joined, RepositoryServices, shown_path
-from dplanner.modules.projects.repositories_folder import (
-    ensure_repositories_folder,
-    repositories_folder,
-)
+from dplanner.modules.projects.repositories_folder import repositories_folder
+from dplanner.modules.projects.repositories_folder_dialog import ensure_repositories_folder
 from dplanner.theme.icons import folder_icon
 from dplanner.theme.tokens import SECTION_GAP
 

@@ -28,7 +28,7 @@ from dplanner.framework.user_config import get_global, set_global
 
 # Estimate-driven fractions stop just short of full so a task that overruns its estimate
 # shows as "almost there", never as falsely complete. Shared with every other surface that
-# draws a remembered duration as progress (modules/sync/save_progress.py).
+# draws a remembered duration as progress (modules/sync/save_progress_dialog.py).
 ESTIMATE_CAP = 0.95
 
 

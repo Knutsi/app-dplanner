@@ -42,9 +42,9 @@ from dplanner.framework.index_panel import SEGMENT_ROLE, IndexPanel
 from dplanner.framework.services import AppServices
 from dplanner.framework.session import AppSession
 from dplanner.modules import start_window
+from dplanner.modules.home.activity import HomePage
 from dplanner.modules.home.garden import Garden
-from dplanner.modules.home.garden_view import GardenView
-from dplanner.modules.home.page import HomePage
+from dplanner.modules.home.garden_widget import GardenView
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 

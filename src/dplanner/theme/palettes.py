@@ -13,7 +13,7 @@ fields — a milestone's shade says *which milestone*, and it has to keep saying
 theme changes underneath (DESIGN.md's exception #2, the rule the status tones keep).
 
 **Qt-free, and hex strings throughout.** This file is where the maps live rather than
-``modules/time_estimates/`` because three consumers need them and modules never import each
+``modules/schedule/`` because three consumers need them and modules never import each
 other: the Time tab deals them, the appearance module lists them in *View ▸ Milestone
 Colours*, and the canvas, the tables and the report wear the answer. ``theme/`` is the leaf
 every module and the framework may import, and a module's Qt-free half may import it too —
@@ -23,7 +23,7 @@ the way ``option.palette`` does (ARCHITECTURE.md's *The palette a painter is han
 snapshot*).
 
 *Which* map a project uses, and a milestone's own chosen colour over the dealt one, are the
-project's stored assumptions — ``modules/time_estimates/schedule.py`` owns those, and
+project's stored assumptions — ``modules/schedule/assumptions.py`` owns those, and
 ``FORMAT.md`` has their shape.
 """
 

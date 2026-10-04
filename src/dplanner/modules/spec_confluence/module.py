@@ -36,7 +36,7 @@ from dplanner.framework.settings_registry import SettingsSection, SettingsSectio
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.modules.spec_confluence.client import ConfluenceClient, Credentials
-from dplanner.modules.spec_confluence.connect import ConnectDialog
+from dplanner.modules.spec_confluence.connect_dialog import ConnectDialog
 from dplanner.modules.spec_confluence.settings_page import build_page
 from dplanner.modules.spec_confluence.source import (
     FOLDER,

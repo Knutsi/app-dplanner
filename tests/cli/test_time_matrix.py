@@ -6,7 +6,7 @@ from datetime import date
 import pytest
 
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.time_estimates.schedule import MODULE_ID
+from dplanner.modules.schedule.assumptions import MODULE_ID
 from dplanner.planning.dates import format_date
 from dplanner.theme.palettes import PALETTES, shades
 

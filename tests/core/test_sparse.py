@@ -2,13 +2,13 @@
 it refuses before downloading anything, how it tells the remote has moved, and the shell
 it runs git in. No network, and no test reads the developer's git configuration.
 
-The remote helper is ``tests/modules/spec_git_helpers.py``'s — the spec kind is the door's
+The remote helper is ``tests/modules/spec_git/spec_git_helpers.py``'s — the spec kind is the door's
 first reader, and one ``file://`` bare repository serves both suites."""
 
 import hashlib
 
 import pytest
-from tests.modules.spec_git_helpers import clean_git, git, make_remote  # noqa: F401
+from tests.modules.spec_git.spec_git_helpers import clean_git, git, make_remote  # noqa: F401
 
 from dplanner.core.storage import sparse
 from dplanner.core.storage.locations import canonical_remote

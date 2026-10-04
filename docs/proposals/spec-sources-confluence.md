@@ -458,19 +458,19 @@ the keychain row gains the Confluence entry `confluence.token:<site>`), `README.
 map: `spec_confluence/`, `spec/`'s line), `NOTES-FOR-APPFRAME.md` (`backend_problem`).
 
 **Tests**
-- `tests/modules/test_confluence_client.py` — Qt-free, a `FakeOpener` routing table that
+- `tests/modules/spec_confluence/test_confluence_client.py` — Qt-free, a `FakeOpener` routing table that
   **raises on any method but GET**: pagination (Link header and `_links.next`, string and
   dict, relative `/wiki`), 429 + Retry-After and the cap, 401 → `needs_reconnect`, 403/404
   sentences, a cross-host 302 followed once without the Authorization header and refused for
   http / a foreign host, the read cap, non-object JSON, the token never appearing in any
   exception text.
-- `tests/modules/test_confluence_convert.py` — storage fixtures as inline strings:
+- `tests/modules/spec_confluence/test_confluence_convert.py` — storage fixtures as inline strings:
   headings/lists/tables/code (CDATA, spaced `]] >`)/panels/tasks/layouts/mentions/time/
   emoticons/status; images by attachment (mapped and unmapped) and external; sibling and
   stranger page links; the hostile set — `<script>`, `<iframe>`, `javascript:`/`file:` hrefs,
   raw `<img src=http>`, an entity bomb, 10 000-deep nesting, a filename `../../x.png`, an
   unknown macro.
-- `tests/modules/test_confluence_source.py` — Qt-free: `parse_url` forms and host refusal;
+- `tests/modules/spec_confluence/test_confluence_source.py` — Qt-free: `parse_url` forms and host refusal;
   the walk with folders and skipped types; the caps; `kept` on an unchanged version; image
   filtering by reference, sniffed type and size; asset names equal `asset_name(bytes, …)`;
   cancellation between requests.
@@ -484,12 +484,12 @@ map: `spec_confluence/`, `spec/`'s line), `NOTES-FOR-APPFRAME.md` (`backend_prob
   `previous`, and two Refreshes are two undo entries; Remove Source takes the subtree and
   undoes; the freshness note appears from a canned `Freshness` and clears on Refresh; a check
   writes nothing; a 401 flips the button label; the check stops on close.
-- `tests/modules/test_confluence_connect.py` — the dialog (disposed with `deleteLater`): OK
+- `tests/modules/spec_confluence/test_confluence_connect.py` — the dialog (disposed with `deleteLater`): OK
   disabled until a passing test; the token reaches the injected secret store and never
   `user_config`; a backend problem refuses; the browser button goes through the seam.
 - `tests/cli/test_spec_sources.py` — Qt-free: format 3→4 migration; `spec list` tree and
   JSON; the refusals; the lint check.
-- Update `tests/modules/test_spec.py` (toolbar shape, `rows()`), the three sibling spec test
+- Update `tests/modules/spec/test_spec.py` (toolbar shape, `rows()`), the three sibling spec test
   files (`rows()`), `test_spec.py`'s stale docstring path, and `tests/test_architecture.py`
   (`HEADLESS_FILES` gains `sourced.py`, `client.py`, `convert.py`, `source.py`).
 
@@ -554,8 +554,8 @@ map: `spec_confluence/`, `spec/`'s line), `NOTES-FOR-APPFRAME.md` (`backend_prob
 
 ```bash
 QT_QPA_PLATFORM=offscreen uv run pytest -q tests/core tests/domain tests/cli \
-    tests/modules/test_confluence_client.py tests/modules/test_confluence_convert.py \
-    tests/modules/test_confluence_source.py      # inner loop, Qt-free
+    tests/modules/spec_confluence/test_confluence_client.py tests/modules/spec_confluence/test_confluence_convert.py \
+    tests/modules/spec_confluence/test_confluence_source.py      # inner loop, Qt-free
 QT_QPA_PLATFORM=offscreen uv run pytest -q     # the whole suite before finishing
 uv run ruff check && uv run ruff format --check && uv run mypy
 ```

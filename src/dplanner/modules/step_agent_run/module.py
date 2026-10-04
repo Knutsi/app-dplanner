@@ -73,6 +73,7 @@ from dplanner.modules.step_agent_run.aspect import (
     record_exit,
     record_launch,
 )
+from dplanner.modules.step_agent_run.browser_dialog import AgentBrowserDialog, button_text
 from dplanner.modules.step_agent_run.runs import (
     AgentRun,
     describe,
@@ -80,7 +81,6 @@ from dplanner.modules.step_agent_run.runs import (
     read_shell,
     settle,
 )
-from dplanner.modules.step_agent_run.view import AgentBrowserDialog, button_text
 
 POLL_MS = 2000
 RUNS_KEY = "runs"

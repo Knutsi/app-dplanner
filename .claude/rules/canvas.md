@@ -1,10 +1,7 @@
 ---
 paths:
-  - "src/dplanner/modules/canvas/**"
-  - "src/dplanner/modules/problems/**"
+  - "{src/dplanner,tests}/modules/{canvas,problems}/**"
   - "src/dplanner/theme/{cards,tones}.py"
-  - "tests/modules/canvas/**"
-  - "tests/modules/test_problems*.py"
   - "tests/cli/test_{layout_cli,step_duplicate,stack_cli}.py"
   - "scripts/render_graph_editor.py"
 ---

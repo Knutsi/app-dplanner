@@ -28,7 +28,7 @@ from dplanner.framework.undo import UndoService
 from dplanner.framework.window import PanelHost
 from dplanner.framework.zoom import ZoomService
 from dplanner.identity import APP_NAME
-from dplanner.modules.appshell.about import AboutDialog
+from dplanner.modules.appshell.about_dialog import AboutDialog
 from dplanner.theme.icons import info_icon, redo_icon, undo_icon
 
 

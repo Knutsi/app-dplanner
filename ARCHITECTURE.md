@@ -607,7 +607,7 @@ reason to spend a core. Somebody who would rather not have it turns it off in *S
 Home* — a global preference, since it is about the person and not the library. It has no
 close button of its own: a ✕ in the corner was one more control on a page that is otherwise
 only the guide, and the developer's call was to leave the garden clean. `garden.py` is what
-happens and `garden_view.py` how it looks; the first version,
+happens and `garden_widget.py` how it looks; the first version,
 a cloud over nine identical stems, taught that the look is most of the message.
 
 ## Motion is a library
@@ -1265,7 +1265,7 @@ the context, the same idiom that keeps the Undo label current.
 editor. Ctrl+X, Ctrl+C, Ctrl+V, Ctrl+D and Ctrl+A are different, and this was measured
 rather than assumed: `QPlainTextEdit` and `QLineEdit` claim all of them through
 `ShortcutOverride`, so a window-wide menu shortcut never fires while an editor has focus —
-the property `tests/modules/test_appshell.py` pins for Ctrl+Shift+Right. A table claims
+the property `tests/modules/appshell/test_appshell.py` pins for Ctrl+Shift+Right. A table claims
 none of them, but every table here is a tab, so no table ever competes with a canvas for a
 key, and a table has no Ctrl+X of its own to lose. Delete is the exception in the other
 direction: a bare `Del` on the menu bar would fire in every list in the window, and
@@ -1458,7 +1458,7 @@ or an unsplit window would keep an accent edge on the pane that survived.
 ## A primitive carries the rule; a dialog's stylesheet does not
 
 (`DESIGN.md`'s *Dialogs*, *Tables*, *Signalling* and *Bringing a surface up* are the
-standard this settled; `modules/debug/design_example.py` is the living reference.)
+standard this settled; `modules/debug/design_example_activity.py` is the living reference.)
 
 For a year the rules lived in two places that could not see each other: DESIGN.md said
 what a dialog looked like, and `theme.qss` said which dialogs looked like it. The accent
@@ -4683,7 +4683,7 @@ is in `.claude/rules/agents.md`, and the edge rule in `.claude/rules/graph-model
 Review tab lists each message as a heading and its first line, which says where a review
 stands but not what it said, and a finding is prose. *Step ▸ Review Conversation…* — and
 the tab's *Open Conversation…*, and a double-click on one of its rows — opens
-`step_review/conversation.py`:
+`step_review/conversation_dialog.py`:
 - the messages on the left, each wearing who said it: the review's glyph for the step that
   asks, the agent's for the step that answers;
 - the picked message rendered in full on the right;
@@ -5961,7 +5961,7 @@ raises `DivergedError` (`core/storage/provider.py`), which carries the repositor
 branch. `SyncService._start` sees it on the way out and sends `diverged(root, branch)` just
 ahead of the failure. A commit that already landed is not "not recorded": the row says
 *committed here, not pushed*. The error's own words were the old message, and it did not fit
-the one-line footer status, so `modules/sync/diverged.py` says what happened and what to do
+the one-line footer status, so `modules/sync/not_pushed_dialog.py` says what happened and what to do
 in the body instead. The quit dialog shows it under its rows, and Save and Update from
 Remote show it in *Not Pushed* rather than a `QMessageBox`. Both offer *Reconcile with Agent*
 with every launch profile, and the agent runs in that plan repository, with no worktree and
@@ -6019,7 +6019,8 @@ verb that sets it.
 **The estimate joined the tier, and the walks read it rather than being handed it.** The
 estimate (`planning/estimate.py`, with the project's start date, under the unchanged id
 `estimation`) is interpreted by the schedule, the critical path and progress alike, so it
-passes the admission test; `modules/estimation/` keeps the editors and the verbs. Once it
+passes the admission test; `modules/estimation/` keeps the editors and the `estimate` verbs,
+and `modules/schedule/` the whole `schedule` noun. Once it
 was here, the `days_for` threaded through the root, the order tab, the layout sorts and the
 time module carried nothing but the one reader, and went: the walks default to
 `estimate.read`, and a function parameter stays only where a caller means other days —
@@ -6107,13 +6108,58 @@ which the branches module reads and caches, and the location roles, the root's r
 over every module's `roles.py`. `tests/cli/test_briefing_golden.py` holds the briefing to
 the byte, which is how the move was shown to change no text.
 
+### A file name has one meaning
+
+The rule is CLAUDE.md's *Two surfaces, one vocabulary*. The checks are rule 15 and the
+headless-file test in `tests/test_architecture.py`.
+
+By 4 October `view.py` meant four things in four packages: a tab's body (the Order table),
+a status-bar widget with a diff dialog beside it (sync), a modal list (the Agents and task
+browsers) and a modal (the outside-change conflict). Five tabs lived inside `module.py`,
+and two `editor.py` files were a Step Details section and a tab's sub-widget. A newcomer
+could not tell where a surface was from a directory listing, which is the one view of a
+package everybody has.
+
+**Now a Qt file's name says its role:**
+
+- `activity.py` (or `<x>_activity.py` where a package has several tabs, as `debug` does) is
+  a tab, with the widgets only that tab hosts;
+- `dialog.py` or `<x>_dialog.py` is a modal, modal lists included;
+- `scene.py` is a `QGraphicsScene`;
+- `panel.py`, `status_widget.py`, `section.py` and `settings_page.py` are what CLAUDE.md lists.
+
+**The first three are checked from the class hierarchy.** An `ActivityBase`, `DialogFrame`
+or `QGraphicsScene` subclass, followed through subclasses across files, must sit in a file
+named for its role. A test reads the classes rather than trusting the names, because a
+convention a reviewer has to remember is the one the next feature forgets. The last four
+have no base class to key on: a section is an `InspectorSection` value, and a status-bar
+widget is any widget. They stay documented.
+
+**A mixed file gave up its dialog, not its logic.** `repo_picker.py` keeps the picker and
+`repositories_folder.py` the remembered folder. Their dialogs, with the code only a dialog
+uses, moved beside them (`repo_list_dialog.py`, `repositories_folder_dialog.py`), so the
+headless remainder no longer imports a dialog. The design example's sample rows became
+`design_sample.py`. Without it the dialog and the tab would import each other.
+
+**`HEADLESS_FILES` became package-relative for the same reason.** Matched by bare name,
+`schedule.py` meant whichever file had that name in any package. When `time_estimates`
+became `schedule`, its `schedule.py` was renamed `assumptions.py`, the entry matched nothing,
+and the file silently left the rule. The test now lists generic roles once (`HEADLESS_ROLES`:
+`cli.py`, `aspect.py`, `report.py`, …) and every other file by package and path. A listed
+path that does not exist fails the suite.
+
+**`tests/modules/<package>/` mirrors `modules/<package>/`**, and a test folder must name a
+package. That turns each area file's `paths:` into one `{src/dplanner,tests}/modules/{…}/**`
+glob rather than a hand-kept list of test files. A test of the composition root, or of
+several packages at once, stays at `tests/modules/` beside the root it tests.
+
 ## Progression is the status-aware frontier
 
 **The surface is named for the question; the derivation keeps the answer's name.** A person
 opens this tab to find out what needs them, so it is called *Step statuses* — in the tab
 title, the two menu entries and the index row — and the title counts the rows that need a
-person, the one number worth reading from across the window. Everything underneath stays
-`progression`: the walk, the module id, the activity kind, the action ids and `dplanner
+person, the one number worth reading from across the window, and the package that renders
+it is `modules/status_board/`. Everything underneath stays `progression`: the walk, the module id, the activity kind, the action ids and `dplanner
 progression show`. That split is deliberate three ways. The derivation puts every step into
 one of eight partitions and the table shows only some of them, so *Step statuses* would be
 the wrong name for the function. The kind and the ids are the contract the per-user store
@@ -6211,7 +6257,7 @@ The rules worth writing down, because each was a decision:
 day, and the wait is still a module's aspect — and the estimate is read from the planning
 tier; the derivation is tested with dict-backed functions in their place. Nothing
 is persisted, for the ordering's reason — `dplanner status set` changes the answer with no
-window running to notice. The tab (`modules/progression/`), `dplanner progression show` and
+window running to notice. The tab (`modules/status_board/`), `dplanner progression show` and
 `--json` are three readers of the one function, so no surface can recommend a launch
 another surface would dispute.
 
@@ -6270,7 +6316,7 @@ The Order tab ran the plan out as a calendar once: an *Accumulated* column, a *S
 milestone* column and a *Date* per row, from a start date set on that page, one step after
 another with a single worker and weekends skipped. Every number in it was true and none of
 it was useful. Nobody works that way, and the application itself does not believe it —
-`time_estimates` simulates two pools of workers against milestone dates, and that is what
+`modules/schedule` simulates two pools of workers against milestone dates, and that is what
 the plan is scheduled on. Two surfaces answering *when* with different arithmetic is one
 surface too many, and the one to drop is the one nobody schedules on.
 
@@ -6343,7 +6389,7 @@ Time tab runs the one the project is staffed for. The decisions worth writing do
   total. An ILP would be tighter in contrived graphs and impossible to explain in a cell.
 - **Calendar time is the same walk over stretched estimates.** The focus factor — how much
   of a person's working day this project actually gets — divides human steps' days via a
-  wrapped `days_for` (`time_estimates/schedule.py`'s `stretched`), so the domain never
+  wrapped `days_for` (`schedule/assumptions.py`'s `stretched`), so the domain never
   learns an efficiency exists. Agent steps are not stretched: their human-in-the-loop cost
   is already inside the quarter-day estimate convention, and the factor prices the person's
   divided week, not the agent's.
@@ -6471,9 +6517,9 @@ prototype (`docs/exploration/time-estimation-2` on its own branch, never merged)
 both over twelve simulated teams and adopted a third: **the plan's own dates stand while
 reality matches them; otherwise the rest resumes from tomorrow, with work in flight
 credited.** `phases(…, facts=ScheduleFacts)` is that model, and
-`tests/modules/test_time_parity.py` holds it to the prototype's forecast on every day of
+`tests/modules/schedule/test_time_parity.py` holds it to the prototype's forecast on every day of
 every scenario, three seeds each — the prototype's fixture replayed through the real aspect
-writers (`time_estimates/simulation/frames.py`), so the stored `since` the model reads is the
+writers (`schedule/simulation/frames.py`), so the stored `since` the model reads is the
 one the status aspect stamped. The rule is `.claude/rules/schedule.md`'s *The plan re-dates
 itself*.
 
@@ -6489,7 +6535,7 @@ itself*.
   worker**: it goes first in `parallel_finish` (`running`), because the person on it does
   not drop it for a longer chain. It is credited with the working days since it started,
   from the middle of that day, and at least half a day is always left. The credit is
-  `ScheduleFacts.worked`, built in `time_estimates/schedule.py`, because a day worked under
+  `ScheduleFacts.worked`, built in `schedule/assumptions.py`, because a day worked under
   an earlier focus is worth what that focus made it (`efficiency_was`) and the domain never
   learns a focus exists.
 - **Facts beat the sequence.** A stretch whose work is all done is dated by when it was
@@ -6595,7 +6641,7 @@ the day:
 A forecast model is judged over days, not in a screenshot: whether it holds still while a
 plan is followed and moves the day it is not. The prototype was built around a simulator
 for that — a team working a synthetic plan while something happens to it, one scenario per
-broken assumption — and `time_estimates/simulation/` is that simulator in Python, Qt-free
+broken assumption — and `schedule/simulation/` is that simulator in Python, Qt-free
 and held to it: the seeded luck and the sample plan to the bit, the world frame for frame
 (`test_time_simulation.py` replays every exported run), and the model on top by the parity
 file. `scripts/time_accuracy.py` prints the prototype's accuracy table — its `resume`
@@ -6701,7 +6747,7 @@ what actually landed, and the plan as it stood on the day you compare against. T
 decisions that carry it:
 
 - **One measure: estimated days.** The days of done steps over the days of all of them,
-  `time_estimates/progress.py` over `status_for` — the status aspect's reader handed in
+  `schedule/progress.py` over `status_for` — the status aspect's reader handed in
   like `days_for`, so this module never learns where a status lives — and "toward a
   milestone" is **cumulative through its stretch**, because a milestone lands when
   everything before it has, not only what is new since the last one. A share by count
@@ -6789,7 +6835,7 @@ decisions that carry it:
   `present.py` (Qt-free) is the prototype's `present.ts` and `brief.ts` less what the
   resume model made redundant: re-dated from what has happened, a plan is never behind
   itself, so there is no lag, no projection at today's pace and no verdict. The tab and
-  `time_estimates/report.py` both read it, and `cli/report/parts.py`'s `Chart` of `Plot`s
+  `schedule/report.py` both read it, and `cli/report/parts.py`'s `Chart` of `Plot`s
   (`shift`, `scope`, `done`) and `Stretch`es is that page said as plain data, which
   `drawings.py` draws for the page and, through QtSvg, the PDF. Weekends and today's word
   are the renderer's own, facts of the calendar rather than of the plan. The report heads
@@ -7267,7 +7313,7 @@ under and scrolls to it. Opening the fold is deliberately *not* part of `select_
 which runs on every rebuild to keep the selection: unfolding there would spring a group
 open the moment the reader shut one holding the row they had picked.
 
-**The preview and the panel are the same two widgets.** `view.py`'s `TestHead` and
+**The preview and the panel are the same two widgets.** `cards.py`'s `TestHead` and
 `TestBody` are the test as it is *read* — what it is called, where it is filed, how it last
 did, and its body rendered. The Test panel puts its verb strip between them and the preview
 puts nothing there, and that is the whole difference; written twice, one of them would have
@@ -7861,7 +7907,7 @@ A whole-codebase review (2026-08) found the architecture holding; these are the 
 where growth has a known cost curve, written down so the feature that crosses the line
 recognises the moment. None needs action today.
 
-- **`agent_briefing/sections.py`'s `step_sections()` grows one hand-rolled block per aspect**
+- **`agent_briefing/blocks.py`'s `step_sections()` grows one hand-rolled block per aspect**
   with a briefing presence, each with its own empty-check — nine today, past the six this
   note once named as the line. The exit is the shape `cli/lint.py` and `cli/authoring.py`
   already use: each module exports a Qt-free block builder and the list is assembled once;
@@ -7910,7 +7956,8 @@ recognises the moment. None needs action today.
   read; nothing reads it yet, which is the only reason it is a constant.
 - **Reports** — new folders in the index tree, which is the shape the registry was built for.
   `dplanner schedule show` is the first of them, and it lives in the module that owns the
-  numbers rather than in the one that owns the table. (The schedule that knows about
+  dates (`modules/schedule/`, with the rest of the `schedule` noun) rather than in the one
+  that owns the table. (The schedule that knows about
   parallelism, once listed here, landed as `parallel_finish` and the time estimates tab —
   see *Time estimates: two worker pools, one greedy simulation*.)
 
@@ -8586,7 +8633,7 @@ snapshot. The Order table is linear in rows (11 → 126 ms, a `QTableWidget` reb
 Three tabs are expensive to open cold and get worse faster than the project grows: the
 Tests tab and the Coverage tab (about *N*^1.2 and *N*^1.4, both walking every collector's
 cone and building a widget per row), and the Estimates tab (linear, a `QWidget` editor
-per row, **2.4 s at 400 steps** — the journal's 448 ms stall at `bulk.py:285` is the same
+per row, **2.4 s at 400 steps** — the journal's 448 ms stall at `bulk.py:285` (now `bulk_activity.py`) is the same
 table at a hundred). Painting is small headless — 3 to 11 ms a frame at a 280 000-pixel
 viewport, the dots and crosses grounds costing a few ms over a plain one — but a 4K
 display has thirty times the pixels, and the journal sampled two `steps.details` stalls
@@ -8622,10 +8669,10 @@ cost goes from 0.4 ms to **6 ms at 25 steps, 15 ms at 100 and 62 ms at 400**, an
 `foreign_edit` scenario — a title edit in the *sibling* project — costs exactly the same,
 which names the view: *All tests* (`modules/testing/activity.py`, `AllTestsActivity`)
 walks every project and rebuilds its whole table on any structure, field or module-data
-change, synchronously, in the signal. The Estimates tab (`modules/estimation/bulk.py`) is
+change, synchronously, in the signal. The Estimates tab (`modules/estimation/bulk_activity.py`) is
 the other: its `_on_structure` rebuilds the table with an editor widget per row on any
 `structure_changed`, so **one new step costs 121 ms at 25 steps, 368 ms at 100 and
-1.4 s at 400** while that tab is open — the journal's 448 ms stall at `bulk.py:285` is
+1.4 s at 400** while that tab is open — the journal's 448 ms stall at `bulk.py:285` (now `bulk_activity.py`) is
 this, on the real project — and it rewrites every row's text on any `field_changed` in
 the library (4 ms at 400). The Coverage tab is filtered and coalesced, and still costs
 **690 ms at 400 steps** once per burst; a click on a step reaches 113 ms with every
@@ -8661,7 +8708,7 @@ above are what to re-measure after each.
    Removes twenty git subprocesses from a paste.
 6. **An action state never leaves the process.** `LLMService.status()` caches until
    `config_changed` — the seam *An LLM call is a task* already names.
-7. **Every subscriber follows a project and coalesces.** Convert `estimation/bulk.py`,
+7. **Every subscriber follows a project and coalesces.** Convert `estimation/bulk_activity.py`,
    `AllTestsActivity` and `framework/project_list_segment.py` to `follow_project` +
    `Debounced`, and add the rule to `tests/test_architecture.py`: a `library.*_changed
    .connect` outside `framework/activity.py` and the store is a finding.
@@ -8739,7 +8786,7 @@ the usual spans, how long the GUI thread was held, how many times the context wa
 announced and how many times the dock relaid itself — the number to quote before
 touching any of this.
 `tests/modules/canvas/test_canvas.py` asserts one announcement and no relayout per
-connect and per paste in the window's deferred regime, and `tests/modules/test_sync.py`
+connect and per paste in the window's deferred regime, and `tests/modules/sync/test_sync.py`
 that a step add asks git nothing.
 
 **An action's state is read on every announce, so it may not derive anything over the
@@ -8763,7 +8810,7 @@ runs inline, so the answer a test reads is always current and the settle never r
 the announce it was read from (`_reading`). `collect.frontier` is the derivation, one
 walk per collector where the state made three; `docs status` reads `compiled_state` over
 sources it already holds for the same reason.
-`tests/modules/test_docs_compile.py` asserts, in the deferred regime, that ten reads walk
+`tests/modules/docs/test_docs_compile.py` asserts, in the deferred regime, that ten reads walk
 nothing, that a change leaves the label as it was until the settle, and that the settle
 announces.
 

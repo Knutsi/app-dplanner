@@ -18,7 +18,7 @@ frames deep with `QScrollArea::eventFilter` on the stack 20,000 times. gdb's `bt
 says so in one line, where faulthandler shows four Python frames and a symbol
 (`_Pep_PrivateMangle`) that is only where the stack ran out. **A widget whose height
 depends on its width implements `heightForWidth` and lets the layout ask; it never resizes
-itself in `resizeEvent`.** `time_estimates/months.py` is the worked example, and its
+itself in `resizeEvent`.** `schedule/months.py` is the worked example, and its
 regression test sweeps a scroll area across every width that could flip the scrollbar.
 **Its `minimumSizeHint` is the least it can ever need — one row — never its `sizeHint`**:
 a resizable scroll area sizes its page to the minimum, and a minimum computed at the

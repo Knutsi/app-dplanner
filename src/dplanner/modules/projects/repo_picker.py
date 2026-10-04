@@ -13,8 +13,9 @@ runs off the GUI thread and lands in the repositories folder.
 :class:`RepoAction`, :func:`menu_of`, :func:`menu_button` and :func:`popup_menu` are the ⋯
 vocabulary the Project dialog's repository columns and its code repository field share with
 the picker; :func:`tool_button` and :func:`field_row` are the field-and-glyph-button pair
-every one of these surfaces is built from; and :class:`GhRepoListDialog` is the listing
-they all pick a repository from — to clone here, or to name as the code a plan is about.
+every one of these surfaces is built from; and ``repo_list_dialog.py``'s
+:class:`GhRepoListDialog` is the listing they all pick a repository from — to clone here, or
+to name as the code a plan is about.
 """
 
 import re
@@ -29,8 +30,6 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
-    QLineEdit,
-    QListWidget,
     QMenu,
     QToolButton,
     QVBoxLayout,
@@ -40,23 +39,21 @@ from PySide6.QtWidgets import (
 from dplanner.core.storage.locations import find_repo_root, origin_url, remote_label
 from dplanner.core.storage.provider import StorageError
 from dplanner.domain.plan_repo import plan_repositories_in
-from dplanner.framework.dialog import DialogFrame, LinePrompt
+from dplanner.framework.dialog import LinePrompt
 from dplanner.framework.signalling import StatusLine, Tone
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
 from dplanner.framework.user_config import get_global, set_global
-from dplanner.framework.widgets import caption, ink_of
+from dplanner.framework.widgets import ink_of
+from dplanner.modules.projects.repo_list_dialog import GhRepoListDialog
 from dplanner.modules.projects.repos import MODULE_ID, RepositoryServices, shown_path
-from dplanner.modules.projects.repositories_folder import (
-    ensure_repositories_folder,
-    repositories_folder,
-)
+from dplanner.modules.projects.repositories_folder import repositories_folder
+from dplanner.modules.projects.repositories_folder_dialog import ensure_repositories_folder
 from dplanner.theme.icons import ICON_SIZE, clone_icon, external_icon, folder_icon, plus_icon
 from dplanner.theme.tokens import CAPTION_GAP, CONTROL_HEIGHT, FIELD_GAP
 
 LAST_ROOT_KEY = "last_plan_root"
-GH_LIST_SIZE = (440, 380)
 
 # The ⋯ button's glyph. A character rather than a painted icon: it names no verb, and every
 # platform's font has it.
@@ -370,91 +367,3 @@ class RepoPicker(QWidget):
     def say(self, text: str, tone: Tone = "error") -> None:
         """The line under the picker: a refusal in the error tone, a clone in the busy."""
         self.note.say(text, tone)
-
-
-def github_listing(services: RepositoryServices) -> tuple[list[str], str]:
-    """BLOCKING — the body every listing of the person's GitHub repositories runs on a
-    task: the repositories, or why gh could not answer. One body, however many presenters
-    (the picking dialog, the location dialog's combo), so a refusal is worded once."""
-    refusal = services.gh_refusal()
-    if refusal is not None:
-        return [], refusal
-    try:
-        return services.list_repositories(), ""
-    except (StorageError, OSError) as error:
-        return [], str(error)
-
-
-class GhRepoListDialog(DialogFrame):
-    """The person's GitHub repositories, filtered as they type; one is chosen.
-
-    What the choice is *for* is the caller's — a clone of a plan repository, or the code a
-    new plan is about — so the window's name and its primary's verb are given, and the
-    dialog itself only lists and answers. The primary is greyed directly rather than
-    through ``refuse()``: the footer's status slot is the listing's, busy while gh answers
-    and the count or the error afterwards.
-    """
-
-    _listed = QtSignal(object, str)  # (repos, error) — queued from the listing body.
-
-    def __init__(
-        self,
-        services: RepositoryServices,
-        tasks: TaskService,
-        parent: QWidget | None = None,
-        *,
-        title: str = "Clone from GitHub",
-        verb: str = "Clone",
-    ) -> None:
-        super().__init__(title, parent, size=GH_LIST_SIZE)
-        self._repos: list[str] = []
-        self._runner = TaskRunner(tasks, parent=self)
-        self._listed.connect(self._on_listed)
-        body, layout = self.body, self.body_layout
-
-        form = QVBoxLayout()
-        layout.addLayout(form)
-        form.setSpacing(CAPTION_GAP)
-        form.addWidget(caption("Your repositories", body))
-        self.filter_edit = QLineEdit(body)
-        self.filter_edit.setObjectName("GhRepoFilter")
-        self.filter_edit.setPlaceholderText("Filter…")
-        self.filter_edit.textChanged.connect(lambda _text: self._fill())
-        form.addWidget(self.filter_edit)
-        self.list = QListWidget(body)
-        self.list.setObjectName("GhRepoList")
-        self.list.itemActivated.connect(lambda _item: self.accept())
-        layout.addWidget(self.list, 1)
-
-        self.add_dismiss()
-        self.choose_button = self.set_primary(verb, self.accept)
-        self.choose_button.setEnabled(False)
-        self.list.currentRowChanged.connect(lambda row: self.choose_button.setEnabled(row >= 0))
-        self.status.say("Listing your repositories…", "busy")
-
-        self._runner.run(
-            "Listing GitHub repositories",
-            lambda: self._listed.emit(*github_listing(services)),
-            key="projects.gh_list",
-        )
-
-    def _on_listed(self, repos: object, error: str) -> None:
-        self._repos = [str(repo) for repo in repos] if isinstance(repos, list) else []
-        if error:
-            self.status.say(error, "error")
-        else:
-            self.status.say(f"{len(self._repos)} repositories")
-        self._fill()
-
-    def _fill(self) -> None:
-        needle = self.filter_edit.text().strip().lower()
-        self.list.clear()
-        for repo in self._repos:
-            if needle in repo.lower():
-                self.list.addItem(repo)
-        if self.list.count():
-            self.list.setCurrentRow(0)
-
-    def chosen(self) -> str:
-        item = self.list.currentItem()
-        return item.text() if item is not None else ""

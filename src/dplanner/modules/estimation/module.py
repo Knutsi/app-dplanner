@@ -30,7 +30,7 @@ from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
-from dplanner.modules.estimation.bulk import (
+from dplanner.modules.estimation.bulk_activity import (
     ESTIMATE_KIND,
     FILTER_UNESTIMATED,
     BulkEstimateActivity,

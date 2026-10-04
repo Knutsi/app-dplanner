@@ -15,7 +15,7 @@ Three things it does, and no more:
   changes 2 · S4, F7, S23*), and everything they counted filling that band with the
   percentage beside the verb. One band however many agents: four stacked bands were four
   things to read past, and a person needs to know *that* agents are writing before *which*.
-  A click on the band opens :class:`~dplanner.modules.agent_at_work.view.AtWorkDialog`,
+  A click on the band opens :class:`~dplanner.modules.agent_at_work.at_work_dialog.AtWorkDialog`,
   where each agent is said in full. A claim that has lapsed is simply not there —
   ``domain/at_work.py`` has why.
 - **Offers the ways out a person needs**: *Clear* on the band drops every claim it stands
@@ -46,7 +46,7 @@ from dplanner.domain.at_work import (
 from dplanner.domain.model import Library, ProjectId, Step, StepId
 from dplanner.framework.notices import Notice
 from dplanner.framework.window import NoticeHost
-from dplanner.modules.agent_at_work.view import AtWorkDialog
+from dplanner.modules.agent_at_work.at_work_dialog import AtWorkDialog
 
 MODULE_ID = "agent_at_work"
 NOTICE_ID = MODULE_ID  # One notice, whoever is at work.

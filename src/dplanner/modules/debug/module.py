@@ -21,16 +21,16 @@ from dplanner.framework.tabs import TabHost
 from dplanner.framework.task_runner import TaskRunner
 from dplanner.framework.tasks import TaskService
 from dplanner.framework.theme_service import ThemeService
-from dplanner.modules.debug.design_example import (
+from dplanner.modules.debug.design_example_activity import (
     DESIGN_TABLE_KIND,
     DESIGN_TOOLBARS_KIND,
     DesignExampleActivity,
-    DesignExampleDialog,
     DesignExampleToolbars,
 )
-from dplanner.modules.debug.design_rows import DESIGN_ROWS_KIND, DesignExampleRows
-from dplanner.modules.debug.telemetry_view import TELEMETRY_KIND, TelemetryActivity
-from dplanner.modules.debug.view import LLM_CALLS_KIND, LLMCallsActivity
+from dplanner.modules.debug.design_example_dialog import DesignExampleDialog
+from dplanner.modules.debug.design_rows_activity import DESIGN_ROWS_KIND, DesignExampleRows
+from dplanner.modules.debug.llm_calls_activity import LLM_CALLS_KIND, LLMCallsActivity
+from dplanner.modules.debug.telemetry_activity import TELEMETRY_KIND, TelemetryActivity
 from dplanner.modules.debug.windows_check import DESKTOP_COMMAND, command, probe
 
 # The child menu every design example hangs from: the list of them, in one seat.

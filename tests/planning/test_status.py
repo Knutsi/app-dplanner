@@ -1,9 +1,9 @@
 """The status vocabulary: what a reader is handed, and what readiness makes of it.
 
-The stored format and its CLI are ``tests/modules/test_step_status.py``'s; this file holds
-the claims the planning tier makes about the *types* — that an unreadable word and a wait
-not over are readings of their own, and that a literal compared with a status is refused
-before the code ever runs.
+The stored format and its CLI are ``tests/modules/step_status/test_step_status.py``'s; this
+file holds the claims the planning tier makes about the *types* — that an unreadable word and
+a wait not over are readings of their own, and that a literal compared with a status is
+refused before the code ever runs.
 """
 
 import textwrap

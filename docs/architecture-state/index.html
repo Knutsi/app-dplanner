@@ -416,7 +416,7 @@ footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted
       <tr><td>a step's key (<code>S7</code>, <code>M2</code>)</td><td class="num">7</td><td><code>step_key</code> ×5, <code>key_of</code> ×2</td><td>the root's <code>_step_key</code></td></tr>
       <tr><td>a step's status word</td><td class="num">4</td><td><code>status_for</code></td><td><code>step_status/aspect.py</code></td></tr>
       <tr><td>pick an existing asset</td><td class="num">4</td><td><code>pick_assets</code></td><td><code>project_assets</code></td></tr>
-      <tr><td>a milestone's colour</td><td class="num">3</td><td><code>milestone_color</code></td><td>the root's <code>_milestone_colors</code> over <code>time_estimates/schedule.py</code></td></tr>
+      <tr><td>a milestone's colour</td><td class="num">3</td><td><code>milestone_color</code></td><td>the root's <code>_milestone_colors</code> over <code>schedule/assumptions.py</code></td></tr>
       <tr><td>a step's estimate in days</td><td class="num">2</td><td><code>days_for</code></td><td><code>planning/estimate.py</code></td></tr>
       <tr><td>a step's kind glyphs</td><td class="num">1 (+2 copies)</td><td><code>step_icons</code>; recomputed in <code>docs/activity.py</code></td><td>the root's <code>_step_type_icons</code></td></tr>
     </tbody>
@@ -466,8 +466,8 @@ footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted
 
   <article class="finding">
     <header><span class="chip info">low</span><h4>The project start date has a split owner</h4></header>
-    <div class="where">modules/estimation/schedule.py (stores it) · modules/time_estimates (edits it) · domain/schedule.py</div>
-    <p><code>CLAUDE.md</code> says the Time tab "owns the start date", but the value is read and written by <code>estimation/schedule.py</code> under <code>estimation</code>'s namespace, and the root hands <code>start_of</code>/<code>set_start</code> across. It works, and the seam is typed — but a developer following the rulebook will look in the wrong package, and two files called <code>schedule.py</code> beside a third in <code>domain/</code> do not help. Either move the date with a <code>Takeover</code> or write down why it stays.</p>
+    <div class="where">modules/schedule/landings.py (stores it) · modules/schedule (edits it) · domain/schedule.py</div>
+    <p><code>CLAUDE.md</code> says the Time tab "owns the start date", but the value is read and written by <code>schedule/landings.py</code> under <code>estimation</code>'s namespace, and the root hands <code>start_of</code>/<code>set_start</code> across. It works, and the seam is typed — but a developer following the rulebook will look in the wrong package, and two files called <code>schedule.py</code> beside a third in <code>domain/</code> do not help. Either move the date with a <code>Takeover</code> or write down why it stays.</p>
   </article>
 
   <article class="finding">

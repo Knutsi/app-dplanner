@@ -118,9 +118,9 @@ from dplanner.modules.projects.checkouts import CheckoutService
 from dplanner.modules.projects.code_choice import CodeChoice
 from dplanner.modules.projects.location_dialog import LocationDialog, known_repositories
 from dplanner.modules.projects.locations_table import LocationsTable
+from dplanner.modules.projects.repo_list_dialog import GhRepoListDialog
 from dplanner.modules.projects.repo_picker import (
     Entry,
-    GhRepoListDialog,
     PlanTarget,
     RepoAction,
     RepoPicker,
@@ -141,10 +141,8 @@ from dplanner.modules.projects.repos import (
     plan_lines,
     shown_path,
 )
-from dplanner.modules.projects.repositories_folder import (
-    ensure_repositories_folder,
-    repositories_folder,
-)
+from dplanner.modules.projects.repositories_folder import repositories_folder
+from dplanner.modules.projects.repositories_folder_dialog import ensure_repositories_folder
 from dplanner.theme.icons import (
     ICON_SIZE,
     branch_icon,
