@@ -1,0 +1,1499 @@
+<title>DPlanner Structural Review</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --ground:#F3F4F0; --surface:#FFFFFF; --sunken:#E9EBE5; --ink:#1A1F23; --muted:#5B646A; --line:#D5D9D2;
+  --accent:#1E6B59; --accent-soft:#DCEDE6; --crack:#A9481A; --crack-soft:#F6E3D8; --caution:#8C6A0C; --caution-soft:#F3EBD2;
+  --code-bg:#ECEEE8; --code-ink:#22292E; --mark:#FFF1B8;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#101416; --surface:#171C1F; --sunken:#1D2327; --ink:#E3E8E6; --muted:#97A2A6; --line:#2A3236;
+    --accent:#62C3A5; --accent-soft:#16302A; --crack:#EE9466; --crack-soft:#3A2116; --caution:#DDB84E; --caution-soft:#33290F;
+    --code-bg:#1B2125; --code-ink:#D7DEDB; --mark:#4A3F12;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#101416; --surface:#171C1F; --sunken:#1D2327; --ink:#E3E8E6; --muted:#97A2A6; --line:#2A3236;
+  --accent:#62C3A5; --accent-soft:#16302A; --crack:#EE9466; --crack-soft:#3A2116; --caution:#DDB84E; --caution-soft:#33290F;
+  --code-bg:#1B2125; --code-ink:#D7DEDB; --mark:#4A3F12;
+}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.6;padding-inline:16px;padding-block:0 64px}
+.shell{max-width:1180px;margin:0 auto;display:grid;grid-template-columns:1fr;gap:40px}
+@media (min-width:1000px){.shell{grid-template-columns:230px minmax(0,1fr)}}
+nav.toc{font-size:14px;padding-top:28px}
+@media (min-width:1000px){nav.toc{position:sticky;top:env(safe-area-inset-top,0px);align-self:start;max-height:100vh;overflow-y:auto;padding-bottom:24px}}
+nav.toc h2{font-family:var(--display);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin:0 0 10px;font-weight:700}
+nav.toc ol{list-style:none;margin:0;padding:0;display:grid;gap:2px;counter-reset:toc}
+nav.toc li{counter-increment:toc}
+nav.toc a{display:flex;gap:10px;color:var(--ink);text-decoration:none;padding:5px 8px;border-radius:4px}
+nav.toc a::before{content:counter(toc);font-family:var(--mono);font-size:12px;color:var(--muted);min-width:1.2em;padding-top:2px}
+nav.toc a:hover,nav.toc a:focus-visible{background:var(--sunken)}
+main{min-width:0;max-width:820px}
+header.masthead{padding:40px 0 8px;border-bottom:1px solid var(--line);margin-bottom:8px}
+.eyebrow{font-family:var(--mono);font-size:12.5px;color:var(--muted);letter-spacing:.02em}
+h1{font-family:var(--display);font-stretch:85%;font-weight:800;font-size:clamp(34px,6vw,54px);line-height:1.02;margin:10px 0 14px;text-wrap:balance;letter-spacing:-.01em}
+.lede{font-size:18px;color:var(--ink);max-width:62ch;margin:0 0 18px}
+.meta-row{display:flex;flex-wrap:wrap;gap:8px 20px;font-size:13.5px;color:var(--muted);padding-bottom:22px}
+.meta-row b{color:var(--ink);font-weight:600;font-family:var(--mono);font-size:13px}
+section{padding-top:44px}
+section+section{border-top:1px solid var(--line);margin-top:44px}
+h2{font-family:var(--display);font-stretch:88%;font-weight:750;font-size:30px;line-height:1.1;margin:0 0 16px;text-wrap:balance}
+h2 .num{font-family:var(--mono);font-size:15px;color:var(--muted);font-weight:500;margin-right:10px;vertical-align:4px}
+h3{font-family:var(--display);font-weight:700;font-size:20px;margin:30px 0 8px;text-wrap:balance}
+h4{font-family:var(--body);font-weight:600;font-size:15.5px;margin:20px 0 6px}
+p,li{max-width:68ch}
+p{margin:0 0 14px}
+ul,ol{padding-left:1.25em;margin:0 0 14px}
+li{margin-bottom:6px}
+a{color:var(--accent)}
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);color:var(--code-ink);padding:1px 5px;border-radius:3px}
+.inshort{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:16px 18px 6px;margin:0 0 22px}
+.inshort .label{font-family:var(--display);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:6px;display:block}
+.inshort p,.inshort li{font-size:15.5px}
+figure{margin:18px 0 22px}
+figcaption{font-size:13px;color:var(--muted);margin-top:6px}
+.code{background:var(--code-bg);border-radius:6px;overflow:hidden;margin:14px 0 20px}
+.code .src{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--muted);padding:8px 14px;border-bottom:1px solid var(--line)}
+.code pre{margin:0;padding:12px 14px;overflow-x:auto;font-family:var(--mono);font-size:13px;line-height:1.55;color:var(--code-ink)}
+.code pre code{background:none;padding:0;font-size:inherit}
+.code .hl{background:var(--mark);display:inline-block;min-width:100%}
+.c{color:var(--muted)}
+.tag{display:inline-block;font-family:var(--mono);font-size:11.5px;font-weight:500;padding:2px 7px;border-radius:999px;vertical-align:2px;white-space:nowrap}
+.tag.crack{background:var(--crack-soft);color:var(--crack)}
+.tag.caution{background:var(--caution-soft);color:var(--caution)}
+.tag.good{background:var(--accent-soft);color:var(--accent)}
+.findings{list-style:none;padding:0;display:grid;gap:14px;margin:0 0 18px}
+.findings>li{max-width:none;background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 16px 4px}
+.findings>li>h4{margin:0 0 6px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.findings>li p{font-size:15px}
+.scroll{overflow-x:auto;margin:14px 0 22px}
+table{border-collapse:collapse;font-size:14px;min-width:560px;width:100%}
+th,td{text-align:left;vertical-align:top;padding:8px 10px;border-bottom:1px solid var(--line)}
+th{font-family:var(--display);font-weight:700;font-size:12.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);border-bottom:1.5px solid var(--ink)}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono);font-size:13px}
+tr.rec td{background:var(--accent-soft)}
+.bars{display:grid;gap:7px;margin:14px 0 6px}
+.bar{display:grid;grid-template-columns:minmax(120px,240px) 1fr;gap:10px;align-items:center;font-size:13px}
+.bar .name{font-family:var(--mono);font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right}
+.bar .track{position:relative;height:20px}
+.bar .fill{height:100%;background:var(--muted);opacity:.45;border-radius:2px}
+.bar.hot .fill{background:var(--crack);opacity:1}
+.bar .val{position:absolute;top:0;left:calc(var(--w) + 6px);line-height:20px;font-family:var(--mono);font-size:12px;font-variant-numeric:tabular-nums}
+@media (max-width:520px){.bar{grid-template-columns:1fr}.bar .name{text-align:left}}
+.stack{display:flex;height:30px;border-radius:4px;overflow:hidden;margin:12px 0 8px}
+.stack span{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:13px;color:var(--muted);margin-bottom:16px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:0}
+.approach{border:1px solid var(--line);background:var(--surface);border-radius:8px;padding:18px 18px 8px;margin:22px 0}
+.approach.recommended{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+.approach header{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.approach header h3{margin:0}
+.approach .verdict{font-size:15px}
+.pc{display:grid;grid-template-columns:1fr;gap:6px 22px;margin:6px 0 10px}
+@media (min-width:640px){.pc{grid-template-columns:1fr 1fr}}
+.pc h4{margin:6px 0 4px;font-size:13px;font-family:var(--display);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.pc ul{font-size:14.5px;margin-bottom:6px}
+.mermaid-wrap{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:12px;overflow-x:auto;margin:14px 0 6px}
+pre.mermaid{margin:0;font-family:var(--mono);font-size:12px;background:none;text-align:center}
+.tree{display:grid;grid-template-columns:1fr;gap:12px;margin:12px 0 18px}
+@media (min-width:640px){.tree{grid-template-columns:1fr 1fr}}
+.tree .code{margin:0}
+.tree .code .src b{color:var(--ink)}
+.rule3{display:grid;grid-template-columns:1fr;gap:12px;margin:16px 0 22px}
+@media (min-width:720px){.rule3{grid-template-columns:repeat(3,1fr)}}
+.rule3 div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px}
+.rule3 .k{font-family:var(--display);font-weight:700;font-size:16px;margin-bottom:4px;display:block}
+.rule3 p{font-size:14px;margin:0 0 8px}
+.rule3 code{font-size:12px}
+.callout{background:var(--caution-soft);border-radius:6px;padding:12px 16px;margin:14px 0 20px;font-size:15px}
+.callout p:last-child{margin:0}
+.nextmove{margin:28px 0 8px;border:2px solid var(--accent);border-radius:10px;background:var(--surface);padding:20px 20px 10px}
+.nextmove .label{font-family:var(--display);font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:800;display:block;margin-bottom:4px}
+.nextmove h2{font-size:26px;margin:0 0 10px}
+.nextmove ol{padding-left:1.3em}
+.nextmove ol>li{max-width:none;margin-bottom:12px}
+.nextmove .done-when{font-size:14px;color:var(--muted);margin:4px 0 0}
+.nextmove .decisions{border-top:1px solid var(--line);padding-top:10px;margin-top:6px;font-size:14.5px}
+.voices{display:grid;grid-template-columns:1fr;gap:12px;margin:18px 0 6px}
+@media (min-width:760px){.voices{grid-template-columns:repeat(3,1fr)}}
+.voices>div{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:14px 14px 4px}
+.voices .who{font-family:var(--display);font-weight:700;font-size:15px;display:block}
+.voices .when{font-family:var(--mono);font-size:11.5px;color:var(--muted);display:block;margin-bottom:6px}
+.voices p{font-size:14px}
+footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:13px;color:var(--muted)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <h2>Contents</h2>
+  <p style="margin:0 0 8px"><a href="#next-move" style="text-decoration:none;font-weight:600">→ The next move</a></p>
+  <ol>
+    <li><a href="#verdict">Verdict</a></li>
+    <li><a href="#findings">Findings</a></li>
+    <li><a href="#root">How the root got here</a></li>
+    <li><a href="#alternatives">Alternatives, compared</a></li>
+    <li><a href="#planning">A planning tier</a></li>
+    <li><a href="#daemon">The daemon as a third root</a></li>
+    <li><a href="#renaming">Renaming, in detail</a></li>
+    <li><a href="#seams">Multiplayer and daemon seams</a></li>
+    <li><a href="#failures">Failure modes</a></li>
+    <li><a href="#waves">Remediation waves</a></li>
+    <li><a href="#second-opinion-codex">Second opinion (Codex)</a></li>
+    <li><a href="#response-claude">Response (Claude)</a></li>
+    <li><a href="#how-made">How this review was made</a></li>
+    <li><a href="#decisions">Decisions, 4 October</a></li>
+  </ol>
+</nav>
+
+<main>
+<aside class="nextmove" id="next-move" aria-label="The next move">
+  <span class="label">The next move · as of 4 October 2026</span>
+  <h2>Fix what's broken, then prove the shape on one workflow</h2>
+  <p>This is where the three passes ended up: the review, Codex's second opinion, and my response, plus Knut's decisions of 4 October. The rest of the page is the reasoning: <a href="#response-claude">§12</a> reconciles the reviews and <a href="#decisions">§14</a> records the decisions.</p>
+  <ol>
+    <li><strong>Correctness first: small PRs, no design decisions.</strong>
+      <ul>
+        <li><code>write_atomic</code> gets a unique temporary file.</li>
+        <li><code>set_checkout</code> stops hiding the other writer's membership change.</li>
+        <li><code>CompositeCommand</code> becomes all-or-nothing.</li>
+        <li>An <strong>unknown status is never due</strong>.</li>
+        <li><code>touch</code> stops bringing back ended claims.</li>
+        <li>Undo refuses to overwrite a value another writer changed.</li>
+      </ul>
+      <p class="done-when">Done when each of Codex's six probes is a regression test that passes.</p></li>
+    <li><strong>Pilot one complete workflow, <em>set status</em>, end to end.</strong>
+      <ul>
+        <li><code>planning/status.py</code> owns the vocabulary as an <code>Enum</code>, with <code>Unknown</code> as its own type, plus the readiness rules. There's no state machine; out-of-order recording stays.</li>
+        <li><code>step_status/workflows.py: set_status(...) -&gt; Change</code> is called by both the window and <code>dplanner status set</code>, underneath the context system, which stays as it is. Under the director rule, the window gains the claim release it lacks today.</li>
+        <li>The first architecture tests:
+          <ul>
+            <li><code>planning/</code> imports only <code>core</code> and <code>domain</code>.</li>
+            <li>One module reaches another only through <code>aspect.py</code> or <code>workflows.py</code>.</li>
+            <li>The module graph is acyclic.</li>
+          </ul></li>
+      </ul>
+      <p class="done-when">Done when the GUI and CLI give the same outcome for every status change, the literal-<code>"done"</code> comparisons are type errors, and a status change touches measurably fewer places than today.</p></li>
+  </ol>
+  <p>After the pilot, extend the same pattern: the kind facts, then the root's clusters, then launch as an external effect before the daemon. <strong>Multiplayer is now a ladder</strong> (<a href="#decisions">§14</a>): git stays the only authority, and an advisory coordination service broadcasts presence, area claims and pushes. Before the second rung, two things are needed: <code>project.dproj</code> must stop colliding on step adds, and step numbers need a small design of their own.</p>
+  <div class="decisions"><strong>Decided on 4 October:</strong>
+    <ol>
+      <li><strong>Multiplayer coordinates; git is the authority.</strong> A service linked from the plan repo broadcasts presence, area claims and pushes. It holds no plan data.</li>
+      <li><strong>The director has authority over the worker.</strong> When the window sets a step done, the agent's claim ends.</li>
+      <li><strong><code>workflows.py</code> sits under the context system</strong>, which stays. It was renamed from <code>actions.py</code>, because "action" already means <code>ActionSpec</code>.</li>
+    </ol>
+    <strong>Still open:</strong> the step-number design for rung 2, and whether <code>workflows.py</code> goes into CLAUDE.md after the pilot.</div>
+</aside>
+<header class="masthead">
+  <div class="eyebrow">main @ 0472101 · 3 October 2026 · review, no code changed</div>
+  <h1>Where DPlanner is starting to crack</h1>
+  <p class="lede">An entropy and structural review before the v2 work: playbooks, a headless daemon, and a multiplayer server. It covers what has held, which patterns are emerging, which seams will give under more writers, and what could replace the composition root.</p>
+  <div class="meta-row">
+    <span><b>126,730</b> lines of source</span>
+    <span><b>69,175</b> lines of tests</span>
+    <span><b>57</b> module packages</span>
+    <span><b>522</b> non-merge commits</span>
+    <span><b>4,923</b> lines in <code>modules/__init__.py</code></span>
+  </div>
+</header>
+
+<div aria-label="Where the discussion stands">
+  <h3 style="margin-top:22px">Where the discussion stands</h3>
+  <div class="voices">
+    <div><span class="who">The review (Claude)</span><span class="when">3–4 October · §1–§10</span>
+      <p>Keep the composition root as wiring. Give the planning ontology a headless home in a <code>planning/</code> tier, and let what's left cross modules along an acyclic graph. Fix the seams for two writers before the daemon.</p></div>
+    <div><span class="who">Second opinion (Codex)</span><span class="when">4 October · §11</span>
+      <p><strong>The diagnosis largely holds; the remediation needs a stronger application boundary.</strong> Headless actions for complete workflows, shared by every writer. Reproduced the bugs and found two more. Decide what multiplayer is the authority for before redesigning storage.</p></div>
+    <div><span class="who">Response (Claude)</span><span class="when">4 October · §12</span>
+      <p>Agrees with about 80% of it and takes three corrections. Units of work should be a per-module <code>workflows.py</code> (renamed from <code>actions.py</code>), not a layer. Import facts, inject effects. Enforce all of it with mypy and architecture tests.</p></div>
+  </div>
+  <p style="font-size:14px;color:var(--muted)">§13 records how the three of us worked on this; §14 records Knut's decisions. The original review below is unchanged.</p>
+</div>
+
+<!-- 1 -->
+<section id="verdict">
+  <h2><span class="num">1</span>Verdict</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>The layering rules have held: <code>test_architecture</code> and <code>test_rules</code> pass (17 tests, run for this review), modules really don't import each other, and the model knows nothing about aspects. The pressure those rules hold back has gone into <strong>the composition root</strong>, and the persistence layer is still shaped for <strong>one writer at a time</strong>. Keep the root and narrow its job: move the planning ontology (status, estimates, step kinds, the review workflow) into a new headless <code>planning/</code> tier, and let what remains cross modules through headless imports. Before the daemon, fix the coordination seams.</p>
+  </div>
+
+  <h3>What has held</h3>
+  <ul>
+    <li><strong>The dependency direction is enforced, not just hoped for.</strong> <code>core → domain → cli → framework → modules → root</code> holds across 126k lines, and the test fails on a violation.</li>
+    <li><strong>The graph model has no aspect knowledge.</strong> <code>model.py</code>, <code>store.py</code> and <code>commands.py</code> never read a module id, and an unknown aspect round-trips untouched.</li>
+    <li><strong>The headless CLI is real.</strong> A verb and a menu action build the same command, and the CLI starts without Qt.</li>
+    <li><strong>The engineering habits stuck:</strong> blocking work goes through <code>TaskRunner</code> (23 call sites, none bypass it), rebuilds go through <code>Debounced</code> (26), and derived facts are never stored.</li>
+  </ul>
+
+  <h3>What is cracking</h3>
+  <ol>
+    <li><strong>The composition root has turned into a feature module.</strong> About 1,900 of its 4,923 lines are business logic that has no owner, and <strong>36% of all commits touch it</strong>.</li>
+    <li><strong>The step ontology has no owner.</strong> "What kind of step is this" is ranked separately in about six places, and "done" means three different things.</li>
+    <li><strong>Seven package names no longer say what the package holds</strong>, and nothing sets a convention for which file holds a tab.</li>
+    <li><strong>Persistence assumes one writer.</strong> Commands aren't operations, every concurrent step add conflicts, numbers are minted locally, claims are machine-local, and two real two-writer bugs exist today.</li>
+  </ol>
+
+  <h3>Recommendation, in three lines</h3>
+  <div class="rule3">
+    <div><span class="k">Keep the root, as wiring</span><p>It is still the right pattern. Take away the second job it picked up: being the only place allowed to know two modules.</p></div>
+    <div><span class="k">A planning tier, then imports</span><p>The step ontology moves into a new <code>planning/</code> tier between the graph and the features (<a href="#planning">§5</a>). What crosses modules after that goes through <em>headless imports</em> along a graph a test keeps acyclic.</p></div>
+    <div><span class="k">Coordination before the daemon</span><p>Fix the two bugs, lock check-and-write, give claims a headless lease, and move "what is due" out of Qt. Turn commands into operations before the server.</p></div>
+  </div>
+</section>
+
+<!-- 2 -->
+<section id="findings">
+  <h2><span class="num">2</span>Findings</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>(a) <strong>Entropy:</strong> ghost packages, an LLM stack with no caller, callback indirection that nothing substitutes, and docs that have become diaries. (b) <strong>Emerging patterns:</strong> the root as a feature home, an ontology written six times, names that no longer say what a package holds, and features leaking into <code>framework/</code>. (c) <strong>Cracking seams:</strong> two verified two-writer bugs, commands that aren't operations, and conflicts that are coarse.</p>
+  </div>
+
+  <h3>(a) Entropy and over-engineering</h3>
+  <ul class="findings">
+    <li><h4>Ten ghost packages <span class="tag caution">hygiene</span></h4>
+      <p><code>agent_skill</code>, <code>llm_anthropic</code>, <code>llm_openai</code>, <code>product</code>, <code>project_dashboard</code>, <code>project_repo</code>, <code>step_feature</code>, <code>step_handoff</code>, <code>step_release</code> and <code>workspaces</code> hold only <code>__pycache__</code>. Git can't see them, but anyone opening <code>modules/</code> for the first time does.</p></li>
+    <li><h4>An LLM stack with no consumer <span class="tag caution">speculative</span></h4>
+      <p><code>LLMService.complete()</code> (<code>framework/llm_service.py:126</code>) has no caller outside its tests. <code>framework/llm.py</code>, <code>key_dialog.py</code>, <code>modules/llm</code>, the provider halves of <code>anthropic</code> and <code>openai</code>, and Debug's <em>LLM Calls</em> tab are all waiting for v2 step 7. Keep it, but move it out of <code>framework/</code>, where it is a divergence from app-framework that serves nothing.</p></li>
+    <li><h4>Callback indirection that nothing substitutes <span class="tag crack">over-engineering</span></h4>
+      <p>50 <code>*Deps</code> classes carry 480 fields; <code>StepAgentInstructionDeps</code> alone has 37. One function, <code>_step_key</code>, is handed to about 11 modules as <code>key_of=</code> or <code>step_key=</code>. About ten root helpers only rename an aspect reader:</p>
+      <div class="code"><div class="src"><span>src/dplanner/modules/__init__.py:3109</span><span>one of ten</span></div><pre><code>def _is_wait(step: "Step") -&gt; bool:
+    """Whether a step is a wait — the wait aspect's answer, for modules that may not ask it."""
+    from dplanner.modules.step_wait.aspect import is_wait
+
+    return is_wait(step)</code></pre></div>
+      <p>The docstring says it plainly: <em>"for modules that may not ask it."</em> The rule forbids the import, so the root does the import for them and passes the result down a callback. The dependency is still there. It just doesn't show up in the module that has it.</p></li>
+    <li><h4>Docs that have become diaries <span class="tag caution">entropy</span></h4>
+      <p><code>ARCHITECTURE.md</code> has 8,843 lines in 75 sections, in the order they were written, with 37 "used to", 26 "no longer" and 20 "retired". <code>NOTES-FOR-APPFRAME.md</code> has 4,932 lines, and §§7–75 are titled "From the X pass…", so it can't answer "what differs from upstream in <code>framework/x.py</code>?". <code>CLAUDE.md</code>'s <em>Mechanical facts</em> (about 140 lines) are rules for particular areas, and its own policy sends those to <code>.claude/rules/</code>.</p></li>
+    <li><h4><code>HEADLESS_FILES</code> matches a bare filename anywhere in the tree <span class="tag caution">fragile rule</span></h4>
+      <p>The list in <code>tests/test_architecture.py:54</code> has 59 names. Two of them match no file (<code>categories.py</code>, <code>catalogue.py</code>), and any future <code>schedule.py</code> or <code>edits.py</code> in any package would be forced headless.</p></li>
+    <li><h4>Small duplications <span class="tag caution">hygiene</span></h4>
+      <p>There are three git runners in <code>core/storage</code>, two <code>gh</code> wrappers, and three detached-process spawns. Only the launcher's spawn sets the Windows flags. <code>spawn_instance</code> (<code>library/module.py:45</code>, which New Window uses) relies on <code>start_new_session</code>, and that is POSIX-only.</p></li>
+  </ul>
+
+  <h3>(b) Bad patterns that are emerging</h3>
+  <ul class="findings">
+    <li><h4>The step ontology is written six times <span class="tag crack">pattern</span></h4>
+      <p>The ranking is milestone, then feature, check, wait, cut, review, agent. It appears in <code>_step_key</code> (root:2837), <code>_step_kind</code> (2874), <code>_step_type_icons</code> (2975), <code>step_accent</code>'s body tone (717), <code>_scope_kinds</code> (3783) and the template list (812–863). <code>docs/activity.py:550</code> repeats the glyph map, and <code>project_editor/renderers.py:238</code> describes it again in prose. Two of the copies, side by side:</p>
+      <div class="tree">
+        <div class="code"><div class="src"><span>modules/__init__.py:2856</span><span><b>_step_key</b></span></div><pre><code>letter = (
+    "M" if milestone_read(step)
+    else "F" if is_feature(step)
+    else "C" if check_read(step)
+    else "W" if is_wait(step)
+    else "B" if _is_cut(step)
+    else "R" if is_review(step)
+    else "S"
+)</code></pre></div>
+        <div class="code"><div class="src"><span>modules/__init__.py:2885</span><span><b>_step_kind</b></span></div><pre><code>if milestone_read(step): return "milestone"
+if is_feature(step):     return "feature"
+if check_read(step):     return "check"
+if is_wait(step):        return "wait"
+if _is_cut(step):        return "cut"
+if is_review(step):      return "review"
+if agent_enabled(step):  return "agent"
+return ""</code></pre></div>
+      </div>
+      <p>Each local choice was reasonable. <code>_scope_kinds</code> even says why: <em>"three lines a reader can check by eye beat an ordering abstraction over exactly three things."</em> Six copies of the same ranking add up to a different problem, though. Adding a kind means finding all six, and the code only works if every copy keeps the same order.</p>
+      <p>"Done" means three different things:</p>
+      <ul>
+        <li><code>_is_done</code> is the raw status.</li>
+        <li><code>_card_status(…) == DONE</code> treats a wait or a cut as never done.</li>
+        <li><code>_status_in</code> treats a wait as done once it is over.</li>
+      </ul>
+      <p>The literal <code>"done"</code> appears at root:704 and 719 and at <code>coverage/trace.py:361,452</code>. The agent-run states (root:685–691) and PR states (root:707) are copied as literals too. The root admits it at 879: <em>"change one, change the other."</em></p></li>
+    <li><h4>Names that no longer say what a package holds <span class="tag crack">pattern</span></h4>
+      <p>The canvas is called <code>project_editor</code>. <code>projects</code> holds the <code>step</code> CLI noun. <code>progression</code> holds the Step statuses tab. <code>step_order</code> holds Expenditure. <code>step_agent_instruction</code> holds Run Agent. <code>step_agent_run</code> holds a second module id, <code>agent_usage</code>. The details are in <a href="#renaming">§7</a>.</p></li>
+    <li><h4>No convention for which file is the tab <span class="tag caution">pattern</span></h4>
+      <p>The tab is in <code>activity.py</code> in 7 modules and inside <code>module.py</code> in 3. <code>view.py</code> means five different things across 10 modules: a tab, a table, a modal, a status-bar widget, shared widgets.</p></li>
+    <li><h4><code>framework/</code> is collecting features <span class="tag caution">divergence</span></h4>
+      <p><code>llm*</code>, <code>key_dialog</code>, <code>dictation*</code>, <code>recording</code> and <code>motion/</code> are features, and they sit in <code>framework/</code>. About 12 framework files import <code>domain</code>. Each of these is a divergence that a later upstream pass to app-framework will run into.</p></li>
+    <li><h4><code>domain/</code> is collecting aspect vocabulary <span class="tag caution">pattern</span></h4>
+      <p><code>progression.py:71</code> owns the status words, <code>shelf.py</code> reserves a <code>module_data</code> key, and <code>schedule.py</code> mixes formatting (<code>format_date</code>, <code>axis_ticks</code>) with simulation.</p></li>
+    <li><h4>Off-stack mutations are spreading <span class="tag crack">pattern</span></h4>
+      <p>Only two kinds of change are documented as bypassing the undo stack. Even so, <code>.redo(library)</code> is called directly at <code>step_status/aspect.py:154,173</code>, <code>step_agent_run/aspect.py:105,116</code> and <code>step_review/rounds.py:205</code>. <code>projects/cli.py:765,1030,1052</code> call membership without an origin.</p></li>
+    <li><h4>Tests are flat <span class="tag caution">entropy</span></h4>
+      <p><code>tests/modules/</code> has 110 files, and 48 aren't named after their package (<code>test_canvas_*</code>, <code>test_time_*</code>…). That is why the rules files' <code>paths:</code> list test globs by hand, and why <code>test_agent_run.py</code> mostly tests <code>step_agent_instruction</code>.</p></li>
+  </ul>
+
+  <h3>(c) Seams that are cracking</h3>
+  <p>These are summarised here; <a href="#seams">§8</a> has the detail.</p>
+  <ul class="findings">
+    <li><h4><code>write_atomic</code> shares one temporary file between processes <span class="tag crack">bug · verified</span></h4>
+      <div class="code"><div class="src"><span>src/dplanner/core/fsio.py:54</span></div><pre><code><span class="hl">tmp = path.with_name(f".{path.name}.tmp")</span>
+tmp.write_text(text, encoding="utf-8", newline="\n")
+tmp.replace(path)</code></pre></div>
+      <p>The GUI and the CLI both write the library file and the at-work claims. Two writers share <code>.library.tmp</code>, so one can rename the other's half-written file into place, or fail with <code>FileNotFoundError</code>.</p></li>
+    <li><h4><code>set_checkout</code> hides the other writer's membership change <span class="tag crack">bug · verified</span></h4>
+      <div class="code"><div class="src"><span>src/dplanner/domain/store.py:588</span></div><pre><code>file = read_library_file(self.library_path, strict=True)
+write_library_file(self.library_path, file.projects, self._checkouts, file.archived)
+<span class="hl">self._remember_library_stamp()</span>
+self.checkout_changed.emit(key)</code></pre></div>
+      <p>The other writer's project rows survive the write, but the re-stamp records the file as already seen. So this window never adopts their change, and its next membership flush writes its own model's list and drops their project. Their checkout keys are replaced by this window's too.</p></li>
+    <li><h4>Commands are not operations <span class="tag crack">seam</span></h4>
+      <p>A command holds live <code>Node</code> objects, captures <code>before</code> lazily, uses an <code>object()</code> sentinel as its origin, and carries no id, author or base version. Undo restores values it captured, which silently overwrites another writer's later change. See <a href="#seams">§8</a>.</p></li>
+    <li><h4>Conflicts are coarse, and the check is separate from the write <span class="tag crack">seam</span></h4>
+      <p>A step's <code>meta</code> holds its title, edges and number. <code>project.dproj</code> holds the children order and <code>last_number</code>, so any two writers who each add a step conflict. Step numbers are minted locally, so both of them mint S8.</p></li>
+    <li><h4>Coordination is machine-local and needs Qt <span class="tag crack">seam</span></h4>
+      <p>Claims carry no agent identity, and <code>touch</code> can bring an ended claim back. The launch lock is a <code>QLockFile</code>. <code>due_here</code> is a closure inside the GUI's <code>default_modules()</code>.</p></li>
+    <li><h4>Loading writes, and slots swallow exceptions <span class="tag caution">seam</span></h4>
+      <p><code>load()</code> writes migrations (<code>store.py:344</code>), so two builds that disagree on the format migrate the plan under each other. <code>Signal.emit</code> logs a failing slot and carries on (<code>core/signals.py:61-66</code>), while the store's conflict bookkeeping depends on those slots.</p></li>
+  </ul>
+</section>
+
+<!-- 3 -->
+<section id="root">
+  <h2><span class="num">3</span>How the composition root got here</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>"Modules never import each other" is enforced and it works. But some knowledge can't be avoided: the briefing has to know a step's PR, and the card has to know whether a step is a milestone. That knowledge had nowhere to live except the one file allowed to import everything. Without anyone deciding it, the root took a second job, and every feature that touches two modules now edits it.</p>
+  </div>
+
+  <figure>
+    <div class="mermaid-wrap"><pre class="mermaid">
+flowchart LR
+  subgraph aspects["Modules' headless files"]
+    M["step_milestone/aspect.py"]
+    F["feature/aspect.py"]
+    W["step_wait/aspect.py"]
+    G["github/aspect.py"]
+    R["step_review/aspect.py"]
+  end
+  ROOT["modules/__init__.py&lt;br/&gt;_step_key · _briefing_sections&lt;br/&gt;_status_in · _branch_plan …"]
+  M --> ROOT
+  F --> ROOT
+  W --> ROOT
+  G --> ROOT
+  R --> ROOT
+  ROOT -- "key_of=_step_key" --> C1["project_editor Deps"]
+  ROOT -- "step_key=_step_key" --> C2["testing Deps"]
+  ROOT -- "key_of=_step_key" --> C3["coverage Deps"]
+  ROOT -- "briefing=Briefing(…)" --> C4["step_agent_instruction Deps"]
+  ROOT -. "… ~11 more" .-> C5["other Deps"]
+    </pre></div>
+    <figcaption>How things flow today. Every cross-module fact goes up into the root and comes back down as a callback field. The arrows into the root are the dependencies the rule was written to prevent; the root is the one place they're allowed.</figcaption>
+  </figure>
+
+  <h3>Churn: one file in three commits</h3>
+  <p>These are files changed by non-merge commits since July. The root is the conflict hotspot today, and v2 makes that worse: playbooks and daemons mean parallel agents editing this codebase, and each of them would touch the same file.</p>
+  <div class="bars" role="img" aria-label="Commits per file: modules/__init__.py 186, theme.qss 66, skill_preamble.md 61, step_agent_instruction/module.py 58, project_editor/module.py 57, menus.py 57, icons.py 50, project_editor/graph.py 38">
+    <div class="bar hot" style="--w:100%"><span class="name">modules/__init__.py</span><span class="track"><span class="fill" style="display:block;width:calc(100% - 40px)"></span><span class="val" style="--w:calc(100% - 40px)">186</span></span></div>
+    <div class="bar" style="--w:35%"><span class="name">theme/theme.qss</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 66 / 186)"></span><span class="val" style="--w:calc((100% - 40px) * 66 / 186)">66</span></span></div>
+    <div class="bar"><span class="name">cli/skill_preamble.md</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 61 / 186)"></span><span class="val" style="--w:calc((100% - 40px) * 61 / 186)">61</span></span></div>
+    <div class="bar"><span class="name">step_agent_instruction/module.py</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 58 / 186)"></span><span class="val" style="--w:calc((100% - 40px) * 58 / 186)">58</span></span></div>
+    <div class="bar"><span class="name">project_editor/module.py</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 57 / 186)"></span><span class="val" style="--w:calc((100% - 40px) * 57 / 186)">57</span></span></div>
+    <div class="bar"><span class="name">menus.py</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 57 / 186)"></span><span class="val" style="--w:calc((100% - 40px) * 57 / 186)">57</span></span></div>
+    <div class="bar"><span class="name">theme/icons.py</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 50 / 186)"></span><span class="val" style="--w:calc((100% - 40px) * 50 / 186)">50</span></span></div>
+    <div class="bar"><span class="name">project_editor/graph.py</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 38 / 186)"></span><span class="val" style="--w:calc((100% - 40px) * 38 / 186)">38</span></span></div>
+  </div>
+  <p class="c" style="font-size:13px">186 of 522 non-merge commits: 54 in August, 129 in September.</p>
+
+  <h3>What the 4,923 lines are</h3>
+  <div class="stack" role="img" aria-label="Root composition: wiring about 1950 lines, adapters about 200, business logic about 1900, docstrings and the rest about 870">
+    <span style="width:39.6%;background:var(--muted);opacity:.55"></span>
+    <span style="width:4.1%;background:var(--caution)"></span>
+    <span style="width:38.6%;background:var(--crack)"></span>
+    <span style="width:17.7%;background:var(--line)"></span>
+  </div>
+  <div class="legend">
+    <span><i style="background:var(--muted);opacity:.55"></i>Wiring ≈ 1,950</span>
+    <span><i style="background:var(--caution)"></i>Adapters to store, git, gh ≈ 200</span>
+    <span><i style="background:var(--crack)"></i>Business logic ≈ 1,900</span>
+    <span><i style="background:var(--line)"></i>Imports, docstrings, blank ≈ 870</span>
+  </div>
+  <div class="scroll"><table>
+    <thead><tr><th>Business-logic cluster</th><th class="n">≈ lines</th><th>Representative functions</th><th>Owner it should have</th></tr></thead>
+    <tbody>
+      <tr><td>Agent briefing and prompt text</td><td class="n">800</td><td><code>_briefing_sections</code>, <code>_agent_preamble</code>, <code>_agent_epilogue</code>, <code>_review_instruction</code></td><td>a new <code>agent_briefing</code></td></tr>
+      <tr><td>Status, time and what is due</td><td class="n">360</td><td><code>_status_in</code>, <code>_time_readers</code>, <code>_due_now</code>, <code>_persons_turn</code></td><td><code>step_status</code>, <code>agent_launch</code></td></tr>
+      <tr><td>Step identity and card look</td><td class="n">320</td><td><code>_step_key</code>, <code>_step_kind</code>, <code>_primary_glyph</code>, <code>step_accent</code></td><td>an extension point on <code>AspectSpec</code></td></tr>
+      <tr><td>Coverage and collectors</td><td class="n">250</td><td><code>_coverage_trace</code>, <code>_scope_kinds</code>, <code>_covered_tests</code></td><td><code>coverage</code></td></tr>
+      <tr><td>Branches and worktrees</td><td class="n">200</td><td><code>_branch_plan</code>, <code>_branch_births</code>, <code>_merged_into_its_branch</code></td><td><code>branches</code></td></tr>
+      <tr><td>Usage ledger</td><td class="n">70</td><td><code>_step_spent</code>, <code>_token_rate</code></td><td><code>agent_usage</code></td></tr>
+    </tbody>
+  </table></div>
+  <p><code>default_modules()</code> by itself is a single function of 2,061 lines.</p>
+</section>
+
+<!-- 4 -->
+<section id="alternatives">
+  <h2><span class="num">4</span>Alternatives, compared</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>Below are seven approaches, each shown on the same two pieces of code. My recommendation is the <strong>hybrid (3)</strong>: a module may import another module's headless files, along an import graph a test keeps acyclic; questions many modules answer become extension points on <code>AspectSpec</code> (as <code>phrase</code> already is); services stay on <code>Deps</code>. Splitting the root (1) is a cheap first step whichever you choose. The event bus (4) and the service locator (5) both make things worse. Bounded contexts (6) is where the hybrid's graph leads later, not a place to start. <a href="#planning">§5</a> refines the hybrid: most of what it would import is the planning ontology, and that is better served by a tier of its own.</p>
+  </div>
+
+  <h3>The running example</h3>
+  <p>Every approach below is written out on the same two questions, because they are the two shapes of cross-module knowledge:</p>
+  <ol>
+    <li><strong>A question many modules answer: the step's key letter.</strong> <code>_step_key</code> asks five aspects in a fixed order and is handed to about 11 modules.</li>
+    <li><strong>A question between one pair of modules: the briefing reads a step's PR.</strong> <code>_source_line</code> (root:2308) imports <code>github.aspect.read</code> to tell an agent which branch and PR its source work is on.</li>
+  </ol>
+
+  <!-- 0 -->
+  <div class="approach">
+    <header><h3>0 · Today: everything through the root by callback</h3><span class="tag caution">status quo</span></header>
+    <div class="code"><div class="src"><span>modules/__init__.py (abridged)</span></div><pre><code><span class="c"># 2837 — the logic, in the root</span>
+def _step_key(step):
+    from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.modules.feature.aspect import is_feature
+    ...                                   <span class="c"># 5 aspects, ranked</span>
+
+<span class="c"># 781, 954, 1144, 1174, 1263, 1460, 1533, 1924, 1995, 2008 — the wiring</span>
+TestsDeps(..., key_of=_step_key, ...)
+CoverageDeps(..., key_of=_step_key, ...)
+StepOrderDeps(..., step_key=_step_key, ...)
+
+<span class="c"># 2308 — the pairwise read, also in the root</span>
+def _source_line(source, facts):
+    from dplanner.modules.github.aspect import read as github_read
+    refs = github_read(source)
+    ...</code></pre></div>
+    <div class="pc">
+      <div><h4>For</h4><ul><li>Every dependency is written down in one place.</li><li>Each module can be tested with fakes.</li><li>No module can tangle with another.</li></ul></div>
+      <div><h4>Against</h4><ul><li>The logic has no owner, so it gets copied (the ranking six times).</li><li>36% of commits touch one file.</li><li>480 <code>Deps</code> fields, most with exactly one implementation.</li><li>A daemon would have to import the GUI's root to get due steps.</li></ul></div>
+    </div>
+  </div>
+
+  <!-- 1 -->
+  <div class="approach">
+    <header><h3>1 · Split the root into wiring files, same rule</h3><span class="tag good">do it anyway</span></header>
+    <div class="code"><div class="src"><span>sketch</span></div><pre><code><span class="c"># modules/composition/kinds.py — the same code, its own file</span>
+def step_key(step: Step) -&gt; str: ...
+
+<span class="c"># modules/composition/briefing.py</span>
+def source_line(source: Step, facts: RepositoryFacts | None) -&gt; str: ...
+
+<span class="c"># modules/composition/__init__.py</span>
+def default_modules(...):
+    return [*canvas_modules(...), *agent_modules(...), *time_modules(...)]</code></pre></div>
+    <div class="pc">
+      <div><h4>For</h4><ul><li>Mechanical and safe.</li><li>Spreads the churn across files.</li><li>Breaks up the 2,061-line function.</li></ul></div>
+      <div><h4>Against</h4><ul><li>The logic still has no owner, and the <code>Deps</code> don't change.</li><li>The ontology is still written six times.</li><li>The daemon still has to import "the wiring" to get the logic.</li></ul></div>
+    </div>
+  </div>
+
+  <!-- 2 -->
+  <div class="approach">
+    <header><h3>2 · Extension points only</h3><span class="tag caution">right for half</span></header>
+    <p class="verdict">Every cross-module question becomes something modules contribute to. Modules still never import each other. <code>AspectSpec.phrase</code> already follows this pattern, and its comment gives the reason: <em>"a second parallel list of these is exactly what this field replaced."</em></p>
+    <div class="code"><div class="src"><span>sketch · domain/aspects.py</span></div><pre><code>@dataclass(frozen=True)
+class Kind:
+    rank: int          <span class="c"># lower wins: the coarser claim</span>
+    letter: str        <span class="c"># the key's letter, "M"</span>
+    word: str          <span class="c"># "milestone"</span>
+    icon: str = ""     <span class="c"># the medallion, "tag"</span>
+
+@dataclass(frozen=True)
+class AspectSpec:
+    ...
+    kind: Callable[[Step], Kind | None] | None = None
+
+def classify(specs: Sequence[AspectSpec], step: Step) -&gt; Kind | None:
+    claims = [k for spec in specs if spec.kind and (k := spec.kind(step))]
+    return min(claims, key=lambda k: k.rank, default=None)
+
+def key_of(specs: Sequence[AspectSpec], step: Step) -&gt; str:
+    """"M12": the kind's letter and the number the project dealt."""
+    if not step.number:
+        return ""
+    kind = classify(specs, step)
+    return f"{kind.letter if kind else 'S'}{step.number}"</code></pre></div>
+    <div class="code"><div class="src"><span>sketch · modules/step_milestone/aspect.py</span></div><pre><code>MILESTONE = Kind(rank=10, letter="M", word="milestone", icon="tag")
+
+SPEC = AspectSpec(
+    id=MODULE_ID, label="Milestone", ..., phrase=summary,
+    kind=lambda step: MILESTONE if is_milestone(step) else None,
+)</code></pre></div>
+    <p>The key, the kind word, the medallion and the body tone all come from one <code>classify()</code>, and the ranking is data in each owner's <code>SPEC</code>. That fits question 1. Question 2 is a different matter:</p>
+    <div class="code"><div class="src"><span>sketch · the pairwise read, forced into a contribution</span></div><pre><code><span class="c"># step_agent_instruction defines a point…</span>
+class SourceFacts(Protocol):
+    def __call__(self, step: Step) -&gt; list[str]: ...
+
+<span class="c"># …github contributes to it…</span>
+def source_facts(step): refs = read(step); return [f"PR #{refs.pr_number}"] if refs else []
+
+<span class="c"># …and the root collects exactly one contributor for exactly one consumer.</span></code></pre></div>
+    <div class="pc">
+      <div><h4>For</h4><ul><li>A new kind is one edit, in its owner.</li><li>The precedence lives in one place, as data.</li><li>The layering rule stays absolute.</li></ul></div>
+      <div><h4>Against</h4><ul><li>A pairwise read becomes a registry with one producer and one consumer: a callback with extra steps.</li><li>Branch planning needs <em>github's</em> <code>pr_base</code> specifically, not "whatever contributes".</li><li>The <code>Deps</code> bundles stay.</li></ul></div>
+    </div>
+  </div>
+
+  <!-- 3 -->
+  <div class="approach recommended">
+    <header><h3>3 · Hybrid: headless imports along an acyclic graph, plus extension points</h3><span class="tag good">recommended</span></header>
+    <p class="verdict">Each kind of cross-module knowledge goes through exactly one channel:</p>
+    <div class="rule3">
+      <div><span class="k">A fact another module owns</span><p>Import its <strong>headless files</strong> (<code>aspect.py</code>, <code>prompt.py</code>, <code>rounds.py</code>…). Never its <code>module.py</code> or anything that uses Qt.</p><p>The briefing reads the PR. Review reads the status.</p></div>
+      <div><span class="k">A question many modules answer</span><p>An <strong>extension point</strong>: a field on <code>AspectSpec</code>, or a <code>report.py</code>-style file.</p><p>The key letter, the medallions, briefing sections.</p></div>
+      <div><span class="k">A live service</span><p>A <strong>callback or Protocol on <code>Deps</code></strong>, as today.</p><p>The store, window capabilities, <code>TaskRunner</code>, <code>follow_project</code>.</p></div>
+    </div>
+    <div class="code"><div class="src"><span>sketch · modules/agent_briefing/compose.py (headless)</span></div><pre><code>from dplanner.modules.github.aspect import read as github_refs
+from dplanner.modules.step_review.aspect import is_review
+from dplanner.domain.aspects import classify
+
+def source_line(source: Step, facts: RepositoryFacts | None, specs: Specs) -&gt; str:
+    refs = github_refs(source)     <span class="c"># a plain import: mypy checks it, "find usages" finds it</span>
+    key = key_of(specs, source)    <span class="c"># the extension point, not a copy of the ranking</span>
+    ...</code></pre></div>
+    <div class="code"><div class="src"><span>sketch · modules/__init__.py after</span></div><pre><code>AgentBriefingModule(AgentBriefingDeps(store=store, facts_for=facts_for, specs=aspect_specs()))
+<span class="c"># no key_of=, no is_wait=, no Briefing(…) bundle of eight callbacks</span></code></pre></div>
+
+    <h4>The test that enforces it</h4>
+    <div class="code"><div class="src"><span>sketch · tests/test_architecture.py</span></div><pre><code>def test_cross_module_imports_are_headless_and_acyclic() -&gt; None:
+    graph: dict[str, set[str]] = {package: set() for package in module_packages()}
+    for path in module_files():
+        for package, filename in imports_of_other_modules(path):
+            assert is_headless(package, filename), (
+                f"{path} imports {package}/{filename}, which is not headless"
+            )
+            graph[package_of(path)].add(package)
+    cycle = find_cycle(graph)
+    assert cycle is None, "module import cycle: " + " → ".join(cycle)</code></pre></div>
+
+    <h4>The graph that test would see: simulated from today's root</h4>
+    <p>I parsed every function in the root, recorded which modules it imports, assigned each cluster to the owner it should have, and ran a cycle check. <strong>The first attempt found two cycles, and each one pointed at code in the wrong place:</strong></p>
+    <ul>
+      <li><code>branches → step_agent_instruction → step_status → branches</code>. If the briefing goes into <code>step_agent_instruction</code>, it imports <code>branches</code>, which imports the launcher back. <strong>Fix:</strong> the briefing gets its own package, <code>agent_briefing</code>.</li>
+      <li><code>step_milestone ⇄ time_estimates</code>. Milestone colours are computed by the schedule. <strong>Fix:</strong> they move to the schedule, not to the milestone aspect.</li>
+    </ul>
+    <p>With both fixes the graph has 31 edges and no cycles. This is the main argument for the hybrid: when you try to place code, the cycle check tells you where it belongs, which the root has never been able to do.</p>
+    <div class="mermaid-wrap"><pre class="mermaid">
+flowchart LR
+  AB[agent_briefing] --> GH[github]
+  AB --> SR[step_review]
+  AB --> SS[step_status]
+  AB --> SAI[step_agent_instruction]
+  AB --> NO[notes]
+  AB --> SP[spec]
+  AB --> FE[feature]
+  AB --> SD[step_description]
+  AB --> ST[step_ticket]
+  AB --> AP[auto_progress]
+  BR[branches] --> GH
+  BR --> ES[estimation]
+  BR --> SAI
+  BR --> SD
+  BR --> PE[project_editor stacks]
+  CO[coverage] --> DO[docs]
+  CO --> FE
+  CO --> SP
+  CO --> SM[step_milestone]
+  CO --> TE[testing]
+  TI[time_estimates] --> ES
+  TI --> SAI
+  TI --> SM
+  TI --> SS
+  TI --> SW[step_wait]
+  SS --> SW
+  SS -. "goes away once kinds are an extension point" .-> BR
+  SAI --> SR
+  AP --> SR
+    </pre></div>
+    <div class="pc">
+      <div><h4>For</h4><ul><li>Logic lives with its owner, and the root shrinks to wiring.</li><li>mypy checks every dependency.</li><li>Most <code>Deps</code> fields go away.</li><li>The daemon can import the logic without importing the GUI.</li><li>It widens two patterns you already have (<code>SPEC</code> fields, <code>report.py</code>) rather than adding a new one.</li></ul></div>
+      <div><h4>Against</h4><ul><li>It relaxes a rule that has served well, so the new rule has to be just as enforceable.</li><li>A module's headless files become a public API: a schema change can break a reader in another package. That is true today too; today it just goes through the root.</li><li>Tests of an importing module see the real aspect, not a fake. That is usually better, because aspect readers are pure.</li></ul></div>
+    </div>
+  </div>
+
+  <!-- 4 -->
+  <div class="approach">
+    <header><h3>4 · Event bus or mediator</h3><span class="tag crack">rejected</span></header>
+    <div class="code"><div class="src"><span>sketch</span></div><pre><code><span class="c"># step_milestone answers…</span>
+bus.answer("step.kind", lambda step: "M" if read(step) else None, rank=10)
+<span class="c"># …the canvas asks</span>
+letter = bus.ask_first("step.kind", step)</code></pre></div>
+    <div class="pc">
+      <div><h4>For</h4><ul><li>Modules stay fully decoupled.</li><li>Works across processes later.</li></ul></div>
+      <div><h4>Against</h4><ul><li>The dependency hides behind a string: mypy can't see it and "find usages" can't find it.</li><li>Ordering and re-entrancy questions, on top of <code>Signal</code>, which already swallows exceptions.</li><li>Harder to debug than either callbacks or imports.</li><li>The cross-process case is better served by operations (§8).</li></ul></div>
+    </div>
+  </div>
+
+  <!-- 5 -->
+  <div class="approach">
+    <header><h3>5 · Service locator</h3><span class="tag crack">rejected</span></header>
+    <div class="code"><div class="src"><span>sketch</span></div><pre><code>key_of = services.get(StepKeys)    <span class="c"># from anywhere</span></code></pre></div>
+    <div class="pc">
+      <div><h4>For</h4><ul><li>Deletes most <code>Deps</code> fields overnight.</li></ul></div>
+      <div><h4>Against</h4><ul><li>The same hidden dependency, now global.</li><li>It breaks the several-libraries-per-process assumption a daemon needs.</li><li>Tests need global setup.</li></ul></div>
+    </div>
+  </div>
+
+  <!-- 6 -->
+  <div class="approach">
+    <header><h3>6 · Bounded contexts, or hexagonal architecture</h3><span class="tag caution">later, maybe</span></header>
+    <div class="code"><div class="src"><span>sketch</span></div><pre><code><span class="c"># contexts/execution/ports.py</span>
+class PlanFacts(Protocol):
+    def pr_refs(self, step_id: StepId) -&gt; PrRefs | None: ...
+    def kind(self, step_id: StepId) -&gt; Kind | None: ...
+
+<span class="c"># contexts/planning/adapters.py implements PlanFacts over the aspects</span></code></pre></div>
+    <div class="pc">
+      <div><h4>For</h4><ul><li>Clear seams for a server: a context can live in another process.</li><li>Matches v2's split into knowledge, execution and visibility.</li></ul></div>
+      <div><h4>Against</h4><ul><li>Heavy ceremony for one process today: ports and adapters for pure readers.</li><li>The contexts aren't known yet. The hybrid's acyclic graph is how you'd find them: <em>Planning</em> (graph, order, schedule), <em>Execution</em> (briefing, launch, runs, claims, the daemon), <em>Knowledge</em> (spec, docs, topology, the system level).</li></ul></div>
+    </div>
+  </div>
+
+  <h3>Side by side</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Approach</th><th>Logic gets an owner</th><th>Deps checked by mypy</th><th>Root churn</th><th>Cost to adopt</th><th>Daemon fit</th></tr></thead>
+    <tbody>
+      <tr><td>0 Today</td><td>no</td><td>at the root only</td><td>very high</td><td>—</td><td>poor</td></tr>
+      <tr><td>1 Split root</td><td>no</td><td>at the root only</td><td>spread out</td><td>low</td><td>poor</td></tr>
+      <tr><td>2 Extension points</td><td>for many-answer questions</td><td>partly</td><td>lower</td><td>medium</td><td>fair</td></tr>
+      <tr class="rec"><td><strong>3 Hybrid</strong></td><td>yes</td><td>yes</td><td>wiring only</td><td>medium, one cluster per PR</td><td>good: a third root</td></tr>
+      <tr><td>4 Event bus</td><td>yes</td><td>no</td><td>low</td><td>medium</td><td>fair</td></tr>
+      <tr><td>5 Service locator</td><td>no</td><td>no</td><td>low</td><td>low</td><td>poor</td></tr>
+      <tr><td>6 Contexts / hexagonal</td><td>yes</td><td>yes</td><td>low</td><td>high</td><td>good, later</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 5 -->
+<section id="planning">
+  <h2><span class="num">5</span>A planning tier</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>Suppose the core aspects move into a new tier between the graph and the features: status, estimates, step kinds, the review workflow. It's a <strong>good move if the tier holds the planning ontology and nothing else</strong>. In simulation it absorbs 23 of the 62 root helpers that read other modules, and it gives v2's server and daemon something to import that isn't a feature. It's a <strong>poor move if it becomes "the important aspects"</strong>, because then it turns into a second composition root. The guard is an admission test. Everything else stays where it is: the execution family (briefing, launch, PR refs) and the knowledge family (spec, docs, tests) are features working with each other, not ontology.</p>
+  </div>
+
+  <h3>The tier already half-exists, split across three places</h3>
+  <p>Step status shows it most clearly. The concept is split across three tiers:</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Part of "status"</th><th>Where it lives today</th></tr></thead>
+    <tbody>
+      <tr><td>The words (<code>done</code>, <code>ready-for-review</code>…)</td><td><code>domain/progression.py:71</code>. <code>step_status</code> and 16 other module files import them from there.</td></tr>
+      <tr><td>The storage format</td><td><code>modules/step_status/aspect.py</code></td></tr>
+      <tr><td>The rules (a wait counts as done once it's over; a branch cut holds for 0 days; review counts as in-progress for time)</td><td>The composition root: <code>_status_in</code>, <code>_card_status</code>, <code>_time_readers</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>The split comes from CLAUDE.md's rule that <em>"a domain derivation is handed a function, never a schema"</em>, so that <em>"the domain works for whatever answers next"</em>. The time simulator is the only code that actually substitutes an answer. Everyone else pays the cost of threading the function through the root.</p>
+  <p>The aspect files are already shaped like a lower tier: every <code>aspect.py</code> imports only <code>core</code> and <code>domain</code>. The package boundary is the only thing keeping each one next to its Qt half.</p>
+
+  <h3>What the code depends on most</h3>
+  <p>The table counts, for each aspect, how many root helpers read it (fan-in) and how often its contract has changed (churn). A lower tier is only a good home for what is both widely depended on and stable.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Aspect package</th><th class="n">Root helpers reading it</th><th class="n">Commits to aspect.py</th><th class="n">since 1 Sep</th><th>Planning tier?</th></tr></thead>
+    <tbody>
+      <tr><td><code>step_review</code></td><td class="n">14</td><td class="n">3</td><td class="n">3</td><td>yes: the review relation</td></tr>
+      <tr><td><code>step_milestone</code></td><td class="n">12</td><td class="n">1</td><td class="n">0</td><td>yes</td></tr>
+      <tr><td><code>step_agent_instruction</code></td><td class="n">11</td><td class="n">9</td><td class="n">4</td><td>yes: the agent flag and its data contract</td></tr>
+      <tr><td><code>feature</code></td><td class="n">9</td><td class="n">4</td><td class="n">4</td><td>yes: the marker</td></tr>
+      <tr><td><code>step_status</code></td><td class="n">9</td><td class="n">13</td><td class="n">11</td><td>yes, as a state machine</td></tr>
+      <tr><td><code>step_wait</code></td><td class="n">9</td><td class="n">2</td><td class="n">2</td><td>yes</td></tr>
+      <tr><td><code>estimation</code></td><td class="n">7</td><td class="n">7</td><td class="n">2</td><td>yes</td></tr>
+      <tr><td><code>github</code></td><td class="n">7</td><td class="n">6</td><td class="n">3</td><td><span class="tag caution">borderline</span> see below</td></tr>
+      <tr><td><code>testing</code></td><td class="n">7</td><td class="n">11</td><td class="n">8</td><td>no: a collector feature</td></tr>
+      <tr><td><code>branches</code></td><td class="n">6</td><td class="n">1</td><td class="n">1</td><td>yes: the cut and landing markers</td></tr>
+      <tr><td><code>step_description</code></td><td class="n">6</td><td class="n">7</td><td class="n">2</td><td>no: prose</td></tr>
+      <tr><td><code>spec</code></td><td class="n">5</td><td class="n">7</td><td class="n">3</td><td>no: knowledge</td></tr>
+      <tr><td><code>auto_progress</code></td><td class="n">4</td><td class="n">1</td><td class="n">1</td><td>yes: a link flag the frontier reads</td></tr>
+      <tr><td><code>step_agent_run</code></td><td class="n">4</td><td class="n">8</td><td class="n">4</td><td>no: execution</td></tr>
+      <tr><td><code>step_check</code></td><td class="n">4</td><td class="n">1</td><td class="n">0</td><td>yes</td></tr>
+      <tr><td><code>docs</code>, <code>step_ticket</code>, <code>step_start</code></td><td class="n">2, 1, 1</td><td class="n">3, 4, 1</td><td class="n"></td><td><code>step_start</code> yes (scope needs it); the others no</td></tr>
+    </tbody>
+  </table></div>
+  <p>Two things stand out:</p>
+  <ul>
+    <li><strong>The real ontology is wider than estimates and status.</strong> The most-read aspects are the <em>workflow</em>: the review relation, the agent flag, waits, branch cuts. A tier holding only estimates and status would leave most of the glue in the root.</li>
+    <li><strong>The contracts are stable.</strong> Most have changed 1–7 times. Status is the exception, at 13 commits, 11 of them since September, because the review and merge states are still being added.</li>
+  </ul>
+
+  <h3>Simulated against today's root</h3>
+  <p>I parsed every helper in the root and asked which of them would need nothing but the planning tier. The tier was <code>status, estimation, milestone, wait, start, check, feature, review, agent flag, branches, auto_progress</code>.</p>
+  <div class="bars" role="img" aria-label="62 root helpers read other modules: 23 read only planning aspects, 39 need feature files">
+    <div class="bar hot"><span class="name">only planning aspects</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 23 / 62)"></span><span class="val" style="--w:calc((100% - 40px) * 23 / 62)">23</span></span></div>
+    <div class="bar"><span class="name">also need feature files</span><span class="track"><span class="fill" style="display:block;width:calc((100% - 40px) * 39 / 62)"></span><span class="val" style="--w:calc((100% - 40px) * 39 / 62)">39</span></span></div>
+  </div>
+  <p><strong>Absorbed (23):</strong> <code>_step_key</code>, <code>_step_kind</code>, <code>_primary_glyph</code>'s rule, <code>_card_status</code>, <code>_status_in</code>, <code>_is_done</code>, <code>_works_nobody</code>, <code>_is_wait</code>, <code>_is_cut</code>, <code>_is_land</code>, <code>_auto_progresses</code>, <code>_always_progresses</code>, <code>_scope_kinds</code>, <code>_step_stats</code>, <code>_preferred_agent</code>, <code>_no_worktree</code>… In short, every rule about what a step <em>is</em> and where it is in its life.</p>
+  <p><strong>What remains (39) falls into two families:</strong></p>
+  <ul>
+    <li><strong>Execution</strong>: the briefing, <code>prompt</code>, <code>launcher</code>, <code>rounds</code>, the PR refs (<code>github.aspect</code>, read by 6 helpers), <code>notes.log</code> and <code>notes.reach</code>, the run aspect and usage.</li>
+    <li><strong>Knowledge</strong>: the coverage trace over <code>spec</code>, <code>docs</code> and <code>testing</code>.</li>
+  </ul>
+  <p>These are features working with other features, mostly <em>within</em> one family. Putting them in the planning tier is exactly how it would bloat. They go through the hybrid's headless imports (<a href="#alternatives">§4</a>), and most of those edges stay inside a family.</p>
+
+  <h3>The shape</h3>
+  <div class="mermaid-wrap"><pre class="mermaid">
+flowchart TB
+  CORE["core/&lt;br/&gt;storage, signals"]
+  DOMAIN["domain/ — the graph&lt;br/&gt;nodes · edges · opaque aspect blobs · commands · store"]
+  PLAN["planning/ — NEW, headless&lt;br/&gt;status state machine · estimate · kinds&lt;br/&gt;review workflow · waits · cuts · auto-progress&lt;br/&gt;schedule · progression · scope"]
+  CLI["cli/"]
+  FW["framework/ (Qt)"]
+  subgraph MODS["modules/ — features"]
+    EXE["execution family&lt;br/&gt;briefing · launch · runs · usage · github"]
+    KNOW["knowledge family&lt;br/&gt;spec · docs · coverage · testing · notes"]
+    UI["the UI halves&lt;br/&gt;canvas · order · time · status board"]
+    TAIL["long tail&lt;br/&gt;ticket · description · assets · themes"]
+  end
+  DOMAIN --> CORE
+  PLAN --> DOMAIN
+  CLI --> PLAN
+  FW --> DOMAIN
+  MODS --> PLAN
+  MODS --> FW
+  SERVER["v2 server"] --> PLAN
+  DAEMON["v2 daemon"] --> PLAN
+  DAEMON --> EXE
+  </pre></div>
+  <p><code>domain/model.py</code> still learns nothing about aspects, so the original principle holds at the graph level. <code>planning/</code> is a fixed vocabulary on top of an open graph. That is a product statement: <strong>DPlanner is a development planner with a fixed planning model and open-ended features</strong>, not a generic graph with plugins. The derivations that only take callbacks because the aspects lived above them (<code>schedule</code>, <code>progression</code>, <code>scope</code>) move up into <code>planning/</code>, where they can read the aspects directly.</p>
+  <div class="code"><div class="src"><span>sketch · planning/status.py</span></div><pre><code>from dplanner.planning.kinds import is_wait, is_cut
+
+DONE, IN_PROGRESS, READY_FOR_REVIEW, READY_TO_MERGE, BLOCKED = (...)
+
+TRANSITIONS: Mapping[str, frozenset[str]] = {   <span class="c"># what a server can validate, a playbook can extend</span>
+    PENDING: frozenset({IN_PROGRESS, BLOCKED}),
+    IN_PROGRESS: frozenset({READY_FOR_REVIEW, DONE, BLOCKED}),
+    ...
+}
+
+def stored(step: Step) -&gt; str: ...                    <span class="c"># the raw status: was _is_done's question</span>
+def worn(step: Step) -&gt; str: ...                      <span class="c"># a wait or cut has none: was _card_status</span>
+def on(library: Library, day: date) -&gt; StatusFor: ... <span class="c"># a wait is done once over: was _status_in</span></code></pre></div>
+  <p>The three meanings of "done" from <a href="#findings">§2</a> become three named functions in one file.</p>
+
+  <h3>Why it is good for long-term complexity</h3>
+  <ul>
+    <li><strong>Dependencies point toward stability.</strong> Everything reads status and kind, so they belong low. Today they sit high and get pushed down through callbacks, which is where the 480 <code>Deps</code> fields and the six copies of the ranking come from.</li>
+    <li><strong>One concept, one place.</strong> The words, the storage format and the rules of status end up in one module.</li>
+    <li><strong>New features get cheaper.</strong> A long-tail feature imports <code>planning/</code> downward and needs no root callbacks. A feature that <em>changes the ontology</em> (playbook stages, claims) has to touch <code>planning/</code> deliberately, and that friction is right for something everything reads.</li>
+    <li><strong>v2 becomes possible.</strong> A multiplayer server can import <code>domain</code> and <code>planning</code> and nothing else. That lets it validate status transitions, mint step numbers and merge the core aspects with real rules, while long-tail aspects stay opaque blobs merged per entry. Without the tier, the server would either load feature modules or be unable to enforce anything. The daemon's question, "what is due?", is a planning question.</li>
+    <li><strong>It shrinks the hybrid.</strong> Once the most-read aspects move below the modules, most of the cross-module edges that remain are inside one family. That suggests the long-term structure: families as bounded contexts, found from the data rather than drawn up front (<a href="#alternatives">§4</a>, approach 6).</li>
+  </ul>
+
+  <h3>Where it goes wrong, and the guards</h3>
+  <ul class="findings">
+    <li><h4>Kernel creep <span class="tag crack">biggest risk</span></h4>
+      <p><code>domain/</code> already shows it: <code>agents.py</code>, <code>dictation.py</code>, <code>ledger.py</code> and <code>document_folder.py</code> are plugin contracts sitting next to the graph.</p>
+      <p><strong>Admission test:</strong> an aspect belongs in <code>planning/</code> only if a headless server or daemon must <em>interpret</em> it to order, claim, validate or merge, without loading any feature. By that test, description, ticket, notes, docs, spec, testing, usage and GitHub sync stay out.</p></li>
+    <li><h4>Work refs are borderline <span class="tag caution">decide later</span></h4>
+      <p>Branch and PR refs are read by 6 helpers, and claims and landings need them. A vendor-neutral "where this step's work lives" (branch, PR number, state) is execution ontology and could belong in <code>planning/</code>. The <code>github</code> module would then be the provider that fills it in, off the undo stack as it does today. Decide when the daemon lands.</p></li>
+    <li><h4>Changes split across tiers <span class="tag caution">a tax</span></h4>
+      <p>For about 11 features, the data contract lives in <code>planning/</code> and the UI in <code>modules/&lt;name&gt;</code>, so a change to estimates touches two packages. That's acceptable for the most stable data and for nothing else, which is why the long tail stays in single packages.</p></li>
+    <li><h4>Status is still moving <span class="tag caution">timing</span></h4>
+      <p>Playbooks will add stage states. Move status down <em>as</em> an explicit state machine with allowed transitions, not as today's bag of words. A server and a daemon need the transitions anyway.</p></li>
+    <li><h4>Presentation creeping in <span class="tag caution">discipline</span></h4>
+      <p>The tier says "milestone" and "M". Glyphs, tones and colours stay in the canvas and the theme, keyed by the kind word.</p></li>
+    <li><h4>Losing real substitution <span class="tag caution">keep one seam</span></h4>
+      <p>The simulator does feed the schedule alternative readers. Keep function parameters where a second implementation exists, with the planning readers as defaults, and drop them everywhere else.</p></li>
+    <li><h4>Naming</h4>
+      <p>Not "core", because <code>core/</code> already exists. <code>planning/</code> says what it holds. The layer test gains one rule: <code>domain/</code> never imports <code>planning/</code>, and <code>planning/</code> imports no Qt and no module.</p></li>
+  </ul>
+
+  <h3>What it changes in the recommendation</h3>
+  <p>It doesn't replace the hybrid; it takes over most of its work. The tier holds the ontology (the 23 helpers), and what is left goes through headless imports, mostly within one family. <strong>Wave 2 becomes "create <code>planning/</code> with kinds and status"</strong> instead of "add <code>AspectSpec.kind</code>". That's a better pilot, because it tests the tier and the ontology together.</p>
+  <div class="callout"><p><strong>The decision this asks for:</strong> declaring the planning model fixed. In practice, status, estimates, kinds and the review workflow become DPlanner's own concepts, no longer something any module could replace. The measurements say the code already treats them that way. The tier would make it official.</p></div>
+</section>
+
+<!-- 6 -->
+<section id="daemon">
+  <h2><span class="num">6</span>The daemon as a third composition root</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>The GUI and the CLI already have separate composition roots. The v2 daemon would be a third, wiring the same headless logic with no window. That's the test of whether the hybrid has worked: <strong>the daemon's root should need no <code>framework/</code> import</strong>. Three things block it today.</p>
+  </div>
+  <figure>
+    <div class="mermaid-wrap"><pre class="mermaid">
+flowchart TB
+  subgraph roots["Composition roots"]
+    GUI["GUI root&lt;br/&gt;default_modules()"]
+    CLI["CLI root&lt;br/&gt;default_cli_commands()"]
+    D["Daemon root&lt;br/&gt;(v2 step 3)"]
+  end
+  subgraph headless["Headless logic, owned by modules"]
+    DUE["agent_launch: due_now"]
+    BRIEF["agent_briefing"]
+    LAUNCH["launcher + harnesses"]
+    PLANNING["planning/: what is due, status, kinds"]
+    LEASE["claim lease (planning)"]
+    LEDGER["agent_usage ledger"]
+  end
+  STORE["LibraryStore + commands"]
+  GUI --> headless
+  CLI --> headless
+  D --> headless
+  headless --> STORE
+  GUI --> QT["framework/ (Qt)"]
+    </pre></div>
+  </figure>
+  <div class="scroll"><table>
+    <thead><tr><th>Blocker today</th><th>Where</th><th>Why it blocks</th></tr></thead>
+    <tbody>
+      <tr><td><code>due_here</code> is a closure inside <code>default_modules()</code></td><td><code>modules/__init__.py:1408</code></td><td>It reads window state (<code>agent_runs.live</code>, <code>services.clock</code>) and sits inside the GUI's builder.</td></tr>
+      <tr><td>Auto-launch is a Qt module</td><td><code>step_agent_instruction/auto_launch.py:37-43</code></td><td><code>QLockFile</code>, <code>Debounced</code>, the window <code>Context</code> and <code>Notice</code>. The decision of what is due is mixed in with the window's reactions to it.</td></tr>
+      <tr><td>The briefing lives in the root</td><td>root:2167–2690, 3457–3780</td><td>About 800 lines of prompt text the daemon must send, and it can only reach them through the GUI root.</td></tr>
+    </tbody>
+  </table></div>
+  <p>One piece is already in good shape: <code>launcher.py</code> imports no Qt.</p>
+</section>
+
+<!-- 6 -->
+<section id="renaming">
+  <h2><span class="num">7</span>Renaming, in detail</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>Seven packages hold something their name doesn't say. I recommend renaming or splitting only those seven, keeping every on-disk <code>MODULE_ID</code> exactly as it is, and fixing what each file name means (<code>activity.py</code> is a tab, <code>view.py</code> is retired). A full pass to make prefixes consistent across all 57 packages costs far more churn than it buys.</p>
+  </div>
+
+  <div class="callout"><p><strong>What never changes:</strong> the <code>MODULE_ID</code> strings. They are keys in <code>module_data</code>, file names under <code>modules/&lt;id&gt;.json</code>, and format stamps, and <code>FORMAT.md</code> owns them. Moving a package is safe. <code>anthropic</code> already did it, and its stored id is still <code>llm_anthropic</code>. A rename PR also adds a test that the set of declared ids hasn't changed.</p></div>
+
+  <div class="scroll"><table>
+    <thead><tr><th>Package today</th><th>What it holds</th><th>Proposed</th><th>Ids kept</th><th>Churn</th></tr></thead>
+    <tbody>
+      <tr><td><code>project_editor</code><br><span class="c">32 files · 12.8k</span></td><td>The canvas: modes, items, scene, renderers, sorts and named layouts, stacks, clipboard, minimap, ruler, find, keymap. Also the <code>step duplicate</code> verb.</td><td><code>canvas/</code> with <code>stacks/</code>, <code>layouts/</code> and <code>clipboard/</code></td><td><code>project_editor</code></td><td>32 test files, 14 rules mentions, 20 in ARCHITECTURE.md</td></tr>
+      <tr><td><code>projects</code><br><span class="c">22 files · 7.4k</span></td><td>The project <em>and step</em> CLI (<code>cli.py</code>, 1,659), the Project dialog (1,416), locations, the Open/Link/Browse/Repositories pages, Share, Move, Archive, checkouts, the index folder</td><td><code>project_settings</code> (dialog, locations); <code>project_join</code> (open, link, browse, repositories, share, checkouts); <code>project_archive</code>; the <code>step</code> noun goes to <code>steps/cli.py</code></td><td><code>projects</code></td><td>large: the CLI tests</td></tr>
+      <tr><td><code>progression</code><br><span class="c">4 files · 1.1k</span></td><td>The Step statuses tab (<code>StatusBoard</code>) and the Control Centre</td><td><code>status_board</code></td><td><code>progression</code></td><td>small</td></tr>
+      <tr><td><code>step_order</code><br><span class="c">6 files · 1.4k</span></td><td>The Order tab, its export, and the token-spend Expenditure tab</td><td>Order stays; Expenditure moves to <code>agent_usage</code></td><td><code>step_order</code></td><td>small</td></tr>
+      <tr><td><code>step_agent_instruction</code><br><span class="c">12 files · 5.7k · Deps of 37</span></td><td>The briefing aspect (aspect, section, prompt, cli) and all of Run Agent (launcher, profiles, run and detect dialogs, settings page, checks, auto-launch)</td><td>The briefing aspect stays; <code>agent_launch</code> takes launching; <code>agent_briefing</code> takes the root's 800 lines</td><td><code>step_agent_instruction</code></td><td>medium</td></tr>
+      <tr><td><code>step_agent_run</code><br><span class="c">8 files · 1.9k</span></td><td>The run aspect, terminals, the Agents browser, and a <em>second</em> module id, <code>agent_usage</code> (<code>usage.py:28</code>)</td><td>The run aspect stays; <code>agent_usage</code> becomes the package its id already names</td><td>both</td><td>small</td></tr>
+      <tr><td><code>time_estimates</code><br><span class="c">29 files · 8.6k</span></td><td>The Time tab, staffing, budget, progress history, the recorder, half the <code>schedule</code> CLI noun, and a 1.6k-line simulator with its debugger</td><td><code>schedule</code> (tab, staffing, budget, progress, the whole <code>schedule</code> noun); the simulator and debugger go to a dev-tool package</td><td><code>time_estimates</code></td><td>medium</td></tr>
+    </tbody>
+  </table></div>
+  <p>Not moved yet: <strong>topology</strong> (<code>spec/cli.py:1</code>, "the project's prose beside the documents"). It is architecture prose, and probably the seed of v2's <em>system</em> level. It can become its own package when that work starts.</p>
+
+  <h3>The largest one, before and after</h3>
+  <div class="tree">
+    <div class="code"><div class="src"><span><b>before</b> · project_editor/</span><span>32 files, flat</span></div><pre><code>project_editor/
+├── modes.py           1612
+├── items.py           1017
+├── module.py           997
+├── graph.py            960
+├── cli.py              919
+├── renderers.py        803
+├── sorts.py            710
+├── stack_edits.py      603
+├── canvas_verbs.py     595
+├── geometry.py         576
+├── layout_verbs.py     469
+├── verbs.py            456
+├── stacks.py           354
+├── stack_verbs.py      335
+├── clipboard.py        335
+├── clipboard_verbs.py  246
+├── positions.py        229
+├── named_layouts.py    222
+└── … 14 more</code></pre></div>
+    <div class="code"><div class="src"><span><b>after</b> · canvas/</span><span>three families made visible</span></div><pre><code>canvas/                  MODULE_ID = "project_editor"
+├── module.py
+├── activity.py          ← the tab, out of module.py
+├── scene.py             ← was graph.py
+├── items.py · modes.py · renderers.py · geometry.py
+├── verbs.py · canvas_verbs.py · keymap.py · find.py
+├── minimap.py · ruler.py · marks.py · look.py
+├── stacks/
+│   ├── model.py         ← stacks.py
+│   ├── edits.py         ← stack_edits.py
+│   └── verbs.py         ← stack_verbs.py
+├── layouts/
+│   ├── sorts.py · named.py · placement.py
+│   ├── positions.py · verbs.py · button.py
+└── clipboard/
+    ├── model.py · verbs.py</code></pre></div>
+  </div>
+
+  <h3>The prefix rule</h3>
+  <p>The prefixes no longer reliably say anything. <code>step_*</code> covers 12 aspects but leaves out <code>estimation</code>, <code>testing</code>, <code>github</code>, <code>feature</code>, <code>branches</code> and <code>auto_progress</code>, and two packages carry it without being aspects (<code>step_properties</code>, <code>step_order</code>).</p>
+  <div class="scroll"><table>
+    <thead><tr><th></th><th>Recommended: stop reading meaning into prefixes</th><th>Alternative: a full prefix pass</th></tr></thead>
+    <tbody>
+      <tr><td>Rule</td><td>A package is an aspect because it has an <code>aspect.py</code>, which <code>aspect_specs()</code> and <code>dplanner aspect list</code> already know. Rename a <code>step_*</code> package only when it moves anyway.</td><td>Every aspect gets <code>step_</code>: <code>step_estimate</code>, <code>step_tests</code>, <code>step_github</code>, <code>step_feature</code>, <code>step_branch</code>…</td></tr>
+      <tr><td>Churn</td><td>none beyond the seven above</td><td>about 15 more packages, their tests, rules paths and docs</td></tr>
+      <tr><td>What it buys</td><td>—</td><td>a visual group in the directory listing</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>File roles</h3>
+  <p>Each file name means one thing, so a newcomer can open any module and know which file is the tab.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>File</th><th>Means</th><th>Where it means something else today</th></tr></thead>
+    <tbody>
+      <tr><td><code>activity.py</code></td><td>the tab</td><td>the tab is inside <code>module.py</code> in project_editor, progression and step_order</td></tr>
+      <tr><td><code>panel.py</code></td><td>a side or dock panel</td><td>—</td></tr>
+      <tr><td><code>*_dialog.py</code></td><td>a modal</td><td><code>view.py</code> in library_watch and agent_at_work</td></tr>
+      <tr><td><code>status_widget.py</code></td><td>a status-bar widget</td><td><code>view.py</code> in sync, taskcenter, step_agent_run</td></tr>
+      <tr><td><code>section.py</code></td><td>a Step Details editor</td><td><code>editor.py</code> in feature and notes</td></tr>
+      <tr><td><code>scene.py</code></td><td>a <code>QGraphicsScene</code></td><td><code>graph.py</code> in project_editor</td></tr>
+      <tr><td><code>settings_page.py</code></td><td>a settings page</td><td>already consistent, but not yet in CLAUDE.md's documented set</td></tr>
+      <tr><td><code>view.py</code></td><td><em>retired</em></td><td>five different things in 10 modules</td></tr>
+    </tbody>
+  </table></div>
+  <div class="tree">
+    <div class="code"><div class="src"><span><b>before</b> · progression/</span></div><pre><code>progression/
+├── module.py   568   ← module + StatusBoard tab + Control Centre
+├── view.py     224   ← a table
+├── cli.py
+└── report.py</code></pre></div>
+    <div class="code"><div class="src"><span><b>after</b> · status_board/</span><span>MODULE_ID = "progression"</span></div><pre><code>status_board/
+├── module.py         ← registration only
+├── activity.py       ← the Step statuses tab
+├── control_centre.py
+├── table.py          ← was view.py
+├── cli.py
+└── report.py</code></pre></div>
+  </div>
+  <p>The tests follow the same layout: <code>tests/modules/&lt;package&gt;/</code>, so a rules file's <code>paths:</code> can name one folder instead of a hand-kept list of globs. And <code>HEADLESS_FILES</code> becomes a list of paths relative to each package, so <code>schedule.py</code> in one package no longer binds every other <code>schedule.py</code>.</p>
+</section>
+
+<!-- 7 -->
+<section id="seams">
+  <h2><span class="num">8</span>Multiplayer and daemon seams</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>Persistence today is optimistic and coarse, built for one person at a time. Before the daemon (v2 step 3): fix the two bugs, lock across check-and-write, give claims a headless lease, and move "what is due" out of Qt. Before the server (v2 step 6): turn commands into operations that carry an id, an author and a base version.</p>
+  </div>
+
+  <h3>The gap between the check and the write</h3>
+  <div class="code"><div class="src"><span>src/dplanner/domain/store.py:1083-1095 (abridged)</span></div><pre><code>for project_id in per_project:
+    if self._snapshot(record) != record.disk:      <span class="c"># check…</span>
+        raise StaleWorkspaceError(...)
+<span class="hl">                                                   # ← another writer can land here</span>
+for project_id, project_marks in per_project.items():
+    self._flush_project(...)                       <span class="c"># …then write</span></code></pre></div>
+  <div class="mermaid-wrap"><pre class="mermaid">
+sequenceDiagram
+  participant W as Window
+  participant FS as Plan folder
+  participant D as Daemon / CLI
+  W->>FS: stat every plan file (snapshot matches)
+  D->>FS: write step.json (S8 added)
+  W->>FS: write project.dproj (its own children list)
+  Note over FS: the daemon's S8 is gone from the order, and nobody was told
+  </pre></div>
+  <p><strong>Fix:</strong> a per-project lock file created with O_EXCL and held across both the check and the write. It is headless, so the daemon can share it. <code>git pull</code> doesn't take the lock, so the store also re-checks after it writes.</p>
+
+  <h3>Conflict entries are coarse</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Entry on disk</th><th>Holds</th><th>So these conflict</th><th>Finer shape</th></tr></thead>
+    <tbody>
+      <tr><td><code>&lt;step&gt;/step.json</code> (the <code>meta</code> entry)</td><td>title, number, every edge list</td><td>a rename against a link</td><td>title, and each edge list, as separate entries</td></tr>
+      <tr><td><code>project.dproj</code></td><td>title, summary, locations, children order, <code>last_number</code></td><td><strong>any two step adds</strong></td><td>children order derived or keyed per step; numbers per writer</td></tr>
+      <tr><td><code>modules/&lt;id&gt;.md</code></td><td>a whole prose document</td><td>two edits anywhere in it</td><td>keep it as is; adoption already diffs it into hunks</td></tr>
+    </tbody>
+  </table></div>
+  <div class="code"><div class="src"><span>src/dplanner/domain/model.py:113</span><span>numbers are minted locally</span></div><pre><code>def next_number(project: "Project") -&gt; int:
+    return max(project.last_number, *(step.number for step in project.steps), 0) + 1</code></pre></div>
+
+  <h3>Commands are not operations</h3>
+  <div class="code"><div class="src"><span>src/dplanner/domain/commands.py:216-232</span></div><pre><code>class AddNodeCommand:
+    def __init__(self, parent_id: NodeId, node: Node, index: int | None = None) -&gt; None:
+        self.parent_id = parent_id
+<span class="hl">        self.node = node                    # a live object, not a value</span>
+        self.index = index
+        self._mark_before: int | None = None
+
+    def redo(self, library: Library) -&gt; None:
+        parent = library.node(self.parent_id)
+<span class="hl">        if self._mark_before is None:       # "before" exists only after the first run</span>
+            self._mark_before = getattr(parent, "last_number", 0)
+        library.add_child(self.parent_id, self.node, self.index)</code></pre></div>
+  <p>Origins are <code>object()</code> sentinels (<code>UNDO_ORIGIN</code>, <code>OUTSIDE_ORIGIN</code>), so they can't be serialised. Builders such as <code>rewire_command</code> produce whole-list replacements read from the live library, against a base nobody records. Undo restores captured values. The undo service already drops history when the document refuses a command (<code>framework/undo.py:162-171</code>), but only a missing node or a text mismatch counts as a refusal. A value another writer changed is just overwritten.</p>
+  <p>What an operation would look like:</p>
+  <div class="code"><div class="src"><span>sketch · domain/ops.py</span></div><pre><code>@dataclass(frozen=True)
+class Op:
+    id: str          <span class="c"># uuid7: sortable, minted by the writer</span>
+    author: str      <span class="c"># a person, or an agent run id</span>
+    entry: Entry     <span class="c"># (step id, "title" | "edges/requires" | "&lt;module&gt;.json" | "&lt;module&gt;.md")</span>
+    base: str        <span class="c"># the version of that entry this op was made against</span>
+    before: Json     <span class="c"># captured eagerly, so undo is the op's inverse…</span>
+    after: Json      <span class="c"># …and can refuse when the entry is no longer at `after`</span></code></pre></div>
+  <p>The ledger already works this way: one append-only file per run, one writer each, a machine id and a run id (<code>domain/ledger.py</code>). Plan state can follow the same pattern.</p>
+
+  <h3>Claims and the launch lock</h3>
+  <div class="code"><div class="src"><span>src/dplanner/domain/at_work.py:303</span></div><pre><code>def touch(self, project: ProjectId) -&gt; None:
+    stamp = now_stamp()
+    for path, claim in self._files():          <span class="c"># read every claim…</span>
+        if claim.project == project:
+<span class="hl">            self._put(path, replace(claim, seen=stamp))   # …and rewrite it: an `end` in between comes back</span></code></pre></div>
+  <p>A claim is one file per (project, step) under <code>config_dir()</code>, with no agent or host identity, so two agents on one step count as one claim. The launch lock is a <code>QLockFile</code>. Both are machine-local by design. That's fine for v2 steps 2–5, where git is the sync and claims are advisory, but it needs to be headless and identified before the daemon.</p>
+</section>
+
+<!-- 8 -->
+<section id="failures">
+  <h2><span class="num">9</span>Failure modes, worked through</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>Each failure mode below shows what happens today, what the proposal changes, and what guards the change. Two groups: what the migration itself could break, and what more writers and a daemon will run into.</p>
+  </div>
+
+  <h3>During the migration</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Scenario</th><th>What happens</th><th>Guard</th></tr></thead>
+    <tbody>
+      <tr><td>A cross-module import cycle</td><td>Two modules' headless files import each other. Python may resolve it lazily and hide it.</td><td>The new test fails and names the cycle. The simulation already found two, and both pointed at misplaced code.</td></tr>
+      <tr><td>A module imports another's Qt half</td><td><code>dplanner --help</code> starts loading Qt, and the CLI slows down or fails on a machine without GUI libraries.</td><td>The new test allows only headless files across packages, and the existing headless test still runs.</td></tr>
+      <tr><td>The root is half-migrated</td><td>The same logic exists in two places for a while, and the copies drift.</td><td>One cluster per PR, and each PR deletes the root copy in the same change. A line-count ceiling test on the root ratchets down after each PR.</td></tr>
+      <tr><td>A rename breaks the rules paths</td><td>A rules file stops loading for the moved files, silently.</td><td>Already guarded: <code>test_every_glob_names_a_file</code> and <code>test_every_module_package_is_claimed_by_an_area</code> fail, so the rename PR has to move the rules with it.</td></tr>
+      <tr><td>A <code>MODULE_ID</code> drifts during a rename</td><td>Stored data is orphaned: it round-trips, but nothing reads it.</td><td>Ids are string constants, never derived from the package name. Add a test that the set of declared ids hasn't changed.</td></tr>
+      <tr><td>Two kinds claim the same rank</td><td>Two kinds tie, and the classifier's answer depends on the order they were declared in.</td><td>The kinds live in one ordered list in <code>planning/kinds.py</code>, so a tie can't be written.</td></tr>
+      <tr><td>The planning tier creeps</td><td>"Important" aspects move in one at a time, and <code>planning/</code> becomes the new hotspot.</td><td>The admission test is written into the rules. Each candidate is reviewed against it, and its fan-in is measured before it moves.</td></tr>
+      <tr><td>A planning aspect is moved, but its UI keeps a private copy of the rule</td><td>Two definitions again, now across tiers.</td><td>The PR that moves an aspect deletes the module's copy. The module may import <code>planning/</code>, so there's no reason to keep one.</td></tr>
+      <tr><td>Status transitions refuse a step that's already stored</td><td>An older plan holds a status pair the new state machine forbids.</td><td>Transitions are checked on <em>change</em>, never on <em>load</em>. Stored values are read as they are, and lint reports impossible combinations.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>With more writers and a daemon</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Scenario</th><th>Today</th><th>With the proposals</th></tr></thead>
+    <tbody>
+      <tr><td>Two writers add a step at once</td><td>Both mint S8, and both rewrite <code>project.dproj</code>. The second flush is refused as stale, and its person picks one side's project file, so one step is left out of the order.</td><td>Per-step entries and per-writer numbering mean both adds land. A duplicate number is linted and repaired.</td></tr>
+      <tr><td>Two processes write the library file</td><td>They share <code>.library.tmp</code>, so a torn file gets renamed into place.</td><td>A unique temporary per write (wave 1).</td></tr>
+      <tr><td>A checkout is recorded while another window joins a project</td><td>The re-stamp hides the join, and the next membership flush drops it.</td><td>Checkouts are merged, and the file isn't re-stamped if it changed underneath (wave 1).</td></tr>
+      <tr><td>A flush races a <code>git pull</code></td><td>The snapshot matches, the pull lands, the flush overwrites what it brought in.</td><td>The lock covers check-and-write. A re-check after writing warns about the pull, which doesn't take the lock.</td></tr>
+      <tr><td>A daemon on build N+1 opens a plan a window on build N has open</td><td><code>load()</code> migrates and writes, and the window refuses the newer format or adopts it without noticing.</td><td>Migrations are written only by a verb that writes anyway, and a minimum-reader stamp makes the old build refuse with a clear message.</td></tr>
+      <tr><td><code>touch</code> brings back an ended claim</td><td><code>end</code> unlinks, <code>touch</code> rewrites from an earlier read, and the claim stands for three more minutes.</td><td>Each claim is owned by an agent id. <code>touch</code> renews only its own, and claims are created with O_EXCL.</td></tr>
+      <tr><td>A daemon crashes holding a claim</td><td>The claim lapses on the wall clock after 3 minutes. The launch lock is a <code>QLockFile</code> the daemon can't take.</td><td>A lease with an expiry and a holder id. The holder renews it; anyone may break an expired one, and the break is logged.</td></tr>
+      <tr><td>Two machines launch the same step</td><td>Both launch until a pull (acknowledged in ARCHITECTURE.md).</td><td>Unchanged until the server (v2 step 6). Before then, the claim is flushed and pushed before launching, and a run that finds a newer claim after pulling stands down.</td></tr>
+      <tr><td>A store slot raises</td><td><code>Signal.emit</code> logs and carries on. <code>_unflushed</code> misses an entry, and a change is never written or never checked.</td><td>The store connects through a path that doesn't swallow. An exception marks the store as broken, and the window says so.</td></tr>
+      <tr><td>An undo crosses another writer's change</td><td>The captured value is restored over theirs, silently.</td><td>The operation's base doesn't match, so undo is refused, the way a text mismatch is today.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<!-- 9 -->
+<section id="waves">
+  <h2><span class="num">10</span>Remediation waves</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>Six waves, each made of PR-sized items, all offered as options. Wave 1 needs no decision and fixes real bugs. Waves 2–3 are the hybrid direction; try it first on the step ontology. Wave 4 is the renaming, wave 5 the docs, wave 6 the groundwork for the daemon and the server.</p>
+  </div>
+  <div class="scroll"><table>
+    <thead><tr><th>Wave</th><th>What</th><th>Size</th><th>Needs</th></tr></thead>
+    <tbody>
+      <tr><td><strong>1</strong> Hygiene and bugs</td><td>Delete the ghost directories. Fix <code>write_atomic</code> and <code>set_checkout</code>, with tests for two writers. Use constants instead of copied literals. Add <code>is_milestone()</code>. One <code>spawn_detached()</code> with the Windows flags. Fix stale docstrings and drop two dead <code>HEADLESS_FILES</code> names.</td><td>~7 small PRs</td><td>—</td></tr>
+      <tr><td><strong>2</strong> The <code>planning/</code> tier (the trial run)</td><td>Create <code>planning/</code> with <code>kinds.py</code> (one ordered list replaces <code>_step_key</code>, <code>_step_kind</code>, <code>_primary_glyph</code>, the body tone and the order in <code>_scope_kinds</code>) and <code>status.py</code> (a state machine, plus the three named meanings of "done"). Move the kind aspects' <code>aspect.py</code> down with them. Add the layer rule to <code>test_architecture</code> and the admission test to the rules.</td><td>3–4 PRs</td><td>1</td></tr>
+      <tr><td><strong>3</strong> Narrow the root</td><td>Move estimation, waits and the review workflow into <code>planning/</code>, with <code>schedule</code>, <code>progression</code> and <code>scope</code> moving up out of <code>domain/</code>. Then the headless-import rule and its test for what is left, and move the clusters: <code>agent_briefing</code>, <code>branches/plan.py</code>, <code>coverage/trace.py</code>, milestone colours to the schedule, the ledger to <code>agent_usage</code>, <code>due_now</code> to <code>agent_launch</code>. Split <code>default_modules()</code> by cluster, with a line ceiling on the root that ratchets down.</td><td>~6 PRs</td><td>2</td></tr>
+      <tr><td><strong>4</strong> Names</td><td>The seven renames, the file-role names, test folders per package, <code>HEADLESS_FILES</code> per package.</td><td>~8 PRs</td><td>3 (moves before renames)</td></tr>
+      <tr><td><strong>5</strong> Docs</td><td><code>NOTES-FOR-APPFRAME.md</code> organised by framework file, keeping only the current divergence. <code>ARCHITECTURE.md</code> split by rule area, with a dated <code>decisions.md</code> for the history. <em>Mechanical facts</em> moved into the rules files.</td><td>3 PRs</td><td>any time</td></tr>
+      <tr><td><strong>6</strong> Groundwork for the daemon and the server</td><td>A per-project flush lock. A headless claim lease. Auto-launch's decision moved out of Qt. No migration writes on load, plus a minimum-reader stamp. Store slots that don't swallow exceptions. Finer conflict entries. Commands as operations, with a design doc first.</td><td>design doc + ~6 PRs</td><td>1; the operations before v2 step 6</td></tr>
+    </tbody>
+  </table></div>
+  <p>How this fits <code>docs/towards-v2/build-order.md</code>: waves 1–3 don't depend on v2 and make playbooks (v2 step 2) cheaper, since a playbook's stage states belong in <code>planning/status.py</code>'s state machine, and because a playbook stage is a briefing plus a launch, which is exactly what <code>agent_briefing</code> and <code>agent_launch</code> would hold. Wave 6's lease and its "due, without Qt" part are the daemon's preconditions (v2 step 3). The operations work can wait until the server (v2 step 6).</p>
+</section>
+
+<!-- 11 -->
+<section id="second-opinion-codex">
+  <h2><span class="num">11</span>Second opinion (Codex)</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p><strong>Support the diagnosis; revise the treatment before adopting the waves.</strong> The root needs narrower ownership, and the persistence bugs are reproducible. The missing seam is a headless application boundary for complete actions: shared validation, all-or-nothing changes and controlled effects. Judge the refactor by how safely and cheaply the next feature can change.</p>
+  </div>
+  <p class="eyebrow">Independent review · 4 October 2026 · checkout b9f7fe0 · no application code changed</p>
+  <p>The source and tests had no diff from the original <code>0472101</code> baseline. This opinion reviews the structural conclusions and the planning-tier follow-up. Its durable source is <a href="second-opinion-codex.md">second-opinion-codex.md</a>.</p>
+
+  <h3>What the evidence confirms</h3>
+  <p>The composition root owns business logic: <code>_status_in</code>, <code>_auto_progresses</code> and <code>_due_now</code> make product decisions. They need discoverable owners outside application assembly. Isolated probes over temporary files and in-memory models also reproduced the following:</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Probe</th><th>Observed result</th><th>Evidence</th></tr></thead>
+    <tbody>
+      <tr><td>Pause writer A before rename, complete B, resume A</td><td>A raises <code>FileNotFoundError</code>: both used the same temporary path.</td><td><code>core/fsio.py:54</code></td></tr>
+      <tr><td>Another writer adds a project and checkout; the old store records a checkout and flushes membership</td><td>The foreign checkout disappears immediately; the later flush reduces membership from two projects to one.</td><td><code>domain/store.py:568</code></td></tr>
+      <tr><td>Local rename, foreign rename, undo local rename</td><td>The original title replaces the foreign title.</td><td><code>domain/commands.py:96</code></td></tr>
+      <tr><td>Capture claims, end one, renew from the captured read</td><td>The ended claim reappears.</td><td><code>domain/at_work.py</code>, <code>touch</code></td></tr>
+      <tr><td>A composite's second command names a missing node</td><td>The first change remains after the second raises.</td><td><code>domain/commands.py:317</code></td></tr>
+      <tr><td>An otherwise eligible agent step carries an unknown future status</td><td>The reader returns <code>pending</code>, and due-step selection includes it.</td><td><code>step_status/aspect.py:81</code>; <code>domain/progression.py</code>, <code>due</code></td></tr>
+    </tbody>
+  </table></div>
+  <p>The first four confirm concerns already raised. The last two make transaction boundaries and compatibility more urgent before unattended execution. These were one-off diagnostic probes, not new regression tests; the unknown-status probe exercised selection, not an actual launch.</p>
+
+  <h3>Where the proposed remedies need qualification</h3>
+  <ul class="findings">
+    <li><h4>Give planning concepts owners <span class="tag good">agree, with limits</span></h4>
+      <p>A <code>planning/</code> tier is a good home for status, readiness, estimates and scope. It needs ownership and versioned contracts, without declaring the model permanently fixed. One kind ranking cannot replace every policy: keys choose identity, medallions show several aspects, primary glyphs identify workers, body colours incorporate completion, and scope defines traversal boundaries. Centralise shared facts while preserving those questions (<code>modules/__init__.py:2975–3107</code>, <code>_scope_kinds</code>).</p>
+      <p>A restrictive status state machine is a product change. <code>domain/progression.py</code> deliberately honours manually recorded, out-of-order completion. Preserve that when extracting the rules; require an explicit compatibility decision before an unknown state can authorise execution.</p></li>
+    <li><h4>Headless and acyclic is not a public API <span class="tag caution">missing guard</span></h4>
+      <p>An acyclic graph can still couple every feature to other features' internal schemas and helpers. Permit imports through small, explicit headless APIs, and enforce that boundary. Pure queries can be ordinary functions; storage, clocks, execution and external services still benefit from injected dependencies, even with one production implementation.</p>
+      <p>Callback counts, line counts and template divergences are warning signals, not proof. Off-stack writes also need context: <code>record_started</code> and <code>record_merged</code> deliberately record external facts undo should not reverse (<code>step_status/aspect.py:140–174</code>).</p></li>
+    <li><h4>Complete actions need one owner <span class="tag good">additional alternative</span></h4>
+      <p>Keep a <strong>modular monolith with explicit application actions</strong>: approve a review, record completion, link steps. GUI, CLI, daemon and server call the same headless action. It coordinates validation, related changes, persistence and notifications of accepted changes. Generic field commands remain building blocks, and UI undo remains a separate concern.</p>
+      <p>The status CLI already combines actor-specific rules, decision notes, claim release and the write (<code>step_status/cli.py:67</code>). Sharing <code>SetModuleDataCommand</code> alone does not share that behaviour. This is a useful middle ground: no generic message bus, microservices or interface around every pure function is needed.</p></li>
+  </ul>
+
+  <h3>Decide what multiplayer owns</h3>
+  <p>The meeting notes describe presence, claims and messaging alongside Git. Parts of this review assume a server that accepts and merges plan edits. Both are possible, with different costs and guarantees.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Intended capability</th><th>Suggested architecture</th></tr></thead>
+    <tbody>
+      <tr><td>Presence and coordinated workers; Git carries plan changes</td><td>A coordination service, with explicit limits on concurrent editing.</td></tr>
+      <tr class="rec"><td>Live shared plan editing</td><td>One authoritative mutation service per project, transactional acceptance and subscriptions.</td></tr>
+      <tr><td>Independent offline editing that later merges</td><td>Explicit merge semantics for each data type; substantially more design work.</td></tr>
+    </tbody>
+  </table></div>
+  <p>For live shared editing, prefer the second option initially. Serialising accepted changes per project simplifies graph validation and numbering; this is a logical authority boundary, not one deployed process per project. The current <code>core/storage/provider.py</code> requires a local working directory, so a remote mutation service needs a boundary above file operations.</p>
+
+  <h3>Gaps in the operation and coordination sketches</h3>
+  <ul>
+    <li><strong>Per-entry versions do not protect graph-wide invariants.</strong> Two writers can independently add opposite dependency edges on different steps. Neither entry conflicts; the combined graph has a cycle. Validate the resulting graph inside the acceptance transaction.</li>
+    <li><strong>Composite commands are not transactions.</strong> Multi-entry changes and their undo need all-or-nothing acceptance. Add transaction grouping to the operation sketch. Compare versions for undo: matching values alone cannot establish that nobody edited an entry in between.</li>
+    <li><strong>A post-write check cannot guarantee detection of an overwritten Git update.</strong> App-controlled checkout/pull and writes need coordinated ownership at repository scope. Arbitrary external writes need a recovery policy; a per-project lock also leaves the separate library file uncovered.</li>
+    <li><strong>Presence and exclusive ownership are different contracts.</strong> Execution needs atomic acquisition, owner-checked renewal and rejection of obsolete owners when accepting protected writes. An expiry and owner id alone are insufficient. The <a href="https://etcd.io/docs/v3.5/dev-guide/api_concurrency_reference_v3/">etcd locking contract</a> illustrates checking ownership within the write transaction; it is a design reference, not a recommendation to add etcd.</li>
+    <li><strong>A launch is an external effect.</strong> The current launcher spawns before <code>due.claim()</code> (<code>step_agent_instruction/module.py:800</code>), and the pass flushes later. A crash between those steps needs reconciliation, not a blind retry. Durable run intent, run identity and recovery belong in the execution boundary; a plan transaction cannot itself atomically start an external process.</li>
+    <li><strong>Step numbers are public references.</strong> Branches, briefings and people name them. Collision repair by lint is not harmless: use authoritative allocation, or deliberately design an offline allocation scheme preserving stable references.</li>
+  </ul>
+
+  <h3>Suggested order and proof of improvement</h3>
+  <ol>
+    <li>Fix the reproduced persistence bugs and unsafe unknown-status interpretation, with regression tests. Protect foreign edits from stale undo.</li>
+    <li>Pilot one complete workflow: planning rules with a clear home, a headless application action and the same outcome through GUI and CLI. Exercise competing writers and failure partway through a change.</li>
+    <li>Settle transaction and multiplayer authority boundaries before expanding cross-module imports. Distinguish durable plan data, execution ownership and local UI state.</li>
+    <li>Move and rename packages as their responsibilities become clear. Preserve on-disk ids. Shorten the current architecture guide and keep dated decisions separately.</li>
+  </ol>
+  <p>A transactional store is a credible alternative to growing a custom file transaction system. <a href="https://www.sqlite.org/transactional.html">SQLite supplies atomic commit and recovery</a>; whether it fits depends on whether Git files remain authoritative or become an export. Avoid two independently writable sources of truth. SQLite alone would not coordinate independent machines or make external launches transactional.</p>
+  <div class="callout"><p><strong>Measure the cost of the next change.</strong> Does a representative feature touch fewer unrelated places? Does each rule have one owner? Are concurrency failures handled predictably? A smaller root is useful evidence, not the outcome by itself. Hygiene need not be a prerequisite for every architectural improvement.</p></div>
+
+  <h3>Validation at review time</h3>
+  <p><strong>4,382 tests passed, 25 skipped</strong>, with four Qt deprecation warnings. Ruff and both mypy runs (default platform and <code>--platform win32</code>, 797 source files each) passed. The six diagnostic probes ran separately and changed no application or test files. Passing the existing suite confirms the baseline; it does not cover the additional cases demonstrated by the probes.</p>
+</section>
+
+<!-- 12 -->
+<section id="response-claude">
+  <h2><span class="num">12</span>Response to the second opinion (Claude)</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>It's a strong second opinion and I agree with roughly 80% of it. It corrects three overreaches in my review, adds two real defects, and names the decision my report assumed without asking: what the multiplayer server is the authority for. Its central proposal is application actions ("units of work"). That idea is right, and the code proves the need. But it should be a <strong>per-module pattern</strong>, an <code>actions.py</code> of plain builder functions next to <code>aspect.py</code>, not a central application layer, which would become the next composition root. All of it is kept honest by <strong>mypy and architecture tests</strong>, not by convention.</p>
+  </div>
+  <div class="callout"><p><strong>Renamed after this section was written:</strong> the pattern below is <code>workflows.py</code>, returning a <code>Change</code>. "Action" already means <code>ActionSpec</code> in this codebase. Read <code>actions.py</code> and <code>Action</code> in this section as those names. <a href="#decisions">§14</a> has the decision.</p></div>
+  <p class="eyebrow">Assessed for performance, readiness for v2, modularity, scaling with features, ease of refactoring and debugging, and the risk of over-engineering · same source, <code>0472101</code></p>
+
+  <h3>The code proves the case for actions</h3>
+  <p>CLAUDE.md promises that a menu action and a CLI verb "build the same object from <code>domain/commands.py</code>", so that "neither can grow a behaviour the other lacks". For setting a status they already have:</p>
+  <div class="tree">
+    <div class="code"><div class="src"><span><b>window</b> · step_status/module.py:120</span></div><pre><code>def run(context: Context) -&gt; None:
+    steps = self._chosen(context)
+    if any(self._deps.works_nobody(step) for step in steps):
+        return
+    today = self._deps.clock.today()
+    with self._deps.undo.gesture("Set Status"):
+        for step in steps:
+            if read(step) == status:
+                continue
+            self._deps.undo.push(
+                status_command(step, status, today=today, ...))</code></pre></div>
+    <div class="code"><div class="src"><span><b>CLI</b> · step_status/cli.py:67</span></div><pre><code>def set_status(context, args) -&gt; int:
+    step = find_step(...)
+    if (kind := works_nobody(step)) and args.state != PENDING:
+        raise CliError(...)
+    <span class="hl">if args.state == DONE and not because and ... is_agent(step) and in_agent_shell():</span>
+<span class="hl">        raise CliError(_review_first(step, args.step))</span>
+<span class="hl">    note, added = note_reason(context, step, because) if because else ("", True)</span>
+<span class="hl">    ended = args.state in STOPPED and end_claim(context, step)</span>
+    _say(context, step, args.state, note, added, ended)</code></pre></div>
+  </div>
+  <p>The shared <code>status_command</code> is there, but the <em>workflow</em> isn't. Only the CLI refuses an agent's done-without-review, records the reason as a note, and <strong>ends the at-work claim</strong> (the only path to that is <code>modules/__init__.py:4368</code>). A person marking a step done in the window leaves the agent's claim standing. That proves Codex's point that sharing <code>SetModuleDataCommand</code> doesn't share the action.</p>
+  <p>I checked three more of Codex's claims in the code:</p>
+  <ul>
+    <li>An unknown status reads as <code>pending</code> (<code>step_status/aspect.py:81</code>), so a word written by a newer build is <em>due again</em>.</li>
+    <li><code>launch_due</code> spawns, then claims (<code>step_agent_instruction/module.py:824-827</code>).</li>
+    <li><code>CompositeCommand.redo</code> runs its commands with no rollback (<code>domain/commands.py:329-331</code>).</li>
+  </ul>
+
+  <h3>Corrections I accept</h3>
+  <ul class="findings">
+    <li><h4>One ordered kind list was too much <span class="tag good">accepted</span></h4>
+      <p>The key and the kind word share one ranking. The primary glyph (who works it), the medallions (several marks), the body tone (includes done) and the scope rules (where traversal stops) are separate policies. <code>planning/</code> owns the <em>facts</em> and that one ranking. The policies stay explicit and read the facts.</p></li>
+    <li><h4>No restrictive state machine <span class="tag good">accepted</span></h4>
+      <p><code>domain/progression.py:36</code>: "the graph gates <em>launching</em>, not <em>recording</em>". My <code>TRANSITIONS</code> sketch in §5 would have broken out-of-order recording. <code>planning/</code> owns the vocabulary and the readiness rules, and doesn't police transitions.</p></li>
+    <li><h4>Off-stack writes were overstated <span class="tag good">accepted</span></h4>
+      <p><code>record_started</code> and <code>record_merged</code> are documented external facts. Only the membership calls with no origin remain a finding.</p></li>
+    <li><h4>Smaller points <span class="tag good">accepted</span></h4>
+      <ul>
+        <li>The commitment is <em>ownership plus versioned contracts</em>, not a "fixed" model.</li>
+        <li>Step numbers are public references, so repairing them by lint is not harmless.</li>
+        <li>Per-entry versions miss graph-wide invariants, so <code>link_refusal</code> runs when a change is accepted.</li>
+        <li>A lease needs fencing.</li>
+        <li>A launch is an external effect: record the run intent before spawning, then reconcile.</li>
+      </ul></li>
+  </ul>
+
+  <h3>Where I qualify Codex</h3>
+  <ul class="findings">
+    <li><h4>Actions belong to their owner, not a layer <span class="tag caution">qualified</span></h4>
+      <p>A complete workflow is a plain headless function in the owning module's <code>actions.py</code>. It returns one composite command plus the effects that follow it. It's the existing "both surfaces build the same object" rule, moved up from command to workflow. <code>status_command</code> and <code>rewire_command</code> are already builders. There's no registry, no bus and no handler interface. A central <code>application/</code> package would be a horizontal layer every feature edits, the composition root's problem all over again.</p></li>
+    <li><h4>Import facts, inject effects <span class="tag good">we converge</span></h4>
+      <p>Pure readers are imported. A module's importable surface is <strong>only <code>aspect.py</code> (facts) and <code>actions.py</code> (workflows)</strong>, which is tighter than my earlier "any headless file" and testable. Effectful services stay injected, even with one implementation, because tests need fakes: the store, clock, launcher, claim board and network. Actions don't call those services. They <em>name</em> the effects as values, and the surface performs them.</p></li>
+    <li><h4>Don't block the facts refactor on the authority decision <span class="tag caution">qualified</span></h4>
+      <p>Extracting the planning facts and narrowing the root are pure refactors, independent of multiplayer. Only operations, versions and the server wait. <code>build-order.md</code> already puts the server last, behind "git plus advisory claims", which is Codex's first option: a coordination service.</p></li>
+    <li><h4>Versions don't belong in git files <span class="tag caution">added</span></h4>
+      <p>A per-entry version counter stored in the plan files conflicts in <em>every</em> concurrent git merge, because both sides bump it. Versions live in the authority's log.</p></li>
+    <li><h4>No SQLite for now <span class="tag caution">qualified</span></h4>
+      <p>Git-mergeable plan files are a product pillar: FORMAT.md, plan repositories, review in PRs. A second writable source of truth would be worse, and Codex itself notes SQLite doesn't coordinate machines.</p></li>
+  </ul>
+
+  <h3>How the planning tier and actions scale, and fit with the modules</h3>
+  <p>Knut asked how both would hold up over time and stay friendly to the modules, and to rely on type checks and architecture checks wherever possible. Every arrow below is an import direction, kept acyclic and checked by a test:</p>
+  <div class="mermaid-wrap"><pre class="mermaid">
+flowchart TB
+  PL["planning/&lt;br/&gt;facts + readiness · pure&lt;br/&gt;imports core, domain only"]
+  AS["&lt;module&gt;/aspect.py&lt;br/&gt;storage of non-planning aspects"]
+  AC["&lt;module&gt;/actions.py&lt;br/&gt;complete workflows → Action"]
+  OTHER["another module's&lt;br/&gt;aspect.py / actions.py"]
+  CLI["&lt;module&gt;/cli.py&lt;br/&gt;applies, flushes, performs effects"]
+  QT["&lt;module&gt;/module.py (Qt)&lt;br/&gt;one undo gesture, performs effects"]
+  D["daemon root · (server)"]
+  AS --> PL
+  AC --> PL
+  AC --> AS
+  AC --> OTHER
+  CLI --> AC
+  QT --> AC
+  D --> AC
+  </pre></div>
+  <div class="code"><div class="src"><span>sketch · planning/status.py</span><span>the type makes the unknown-status probe impossible</span></div><pre><code>class Status(Enum):                 <span class="c"># Enum, not StrEnum: --strict-equality rejects status == "done"</span>
+    PENDING = "pending"
+    IN_PROGRESS = "in-progress"
+    READY_FOR_REVIEW = "ready-for-review"
+    READY_TO_MERGE = "ready-to-merge"
+    DONE = "done"
+    BLOCKED = "blocked"             <span class="c"># .value is the word on disk; the format is unchanged</span>
+
+@dataclass(frozen=True)
+class Unknown:
+    word: str                       <span class="c"># written by a newer build, left on disk untouched</span>
+
+def stored(step: Step) -&gt; Status | Unknown: ...
+
+def launchable(view: PlanView, step: Step) -&gt; bool:
+    match stored(step):
+        case Unknown():
+            return False            <span class="c"># never due on a word this build can't read</span>
+        case Status.PENDING:
+            return prerequisites_recorded(view, step)
+        case _:
+            return False</code></pre></div>
+  <div class="code"><div class="src"><span>sketch · step_status/actions.py</span><span>one workflow, every surface</span></div><pre><code>def refusal(view: PlanView, step: Step, status: Status, actor: Actor) -&gt; str:
+    ...                             <span class="c"># why not, or "": the CLI's error and the menu's greyed label</span>
+
+def set_status(view: PlanView, step: Step, status: Status, *,
+               actor: Actor, today: date, because: str = "") -&gt; Action:
+    commands = [status_command(step, status, today=today)]
+    if because:
+        commands.append(notes_actions.decision(view, step, because).command)
+    effects = (EndClaim(step.id),) if status in STOPPED else ()
+    return Action(CompositeCommand("Set Status", commands), effects)
+
+<span class="c"># window:  action = set_status(...); undo.push(action.command); perform(action.effects)</span>
+<span class="c"># CLI:     action = set_status(...); apply(action.command); flush(); perform(action.effects)</span></code></pre></div>
+
+  <h4>How each one grows</h4>
+  <ul>
+    <li><strong>The planning tier grows with the ontology, not with features</strong>: about ten aspects plus readiness. A new feature lands as a module. Creep is how this fails. The guard is a short, explicit <code>PLANNING_ASPECTS</code> list in <code>test_architecture.py</code>, so adding to it is a deliberate, reviewed diff. If it passes about 15 entries, stop and rethink.</li>
+    <li><strong>Actions grow with verbs</strong>, about one per verb that changes the plan. That's the same curve as <code>CliCommand</code>s today, spread across the modules that own them. Nothing central lists them, so there's no hotspot. A workflow that spans modules composes by calling: approving a review calls <code>step_status.actions.set_status(...)</code> and combines the result. The risk is an <code>actions.py</code> that grows into a god file. The guard is one function per verb, and splitting the module when its actions outgrow its CLI.</li>
+    <li><strong>Modules stay vertical slices.</strong> The only cross-module surface is two files per module, both visible to a test.</li>
+  </ul>
+
+  <h4>Enforced by mypy</h4>
+  <p>mypy already runs with <code>strict = true</code>, which includes <code>--strict-equality</code>, and with <code>warn_unreachable</code>.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Type</th><th>What it makes impossible</th></tr></thead>
+    <tbody>
+      <tr><td><code>Status</code> and <code>Kind</code> as <code>enum.Enum</code></td><td><code>status == "done"</code> against a literal: the bug class at root:704/719 and <code>coverage/trace.py:361,452</code></td></tr>
+      <tr><td><code>stored() -&gt; Status | Unknown</code></td><td>asking whether an unreadable status is due. It has to be handled first, and <code>warn_unreachable</code> flags a forgotten branch.</td></tr>
+      <tr><td><code>PlanView</code>, a <code>Protocol</code> with only <code>Library</code>'s queries</td><td>an action that mutates the model instead of building a command</td></tr>
+      <tr><td><code>Actor = Person | AgentRun | Daemon</code></td><td>actor-specific rules hidden in an <code>in_agent_shell()</code> check. It's also the author field v2 needs, at no cost now.</td></tr>
+      <tr><td><code>Action(command, effects, label)</code> with effects as frozen dataclasses (<code>EndClaim</code> first)</td><td>an action quietly calling a service: effects are values a test can compare</td></tr>
+    </tbody>
+  </table></div>
+
+  <h4>Enforced by <code>tests/test_architecture.py</code></h4>
+  <ol>
+    <li><code>planning/</code> imports only <code>core</code> and <code>domain</code>.</li>
+    <li>One module imports another only through <code>aspect.py</code> or <code>actions.py</code>. Both are headless, checked per package rather than by bare file name.</li>
+    <li>The module import graph is acyclic, and a failure names the cycle.</li>
+    <li><code>actions.py</code> imports no <code>framework</code>, no Qt and no <code>domain.store</code>: it builds, and its callers persist.</li>
+    <li><strong>Ratchets</strong>, counts that may only fall: the root's line count, and how many built-in commands are pushed or applied directly outside <code>actions.py</code>.</li>
+    <li>The set of declared <code>MODULE_ID</code>s doesn't change.</li>
+  </ol>
+  <p>A rule kept "by convention" erodes. A test that names the offending import doesn't.</p>
+
+  <h3>Performance</h3>
+  <ul>
+    <li><strong>Actions</strong> are plain function calls that build commands. There's no dispatch.</li>
+    <li><strong>An all-or-nothing composite</strong> costs nothing extra unless something fails.</li>
+    <li><strong>Validating the whole graph when a change is accepted</strong> is O(V+E) per batch, well under a millisecond at today's plan sizes; <code>scripts/measure_scaling.py</code> is the check.</li>
+    <li><strong>Enums</strong> cost an attribute lookup.</li>
+    <li>None of this touches the debounce or announce paths.</li>
+  </ul>
+
+  <h3>Reconciled order</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Step</th><th>What</th><th>Who argued for it</th></tr></thead>
+    <tbody>
+      <tr class="rec"><td>1 Correctness</td><td><code>write_atomic</code>, <code>set_checkout</code>, an all-or-nothing composite, unknown status never due, <code>touch</code>, refusing stale undo</td><td>both</td></tr>
+      <tr class="rec"><td>2 Pilot: <em>set status</em></td><td><code>planning/</code> status; <code>step_status/actions.py</code> for both surfaces; the first architecture tests</td><td>both (Codex: one workflow; Claude: the planning tier and the tests)</td></tr>
+      <tr><td>3 Planning facts, narrower root</td><td>kind predicates and one key ranking, with separate policies; imports only through <code>aspect.py</code> and <code>actions.py</code></td><td>Claude; Codex would settle the boundaries first</td></tr>
+      <tr><td>4 Launch as an external effect</td><td>durable run intent and reconciliation, before the daemon</td><td>Codex</td></tr>
+      <tr><td>5 Multiplayer authority</td><td>decide first, then design operations and versions (kept out of git files)</td><td>Codex; Claude agrees</td></tr>
+      <tr><td>6 Renames and docs</td><td>as responsibilities settle</td><td>both</td></tr>
+    </tbody>
+  </table></div>
+  <p>The durable source is <a href="response-claude.md">response-claude.md</a>.</p>
+</section>
+
+<!-- 13 -->
+<section id="how-made">
+  <h2><span class="num">13</span>How this review was made</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>Three participants over two days. Knut asked the questions and makes the decisions. Claude reviewed first. Codex reviewed Claude's review independently. Claude responded. Every claim was checked against the tree, by citation, measurement, simulation or probe, and the disagreements are kept visible, each in its own voice.</p>
+  </div>
+  <h3>How we worked</h3>
+  <ul>
+    <li><strong>Independent passes over the same source.</strong> Codex reviewed without being steered, then Claude answered Codex.</li>
+    <li><strong>Claims are checked.</strong> Each one has a <code>file:line</code>, a measurement, a simulation over the real composition root, or, for Codex, a one-off probe over temporary files.</li>
+    <li><strong>Voices stay separate.</strong> §11 is Codex's and §12 is Claude's. Nothing is merged into one blended text.</li>
+    <li><strong>Knut decides.</strong> The reviews recommend; the open questions are his.</li>
+  </ul>
+  <h3>The conversation</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>When</th><th>Who</th><th>Question or position</th></tr></thead>
+    <tbody>
+      <tr><td>3 Oct</td><td>Knut</td><td>Asked for an entropy and structural review covering (a) entropy and over-engineering, (b) bad patterns emerging, and (c) seams starting to crack, to keep scaling and keep the modularity, with multiplayer and autonomous workers ahead.</td></tr>
+      <tr><td>3 Oct</td><td>Claude</td><td>The root holds about 1,900 lines of business logic and is touched by 36% of commits. The step ontology is written six times. There are two bugs that need two writers. Persistence assumes a single writer.</td></tr>
+      <tr><td>3 Oct</td><td>Knut</td><td>"What is better than the composition root? It has kept scale working so far. Would we be better off with another architectural pattern?"</td></tr>
+      <tr><td>3 Oct</td><td>Claude</td><td>Keep the root as wiring and add the hybrid: headless imports along an acyclic graph, plus extension points. The event bus and the service locator are rejected.</td></tr>
+      <tr><td>3 Oct</td><td>Knut</td><td>Asked for a report first, with code examples, diagrams, alternatives and renaming in detail, and only then a decision.</td></tr>
+      <tr><td>4 Oct</td><td>Knut</td><td>"What if a new layer held more of the domain, like estimation and statuses?"</td></tr>
+      <tr><td>4 Oct</td><td>Claude</td><td>A <code>planning/</code> tier, if it holds the ontology only. It absorbs 23 of 62 root helpers in simulation. Its risk is creep.</td></tr>
+      <tr><td>4 Oct</td><td>Codex</td><td>Second opinion: reproduced the bugs with probes and found two more. Argued for headless application actions and an explicit multiplayer authority. Qualified the kind ranking, the state machine and "fixed".</td></tr>
+      <tr><td>4 Oct</td><td>Knut</td><td>Asked Claude to assess Codex on performance, v2, modularity, scaling, ease of refactoring and debugging, and over-engineering. Then: how would the planning tier and units of work scale and fit with the modules? Rely on type checks and architecture checks to stop creeping entropy.</td></tr>
+      <tr><td>4 Oct</td><td>Claude</td><td>Agreed with about 80% and accepted three corrections. Proposed actions as a per-module <code>actions.py</code>; importing facts and injecting effects; enforcement by types and tests; and the reconciled order with the next move at the top of this page.</td></tr>
+      <tr><td>4 Oct</td><td>Knut</td><td>"Multiplayer is not designed yet." The aim is a ladder from one person to two people, a person and a worker, worker and worker, and "a little bit more, but not too much". The person at the window is the director, with authority over the worker. Asked what the <code>actions.py</code> pattern means.</td></tr>
+      <tr><td>4 Oct</td><td>Claude</td><td>Proposed git as the only authority, the director rule as the collision policy, and explained the pattern as one function per thing a person or agent does.</td></tr>
+      <tr><td>4 Oct</td><td>Knut</td><td>His own design: a coordination service linked from the plan repo that broadcasts presence, area claims and pushes, with a data format kept merge-friendly so plain git still works. It should start at two people and also cover one worker with a person locally. The workflow pattern is fine, as long as the context system stays.</td></tr>
+      <tr><td>4 Oct</td><td>Claude</td><td>Agreed, and laid out three layers: format, git, coordination. One set of events, with a local and a remote transport. Claims are leases on areas the graph already names. The JSON is already one key per line; <code>project.dproj</code> and step numbers are what still collide. The pattern was renamed <code>workflows.py</code>, under the context system. Recorded in §14.</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Where each of us stands on 4 October</h3>
+  <ul>
+    <li><strong>Agreed:</strong>
+      <ul>
+        <li>the diagnosis</li>
+        <li>bugs first</li>
+        <li>a planning home for status, readiness, estimates and scope</li>
+        <li>pure facts may be imported, and effects stay injected</li>
+        <li>no message bus and no microservices</li>
+        <li>on-disk ids stay stable</li>
+      </ul></li>
+    <li><strong>Open between Claude and Codex:</strong>
+      <ul>
+        <li>Should the facts refactor wait for the transaction and authority boundaries (Codex), or go ahead independently (Claude)?</li>
+        <li>Should actions be a small application layer (Codex's phrasing), or a per-module pattern (Claude)?</li>
+      </ul></li>
+    <li><strong>Decided by Knut</strong> (<a href="#decisions">§14</a>):
+      <ul>
+        <li>multiplayer coordinates and git is the authority</li>
+        <li>the director has authority over the worker</li>
+        <li><code>workflows.py</code> sits under the context system</li>
+      </ul></li>
+    <li><strong>Still open:</strong>
+      <ul>
+        <li>the step-number design</li>
+        <li>whether <code>workflows.py</code> goes into CLAUDE.md after the pilot</li>
+      </ul></li>
+  </ul>
+  <p>The durable source is <a href="how-this-review-was-made.md">how-this-review-was-made.md</a>.</p>
+</section>
+
+<!-- 14 -->
+<section id="decisions">
+  <h2><span class="num">14</span>Decisions, 4 October</h2>
+  <div class="inshort"><span class="label">In short</span>
+    <p>Knut settled the three open questions.</p>
+    <ul>
+      <li><strong>Multiplayer is a ladder</strong> from one person to "a little bit more, but not too much". git is the only authority, and a <strong>coordination service</strong> linked from the plan repo broadcasts presence, area claims and pushes, holding no plan data.</li>
+      <li><strong>The director at the window has authority over the worker.</strong></li>
+      <li><strong>The workflow pattern goes ahead under the context system</strong>, renamed <code>workflows.py</code>.</li>
+    </ul>
+    <p>With nothing on the ladder accepting plan edits, the heavy operations work drops out of the plan.</p>
+  </div>
+
+  <h3>Multiplayer: three layers, one authority</h3>
+  <p>Knut's design is a service that just broadcasts presence ("worker XX present"), claims on areas of the graph, and pushes ("others need to pull"). The data format is kept merge-friendly so the simple git structure still works. It is the minimal design for the ladder, and each layer has one job:</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Layer</th><th>Job</th><th>Authority</th></tr></thead>
+    <tbody>
+      <tr><td>The data format</td><td>make concurrent edits merge on their own</td><td>git merges it</td></tr>
+      <tr class="rec"><td>git</td><td>source of truth, and the transport for plan changes</td><td><strong>yes: the only one</strong></td></tr>
+      <tr><td>The coordination service</td><td>awareness: presence, area claims, "pushed, please pull"</td><td>none: advisory</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><strong>The service never holds plan data.</strong> If it's down, everything still works through git, with less awareness.</li>
+    <li><strong>Claims are leases</strong> that expire unless renewed, so a crashed worker frees its area by itself.</li>
+    <li><strong>What drops out</strong>, because nothing on the ladder accepts plan edits: commands as operations, version logs, and merge rules per data type. Authorship (<code>Actor</code>) and a finer format remain.</li>
+  </ul>
+
+  <h4>One mechanism, two transports</h4>
+  <div class="mermaid-wrap"><pre class="mermaid">
+flowchart LR
+  W["window&lt;br/&gt;(director)"] -- "presence · claim · release · pushed" --> T{{"coordination events"}}
+  A["worker / agent"] -- "presence · claim · release · pushed" --> T
+  T --> L["local transport&lt;br/&gt;files (domain/at_work.py, fixed)&lt;br/&gt;no service linked"]
+  T --> R["remote transport&lt;br/&gt;the small service&lt;br/&gt;linked from .dplanner"]
+  W -. "plan data" .-> G[("git: the only authority")]
+  A -. "plan data" .-> G
+  </pre></div>
+  <p>The events are defined once and the transport is chosen per plan repo. That is how one mechanism covers two people and also a person with a worker on one machine. The <em>data</em> path differs honestly:</p>
+  <ul>
+    <li><strong>On one machine</strong>, the window and the worker write the same files in one checkout, so collisions are concurrent writes the store adopts. That needs the flush lock and the <code>write_atomic</code> fix.</li>
+    <li><strong>Across machines</strong>, collisions meet at git merge.</li>
+  </ul>
+  <p>Both paths were already in the plan.</p>
+
+  <h4>Areas of the graph</h4>
+  <p>The graph already names its areas:</p>
+  <ul>
+    <li>a branch stretch, from cut to land</li>
+    <li>a feature or milestone cone (<code>domain/scope.py</code>)</li>
+    <li>a single step</li>
+  </ul>
+  <p>A claim carries a set of step ids and a label. The service broadcasts ids and never needs to understand the graph.</p>
+
+  <h4>The format: the lever that matters most</h4>
+  <div class="scroll"><table>
+    <thead><tr><th>File</th><th>Today</th><th>Merges?</th></tr></thead>
+    <tbody>
+      <tr><td><code>step.json</code>, <code>modules/&lt;id&gt;.json</code></td><td>written with <code>indent=2, sort_keys=True</code> (<code>store.py:1286</code>): one key per line, one list item per line</td><td><span class="tag good">mostly</span> edits on different lines merge</td></tr>
+      <tr><td><code>modules/&lt;id&gt;.md</code></td><td>prose</td><td><span class="tag good">yes</span> by line</td></tr>
+      <tr><td><code>project.dproj</code></td><td>the <code>children</code> order and <code>last_number</code></td><td><span class="tag crack">no</span> two step adds append to the same place and bump the same counter. Fix: derive the order, or store it per step, and drop the stored counter.</td></tr>
+      <tr><td>step numbers</td><td>minted locally (<code>model.py:113</code>)</td><td><span class="tag caution">open design</span> two writers mint S8, and S8 is a public name. One option: the service hands out numbers while connected, with an offline fallback. It is the first thing rung 2 hits.</td></tr>
+    </tbody>
+  </table></div>
+  <p>With area claims reducing overlap and the format absorbing the rest, real conflicts should be rare. When one happens, git shows it the usual way.</p>
+
+  <h4>The ladder</h4>
+  <div class="scroll"><table>
+    <thead><tr><th>Rung</th><th>New</th><th>Needs</th></tr></thead>
+    <tbody>
+      <tr><td>One person</td><td>—</td><td>today, plus the correctness fixes</td></tr>
+      <tr><td>Two people, one repo</td><td>edits meet at pull and merge</td><td><code>project.dproj</code> stops colliding on adds; the step-number design; the service, or claims pushed through git</td></tr>
+      <tr><td>Person + worker, one machine</td><td>two processes, one checkout</td><td>the flush lock, <code>write_atomic</code>, claims with identity, run intent before launch; the local transport</td></tr>
+      <tr><td>Worker + worker, across machines</td><td>claims visible to others</td><td>the remote transport</td></tr>
+      <tr><td>"A little bit more"</td><td>—</td><td>the same</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>The director has authority over the worker</h3>
+  <p>"A person operating the window is the director, and has authority over the worker or agent." That settles the claim question: <strong>when the director sets a step done or blocked in the window, the agent's at-work claim ends</strong>, and the agent finds out at its next CLI call. It also gives the ladder its collision policy:</p>
+  <ul>
+    <li><strong>Director against worker:</strong> the director wins and the worker stands down.</li>
+    <li><strong>Worker against worker:</strong> whoever holds the claim wins.</li>
+  </ul>
+  <p>In code it is one typed branch on <code>Actor</code>: a <code>Person</code> may set a step done directly, while an <code>AgentRun</code> goes through review.</p>
+
+  <h3><code>workflows.py</code>, under the context system</h3>
+  <p>"Reasonable, as long as we keep the underlying context system. I believe that has kept the UI clean and easy to shape." It stays exactly as it is, and the workflow functions sit <em>under</em> it:</p>
+  <div class="code"><div class="src"><span>the chain</span></div><pre><code>today:  ActionSpec(context) → command → model → signal → views
+with:   ActionSpec(context) → set_status(view, the context's steps, …) → change.command → undo → model → signal → views
+                               ↑ the ActionSpec's state calls refusal() to grey the entry and say why</code></pre></div>
+  <p>The context still decides which steps a verb acts on, whether it is enabled, and the menus, the palette and the right-click bands. Only the middle step, building the command, moves into one shared function, which the CLI and a future worker call too.</p>
+  <ul>
+    <li><strong>Renamed.</strong> "Action" already means <code>ActionSpec</code> here, so the file is <code>workflows.py</code> and it returns a <code>Change</code>: the command plus its follow-ups.</li>
+    <li><strong><code>refusal()</code> runs in an action state</strong>, so it inherits CLAUDE.md's rule: no walk over a whole project, only the steps the context names.</li>
+  </ul>
+  <p>The durable source is <a href="decisions-2026-10-04.md">decisions-2026-10-04.md</a>. The multiplayer direction is also kept on its own, for when that work starts, with the failure modes to work through: <a href="../2026-10-04-multiplayer/README.md">docs/research/2026-10-04-multiplayer/</a>.</p>
+</section>
+
+<footer>
+  This page is <code>docs/research/2026-10-03-structural-review/report.html</code>. Source notes in the same folder: README, alternatives, planning-tier, renaming, seams, waves, second-opinion-codex, response-claude, how-this-review-was-made, decisions-2026-10-04. Updated 4 October 2026 with the planning tier (§5), Second opinion (Codex) (§11), the response (§12), how the review was made (§13), the decisions (§14) and the next move at the top. Original measurements on <code>main</code> at <code>0472101</code>; the second opinion records its own validation baseline. Code excerpts are quoted from the tree with their <code>file:line</code>. Sketches are marked as sketches.
+</footer>
+</main>
+</div>
