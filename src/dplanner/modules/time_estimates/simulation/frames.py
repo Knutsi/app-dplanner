@@ -28,8 +28,19 @@ from dplanner.modules.time_estimates.schedule import (
     write_assumptions,
     write_milestone,
 )
+from dplanner.planning.agent import MODULE_ID as AGENT_ID
+from dplanner.planning.agent import write_state as write_agent
+from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+from dplanner.planning.estimate import write as write_estimate
+from dplanner.planning.estimate import write_start
+from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
+from dplanner.planning.milestone import write as write_label
+from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status
+from dplanner.planning.status import write as write_status
+from dplanner.planning.wait import MODULE_ID as WAIT_ID
 from dplanner.planning.wait import Wait
+from dplanner.planning.wait import write as write_wait
 
 
 @dataclass(frozen=True)
@@ -91,12 +102,42 @@ PlanWriter = Callable[[Project, PlanState, date], tuple[str, dict[str, Any]]]
 """The same for the project node."""
 
 
+def _estimate(step: Step, state: StepState, today: date) -> tuple[str, dict[str, Any]]:
+    previous = step.module_data.get(ESTIMATION_ID)
+    return ESTIMATION_ID, write_estimate(
+        state.estimate, on=not state.off, previous=previous, today=today
+    )
+
+
+def _status(step: Step, state: StepState, today: date) -> tuple[str, dict[str, Any]]:
+    previous = step.module_data.get(STATUS_ID)
+    return STATUS_ID, write_status(state.status, today=today, previous=previous)
+
+
+def _milestone(_step: Step, state: StepState, _today: date) -> tuple[str, dict[str, Any]]:
+    return MILESTONE_ID, write_label(state.milestone)
+
+
+def _agent(_step: Step, state: StepState, _today: date) -> tuple[str, dict[str, Any]]:
+    return AGENT_ID, write_agent(state.agent)
+
+
+def _wait(_step: Step, state: StepState, _today: date) -> tuple[str, dict[str, Any]]:
+    return WAIT_ID, write_wait(state.wait)
+
+
+def _start(_project: Project, plan: PlanState, _today: date) -> tuple[str, dict[str, Any]]:
+    return ESTIMATION_ID, write_start(plan.start)
+
+
 @dataclass(frozen=True)
 class Writers:
-    """Every owner's writer a frame goes through — the composition root's to hand in."""
+    """Every owner's writer a frame goes through: each aspect's own, handed the entry it
+    replaces and the day — so a replayed status is dated by the status aspect, exactly as a
+    person's edit on that day would have been. Every one it touches is ``planning/``'s."""
 
-    steps: Sequence[StepWriter]
-    plan: Sequence[PlanWriter]
+    steps: Sequence[StepWriter] = (_estimate, _status, _milestone, _agent, _wait)
+    plan: Sequence[PlanWriter] = (_start,)
 
 
 def apply(library: Library, project: Project, frame: Frame, writers: Writers) -> None:

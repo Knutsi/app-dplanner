@@ -13,13 +13,14 @@ import pytest
 from tests.modules.time_helpers import frame_of, run_id, runs
 
 from dplanner.domain.model import Project
-from dplanner.modules import _time_readers, _time_writers
+from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.progress import Snapshot
+from dplanner.modules.time_estimates.simulation.frames import Writers
 from dplanner.modules.time_estimates.simulation.replay import Replay
 from dplanner.planning.estimate import is_marker
 from dplanner.planning.status import Status, in_flight, read_started, work_since
 
-READERS = _time_readers()
+READERS = Readers()
 
 
 def _as_exported(snapshot: Snapshot) -> list[dict[str, Any]]:
@@ -41,7 +42,7 @@ def _as_exported(snapshot: Snapshot) -> list[dict[str, Any]]:
 def _replayed(run: dict[str, Any]) -> tuple[Project, list[Snapshot]]:
     """``run`` written into one library a day at a time and held to the prototype's
     forecast on every day it made one: the project it leaves, and the model's forecasts."""
-    replay = Replay(run_id(run), _time_writers(), READERS)
+    replay = Replay(run_id(run), Writers(), READERS)
     forecasts: list[Snapshot] = []
     for raw in run["days"]:
         frame = frame_of(raw)

@@ -8,9 +8,9 @@ from dataclasses import replace
 from datetime import date
 
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules import _time_readers, _time_writers
+from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.schedule import stretched
-from dplanner.modules.time_estimates.simulation.frames import Plan, StepState
+from dplanner.modules.time_estimates.simulation.frames import Plan, StepState, Writers
 from dplanner.modules.time_estimates.simulation.replay import Replay
 from dplanner.modules.time_estimates.simulation.sample import SAMPLE_START, sample_plan
 from dplanner.modules.time_estimates.simulation.timeline import Timeline
@@ -70,7 +70,7 @@ def _waited(wait: Wait | None) -> tuple[Timeline, str]:
 
 def _forecasts(timeline: Timeline, key: str) -> list[tuple[date, date]]:
     """What the model said each working day, at the day's end, of where ``key`` lands."""
-    replay = Replay("Waited", _time_writers(), _time_readers())
+    replay = Replay("Waited", Writers(), Readers())
     found = []
     for played, frame in zip(timeline.days, timeline.frames(), strict=True):
         replay.apply(frame)

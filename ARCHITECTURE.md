@@ -6020,7 +6020,8 @@ time module carried nothing but the one reader, and went: the walks default to
 calendar days stretched by a focus, the simulator's world, a folded stack's blocks. The time
 module's view of status (review and merge as work in flight, `status.in_flight`) moved with
 it, and once the wait joined the tier (*Planning owns what a step is*) `wait_of` went the same
-way, so `_time_readers` hands over only agent-ness, the milestone label and the key. The collector vocabulary
+way, leaving `Readers` only agent-ness, the milestone label and the key — planning facts too,
+which its fields now default to. The collector vocabulary
 (`planning/scope.py`) moved up too, while the walk it reads, `cone()`, stays in
 `domain/ordering.py` beside `upstream()` — the graph may not import the tier. Date words
 (`planning/dates.py`) live in the tier because its phrases print a day; the chart axis is
@@ -6065,6 +6066,23 @@ a package can move or be renamed and no plan on disk loses its entries. And what
 interprets is a list, `PLANNING_ASPECTS` (rule 14), so admitting an aspect is a diff somebody
 reviews; past about fifteen entries the tier has become "the important aspects" and wants
 rethinking rather than another line.
+
+**The root is wiring, split by cluster.** Once the logic had owners, `default_modules()` was
+still one function of two thousand lines — forty closures and twenty-five modules built
+"before the list" — so where a module's wiring lived was a search. It is now the order alone:
+a shared `_Root` (the services, the library, the concrete store, the location roles and the
+few seams several clusters read), then one builder per cluster — `_branches`, `_agents`,
+`_graph`, `_knowledge`, `_project_tabs`, then the list's own `_shell`, `_assistants`,
+`_projects`, `_aspects`, `_step_properties`, `_machine` — each building in the order its
+neighbours need it and returning what they read. Building the agents before the graph editor
+and the editor before the feature module turned three forward references into plain
+arguments; the one true cycle, Coverage and the Specs tab pointing at each other, stays a
+lazy lambda inside `_knowledge`. A lambda that wraps a built object's method is kept where a
+test patches the class after the build (Sync's reconcile hand-off). Registration order is the
+list's and nothing else's, and the split did not move it — the same 52 modules in the same
+order. Building inside the root's one file is deliberate: rule 4 lets only
+`modules/__init__.py` import a module's Qt half, and a builder in a file of its own would be
+a second root.
 
 **A package that registers nothing is surface all through.** The briefing is the case that
 needed it: what an agent is told reads a dozen modules' facts, and it lived in the root as
@@ -6579,12 +6597,12 @@ column exactly, and its *pace so far* as the column with *Adjust for Efficiency*
 is what makes a model change there a measured one here.
 
 - **A simulated day reaches the library through the owners' own writers.** A frame is a
-  day's changes in the terms DPlanner stores (`frames.py`); the root hands the simulator
-  each aspect's writer (`_time_writers`) beside its readers (`_time_readers`), so a status
-  is dated by the status aspect exactly as a person's edit that day would have been, and
-  the time module still imports no other module.
+  day's changes in the terms DPlanner stores (`frames.py`); its `Writers` are each aspect's
+  own writer beside the `Readers` it reads with, so a status is dated by the status aspect
+  exactly as a person's edit that day would have been. Every aspect either touches is a
+  `planning/` one, so both default to the tier's functions and import no other module.
 - **Debug ▸ Time Simulation embeds the real Time tab, over a world of its own.** The tab's
-  deps come from the root's one recipe (`time_deps` in `default_modules`), called once for
+  deps come from the root's one recipe (`time_deps` in the root's `_project_tabs`), called once for
   the window and once per simulation with a scratch library, undo stack, context, clock and
   debounce service — never a copy of the window's deps with fields swapped, which is how a
   shared service slips through unnoticed (a test holds the two apart). The verbs are shared:

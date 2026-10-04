@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from tests.modules.time_helpers import frame_of, run_id, runs
 
-from dplanner.modules import _time_readers, _time_writers
+from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.progress import read_history, read_saved
 from dplanner.modules.time_estimates.simulation.accuracy import timeline_accuracy
 from dplanner.modules.time_estimates.simulation.edits import (
@@ -22,6 +22,7 @@ from dplanner.modules.time_estimates.simulation.edits import (
     rebudget,
     world_budgets,
 )
+from dplanner.modules.time_estimates.simulation.frames import Writers
 from dplanner.modules.time_estimates.simulation.replay import (
     Replay,
     SavedSpec,
@@ -48,7 +49,7 @@ def _played(scenario_id: str, seed: int) -> Timeline:
 
 
 def _replay() -> Replay:
-    return Replay("Simulated", _time_writers(), _time_readers())
+    return Replay("Simulated", Writers(), Readers())
 
 
 # -- the prototype's own days --------------------------------------------------------------------

@@ -224,6 +224,26 @@ def adding(project: Project, draft: Note) -> tuple[Note, SetModuleDataCommand | 
     return note, SetModuleDataCommand(project.id, MODULE_ID, write_log([*records, note]))
 
 
+def note_on(
+    project: Project, step: Step, label_id: str, title: str, body: str, day: date
+) -> tuple[str, SetModuleDataCommand | None]:
+    """A ``label_id`` note made on ``step`` on ``day``, through :func:`adding`: its id, and the
+    command that adds it — None when the step already carries it, so a retried verb is one
+    note. How a workflow keeps what a person must read: a reason, an escalation."""
+    note, command = adding(
+        project,
+        Note(
+            id="",
+            label=check_label(label_id),
+            title=title,
+            body=body,
+            made=day.isoformat(),
+            step=step.id,
+        ),
+    )
+    return note.id, command
+
+
 def find_note(project: Project, needle: str) -> Note:
     """The note ``needle`` names: its id (``N3``, ``n3``), else a unique part of its
     title. Refuses the way ``find_step`` does — an ambiguous name lists the ids."""

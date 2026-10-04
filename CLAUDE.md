@@ -173,7 +173,10 @@ application. The framework is still ours to evolve — see *Deliberate divergenc
    the same: importable without a graphics stack. The CLI is how an agent drives DPlanner,
    and it has to start in milliseconds on a machine with no GUI libraries at all.
 5. `framework/` never imports `modules` or the entry points.
-6. Modules never import each other. Only `modules/__init__.py` may import them all.
+6. A module reaches another only through its headless `aspect.py` (facts) or `workflows.py`
+   (a verb returning a `Change`) — or any file of a package with no `module.py`, which is
+   headless all through (`modules/agent_briefing`). Only `modules/__init__.py` imports the
+   rest. ARCHITECTURE.md's *What holds the tier and the workflows in place*.
 7. Modules never import `AppServices`, the builder, or the concrete window. Window
    capabilities come through the protocols in `framework/window.py`.
 8. `app.py` and `entry.py` import the composition root and nothing deeper.
@@ -188,6 +191,10 @@ A menu action and a `dplanner` verb build the **same object from `domain/command
 GUI pushes it onto the undo stack; the CLI applies it and lets the store flush. That one rule
 is what keeps the surfaces from drifting: anything the CLI can do is undoable in a window,
 and neither can grow a behaviour the other lacks without somebody editing that file.
+**A whole verb is a workflow**: a `workflows.py` function returns a `Change`; each surface
+applies its command as one command, persists it, and only then performs the follow-ups
+(`CliContext.after_flush`; after the gesture) — each attempted, failures reported, never
+rolled back (ARCHITECTURE.md's *A workflow is one function under both surfaces*).
 
 It follows that a feature has two halves in one package:
 
@@ -218,10 +225,11 @@ to that tuple; a file the rule cannot see is a rule that is only a habit.
 2. Menu placement: every `ActionSpec` names a `menu` and a `group` from `MENU_STRUCTURE` in
    `menus.py`; `order` ranks only within the group (10/20/30…). Separators between groups
    are automatic. **Add a group rather than smuggling structure into `order`.**
-3. If the module needs something another module provides, declare a typed callback — or a
-   small consumer-owned `Protocol` — on your own `Deps`, and wire it in
-   `modules/__init__.py`. Never import the other module. `modules/project_editor/module.py`
-   is the worked example: it names the panel interface it needs and is handed a factory.
+3. Another module's facts come from its `aspect.py`, a whole verb from its `workflows.py`, a
+   planning fact from `planning/`. Anything else, and anything effectful, is a typed
+   callback — or a small consumer-owned `Protocol` — on your own `Deps`, wired in
+   `modules/__init__.py`. `modules/project_editor/module.py` is the worked example: it
+   names the panel interface it needs and is handed a factory.
    If what you provide is a *widget* other features host, the module that owns it registers
    nothing and exposes a `create_…()` — see `modules/step_properties/`.
 4. If it stores data, declare `data_format = ModuleDataFormat(...)` on the class and read
@@ -245,7 +253,8 @@ to that tuple; a file the rule cannot see is a rule that is only a habit.
    cross-module fact, take it as a **keyword-only parameter and close over it in one inner
    wrapper** — `modules/progression/cli.py` is the worked example; don't invent a fifth
    injection style.
-8. Construct it in `default_modules()`. **List order is registration order and it matters** —
+8. Construct it in the root's builder for its cluster (`_agents`, `_graph`, `_aspects`, …) and
+   list it in `default_modules()`. **List order is registration order and it matters** —
    status-bar widget order, index folder order, and whether a surface exists before whoever
    renders it is built. Put a comment on any position that is constrained.
 9. Leave the package `__init__.py` as a docstring — the composition root imports
@@ -341,10 +350,8 @@ reasoning.
   `belongs_to` about the node each signal names — a rename in project B is nothing for
   project A's table to redraw for. What it calls is a `Debounced` (`framework/debounce.py`):
   `trigger()` restarts a single-shot timer, so a burst runs the rebuild once, over the latest
-  state, and nothing queues — the canvas at 0 ms (once per event-loop turn, so a title still
-  lands on its node as it is typed; prose after a settle, as a card shows none of it but the
-  spark), tables and lists after `SETTLE_MS` (300 ms), the Time tab
-  after 500 ms. **Tests run in immediate mode**: the `session` fixture sets
+  state, and nothing queues — the canvas at 0 ms (prose after a settle), tables and lists after
+  `SETTLE_MS` (300 ms), the Time tab after 500 ms. **Tests run in immediate mode**: the `session` fixture sets
   `services.debounce.set_immediate(True)`, so every trigger runs inline and a test asserts on
   a view the line after a push exactly as before; the deferred path is tested once with real
   timers and once per view by switching it off and calling `flush_all()`. Never
@@ -362,7 +369,7 @@ reasoning.
   recognise, not a word in one place and a glyph in another. Never move a derivation to a worker thread for speed: it is
   pure Python competing for the GIL, and a thread alive at teardown is the suite's SIGSEGV
   shape — `ARCHITECTURE.md`'s *A view refresh is coalesced, and hears one project* has the
-  measurements (67 ms → 0.3 ms of synchronous work per keystroke with seven tabs open).
+  measurements.
 - **The context is announced once per event-loop turn, and a gesture changes the
   selection once.** `ContextService.set_scope`/`clear_scope`/`refresh` update the snapshot
   synchronously — `current()` is always true, which is all a verb run right after a
@@ -370,24 +377,19 @@ reasoning.
   goes through `announce`, a 0 ms `Debounced` the builder wires, so a gesture that
   publishes seven times costs one re-evaluation over the final state and never shows a
   panel a selection that was empty for a microsecond. Three rules keep it that way:
-  `GraphScene.select_steps` announces once (it reconciles Qt's selection item by item
-  behind a `_reselecting` guard); a verb that needs a selection the user did not make is
+  `GraphScene.select_steps` announces once; a verb that needs a selection the user did not make is
   handed a **constructed `Context`** (`_on_link_requested`) rather than having the canvas
-  select for it; and **a panel that steps aside keeps its content** (clearing the project
-  form's cards on every selection tore them down and rebuilt them twice per gesture; a side
-  panel is fed while hidden for the same reason). **No subprocess in an action state or a structure
+  select for it; and **a panel that steps aside keeps its content** (a side panel is fed
+  while hidden). **No subprocess in an action state or a structure
   listener**: `origin_url` is memoised on the config file's mtime, and the sync module
   asks git about membership only when the *library's* children change. **And no walk
   over a project in an action state**: a state runs on every announce, so a derivation
-  over every step is paid per keystroke — *Compile Out of Date*'s label once re-walked
-  every collector's cone on each one (198 ms at 400 steps, from a flat 4). The pattern
+  over every step is paid per keystroke. The pattern
   is the Problems count's: the module settles the answer once per burst in a `Debounced`
   and the state *reads* it (`DocsModule._frontier_of`), with the settle announcing the
-  context so the label catches up; the gesture itself computes fresh. Measured on a
-  74-step, 344-note plan: connect 1.7 s → tens of ms, paste 0.6 s → tens of ms; the
-  suite runs the debounce service immediate, so a test that asserts coalescing switches
-  it off and `flush_all()`s. `scripts/measure_scaling.py --scenarios connect,paste` is the number to
-  quote. `ARCHITECTURE.md`'s *The context is announced once per turn* has the reasoning.
+  context so the label catches up; the gesture itself computes fresh.
+  `scripts/measure_scaling.py --scenarios connect,paste` is the number to quote.
+  `ARCHITECTURE.md`'s *The context is announced once per turn* has the reasoning.
 - **Every model change goes through a command** on the single undo stack, and carries an
   `origin` so the view that made the edit can ignore its own echo. Two kinds of change
   bypass the stack, never the vocabulary: an external fact (the bullet below) and
@@ -404,9 +406,8 @@ reasoning.
   operations that rewrite the working tree are synchronous*.
 - **`Library.link_refusal()` is the only authority on a legal edge.** `set_edges` asks it
   before writing, and `steps.link`'s state asks it to decide whether the menu entry is enabled
-  and what a greyed one says. Never write a second reachability check in a view — the one that
-  existed refused every drop for a fortnight because it read gesture state that had already
-  been cleared.
+  and what a greyed one says. Never write a second reachability check in a view (ARCHITECTURE.md
+  has the fortnight it cost).
 - **An action that exists but does not apply right now is DISABLED, never HIDDEN.** A greyed
   entry teaches the precondition — its `label` carries the reason where there is one. HIDDEN
   is reserved for a capability absent from this build (a feature flag, a storage provider

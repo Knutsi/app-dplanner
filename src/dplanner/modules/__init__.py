@@ -11,7 +11,10 @@ it declares a typed callback on its own ``Deps`` and this file supplies one. So 
 
 **Order matters.** The returned list is registration order, and it fixes status-bar widget
 order, index segment order, and — the one that bites — that surfaces exist before whoever
-renders them is built. Every constrained position below carries a comment saying why.
+renders them is built. Every constrained position carries a comment saying why.
+
+``default_modules()`` holds that order alone; each cluster's wiring is a builder over the
+shared ``_Root`` (``_agents``, ``_graph``, ``_aspects``, …), and a new module joins one.
 
 **The imports are inside the functions on purpose.** Importing this package must not load Qt,
 because the CLI reaches a module's ``cli.py`` through it and has to start in milliseconds on
@@ -22,7 +25,7 @@ lines of each function instead of the first lines of the file, and
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from dplanner.core.module_data import ModuleDataFormat
 
@@ -42,29 +45,53 @@ if TYPE_CHECKING:
     from dplanner.cli.lint import LintCheck
     from dplanner.cli.report.parts import ReportSource
     from dplanner.cli.report.website import SiteTarget
+    from dplanner.core.clock import Clock
     from dplanner.domain.agents import AgentHarness
     from dplanner.domain.aspects import AspectSpec
     from dplanner.domain.assets import AssetSource
     from dplanner.domain.at_work import AtWorkBoard
-    from dplanner.domain.branches import Reading as BranchReading
     from dplanner.domain.commands import Command
     from dplanner.domain.dictation import DictationProvider
     from dplanner.domain.locations import Location, LocationRole, ManagedFor
     from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
+    from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.store import FilesFor
     from dplanner.domain.workflow import Actor, EndClaim, PlanView
     from dplanner.framework.autosave import AutosaveService
+    from dplanner.framework.context import ContextService
+    from dplanner.framework.debounce import DebounceService
     from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
+    from dplanner.framework.undo import UndoService
+    from dplanner.modules.agent_at_work.module import AgentAtWorkModule
+    from dplanner.modules.branches.module import BranchesModule
+    from dplanner.modules.coverage.module import CoverageModule
     from dplanner.modules.coverage.trace import Trace
+    from dplanner.modules.estimation.module import EstimationModule
+    from dplanner.modules.feature.module import FeatureModule
+    from dplanner.modules.notes.module import NotesModule
+    from dplanner.modules.problems.module import ProblemsModule
+    from dplanner.modules.progression.module import ProgressionModule
+    from dplanner.modules.project_assets.module import ProjectAssetsModule
     from dplanner.modules.project_editor.clipboard import PastePolicy
+    from dplanner.modules.project_editor.module import ProjectEditorModule
+    from dplanner.modules.projects.checkouts import CheckoutService
+    from dplanner.modules.projects.module import ProjectsModule
+    from dplanner.modules.projects.repos import RepositoryServices
+    from dplanner.modules.reporting.module import ReportingModule
+    from dplanner.modules.settings.module import SettingsModule
+    from dplanner.modules.spec.module import SpecModule
     from dplanner.modules.spec.source_kind import DocumentSourceKind
-    from dplanner.modules.spec_confluence.module import SecretStore
+    from dplanner.modules.spec_confluence.module import SecretStore, SpecConfluenceModule
     from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
+    from dplanner.modules.step_agent_instruction.module import StepAgentInstructionModule
+    from dplanner.modules.step_agent_run.module import StepAgentRunModule
+    from dplanner.modules.step_order.module import StepOrderModule
+    from dplanner.modules.step_properties.module import StepPropertiesModule
     from dplanner.modules.step_status.workflows import StatusWorkflow
-    from dplanner.modules.time_estimates.cli import Readers as TimeReaders
-    from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
+    from dplanner.modules.time_estimates.debugger import TimeSimulationModule
+    from dplanner.modules.time_estimates.module import TimeEstimatesModule
     from dplanner.planning.status import Reading, Status, Unknown
     from dplanner.theme.providers import ThemeProvider
 
@@ -88,287 +115,251 @@ def default_modules(
     board: "AtWorkBoard | None" = None,
     launch_locks: "LaunchLocks | None" = None,
 ) -> list["Module"]:
+    """Every module, in registration order. The clusters are built first, in the order they
+    hand each other what they need — the agents before the graph editor whose Problems panel
+    hands them findings, the editor before the feature module that places steps in it."""
+    from dplanner.modules.settings.module import SettingsDeps, SettingsModule
+    from dplanner.modules.time_estimates.module import ProgressHistoryModule
+
+    root = _Root(services)
+    # Built ahead of the list: Run Agent and dictation deep-link to their own settings pages
+    # through it.
+    settings = SettingsModule(
+        SettingsDeps(
+            actions=services.actions,
+            settings_sections=services.settings_sections,
+            parent=services.window,
+        )
+    )
+    # The board comes from `app.new_session` — the machine's when the application runs, one
+    # holding nothing when a test builds — and is named nowhere deeper: no feature module
+    # reaches `config_dir`, the same rule the topology gate's record path follows.
+    if board is None:
+        board = at_work_board()
+    branches = _branches(root)
+    agents = _agents(
+        root, branches=branches, settings=settings, board=board, launch_locks=launch_locks
+    )
+    graph = _graph(root, branches=branches, agent_instruction=agents.instruction)
+    knowledge = _knowledge(root, editor=graph.editor)
+    tabs = _project_tabs(root)
+    return [
+        *_shell(root, agents),
+        *_assistants(root, settings),
+        _projects(
+            root, editor=graph.editor, knowledge=knowledge, tabs=tabs, checkouts=agents.checkouts
+        ),
+        # Before spec: the Specs tab's + menu lists its kinds, and its settings section
+        # must exist before the settings dialog is built.
+        knowledge.confluence,
+        knowledge.spec,
+        knowledge.coverage,
+        tabs.assets,
+        # Each registers one tab into the step detail panel — or, for the estimate and
+        # description, a block into its Details tab (services.step_details). They must
+        # come before step_properties, which reads the registry when it opens a dialog.
+        *_aspects(
+            root,
+            graph=graph,
+            knowledge=knowledge,
+            tabs=tabs,
+            agents=agents,
+            branches=branches,
+            board=board,
+        ),
+        _step_properties(root),
+        graph.editor,
+        tabs.step_order,
+        tabs.progression,
+        tabs.time,
+        # After every module whose report_source it renders; before Settings, whose dialog
+        # is built from the sections registered by then.
+        tabs.reporting,
+        # Declares the progress history's format only; the recorder above writes it.
+        ProgressHistoryModule(),
+        tabs.simulation,
+        *_machine(root),
+        # Last: its dialog is built during register() and must see every other module's
+        # settings sections.
+        settings,
+    ]
+
+
+class _Root:
+    """What every cluster is wired over: the window's services, its library and the concrete
+    store behind it, the location roles — and the seams more than one cluster hands on."""
+
+    def __init__(self, services: "AppServices") -> None:
+        from dplanner.domain.locations import roles_by_id
+        from dplanner.domain.store import LibraryStore
+
+        self.services = services
+        self.library: Library = services.document
+        # What may link to what, beyond the graph's own four refusals — the same rules the
+        # CLI's library asks (`default_link_rules`), so a drop and `step link` refuse alike. A
+        # reload builds a new library and comes back through here; a refresh keeps this one.
+        self.library.link_rules = default_link_rules()
+        # The composition root knows the concrete store, exactly as it knows the concrete
+        # document — modules reach a file area only through the typed callback on their Deps.
+        store = services.repo
+        assert isinstance(store, LibraryStore)
+        self.store = store
+        self.roles = roles_by_id(default_location_roles())
+        self.managed = managed_for(self.roles)
+        # The tuple the CLI reports read (`_asset_sources`), so the Assets tab, the picker
+        # and `dplanner asset list` can never disagree about what a project holds.
+        self.asset_sources = _asset_sources()
+        self.repos = _repository_services(self)
+        # A checkout recorded for a repository — by the Project dialog, or by an agent's
+        # first `dplanner` call from the code and adopted through the library file — is what
+        # turns Run Agent from greyed to runnable, and nothing in the context graph changed.
+        store.checkout_changed.connect(lambda _repository: services.context.refresh())
+
+    def facts_of(self, project_id: str) -> "RepositoryFacts":
+        """The plan repository and every location of a project placed against this
+        machine's checkouts — the one derivation every seam reads."""
+        from dplanner.core.config_dir import config_dir
+        from dplanner.domain.repositories import repository_facts
+
+        return repository_facts(
+            self.library.project(project_id),
+            self.store.project_dir(project_id),
+            self.store.checkouts(),
+            managed=self.managed,
+            kept_root=config_dir(),
+        )
+
+    def facts_for(self, node_id: str) -> "RepositoryFacts":
+        """The facts for a step — or for a project named directly, which is what a run
+        with no step (the Problems panel's) has to ask about."""
+        from dplanner.domain.model import Project
+
+        node = self.library.node(node_id)
+        project_id = node.id if isinstance(node, Project) else self.library.project_of(node_id).id
+        return self.facts_of(project_id)
+
+    def reporting_site(self, project_id: str) -> "SiteTarget | None":
+        """Where the project publishes instead of beside its plan: its reporting row placed
+        on this machine — a checkout, the person's or one DPlanner keeps — or None, when it
+        names none or nothing here has it yet."""
+        from dplanner.cli.report.website import SiteTarget
+        from dplanner.modules.reporting.roles import ROLE as REPORTING_ROLE
+
+        placement = self.facts_of(project_id).of_role(REPORTING_ROLE.id)
+        if placement is None or not placement.here:
+            return None
+        if placement.root is None or placement.directory is None:
+            return None
+        return SiteTarget(placement.root, placement.directory)
+
+    def reporting_dir(self, project_id: str) -> "Path | None":
+        site = self.reporting_site(project_id)
+        return site.site if site is not None else None
+
+    def milestone_colors(self, project: "Project") -> dict[str, str]:
+        from dplanner.modules.time_estimates.schedule import milestone_colors
+
+        return milestone_colors(self.library, project)
+
+    def milestone_color(self, step_id: str) -> str:
+        """One milestone's shade, for a surface that draws a row at a time. A surface that
+        draws many at once takes the whole dict instead — this deals the project each call."""
+        if not self.library.has(step_id):
+            return ""
+        return self.milestone_colors(self.library.project_of(step_id)).get(step_id, "")
+
+    def pick_assets(self, node_id: str) -> "list[Payload]":
+        """Insert from Assets…: the picker over the node's project's whole catalog.
+
+        Composed here because it is cross-module three ways — the catalog is every
+        module's areas, the titles are the asset browser's data, and the host knows only
+        its own node. The picked bytes go back to the host, which attaches them into its
+        *own* area: reuse is a copy, so a link never points into another module's
+        directory.
+        """
+        from pathlib import PurePosixPath
+
+        from dplanner.domain.assets import AssetEntry, catalog
+        from dplanner.framework.asset_picker import AssetPickerDialog, PickerEntry
+        from dplanner.modules.project_assets.cli import read_titles
+
+        library, store = self.library, self.store
+        node = library.node(node_id)
+        project = (
+            library.project(node_id) if node.kind == "project" else library.project_of(node_id)
+        )
+        titles = read_titles(project)
+
+        def reader(entry: "AssetEntry") -> "Callable[[], bytes | None]":
+            def read() -> bytes | None:
+                for _source, location in entry.locations:
+                    try:
+                        area = store.files(location.node_id, location.module_id)
+                    except KeyError:
+                        continue
+                    data = area.read_bytes(location.name)
+                    if data is not None:
+                        return data
+                return None
+
+            return read
+
+        choices = []
+        for entry in catalog(library, project, store.files, self.asset_sources):
+            basename = PurePosixPath(entry.name).name
+            title = titles.get(entry.name, "")
+            choices.append(
+                PickerEntry(
+                    key=entry.name,
+                    title=title or basename,
+                    detail=", ".join(dict.fromkeys(source.label for source, _l in entry.locations)),
+                    # The display name becomes the typed link's alt text; the suffix
+                    # stays the content's own.
+                    filename=f"{title}{PurePosixPath(entry.name).suffix}" if title else basename,
+                    read=reader(entry),
+                )
+            )
+        dialog = AssetPickerDialog(choices, self.services.window)
+        picked = dialog.chosen() if dialog.exec() == AssetPickerDialog.DialogCode.Accepted else []
+        dialog.deleteLater()
+        return picked
+
+
+def _repository_services(root: _Root) -> "RepositoryServices":
+    """git and GitHub for the project surfaces. The Project dialog, Open Project and Move
+    Plan reach both repositories through this one bundle; the root names the providers
+    (rule 8) and the github module's gh door (rule 5) so the projects module names neither."""
     from pathlib import Path
 
-    from dplanner.cli.report.website import SiteTarget
-    from dplanner.core.clock import Clock
     from dplanner.core.config_dir import config_dir
     from dplanner.core.storage.git import GitStorage
     from dplanner.core.storage.github import GitHubStorage
     from dplanner.core.storage.kept import clone_full
     from dplanner.core.storage.locations import find_repo_root, origin_url, repo_storage
     from dplanner.core.storage.provider import StorageError, VersionedStorage
-    from dplanner.domain.commands import (
-        Command,
-        CompositeCommand,
-        EditTextCommand,
-        SetModuleDataCommand,
-    )
-    from dplanner.domain.locations import Placement, roles_by_id
-    from dplanner.domain.model import Library, Project, TextEdit
     from dplanner.domain.relocate import move_project
-    from dplanner.domain.repositories import RepositoryFacts, repository_facts
-    from dplanner.domain.store import LibraryStore
-    from dplanner.framework.aspect_bar import AspectTemplate
-    from dplanner.framework.context import (
-        SCOPE_SELECTION,
-        Context,
-        ContextNode,
-        ContextService,
-        selection_uri,
-    )
-    from dplanner.framework.debounce import DebounceService
-    from dplanner.framework.side_panel import SidePanel
-    from dplanner.framework.undo import UndoService
-    from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
-    from dplanner.modules.agent_briefing.worktree import mainline
-    from dplanner.modules.anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
-    from dplanner.modules.appearance.module import AppearanceDeps, AppearanceModule
-    from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
-    from dplanner.modules.auto_progress.aspect import auto_progresses
-    from dplanner.modules.auto_progress.module import AutoProgressDeps, AutoProgressModule
-    from dplanner.modules.branches.module import BranchesDeps, BranchesModule, LandingModule
-    from dplanner.modules.branches.plan import branch_plan, merged_into_its_branch
-    from dplanner.modules.checklist.module import ChecklistDeps, ChecklistModule
-    from dplanner.modules.coverage.activity import CoverageDeps
-    from dplanner.modules.coverage.module import CoverageModule
-    from dplanner.modules.debug.module import DebugDeps, DebugModule
-    from dplanner.modules.dictation.module import DictationDeps, DictationModule
-    from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
-    from dplanner.modules.estimation import schedule as estimation_schedule
-    from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
-    from dplanner.modules.feature.module import FeatureDeps, FeatureModule
-    from dplanner.modules.github.aspect import PR_CLOSED, PR_MERGED, PR_OPEN, pr_label
+    from dplanner.modules.github.aspect import PR_OPEN
     from dplanner.modules.github.aspect import read as github_read
-    from dplanner.modules.github.module import GithubDeps, GithubModule
-    from dplanner.modules.home.module import HomeDeps, HomeModule
-    from dplanner.modules.install.module import InstallDeps, InstallModule
-    from dplanner.modules.library.module import LibraryDeps, LibraryModule
-    from dplanner.modules.library_watch.module import LibraryWatchDeps, LibraryWatchModule
-    from dplanner.modules.llm.module import LlmDeps, LlmModule
-    from dplanner.modules.notes.module import NotesDeps, NotesModule
-    from dplanner.modules.openai.module import LlmOpenAIDeps, LlmOpenAIModule
-    from dplanner.modules.problems.module import ProblemsDeps, ProblemsModule
-    from dplanner.modules.progression.module import (
-        ProgressionDeps,
-        ProgressionModule,
-        StripVerb,
-    )
-    from dplanner.modules.project_assets.module import (
-        ProjectAssetsDeps,
-        ProjectAssetsModule,
-    )
-    from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
-    from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
-    from dplanner.modules.project_editor.stacks import stack_split
-    from dplanner.modules.project_editor.verbs import picked_edges
-    from dplanner.modules.projects.checkouts import CheckoutService
-    from dplanner.modules.projects.location_dialog import ask_location
-    from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.modules.projects.repos import (
         LogEntry,
         PullRequest,
         RepoLog,
         RepositoryServices,
     )
-    from dplanner.modules.reopen_tabs.module import ReopenTabsDeps, ReopenTabsModule
-    from dplanner.modules.reporting.module import ReportingDeps, ReportingModule
-    from dplanner.modules.reporting.roles import ROLE as REPORTING_ROLE
-    from dplanner.modules.settings.module import SettingsDeps, SettingsModule
-    from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
-    from dplanner.modules.spec.cli import digest_of as spec_digest_of
-    from dplanner.modules.spec.cli import document_names as spec_document_names
-    from dplanner.modules.spec.module import SpecDeps, SpecModule
-    from dplanner.modules.spec.module import open_url as open_in_browser
-    from dplanner.modules.spec_confluence.module import SpecConfluenceDeps, SpecConfluenceModule
-    from dplanner.modules.spec_folder.module import SpecFolderKind
-    from dplanner.modules.spec_git.module import SpecGitDeps, SpecGitKind
     from dplanner.modules.spec_git.source import SPEC_GIT_CACHE, probe
-    from dplanner.modules.step_agent_instruction.due import Due, due_in, has_run
-    from dplanner.modules.step_agent_instruction.module import (
-        RUN_MENU_ID,
-        StepAgentInstructionDeps,
-        StepAgentInstructionModule,
-    )
-    from dplanner.modules.step_agent_instruction.profiles import default_profile
-    from dplanner.modules.step_agent_run.aspect import (
-        LAUNCHED,
-        NEEDS_INPUT,
-        PENDING_APPROVAL,
-        PLAN_FOR_REVIEW,
-        WORKING,
-    )
-    from dplanner.modules.step_agent_run.aspect import read as agent_run_state
-    from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
-    from dplanner.modules.step_agent_run.usage import (
-        ledger_dir,
-        ledger_stamp,
-        step_spent,
-        step_usage_words,
-        token_rate,
-    )
-    from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
-    from dplanner.modules.step_description.aspect import read as description_read
-    from dplanner.modules.step_description.module import (
-        StepDescriptionDeps,
-        StepDescriptionModule,
-    )
-    from dplanner.modules.step_description.section import SeparateInstructionLink
-    from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
-    from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
-    from dplanner.modules.step_properties.module import (
-        StepPropertiesDeps,
-        StepPropertiesModule,
-    )
-    from dplanner.modules.step_review.module import (
-        ReviewRoundsModule,
-        StepReviewDeps,
-        StepReviewModule,
-    )
-    from dplanner.modules.step_start.module import StepStartDeps, StepStartModule
-    from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
-    from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
-    from dplanner.modules.step_wait.module import StepWaitDeps, StepWaitModule
-    from dplanner.modules.sync.module import SyncDeps, SyncModule
-    from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
-    from dplanner.modules.testing.aspect import read as tests_read
-    from dplanner.modules.testing.module import TestsDeps, TestsModule
-    from dplanner.modules.time_estimates import schedule as time_schedule
-    from dplanner.modules.time_estimates.debugger import TimeSimulationDeps, TimeSimulationModule
-    from dplanner.modules.time_estimates.module import (
-        ProgressHistoryModule,
-        TimeEstimatesDeps,
-        TimeEstimatesModule,
-    )
-    from dplanner.planning.agent import MODULE_ID as AGENT_INSTRUCTION_ID
-    from dplanner.planning.agent import enabled as agent_enabled
-    from dplanner.planning.agent import enabled as is_agent
-    from dplanner.planning.agent import read as agent_instruction_read
-    from dplanner.planning.agent import (
-        separate_instruction as agent_separate,
-    )
-    from dplanner.planning.agent import write_state as agent_write_state
-    from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
-    from dplanner.planning.estimate import read as estimated_days
-    from dplanner.planning.estimate import write as estimate_write
-    from dplanner.planning.estimate import write_start
-    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
-    from dplanner.planning.feature import is_feature
-    from dplanner.planning.feature import read as feature_read
-    from dplanner.planning.kinds import (
-        Kind,
-        flows_into,
-        key_of,
-        kind_of,
-        kind_word,
-        scope_kinds,
-        works_nobody,
-    )
-    from dplanner.planning.milestone import is_milestone
-    from dplanner.planning.milestone import read as milestone_read
-    from dplanner.planning.schedule import format_days
-    from dplanner.planning.status import (
-        Status,
-        readiness_of,
-        record_merged,
-        record_started,
-        stored,
-        word,
-    )
-    from dplanner.planning.wait import Wait
-    from dplanner.planning.wait import read as wait_read
-    from dplanner.planning.wait import stat as wait_stat
-    from dplanner.theme.icons import (
-        clock_icon,
-        coverage_icon,
-        gauge_icon,
-        graph_icon,
-        image_icon,
-        list_icon,
-        problem_icon,
-        spark_icon,
-        spec_icon,
-    )
-    from dplanner.theme.tones import STEP_STATUS_TONES
+    from dplanner.planning.kinds import key_of
 
-    library: Library = services.document
-    # What may link to what, beyond the graph's own four refusals — the same rules the CLI's
-    # library asks (`default_link_rules`), so a drop and `step link` refuse alike. A reload
-    # builds a new library and comes back through here; a refresh keeps this one.
-    library.link_rules = default_link_rules()
-    # The composition root knows the concrete store, exactly as it knows the concrete
-    # document — modules reach a file area only through the typed callback on their Deps.
-    store = services.repo
-    assert isinstance(store, LibraryStore)
-
-    def project_dir_of(step_id: str) -> "Path":
-        return store.project_dir(library.project_of(step_id).id)
-
-    roles = roles_by_id(default_location_roles())
-    managed = managed_for(roles)
-
-    def facts_of(project_id: str) -> RepositoryFacts:
-        """The plan repository and every location of a project placed against this
-        machine's checkouts — the one derivation every seam below reads."""
-        return repository_facts(
-            library.project(project_id),
-            store.project_dir(project_id),
-            store.checkouts(),
-            managed=managed,
-            kept_root=config_dir(),
-        )
-
-    def facts_for(node_id: str) -> RepositoryFacts:
-        """The facts for a step — or for a project named directly, which is what a run
-        with no step (the Problems panel's) has to ask about."""
-        node = library.node(node_id)
-        return facts_of(node.id if isinstance(node, Project) else library.project_of(node_id).id)
-
-    def reporting_placement(project_id: str) -> "Placement | None":
-        """The project's reporting row placed on this machine — a checkout, the person's
-        or one DPlanner keeps — or None: it names none, or nothing here has it yet."""
-        placement = facts_of(project_id).of_role(REPORTING_ROLE.id)
-        return placement if placement is not None and placement.here else None
-
-    def reporting_site(project_id: str) -> "SiteTarget | None":
-        """Where the project publishes instead of beside its plan, when it does."""
-        placement = reporting_placement(project_id)
-        if placement is None or placement.root is None or placement.directory is None:
-            return None
-        return SiteTarget(placement.root, placement.directory)
-
-    def reporting_dir(project_id: str) -> "Path | None":
-        site = reporting_site(project_id)
-        return site.site if site is not None else None
-
-    def repository_for(step_id: str) -> str:
-        """Which repository a step's GitHub refs belong to: the code repository the
-        project records, else — the older shape, a plan kept beside its code — the plan's
-        own origin, and none while the code is not set. Git's answer either way; nothing
-        stored can disagree with it."""
-        return facts_for(step_id).code_remote
-
-    # A checkout recorded for a repository — by the Project dialog, or by an agent's
-    # first `dplanner` call from the code and adopted through the library file — is what
-    # turns Run Agent from greyed to runnable, and nothing in the context graph changed.
-    store.checkout_changed.connect(lambda _repository: services.context.refresh())
-
-    # -- git and GitHub for the project surfaces ----------------------------------------
-    # The Project dialog, Open Project and Move Plan reach both
-    # repositories through this one bundle; the root names the providers (rule 8) and
-    # the github module's gh door (rule 5) so the projects module names neither.
+    library, store = root.library, root.store
 
     def plan_roots() -> list[Path]:
         roots: list[Path] = []
         for project in library.projects:
-            root = find_repo_root(store.project_dir(project.id))
-            if root is not None and root not in roots:
-                roots.append(root)
+            found = find_repo_root(store.project_dir(project.id))
+            if found is not None and found not in roots:
+                roots.append(found)
         return roots
 
     def pr_steps(project_id: str) -> dict[int, str]:
-        from dplanner.modules.github.aspect import read as github_read
-
         named: dict[int, str] = {}
         for step in library.project(project_id).steps:
             refs = github_read(step)
@@ -376,10 +367,10 @@ def default_modules(
                 named[refs.pr_number] = f"{key_of(step)} {step.title}".strip()
         return named
 
-    def history_for(root: Path, scope: str, limit: int) -> RepoLog:
-        storage = repo_storage(root, (scope,) if scope else ())
+    def history_for(repo_root: Path, scope: str, limit: int) -> RepoLog:
+        storage = repo_storage(repo_root, (scope,) if scope else ())
         if not isinstance(storage, VersionedStorage):
-            raise StorageError(f"{root} has no history")
+            raise StorageError(f"{repo_root} has no history")
         return RepoLog(
             branch=storage.current_branch(),
             entries=tuple(
@@ -409,41 +400,20 @@ def default_modules(
             if row.state == PR_OPEN
         ]
 
-    def publish(root: Path, name: str) -> str:
-        storage = repo_storage(root)
+    def publish(repo_root: Path, name: str) -> str:
+        storage = repo_storage(repo_root)
         assert isinstance(storage, GitStorage)
         storage.commit("Start the plan repository")  # gh needs a commit to push.
         GitHubStorage.publish(storage, name)
-        return origin_url(root)
+        return origin_url(repo_root)
 
     def create_repository(name: str, dest: Path) -> str:
         GitHubStorage.create(name, dest)
         return origin_url(dest)
 
-    def connect_project(directory: Path) -> Project:
-        from dplanner.modules.library.membership import LIBRARY_ORIGIN
-
-        project = store.attach(directory)
-        library.add_child(library.id, project, origin=LIBRARY_ORIGIN)
-        return project
-
-    # The store lets go first, then the model: sync rewires its repository groups on the
-    # structure signal, and reads them from the store's records.
-    def disconnect_project(project_id: str) -> None:
-        from dplanner.modules.library.membership import LIBRARY_ORIGIN
-
-        store.detach(project_id)
-        library.remove_child(project_id, origin=LIBRARY_ORIGIN)
-
-    def archive_project(project_id: str) -> None:
-        from dplanner.modules.library.membership import LIBRARY_ORIGIN
-
-        store.archive(project_id)
-        library.remove_child(project_id, origin=LIBRARY_ORIGIN)
-
-    repos = RepositoryServices(
-        facts_of=facts_of,
-        roles=roles,
+    return RepositoryServices(
+        facts_of=root.facts_of,
+        roles=root.roles,
         project_dir=store.project_dir,
         checkout_for=store.checkout_for,
         set_checkout=store.set_checkout,
@@ -466,183 +436,313 @@ def default_modules(
         ),
     )
 
+
+def _branches(root: _Root) -> "BranchesModule":
+    """The branch cut and its landing. Built before everything that reads it: the briefing
+    reads its cached stretches — Run Agent's state asks which branch a step is on at every
+    announce — and the canvas draws its lanes."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.modules.branches.module import BranchesDeps, BranchesModule
+    from dplanner.modules.project_editor.stacks import stack_split
+    from dplanner.planning.agent import enabled as is_agent
+    from dplanner.planning.kinds import key_of
+
+    services, library = root.services, root.library
+
+    def branch_seats(step_ids: "Sequence[str]", cut: "Step", land: "Step") -> "list[Command]":
+        """Where Put on a Branch's two new cards stand: the cut a column left of the picked
+        card furthest left, the landing a column right of the one furthest right — when those
+        were placed by hand; otherwise the ambient layout places them, as it does the rest."""
+        from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_ID
+        from dplanner.modules.project_editor.positions import read_position, write_position
+        from dplanner.modules.project_editor.sorts import H_PITCH
+
+        placed = [where for s in step_ids if (where := read_position(library.step(s)))]
+        if not placed:
+            return []
+        left, right = min(placed), max(placed)
+        return [
+            SetModuleDataCommand(cut.id, POSITION_ID, write_position(left[0] - H_PITCH, left[1])),
+            SetModuleDataCommand(
+                land.id, POSITION_ID, write_position(right[0] + H_PITCH, right[1])
+            ),
+        ]
+
+    return BranchesModule(
+        BranchesDeps(
+            library=library,
+            undo=services.undo,
+            actions=services.actions,
+            details=services.step_details,
+            is_agent=is_agent,
+            stacked_apart=stack_split,
+            seats=branch_seats,
+            key_of=key_of,
+            parent=services.window,
+        )
+    )
+
+
+class _Agents(NamedTuple):
+    runs: "StepAgentRunModule"
+    at_work: "AgentAtWorkModule"
+    checkouts: "CheckoutService"
+    instruction: "StepAgentInstructionModule"
+
+
+def _agents(
+    root: _Root,
+    *,
+    branches: "BranchesModule",
+    settings: "SettingsModule",
+    board: "AtWorkBoard",
+    launch_locks: "LaunchLocks | None",
+) -> _Agents:
+    """Run Agent, the tracker that watches the shells it spawns, and the banner that says an
+    agent is at work. Built before the clusters that hand work to Run Agent: the Problems
+    panel its findings, the docs module its compilations, the library watcher an entry two
+    writers changed at once, sync its reconciling."""
+    from pathlib import Path
+
+    from dplanner.core.config_dir import config_dir
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+    from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
+    from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.auto_progress.aspect import auto_progresses
+    from dplanner.modules.branches.plan import branch_plan
+    from dplanner.modules.projects.checkouts import CheckoutService
+    from dplanner.modules.step_agent_instruction.due import Due, due_in, has_run
+    from dplanner.modules.step_agent_instruction.module import (
+        StepAgentInstructionDeps,
+        StepAgentInstructionModule,
+    )
+    from dplanner.modules.step_agent_run.aspect import asks_person
+    from dplanner.modules.step_agent_run.aspect import read as agent_run_state
+    from dplanner.modules.step_agent_run.module import StepAgentRunDeps, StepAgentRunModule
+    from dplanner.modules.step_agent_run.usage import ledger_dir, step_usage_words
+    from dplanner.planning.kinds import key_of, works_nobody
+    from dplanner.planning.status import record_started
+
+    services, library, store = root.services, root.library, root.store
+
     def read_absolute(path: str) -> bytes | None:
         """Asset bytes by absolute path — module file areas hand those out now."""
         file = Path(path)
         return file.read_bytes() if file.is_file() else None
 
-    def focused_project(context: object) -> str | None:
-        """The project the user is in: the focused project, else the focused step's."""
-        from dplanner.framework.context import Context
-
-        assert isinstance(context, Context)
-        project_id = context.focus_entity("project")
-        if project_id is not None and library.has(project_id):
-            return project_id
-        step_id = context.focus_entity("step")
-        if step_id is not None and library.has(step_id):
-            return library.project_of(step_id).id
-        return None
-
-    def projects_in(group: object) -> list[str]:
-        """The titles a repository group covers — for the diff picker and quit dialog."""
-        return [
-            project.title or project.folder_name
-            for project in library.projects
-            if store.repo_for(project.id) is group
-        ]
-
-    def skill_files() -> dict[str, str]:
-        from dplanner.cli.command import CliRegistry
-        from dplanner.cli.skill import generate
-
-        registry = CliRegistry()
-        registry.register_all(default_cli_commands())
-        return generate(registry, aspect_specs())
-
-    def step_aspects(step_id: str, skip: "Container[str]" = ()) -> list[str]:
-        """One short phrase per aspect that has something to say about this step."""
-        step = library.step(step_id)
-        summaries = aspect_summaries(skip)
-        return [phrase for phrase in (summary(step) for summary in summaries) if phrase]
-
-    def milestone_stats(project: "Project") -> dict[str, str]:
-        return estimation_schedule.milestone_stats(library, project)
-
-    def milestone_colors(project: "Project") -> dict[str, str]:
-        return time_schedule.milestone_colors(library, project)
-
-    def milestone_color(step_id: str) -> str:
-        """One milestone's shade, for a surface that draws a row at a time. A surface that
-        draws many at once takes the whole dict instead — this deals the project each call."""
-        if not library.has(step_id):
-            return ""
-        return milestone_colors(library.project_of(step_id)).get(step_id, "")
-
-    def milestone_badge(step_id: str) -> "QIcon | None":
-        """A milestone's key as a badge in its own shade, or None for a step that is not one.
-
-        The one place a milestone's key and its colour are painted together for a surface
-        that is not a table; the order table builds the same badge from the same two facts.
-        """
-        from dplanner.theme.icons import key_badge_icon
-
-        if not library.has(step_id):
-            return None
-        step = library.step(step_id)
-        if not is_milestone(step):
-            return None
-        return key_badge_icon(key_of(step), milestone_color(step_id))
-
-    def milestone_palette(project_id: str) -> str:
-        """Which colour map a project's milestones are shaded from."""
-        from dplanner.modules.time_estimates.schedule import read_palette
-
-        if not library.has(project_id):
-            return ""
-        return read_palette(library.project(project_id)).id
-
-    def set_milestone_palette(project_id: str, palette_id: str) -> None:
-        """The same undoable write the Time tab's picker and ``schedule palette`` make —
-        one choice, three ways in, so the window and the published report cannot disagree."""
-        from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
-        from dplanner.modules.time_estimates.schedule import write_project
-
-        if not library.has(project_id):
-            return
-        project = library.project(project_id)
-        services.undo.push(
-            SetModuleDataCommand(
-                project_id,
-                TIME_ID,
-                write_project(project, today=services.clock.today(), palette_id=palette_id),
-                label="Milestone Palette",
-            )
+    def reveal_step(step_id: str) -> None:
+        """Select a step in its project: ``steps.reveal`` against a context naming it."""
+        services.actions.run(
+            "steps.reveal",
+            Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
         )
 
-    def watch_milestone_palette(restate: "Callable[[], None]") -> None:
-        """Restate the menu's ticks when a project's stored map changes underneath — the
-        Time tab's picker, an undo, or a terminal's ``dplanner schedule palette`` adopted
-        from disk. One entry of one node, so the guard is the module id."""
-        from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
+    # Every launch is handed here, and this is the one place that keeps an eye on the shell
+    # afterwards.
+    runs = StepAgentRunModule(
+        StepAgentRunDeps(
+            library=library,
+            undo=services.undo,
+            actions=services.actions,
+            context=services.context,
+            status=services.window,
+            parent=services.window,
+            # An exit is never written over a plan that changed underneath — the same
+            # narrowed store the library watcher reads.
+            repo=store,
+            reveal=reveal_step,
+            # Which CLI ran a step, and how to read its record back when the shell ends.
+            harnesses=agent_harnesses(),
+            # A run that ended frees a slot for what is due — even when the agent had
+            # cleared its state and the plan did not change. The agent module is built
+            # below, and nothing ends before the build is up.
+            ended=lambda: instruction.settle_launches(),
+            # Where each run's ledger record lives, and every project's ledger for the
+            # sweep that reads what the runs consumed back into them.
+            project_dir=lambda step_id: (
+                ledger_dir(store, library.project_of(step_id).id) if library.has(step_id) else None
+            ),
+            project_dirs=lambda: [
+                directory
+                for project in library.projects
+                if (directory := ledger_dir(store, project.id)) is not None
+            ],
+            tasks=services.tasks,
+        )
+    )
 
-        library.module_data_changed.connect(
-            lambda _node_id, module_id, _origin: restate() if module_id == TIME_ID else None
+    def due_here() -> "list[Due]":
+        """What this window would launch: running is the plan's run stamp *or* a run this
+        window is watching, so a claim still on its way to disk can never make a live
+        shell's step due again."""
+        return due_in(
+            library,
+            services.clock.today(),
+            lambda step: has_run(step) or runs.live(step.id) > 0,
         )
 
-    def milestone_shade(step_id: str) -> tuple[str, str]:
-        """A milestone's shade and the sentence for it: *2nd of 4 · Viridis*.
-
-        The words are what make a swatch teach rather than decorate — a colour means "this
-        far along the roadmap", and the tooltip is where that is said once (DESIGN.md's
-        *Words*) instead of as a line under every field.
-        """
-        from dplanner.modules.time_estimates.schedule import read_palette
-
-        if not library.has(step_id):
-            return "", ""
-        project = library.project_of(step_id)
-        colors = milestone_colors(project)
-        color = colors.get(step_id, "")
-        if not color:
-            return "", ""
-        place = list(colors).index(step_id) + 1
-        return color, f"{_ordinal(place)} of {len(colors)} · {read_palette(project).name}"
-
-    def step_type_icons(step: "Step") -> tuple[str, ...]:
-        return _step_type_icons(step)
-
-    def set_separate_instruction(step_id: str, separate: bool) -> None:
-        """The Description block's checkbox, translated into the agent aspect's writes.
-
-        Unchecking merges back into the description — the separate text is dropped and
-        the mark stays — as one undo step, so Ctrl+Z restores text and flag together.
-        """
-        if separate:
-            services.undo.push(
-                SetModuleDataCommand(
-                    step_id,
-                    AGENT_INSTRUCTION_ID,
-                    agent_write_state(True, separate=True),
-                    label="Separate Agent Instruction",
-                )
-            )
-            return
-        current = agent_instruction_read(library.step(step_id))
-        mark: Command = SetModuleDataCommand(
-            step_id,
-            AGENT_INSTRUCTION_ID,
-            agent_write_state(True),
-            label="Use Description as Instructions",
+    # The library watcher asks it one question — whether an agent is at work on the project
+    # a conflict is in — and stands its modal down while one is.
+    at_work = AgentAtWorkModule(
+        AgentAtWorkDeps(
+            board=board,
+            notices=services.window,
+            library=library,
+            parent=services.window,
+            # The dialog behind the banner selects the step a row's agent is on.
+            reveal=reveal_step,
+            key_of=key_of,
         )
-        if not current:
-            services.undo.push(mark)
-            return
-        services.undo.push(
-            CompositeCommand(
-                "Use Description as Instructions",
-                [
-                    EditTextCommand(
-                        TextEdit(step_id, AGENT_INSTRUCTION_ID, 0, current, ""),
-                        label="Set Agent Instruction",
-                    ),
-                    mark,
-                ],
-            )
+    )
+
+    # A repository on this machine for a verb that needs one, cloned where the clone
+    # policy says: the projects module's service, built here because Run Agent is handed
+    # it too. Owned by the window, so its task runner outlives every dialog.
+    checkouts = CheckoutService(
+        root.repos, services.tasks, kept_root=config_dir(), parent=services.window
+    )
+
+    instruction = StepAgentInstructionModule(
+        StepAgentInstructionDeps(
+            works_nobody=works_nobody,
+            dictation=services.dictation,
+            library=library,
+            debounce=services.debounce,
+            undo=services.undo,
+            sections=services.inspector_sections,
+            actions=services.actions,
+            context=services.context,
+            settings_sections=services.settings_sections,
+            status=services.window,
+            parent=services.window,
+            # Its Project ▸ Settings… tab: the standing instruction every briefing opens with.
+            project_settings=services.project_settings,
+            files=store.files,
+            # How staged assets are read at launch — bytes by absolute path.
+            read_asset=read_absolute,
+            # Where the agent runs is the module's reading of these: the code checkout
+            # for a project that records its code repository, the plan's own repository
+            # for one that does not.
+            facts_for=root.facts_for,
+            # Code nobody checked out here is cloned before the agent opens in it.
+            ensure_checkouts=checkouts.ensure_many,
+            # Which branches a run works between — read through the branches module's
+            # cached stretches, since Run Agent's state asks on every announce.
+            branch_plan=lambda library, step, facts: branch_plan(
+                library, step, mainline(facts, step), branches.reading_of
+            ),
+            # The kinds of place a project names, which the briefing's preamble words.
+            location_roles=default_location_roles(),
+            # The spawned shell goes to the run tracker: it stamps the launch — directly,
+            # off the undo stack, since Ctrl+Z cannot un-launch a shell — and watches
+            # the run's files for the shell's end.
+            record_launch=lambda step_id, files, harness: runs.track(
+                step_id,
+                str(files.shell_file),
+                str(files.exit_file),
+                harness,
+                # The session the command named, for a harness that names one; a harness
+                # that mints its own is found by its record once the run ends.
+                files.session if _names_session(harness) else "",
+                # What the briefing came to: measured where prompt.md was written.
+                files.prompt_chars,
+                # A session that starts in plan mode waits for a person from the first
+                # moment, and says nothing until its plan is approved.
+                files.plans_first,
+                # Its record in the ledger, and where it works: what is harvested into it.
+                files.run,
+                files.workdir,
+            ),
+            harnesses=agent_harnesses(),
+            # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.
+            usage_words=lambda step_id: step_usage_words(store, library, step_id),
+            pick_assets=root.pick_assets,
+            # Run Agent asks before launching on a step whose prerequisites are not
+            # done — the same status reader the Step statuses tab's frontier uses.
+            status_for=_wait_aware(library, services.clock.today),
+            # A source under review does not hold a step that collects it.
+            auto_progresses=auto_progresses,
+            # And says so on the step when the shell opens: the status aspect's own
+            # writer, applied off the undo stack the way the launch stamp is. The
+            # agent module holds the preference; the word is the status module's.
+            mark_started=lambda step_id: record_started(library, step_id, services.clock.today()),
+            # The key that heads the run's terminal title and its subject line.
+            step_key=key_of,
+            # Manage Agent Profiles… lands on the module's own settings page.
+            open_settings=settings.open,
+            # What the window launches with nobody clicking, when this machine says so.
+            due=due_here,
+            preferred_agent=_preferred_agent,
+            asks_person=asks_person,
+            run_state=agent_run_state,
+            live_runs=runs.live,
+            repo=store,
+            notices=services.window,
+            clock=services.clock,
+            flush=lambda: _flushed(services.autosave),
+            launch_lock=(
+                launch_locks.for_library(store.library_path) if launch_locks is not None else None
+            ),
         )
+    )
+    return _Agents(runs, at_work, checkouts, instruction)
+
+
+class _Graph(NamedTuple):
+    problems: "ProblemsModule"
+    editor: "ProjectEditorModule"
+
+
+def _graph(
+    root: _Root, *, branches: "BranchesModule", agent_instruction: "StepAgentInstructionModule"
+) -> _Graph:
+    """The graph editor, the Problems panel it stands beside the canvas, and the canvas's
+    reading of every aspect a card or an arrow wears."""
+    from dataclasses import replace
+
+    from dplanner.framework.side_panel import SidePanel
+    from dplanner.modules.auto_progress.aspect import auto_progresses
+    from dplanner.modules.branches.plan import lanes as branch_lanes
+    from dplanner.modules.branches.plan import strips as branch_strips
+    from dplanner.modules.estimation.schedule import milestone_stats
+    from dplanner.modules.github.aspect import PR_CLOSED, PR_MERGED, pr_label
+    from dplanner.modules.github.aspect import read as github_read
+    from dplanner.modules.problems.module import ProblemsDeps, ProblemsModule
+    from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
+    from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
+    from dplanner.modules.step_agent_run.aspect import (
+        LAUNCHED,
+        NEEDS_INPUT,
+        PENDING_APPROVAL,
+        PLAN_FOR_REVIEW,
+        WORKING,
+    )
+    from dplanner.modules.step_agent_run.aspect import read as agent_run_state
+    from dplanner.planning.estimate import read as estimated_days
+    from dplanner.planning.kinds import Kind, key_of, kind_of
+    from dplanner.planning.milestone import read as milestone_read
+    from dplanner.planning.review import reviews
+    from dplanner.planning.schedule import format_days
+    from dplanner.planning.status import Status, word
+    from dplanner.planning.wait import read as wait_read
+    from dplanner.planning.wait import stat as wait_stat
+    from dplanner.theme.icons import problem_icon
+    from dplanner.theme.tones import STEP_STATUS_TONES
+
+    services, library, store = root.services, root.library, root.store
 
     def step_accents(project_id: str) -> "dict[str, NodeAccent]":
         """How every step of a project looks on the canvas — one call per canvas sync, so
         the schedule behind the milestone stats and the project's colour deal are each
         walked once for all of them."""
         project = library.project(project_id)
-        stats = milestone_stats(project)
-        colors = milestone_colors(project)
+        stats = milestone_stats(library, project)
+        colors = root.milestone_colors(project)
         # The settled reading, never a fresh lint pass: the checks are super-linear in the
         # size of a plan (66 ms at 300 steps) and this runs on every canvas sync.
         flagged = problems.flagged(project_id)
         status_for = _ready_in(library, services.clock.today())
-        strips = _strips(branches.reading_of(project))
+        strips = branch_strips(branches.reading_of(project))
         return {
             step.id: step_accent(
                 step,
@@ -663,10 +763,6 @@ def default_modules(
         review — doubled by that same answer — also wears the review's talk bubble at its
         middle: the work on this arrow is about to be talked over. And every arrow of work
         on a feature branch not yet landed lies on that branch's lane."""
-        from dataclasses import replace
-
-        from dplanner.planning.review import reviews
-
         project = library.project(project_id)
         accents = {
             (waiter.id, "requires", source.id): EdgeAccent(
@@ -678,7 +774,7 @@ def default_modules(
             for source in library.requires(waiter.id)
             if auto_progresses(waiter, source)
         }
-        for edge, color in _lanes(library, branches.reading_of(project)).items():
+        for edge, color in branch_lanes(library, branches.reading_of(project)).items():
             accents[edge] = replace(accents.get(edge, EdgeAccent()), lane=color)
         return accents
 
@@ -693,7 +789,6 @@ def default_modules(
     ) -> "NodeAccent":
         """How a step looks on the canvas, translated from aspects the canvas never learns.
 
-
         A done step is muted with a green body — finished work recedes into a colour the
         eye can skip; the key block down the card's left carries the step's key under who
         works it (:func:`_primary_glyph`) and is shaded by status — busy for in-progress,
@@ -707,7 +802,7 @@ def default_modules(
         moves next pulses (:func:`_persons_turn`). The card says nothing in words beyond its
         title and its key — every aspect it wears is one of these, never a phrase — but for
         the one name a person has to read: the feature branch its work goes onto, in a
-        strip under the body (``strip`` is the branch and its lane colour, :func:`_strips`).
+        strip under the body (``strip`` is the branch and its lane colour, ``plan.strips``).
         """
         refs = github_read(step)
 
@@ -759,7 +854,7 @@ def default_modules(
             # A milestone recolours the kind it is rather than gaining a second mark: the
             # body, the badge and the tag medallion all take its shade of the project's map.
             tone_color=milestone_color if milestone else "",
-            icons=step_type_icons(step),
+            icons=_step_type_icons(step),
             # Something in the plan is wrong about this step. The canvas draws the
             # squiggle; what is wrong is the Problems panel's to say.
             flagged=flagged,
@@ -771,125 +866,95 @@ def default_modules(
             strip_tone=strip[1],
         )
 
-    def branch_seats(step_ids: "Sequence[str]", cut: "Step", land: "Step") -> "list[Command]":
-        """Where Put on a Branch's two new cards stand: the cut a column left of the picked
-        card furthest left, the landing a column right of the one furthest right — when those
-        were placed by hand; otherwise the ambient layout places them, as it does the rest."""
-        from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_ID
-        from dplanner.modules.project_editor.positions import read_position, write_position
-        from dplanner.modules.project_editor.sorts import H_PITCH
-
-        placed = [where for s in step_ids if (where := read_position(library.step(s)))]
-        if not placed:
-            return []
-        left, right = min(placed), max(placed)
-        return [
-            SetModuleDataCommand(cut.id, POSITION_ID, write_position(left[0] - H_PITCH, left[1])),
-            SetModuleDataCommand(
-                land.id, POSITION_ID, write_position(right[0] + H_PITCH, right[1])
-            ),
-        ]
-
-    # Constructed before the list because the briefing reads its cached stretches: Run
-    # Agent's state asks which branch a step is on at every announce.
-    branches = BranchesModule(
-        BranchesDeps(
+    # Built before the graph editor because the editor stands its panel beside the canvas.
+    # What it shows is the lint registry — the very list `dplanner project lint` runs — so
+    # the window and the terminal cannot disagree about what is wrong with a plan.
+    problems = ProblemsModule(
+        ProblemsDeps(
             library=library,
-            undo=services.undo,
             actions=services.actions,
-            details=services.step_details,
-            is_agent=is_agent,
-            stacked_apart=stack_split,
-            seats=branch_seats,
+            files=store.files,
+            checks=_lint_checks,
+            debounce=services.debounce,
+            parent=services.window,
+            facts_of=root.facts_of,
             key_of=key_of,
-            parent=services.window,
+            # Handing the problems to an agent is Run Agent's.
+            fix_profiles=agent_instruction.plan_profiles,
+            fix=lambda project_id, findings, profile: agent_instruction.fix_problems(
+                project_id,
+                [(row.check, row.subject, row.message) for row in findings],
+                profile,
+            ),
         )
     )
 
-    # Modules constructed before the list, because what each one hands the others reads
-    # better as wiring than as ordering:
-    #
-    #   step_properties  owns THE step editor — `steps.details`, a modal and nothing else
-    #   project_editor   opens projects into graph tabs
-    #   projects         puts projects in the index and opens them through the one above
-    #   estimation       owns the estimate, the start date and the bulk Estimates tab; the
-    #                    order view hosts its bar
-    #
-    # None of them imports any other. Construction is side-effect-free, so ordering here is
-    # about legibility; what matters at run time is that the aspect modules have registered
-    # their sections before step_properties builds a dialog, which is a position in the list
-    # below.
-    step_properties = StepPropertiesModule(
-        StepPropertiesDeps(
-            # The templates the bar's dropdown offers: what a step *amounts to*, as the set
-            # of Type toggles that are on — picking one moves every toggle to match, and a
-            # step carrying exactly that set wears its name. Step is the catch-all: any
-            # combination no other template names is still a step. Collectors carry no
-            # estimate of their own; an agent step gets what an agent reports back
-            # through. The selected one's glyph wears its body tone: violet the milestone,
-            # teal the feature, the agent-run chip's blue for an agent step; Step and Check
-            # keep the plain ink. Wired, never inferred, like the scope kinds.
-            templates=(
-                AspectTemplate(
-                    "Step",
-                    frozenset({"estimate.toggle", "description.toggle"}),
-                    # A glyph like every other, so the face's icon slot is never empty:
-                    # one that appeared only for the named kinds would resize the face as
-                    # the step changed, and a face that reports what is on keeps its size.
-                    glyph="step",
-                    catch_all=True,
-                ),
-                AspectTemplate(
-                    "Milestone",
-                    frozenset({"milestone.toggle", "description.toggle"}),
-                    tone="highlight",
-                    glyph="tag",
-                ),
-                AspectTemplate(
-                    "Feature",
-                    frozenset({"feature.toggle", "description.toggle"}),
-                    tone="feature",
-                    glyph="layers",
-                ),
-                AspectTemplate(
-                    "Agent",
-                    frozenset({"agent.toggle", "description.toggle", "estimate.toggle"}),
-                    tone="info",
-                    glyph="spark",
-                ),
-                # A review is an agent step whose work is reading another's.
-                AspectTemplate(
-                    "Review",
-                    frozenset(
-                        {"agent.toggle", "review.toggle", "description.toggle", "estimate.toggle"}
-                    ),
-                    tone="info",
-                    glyph="review",
-                ),
-                AspectTemplate(
-                    "Check", frozenset({"check.toggle", "description.toggle"}), glyph="shield"
-                ),
-                # A wait carries no estimate and no description: how long it holds is its
-                # size, and there is nothing to do.
-                AspectTemplate("Wait", frozenset({"wait.toggle"}), glyph="clock"),
-                # A cut is nobody's work either; a landing is an agent step that closes one.
-                AspectTemplate("Branch cut", frozenset({"cut.toggle"}), glyph="branch"),
-                AspectTemplate(
-                    "Landing",
-                    frozenset({"agent.toggle", "land.toggle", "estimate.toggle"}),
-                    tone="info",
-                    glyph="merge",
-                ),
-            ),
+    editor = ProjectEditorModule(
+        ProjectEditorDeps(
             library=library,
-            undo=services.undo,
+            debounce=services.debounce,
             actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            undo=services.undo,
+            status=services.window,
             parent=services.window,
-            sections=services.inspector_sections,
-            details=services.step_details,
             theme=services.theme,
+            files=store.files,
+            file_modules=tuple(source.id for source in root.asset_sources),
+            paste_policies=_paste_policies(),
+            step_accents=step_accents,
+            accents_changed=problems.findings.flagged_changed,
+            edge_accents=edge_accents,
+            # The cards that wear a branch strip, from the same reading their accents are.
+            strips=lambda project_id: frozenset(
+                branch_strips(branches.reading_of(library.project(project_id)))
+            ),
+            # What stands beside the canvas: what is wrong with this plan, where it is
+            # fixed. The editor never learns whose widget it is — only that it may carry
+            # a reading for the button that opens it.
+            side_panel=SidePanel("Problems", problem_icon, problems.create_panel),
         )
     )
+    return _Graph(problems, editor)
+
+
+class _Knowledge(NamedTuple):
+    feature: "FeatureModule"
+    coverage: "CoverageModule"
+    confluence: "SpecConfluenceModule"
+    spec: "SpecModule"
+
+
+def _knowledge(root: _Root, *, editor: "ProjectEditorModule") -> _Knowledge:
+    """What a plan answers to: the feature steps, the Specs tab and its document sources,
+    and Coverage between the two."""
+    from dplanner.core.config_dir import config_dir
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
+    from dplanner.modules.coverage.activity import CoverageDeps
+    from dplanner.modules.coverage.module import CoverageModule
+    from dplanner.modules.feature.module import FeatureDeps, FeatureModule
+    from dplanner.modules.projects.location_dialog import ask_location
+    from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
+    from dplanner.modules.spec.cli import digest_of as spec_digest_of
+    from dplanner.modules.spec.cli import document_names as spec_document_names
+    from dplanner.modules.spec.module import SpecDeps, SpecModule
+    from dplanner.modules.spec.module import open_url as open_in_browser
+    from dplanner.modules.spec_confluence.module import SpecConfluenceDeps, SpecConfluenceModule
+    from dplanner.modules.spec_folder.module import SpecFolderKind
+    from dplanner.modules.spec_git.module import SpecGitDeps, SpecGitKind
+    from dplanner.modules.spec_git.source import SPEC_GIT_CACHE
+    from dplanner.modules.testing.aspect import read as tests_read
+    from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+    from dplanner.planning.estimate import write as estimate_write
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import is_feature
+    from dplanner.planning.feature import read as feature_read
+    from dplanner.planning.kinds import flows_into
+    from dplanner.planning.milestone import is_milestone
+
+    services, library, store = root.services, root.library, root.store
 
     def place_feature_step(project_id: str, title: str, marker: dict[str, Any]) -> str:
         """A feature step born where nobody pointed — the Specs tab's *New feature step…*.
@@ -902,7 +967,7 @@ def default_modules(
         """
         from dplanner.modules.project_editor.placement import free_spot
 
-        return project_editor.create_step(
+        return editor.create_step(
             project_id,
             title,
             at=free_spot(library, library.project(project_id)),
@@ -913,35 +978,8 @@ def default_modules(
             label="New Feature",
         ).id
 
-    def insert_wait_before(step_id: str) -> None:
-        """Step ▸ Insert Wait Before: a wait of a working day in front of the step — it takes
-        over what the step waited on, and the step waits on it — as the *Wait* template makes
-        one (no estimate, no description), and one undo entry like every other placed step.
-        A loose step's wait lands a column to its left where the step was placed; a stacked
-        step's joins its stack in its slot, where the column seats it."""
-        from dplanner.modules.project_editor.positions import read_position
-        from dplanner.modules.project_editor.sorts import H_PITCH
-        from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
-        from dplanner.modules.step_description.aspect import write_state as description_state
-        from dplanner.planning.wait import MODULE_ID as WAIT_ID
-        from dplanner.planning.wait import write as write_wait
-
-        where = read_position(library.step(step_id))
-        project_editor.create_step(
-            library.project_of(step_id).id,
-            "Wait",
-            at=(where[0] - H_PITCH, where[1]) if where is not None else None,
-            carrying=lambda wait: [
-                SetModuleDataCommand(wait.id, WAIT_ID, write_wait(Wait(days=1.0))),
-                SetModuleDataCommand(wait.id, ESTIMATION_ID, estimate_write(None, on=False)),
-                SetModuleDataCommand(wait.id, DESCRIPTION_ID, description_state(False)),
-            ],
-            label="Insert Wait",
-            before=step_id,
-        )
-
-    # Constructed before the list because the Specs tab cites a selection into it — the
-    # feature side of one seam.
+    # Built before spec because the Specs tab cites a selection into it — the feature side
+    # of one seam.
     feature = FeatureModule(
         FeatureDeps(
             library=library,
@@ -951,74 +989,12 @@ def default_modules(
             parent=services.window,
             documents_of=lambda project_id: spec_document_names(library.project(project_id)),
             digest_of=lambda project_id, name: spec_digest_of(library.project(project_id), name),
-            # Births a feature step somewhere free on the graph; the editor is constructed
-            # below, so the call is what resolves it, not the reference.
-            place_step=lambda project_id, title, marker: place_feature_step(
-                project_id, title, marker
-            ),
+            # Births a feature step somewhere free on the graph.
+            place_step=place_feature_step,
         )
     )
 
-    # Constructed before the graph editor because the editor stands its panel beside the
-    # canvas. What it shows is the lint registry — the very list `dplanner project lint`
-    # runs — so the window and the terminal cannot disagree about what is wrong with a plan.
-    problems = ProblemsModule(
-        ProblemsDeps(
-            library=library,
-            actions=services.actions,
-            files=store.files,
-            checks=_lint_checks,
-            debounce=services.debounce,
-            parent=services.window,
-            facts_of=facts_of,
-            key_of=key_of,
-            # Handing the problems to an agent is the agent module's — resolved lazily,
-            # since it is constructed further down and neither knows the other's name.
-            fix_profiles=lambda: agent_instruction.plan_profiles(),
-            fix=lambda project_id, findings, profile: agent_instruction.fix_problems(
-                project_id,
-                [(row.check, row.subject, row.message) for row in findings],
-                profile,
-            ),
-        )
-    )
-
-    project_editor = ProjectEditorModule(
-        ProjectEditorDeps(
-            library=library,
-            debounce=services.debounce,
-            actions=services.actions,
-            context=services.context,
-            tabs=services.tabs,
-            undo=services.undo,
-            status=services.window,
-            parent=services.window,
-            theme=services.theme,
-            files=store.files,
-            file_modules=tuple(source.id for source in _asset_sources()),
-            paste_policies=_paste_policies(),
-            step_accents=step_accents,
-            accents_changed=problems.findings.flagged_changed,
-            edge_accents=edge_accents,
-            # The cards that wear a branch strip, from the same reading their accents are.
-            strips=lambda project_id: frozenset(
-                _strips(branches.reading_of(library.project(project_id)))
-            ),
-            # What stands beside the canvas: what is wrong with this plan, where it is
-            # fixed. The editor never learns whose widget it is — only that it may carry
-            # a reading for the button that opens it.
-            side_panel=SidePanel("Problems", problem_icon, problems.create_panel),
-        )
-    )
-    # The collectors, wired once: the docs and tests modules group by them, and every walk
-    # either module makes stops where these say.
-    scopes = scope_kinds()
-
-    # Constructed before the list because the projects index opens it and the Specs tab
-    # jumps into it. Its picture is every module's Qt-free half read once (coverage/readers.py);
-    # the surfaces a double-click reaches arrive as callables, and the Specs tab's is
-    # resolved lazily because the two modules point at each other.
-    def _step_passages(step_id: str) -> list[tuple[str, str]]:
+    def step_passages(step_id: str) -> list[tuple[str, str]]:
         """The passages a step reaches: its own, or its gathering features'."""
         if not library.has(step_id):
             return []
@@ -1032,6 +1008,9 @@ def default_modules(
             if source.quote
         ]
 
+    # Its picture is every module's Qt-free half read once (coverage/readers.py); the
+    # surfaces a double-click reaches arrive as callables, and the Specs tab's is resolved
+    # lazily because the two modules point at each other.
     coverage = CoverageModule(
         CoverageDeps(
             library=library,
@@ -1058,13 +1037,13 @@ def default_modules(
                 if library.has(step_id)
                 else []
             ),
-            passages_of=_step_passages,
+            passages_of=step_passages,
         )
     )
 
-    # Constructed before spec: it owns the two Confluence document source kinds the Specs
-    # tab runs, and the credential's four doors are the keychain's, handed over as
-    # callables so a test can hand in a dict instead.
+    # Built before spec: it owns the two Confluence document source kinds the Specs tab
+    # runs, and the credential's four doors are the keychain's, handed over as callables so
+    # a test can hand in a dict instead.
     confluence = SpecConfluenceModule(
         SpecConfluenceDeps(
             parent=services.window,
@@ -1074,10 +1053,8 @@ def default_modules(
             open_url=open_in_browser,
         )
     )
-    # Constructed before the list because the projects index opens Specs through it — the
-    # same seam as open_project, one level down. The document source kinds it runs are
-    # named here — ``_source_kinds`` — and nowhere else; a test hands in a fake through
-    # the same function.
+    # The document source kinds the Specs tab runs are named here — ``_source_kinds`` — and
+    # nowhere else; a test hands in a fake through the same function.
     # Kinds, not modules: they register nothing (the spec module mints the + menu's
     # entries from the kinds it is handed), so there is no `register()` for the list to
     # call. The git cache is named here and nowhere deeper — no feature module reaches
@@ -1100,16 +1077,15 @@ def default_modules(
             details=services.step_details,
             tasks=services.tasks,
             debounce=services.debounce,
-            rename_references=_rename_spec_references,
             kinds=_source_kinds(spec_folder, spec_git, confluence.page, confluence.folder),
-            roles=roles,
+            roles=root.roles,
             # From Repository…: the projects module's location dialog for a spec row,
             # so a spec author names their repository from the Specs tab itself.
             ask_location=lambda project_id, role_id: ask_location(
-                roles[role_id],
+                root.roles[role_id],
                 project=library.project(project_id),
                 library=library,
-                services=repos,
+                services=root.repos,
                 tasks=services.tasks,
                 theme=services.theme,
                 parent=services.window,
@@ -1124,7 +1100,74 @@ def default_modules(
             open_coverage=coverage.show_passage,
         )
     )
-    # Constructed before the list because the projects index opens the tab through it.
+    return _Knowledge(feature, coverage, confluence, spec)
+
+
+class _Tabs(NamedTuple):
+    progression: "ProgressionModule"
+    estimation: "EstimationModule"
+    notes: "NotesModule"
+    time: "TimeEstimatesModule"
+    simulation: "TimeSimulationModule"
+    assets: "ProjectAssetsModule"
+    reporting: "ReportingModule"
+    step_order: "StepOrderModule"
+
+
+def _project_tabs(root: _Root) -> _Tabs:
+    """The tabs a project's index rows open — each built ahead of the list because the
+    projects index opens it — and the Time tab's simulator, over a world of its own."""
+    from dplanner.core.storage.locations import find_repo_root, origin_url
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.framework.context import ContextService
+    from dplanner.framework.undo import UndoService
+    from dplanner.modules.auto_progress.aspect import auto_progresses
+    from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
+    from dplanner.modules.notes.module import NotesDeps, NotesModule
+    from dplanner.modules.progression.module import (
+        ProgressionDeps,
+        ProgressionModule,
+        StripVerb,
+    )
+    from dplanner.modules.project_assets.module import (
+        ProjectAssetsDeps,
+        ProjectAssetsModule,
+    )
+    from dplanner.modules.reporting.module import ReportingDeps, ReportingModule
+    from dplanner.modules.step_agent_instruction.module import RUN_MENU_ID
+    from dplanner.modules.step_agent_run.aspect import asks_person
+    from dplanner.modules.step_agent_run.usage import ledger_stamp, step_spent, token_rate
+    from dplanner.modules.step_description.aspect import read as description_read
+    from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
+    from dplanner.modules.time_estimates.cli import Readers as TimeReaders
+    from dplanner.modules.time_estimates.debugger import TimeSimulationDeps, TimeSimulationModule
+    from dplanner.modules.time_estimates.module import TimeEstimatesDeps, TimeEstimatesModule
+    from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
+    from dplanner.planning.agent import enabled as is_agent
+    from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+    from dplanner.planning.estimate import write_start
+    from dplanner.planning.kinds import key_of, kind_word
+    from dplanner.planning.milestone import is_milestone
+    from dplanner.planning.milestone import read as milestone_read
+    from dplanner.planning.status import Status, readiness_of, stored
+
+    services, library, store = root.services, root.library, root.store
+
+    def milestone_badge(step_id: str) -> "QIcon | None":
+        """A milestone's key as a badge in its own shade, or None for a step that is not one.
+
+        The one place a milestone's key and its colour are painted together for a surface
+        that is not a table; the order table builds the same badge from the same two facts.
+        """
+        from dplanner.theme.icons import key_badge_icon
+
+        if not library.has(step_id):
+            return None
+        step = library.step(step_id)
+        if not is_milestone(step):
+            return None
+        return key_badge_icon(key_of(step), root.milestone_color(step_id))
+
     # Its strip seats verbs other modules own, named here by id — Run Agent, worded as the
     # verb the tab leads with, with the Step menu's own profiles under its arrow, then the
     # status verbs a person moves finished work on with — so neither module knows the
@@ -1146,9 +1189,9 @@ def default_modules(
             # A step that collects its sources' work is ready once they are under review.
             auto_progresses=auto_progresses,
             # An agent that waits on a person is a row of its own: Waits for you.
-            asks_person=_asks_person,
+            asks_person=asks_person,
             # Work under review an agent takes on is that agent's, not a person's row —
-            # the same answer the canvas pulses by (step_accents above).
+            # the same answer the canvas pulses by (the graph's step accents).
             is_agent=is_agent,
             verbs=(
                 StripVerb("agent.run", data_menu=RUN_MENU_ID, face="Run Agents"),
@@ -1179,8 +1222,8 @@ def default_modules(
             describe_step=lambda step_id: description_read(library.step(step_id)),
         )
     )
-    # Constructed before the list because the Docs folder carries its Implementation notes
-    # row; the key rule is the root's, handed over like every row's.
+    # The Docs folder carries its Implementation notes row; the key rule is the root's,
+    # handed over like every row's.
     notes = NotesModule(
         NotesDeps(
             dictation=services.dictation,
@@ -1194,15 +1237,15 @@ def default_modules(
     )
 
     def time_deps(
-        library: Library,
+        library: "Library",
         *,
-        undo: UndoService[Library],
-        context: ContextService,
-        clock: Clock,
-        debounce: DebounceService,
+        undo: "UndoService[Library]",
+        context: "ContextService",
+        clock: "Clock",
+        debounce: "DebounceService",
         estimate_missing: "Callable[[ProjectId], None]",
         day_over: bool,
-    ) -> TimeEstimatesDeps:
+    ) -> "TimeEstimatesDeps":
         """The Time tab's deps over ``library``: the window's, or the simulator's scratch
         world, which differs only in what is handed in here — one recipe, never two."""
         return TimeEstimatesDeps(
@@ -1216,7 +1259,7 @@ def default_modules(
             day_over=day_over,
             # Agent-ness, waits and milestones through the owners' Qt-free readers; the
             # estimate and the status are planning facts the tab reads itself.
-            readers=_time_readers(),
+            readers=TimeReaders(),
             # Clicking the calendar re-dates the plan: one undoable write of the project's
             # start (``planning/estimate.py``), pushed here on the window's undo stack.
             set_start=lambda project_id, when: undo.push(
@@ -1229,8 +1272,7 @@ def default_modules(
             parent=services.window,
         )
 
-    # Constructed before the list because the projects index opens the tab through it.
-    time_estimates = TimeEstimatesModule(
+    time = TimeEstimatesModule(
         time_deps(
             library,
             undo=services.undo,
@@ -1244,11 +1286,28 @@ def default_modules(
             day_over=False,
         )
     )
-    # Constructed before the list for the same reason — its index row opens the tab. The
-    # sources tuple is the same one the CLI reports read (`_asset_sources`), so the tab,
-    # the picker and `dplanner asset list` can never disagree about what a project holds.
-    asset_sources = _asset_sources()
-    project_assets = ProjectAssetsModule(
+    # Debug ▸ Time Simulation: the real Time tab over a scratch world of its own — its own
+    # library, undo stack, context, clock and debounce service, so nothing it does reaches
+    # the window's. It shares only the verbs, which run against its own context.
+    simulation = TimeSimulationModule(
+        TimeSimulationDeps(
+            actions=services.actions,
+            context=services.context,
+            tabs=services.tabs,
+            readers=TimeReaders(),
+            writers=TimeWriters(),
+            time_deps=lambda scratch, clock, debounce: time_deps(
+                scratch,
+                undo=UndoService(scratch),
+                context=ContextService(),
+                clock=clock,
+                debounce=debounce,
+                estimate_missing=lambda _project_id: None,
+                day_over=True,
+            ),
+        )
+    )
+    assets = ProjectAssetsModule(
         ProjectAssetsDeps(
             library=library,
             actions=services.actions,
@@ -1258,10 +1317,9 @@ def default_modules(
             parent=services.window,
             debounce=services.debounce,
             files=store.files,
-            sources=asset_sources,
+            sources=root.asset_sources,
         )
     )
-
     # The sources are the tuple `dplanner report` reads (`_report_sources`), so the page the
     # window exports and the page the terminal writes are one page.
     reporting = ReportingModule(
@@ -1281,66 +1339,17 @@ def default_modules(
             kind_of=kind_word,
             status_for=stored,
             clock=services.clock,
-            reporting_site=reporting_site,
+            reporting_site=root.reporting_site,
         )
     )
 
-    def pick_assets(node_id: str) -> "list[Payload]":
-        """Insert from Assets…: the picker over the node's project's whole catalog.
+    def step_aspects(step_id: str, skip: "Container[str]" = ()) -> list[str]:
+        """One short phrase per aspect that has something to say about this step."""
+        step = library.step(step_id)
+        return [
+            phrase for phrase in (summary(step) for summary in aspect_summaries(skip)) if phrase
+        ]
 
-        Composed here because it is cross-module three ways — the catalog is every
-        module's areas, the titles are the asset browser's data, and the host knows only
-        its own node. The picked bytes go back to the host, which attaches them into its
-        *own* area: reuse is a copy, so a link never points into another module's
-        directory.
-        """
-        from pathlib import PurePosixPath
-
-        from dplanner.domain.assets import AssetEntry, catalog
-        from dplanner.framework.asset_picker import AssetPickerDialog, PickerEntry
-        from dplanner.modules.project_assets.cli import read_titles
-
-        node = library.node(node_id)
-        project = (
-            library.project(node_id) if node.kind == "project" else library.project_of(node_id)
-        )
-        titles = read_titles(project)
-
-        def reader(entry: "AssetEntry") -> "Callable[[], bytes | None]":
-            def read() -> bytes | None:
-                for _source, location in entry.locations:
-                    try:
-                        area = store.files(location.node_id, location.module_id)
-                    except KeyError:
-                        continue
-                    data = area.read_bytes(location.name)
-                    if data is not None:
-                        return data
-                return None
-
-            return read
-
-        choices = []
-        for entry in catalog(library, project, store.files, asset_sources):
-            basename = PurePosixPath(entry.name).name
-            title = titles.get(entry.name, "")
-            choices.append(
-                PickerEntry(
-                    key=entry.name,
-                    title=title or basename,
-                    detail=", ".join(dict.fromkeys(source.label for source, _l in entry.locations)),
-                    # The display name becomes the typed link's alt text; the suffix
-                    # stays the content's own.
-                    filename=f"{title}{PurePosixPath(entry.name).suffix}" if title else basename,
-                    read=reader(entry),
-                )
-            )
-        dialog = AssetPickerDialog(choices, services.window)
-        picked = dialog.chosen() if dialog.exec() == AssetPickerDialog.DialogCode.Accepted else []
-        dialog.deleteLater()
-        return picked
-
-    # Constructed before the list for the same reason — its index row opens the table.
     step_order = StepOrderModule(
         StepOrderDeps(
             counts_as_work=_counts_as_work,
@@ -1359,10 +1368,10 @@ def default_modules(
             # trailing aspects column, which is why the milestone is not skipped here.
             milestone_label=lambda step_id: milestone_read(library.step(step_id)),
             # The same kind vocabulary the canvas medallions wear, one translation.
-            step_icons=lambda step_id: step_type_icons(library.step(step_id)),
+            step_icons=lambda step_id: _step_type_icons(library.step(step_id)),
             # The rule, the tint and the key badge all take the milestone's own shade —
             # the same one its card wears on the canvas and its band in the calendar.
-            milestone_color=milestone_color,
+            milestone_color=root.milestone_color,
             step_key=lambda step_id: key_of(library.step(step_id)),
             # The same answer the canvas card's ✓ and the report's read: a wait is never
             # done here, whatever its day.
@@ -1380,185 +1389,73 @@ def default_modules(
             ledger_stamp=lambda project_id: ledger_stamp(store, project_id),
         )
     )
+    return _Tabs(progression, estimation, notes, time, simulation, assets, reporting, step_order)
 
-    def reveal_step(step_id: str) -> None:
-        """Select a step in its project: ``steps.reveal`` against a context naming it."""
-        from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 
-        services.actions.run(
-            "steps.reveal",
-            Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step_id)),)}),
+def _shell(root: _Root, agents: _Agents) -> list["Module"]:
+    """The window itself, its library and the status bar, in left-to-right order."""
+    from dplanner.domain.commands import SetModuleDataCommand
+    from dplanner.framework.context import Context
+    from dplanner.modules.appearance.module import AppearanceDeps, AppearanceModule
+    from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
+    from dplanner.modules.library.module import LibraryDeps, LibraryModule
+    from dplanner.modules.library_watch.module import LibraryWatchDeps, LibraryWatchModule
+    from dplanner.modules.sync.module import SyncDeps, SyncModule
+    from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
+    from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
+    from dplanner.modules.time_estimates.schedule import read_palette, write_project
+
+    services, library, store = root.services, root.library, root.store
+
+    def milestone_palette(project_id: str) -> str:
+        """Which colour map a project's milestones are shaded from."""
+        if not library.has(project_id):
+            return ""
+        return read_palette(library.project(project_id)).id
+
+    def set_milestone_palette(project_id: str, palette_id: str) -> None:
+        """The same undoable write the Time tab's picker and ``schedule palette`` make —
+        one choice, three ways in, so the window and the published report cannot disagree."""
+        if not library.has(project_id):
+            return
+        project = library.project(project_id)
+        services.undo.push(
+            SetModuleDataCommand(
+                project_id,
+                TIME_ID,
+                write_project(project, today=services.clock.today(), palette_id=palette_id),
+                label="Milestone Palette",
+            )
         )
 
-    # Built ahead of the list because Run Agent's module closes over it: every launch is
-    # handed here, and this is the one place that keeps an eye on the shell afterwards.
-    agent_runs = StepAgentRunModule(
-        StepAgentRunDeps(
-            library=library,
-            undo=services.undo,
-            actions=services.actions,
-            context=services.context,
-            status=services.window,
-            parent=services.window,
-            # An exit is never written over a plan that changed underneath — the same
-            # narrowed store the library watcher reads.
-            repo=store,
-            reveal=reveal_step,
-            # Which CLI ran a step, and how to read its record back when the shell ends.
-            harnesses=agent_harnesses(),
-            # A run that ended frees a slot for what is due — even when the agent had
-            # cleared its state and the plan did not change. The agent module is built
-            # below, and nothing ends before the build is up.
-            ended=lambda: agent_instruction.settle_launches(),
-            # Where each run's ledger record lives, and every project's ledger for the
-            # sweep that reads what the runs consumed back into them.
-            project_dir=lambda step_id: (
-                ledger_dir(store, library.project_of(step_id).id) if library.has(step_id) else None
-            ),
-            project_dirs=lambda: [
-                directory
-                for project in library.projects
-                if (directory := ledger_dir(store, project.id)) is not None
-            ],
-            tasks=services.tasks,
-        )
-    )
-
-    def due_here() -> "list[Due]":
-        """What this window would launch: running is the plan's run stamp *or* a run this
-        window is watching, so a claim still on its way to disk can never make a live
-        shell's step due again."""
-        return due_in(
-            library,
-            services.clock.today(),
-            lambda step: has_run(step) or agent_runs.live(step.id) > 0,
+    def watch_milestone_palette(restate: "Callable[[], None]") -> None:
+        """Restate the menu's ticks when a project's stored map changes underneath — the
+        Time tab's picker, an undo, or a terminal's ``dplanner schedule palette`` adopted
+        from disk. One entry of one node, so the guard is the module id."""
+        library.module_data_changed.connect(
+            lambda _node_id, module_id, _origin: restate() if module_id == TIME_ID else None
         )
 
-    # Built ahead of the list: the agent module deep-links to its own settings page
-    # through it. Registered last, since its dialog must see every other module's
-    # settings sections.
-    settings = SettingsModule(
-        SettingsDeps(
-            actions=services.actions,
-            settings_sections=services.settings_sections,
-            parent=services.window,
-        )
-    )
+    def focused_project(context: object) -> str | None:
+        """The project the user is in: the focused project, else the focused step's."""
+        assert isinstance(context, Context)
+        project_id = context.focus_entity("project")
+        if project_id is not None and library.has(project_id):
+            return project_id
+        step_id = context.focus_entity("step")
+        if step_id is not None and library.has(step_id):
+            return library.project_of(step_id).id
+        return None
 
-    # Built ahead of the list because the library watcher asks it one question — whether an
-    # agent is at work on the project a conflict is in — and stands its modal down while one
-    # is. The board comes from `app.new_session` — the machine's when the application runs,
-    # one holding nothing when a test builds — and is named nowhere deeper: no feature
-    # module reaches `config_dir`, the same rule the topology gate's record path follows.
-    if board is None:
-        board = at_work_board()
-    agent_at_work = AgentAtWorkModule(
-        AgentAtWorkDeps(
-            board=board,
-            notices=services.window,
-            library=library,
-            parent=services.window,
-            # The dialog behind the banner selects the step a row's agent is on.
-            reveal=reveal_step,
-            key_of=key_of,
-        )
-    )
-
-    # A repository on this machine for a verb that needs one, cloned where the clone
-    # policy says: the projects module's service, built here because Run Agent is handed
-    # it too. Owned by the window, so its task runner outlives every dialog.
-    checkouts = CheckoutService(
-        repos, services.tasks, kept_root=config_dir(), parent=services.window
-    )
-
-    # Built ahead of the list too: the library watcher hands an entry two writers changed
-    # at once to this module's launcher, and it is listed before this module.
-    agent_instruction = StepAgentInstructionModule(
-        StepAgentInstructionDeps(
-            works_nobody=works_nobody,
-            dictation=services.dictation,
-            library=library,
-            debounce=services.debounce,
-            undo=services.undo,
-            sections=services.inspector_sections,
-            actions=services.actions,
-            context=services.context,
-            settings_sections=services.settings_sections,
-            status=services.window,
-            parent=services.window,
-            # Its Project ▸ Settings… tab: the standing instruction every briefing opens with.
-            project_settings=services.project_settings,
-            files=store.files,
-            # How staged assets are read at launch — bytes by absolute path.
-            read_asset=read_absolute,
-            # Where the agent runs is the module's reading of these: the code checkout
-            # for a project that records its code repository, the plan's own repository
-            # for one that does not.
-            facts_for=facts_for,
-            # Code nobody checked out here is cloned before the agent opens in it.
-            ensure_checkouts=checkouts.ensure_many,
-            # Which branches a run works between — read through the branches module's
-            # cached stretches, since Run Agent's state asks on every announce.
-            branch_plan=lambda library, step, facts: branch_plan(
-                library, step, mainline(facts, step), branches.reading_of
-            ),
-            # The kinds of place a project names, which the briefing's preamble words.
-            location_roles=default_location_roles(),
-            # The spawned shell goes to the run tracker: it stamps the launch — directly,
-            # off the undo stack, since Ctrl+Z cannot un-launch a shell — and watches
-            # the run's files for the shell's end.
-            record_launch=lambda step_id, files, harness: agent_runs.track(
-                step_id,
-                str(files.shell_file),
-                str(files.exit_file),
-                harness,
-                # The session the command named, for a harness that names one; a harness
-                # that mints its own is found by its record once the run ends.
-                files.session if _names_session(harness) else "",
-                # What the briefing came to: measured where prompt.md was written.
-                files.prompt_chars,
-                # A session that starts in plan mode waits for a person from the first
-                # moment, and says nothing until its plan is approved.
-                files.plans_first,
-                # Its record in the ledger, and where it works: what is harvested into it.
-                files.run,
-                files.workdir,
-            ),
-            harnesses=agent_harnesses(),
-            # The Agent tab's "tokens so far" line: the run tracker's ledger, worded.
-            usage_words=lambda step_id: step_usage_words(store, library, step_id),
-            pick_assets=pick_assets,
-            # Run Agent asks before launching on a step whose prerequisites are not
-            # done — the same status reader the Step statuses tab's frontier uses.
-            status_for=_wait_aware(library, services.clock.today),
-            # A source under review does not hold a step that collects it.
-            auto_progresses=auto_progresses,
-            # And says so on the step when the shell opens: the status aspect's own
-            # writer, applied off the undo stack the way the launch stamp is. The
-            # agent module holds the preference; the word is the status module's.
-            mark_started=lambda step_id: record_started(library, step_id, services.clock.today()),
-            # The key that heads the run's terminal title and its subject line.
-            step_key=key_of,
-            # Manage Agent Profiles… lands on the module's own settings page.
-            open_settings=settings.open,
-            # What the window launches with nobody clicking, when this machine says so.
-            due=due_here,
-            preferred_agent=_preferred_agent,
-            asks_person=_asks_person,
-            run_state=agent_run_state,
-            live_runs=agent_runs.live,
-            repo=store,
-            notices=services.window,
-            clock=services.clock,
-            flush=lambda: _flushed(services.autosave),
-            launch_lock=(
-                launch_locks.for_library(store.library_path) if launch_locks is not None else None
-            ),
-        )
-    )
+    def projects_in(group: object) -> list[str]:
+        """The titles a repository group covers — for the diff picker and quit dialog."""
+        return [
+            project.title or project.folder_name
+            for project in library.projects
+            if store.repo_for(project.id) is group
+        ]
 
     return [
-        # -- the shell -------------------------------------------------------------------
         AppShellModule(
             AppShellDeps(
                 actions=services.actions,
@@ -1619,20 +1516,20 @@ def default_modules(
                 repo_for=store.repo_for,
                 focused_project=focused_project,
                 projects_in=projects_in,
-                reconcile_profiles=lambda: agent_instruction.plan_profiles(),
-                reconcile=lambda root, branch, profile: agent_instruction.reconcile_remote(
+                reconcile_profiles=lambda: agents.instruction.plan_profiles(),
+                reconcile=lambda root, branch, profile: agents.instruction.reconcile_remote(
                     root, branch, profile
                 ),
             )
         ),
         # Before the watcher: the banner that says an agent is at work is what makes the
         # watcher's stood-down modal legible, so it must already be on screen.
-        agent_at_work,
+        agents.at_work,
         # After sync, so the conflict button lands to the right of the library path.
         LibraryWatchModule(
             LibraryWatchDeps(
-                # The narrowed store from above: the watcher needs changed_underneath()
-                # and adopt_outside_changes(), which the Repository protocol deliberately
+                # The narrowed store: the watcher needs changed_underneath() and
+                # adopt_outside_changes(), which the Repository protocol deliberately
                 # does not promise.
                 repo=store,
                 autosave=services.autosave,
@@ -1644,14 +1541,14 @@ def default_modules(
                 library=library,
                 # An entry both writers changed goes to Run Agent's launcher with both
                 # versions; the run is tracked on the step like any other.
-                hand_to_agent=agent_instruction.hand_conflicts,
-                agent_refusal=agent_instruction.conflict_refusal,
+                hand_to_agent=agents.instruction.hand_conflicts,
+                agent_refusal=agents.instruction.conflict_refusal,
                 # Whether an agent says it is at work on a project: the modal stands down
                 # while one is, and the dialog says so when it does open.
-                agent_at_work=agent_at_work.at_work_words,
+                agent_at_work=agents.at_work.at_work_words,
                 # Every settle of an outside change — even one that changed nothing the
                 # model heard, like Keep Mine — lets the launcher look again.
-                settled=agent_instruction.settle_launches,
+                settled=agents.instruction.settle_launches,
             )
         ),
         TaskCenterModule(
@@ -1662,8 +1559,21 @@ def default_modules(
                 parent=services.window,
             )
         ),
-        # -- AI --------------------------------------------------------------------------
-        # Providers before the llm module: its settings page lists whatever has registered.
+    ]
+
+
+def _assistants(root: _Root, settings: "SettingsModule") -> list["Module"]:
+    """The language models, dictation and the Debug menu. Providers before the llm module:
+    its settings page lists whatever has registered."""
+    from dplanner.modules.anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
+    from dplanner.modules.debug.module import DebugDeps, DebugModule
+    from dplanner.modules.dictation.module import DictationDeps, DictationModule
+    from dplanner.modules.llm.module import LlmDeps, LlmModule
+    from dplanner.modules.openai.module import LlmOpenAIDeps, LlmOpenAIModule
+    from dplanner.modules.spec.module import open_url as open_in_browser
+
+    services = root.services
+    return [
         LlmOpenAIModule(
             LlmOpenAIDeps(
                 llm_providers=services.llm_providers,
@@ -1717,149 +1627,328 @@ def default_modules(
                 tasks=services.tasks,
             )
         ),
-        # -- the planner ------------------------------------------------------------------
-        ProjectsModule(
-            ProjectsDeps(
-                library=library,
-                debounce=services.debounce,
-                actions=services.actions,
-                context=services.context,
-                undo=services.undo,
-                segments=services.index_segments,
-                tabs=services.tabs,
-                theme=services.theme,
-                parent=services.window,
-                status=services.window,
-                tasks=services.tasks,
-                autosave=services.autosave,
-                switcher=services.switcher,
-                settings_sections=services.settings_sections,
-                # The Project dialog's tabs after Repositories: whatever other modules
-                # registered about a project, read when the dialog is first built.
-                project_settings=services.project_settings,
-                checkouts=checkouts,
-                repos=repos,
-                # The index opens a project without knowing what an activity is: *Show
-                # Steps* and the Steps row open the graph; the project's row only selects.
-                open_steps=project_editor.open,
-                # The store's membership face: attach/detach track directories, the
-                # model change itself is applied here, off the undo stack, with the
-                # membership origin the `library add` verb uses too.
-                connect_project=connect_project,
-                disconnect_project=disconnect_project,
-                # The archive is the store's too — per user, in the library file.
-                # Restoring is connecting: an attach takes its directory off the list.
-                archive_project=archive_project,
-                archived=store.archived,
-                archive_changed=store.archive_changed,
-                forget_archived=store.forget_archived,
-                has_unflushed=store.has_unflushed,
-                project_dirs=lambda: (
-                    [store.project_dir(project.id).resolve() for project in library.projects]
-                    + [problem.path.resolve() for problem in store.problems()]
+    ]
+
+
+def _projects(
+    root: _Root,
+    *,
+    editor: "ProjectEditorModule",
+    knowledge: _Knowledge,
+    tabs: _Tabs,
+    checkouts: "CheckoutService",
+) -> "ProjectsModule":
+    """The projects in the index, and the rows under each that open what a project has."""
+    from dplanner.modules.library.membership import LIBRARY_ORIGIN
+    from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
+    from dplanner.theme.icons import (
+        clock_icon,
+        coverage_icon,
+        gauge_icon,
+        graph_icon,
+        image_icon,
+        list_icon,
+        spark_icon,
+        spec_icon,
+    )
+
+    services, library, store = root.services, root.library, root.store
+    spec, coverage = knowledge.spec, knowledge.coverage
+
+    def connect_project(directory: "Path") -> "Project":
+        project = store.attach(directory)
+        library.add_child(library.id, project, origin=LIBRARY_ORIGIN)
+        return project
+
+    # The store lets go first, then the model: sync rewires its repository groups on the
+    # structure signal, and reads them from the store's records.
+    def disconnect_project(project_id: str) -> None:
+        store.detach(project_id)
+        library.remove_child(project_id, origin=LIBRARY_ORIGIN)
+
+    def archive_project(project_id: str) -> None:
+        store.archive(project_id)
+        library.remove_child(project_id, origin=LIBRARY_ORIGIN)
+
+    return ProjectsModule(
+        ProjectsDeps(
+            library=library,
+            debounce=services.debounce,
+            actions=services.actions,
+            context=services.context,
+            undo=services.undo,
+            segments=services.index_segments,
+            tabs=services.tabs,
+            theme=services.theme,
+            parent=services.window,
+            status=services.window,
+            tasks=services.tasks,
+            autosave=services.autosave,
+            switcher=services.switcher,
+            settings_sections=services.settings_sections,
+            # The Project dialog's tabs after Repositories: whatever other modules
+            # registered about a project, read when the dialog is first built.
+            project_settings=services.project_settings,
+            checkouts=checkouts,
+            repos=root.repos,
+            # The index opens a project without knowing what an activity is: *Show
+            # Steps* and the Steps row open the graph; the project's row only selects.
+            open_steps=editor.open,
+            # The store's membership face: attach/detach track directories, the
+            # model change itself is applied here, off the undo stack, with the
+            # membership origin the `library add` verb uses too.
+            connect_project=connect_project,
+            disconnect_project=disconnect_project,
+            # The archive is the store's too — per user, in the library file.
+            # Restoring is connecting: an attach takes its directory off the list.
+            archive_project=archive_project,
+            archived=store.archived,
+            archive_changed=store.archive_changed,
+            forget_archived=store.forget_archived,
+            has_unflushed=store.has_unflushed,
+            project_dirs=lambda: (
+                [store.project_dir(project.id).resolve() for project in library.projects]
+                + [problem.path.resolve() for problem in store.problems()]
+            ),
+            problems=store.problems,
+            # Rows under each project — the project row only selects; these open what
+            # the project has. Each renders the Project menu: the row stands for its
+            # project, and the project's verbs all live there.
+            # A single click opens the same surface as a preview tab — the VS Code
+            # gesture: the next click's preview replaces it, activation keeps it.
+            # In the order a plan is made: what it answers to and carries (Specs,
+            # Assets), the graph and its readings, then how the whole covers the spec.
+            # Project ▸ Show … lists them the same way.
+            entries=(
+                ProjectEntry(
+                    id="spec",
+                    label="Specs",
+                    open=spec.open,
+                    open_preview=lambda pid: spec.open(pid, preview=True),
+                    icon=spec_icon,
+                    menu="Project",
+                    order=10,
+                    # A mark while a source of that project has updates waiting, so it
+                    # is visible without opening the tab. What the window has found,
+                    # not a claim about the source now: checking runs while a Specs tab
+                    # is open, and a project nobody has opened is not being checked.
+                    badge=spec.updates_mark,
+                    changed=spec.updates_changed,
                 ),
-                problems=store.problems,
-                # Rows under each project — the project row only selects; these open what
-                # the project has. Each renders the Project menu: the row stands for its
-                # project, and the project's verbs all live there.
-                # A single click opens the same surface as a preview tab — the VS Code
-                # gesture: the next click's preview replaces it, activation keeps it.
-                # In the order a plan is made: what it answers to and carries (Specs,
-                # Assets), the graph and its readings, then how the whole covers the spec.
-                # Project ▸ Show … lists them the same way.
-                entries=(
-                    ProjectEntry(
-                        id="spec",
-                        label="Specs",
-                        open=spec.open,
-                        open_preview=lambda pid: spec.open(pid, preview=True),
-                        icon=spec_icon,
-                        menu="Project",
-                        order=10,
-                        # A mark while a source of that project has updates waiting, so it
-                        # is visible without opening the tab. What the window has found,
-                        # not a claim about the source now: checking runs while a Specs tab
-                        # is open, and a project nobody has opened is not being checked.
-                        badge=spec.updates_mark,
-                        changed=spec.updates_changed,
-                    ),
-                    ProjectEntry(
-                        id="assets",
-                        label="Assets",
-                        open=project_assets.open,
-                        open_preview=lambda pid: project_assets.open(pid, preview=True),
-                        icon=image_icon,
-                        menu="Project",
-                        order=20,
-                    ),
-                    ProjectEntry(
-                        id="steps",
-                        label="Steps",
-                        open=project_editor.open,
-                        open_preview=lambda pid: project_editor.open(pid, preview=True),
-                        icon=graph_icon,
-                        menu="Project",
-                        order=30,
-                    ),
-                    ProjectEntry(
-                        id="order",
-                        label="Order",
-                        open=step_order.open,
-                        open_preview=lambda pid: step_order.open(pid, preview=True),
-                        icon=list_icon,
-                        menu="Project",
-                        order=35,
-                    ),
-                    ProjectEntry(
-                        id="expenditure",
-                        label="Expenditure",
-                        open=step_order.open_expenditure,
-                        open_preview=lambda pid: step_order.open_expenditure(pid, preview=True),
-                        icon=spark_icon,
-                        menu="Project",
-                        order=37,
-                    ),
-                    ProjectEntry(
-                        id="progression",
-                        label="Step statuses",
-                        open=progression.open,
-                        open_preview=lambda pid: progression.open(pid, preview=True),
-                        icon=gauge_icon,
-                        menu="Project",
-                        order=40,
-                    ),
-                    ProjectEntry(
-                        id="time",
-                        label="Time Estimates",
-                        open=time_estimates.open,
-                        open_preview=lambda pid: time_estimates.open(pid, preview=True),
-                        icon=clock_icon,
-                        menu="Project",
-                        order=50,
-                    ),
-                    ProjectEntry(
-                        id="coverage",
-                        label="Coverage",
-                        open=coverage.open,
-                        open_preview=lambda pid: coverage.open(pid, preview=True),
-                        icon=coverage_icon,
-                        menu="Project",
-                        order=60,
-                    ),
+                ProjectEntry(
+                    id="assets",
+                    label="Assets",
+                    open=tabs.assets.open,
+                    open_preview=lambda pid: tabs.assets.open(pid, preview=True),
+                    icon=image_icon,
+                    menu="Project",
+                    order=20,
                 ),
+                ProjectEntry(
+                    id="steps",
+                    label="Steps",
+                    open=editor.open,
+                    open_preview=lambda pid: editor.open(pid, preview=True),
+                    icon=graph_icon,
+                    menu="Project",
+                    order=30,
+                ),
+                ProjectEntry(
+                    id="order",
+                    label="Order",
+                    open=tabs.step_order.open,
+                    open_preview=lambda pid: tabs.step_order.open(pid, preview=True),
+                    icon=list_icon,
+                    menu="Project",
+                    order=35,
+                ),
+                ProjectEntry(
+                    id="expenditure",
+                    label="Expenditure",
+                    open=tabs.step_order.open_expenditure,
+                    open_preview=lambda pid: tabs.step_order.open_expenditure(pid, preview=True),
+                    icon=spark_icon,
+                    menu="Project",
+                    order=37,
+                ),
+                ProjectEntry(
+                    id="progression",
+                    label="Step statuses",
+                    open=tabs.progression.open,
+                    open_preview=lambda pid: tabs.progression.open(pid, preview=True),
+                    icon=gauge_icon,
+                    menu="Project",
+                    order=40,
+                ),
+                ProjectEntry(
+                    id="time",
+                    label="Time Estimates",
+                    open=tabs.time.open,
+                    open_preview=lambda pid: tabs.time.open(pid, preview=True),
+                    icon=clock_icon,
+                    menu="Project",
+                    order=50,
+                ),
+                ProjectEntry(
+                    id="coverage",
+                    label="Coverage",
+                    open=coverage.open,
+                    open_preview=lambda pid: coverage.open(pid, preview=True),
+                    icon=coverage_icon,
+                    menu="Project",
+                    order=60,
+                ),
+            ),
+        )
+    )
+
+
+def _aspects(
+    root: _Root,
+    *,
+    graph: _Graph,
+    knowledge: _Knowledge,
+    tabs: _Tabs,
+    agents: _Agents,
+    branches: "BranchesModule",
+    board: "AtWorkBoard",
+) -> list["Module"]:
+    """The step aspects, in the order their tabs and blocks appear in Step Details."""
+    from dplanner.domain.commands import (
+        Command,
+        CompositeCommand,
+        EditTextCommand,
+        SetModuleDataCommand,
+    )
+    from dplanner.domain.model import TextEdit
+    from dplanner.modules.auto_progress.module import AutoProgressDeps, AutoProgressModule
+    from dplanner.modules.branches.module import LandingModule
+    from dplanner.modules.branches.plan import merged_into_its_branch
+    from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
+    from dplanner.modules.github.module import GithubDeps, GithubModule
+    from dplanner.modules.project_editor.verbs import picked_edges
+    from dplanner.modules.step_agent_instruction.profiles import default_profile
+    from dplanner.modules.step_agent_run.aspect import read as agent_run_state
+    from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
+    from dplanner.modules.step_description.aspect import read as description_read
+    from dplanner.modules.step_description.module import (
+        StepDescriptionDeps,
+        StepDescriptionModule,
+    )
+    from dplanner.modules.step_description.section import SeparateInstructionLink
+    from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
+    from dplanner.modules.step_review.module import (
+        ReviewRoundsModule,
+        StepReviewDeps,
+        StepReviewModule,
+    )
+    from dplanner.modules.step_start.module import StepStartDeps, StepStartModule
+    from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
+    from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
+    from dplanner.modules.step_wait.module import StepWaitDeps, StepWaitModule
+    from dplanner.modules.testing.module import TestsDeps, TestsModule
+    from dplanner.modules.time_estimates.schedule import read_palette
+    from dplanner.planning.agent import MODULE_ID as AGENT_INSTRUCTION_ID
+    from dplanner.planning.agent import enabled as is_agent
+    from dplanner.planning.agent import read as agent_instruction_read
+    from dplanner.planning.agent import separate_instruction as agent_separate
+    from dplanner.planning.agent import write_state as agent_write_state
+    from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+    from dplanner.planning.estimate import write as estimate_write
+    from dplanner.planning.kinds import key_of, scope_kinds, works_nobody
+    from dplanner.planning.status import record_merged
+    from dplanner.planning.wait import Wait
+
+    services, library, store = root.services, root.library, root.store
+    # The collectors, wired once: the docs and tests modules group by them, and every walk
+    # either module makes stops where these say.
+    scopes = scope_kinds()
+
+    def set_separate_instruction(step_id: str, separate: bool) -> None:
+        """The Description block's checkbox, translated into the agent aspect's writes.
+
+        Unchecking merges back into the description — the separate text is dropped and
+        the mark stays — as one undo step, so Ctrl+Z restores text and flag together.
+        """
+        if separate:
+            services.undo.push(
+                SetModuleDataCommand(
+                    step_id,
+                    AGENT_INSTRUCTION_ID,
+                    agent_write_state(True, separate=True),
+                    label="Separate Agent Instruction",
+                )
             )
-        ),
-        # Before spec: the Specs tab's + menu lists its kinds, and its settings section
-        # must exist before the settings dialog is built.
-        confluence,
-        spec,
-        coverage,
-        project_assets,
-        # -- the step aspects --------------------------------------------------------------
-        # Each registers one tab into the step detail panel — or, for the estimate and
-        # description, a block into its Details tab (services.step_details). They must
-        # come before step_properties, which reads the registry when it opens a dialog.
-        estimation,
+            return
+        current = agent_instruction_read(library.step(step_id))
+        mark: Command = SetModuleDataCommand(
+            step_id,
+            AGENT_INSTRUCTION_ID,
+            agent_write_state(True),
+            label="Use Description as Instructions",
+        )
+        if not current:
+            services.undo.push(mark)
+            return
+        services.undo.push(
+            CompositeCommand(
+                "Use Description as Instructions",
+                [
+                    EditTextCommand(
+                        TextEdit(step_id, AGENT_INSTRUCTION_ID, 0, current, ""),
+                        label="Set Agent Instruction",
+                    ),
+                    mark,
+                ],
+            )
+        )
+
+    def milestone_shade(step_id: str) -> tuple[str, str]:
+        """A milestone's shade and the sentence for it: *2nd of 4 · Viridis*.
+
+        The words are what make a swatch teach rather than decorate — a colour means "this
+        far along the roadmap", and the tooltip is where that is said once (DESIGN.md's
+        *Words*) instead of as a line under every field.
+        """
+        if not library.has(step_id):
+            return "", ""
+        project = library.project_of(step_id)
+        colors = root.milestone_colors(project)
+        color = colors.get(step_id, "")
+        if not color:
+            return "", ""
+        place = list(colors).index(step_id) + 1
+        return color, f"{_ordinal(place)} of {len(colors)} · {read_palette(project).name}"
+
+    def insert_wait_before(step_id: str) -> None:
+        """Step ▸ Insert Wait Before: a wait of a working day in front of the step — it takes
+        over what the step waited on, and the step waits on it — as the *Wait* template makes
+        one (no estimate, no description), and one undo entry like every other placed step.
+        A loose step's wait lands a column to its left where the step was placed; a stacked
+        step's joins its stack in its slot, where the column seats it."""
+        from dplanner.modules.project_editor.positions import read_position
+        from dplanner.modules.project_editor.sorts import H_PITCH
+        from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
+        from dplanner.modules.step_description.aspect import write_state as description_state
+        from dplanner.planning.wait import MODULE_ID as WAIT_ID
+        from dplanner.planning.wait import write as write_wait
+
+        where = read_position(library.step(step_id))
+        graph.editor.create_step(
+            library.project_of(step_id).id,
+            "Wait",
+            at=(where[0] - H_PITCH, where[1]) if where is not None else None,
+            carrying=lambda wait: [
+                SetModuleDataCommand(wait.id, WAIT_ID, write_wait(Wait(days=1.0))),
+                SetModuleDataCommand(wait.id, ESTIMATION_ID, estimate_write(None, on=False)),
+                SetModuleDataCommand(wait.id, DESCRIPTION_ID, description_state(False)),
+            ],
+            label="Insert Wait",
+            before=step_id,
+        )
+
+    return [
+        tabs.estimation,
         StepTicketModule(
             StepTicketDeps(
                 library=library,
@@ -1879,20 +1968,19 @@ def default_modules(
                 # The "Separate agent instruction" checkbox: the agent aspect through
                 # typed callbacks, so neither module learns the other's name.
                 agent_link=SeparateInstructionLink(
-                    agent_enabled=lambda sid: agent_enabled(library.step(sid)),
+                    agent_enabled=lambda sid: is_agent(library.step(sid)),
                     separate=lambda sid: agent_separate(library.step(sid)),
                     has_text=lambda sid: bool(agent_instruction_read(library.step(sid))),
                     set_separate=set_separate_instruction,
                 ),
-                # Insert from Assets…, composed above over every module's catalog slice.
-                pick_assets=pick_assets,
+                # Insert from Assets…, composed over every module's catalog slice.
+                pick_assets=root.pick_assets,
             )
         ),
-        # Run Agent, built above the list; the library watcher borrows its launcher.
-        agent_instruction,
-        # The shells Run Agent above spawns, and the canvas reads the aspect through
-        # step_accents above.
-        agent_runs,
+        # Run Agent; the library watcher borrows its launcher.
+        agents.instruction,
+        # The shells Run Agent spawns; the canvas reads the aspect through its accents.
+        agents.runs,
         DocsModule(
             DocsDeps(
                 dictation=services.dictation,
@@ -1920,8 +2008,8 @@ def default_modules(
                 # Compiling is a launch: the briefing is the docs module's words, the
                 # terminal and the desk's limit are Run Agent's, and neither imports the
                 # other. The run is tracked on the collector like any other agent run.
-                compile_profiles=agent_instruction.compile_profiles,
-                compile_with_agent=agent_instruction.compile_documentation,
+                compile_profiles=agents.instruction.compile_profiles,
+                compile_with_agent=agents.instruction.compile_documentation,
                 # Whether an agent is already at work on a collector — the run aspect's own
                 # reader, so the words are the status module's and not a second copy.
                 run_state=lambda step_id: (
@@ -1931,18 +2019,18 @@ def default_modules(
                 step_key=key_of,
                 # A milestone group's medallion in the milestone's own shade — the same
                 # sequence the Tests tab's headings and the calendar show.
-                milestone_color=milestone_color,
+                milestone_color=root.milestone_color,
                 parent=services.window,
-                pick_assets=pick_assets,
+                pick_assets=root.pick_assets,
                 # The Implementation notes tab — the notes the project made along the way,
                 # which every briefing indexes — as a row under each project in its folder.
-                more_rows=(notes.index_row(),),
+                more_rows=(tabs.notes.index_row(),),
             )
         ),
         # Declares the compiled-document format only; DocsModule and the CLI write it.
         DocsCompiledModule(),
         # Registers nothing; in the list for its data format, and because it is a module.
-        notes,
+        tabs.notes,
         StepMilestoneModule(
             StepMilestoneDeps(
                 library=library,
@@ -2027,9 +2115,9 @@ def default_modules(
         # A feature is a step: one a person would name and demo, gathering the work behind
         # it and stopping at the previous feature. The Covers tab that shows what it
         # gathers is still the tests module's.
-        feature,
+        knowledge.feature,
         # Registers nothing: it owns the widget the graph tab stands beside the canvas.
-        problems,
+        graph.problems,
         TestsModule(
             TestsDeps(
                 works_nobody=works_nobody,
@@ -2049,12 +2137,12 @@ def default_modules(
                 # all three are the same walk with a different stopping rule. Named here,
                 # the one place that may know every aspect, so none learns the others.
                 scopes=scopes,
-                pick_assets=pick_assets,
+                pick_assets=root.pick_assets,
                 # Grouping by milestone writes each heading in that milestone's own shade,
                 # so the Tests tab reads as the same sequence the calendar does.
-                milestone_color=milestone_color,
+                milestone_color=root.milestone_color,
                 # An export is offered where colleagues read reports from.
-                reporting_dir=reporting_dir,
+                reporting_dir=root.reporting_dir,
             )
         ),
         GithubModule(
@@ -2065,7 +2153,11 @@ def default_modules(
                 sections=services.inspector_sections,
                 tasks=services.tasks,
                 parent=services.window,
-                repository_for=repository_for,
+                # Which repository a step's GitHub refs belong to: the code repository the
+                # project records, else — the older shape, a plan kept beside its code — the
+                # plan's own origin, and none while the code is not set. Git's answer either
+                # way; nothing stored can disagree with it.
+                repository_for=lambda step_id: root.facts_for(step_id).code_remote,
                 finish_merged=lambda step_id: record_merged(
                     library,
                     step_id,
@@ -2075,37 +2167,111 @@ def default_modules(
                 ),
             )
         ),
-        step_properties,
-        project_editor,
-        step_order,
-        progression,
-        time_estimates,
-        # After every module whose report_source it renders; before Settings, whose dialog
-        # is built from the sections registered by then.
-        reporting,
-        # Declares the progress history's format only; the recorder above writes it.
-        ProgressHistoryModule(),
-        # Debug ▸ Time Simulation: the real Time tab over a scratch world of its own — its
-        # own library, undo stack, context, clock and debounce service, so nothing it does
-        # reaches the window's. It shares only the verbs, which run against its own context.
-        TimeSimulationModule(
-            TimeSimulationDeps(
-                actions=services.actions,
-                context=services.context,
-                tabs=services.tabs,
-                readers=_time_readers(),
-                writers=_time_writers(),
-                time_deps=lambda scratch, clock, debounce: time_deps(
-                    scratch,
-                    undo=UndoService(scratch),
-                    context=ContextService(),
-                    clock=clock,
-                    debounce=debounce,
-                    estimate_missing=lambda _project_id: None,
-                    day_over=True,
+    ]
+
+
+def _step_properties(root: _Root) -> "StepPropertiesModule":
+    """THE step editor — `steps.details`, a modal and nothing else — and the templates its
+    bar offers."""
+    from dplanner.framework.aspect_bar import AspectTemplate
+    from dplanner.modules.step_properties.module import (
+        StepPropertiesDeps,
+        StepPropertiesModule,
+    )
+
+    services = root.services
+    return StepPropertiesModule(
+        StepPropertiesDeps(
+            # The templates the bar's dropdown offers: what a step *amounts to*, as the set
+            # of Type toggles that are on — picking one moves every toggle to match, and a
+            # step carrying exactly that set wears its name. Step is the catch-all: any
+            # combination no other template names is still a step. Collectors carry no
+            # estimate of their own; an agent step gets what an agent reports back
+            # through. The selected one's glyph wears its body tone: violet the milestone,
+            # teal the feature, the agent-run chip's blue for an agent step; Step and Check
+            # keep the plain ink. Wired, never inferred, like the scope kinds.
+            templates=(
+                AspectTemplate(
+                    "Step",
+                    frozenset({"estimate.toggle", "description.toggle"}),
+                    # A glyph like every other, so the face's icon slot is never empty:
+                    # one that appeared only for the named kinds would resize the face as
+                    # the step changed, and a face that reports what is on keeps its size.
+                    glyph="step",
+                    catch_all=True,
                 ),
-            )
-        ),
+                AspectTemplate(
+                    "Milestone",
+                    frozenset({"milestone.toggle", "description.toggle"}),
+                    tone="highlight",
+                    glyph="tag",
+                ),
+                AspectTemplate(
+                    "Feature",
+                    frozenset({"feature.toggle", "description.toggle"}),
+                    tone="feature",
+                    glyph="layers",
+                ),
+                AspectTemplate(
+                    "Agent",
+                    frozenset({"agent.toggle", "description.toggle", "estimate.toggle"}),
+                    tone="info",
+                    glyph="spark",
+                ),
+                # A review is an agent step whose work is reading another's.
+                AspectTemplate(
+                    "Review",
+                    frozenset(
+                        {"agent.toggle", "review.toggle", "description.toggle", "estimate.toggle"}
+                    ),
+                    tone="info",
+                    glyph="review",
+                ),
+                AspectTemplate(
+                    "Check", frozenset({"check.toggle", "description.toggle"}), glyph="shield"
+                ),
+                # A wait carries no estimate and no description: how long it holds is its
+                # size, and there is nothing to do.
+                AspectTemplate("Wait", frozenset({"wait.toggle"}), glyph="clock"),
+                # A cut is nobody's work either; a landing is an agent step that closes one.
+                AspectTemplate("Branch cut", frozenset({"cut.toggle"}), glyph="branch"),
+                AspectTemplate(
+                    "Landing",
+                    frozenset({"agent.toggle", "land.toggle", "estimate.toggle"}),
+                    tone="info",
+                    glyph="merge",
+                ),
+            ),
+            library=root.library,
+            undo=services.undo,
+            actions=services.actions,
+            parent=services.window,
+            sections=services.inspector_sections,
+            details=services.step_details,
+            theme=services.theme,
+        )
+    )
+
+
+def _machine(root: _Root) -> list["Module"]:
+    """This machine and this session: the installer and the checklist over the skill the
+    CLI generates, Home, and the tabs the last session had open."""
+    from dplanner.modules.checklist.module import ChecklistDeps, ChecklistModule
+    from dplanner.modules.home.module import HomeDeps, HomeModule
+    from dplanner.modules.install.module import InstallDeps, InstallModule
+    from dplanner.modules.reopen_tabs.module import ReopenTabsDeps, ReopenTabsModule
+
+    services = root.services
+
+    def skill_files() -> dict[str, str]:
+        from dplanner.cli.command import CliRegistry
+        from dplanner.cli.skill import generate
+
+        registry = CliRegistry()
+        registry.register_all(default_cli_commands())
+        return generate(registry, aspect_specs())
+
+    return [
         InstallModule(
             InstallDeps(
                 actions=services.actions,
@@ -2151,68 +2317,10 @@ def default_modules(
                 scope=services.source_scope,
                 # A remembered tab whose project has since been deleted is dropped; the
                 # module never learns what a project is.
-                exists=library.has,
+                exists=root.library.has,
             )
         ),
-        # Last: its dialog is built during register() and must see every other module's
-        # settings sections.
-        settings,
     ]
-
-
-def _branches_in(project: "Project") -> "dict[str, str]":
-    """The feature branch each step's work is on, for the steps a stretch not yet landed
-    holds — and each landing, whose work is on the branch it brings back."""
-    from dplanner.modules.branches.plan import branch_reading
-
-    found = branch_reading(project)
-    on: dict[str, str] = {}
-    for step in project.steps:
-        stretch = found.of_land(step.id) or found.innermost(step.id, open_only=True)
-        if stretch is not None and not stretch.landed:
-            on[step.id] = stretch.branch
-    return on
-
-
-def _strips(found: "BranchReading") -> "dict[str, tuple[str, str]]":
-    """What each card on a branch wears under its body: the branch's name, and its lane
-    colour while the branch is open — "" once it has landed, when the strip goes quiet and
-    keeps the name. Every step on a stretch and its landing wear one; a step on a branch off
-    a branch wears the inner one's."""
-    colors = _lane_colors(found)
-    strips: dict[str, tuple[str, str]] = {}
-    for stretch in sorted(found.stretches, key=lambda stretch: -len(stretch.members)):
-        tone = "" if stretch.landed else colors[stretch.cut.id]
-        for step in (*stretch.members, stretch.land):
-            strips[step.id] = (stretch.branch, tone)
-    return strips
-
-
-def _lane_colors(found: "BranchReading") -> "dict[str, str]":
-    """Each stretch's lane colour by its cut's id, dealt in the order the cuts were made, so
-    a branch keeps its colour while others come and go after it."""
-    from dplanner.theme.palettes import lane
-
-    cuts = sorted((stretch.cut for stretch in found.stretches), key=lambda cut: cut.number)
-    return {cut.id: lane(index) for index, cut in enumerate(cuts)}
-
-
-def _lanes(library: "Library", found: "BranchReading") -> "dict[Edge, str]":
-    """The arrows of work on a branch not yet landed, each with its branch's lane colour:
-    from the cut or a step on it, into a step on it or its landing. An arrow on a branch
-    off a branch wears the inner one's."""
-    colors = _lane_colors(found)
-    lanes: dict[Edge, str] = {}
-    widest_first = sorted(found.stretches, key=lambda stretch: -len(stretch.members))
-    for stretch in widest_first:
-        if stretch.landed:
-            continue
-        on = {member.id for member in stretch.members}
-        for waiter in (*stretch.members, stretch.land):
-            for source in library.requires(waiter.id):
-                if source.id in on or source.id == stretch.cut.id:
-                    lanes[(waiter.id, "requires", source.id)] = colors[stretch.cut.id]
-    return lanes
 
 
 def _pr_base(step: "Step") -> str:
@@ -2309,22 +2417,6 @@ def _primary_glyph(step: "Step") -> tuple[str, str]:
     return ("spark" if agent_enabled(step) else "person"), ""
 
 
-def _time_readers() -> "TimeReaders":
-    """What the time module reads of other modules' aspects, for its verbs and its report:
-    agent-ness, milestones and the key a row prints. The estimate, the wait, the status and
-    its days and the start date the module reads from ``planning/`` itself."""
-    from dplanner.modules.time_estimates.cli import Readers
-    from dplanner.planning.agent import enabled as agent_enabled
-    from dplanner.planning.kinds import key_of
-    from dplanner.planning.milestone import read as milestone_read
-
-    return Readers(
-        is_agent=agent_enabled,
-        milestone_label=milestone_read,
-        key_of=key_of,
-    )
-
-
 def _ready_in(library: "Library", today: "date") -> "Callable[[Step], Status]":
     """``schedule.status_on`` as readiness reads it (``status.held``): a word this build cannot
     read holds its step as blocked, and a wait not over is pending."""
@@ -2373,14 +2465,6 @@ def _preferred_agent(step: "Step") -> str:
     return settings(step).agent if is_review(step) else ""
 
 
-def _asks_person(step: "Step") -> bool:
-    """Whether a step's agent waits on a person — a plan to approve, a question to answer:
-    what puts a running row under *Waits for you*."""
-    from dplanner.modules.step_agent_run.aspect import asks_person
-
-    return asks_person(step)
-
-
 def _due_steps(
     library: "Library", project: "Project", status_for: "Callable[[Step], Status]"
 ) -> "list[Step]":
@@ -2412,22 +2496,13 @@ def _inherit_refs(subject: "Step", review: "Step") -> "Command | None":
 def _note_escalation(context: "CliContext", review: "Step", title: str, body: str) -> str:
     """Keep what a person must decide as a handoff note on the escalated review — the note
     a blocked step says why in — and answer its id. A retried verb finds the same note."""
-    from dplanner.modules.notes.aspect import Note, adding, check_label
+    from dplanner.modules.notes.aspect import note_on
 
-    note, command = adding(
-        context.library.project_of(review.id),
-        Note(
-            id="",
-            label=check_label("handoff"),
-            title=title,
-            body=body,
-            made=context.clock.today().isoformat(),
-            step=review.id,
-        ),
-    )
+    project = context.library.project_of(review.id)
+    note_id, command = note_on(project, review, "handoff", title, body, context.clock.today())
     if command is not None:
         context.apply(command)
-    return note.id
+    return note_id
 
 
 def _status_workflow() -> "StatusWorkflow":
@@ -2442,22 +2517,11 @@ def _reason_note(
     view: "PlanView", step: "Step", reason: str, today: "date"
 ) -> "tuple[str, Command | None]":
     """Why a step went to done without review, as a decision note on it — added the way
-    `note add` adds one, so a retried verb is one note: the note's id, and the command that
-    adds it, None when the step already carries it."""
-    from dplanner.modules.notes.aspect import Note, adding, check_label
+    `note add` adds one, so a retried verb is one note."""
+    from dplanner.modules.notes.aspect import note_on
 
-    note, command = adding(
-        view.project_of(step.id),
-        Note(
-            id="",
-            label=check_label("decision"),
-            title="Done without review",
-            body=reason,
-            made=today.isoformat(),
-            step=step.id,
-        ),
-    )
-    return note.id, command
+    project = view.project_of(step.id)
+    return note_on(project, step, "decision", "Done without review", reason, today)
 
 
 def _counts_as_work(step: "Step") -> bool:
@@ -2466,51 +2530,6 @@ def _counts_as_work(step: "Step") -> bool:
     from dplanner.planning.kinds import works_nobody
 
     return not works_nobody(step)
-
-
-def _time_writers() -> "TimeWriters":
-    """How a simulated day reaches the aspects it touches: each owner's own writer, handed
-    the entry it replaces and the day — so a replayed status is dated by the status aspect,
-    exactly as a person's edit on that day would have been."""
-    from datetime import date
-
-    from dplanner.domain.model import Project, Step
-    from dplanner.modules.time_estimates.simulation.frames import PlanState, StepState, Writers
-    from dplanner.planning.agent import MODULE_ID as AGENT_ID
-    from dplanner.planning.agent import write_state
-    from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
-    from dplanner.planning.estimate import write as write_estimate
-    from dplanner.planning.estimate import write_start
-    from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
-    from dplanner.planning.milestone import write as write_label
-    from dplanner.planning.status import MODULE_ID as STATUS_ID
-    from dplanner.planning.status import write as write_status
-    from dplanner.planning.wait import MODULE_ID as WAIT_ID
-    from dplanner.planning.wait import write as write_wait
-
-    def estimate(step: Step, state: StepState, today: date) -> tuple[str, dict[str, Any]]:
-        previous = step.module_data.get(ESTIMATION_ID)
-        return ESTIMATION_ID, write_estimate(
-            state.estimate, on=not state.off, previous=previous, today=today
-        )
-
-    def status(step: Step, state: StepState, today: date) -> tuple[str, dict[str, Any]]:
-        previous = step.module_data.get(STATUS_ID)
-        return STATUS_ID, write_status(state.status, today=today, previous=previous)
-
-    def milestone(_step: Step, state: StepState, _today: date) -> tuple[str, dict[str, Any]]:
-        return MILESTONE_ID, write_label(state.milestone)
-
-    def agent(_step: Step, state: StepState, _today: date) -> tuple[str, dict[str, Any]]:
-        return AGENT_ID, write_state(state.agent)
-
-    def wait(_step: Step, state: StepState, _today: date) -> tuple[str, dict[str, Any]]:
-        return WAIT_ID, write_wait(state.wait)
-
-    def start(_project: Project, plan: PlanState, _today: date) -> tuple[str, dict[str, Any]]:
-        return ESTIMATION_ID, write_start(plan.start)
-
-    return Writers(steps=(estimate, status, milestone, agent, wait), plan=(start,))
 
 
 # The status verbs that write one, each followed by the day's progress row — the review
@@ -2588,6 +2607,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
     from dplanner.modules.step_order.report import report_source as order
     from dplanner.modules.step_ticket.report import report_source as tickets
     from dplanner.modules.testing.report import report_source as tests
+    from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.modules.time_estimates.report import report_source as time_estimates
     from dplanner.modules.time_estimates.schedule import milestone_colors
     from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
@@ -2606,7 +2626,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
             key_of=key_of,
             auto_progresses=auto_progresses,
         ),
-        time_estimates(_time_readers()),
+        time_estimates(TimeReaders()),
         graph(
             key_of=key_of,
             kind_of=kind_word,
@@ -2892,36 +2912,6 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     )
 
 
-def _rename_spec_references(project: "Project", name: str, chosen: str) -> list["Command"]:
-    """What else in a project points at a spec document by its name, renamed with it.
-
-    A feature's citation keys on the document's name — the one thing that must not go
-    stale when the name moves, because a lost citation is a coverage answer that quietly
-    changes. A feature is a step, so this walks the project's steps and writes only the
-    ones that actually cited the old name. `modules/spec/` may not import
-    `modules/feature/`, so the cross is here, and the commands ride in the rename's own
-    undo entry — one per feature that moved, inside the one `CompositeCommand`.
-    """
-    from dataclasses import replace
-
-    from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
-    from dplanner.planning.feature import read as feature_read
-    from dplanner.planning.feature import write as feature_write
-
-    commands: list[Command] = []
-    for step in project.steps:
-        cites = feature_read(step)
-        if cites is None:
-            continue  # Not a feature, so it cites nothing.
-        moved = tuple(
-            replace(cite, document=chosen) if cite.document == name else cite for cite in cites
-        )
-        if moved != cites:
-            commands.append(SetModuleDataCommand(step.id, FEATURE_ID, feature_write(moved)))
-    return commands
-
-
 def at_work_board() -> "AtWorkBoard":
     """Where an agent's *at work* claims live on this machine — ``domain/at_work.py``.
 
@@ -3006,7 +2996,13 @@ def default_cli_commands(
     from dplanner.modules.auto_progress import cli as auto_progress_cli
     from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.modules.branches import cli as branches_cli
-    from dplanner.modules.branches.plan import branch_plan, branch_reading, merged_into_its_branch
+    from dplanner.modules.branches.plan import (
+        branch_plan,
+        branch_reading,
+        branches_in,
+        merged_into_its_branch,
+    )
+    from dplanner.modules.branches.plan import strips as branch_strips
     from dplanner.modules.coverage import cli as coverage_cli
     from dplanner.modules.coverage.readers import covered_tests
     from dplanner.modules.docs import cli as docs_cli
@@ -3026,6 +3022,7 @@ def default_cli_commands(
     from dplanner.modules.spec.aspect import read_topology
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_agent_run import cli as agent_state_cli
+    from dplanner.modules.step_agent_run.aspect import asks_person
     from dplanner.modules.step_check import cli as check_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_milestone import cli as milestone_cli
@@ -3044,7 +3041,7 @@ def default_cli_commands(
     from dplanner.planning.status import Status, stored
 
     specs = aspect_specs()
-    time_readers = _time_readers()
+    time_readers = time_cli.Readers()
     scopes = scope_kinds()
     sources = _asset_sources()
     roles = roles_by_id(default_location_roles())
@@ -3109,7 +3106,7 @@ def default_cli_commands(
             # `project graph` and `step show` mark the links a step collects across, and
             # the feature branch a step's work is on.
             auto_progresses=auto_progresses,
-            branches_in=_branches_in,
+            branches_in=branches_in,
             # The location roles every module declared, and where a read-only one's
             # managed clone stands — both cross-module facts, handed in here.
             roles=roles,
@@ -3120,7 +3117,7 @@ def default_cli_commands(
         ),
         # `topology show` tells the gate what it printed; the gate is built here, so the
         # spec module never learns where the record lives.
-        *spec_cli.commands(note_read=gate.record, rename_references=_rename_spec_references),
+        *spec_cli.commands(note_read=gate.record),
         *estimation_cli.commands(counts_as_work=_counts_as_work),
         *ticket_cli.commands(),
         *description_cli.commands(),
@@ -3203,7 +3200,7 @@ def default_cli_commands(
             counts_as_work=_counts_as_work,
             auto_progresses=auto_progresses,
             is_agent=is_agent,
-            asks_person=_asks_person,
+            asks_person=asks_person,
             due=_due_steps,
         ),
         *layout_cli.commands(
@@ -3211,7 +3208,7 @@ def default_cli_commands(
             file_modules=tuple(source.id for source in sources),
             key_of=key_of,
             # A sort leaves a card on a branch the room of its strip, as the window does.
-            strips=lambda project: _strips(branch_reading(project)),
+            strips=lambda project: branch_strips(branch_reading(project)),
         ),
         # The staffing matrix reads estimates, agent-ness and the start date through the
         # owners' Qt-free readers — handed over here so no cli.py imports another module's.

@@ -29,10 +29,8 @@ by itself after every settled change, for a plan driven from the terminal — an
 ``progress save`` keeps today's plan under a title on purpose, for ``list`` to print and
 ``--basis`` to name (``progress.py`` has the shape and the reasoning).
 
-The estimate, the wait, the status and its days and the project's start are planning facts,
-imported from ``planning/``; the agent-step, milestone and key readers arrive as functions
-from the composition root, the same hand-over ``progression_cli.commands(status_for=…)`` uses —
-no ``cli.py`` imports another module's.
+The estimate, the wait, the status and its days, the project's start, and the agent-step,
+milestone and key readers ``Readers`` carries are planning facts, imported from ``planning/``.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
@@ -98,19 +96,22 @@ from dplanner.modules.time_estimates.schedule import (
     write_milestone,
     write_project,
 )
+from dplanner.planning.agent import enabled as agent_enabled
 from dplanner.planning.dates import format_date
 from dplanner.planning.estimate import start_of
+from dplanner.planning.kinds import key_of as planning_key_of
+from dplanner.planning.milestone import read as milestone_read
 from dplanner.planning.schedule import Phase, ScheduleFacts, format_days
 from dplanner.theme.palettes import PALETTES, palette, shades
 
 
 @dataclass(frozen=True)
 class Readers:
-    """The other modules' Qt-free readers a verb here needs, handed over by the root."""
+    """The kind facts a verb here reads: ``planning/``'s own, which is every build's."""
 
-    is_agent: Callable[[Step], bool]
-    milestone_label: Callable[[Step], str]
-    key_of: Callable[[Step], str]
+    is_agent: Callable[[Step], bool] = agent_enabled
+    milestone_label: Callable[[Step], str] = milestone_read
+    key_of: Callable[[Step], str] = planning_key_of
 
     def is_milestone(self, step: Step) -> bool:
         return bool(self.milestone_label(step))
