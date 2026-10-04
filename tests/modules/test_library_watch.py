@@ -20,9 +20,9 @@ from dplanner.domain.model import Step
 from dplanner.domain.seed import seed_project
 from dplanner.domain.store import LibraryStore, StaleWorkspaceError
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+from dplanner.modules.agent_launch import launcher
 from dplanner.modules.library_watch import module as watch_module
 from dplanner.modules.library_watch.view import AGENT, LATER, MINE, THEIRS
-from dplanner.modules.step_agent_instruction import launcher
 from dplanner.planning.status import Status
 
 

@@ -30,7 +30,7 @@ is not there or not readable. That is an honest answer and never an error: the f
 are the vendors' own, undocumented, and change between their releases, so a reader is
 tolerant by construction. Reading is idempotent — the same record read twice gives the
 same answer, larger while the run goes on — which is what lets anybody harvest a run at
-any time (``modules/step_agent_run/harvest.py``).
+any time (``modules/agent_usage/harvest.py``).
 
 **A briefed run and a bare one are two invocations, and neither is derived from the
 other.** ``command`` opens a session on a briefing and carries whatever mode a hand-over

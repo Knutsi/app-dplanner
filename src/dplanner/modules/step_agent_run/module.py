@@ -14,13 +14,11 @@ half of a launch — **the shell is a peer this window keeps an eye on**:
   runs from the per-user store — and the next tick checks again on a plan this window has
   seen, so the exit is never written over an agent's own last ``dplanner`` call.
 - **What a run consumed is never this module's to catch.** The launch writes the run's
-  record into the project's ledger (``harvest.launch_record``), and the tokens are read
-  back into it by a harvest that anybody may run at any time (``harvest.py``): the wrapper
-  script does when the agent exits, this module does when it sees the shell end, and a
-  sweep — at start and every few minutes, through a ``TaskRunner`` since a transcript can
-  be megabytes — reads every run of this machine that has not been read since it ended.
-  A window that was closed, a terminal killed on the agent, a ``/tmp`` a reboot emptied:
-  the next sweep reads the same records.
+  record into the project's ledger and the end marks it (``agent_usage``'s ``aspect.py``);
+  the tokens are read back into it by a harvest that anybody may run at any time — the
+  wrapper script when the agent exits, and ``agent_usage``'s sweep, which ``deps.ended``
+  sets going when this module sees a shell end. A window that was closed, a terminal
+  killed on the agent, a ``/tmp`` a reboot emptied: the next sweep reads the same records.
 - A status-bar button ("Agent on “X”", "2 agents running") opens the Agents browser —
   View ▸ Agents… does the same — where every run this machine launched is a row with its
   state or outcome, *Show Terminal*, *Reveal* and a dismiss — and, once it has ended, the
@@ -61,14 +59,13 @@ from dplanner.framework.action_registry import (
     DataMenuSpec,
 )
 from dplanner.framework.context import Context, ContextService
-from dplanner.framework.task_runner import TaskRunner
-from dplanner.framework.tasks import TaskService
 from dplanner.framework.undo import UndoService
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.widgets import StatusBarButton
 from dplanner.framework.window import StatusHost
 from dplanner.framework.window_watch import WatchableRepository
-from dplanner.modules.step_agent_run import harvest, terminal
+from dplanner.modules.agent_usage.aspect import end, launch_record, words
+from dplanner.modules.step_agent_run import terminal
 from dplanner.modules.step_agent_run.aspect import (
     DATA_FORMAT,
     MODULE_ID,
@@ -83,11 +80,9 @@ from dplanner.modules.step_agent_run.runs import (
     read_shell,
     settle,
 )
-from dplanner.modules.step_agent_run.usage import words
 from dplanner.modules.step_agent_run.view import AgentBrowserDialog, button_text
 
 POLL_MS = 2000
-SWEEP_MS = 5 * 60 * 1000
 RUNS_KEY = "runs"
 
 
@@ -110,11 +105,8 @@ class StepAgentRunDeps:
     # its state and the plan did not change — what the window's launcher waits on.
     ended: Callable[[], None] = lambda: None
     # Where a step's project keeps its ledger, None for a step or project this store does
-    # not hold; and every open project's, which is what the sweep reads.
+    # not hold — where a run's record is written at launch and marked at its end.
     project_dir: Callable[[StepId], Path | None] = lambda _step: None
-    project_dirs: Callable[[], list[Path]] = list
-    # Runs the sweep off the GUI thread; None reads nothing back (a test of the tracking).
-    tasks: TaskService | None = None
 
 
 class StepAgentRunModule:
@@ -127,8 +119,6 @@ class StepAgentRunModule:
         self._timer: QTimer | None = None
         self._button: StatusBarButton | None = None
         self._browser: AgentBrowserDialog | None = None
-        self._runner: TaskRunner | None = None
-        self._sweep_again = False
 
     def register(self) -> None:
         deps = self._deps
@@ -150,19 +140,12 @@ class StepAgentRunModule:
             reveal=lambda run: deps.reveal(run.step_id),
             forget=self._forget,
             clear_ended=self._clear_ended,
-            relist=self._refresh,  # Show ended changes what is listed, not what is known.
+            relist=self.refresh,  # Show ended changes what is listed, not what is known.
         )
         self._timer = QTimer(self._button)
         self._timer.setInterval(POLL_MS)
         self._timer.timeout.connect(self.check)
-        deps.library.module_data_changed.connect(lambda *_a: self._refresh())
-        if deps.tasks is not None:
-            self._runner = TaskRunner(deps.tasks, self._button)
-            self._runner.busy_changed.connect(self._on_sweep_busy)
-            sweep_timer = QTimer(self._button)
-            sweep_timer.setInterval(SWEEP_MS)
-            sweep_timer.timeout.connect(self.sweep)
-            sweep_timer.start()
+        deps.library.module_data_changed.connect(lambda *_a: self.refresh())
 
         deps.actions.register(
             ActionSpec(
@@ -210,7 +193,6 @@ class StepAgentRunModule:
             )
         )
         self.check()
-        self.sweep()
 
     # -- tracking ----------------------------------------------------------------------------
 
@@ -241,7 +223,7 @@ class StepAgentRunModule:
         if run and workdir is not None and project_dir is not None:
             ledger.write(
                 project_dir,
-                harvest.launch_record(
+                launch_record(
                     run=run,
                     project=deps.library.project_of(step_id).id,
                     step=step_id,
@@ -255,7 +237,7 @@ class StepAgentRunModule:
             new_run(step_id, shell_file, exit_file, harness, session, prompt_chars, run)
         )
         self._store()
-        self._refresh()
+        self.refresh()
 
     def check(self) -> None:
         """One tick: settle every live run whose shell has ended, and say so.
@@ -273,7 +255,7 @@ class StepAgentRunModule:
             if (settled := settle(run)) is not run
         ]
         if not ended:
-            self._refresh()
+            self.refresh()
             return
         if deps.repo.changed_underneath():
             return  # The watcher takes the change first; the next tick checks again.
@@ -282,52 +264,30 @@ class StepAgentRunModule:
             record_exit(deps.library, settled.step_id)
             project_dir = deps.project_dir(settled.step_id)
             if settled.run and project_dir is not None:
-                harvest.end(project_dir, settled.run, settled.code, settled.ended)
+                end(project_dir, settled.run, settled.code, settled.ended)
             deps.status.show_status(
                 f"Agent on “{self._title_of(settled.step_id)}” {describe(settled, '')}", 6000
             )
         self._store()
-        self._refresh()
-        self.sweep()  # Read what the ended runs consumed, off the GUI thread.
-        deps.ended()
-
-    def sweep(self) -> None:
-        """Harvest every run of this machine that is due, in the background; a sweep asked
-        for while one runs goes again once it is done, never queued twice."""
-        if self._runner is None:
-            return
-        dirs, harnesses = self._deps.project_dirs(), self._deps.harnesses
-        if not harvest.anything_due(dirs):
-            return
-
-        def body() -> None:
-            harvest.sweep(dirs, harnesses)
-
-        if not self._runner.run("Reading agent usage", body, key="agent_run.sweep"):
-            self._sweep_again = True
-
-    def _on_sweep_busy(self, busy: bool) -> None:
-        if busy:
-            return
-        self._refresh()
-        if self._sweep_again:
-            self._sweep_again = False
-            self.sweep()
+        self.refresh()
+        deps.ended()  # A slot is free, and what the ended runs consumed is due a read.
 
     def _forget(self, run: AgentRun) -> None:
         self._runs = [other for other in self._runs if other.key != run.key]
         self._store()
-        self._refresh()
+        self.refresh()
 
     def _clear_ended(self) -> None:
         self._runs = [run for run in self._runs if run.live]
         self._store()
-        self._refresh()
+        self.refresh()
 
     def _store(self) -> None:
         set_global(MODULE_ID, RUNS_KEY, [run.to_json() for run in self._runs])
 
-    def _refresh(self) -> None:
+    def refresh(self) -> None:
+        """Say the runs again — the button, and the browser when it is open, which shows
+        what each consumed once a harvest has read it."""
         if self._button is None or self._browser is None or self._timer is None:
             return
         self._button.show_text(button_text(self._runs, self._title_of))

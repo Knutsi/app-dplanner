@@ -42,7 +42,7 @@ from typing import Any
 
 from dplanner.domain.agents import AgentHarness
 from dplanner.framework.user_config import get_global, set_global
-from dplanner.modules.step_agent_instruction.launcher import (
+from dplanner.modules.agent_launch.launcher import (
     current_command,
     harness_of,
     is_installed,

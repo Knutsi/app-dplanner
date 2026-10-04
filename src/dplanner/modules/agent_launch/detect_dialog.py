@@ -1,7 +1,7 @@
 """Add Detected Profiles…: the pairings this machine can run, ticked, then added.
 
 A fit dialog on the frame (DESIGN.md's *Dialogs*): a note, then one checkable row per
-pairing :func:`~dplanner.modules.step_agent_instruction.profiles.detect_pairings` found —
+pairing :func:`~dplanner.modules.agent_launch.profiles.detect_pairings` found —
 every agent CLI in every terminal of this platform, and Automatic. A row whose agent and
 terminal are both on this machine and which the list does not already hold is ticked;
 the rest are listed and say why they are not (*codex not found*, *already in the list*),
@@ -24,7 +24,7 @@ from PySide6.QtWidgets import QListWidget, QListWidgetItem, QWidget
 from dplanner.domain.agents import AgentHarness
 from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.widgets import note
-from dplanner.modules.step_agent_instruction.profiles import Detected, Profile, detect_pairings
+from dplanner.modules.agent_launch.profiles import Detected, Profile, detect_pairings
 
 NOTHING_TICKED = "Tick at least one profile to add"
 

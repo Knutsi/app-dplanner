@@ -347,7 +347,7 @@ def test_preview_is_enabled_on_an_agent_step_and_greyed_with_the_reason_off_one(
 
 
 def test_preview_shows_the_exact_assembled_prompt(services, step, monkeypatch):
-    from dplanner.modules.step_agent_instruction import module as module_module
+    from dplanner.modules.agent_launch import module as module_module
 
     services.document.set_text(step.id, MODULE_ID, "Ship it.")
     project = services.document.project_of(step.id)

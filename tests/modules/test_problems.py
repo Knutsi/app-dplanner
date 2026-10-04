@@ -127,16 +127,16 @@ def test_the_fix_face_counts_what_it_would_act_on(tab):
 
 
 def test_the_fix_menu_lists_the_profiles_and_launches_one(services, tab, monkeypatch):
-    from dplanner.modules.step_agent_instruction.module import StepAgentInstructionModule
+    from dplanner.modules.agent_launch.module import AgentLaunchModule
 
-    agent = next(m for m in services.modules if isinstance(m, StepAgentInstructionModule))
+    agent = next(m for m in services.modules if isinstance(m, AgentLaunchModule))
     launched: list[tuple[str, int]] = []
 
     def record(_self, _project_id, problems, profile) -> bool:
         launched.append((profile, len(problems)))
         return True
 
-    monkeypatch.setattr(StepAgentInstructionModule, "fix_problems", record)
+    monkeypatch.setattr(AgentLaunchModule, "fix_problems", record)
     view = panel(tab)
     menu = view.fix_menu()
     assert menu is not None

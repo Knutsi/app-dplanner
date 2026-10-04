@@ -1,8 +1,8 @@
 ---
 paths:
-  - "src/dplanner/modules/{agent_briefing,step_agent_instruction,step_agent_run,step_review,agent_claude,agent_codex,agent_opencode}/**"
+  - "src/dplanner/modules/{agent_briefing,agent_launch,agent_usage,step_agent_instruction,step_agent_run,step_review,agent_claude,agent_codex,agent_opencode}/**"
   - "src/dplanner/domain/agents.py"
-  - "tests/modules/test_agent_*.py"
+  - "tests/modules/test_{agent_*,expenditure_tab,launch_intents}.py"
   - "tests/{cli,modules}/test_review*.py"
   - "scripts/render_briefing_size.py"
 ---
@@ -86,13 +86,13 @@ paths:
   `epilogue` names who collects it and leaves its done to them. The status guard
   needed nothing: an agent may already finish a step under review.
 - **The window launches what the plan made due, and only a window does.** Due is the one
-  headless derivation `step_agent_instruction/due.py`'s `due_now` (the root only widens
+  headless derivation `agent_launch/due.py`'s `due_now` (the root only widens
   *running* with the watched runs): `progression.due` (an agent step, pending, no run, nothing
   outstanding, and a prerequisite fulfilled *through* an auto-progress link) and
   `step_review/aspect.py`'s `due_turns` (a conversation's side with the turn, no run, not launched for that
   turn — `*_turn_launched` holds the stamp that began it, equality not order). The terminal
   says it (`_status_written` after every status-moving verb, text only; `progression show`'s
-  `due`) and `step_agent_instruction/auto_launch.py` launches it: **level-triggered** — after
+  `due`) and `agent_launch/auto_launch.py` launches it: **level-triggered** — after
   every change of any origin, the day turning, a run ending (`StepAgentRunDeps.ended`), the
   watcher settling (`LibraryWatchDeps.settled`) and once at start, over a **0 ms**
   `Debounced` registered with the service — never on an edge, and never held behind a
@@ -226,20 +226,25 @@ paths:
   reasoning.
 - **What a run consumed is a ledger record, harvested by anyone — never caught at the
   end.** The launch writes the run's record into `<project>/ledger/YYYY-MM/<run id>.json`
-  (`domain/ledger.py`; `harvest.launch_record`, through the tracker's `project_dir` seam):
+  (`domain/ledger.py`; `agent_usage/aspect.py`'s `launch_record`, through the tracker's
+  `project_dir` seam):
   step, harness, the worktree it works in, the session when the harness names one. A
-  harvest (`step_agent_run/harvest.py`) re-reads the CLI's own records of the run's whole
+  harvest (`agent_usage/harvest.py`) re-reads the CLI's own records of the run's whole
   tree — main agent and every subagent, per model, as `in`/`cached`/`out` — and rewrites the
   record; it is idempotent, so the triggers are many and none is load-bearing: the wrapper's
   `dplanner usage harvest --run` after the agent exits (`launcher.HARVEST`, no window
-  needed), the tracker on settle (`harvest.end`, then a sweep), and the sweep at start and
-  every five minutes through a `TaskRunner` — started only when `harvest.anything_due` finds
-  a run of this machine not read since it ended. **Never add a usage path that depends on
+  needed), the tracker on settle (`aspect.end`, then `StepAgentRunDeps.ended` sets
+  `AgentUsageModule.sweep` going), and that sweep at start and every five minutes through a
+  `TaskRunner` — started only when `harvest.anything_due` finds a run of this machine not
+  read since it ended. **Never add a usage path that depends on
   seeing the end.** One writer per file (only the launching machine can read the vendor
   records), outside `PLAN_ENTRIES`, committed by Save, carried by Move Plan; a harness that
   mints its session claims the earliest *unclaimed* one (`RunFacts.claimed`) and the record
-  keeps it. No dollars: tokens only. `agent_usage` on the step is retired, absorbed into
-  `legacy` records at open. `dplanner usage show|list|harvest|record` is the terminal's half.
+  keeps it. No dollars: tokens only. **`modules/agent_usage/` is the package its id names**:
+  the ledger's words and readers (`aspect.py`, the surface other modules import), the
+  harvest, the `usage` verbs, the sweep and Expenditure. `agent_usage` on the step is
+  retired, absorbed into `legacy` records at every open — the window's too, since the
+  module declares the format. `dplanner usage show|list|harvest|record` is the terminal's half.
   `ARCHITECTURE.md`'s *Usage is a ledger, harvested by anyone* has the reasoning.
   **And what the run was *handed*:** `prompt_chars`, measured in `launcher.prepare` —
   the one place that knows what reached `prompt.md` — carried on `LaunchFiles` to the
@@ -248,6 +253,21 @@ paths:
   show`'s total and the step's own phrase stay tokens-only, and `brief_words` says the unit
   out loud (*briefed 18.4k chars*) because the number beside it is tokens.
   `ARCHITECTURE.md`'s *What a run was handed* has the reasoning.
+- **Expenditure is the order read for what it consumed — tokens, never money.** The ledger's
+  tab, in `agent_usage/` (`ExpenditureActivity`; columns and words in `expenditure.py`, the
+  walk in `domain/expenditure.py`): the same rows as Order through
+  `framework/step_table.py`'s `StepTable` — which is where a row's look lives, so a third
+  step table subclasses it rather than copying it —
+  then runs, models, **in / cached / out** (cache reads apart: they are context, not work),
+  the running total, *expected* and the running offset. Expected is the estimate × a rate
+  of tokens of work per estimated day **learned from the library's other projects first**
+  (from the same steps the offset would end at 0% by construction), and empty, never
+  invented, with no history. The offset's tone follows the number shown (`+0%` is `ok`).
+  *By model* rebuilds the table with an in/out pair per model; the export is long — a row
+  per step and model. The ledger is written by other processes, so the tab polls
+  `ledger.fingerprint` beside `follow_project`, into one `Debounced`. No dollars: a price is
+  a derivation somebody can add over the counts (`ARCHITECTURE.md`'s *Expenditure is the
+  order, in tokens*).
 - **An agent CLI is a harness, and a harness is a module.** `domain/agents.py` is the
   contract: an `AgentHarness` is the command (`{prompt}`, `{session}`, `{run_dir}`), how
   a run resumes, the texts it shipped earlier, the variables it sets in the shells it
@@ -280,7 +300,7 @@ paths:
   stage printed, and a stage that fails is a reason and no run — the fallback dialog
   hands the prompt over, exactly as when no terminal exists.
 - **A launch profile is a name over the two choices, and the first is the default.**
-  `step_agent_instruction/profiles.py`: a `Profile` is an agent command and a terminal
+  `agent_launch/profiles.py`: a `Profile` is an agent command and a terminal
   template under a name, kept per user (`user_config`; the two single settings they
   replaced are read as the default profile when no list is stored). `agent.run` runs
   the first — the Agent tab's button and the palette — and its seat in the Step menu is

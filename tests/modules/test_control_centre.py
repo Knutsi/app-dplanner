@@ -221,7 +221,7 @@ def test_ticked_ready_steps_in_two_projects_launch_in_one_gesture(
     left."""
     from dplanner.core.storage.locations import init_repo
     from dplanner.domain.seed import seed_project
-    from dplanner.modules.step_agent_instruction import launcher
+    from dplanner.modules.agent_launch import launcher
     from dplanner.modules.step_agent_run.aspect import launched
 
     alpha = make_project("Alpha", legacy=True)

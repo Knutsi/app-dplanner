@@ -80,7 +80,8 @@ def milestone_section(services, step_id: str):
 
 def order_rows(services, project):
     """``{step id: (row tint colour, key badge present)}`` from a built Order tab."""
-    from dplanner.modules.step_order.view import COLOR_ROLE, STEP_ROLE, TITLE_COLUMN
+    from dplanner.framework.step_table import COLOR_ROLE, STEP_ROLE
+    from dplanner.modules.step_order.view import TITLE_COLUMN
 
     tab = services.tabs.open("order", project.id)
     found = {}

@@ -9,13 +9,9 @@ from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleD
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION
 from dplanner.framework.list_rows import EMPHASIS_ROLE, FINISHED_ROLE, TINT_ROLE
+from dplanner.framework.step_table import MILESTONE_ROLE
 from dplanner.framework.table import row_height
-from dplanner.modules.step_order.view import (
-    ASPECTS_COLUMN,
-    ESTIMATE_COLUMN,
-    MILESTONE_ROLE,
-    TITLE_COLUMN,
-)
+from dplanner.modules.step_order.view import ASPECTS_COLUMN, ESTIMATE_COLUMN, TITLE_COLUMN
 
 
 @pytest.fixture
@@ -178,7 +174,7 @@ def test_every_row_wears_the_glyph_of_what_it_is(services, mixed, tab):
     """The canvas medallions' vocabulary, read off the same wiring: a milestone wears the
     tag, a feature the layer stack, and a work step — agent or not — the card, so steps and
     features tell apart at a glance."""
-    from dplanner.modules.step_order.view import KIND_FEATURE, KIND_MILESTONE, KIND_STEP
+    from dplanner.framework.step_table import KIND_FEATURE, KIND_MILESTONE, KIND_STEP
 
     table = tab.table
     assert [table.kind_at(row) for row in range(4)] == [

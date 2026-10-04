@@ -70,14 +70,14 @@ from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.user_config import get_global, set_global
 from dplanner.framework.widgets import block, caption, captioned, note
-from dplanner.modules.step_agent_instruction.detect_dialog import DetectedProfilesDialog
-from dplanner.modules.step_agent_instruction.launcher import (
+from dplanner.modules.agent_launch.detect_dialog import DetectedProfilesDialog
+from dplanner.modules.agent_launch.launcher import (
     TerminalPreset,
     current_command,
     is_installed,
     terminals_for,
 )
-from dplanner.modules.step_agent_instruction.profiles import (
+from dplanner.modules.agent_launch.profiles import (
     Profile,
     add_profiles,
     default_profile,

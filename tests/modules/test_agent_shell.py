@@ -12,8 +12,8 @@ import pytest
 
 from dplanner.cli.discovery import PROJECT_ENV
 from dplanner.modules.agent_briefing.worktree import run_name, worktree_path
-from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.module import NO_WORKTREE
+from dplanner.modules.agent_launch import launcher
+from dplanner.modules.agent_launch.module import NO_WORKTREE
 from dplanner.planning.status import Status
 
 

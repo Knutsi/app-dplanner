@@ -30,10 +30,10 @@ from dplanner.app import configure_application, new_session, set_early_attribute
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
+from dplanner.modules.agent_usage.aspect import Usage, record, row_for
 from dplanner.modules.notes.aspect import MODULE_ID as NOTES_ID
 from dplanner.modules.notes.aspect import Note, write_log
 from dplanner.modules.step_agent_run.aspect import MODULE_ID as RUNS_ID
-from dplanner.modules.step_agent_run.usage import Usage, record, row_for
 from dplanner.planning.agent import MODULE_ID as AGENT_ID
 from dplanner.planning.agent import write_state
 from dplanner.theme import apply_theme

@@ -41,7 +41,7 @@ worth the twenty minutes. `ARCHITECTURE.md` here covers what DPlanner added on t
   would otherwise have to research — an agent CLI's invocation, a terminal's exec flag —
   offers the known choices up front (a dropdown of presets pre-filling an editable field)
   and works untouched on the default. A bare free-text setting is a lookup pushed onto the
-  user. `modules/step_agent_instruction/settings_page.py` is the worked example.
+  user. `modules/agent_launch/settings_page.py` is the worked example.
 - When you spot cleanup that reduces entropy without adding over-engineering or "magic",
   suggest it.
 - Only add comments that carry durable value for future developers and agents. Otherwise,

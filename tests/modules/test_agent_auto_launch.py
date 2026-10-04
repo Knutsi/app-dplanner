@@ -21,17 +21,17 @@ from dplanner.domain.model import Step
 from dplanner.domain.store import LibraryStore
 from dplanner.domain.workflow import Daemon
 from dplanner.framework.user_config import set_global
-from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
-from dplanner.modules.auto_progress.aspect import write as write_flags
-from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.auto_launch import (
+from dplanner.modules.agent_launch import launcher
+from dplanner.modules.agent_launch.auto_launch import (
     ANOTHER_WINDOW,
     INTERRUPTED,
     NOTICE_ID,
     LaunchLocks,
 )
-from dplanner.modules.step_agent_instruction.intents import LaunchIntent
-from dplanner.modules.step_agent_instruction.settings_page import AUTO_LAUNCH_KEY, MAX_AGENTS_KEY
+from dplanner.modules.agent_launch.intents import LaunchIntent
+from dplanner.modules.agent_launch.settings_page import AUTO_LAUNCH_KEY, MAX_AGENTS_KEY
+from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
+from dplanner.modules.auto_progress.aspect import write as write_flags
 from dplanner.modules.step_agent_run.aspect import MODULE_ID as RUN_ID
 from dplanner.modules.step_agent_run.aspect import asks_person
 from dplanner.modules.step_agent_run.aspect import read as run_state
@@ -356,7 +356,7 @@ def test_it_stands_down_while_the_plan_changed_underneath_and_the_watcher_wakes_
 def test_no_terminal_is_said_once_with_no_dialog_and_retried_when_the_step_changes(
     services, plan, library_file, monkeypatch
 ):
-    import dplanner.modules.step_agent_instruction.module as agent_module
+    import dplanner.modules.agent_launch.module as agent_module
 
     asked: list[str] = []
 
@@ -415,7 +415,7 @@ def test_the_side_with_the_turn_is_relaunched_once_and_its_status_left_alone(
     opened_for = fake_terminal(monkeypatch)
     work, reviewer = review
     launch_when_due(services)
-    module(services, AGENT_ID).settle_launches()
+    module(services, "agent_launch").settle_launches()
     settle(services)
     assert len(opened_for) == 1
     held = last(services.document.step(reviewer.id), work.id)
@@ -446,7 +446,7 @@ def test_a_review_is_launched_through_a_profile_running_its_own_agent(
     opened_for = fake_terminal(monkeypatch)
     subject_in_review(services, make_project, "codex")
     launch_when_due(services)
-    module(services, AGENT_ID).settle_launches()
+    module(services, "agent_launch").settle_launches()
     settle(services)
     assert len(opened_for) == 1 and opened_for[0].startswith("codex")
 
@@ -457,7 +457,7 @@ def test_a_review_naming_an_agent_no_profile_runs_is_refused_with_that_reason(
     opened_for = fake_terminal(monkeypatch)
     reviewer = subject_in_review(services, make_project, "gemini")
     launch_when_due(services)
-    module(services, AGENT_ID).settle_launches()
+    module(services, "agent_launch").settle_launches()
     settle(services)
     assert opened_for == []
     assert "no launch profile runs gemini" in status_line(services)

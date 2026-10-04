@@ -14,11 +14,11 @@ import pytest
 
 from dplanner.cli.checklist import GROUPS
 from dplanner.domain.agents import AgentHarness
+from dplanner.modules.agent_launch import checks as agent_checks
 from dplanner.modules.checklist import checks as generic
 from dplanner.modules.github import checks as github_checks
 from dplanner.modules.llm import checks as llm_checks
 from dplanner.modules.spec_confluence import checks as confluence_checks
-from dplanner.modules.step_agent_instruction import checks as agent_checks
 
 
 def read(checks, check_id):

@@ -22,7 +22,7 @@ from dplanner.domain.seed import seed_project
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.framework.tasks import ESTIMATE_CAP
 from dplanner.modules.agent_briefing.prompt import reconcile_prompt
-from dplanner.modules.step_agent_instruction.module import StepAgentInstructionModule
+from dplanner.modules.agent_launch.module import AgentLaunchModule
 from dplanner.modules.sync import module as sync_module_mod
 from dplanner.modules.sync.diverged import (
     RECONCILE_LABEL,
@@ -718,7 +718,7 @@ def test_a_quit_time_push_the_remote_refused_is_explained_and_offered_to_an_agen
         launched.append((repo_root, branch, profile))
         return True
 
-    monkeypatch.setattr(StepAgentInstructionModule, "reconcile_remote", reconcile)
+    monkeypatch.setattr(AgentLaunchModule, "reconcile_remote", reconcile)
     monkeypatch.setattr(service, "save_sync", refuse_as_diverged(service, tmp_path))
     monkeypatch.setattr(sync_module_mod, "ExitDialog", CommitEverything)
     module._confirm_close(service)

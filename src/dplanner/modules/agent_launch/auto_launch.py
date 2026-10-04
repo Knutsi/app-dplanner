@@ -44,12 +44,15 @@ from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, se
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.notices import Notice
 from dplanner.framework.user_config import library_scope
-from dplanner.modules.step_agent_instruction.due import Due, claim
-from dplanner.modules.step_agent_instruction.intents import LaunchIntent, LaunchIntents
-from dplanner.modules.step_agent_instruction.settings_page import auto_launch, max_agents
+from dplanner.modules.agent_launch.due import Due, claim
+from dplanner.modules.agent_launch.intents import LaunchIntent, LaunchIntents
+from dplanner.modules.agent_launch.settings_page import auto_launch, max_agents
+from dplanner.modules.step_agent_run.aspect import asks_person
+from dplanner.modules.step_agent_run.aspect import read as run_state
+from dplanner.planning.kinds import key_of
 
 if TYPE_CHECKING:
-    from dplanner.modules.step_agent_instruction.module import StepAgentInstructionDeps
+    from dplanner.modules.agent_launch.module import AgentLaunchDeps
 
 NOTICE_ID = "agent.auto_launch"
 ANOTHER_WINDOW = "another DPlanner window on this library launches them"
@@ -118,7 +121,7 @@ class AutoLauncher:
     """The settled pass that launches what is due. ``launch`` is the agent module's
     unattended launch: "" when a shell opened, else why not."""
 
-    def __init__(self, deps: "StepAgentInstructionDeps", launch: Callable[[Due], str]) -> None:
+    def __init__(self, deps: "AgentLaunchDeps", launch: Callable[[Due], str]) -> None:
         self._deps = deps
         self._launch = launch
         # Zero: once per event-loop turn — a burst adopted in one tick is one pass, and a pass
@@ -300,7 +303,7 @@ class AutoLauncher:
         self._launched = {
             step_id
             for step_id in self._launched
-            if library.has(step_id) and deps.asks_person(library.step(step_id))
+            if library.has(step_id) and asks_person(library.step(step_id))
         }
         waiting = [step.id for step in self._in_order(self._launched)]
         if deps.notices is None:
@@ -312,7 +315,7 @@ class AutoLauncher:
             step = library.step(waiting[0])
             asks = (
                 "has a question for you in its terminal"
-                if deps.run_state(step) == "needs-input"
+                if run_state(step) == "needs-input"
                 else "started in plan mode and waits for you to approve its plan"
             )
             context = Context({SCOPE_SELECTION: (ContextNode(selection_uri("step", step.id)),)})
@@ -348,14 +351,12 @@ class AutoLauncher:
         if not library.has(step_id):
             return "a deleted step"
         step = library.step(step_id)
-        return f"{self._deps.step_key(step)} “{step.title or 'Untitled step'}”".strip()
+        return f"{key_of(step)} “{step.title or 'Untitled step'}”".strip()
 
     def _keys(self, step_ids: list[StepId]) -> str:
         library = self._deps.library
         return ", ".join(
-            self._deps.step_key(library.step(step_id)) or "?"
-            for step_id in step_ids
-            if library.has(step_id)
+            key_of(library.step(step_id)) or "?" for step_id in step_ids if library.has(step_id)
         )
 
 

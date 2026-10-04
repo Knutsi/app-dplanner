@@ -321,7 +321,7 @@ def _boxes(monkeypatch):
     uses."""
     from PySide6.QtWidgets import QDialog
 
-    from dplanner.modules.step_agent_instruction.run_dialog import RunAnywayDialog
+    from dplanner.modules.agent_launch.run_dialog import RunAnywayDialog
 
     shown: list[str] = []
 
@@ -343,7 +343,7 @@ def test_the_ticked_ready_steps_launch_in_one_gesture_and_nothing_is_asked(
     are the same question, so a launch from here can only ever be a quiet one — and a box
     that never appears in the place a person launches from is worth a test saying so.
     """
-    from dplanner.modules.step_agent_instruction import launcher
+    from dplanner.modules.agent_launch import launcher
     from dplanner.modules.step_agent_run.aspect import launched
 
     tab = services.tabs.open("progression", ready_agents.id)
@@ -380,7 +380,7 @@ def test_more_ticks_than_the_limit_grey_run_agent_with_the_count_as_the_reason(
 ):
     """Past *Settings ▸ Agent profiles*' limit the count itself refuses, before any step is
     asked about — so the verb says the cap rather than naming one step's problem."""
-    from dplanner.modules.step_agent_instruction.settings_page import DEFAULT_MAX_AGENTS
+    from dplanner.modules.agent_launch.settings_page import DEFAULT_MAX_AGENTS
 
     tab = services.tabs.open("progression", ready_agents.id)
     tab.on_activated()

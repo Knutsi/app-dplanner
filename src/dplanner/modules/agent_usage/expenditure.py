@@ -1,12 +1,12 @@
 """What each step's agents consumed, in the order the work can be done — the Expenditure
 tab's columns, cells and words (the activity is ``module.py``'s ``ExpenditureActivity``).
 
-The Order tab with other columns: the same rows (``view.StepTable``), the same switches, the
-same gestures, and after the title what the ledger says each step's runs consumed — fresh
-input, cache reads, output — the running total down the order, what was expected of each
-step and the running offset between the two (``domain/expenditure.py``). **Tokens, never
-money**: a token's price depends on the plan, the tier and the mode, and on a subscription
-nothing is spent at all.
+The Order tab with other columns: the same rows (``framework/step_table.py``), the same
+switches, the same gestures, and after the title what the ledger says each step's runs
+consumed — fresh input, cache reads, output — the running total down the order, what was
+expected of each step and the running offset between the two (``domain/expenditure.py``).
+**Tokens, never money**: a token's price depends on the plan, the tier and the mode, and on
+a subscription nothing is spent at all.
 
 **Expected is learned**, from the tokens of work (fresh input and output) finished steps
 consumed per estimated day — the library's other projects first, this one when nothing else
