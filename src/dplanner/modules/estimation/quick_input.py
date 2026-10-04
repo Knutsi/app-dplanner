@@ -39,7 +39,7 @@ from dplanner.modules.estimation.aspect import MODULE_ID, write
 CHIP_GAP = 8
 
 MAX_DAYS = 999.0
-# The finest estimate — one agent task — and the box's step. One step under zero is the
+# The finest estimate — one agent step — and the box's step. One step under zero is the
 # box's "no estimate": the special value text prints it as a dash, an arrow-down from 0
 # reaches it, and 0 itself stays sayable.
 QUARTER = 0.25
@@ -47,9 +47,9 @@ UNESTIMATED = -QUARTER
 
 FREE_LABEL = "Does not add time"
 FREE_TIP = "0 days — counted as estimated, and adds no time to the plan"
-QUARTER_TIP = "0.25 days — one agent task, about two hours with a human in the loop"
+QUARTER_TIP = "0.25 days — one agent step, about two hours with a human in the loop"
 
-# The sizes a step usually is. A quarter day is one agent task (about two hours with a
+# The sizes a step usually is. A quarter day is one agent step (about two hours with a
 # human in the loop), half a day is where most small human work sits, and the top of the
 # range is where precision stops being real, so the scale opens fine and coarsens.
 QUICK_DAYS = (

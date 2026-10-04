@@ -178,8 +178,8 @@ that share a layout, the migrations and the model they serve. Cut a step only wh
 graph needs a boundary — a real dependency another step waits on, a feature step that
 gathers the work of several, a check or a review the topology asks for, or work that
 belongs to a different person or agent. A feature is not a boundary on its own: a feature
-one run delivers *is* its work step (step 7). A plan of many quarter-day steps is a plan
-of many launches; a plan of a few well-batched days is what an agent and its reviewer both
+one run delivers *is* its work step (step 7). A plan of many thin steps is a plan
+of many launches; a plan of a few well-batched steps is what an agent and its reviewer both
 prefer.
 
 **Cluster what is connected, and cut for calendar time.** Two things are worth optimising —
@@ -196,11 +196,14 @@ shaping is also somebody's afternoon.
 
 ## Sizing a step
 
-With a human in the loop — reviewing the plan, answering questions, checking the result —
-an agent task takes about **2 hours per task** in its `## Approach` list, coding and the
-work around it together. So count the tasks: one task is a quarter day (`--days 0.25`,
-the ¼ chip in the window), two are half a day, four fill one. Estimate the step at what
-its tasks add up to rather than inflating or rounding it.
+**An agent step is one run, and one run takes about 2 hours** with a human in the loop —
+reviewing the plan, answering questions, checking the result — coding and the work around
+it together. So an agent step is a quarter day (`--days 0.25`, the ¼ chip in the window)
+**however many tasks its `## Approach` lists**: the list is how the briefing is organised,
+not a count of runs, and multiplying it out is how a plan comes to read three or four
+times longer than the work takes. Size an agent step larger only when it genuinely needs
+more than one run, or a person's time beside it; a person's own step is sized in a
+person's days.
 
 ## Linking honestly
 
