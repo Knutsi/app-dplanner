@@ -14,7 +14,7 @@ The stack is generic over your aggregate, and the concrete commands live in
 reversed, named and possibly merged.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from typing import Protocol
 
@@ -38,8 +38,31 @@ class Command[DocT](Protocol):
         ...
 
 
+def _all_or_nothing[T](
+    items: Iterable[T], apply: Callable[[T], None], revert: Callable[[T], None]
+) -> None:
+    """``apply`` each item in turn; if one raises, ``revert`` those done, then re-raise.
+
+    ``domain/commands.py`` has its own copy for ``CompositeCommand``: the domain sits below
+    this layer and cannot import it, and ten lines are not worth a module in ``core``.
+    """
+    done: list[T] = []
+    try:
+        for item in items:
+            apply(item)
+            done.append(item)
+    except Exception:
+        for item in reversed(done):
+            revert(item)
+        raise
+
+
 class _Gesture[DocT]:
-    """Several already-applied commands as one undo step — what :meth:`gesture` records."""
+    """Several already-applied commands as one undo step — what :meth:`gesture` records.
+
+    Replayed whole or not at all: when one command refuses, the ones already replayed are
+    reversed before the refusal reaches :meth:`UndoService.undo`, which drops the entry.
+    """
 
     def __init__(self, label: str, commands: list[Command[DocT]]) -> None:
         self._label = label
@@ -49,12 +72,12 @@ class _Gesture[DocT]:
         return self._label
 
     def redo(self, document: DocT) -> None:
-        for command in self._commands:
-            command.redo(document)
+        _all_or_nothing(self._commands, lambda c: c.redo(document), lambda c: c.undo(document))
 
     def undo(self, document: DocT) -> None:
-        for command in reversed(self._commands):
-            command.undo(document)
+        _all_or_nothing(
+            reversed(self._commands), lambda c: c.undo(document), lambda c: c.redo(document)
+        )
 
     def merge_with(self, other: Command[DocT]) -> bool:
         return False
@@ -189,7 +212,8 @@ class UndoService[DocT]:
 
     def _drop_from(self, index: int) -> None:
         """The document refused a command: it names what is no longer there — a step
-        another writer removed, prose whose positions moved under an adopted edit. That
+        another writer removed, prose whose positions moved under an adopted edit, a value
+        another writer changed since and an undo would overwrite. That
         entry and everything after it describe a document that no longer exists, so they
         go; the history before it is still true."""
         del self._stack[index:]

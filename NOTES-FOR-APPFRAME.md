@@ -4930,3 +4930,22 @@ workaround is one line at the construction site (`step_order/module.py`'s `_new_
 **Upstream?** Yes, as a note in the table primitive's docstring until somebody finds the
 cause — or a `Table.with_columns()` that rebuilds the header in place, which would retire the
 swap altogether.
+
+## 76. From the structural review (S3): a recorded gesture replays whole or not at all
+
+### `framework/undo.py` — `_Gesture` reverses what it replayed when a command refuses
+
+**What.** `_Gesture.redo` and `.undo` go through a small `_all_or_nothing(items, apply,
+revert)`: when one command raises, the ones already replayed are reversed and the exception
+goes on to `UndoService`, which drops the entry as before. `_drop_from`'s docstring now
+names the third kind of refusal — a value another writer changed since.
+
+**Why.** The stack dropped a refused entry, but a gesture that refused on its third command
+had already re-applied its first two, so the document was left in a state nobody asked for.
+The domain's `CompositeCommand` had the same bug and the same fix (it keeps its own copy of
+the helper: the domain sits below the framework). The value commands now refuse an undo over
+a foreign change, which makes a mid-gesture refusal ordinary rather than rare.
+`ARCHITECTURE.md`'s *An undo never overwrites a value somebody else wrote* has the reasoning.
+
+**Upstream?** Yes. Any application whose commands can refuse needs a gesture that is atomic
+on replay, and the template's `_Gesture` is the same loop.
