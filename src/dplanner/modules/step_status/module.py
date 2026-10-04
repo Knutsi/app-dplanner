@@ -9,15 +9,21 @@ table's, the menu bar and the command palette at once, because that is what regi
 read), as one undo step: a lasso on the canvas, or the rows ticked in the Step statuses
 tab, all move at once. It reads as checked only when every one of them already stands
 there, and a wait among them greys it, saying why — a wait has no status to set.
+
+**The verb is the workflow's, not this module's.** Whether it applies and what it writes come
+from ``workflows.py``, the same calls ``dplanner status set`` makes; the window's actor is
+the director, so a status that says the work stopped ends the agent's claim on the step.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from PySide6.QtGui import QColor, QIcon
 
 from dplanner.core.clock import Clock
+from dplanner.domain.commands import CompositeCommand
 from dplanner.domain.model import Library, Step
+from dplanner.domain.workflow import EndClaim, Person
 from dplanner.framework.action_registry import (
     DISABLED,
     ActionRegistry,
@@ -25,18 +31,12 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context
+from dplanner.framework.notices import Notice
 from dplanner.framework.step_selection import chosen_steps
 from dplanner.framework.undo import UndoService
-from dplanner.planning.status import (
-    DATA_FORMAT,
-    MODULE_ID,
-    Status,
-    label,
-    no_status,
-    phrase,
-    status_command,
-    stored,
-)
+from dplanner.framework.window import NoticeHost
+from dplanner.modules.step_status.workflows import LABEL, StatusWorkflow, perform
+from dplanner.planning.status import DATA_FORMAT, MODULE_ID, Status, label, phrase, stored
 from dplanner.theme.icons import (
     check_icon,
     eye_icon,
@@ -63,9 +63,12 @@ class StepStatusDeps:
     undo: UndoService[Library]
     actions: ActionRegistry
     clock: Clock  # The day a status change is stamped with.
-    # A wait has no status of its own — it is over when its day comes — so the verbs grey
-    # on one. The composition root knows what marks a wait.
-    works_nobody: Callable[[Step], str] = field(default=lambda _step: "")
+    workflow: StatusWorkflow
+    end_claim: Callable[[EndClaim], bool]  # The at-work board's; answers whether one stood.
+    notices: NoticeHost  # Where a claim that could not be ended stands, with a retry.
+
+
+NOTICE_ID = "step_status.unreleased"
 
 
 class StepStatusModule:
@@ -103,8 +106,8 @@ class StepStatusModule:
             steps = self._chosen(context)
             if not steps:
                 return DISABLED
-            if kind := next(filter(None, map(self._deps.works_nobody, steps)), ""):
-                return ActionState(enabled=False, label=f"{label(status)} — {no_status(kind)}")
+            if why := self._deps.workflow.refusal(steps, status, Person()):
+                return ActionState(enabled=False, label=f"{label(status)} — {why}")
             return ActionState(checked=all(stored(step) is status for step in steps))
 
         return state
@@ -112,15 +115,44 @@ class StepStatusModule:
     def _setter(self, status: Status) -> Callable[[Context], None]:
         def run(context: Context) -> None:
             steps = self._chosen(context)
-            if any(self._deps.works_nobody(step) for step in steps):
+            if self._deps.workflow.refusal(steps, status, Person()):
                 return
             today = self._deps.clock.today()
-            with self._deps.undo.gesture("Set Status"):
-                for step in steps:
-                    if stored(step) is status:
-                        continue
-                    self._deps.undo.push(
-                        status_command(step, status, today=today, label="Set Status")
-                    )
+            library = self._deps.library
+            changes = [
+                self._deps.workflow.set_status(library, step, status, actor=Person(), today=today)[
+                    0
+                ]
+                for step in steps
+            ]
+            # One composite, not a gesture of pushes: it is all-or-nothing on the way in, so
+            # a refusal part way leaves no step moved and no claim ended.
+            commands = [change.command for change in changes if change.command is not None]
+            if commands:
+                self._deps.undo.push(CompositeCommand(LABEL, commands))
+            self._release([claim for change in changes for claim in change.follow_ups])
 
         return run
+
+    def _release(self, claims: list[EndClaim]) -> None:
+        """End the claims a stopped status owes, each on its own. Any that could not be
+        ended stand on a notice with a retry — the statuses are true, and are not undone
+        for an effect."""
+        failed = perform(claims, self._deps.end_claim).failed
+        if not failed:
+            self._deps.notices.clear_notice(NOTICE_ID)
+            return
+        unreleased = [claim for claim, _why in failed]
+        self._deps.notices.show_notice(
+            Notice(
+                id=NOTICE_ID,
+                words=(
+                    f"The status is set, but {len(failed)} agent claim(s) could not be ended:"
+                    f" {failed[0][1]}"
+                ),
+                tone="error",
+                action="Retry",
+                tip="End the claims again",
+                act=lambda: self._release(unreleased),
+            )
+        )

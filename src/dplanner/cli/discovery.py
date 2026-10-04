@@ -14,7 +14,7 @@ loss that shows up months later, in a project nobody can reconstruct.
 
 import json
 import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
 from typing import TextIO
@@ -276,5 +276,19 @@ def open_library(
             # the loser is told, nothing is overwritten, and running again picks up the
             # change.
             raise CliError(f"{error} — nothing was written; run this again") from error
+        _settle(context.after_flush)
     finally:
         store.close()
+
+
+def _settle(owed: Sequence[Callable[[], None]]) -> None:
+    """Run what a written invocation owes, every one of them: one that refuses does not
+    stop the rest, and the refusals are said together once all have run."""
+    refusals: list[str] = []
+    for step in owed:
+        try:
+            step()
+        except CliError as error:
+            refusals.append(str(error))
+    if refusals:
+        raise CliError("; ".join(refusals))

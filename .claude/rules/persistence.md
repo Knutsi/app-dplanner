@@ -39,8 +39,12 @@ paths:
   guard — the guards run inside `closeEvent`, so a nested modal loop there is re-entrant.
   Branch verbs act on the focused project's repository.
   The CLI has no timer: a run is a transaction that flushes once, at the end, and writes
-  nothing if the verb failed. `ARCHITECTURE.md`'s *Save spans repositories; the exit dialog
-  says what it records* has the reasoning.
+  nothing if the verb failed. **What a run owes outside the plan waits for that flush** —
+  ending an agent's claim is appended to `CliContext.after_flush`, which `open_library`
+  runs only once everything is written, and the verb's report goes with it, so a refused
+  flush has released nothing and claimed no success. `ARCHITECTURE.md`'s *Save spans
+  repositories; the exit dialog says what it records* and *A workflow is one function under
+  both surfaces* have the reasoning.
 - **Two writers are expected.** An agent runs `dplanner` against a project a window has
   open. The store records what each project directory last looked like and **refuses to
   flush over anything that changed underneath** (`StaleWorkspaceError`) — checked **per

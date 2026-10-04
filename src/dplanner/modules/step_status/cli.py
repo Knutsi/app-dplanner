@@ -19,9 +19,11 @@ for it; ``ready-for-review``, ``ready-to-merge``, ``done`` and ``blocked`` each 
 has stopped, so setting one ends that step's claim in the same run, whoever sets it. The
 banner an agent forgot to take down was the common case, and the one verb every finishing
 agent is sure to run is this one.
+
+Both rules are ``workflows.py``'s, and the window's Status verbs call the same functions:
+this file only reads the arguments, names the actor and says what happened.
 """
 
-import shlex
 from argparse import ArgumentParser, Namespace
 from collections.abc import Callable
 
@@ -29,56 +31,63 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
-from dplanner.planning.status import (
-    REVIEW_AND_MERGE,
-    Status,
-    no_status,
-    status_command,
-    stored,
-    word,
-)
-
-# The statuses that say nobody is working a step any more: setting one ends its claim.
-STOPPED = frozenset({*REVIEW_AND_MERGE, Status.DONE, Status.BLOCKED})
+from dplanner.domain.workflow import Actor, AgentRun, EndClaim, Person
+from dplanner.modules.step_status.workflows import Kept, Performed, StatusWorkflow, perform
+from dplanner.planning.status import Status, stored, word
 
 
 def commands(
     *,
-    works_nobody: Callable[[Step], str],
-    is_agent: Callable[[Step], bool],
+    workflow: StatusWorkflow,
     in_agent_shell: Callable[[], bool],
-    note_reason: Callable[[CliContext, Step, str], tuple[str, bool]],
-    end_claim: Callable[[CliContext, Step], bool],
+    end_claim: Callable[[EndClaim], bool],
 ) -> list[CliCommand]:
-    """``works_nobody`` names a step nobody works — "a wait" — which has no status to set;
-    ``is_agent`` says an agent executes a step, and ``in_agent_shell`` that this command
-    runs inside an agent CLI's shell — together, a done that skips review. ``note_reason``
-    keeps a ``--because`` as a
-    decision note on the step and answers the note's id, and whether it was added — False
-    when the step already carried that note, which then stands as it was. ``end_claim`` ends
-    an agent's at-work claim on the step and answers whether one stood."""
+    """``in_agent_shell`` says this command runs inside an agent CLI's shell — the actor is
+    then an agent run; ``end_claim`` ends an agent's at-work claim and answers whether one
+    stood."""
+
+    def actor() -> Actor:
+        return AgentRun() if in_agent_shell() else Person()
 
     def set_status(context: CliContext, args: Namespace) -> int:
         step = find_step(context.library, args.step, context.current)
         state = Status(args.state)
-        if (kind := works_nobody(step)) and state is not Status.PENDING:
-            raise CliError(f"{step.title!r} is {kind}: {no_status(kind)}")
-        because = (args.because or "").strip()
-        if args.because is not None and state is not Status.DONE:
-            raise CliError("--because says why a step is done without review; it goes with done")
-        if (
-            state is Status.DONE
-            and not because
-            and stored(step)
-            not in REVIEW_AND_MERGE  # Under review, a reviewing agent may finish it.
-            and is_agent(step)
-            and in_agent_shell()
-        ):
-            raise CliError(_review_first(step, args.step))
-        note, added = note_reason(context, step, because) if because else ("", True)
-        ended = state in STOPPED and end_claim(context, step)
-        _say(context, step, state, note, added, ended)
+        _set(context, step, state, actor(), (args.because or "").strip())
         return 0
+
+    def clear(context: CliContext, args: Namespace) -> int:
+        step = find_step(context.library, args.step, context.current)
+        _set(context, step, Status.PENDING, actor())
+        return 0
+
+    def _set(
+        context: CliContext, step: Step, status: Status, who: Actor, because: str = ""
+    ) -> None:
+        """Write ``status`` through the workflow, and say so once it is written — naming the
+        note a ``--because`` was kept as, or the one already there that it did not replace,
+        and the agent's claim it ended."""
+
+        def say(kept: Kept | None, done: Performed) -> None:
+            data = (
+                {"step": step.id, "status": status.value}
+                | ({"note": kept.note} if kept else {})
+                | ({"claim_ended": True} if done.ended else {})
+            )
+            reason = (
+                (
+                    f" — the reason kept as {kept.note}"
+                    if kept.added
+                    else f" — a reason is already recorded as {kept.note}"
+                )
+                if kept
+                else ""
+            )
+            released = " — no agent at work on it now" if done.ended else ""
+            context.report(data, f"{step.title}: {status.value}{reason}{released}")
+
+        write_status(
+            context, workflow, end_claim, step, status, actor=who, because=because, then=say
+        )
 
     return [
         CliCommand(
@@ -102,7 +111,7 @@ def commands(
             path=("status", "clear"),
             summary="Back to pending; the step keeps the days it started and changed on.",
             configure=step_arg,
-            run=_clear,
+            run=clear,
             examples=("dplanner status clear 'Read the spec'",),
         ),
         CliCommand(
@@ -113,6 +122,44 @@ def commands(
             examples=("dplanner status list discovery",),
         ),
     ]
+
+
+def write_status(
+    context: CliContext,
+    workflow: StatusWorkflow,
+    end_claim: Callable[[EndClaim], bool],
+    step: Step,
+    status: Status,
+    *,
+    actor: Actor,
+    because: str = "",
+    then: Callable[[Kept | None, Performed], None] = lambda _kept, _done: None,
+) -> None:
+    """Set a status the way every verb does: refused as one line, applied now, and its
+    follow-ups owed to after the invocation is written — ``then`` hears what came of them.
+    A claim that could not be ended is refused once the rest is done, saying the status
+    stands."""
+    if why := workflow.refusal([step], status, actor, because):
+        raise CliError(why)
+    change, kept = workflow.set_status(
+        context.library, step, status, actor=actor, today=context.clock.today(), because=because
+    )
+    if change.command is not None:
+        context.apply(change.command)
+
+    def settle() -> None:
+        done = perform(change.follow_ups, end_claim)
+        then(kept, done)
+        if done.failed:
+            raise CliError(
+                "; ".join(
+                    f"{step.title}: {status.value} is written, but the agent's claim on it"
+                    f" could not be ended ({why}) — `dplanner agent-work end` ends it"
+                    for _claim, why in done.failed
+                )
+            )
+
+    context.after_flush.append(settle)
 
 
 def _configure_set(parser: ArgumentParser) -> None:
@@ -127,50 +174,10 @@ def _configure_set(parser: ArgumentParser) -> None:
     )
 
 
-def _review_first(step: Step, needle: str) -> str:
-    ref = shlex.quote(needle)
-    return (
-        f"{step.title!r} is an agent step, and an agent's work ends at ready-for-review:"
-        f" `dplanner status set {ref} ready-for-review` — a person or a reviewing agent"
-        f" sets it done. If nothing needs reviewing, say why:"
-        f" `dplanner status set {ref} done --because '<reason>'`."
-    )
-
-
-def _say(
-    context: CliContext,
-    step: Step,
-    status: Status,
-    note: str = "",
-    added: bool = True,
-    ended: bool = False,
-) -> None:
-    """Write ``status``, and say so — naming the note a ``--because`` was kept as, or the one
-    already there that it did not replace, and the agent's claim it ended."""
-    context.apply(status_command(step, status, today=context.clock.today()))
-    data = (
-        {"step": step.id, "status": status.value}
-        | ({"note": note} if note else {})
-        | ({"claim_ended": True} if ended else {})
-    )
-    kept = (
-        (f" — the reason kept as {note}" if added else f" — a reason is already recorded as {note}")
-        if note
-        else ""
-    )
-    released = " — no agent at work on it now" if ended else ""
-    context.report(data, f"{step.title}: {status.value}{kept}{released}")
-
-
 def _show(context: CliContext, args: Namespace) -> int:
     step = find_step(context.library, args.step, context.current)
     status = word(stored(step))
     context.report({"step": step.id, "status": status}, f"{step.title}: {status}")
-    return 0
-
-
-def _clear(context: CliContext, args: Namespace) -> int:
-    _say(context, find_step(context.library, args.step, context.current), Status.PENDING)
     return 0
 
 

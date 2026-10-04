@@ -41,6 +41,12 @@ class CliContext:
 
     ``clock`` is the day the run dates things by (``core/clock.py``): the machine's, unless
     a test pinned the one it handed to ``run``.
+
+    ``after_flush`` is what the run owes the world outside the plan — ending an agent's
+    claim — once everything it changed has been written: ``open_library`` runs each after a
+    successful flush and none after a failed one, so a run that wrote nothing has released
+    nothing. A step that reports what it did reports from there, so success is said only
+    once it is true.
     """
 
     out: TextIO
@@ -50,6 +56,7 @@ class CliContext:
     current: "Project | None" = None
     marks: set[DirtyMark] = field(default_factory=set)
     clock: Clock = field(default_factory=Clock)
+    after_flush: list[Callable[[], None]] = field(default_factory=list)
 
     @property
     def library(self) -> Library:

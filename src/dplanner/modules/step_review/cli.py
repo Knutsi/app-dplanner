@@ -72,7 +72,7 @@ TIMED_OUT = 3
 DEFAULT_WORD = "default"
 NO_LENSES = "none"
 
-SetStatus = Callable[[CliContext, Step, Status], bool]
+SetStatus = Callable[[CliContext, Step, Status], None]
 
 
 @dataclass(frozen=True)

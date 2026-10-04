@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.scope import ScopeKind
     from dplanner.domain.store import FilesFor, LibraryStore, ModuleFileArea
+    from dplanner.domain.workflow import Actor, EndClaim, PlanView
     from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
@@ -68,6 +69,7 @@ if TYPE_CHECKING:
     from dplanner.modules.step_agent_instruction.launcher import BranchPlan
     from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
     from dplanner.modules.step_review.rounds import TurnDue
+    from dplanner.modules.step_status.workflows import StatusWorkflow
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
     from dplanner.planning.schedule import Scheduled
@@ -1467,9 +1469,11 @@ def default_modules(
     # is. The board comes from `app.new_session` — the machine's when the application runs,
     # one holding nothing when a test builds — and is named nowhere deeper: no feature
     # module reaches `config_dir`, the same rule the topology gate's record path follows.
+    if board is None:
+        board = at_work_board()
     agent_at_work = AgentAtWorkModule(
         AgentAtWorkDeps(
-            board=board if board is not None else at_work_board(),
+            board=board,
             notices=services.window,
             library=library,
             parent=services.window,
@@ -1978,14 +1982,18 @@ def default_modules(
         # step nobody works.
         branches,
         LandingModule(),
-        # No tab: the status vocabulary is a Status submenu of checkable Step verbs.
+        # No tab: the status vocabulary is a Status submenu of checkable Step verbs. The
+        # window is the director's, so a status that says the work stopped ends the agent's
+        # claim on the board the banner reads.
         StepStatusModule(
             StepStatusDeps(
-                works_nobody=_works_nobody,
                 library=library,
                 undo=services.undo,
                 actions=services.actions,
                 clock=services.clock,
+                workflow=_status_workflow(),
+                end_claim=lambda claim: board.end(claim.project, claim.step),
+                notices=services.window,
             )
         ),
         # No tab either: a check carries nothing, and the Covers tab that shows what it
@@ -3279,25 +3287,37 @@ def _note_escalation(context: "CliContext", review: "Step", title: str, body: st
     return note.id
 
 
-def _note_reason(context: "CliContext", step: "Step", reason: str) -> tuple[str, bool]:
-    """Keep why a step went to done without review as a decision note on it, in the same
-    run as the status — added the way `note add` adds one, so a retried verb is one note."""
+def _status_workflow() -> "StatusWorkflow":
+    """Setting a status, as the window and every CLI verb do it: the root's answers for
+    what nobody works and what an agent executes, and the notes module's way to keep a
+    reason."""
+    from dplanner.modules.step_status.workflows import StatusWorkflow
+
+    return StatusWorkflow(
+        works_nobody=_works_nobody, is_agent=_is_agent_step, keep_reason=_reason_note
+    )
+
+
+def _reason_note(
+    view: "PlanView", step: "Step", reason: str, today: "date"
+) -> "tuple[str, Command | None]":
+    """Why a step went to done without review, as a decision note on it — added the way
+    `note add` adds one, so a retried verb is one note: the note's id, and the command that
+    adds it, None when the step already carries it."""
     from dplanner.modules.notes.log import Note, adding, check_label
 
     note, command = adding(
-        context.library.project_of(step.id),
+        view.project_of(step.id),
         Note(
             id="",
             label=check_label("decision"),
             title="Done without review",
             body=reason,
-            made=context.clock.today().isoformat(),
+            made=today.isoformat(),
             step=step.id,
         ),
     )
-    if command is not None:
-        context.apply(command)
-    return note.id, command is not None
+    return note.id, command
 
 
 def _counts_as_work(step: "Step") -> bool:
@@ -4328,6 +4348,7 @@ def default_cli_commands(
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
     from dplanner.domain.locations import roles_by_id
+    from dplanner.domain.workflow import AgentRun, Person
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.auto_progress import cli as auto_progress_cli
     from dplanner.modules.branches import cli as branches_cli
@@ -4362,7 +4383,7 @@ def default_cli_commands(
     from dplanner.modules.testing.format import FORMAT_SUBJECT, FORMAT_VERB
     from dplanner.modules.testing.format import guide as test_format
     from dplanner.modules.time_estimates import cli as time_cli
-    from dplanner.planning.status import Status, status_command, stored
+    from dplanner.planning.status import Status, stored
 
     specs = aspect_specs()
     time_readers = _time_readers()
@@ -4380,13 +4401,18 @@ def default_cli_commands(
     if board is None:
         board = at_work_board()
 
-    def end_claim(context: "CliContext", step: "Step") -> bool:
-        return board.end(context.library.project_of(step.id).id, step.id)
+    workflow = _status_workflow()
 
-    def set_status(context: "CliContext", step: "Step", status: "Status") -> bool:
-        """A status written as `status set` writes it, ending a stopped step's claim."""
-        context.apply(status_command(step, status, today=context.clock.today()))
-        return status in status_cli.STOPPED and end_claim(context, step)
+    def end_claim(claim: "EndClaim") -> bool:
+        return board.end(claim.project, claim.step)
+
+    def actor() -> "Actor":
+        return AgentRun() if agent_shell_marker() else Person()
+
+    def set_status(context: "CliContext", step: "Step", status: "Status") -> None:
+        """A status written as `status set` writes it — refused as one line, its claim
+        ended once the run is written."""
+        status_cli.write_status(context, workflow, end_claim, step, status, actor=actor())
 
     def finish_merged(context: "CliContext", step: "Step") -> bool:
         """A step waiting on its merge is done once its PR reads merged — written as
@@ -4453,10 +4479,8 @@ def default_cli_commands(
         # `--because` lands as a decision note in the same run. A status that says nobody
         # is working the step ends the claim somebody made on it, on the board above.
         *status_cli.commands(
-            works_nobody=_works_nobody,
-            is_agent=_is_agent_step,
+            workflow=workflow,
             in_agent_shell=lambda: bool(agent_shell_marker()),
-            note_reason=_note_reason,
             end_claim=end_claim,
         ),
         *milestone_cli.commands(),
