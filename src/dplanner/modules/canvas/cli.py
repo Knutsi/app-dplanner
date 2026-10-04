@@ -1,4 +1,4 @@
-"""``dplanner layout …``, ``stack …`` and ``step duplicate`` — the graph editor's verbs.
+"""``dplanner layout …`` and ``stack …`` — the graph editor's verbs.
 
 The same command objects the window pushes, so an apply here is undoable in a tab open on
 the same library. ``layout save`` upserts rather than refusing a collision: an agent
@@ -12,7 +12,8 @@ those reshapes the graph, so none reads the topology first. ``stack list`` says 
 the canvas draws as one tall card (``stacks/stack.py``); ``stack new``, ``make``, ``add``,
 ``move``, ``take-out`` and ``dissolve`` build and reshape one with the very commands the
 canvas pushes (``stacks/edits.py``), and those do read it first. ``lint_checks`` names a
-stack that is no longer one line.
+stack that is no longer one line. ``step duplicate`` is ``modules/steps``' verb; what it
+runs is :func:`duplicator`, the clipboard's clone handed over by the root.
 """
 
 import math
@@ -82,6 +83,7 @@ from dplanner.modules.canvas.stacks.stack import (
     stack_of,
     stray_links,
 )
+from dplanner.modules.steps.cli import Duplicate
 from dplanner.planning import estimate
 
 # The last is Wave view's arrangement, written: the canvas's *Keep This Arrangement*.
@@ -97,10 +99,27 @@ def _no_key(_step: Step) -> str:
     return ""
 
 
+def duplicator(
+    *, paste_policies: Sequence[PastePolicy] = (), file_modules: Sequence[str] = ()
+) -> Duplicate:
+    """The window's Duplicate as one function: the same clone command under the same
+    policies, applied, then the copies' attachments written — see ``clipboard/clip.py``."""
+
+    def duplicate(context: CliContext, originals: Sequence[StepId], target: Project) -> list[Step]:
+        library = context.library
+        clips = clip(library, context.store.files, file_modules, list(originals))
+        command, copies = paste(
+            library, target.id, clips, anchor=None, policies=paste_policies, verb="Duplicate"
+        )
+        context.apply(command)
+        write_files(context.store.files, list(zip(copies, clips, strict=True)))
+        return copies
+
+    return duplicate
+
+
 def commands(
     *,
-    paste_policies: Sequence[PastePolicy] = (),
-    file_modules: Sequence[str] = (),
     key_of: Callable[[Step], str] = _no_key,
     strips: Callable[[Project], Container[StepId]] = lambda _project: (),
 ) -> list[CliCommand]:
@@ -108,51 +127,6 @@ def commands(
     root's fact, handed over so the geometry report names steps the way every row does.
     ``strips`` names the cards that wear a branch strip, so a sort from the terminal leaves
     them the room the window draws them with."""
-
-    def _configure_duplicate(parser: ArgumentParser) -> None:
-        parser.add_argument(
-            "step", nargs="+", help="steps to copy: id, folder name, or part of a title"
-        )
-        parser.add_argument(
-            "--into",
-            metavar="PROJECT",
-            help="the project the copies go into; default: the steps' own",
-        )
-
-    def _project_of_duplicate(context: CliContext, args: Namespace) -> Project:
-        """The project the copies land in — what the topology gate asks about."""
-        library = context.library
-        if args.into:
-            return find_project(library, args.into)
-        return library.project_of(find_step(library, args.step[0], context.current).id)
-
-    def _step_duplicate(context: CliContext, args: Namespace) -> int:
-        """The window's Duplicate, as one transaction: the same clone command, the same
-        policies, the attachments copied after it — see clipboard.py."""
-        library = context.library
-        originals = [find_step(library, needle, context.current) for needle in args.step]
-        target = _project_of_duplicate(context, args)
-        clips = clip(library, context.store.files, file_modules, [s.id for s in originals])
-        command, copies = paste(
-            library, target.id, clips, anchor=None, policies=paste_policies, verb="Duplicate"
-        )
-        context.apply(command)
-        write_files(context.store.files, list(zip(copies, clips, strict=True)))
-        pairs = list(zip(originals, copies, strict=True))
-        context.report(
-            {
-                "project": target.id,
-                "steps": [
-                    {"id": copy.id, "title": copy.title, "from": original.id}
-                    for original, copy in pairs
-                ],
-            },
-            "\n".join(
-                f"Duplicated {original.title!r} as {copy.id} in {target.title}"
-                for original, copy in pairs
-            ),
-        )
-        return 0
 
     def _sort(context: CliContext, args: Namespace) -> int:
         project = _arrangeable(context, args)
@@ -620,18 +594,6 @@ def commands(
             run=_stack_dissolve,
             examples=("dplanner stack dissolve S4",),
             edits_graph=lambda context, args: _project_of(context, args.step),
-        ),
-        CliCommand(
-            path=("step", "duplicate"),
-            summary="Copy steps — aspects, prose, attachments and the links among them — "
-            "into a project, one row below the originals.",
-            configure=_configure_duplicate,
-            run=_step_duplicate,
-            examples=(
-                "dplanner step duplicate read-the-spec",
-                "dplanner step duplicate read-the-spec draft-the-model --into rollout",
-            ),
-            edits_graph=_project_of_duplicate,
         ),
     ]
 

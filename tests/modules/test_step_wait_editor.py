@@ -83,7 +83,8 @@ def test_a_wait_takes_no_status_no_agent_and_no_tests_and_says_why(services, pro
 
 def test_a_wait_wears_its_letter_its_clock_and_how_long_it_holds(services, project):
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules import _primary_glyph, _step_stats
+    from dplanner.modules import _primary_glyph
+    from dplanner.modules.estimation.schedule import card_stats
     from dplanner.planning.kinds import key_of, kind_word
     from dplanner.planning.wait import MODULE_ID as WAIT_ID
     from dplanner.planning.wait import write
@@ -93,9 +94,9 @@ def test_a_wait_wears_its_letter_its_clock_and_how_long_it_holds(services, proje
     SetModuleDataCommand(step.id, WAIT_ID, write(until)).redo(services.document)
     assert key_of(step).startswith("W") and kind_word(step) == "wait"
     assert _primary_glyph(step) == ("clock", "warn")  # The amber clock, in its key block.
-    assert _step_stats(services.document, project)[step.id] == "until 4 Nov"
+    assert card_stats(services.document, project)[step.id] == "until 4 Nov"
     SetModuleDataCommand(step.id, WAIT_ID, write(Wait(days=3.0))).redo(services.document)
-    assert _step_stats(services.document, project)[step.id] == "3 wd"
+    assert card_stats(services.document, project)[step.id] == "3 wd"
 
 
 def test_insert_wait_before_puts_a_wait_in_front_of_a_step_as_one_undo(services, make_project):

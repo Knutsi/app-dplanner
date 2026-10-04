@@ -360,7 +360,7 @@ def test_remove_takes_the_project_out_of_model_and_store_but_leaves_its_files(
     tab goes, and the directory stays exactly where it was — which is what the confirm
     prompt promises."""
     from dplanner.domain.store import PROJECT_META
-    from dplanner.modules.projects import verbs
+    from dplanner.modules.project_archive import verbs
 
     asked = []
 

@@ -75,6 +75,7 @@ if TYPE_CHECKING:
     from dplanner.modules.notes.module import NotesModule
     from dplanner.modules.problems.module import ProblemsModule
     from dplanner.modules.progression.module import ProgressionModule
+    from dplanner.modules.project_archive.module import ProjectArchiveModule
     from dplanner.modules.project_assets.module import ProjectAssetsModule
     from dplanner.modules.projects.checkouts import CheckoutService
     from dplanner.modules.projects.module import ProjectsModule
@@ -149,6 +150,7 @@ def default_modules(
         _projects(
             root, editor=graph.editor, knowledge=knowledge, tabs=tabs, checkouts=agents.checkouts
         ),
+        _project_archive(root),
         # Before spec: the Specs tab's + menu lists its kinds, and its settings section
         # must exist before the settings dialog is built.
         knowledge.confluence,
@@ -214,6 +216,15 @@ class _Root:
         # first `dplanner` call from the code and adopted through the library file — is what
         # turns Run Agent from greyed to runnable, and nothing in the context graph changed.
         store.checkout_changed.connect(lambda _repository: services.context.refresh())
+
+    def connect_project(self, directory: "Path") -> "Project":
+        """Attach a directory and add its project off the undo stack, with the membership
+        origin `library add` uses too — what New Project, Open Project and Restore end in."""
+        from dplanner.modules.library.membership import LIBRARY_ORIGIN
+
+        project = self.store.attach(directory)
+        self.library.add_child(self.library.id, project, origin=LIBRARY_ORIGIN)
+        return project
 
     def facts_of(self, project_id: str) -> "RepositoryFacts":
         """The plan repository and every location of a project placed against this
@@ -706,7 +717,7 @@ def _graph(
     from dplanner.modules.branches.plan import strips as branch_strips
     from dplanner.modules.canvas.module import CanvasDeps, CanvasModule
     from dplanner.modules.canvas.renderers import EdgeAccent, NodeAccent
-    from dplanner.modules.estimation.schedule import milestone_stats
+    from dplanner.modules.estimation.schedule import card_stats
     from dplanner.modules.github.aspect import PR_CLOSED, PR_MERGED, pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.problems.module import ProblemsDeps, ProblemsModule
@@ -718,14 +729,10 @@ def _graph(
         WORKING,
     )
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
-    from dplanner.planning.estimate import read as estimated_days
     from dplanner.planning.kinds import Kind, key_of, kind_of
     from dplanner.planning.milestone import read as milestone_read
     from dplanner.planning.review import reviews
-    from dplanner.planning.schedule import format_days
     from dplanner.planning.status import Status, word
-    from dplanner.planning.wait import read as wait_read
-    from dplanner.planning.wait import stat as wait_stat
     from dplanner.theme.icons import problem_icon
     from dplanner.theme.tones import STEP_STATUS_TONES
 
@@ -736,7 +743,7 @@ def _graph(
         the schedule behind the milestone stats and the project's colour deal are each
         walked once for all of them."""
         project = library.project(project_id)
-        stats = milestone_stats(library, project)
+        stats = card_stats(library, project, services.clock.today())
         colors = root.milestone_colors(project)
         # The settled reading, never a fresh lint pass: the checks are super-linear in the
         # size of a plan (66 ms at 300 steps) and this runs on every canvas sync.
@@ -780,7 +787,7 @@ def _graph(
 
     def step_accent(
         step: "Step",
-        milestone_stat: str,
+        stat: str,
         milestone_color: str = "",
         *,
         flagged: bool = False,
@@ -818,16 +825,8 @@ def _graph(
         }.get(agent_run_state(step), ("", ""))
         status = _card_status(step)
         milestone = milestone_read(step)
-        wait = wait_read(step)
         key_glyph, key_glyph_tone = _primary_glyph(step)
         kind = kind_of(step)
-        if milestone:
-            stat = milestone_stat
-        elif wait is not None:
-            stat = wait_stat(wait, services.clock.today())  # How long it holds.
-        else:
-            days = estimated_days(step)
-            stat = format_days(days) if days is not None else ""
         return NodeAccent(
             muted=status is Status.DONE,
             badge=milestone,
@@ -1630,6 +1629,47 @@ def _assistants(root: _Root, settings: "SettingsModule") -> list["Module"]:
     ]
 
 
+def _project_archive(root: _Root) -> "ProjectArchiveModule":
+    """Archive, Restore and Remove from Library, the Archive tab and its index folder."""
+    from dplanner.modules.library.membership import LIBRARY_ORIGIN
+    from dplanner.modules.project_archive.module import ProjectArchiveDeps, ProjectArchiveModule
+
+    services, library, store = root.services, root.library, root.store
+
+    # The store lets go first, then the model: sync rewires its repository groups on the
+    # structure signal, and reads them from the store's records.
+    def disconnect_project(project_id: str) -> None:
+        store.detach(project_id)
+        library.remove_child(project_id, origin=LIBRARY_ORIGIN)
+
+    def archive_project(project_id: str) -> None:
+        store.archive(project_id)
+        library.remove_child(project_id, origin=LIBRARY_ORIGIN)
+
+    return ProjectArchiveModule(
+        ProjectArchiveDeps(
+            library=library,
+            actions=services.actions,
+            context=services.context,
+            segments=services.index_segments,
+            tabs=services.tabs,
+            theme=services.theme,
+            parent=services.window,
+            status=services.window,
+            autosave=services.autosave,
+            # Restoring is connecting: an attach takes its directory off the list.
+            connect_project=root.connect_project,
+            disconnect_project=disconnect_project,
+            # The archive is the store's — per user, in the library file.
+            archive_project=archive_project,
+            archived=store.archived,
+            archive_changed=store.archive_changed,
+            forget_archived=store.forget_archived,
+            has_unflushed=store.has_unflushed,
+        )
+    )
+
+
 def _projects(
     root: _Root,
     *,
@@ -1639,7 +1679,6 @@ def _projects(
     checkouts: "CheckoutService",
 ) -> "ProjectsModule":
     """The projects in the index, and the rows under each that open what a project has."""
-    from dplanner.modules.library.membership import LIBRARY_ORIGIN
     from dplanner.modules.projects.module import ProjectEntry, ProjectsDeps, ProjectsModule
     from dplanner.theme.icons import (
         clock_icon,
@@ -1655,21 +1694,6 @@ def _projects(
     services, library, store = root.services, root.library, root.store
     spec, coverage = knowledge.spec, knowledge.coverage
 
-    def connect_project(directory: "Path") -> "Project":
-        project = store.attach(directory)
-        library.add_child(library.id, project, origin=LIBRARY_ORIGIN)
-        return project
-
-    # The store lets go first, then the model: sync rewires its repository groups on the
-    # structure signal, and reads them from the store's records.
-    def disconnect_project(project_id: str) -> None:
-        store.detach(project_id)
-        library.remove_child(project_id, origin=LIBRARY_ORIGIN)
-
-    def archive_project(project_id: str) -> None:
-        store.archive(project_id)
-        library.remove_child(project_id, origin=LIBRARY_ORIGIN)
-
     return ProjectsModule(
         ProjectsDeps(
             library=library,
@@ -1678,7 +1702,6 @@ def _projects(
             context=services.context,
             undo=services.undo,
             segments=services.index_segments,
-            tabs=services.tabs,
             theme=services.theme,
             parent=services.window,
             status=services.window,
@@ -1694,18 +1717,7 @@ def _projects(
             # The index opens a project without knowing what an activity is: *Show
             # Steps* and the Steps row open the graph; the project's row only selects.
             open_steps=editor.open,
-            # The store's membership face: attach/detach track directories, the
-            # model change itself is applied here, off the undo stack, with the
-            # membership origin the `library add` verb uses too.
-            connect_project=connect_project,
-            disconnect_project=disconnect_project,
-            # The archive is the store's too — per user, in the library file.
-            # Restoring is connecting: an attach takes its directory off the list.
-            archive_project=archive_project,
-            archived=store.archived,
-            archive_changed=store.archive_changed,
-            forget_archived=store.forget_archived,
-            has_unflushed=store.has_unflushed,
+            connect_project=root.connect_project,
             project_dirs=lambda: (
                 [store.project_dir(project.id).resolve() for project in library.projects]
                 + [problem.path.resolve() for problem in store.problems()]
@@ -2337,30 +2349,6 @@ def _ordinal(place: int) -> str:
     return f"{place}{suffix}"
 
 
-def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
-    """The figure at each card's bottom right: a milestone's total and landing, how long a
-    wait holds, any other step's estimate — what the canvas paints, read once for the
-    report's graph."""
-    from dplanner.modules.estimation.schedule import milestone_stats
-    from dplanner.planning.estimate import read as estimated_days
-    from dplanner.planning.schedule import format_days
-    from dplanner.planning.wait import read as wait_read
-    from dplanner.planning.wait import stat as wait_stat
-
-    stats = milestone_stats(library, project)
-    for step in project.steps:
-        if step.id in stats:
-            continue
-        wait = wait_read(step)
-        if wait is not None:
-            stats[step.id] = wait_stat(wait, wait.until)  # A card prints no year.
-            continue
-        days = estimated_days(step)
-        if days is not None:
-            stats[step.id] = format_days(days)
-    return stats
-
-
 def _step_type_icons(step: "Step") -> tuple[str, ...]:
     """What kind of thing a step is, in the medallion vocabulary the canvas painted
     first: "tag" a milestone, "layers" a feature, "beaker" one carrying tests, "shield" a
@@ -2598,6 +2586,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
     from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.modules.canvas.report import report_source as graph
     from dplanner.modules.estimation.report import report_source as estimates
+    from dplanner.modules.estimation.schedule import card_stats
     from dplanner.modules.feature.report import report_source as features
     from dplanner.modules.github.report import report_source as github
     from dplanner.modules.notes.report import report_source as notes
@@ -2631,7 +2620,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
             key_of=key_of,
             kind_of=kind_word,
             status_for=_card_status,
-            stats_of=_step_stats,
+            stats_of=card_stats,
             badge_of=milestone_read,
             # The report's picture of the graph wears the same shades the window does, and
             # the same glyph in each card's key block.
@@ -2832,13 +2821,13 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.feature import cli as feature_cli
-    from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_review import cli as review_cli
     from dplanner.modules.step_start import cli as start_cli
+    from dplanner.modules.steps import cli as steps_cli
     from dplanner.modules.testing import cli as testing_cli
     from dplanner.modules.testing.aspect import enabled as test_enabled
     from dplanner.planning.agent import enabled as is_agent
@@ -2849,7 +2838,7 @@ def _lint_checks() -> tuple["LintCheck", ...]:
 
     scopes = scope_kinds()
     return (
-        *projects_cli.lint_checks(),
+        *steps_cli.lint_checks(),
         *start_cli.lint_checks(),
         # Collecting is an agent's job: the agent aspect's reader, handed over.
         *auto_progress_cli.lint_checks(is_agent=is_agent, key_of=key_of),
@@ -3032,6 +3021,7 @@ def default_cli_commands(
     from dplanner.modules.step_status import cli as status_cli
     from dplanner.modules.step_ticket import cli as ticket_cli
     from dplanner.modules.step_wait import cli as wait_cli
+    from dplanner.modules.steps import cli as steps_cli
     from dplanner.modules.testing import cli as testing_cli
     from dplanner.modules.testing.format import FORMAT_SUBJECT, FORMAT_VERB
     from dplanner.modules.testing.format import guide as test_format
@@ -3086,7 +3076,7 @@ def default_cli_commands(
         *library_cli.commands(),
         # The step authors let `step add` author the step in the same call; the list
         # order is the report order — the same order the skill teaches authoring in.
-        *projects_cli.commands(
+        *steps_cli.commands(
             step_authors=[
                 start_cli.step_author(),
                 description_cli.step_author(),
@@ -3103,8 +3093,20 @@ def default_cli_commands(
             ],
             # The key a row prints is the one the canvas paints: one rule, here.
             key_of=key_of,
-            # `project graph` and `step show` mark the links a step collects across, and
+            # `step show` and `project graph` mark the links a step collects across, and
             # the feature branch a step's work is on.
+            auto_progresses=auto_progresses,
+            branches_in=branches_in,
+            # A step removed from a stack closes the chain round it, as Delete does.
+            remove_steps=bridged_removal,
+            # The canvas's Duplicate: its clipboard clones, under the same policies.
+            duplicate=layout_cli.duplicator(
+                paste_policies=_paste_policies(),
+                file_modules=tuple(source.id for source in sources),
+            ),
+        ),
+        *projects_cli.commands(
+            key_of=key_of,
             auto_progresses=auto_progresses,
             branches_in=branches_in,
             # The location roles every module declared, and where a read-only one's
@@ -3112,7 +3114,6 @@ def default_cli_commands(
             roles=roles,
             managed=managed_for(roles),
             kept_root=config_dir(),
-            # A step removed from a stack closes the chain round it, as Delete does.
             remove_steps=bridged_removal,
         ),
         # `topology show` tells the gate what it printed; the gate is built here, so the
@@ -3204,8 +3205,6 @@ def default_cli_commands(
             due=_due_steps,
         ),
         *layout_cli.commands(
-            paste_policies=_paste_policies(),
-            file_modules=tuple(source.id for source in sources),
             key_of=key_of,
             # A sort leaves a card on a branch the room of its strip, as the window does.
             strips=lambda project: branch_strips(branch_reading(project)),

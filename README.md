@@ -482,9 +482,12 @@ src/dplanner/
 │   │                        (Agent, Compilation instructions) — the location dialog
 │   │                        (location_dialog.py), Move Plan, the repositories folder and the clone
 │   │                        policy (repositories_folder.py), the checkout service a verb gets a
-│   │                        repository on this machine from (checkouts.py), and the archive:
-│   │                        Archive/Restore Project, the index's Archive folder
-│   │                        (archive_index.py) and the Archive tab (archive_tab.py)
+│   │                        repository on this machine from (checkouts.py), and Share Project…
+│   ├── project_archive/     leaving the library: Archive/Restore Project and Remove from Library
+│   │                        (verbs.py), the index's Archive folder (archive_index.py) and the
+│   │                        Archive tab (archive_tab.py)
+│   ├── steps/               the `step …` verbs and the graph's lint (cli.py; no module.py, so
+│   │                        headless all through) — `step duplicate` runs the canvas's clone
 │   ├── canvas/              a project in a tab (activity.py): the canvas (scene.py), its modes (connect, redirect,
 │   │                        lasso, divide, contract, resize), items and renderers, and the user's look (look.py:
 │   │                        marks, background, snap to grid, the side panel; ground.py paints the background);
@@ -508,7 +511,7 @@ src/dplanner/
 │   │   │                    verbs.py the menu verbs that push them; items.py's StackItem the
 │   │   │                    frame and "+", and modes.py's BlockDragMode what drags one
 │   │   └── clipboard/       clip.py is what a copied step is; verbs.py the Edit menu's
-│   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone
+│   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone (cli.py's duplicator)
 │   ├── step_properties/     THE step editor — `steps.details`, a modal and nothing anchored
 │   │                        (its first tab, details.py, stacks whatever registered a Details
 │   │                        block, name.py leading it; every view's double-click on a step

@@ -12,6 +12,7 @@ from datetime import date
 from dplanner.domain.model import Library, Project
 from dplanner.domain.ordering import placed
 from dplanner.planning.dates import format_date
+from dplanner.planning.estimate import read as estimated_days
 from dplanner.planning.estimate import start_of
 from dplanner.planning.milestone import is_milestone
 from dplanner.planning.schedule import (
@@ -22,6 +23,8 @@ from dplanner.planning.schedule import (
     schedule,
     working_days_after,
 )
+from dplanner.planning.wait import read as wait_read
+from dplanner.planning.wait import stat as wait_stat
 
 
 def project_schedule(library: Library, project: Project) -> list[Scheduled]:
@@ -52,6 +55,25 @@ def milestone_stats(library: Library, project: Project) -> dict[str, str]:
             )
         elif scheduled.accumulated:
             stats[step.id] = format_days(scheduled.accumulated)
+    return stats
+
+
+def card_stats(library: Library, project: Project, today: date | None = None) -> dict[str, str]:
+    """The figure at each card's bottom right — a milestone's total and landing, how long a
+    wait holds, any other step's estimate — read once for every card the canvas and the
+    report's graph paint. A wait is said as of ``today``, or as of its own date where none
+    is given: a printed card names no year."""
+    stats = milestone_stats(library, project)
+    for step in project.steps:
+        if is_milestone(step):
+            continue
+        wait = wait_read(step)
+        if wait is not None:
+            stats[step.id] = wait_stat(wait, today or wait.until)
+            continue
+        days = estimated_days(step)
+        if days is not None:
+            stats[step.id] = format_days(days)
     return stats
 
 
