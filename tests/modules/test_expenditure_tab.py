@@ -132,8 +132,8 @@ def test_a_record_another_process_writes_reaches_the_open_tab(services, project)
 def test_a_milestone_row_keeps_its_tint_and_a_double_click_opens_details(
     services, project, monkeypatch
 ):
-    from dplanner.modules.step_milestone import aspect as milestone
     from dplanner.modules.step_properties.dialog import StepDetailsDialog
+    from dplanner.planning import milestone
 
     c = project.steps[2]
     services.undo.push(SetModuleDataCommand(c.id, milestone.MODULE_ID, milestone.write("MVP")))

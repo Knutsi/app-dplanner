@@ -35,8 +35,6 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.domain.store import ModuleFileArea
 from dplanner.modules import default_module_formats
-from dplanner.modules.feature.aspect import FeatureSource
-from dplanner.modules.feature.aspect import write as feature_marker
 from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
 from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
@@ -44,16 +42,18 @@ from dplanner.modules.project_editor.positions import write_position
 from dplanner.modules.project_editor.sorts import layered_flow
 from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
 from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
-from dplanner.modules.step_agent_instruction.aspect import write_state as agent_state
-from dplanner.modules.step_check.aspect import write as check
-from dplanner.modules.step_milestone.aspect import write as milestone
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.aspect import write as tests
 from dplanner.modules.testing.filing import Category, write_catalog
 from dplanner.modules.time_estimates.schedule import write_project
+from dplanner.planning.agent import write_state as agent_state
+from dplanner.planning.check import write as check
 from dplanner.planning.estimate import write as estimate
 from dplanner.planning.estimate import write_start
+from dplanner.planning.feature import FeatureSource
+from dplanner.planning.feature import write as feature_marker
+from dplanner.planning.milestone import write as milestone
 from dplanner.planning.status import Status
 from dplanner.planning.status import write as status
 

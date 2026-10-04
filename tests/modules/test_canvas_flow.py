@@ -28,9 +28,7 @@ from dplanner.modules.project_editor.renderers import (
     pulse_level,
 )
 from dplanner.modules.project_editor.selection import EdgeRef
-from dplanner.modules.step_agent_instruction import aspect as agent
-from dplanner.modules.step_review import aspect as review
-from dplanner.planning import status
+from dplanner.planning import agent, review, status
 from dplanner.theme.cards import LIFT
 
 

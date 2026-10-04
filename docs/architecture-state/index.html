@@ -427,7 +427,7 @@ footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted
   <p>The import rule cannot see a string. Three places name another module's id as a literal:</p>
   <ul>
     <li><code>modules/docs/activity.py</code> maps <code>"feature"</code>, <code>"step_milestone"</code> and <code>"step_check"</code> to glyph names in <code>_glyph_for</code> — a copy of what <code>_step_type_icons</code> and <code>theme/icons.py</code> already agree on. <span class="chip warn">copy</span></li>
-    <li><code>modules/feature/migrate.py</code> writes into <code>"step_description"</code>'s namespace when it absorbs the old catalogue — a documented one-way migration, and the least bad way to do one. <span class="chip info">deliberate</span></li>
+    <li><code>planning/feature_migrate.py</code> writes into <code>"step_description"</code>'s namespace when it absorbs the old catalogue — a documented one-way migration, and the least bad way to do one. <span class="chip info">deliberate</span></li>
     <li><code>modules/step_order/view.py</code> keeps a <code>KIND_FEATURE = "feature"</code>, and <code>project_assets</code> matches a role against <code>"spec"</code> — vocabulary, not a read of the other module's data. <span class="chip info">minor</span></li>
   </ul>
 </section>

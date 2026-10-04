@@ -41,7 +41,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, NodeId, StepId
 from dplanner.framework.list_rows import DETAIL_ROLE, TwoLineDelegate
 from dplanner.framework.undo import UndoService
-from dplanner.modules.feature.aspect import MODULE_ID, FeatureSource, read, write
+from dplanner.planning.feature import MODULE_ID, FeatureSource, read, write
 from dplanner.theme.icons import plus_icon, trash_icon
 from dplanner.theme.tokens import PANEL_MARGIN
 

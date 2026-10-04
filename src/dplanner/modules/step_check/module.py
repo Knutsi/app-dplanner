@@ -12,7 +12,7 @@ from dplanner.domain.model import Library
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.undo import UndoService
-from dplanner.modules.step_check.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, write
+from dplanner.planning.check import DATA_FORMAT, MODULE_ID, SPEC, read, write
 from dplanner.theme.icons import shield_icon
 
 

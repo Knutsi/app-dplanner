@@ -9,13 +9,13 @@ from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, se
 from dplanner.modules.docs.aspect import MODULE_ID as DOCS_ID
 from dplanner.modules.docs.aspect import write_state
 from dplanner.modules.docs.module import NO_DOCS_REASON, OPEN_STEP_ACTION
-from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-from dplanner.modules.feature.aspect import read as feature_read
-from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.feature.module import FeatureModule
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
 from dplanner.modules.testing.aspect import MODULE_ID as TESTING_ID
 from dplanner.modules.testing.aspect import Test, write
+from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+from dplanner.planning.feature import read as feature_read
+from dplanner.planning.feature import write as feature_write
 
 
 @pytest.fixture

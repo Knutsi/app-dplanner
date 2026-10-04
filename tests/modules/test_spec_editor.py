@@ -281,9 +281,9 @@ def cited(services, project, document, quote="a passage"):
     """A feature step of this project, citing one passage of ``document``."""
     from dplanner.domain.commands import AddNodeCommand
     from dplanner.domain.model import Step
-    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.aspect import FeatureSource
-    from dplanner.modules.feature.aspect import write as feature_write
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import FeatureSource
+    from dplanner.planning.feature import write as feature_write
 
     step = Step(title="Login")
     AddNodeCommand(project.id, step).redo(services.document)
@@ -293,7 +293,7 @@ def cited(services, project, document, quote="a passage"):
 
 
 def citations(services, project):
-    from dplanner.modules.feature.aspect import read as feature_read
+    from dplanner.planning.feature import read as feature_read
 
     return [
         cite.document

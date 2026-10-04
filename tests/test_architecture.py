@@ -42,6 +42,7 @@ The rules, in prose (see also CLAUDE.md):
 12. Two counts may only fall: the composition root's lines, and the built-in commands pushed
     or applied directly outside a ``workflows.py``. They are ceilings, lowered by hand.
 13. The ids a module stores its data under are pinned: a package may move, its ids may not.
+14. The aspects ``planning/`` interprets are listed: admitting one is a reviewed diff.
 
 ARCHITECTURE.md's *What holds the tier and the workflows in place* has the reasoning for
 rules 4 and 11 to 13.
@@ -136,7 +137,7 @@ CONCRETE_STORAGE = (
 
 # Ceilings (rule 12), recorded on 4 October 2026. Lower one by hand when its count falls;
 # never raise it.
-ROOT_LINES = 4904
+ROOT_LINES = 4885
 DIRECT_COMMANDS = 141
 
 # Every id a module stores data, settings or files under (rule 13). Stored ids are public:
@@ -192,6 +193,25 @@ STORED_IDS = frozenset(
         "step_wait",
         "testing",
         "time_estimates",
+    }
+)
+
+# The aspects planning/ owns (rule 14). An aspect is admitted only when a headless server
+# or daemon must interpret it — status and what a step is, so far. The list growing past
+# about fifteen is the signal that planning/ has become "the important aspects": stop and
+# reconsider rather than add.
+PLANNING_ASPECTS = frozenset(
+    {
+        "branch_cut",
+        "branch_land",
+        "feature",
+        "step_agent_instruction",
+        "step_check",
+        "step_milestone",
+        "step_review",
+        "step_start",
+        "step_status",
+        "step_wait",
     }
 )
 
@@ -665,6 +685,26 @@ def test_stored_module_ids_never_change() -> None:
     added = sorted(found - STORED_IDS)
     assert not removed, f"stored ids no longer declared: {removed} — a stored id never changes"
     assert not added, f"new stored ids: {added} — add them to STORED_IDS"
+
+
+def test_planning_admits_only_the_listed_aspects() -> None:
+    """Rule 14: what planning/ interprets grows only by an edit to PLANNING_ASPECTS — read
+    off the ``AspectSpec``s its files declare, since a file may declare two (the cut and
+    the landing) under names of its own."""
+    from importlib import import_module
+
+    from dplanner.domain.aspects import AspectSpec
+
+    admitted = {
+        value.data_format.module_id
+        for path in (SRC / "planning").glob("[!_]*.py")
+        for value in vars(import_module(f"{PACKAGE}.planning.{path.stem}")).values()
+        if isinstance(value, AspectSpec)
+    }
+    assert admitted == PLANNING_ASPECTS, (
+        f"planning/ declares {sorted(admitted - PLANNING_ASPECTS)} unlisted and "
+        f"{sorted(PLANNING_ASPECTS - admitted)} missing — admitting an aspect is a decision"
+    )
 
 
 def test_the_id_scanner_reads_a_declaration(tmp_path) -> None:

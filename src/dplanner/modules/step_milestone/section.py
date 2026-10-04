@@ -10,7 +10,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QVBoxLayout, QWidg
 from dplanner.domain.model import Library, Step
 from dplanner.framework.module_data_section import FIELD_GAP, PANEL_MARGIN, ModuleDataSection
 from dplanner.framework.undo import UndoService
-from dplanner.modules.step_milestone.aspect import MODULE_ID, read, write
+from dplanner.planning.milestone import MODULE_ID, read, write
 
 # The swatch beside the label: a dot the size of a line of text, so the row reads as one.
 SWATCH = 14

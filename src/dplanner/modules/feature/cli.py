@@ -36,7 +36,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.shelf import turn_off, turn_on
 from dplanner.domain.store import FilesFor
-from dplanner.modules.feature.aspect import (
+from dplanner.planning.feature import (
     MODULE_ID,
     FeatureSource,
     cited_at,

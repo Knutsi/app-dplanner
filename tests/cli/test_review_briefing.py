@@ -13,7 +13,7 @@ import json
 
 import pytest
 
-from dplanner.modules.step_review.aspect import LENSES, NO_WORKTREE_FOR_A_REVIEW
+from dplanner.planning.review import LENSES, NO_WORKTREE_FOR_A_REVIEW
 
 
 @pytest.fixture

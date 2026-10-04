@@ -143,7 +143,6 @@ def test_the_wrapper_records_the_multiplexers_own_names_for_the_pane(tmp_path):
 
 def test_the_two_old_settings_read_as_the_default_profile(app):
     from dplanner.framework.user_config import set_global
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
     from dplanner.modules.step_agent_instruction.profiles import (
         AGENT_COMMAND_KEY,
         LAUNCH_COMMAND_KEY,
@@ -152,6 +151,7 @@ def test_the_two_old_settings_read_as_the_default_profile(app):
         read_profiles,
         write_profiles,
     )
+    from dplanner.planning.agent import MODULE_ID
 
     set_global(MODULE_ID, AGENT_COMMAND_KEY, "codex {prompt}")
     set_global(MODULE_ID, LAUNCH_COMMAND_KEY, "kitty {script}")
@@ -166,7 +166,6 @@ def test_the_known_pairings_are_seeded_once_and_never_doubled(app):
     pairing already there by its choices is skipped whatever it is named, the stored
     default stays first, and a second seed (or a removal) is honoured by the flag."""
     from dplanner.framework.user_config import get_global
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
     from dplanner.modules.step_agent_instruction.launcher import HERDR_COMMAND
     from dplanner.modules.step_agent_instruction.profiles import (
         SEEDED_KEY,
@@ -175,6 +174,7 @@ def test_the_known_pairings_are_seeded_once_and_never_doubled(app):
         seed_profiles,
         write_profiles,
     )
+    from dplanner.planning.agent import MODULE_ID
 
     write_profiles([Profile("Mine", "", "ghostty -e {script}"), Profile("Codex", "codex {prompt}")])
     added = seed_profiles(HARNESSES, platform="linux")
@@ -204,12 +204,12 @@ def test_the_known_pairings_are_seeded_once_and_never_doubled(app):
 
 def test_a_fresh_machine_is_seeded_around_its_default_and_no_harness_seeds_nothing(app):
     from dplanner.framework.user_config import get_global
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
     from dplanner.modules.step_agent_instruction.profiles import (
         SEEDED_KEY,
         read_profiles,
         seed_profiles,
     )
+    from dplanner.planning.agent import MODULE_ID
 
     assert seed_profiles((), platform="linux") == [] and get_global(MODULE_ID, SEEDED_KEY) is None
     seed_profiles(HARNESSES, platform="darwin")

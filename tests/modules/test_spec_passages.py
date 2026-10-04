@@ -8,12 +8,12 @@ from tests.modules.test_spec import imported
 from dplanner.core import anchors
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-from dplanner.modules.feature.aspect import FeatureSource
-from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.spec import activity as activity_module
 from dplanner.modules.spec.activity import SpecsActivity
 from dplanner.modules.spec.aspect import MODULE_ID
+from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+from dplanner.planning.feature import FeatureSource
+from dplanner.planning.feature import write as feature_write
 
 GUIDE = """# Guide
 

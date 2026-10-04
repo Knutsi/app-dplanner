@@ -35,11 +35,11 @@ from dplanner.modules.docs.module import (
     NOTHING_REASON,
     STALE_ACTION,
 )
-from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction import module as agent_module
 from dplanner.modules.step_agent_run.aspect import read as run_state
-from dplanner.modules.step_milestone.aspect import write as milestone_write
+from dplanner.planning.feature import write as feature_write
+from dplanner.planning.milestone import write as milestone_write
 
 
 @pytest.fixture

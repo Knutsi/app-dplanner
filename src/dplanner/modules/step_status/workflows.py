@@ -31,6 +31,8 @@ from dplanner.domain.workflow import (
     Person,
     PlanView,
 )
+from dplanner.planning.agent import enabled as is_agent
+from dplanner.planning.kinds import works_nobody
 from dplanner.planning.status import (
     MODULE_ID,
     REVIEW_AND_MERGE,
@@ -58,14 +60,10 @@ class Kept:
 
 @dataclass(frozen=True)
 class StatusWorkflow:
-    """The facts the composition root knows and this module does not: ``works_nobody``
-    names a step nobody works — "a wait" — which has no status but pending; ``is_agent``
-    says an agent executes a step; ``keep_reason`` builds the decision note a ``because``
-    is kept as, answering its id and the command that adds it — None when the step already
-    carries that note."""
+    """The one effect the composition root supplies: ``keep_reason`` builds the decision note
+    a ``because`` is kept as, answering its id and the command that adds it — None when the
+    step already carries that note. What a step is comes from ``planning.kinds``."""
 
-    works_nobody: Callable[[Step], str]
-    is_agent: Callable[[Step], bool]
     keep_reason: Callable[[PlanView, Step, str, date], tuple[str, Command | None]]
 
     def refusal(
@@ -76,7 +74,7 @@ class StatusWorkflow:
         if because and status is not Status.DONE:
             return "--because says why a step is done without review; it goes with done"
         for step in steps:
-            if (kind := self.works_nobody(step)) and status is not Status.PENDING:
+            if (kind := works_nobody(step)) and status is not Status.PENDING:
                 return f"{step.title!r} is {kind}: {no_status(kind)}"
             match actor:
                 case AgentRun():
@@ -84,7 +82,7 @@ class StatusWorkflow:
                         status is Status.DONE
                         and not because
                         and stored(step) not in REVIEW_AND_MERGE  # A reviewer may finish it.
-                        and self.is_agent(step)
+                        and is_agent(step)
                     ):
                         return _review_first(step)
                 case Person() | Daemon():

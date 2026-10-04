@@ -817,9 +817,9 @@ inherited it. Modules never import each other, and this is why they do not have 
 
 `planning/estimate.py` is the worked example: `step_estimation` became `estimation`
 when it grew a project's start date, and the rename cost no project-format migration and no
-import. `modules/step_milestone/aspect.py` is the second: `step_release` became
+import. `planning/milestone.py` is the second: `step_release` became
 `step_milestone` when *release* turned out to be the wrong word for a thing that collects
-features. `modules/feature/aspect.py` is the third: `step_feature` became `feature` when a
+features. `planning/feature.py` is the third: `step_feature` became `feature` when a
 feature grew a catalogue beside the project and stopped being a marker on a step. Its
 converter was for a while the one that could not finish the job — a per-entry converter
 never sees the project, so it could not mint the record and the entry read as
@@ -844,7 +844,7 @@ again. Three rules they make concrete:
   and the loaded library, returning the owners it changed, and idempotent because it runs
   on every open. `modules/notes/migrate.py` is the worked example: the retired handoff
   aspect's prose, scope and files become a `handoff` note on the step.
-  `modules/feature/migrate.py` is the second, and it adds three things the next one will
+  `planning/feature_migrate.py` is the second, and it adds three things the next one will
   want. **A created node's data goes on the object before `add_child`, and its id is never
   returned**: the builder flushes what an absorption returns with the `module_data` and
   `module_text` aspects only, and a node that did not exist a moment ago has no directory

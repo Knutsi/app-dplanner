@@ -22,8 +22,8 @@ from dplanner.theme.cards import key_glyph_ink
 from dplanner.theme.icons import glyph_painter, key_badge_icon, step_icon
 
 # The medallion a step wears, as the word this list says it by — coarsest claim first, the
-# same order ``_step_key`` reads a step's letter in. The row's glyph is the key block's: who
-# works the step, where the word under the title says what it is.
+# same order ``planning.kinds.RANKING`` reads a step's letter in. The row's glyph is the key
+# block's: who works the step, where the word under the title says what it is.
 KINDS: tuple[tuple[str, str], ...] = (
     ("tag", "Milestone"),
     ("layers", "Feature"),

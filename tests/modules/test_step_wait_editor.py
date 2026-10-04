@@ -9,9 +9,9 @@ from PySide6.QtCore import QDate
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
 from dplanner.modules.step_description.aspect import enabled as description_on
-from dplanner.modules.step_wait.aspect import read
 from dplanner.planning.estimate import enabled as estimate_on
 from dplanner.planning.schedule import Wait
+from dplanner.planning.wait import read
 
 TODAY = date(2026, 9, 4)
 
@@ -84,14 +84,15 @@ def test_a_wait_takes_no_status_no_agent_and_no_tests_and_says_why(services, pro
 
 def test_a_wait_wears_its_letter_its_clock_and_how_long_it_holds(services, project):
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules import _primary_glyph, _step_key, _step_kind, _step_stats
-    from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
-    from dplanner.modules.step_wait.aspect import write
+    from dplanner.modules import _primary_glyph, _step_stats
+    from dplanner.planning.kinds import key_of, kind_word
+    from dplanner.planning.wait import MODULE_ID as WAIT_ID
+    from dplanner.planning.wait import write
 
     step = project.steps[0]
     until = Wait(until=date(2026, 11, 4))
     SetModuleDataCommand(step.id, WAIT_ID, write(until)).redo(services.document)
-    assert _step_key(step).startswith("W") and _step_kind(step) == "wait"
+    assert key_of(step).startswith("W") and kind_word(step) == "wait"
     assert _primary_glyph(step) == ("clock", "warn")  # The amber clock, in its key block.
     assert _step_stats(services.document, project)[step.id] == "until 4 Nov"
     SetModuleDataCommand(step.id, WAIT_ID, write(Wait(days=3.0))).redo(services.document)

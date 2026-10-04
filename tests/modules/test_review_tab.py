@@ -11,16 +11,16 @@ from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleD
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.project_editor.selection import EdgeRef
-from dplanner.modules.step_agent_instruction import aspect as agent
-from dplanner.modules.step_review.aspect import (
+from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
+from dplanner.modules.step_review.rounds import opened, said
+from dplanner.planning import agent
+from dplanner.planning.review import (
     MODULE_ID,
     ReviewSettings,
     is_review,
     settings,
     write,
 )
-from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
-from dplanner.modules.step_review.rounds import opened, said
 
 TOGGLE = "links.auto_progress"
 
