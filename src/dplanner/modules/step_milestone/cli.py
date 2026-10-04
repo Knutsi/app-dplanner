@@ -11,7 +11,7 @@ from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.ordering import placed
 from dplanner.domain.shelf import shelved, turn_off, turn_on
-from dplanner.modules.step_milestone.aspect import (
+from dplanner.planning.milestone import (
     MODULE_ID,
     next_milestone_label,
     project_labels,

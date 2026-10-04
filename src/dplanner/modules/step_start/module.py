@@ -11,7 +11,7 @@ from dplanner.domain.model import Library
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.aspect_toggle import aspect_toggle
 from dplanner.framework.undo import UndoService
-from dplanner.modules.step_start.aspect import DATA_FORMAT, MODULE_ID, SPEC, read, write
+from dplanner.planning.start import DATA_FORMAT, MODULE_ID, SPEC, read, write
 from dplanner.theme.icons import mark_starts_icon
 
 

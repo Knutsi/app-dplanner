@@ -5,10 +5,10 @@ from pathlib import Path
 from scripts.synthetic_library import build_library
 
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.feature.aspect import is_feature
 from dplanner.modules.project_editor.positions import read_position
-from dplanner.modules.step_milestone.aspect import read as milestone_label
 from dplanner.modules.testing import runs
+from dplanner.planning.feature import is_feature
+from dplanner.planning.milestone import read as milestone_label
 
 
 def test_the_library_reads_back_with_the_mix_it_promises(tmp_path: Path) -> None:
@@ -48,15 +48,15 @@ def test_an_unplaced_share_leaves_positions_to_the_layout(tmp_path: Path) -> Non
 def test_every_project_measures_and_maps(tmp_path: Path) -> None:
     """The agent's eyes over a real plan: the geometry report and the map, for every
     project the library holds, keyed the way every CLI row is."""
-    from dplanner.modules import _step_key
     from dplanner.modules.project_editor.geometry import map_text, measure, text
+    from dplanner.planning.kinds import key_of
 
     library_file = build_library(tmp_path, steps=30)
     store = LibraryStore(library_file)
     library = store.load()
     try:
         for project in library.projects:
-            geometry = measure(library, project, key_of=_step_key)
+            geometry = measure(library, project, key_of=key_of)
             assert len(geometry.cards) == len(project.steps)
             assert geometry.bounds is not None and geometry.bounds[2] > 0
             picture = map_text(geometry)

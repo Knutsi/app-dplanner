@@ -61,7 +61,6 @@ if TYPE_CHECKING:
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
     from dplanner.modules.coverage.trace import Trace
-    from dplanner.modules.feature.aspect import FeatureSource
     from dplanner.modules.project_editor.clipboard import PastePolicy
     from dplanner.modules.spec.source_kind import DocumentSourceKind
     from dplanner.modules.spec_confluence.module import SecretStore
@@ -72,6 +71,7 @@ if TYPE_CHECKING:
     from dplanner.modules.step_status.workflows import StatusWorkflow
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
+    from dplanner.planning.feature import FeatureSource
     from dplanner.planning.schedule import Scheduled
     from dplanner.planning.status import Reading, Status, Unknown
     from dplanner.theme.providers import ThemeProvider
@@ -145,9 +145,6 @@ def default_modules(
     from dplanner.modules.estimation.aspect import write as estimate_write
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.estimation.schedule import start_of, write_start
-    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.aspect import is_feature
-    from dplanner.modules.feature.aspect import read as feature_read
     from dplanner.modules.feature.module import FeatureDeps, FeatureModule
     from dplanner.modules.github.aspect import PR_CLOSED, PR_MERGED, PR_OPEN, pr_label
     from dplanner.modules.github.aspect import read as github_read
@@ -194,13 +191,6 @@ def default_modules(
     from dplanner.modules.spec_folder.module import SpecFolderKind
     from dplanner.modules.spec_git.module import SpecGitDeps, SpecGitKind
     from dplanner.modules.spec_git.source import SPEC_GIT_CACHE, probe
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_INSTRUCTION_ID
-    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
-    from dplanner.modules.step_agent_instruction.aspect import read as agent_instruction_read
-    from dplanner.modules.step_agent_instruction.aspect import (
-        separate_instruction as agent_separate,
-    )
-    from dplanner.modules.step_agent_instruction.aspect import write_state as agent_write_state
     from dplanner.modules.step_agent_instruction.auto_launch import Due
     from dplanner.modules.step_agent_instruction.module import (
         RUN_MENU_ID,
@@ -224,8 +214,6 @@ def default_modules(
         StepDescriptionModule,
     )
     from dplanner.modules.step_description.section import SeparateInstructionLink
-    from dplanner.modules.step_milestone.aspect import is_milestone
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_milestone.module import StepMilestoneDeps, StepMilestoneModule
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
     from dplanner.modules.step_properties.module import (
@@ -240,8 +228,6 @@ def default_modules(
     from dplanner.modules.step_start.module import StepStartDeps, StepStartModule
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
-    from dplanner.modules.step_wait.aspect import read as wait_read
-    from dplanner.modules.step_wait.aspect import stat as wait_stat
     from dplanner.modules.step_wait.module import StepWaitDeps, StepWaitModule
     from dplanner.modules.sync.module import SyncDeps, SyncModule
     from dplanner.modules.taskcenter.module import TaskCenterDeps, TaskCenterModule
@@ -253,6 +239,20 @@ def default_modules(
         TimeEstimatesDeps,
         TimeEstimatesModule,
     )
+    from dplanner.planning.agent import MODULE_ID as AGENT_INSTRUCTION_ID
+    from dplanner.planning.agent import enabled as agent_enabled
+    from dplanner.planning.agent import enabled as is_agent
+    from dplanner.planning.agent import read as agent_instruction_read
+    from dplanner.planning.agent import (
+        separate_instruction as agent_separate,
+    )
+    from dplanner.planning.agent import write_state as agent_write_state
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import is_feature
+    from dplanner.planning.feature import read as feature_read
+    from dplanner.planning.kinds import Kind, key_of, kind_of, kind_word, works_nobody
+    from dplanner.planning.milestone import is_milestone
+    from dplanner.planning.milestone import read as milestone_read
     from dplanner.planning.schedule import Wait, format_days, schedule
     from dplanner.planning.status import (
         Status,
@@ -262,6 +262,8 @@ def default_modules(
         stored,
         word,
     )
+    from dplanner.planning.wait import read as wait_read
+    from dplanner.planning.wait import stat as wait_stat
     from dplanner.theme.icons import (
         clock_icon,
         coverage_icon,
@@ -357,7 +359,7 @@ def default_modules(
         for step in library.project(project_id).steps:
             refs = github_read(step)
             if refs is not None and refs.pr_number is not None:
-                named[refs.pr_number] = f"{_step_key(step)} {step.title}".strip()
+                named[refs.pr_number] = f"{key_of(step)} {step.title}".strip()
         return named
 
     def history_for(root: Path, scope: str, limit: int) -> RepoLog:
@@ -516,7 +518,7 @@ def default_modules(
         step = library.step(step_id)
         if not is_milestone(step):
             return None
-        return key_badge_icon(_step_key(step), milestone_color(step_id))
+        return key_badge_icon(key_of(step), milestone_color(step_id))
 
     def milestone_palette(project_id: str) -> str:
         """Which colour map a project's milestones are shaded from."""
@@ -649,7 +651,7 @@ def default_modules(
         on a feature branch not yet landed lies on that branch's lane."""
         from dataclasses import replace
 
-        from dplanner.modules.step_review.aspect import reviews
+        from dplanner.planning.review import reviews
 
         project = library.project(project_id)
         accents = {
@@ -709,6 +711,7 @@ def default_modules(
         milestone = milestone_read(step)
         wait = wait_read(step)
         key_glyph, key_glyph_tone = _primary_glyph(step)
+        kind = kind_of(step)
         if milestone:
             stat = milestone_stat
         elif wait is not None:
@@ -722,21 +725,21 @@ def default_modules(
             pill_text=pill,
             pill_tone={PR_MERGED: "good", PR_CLOSED: "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
-            key_text=_step_key(step),
+            key_text=key_of(step),
             key_tone=STEP_STATUS_TONES.get(word(status), ""),
             key_glyph=key_glyph,
             key_glyph_tone=key_glyph_tone,
             chip_text=chip_text,
             chip_tone=chip_tone,
-            # Done outranks a kind, and a milestone outranks a feature: the coarser claim
-            # wins the body, and the medallion still says what the node also is.
+            # Done outranks a kind; otherwise the kind tints the body, and the medallion
+            # still says what the node also is.
             body_tone=(
                 "good"
                 if status is Status.DONE
                 else "highlight"
-                if milestone
+                if kind is Kind.MILESTONE
                 else "feature"
-                if is_feature(step)
+                if kind is Kind.FEATURE
                 else ""
             ),
             # A milestone recolours the kind it is rather than gaining a second mark: the
@@ -790,11 +793,11 @@ def default_modules(
             actions=services.actions,
             details=services.step_details,
             is_done=_is_done,
-            is_agent=_is_agent_step,
+            is_agent=is_agent,
             stacked_apart=_stacked_apart,
             born=_branch_births,
             seats=branch_seats,
-            key_of=_step_key,
+            key_of=key_of,
             parent=services.window,
         )
     )
@@ -919,8 +922,8 @@ def default_modules(
         from dplanner.modules.project_editor.sorts import H_PITCH
         from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
         from dplanner.modules.step_description.aspect import write_state as description_state
-        from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
-        from dplanner.modules.step_wait.aspect import write as write_wait
+        from dplanner.planning.wait import MODULE_ID as WAIT_ID
+        from dplanner.planning.wait import write as write_wait
 
         where = read_position(library.step(step_id))
         project_editor.create_step(
@@ -967,7 +970,7 @@ def default_modules(
             debounce=services.debounce,
             parent=services.window,
             facts_of=facts_of,
-            key_of=_step_key,
+            key_of=key_of,
             # Handing the problems to an agent is the agent module's — resolved lazily,
             # since it is constructed further down and neither knows the other's name.
             fix_profiles=lambda: agent_instruction.plan_profiles(),
@@ -1147,7 +1150,7 @@ def default_modules(
             asks_person=_asks_person,
             # Work under review an agent takes on is that agent's, not a person's row —
             # the same answer the canvas pulses by (step_accents above).
-            is_agent=_is_agent_step,
+            is_agent=is_agent,
             verbs=(
                 StripVerb("agent.run", data_menu=RUN_MENU_ID, face="Run Agents"),
                 StripVerb("status.ready-to-merge"),
@@ -1157,7 +1160,7 @@ def default_modules(
             # where the work stands, so the one colour that is not a status says what the
             # work is leading to.
             milestone_badge=milestone_badge,
-            key_of=_step_key,
+            key_of=key_of,
             # Who works the step, as its key block and Find's rows say it.
             glyph_of=lambda step: _primary_glyph(step)[0],
         )
@@ -1187,7 +1190,7 @@ def default_modules(
             debounce=services.debounce,
             context=services.context,
             tabs=services.tabs,
-            step_key=_step_key,
+            step_key=key_of,
         )
     )
 
@@ -1276,8 +1279,8 @@ def default_modules(
             repo_root=lambda project_id: find_repo_root(store.project_dir(project_id)),
             plan_remote=lambda project_id: origin_url(store.project_dir(project_id)),
             sources=_report_sources(),
-            key_of=_step_key,
-            kind_of=_step_kind,
+            key_of=key_of,
+            kind_of=kind_word,
             status_for=stored,
             clock=services.clock,
             reporting_site=reporting_site,
@@ -1363,7 +1366,7 @@ def default_modules(
             # The rule, the tint and the key badge all take the milestone's own shade —
             # the same one its card wears on the canvas and its band in the calendar.
             milestone_color=milestone_color,
-            step_key=lambda step_id: _step_key(library.step(step_id)),
+            step_key=lambda step_id: key_of(library.step(step_id)),
             # The same answer the canvas card's ✓ and the report's read: a wait is never
             # done here, whatever its day.
             step_done=lambda step_id: _card_status(library.step(step_id)) is Status.DONE,
@@ -1479,7 +1482,7 @@ def default_modules(
             parent=services.window,
             # The dialog behind the banner selects the step a row's agent is on.
             reveal=reveal_step,
-            key_of=_step_key,
+            key_of=key_of,
         )
     )
 
@@ -1494,7 +1497,7 @@ def default_modules(
     # at once to this module's launcher, and it is listed before this module.
     agent_instruction = StepAgentInstructionModule(
         StepAgentInstructionDeps(
-            works_nobody=_works_nobody,
+            works_nobody=works_nobody,
             dictation=services.dictation,
             library=library,
             debounce=services.debounce,
@@ -1552,7 +1555,7 @@ def default_modules(
             mark_started=lambda step_id: record_started(library, step_id, services.clock.today()),
             # What names the run — its worktree, its branch, its window: the key and
             # the ticket, composed here from aspects the agent module never reads.
-            step_key=_step_key,
+            step_key=key_of,
             ticket_key=_ticket_key,
             # Manage Agent Profiles… lands on the module's own settings page.
             open_settings=settings.open,
@@ -1943,7 +1946,7 @@ def default_modules(
                     agent_run_state(library.step(step_id)) if library.has(step_id) else ""
                 ),
                 # How a step is named everywhere, for the briefing's verbs and the rows.
-                step_key=_step_key,
+                step_key=key_of,
                 # A milestone group's medallion in the milestone's own shade — the same
                 # sequence the Tests tab's headings and the calendar show.
                 milestone_color=milestone_color,
@@ -2017,8 +2020,8 @@ def default_modules(
                 picked_links=lambda context: [
                     ref.as_edge() for ref in picked_edges(library, context)
                 ],
-                is_agent=_is_agent_step,
-                key_of=_step_key,
+                is_agent=is_agent,
+                key_of=key_of,
                 # A link into a review auto-progresses by the review's rule, not its flag.
                 always=_always_progresses,
             )
@@ -2030,8 +2033,8 @@ def default_modules(
                 undo=services.undo,
                 actions=services.actions,
                 sections=services.inspector_sections,
-                works_nobody=_works_nobody,
-                key_of=_step_key,
+                works_nobody=works_nobody,
+                key_of=key_of,
                 harnesses=agent_harnesses(),
                 default_profile=lambda: default_profile().name,
                 parent=services.window,
@@ -2047,7 +2050,7 @@ def default_modules(
         problems,
         TestsModule(
             TestsDeps(
-                works_nobody=_works_nobody,
+                works_nobody=works_nobody,
                 dictation=services.dictation,
                 library=library,
                 debounce=services.debounce,
@@ -2201,6 +2204,7 @@ def _note_parts(
     from dplanner.modules.notes.log import note_files
     from dplanner.modules.notes.reach import briefing_blocks, reaching
     from dplanner.modules.step_agent_instruction.prompt import PromptPart
+    from dplanner.planning.kinds import key_of
 
     project = library.project_of(step.id)
     return [
@@ -2211,7 +2215,7 @@ def _note_parts(
                 path for note in block.carried for path in note_files(files, project.id, note)
             ),
         )
-        for block in briefing_blocks(project, reaching(library, step), _step_key)
+        for block in briefing_blocks(project, reaching(library, step), key_of)
     ]
 
 
@@ -2232,15 +2236,15 @@ def _briefing_sections(
     blocks without learning what a description, a requirement or a PR is. An empty fact
     contributes no section.
     """
-    from dplanner.modules.feature.aspect import is_feature
-    from dplanner.modules.feature.aspect import read as feature_read
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.spec.aspect import attachment_paths
-    from dplanner.modules.step_agent_instruction.aspect import read as instruction_read
     from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
     from dplanner.modules.step_description.aspect import read as description_read
+    from dplanner.planning.agent import read as instruction_read
+    from dplanner.planning.feature import is_feature
+    from dplanner.planning.feature import read as feature_read
 
     sections: list[PromptPart] = []
     # Without a separate instruction the description IS the ## Instructions block (see
@@ -2323,7 +2327,9 @@ def _briefing_sections(
 def _landed_work(library: "Library", step: "Step", facts: "RepositoryFacts | None") -> str:
     """What a landing is handed about the branch it lands: each step on it where it stands,
     the line *Work you collect* prints. Empty for a step that lands nothing."""
-    if not _is_land(step):
+    from dplanner.planning.branches import is_land
+
+    if not is_land(step):
         return ""
     stretch = _branch_reading(library.project_of(step.id)).of_land(step.id)
     if stretch is None:
@@ -2342,8 +2348,9 @@ def _source_line(source: "Step", facts: "RepositoryFacts | None") -> str:
     """
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
-    from dplanner.modules.step_agent_instruction.aspect import uses_worktree
     from dplanner.modules.step_agent_instruction.launcher import workdir, worktree_path
+    from dplanner.planning.agent import uses_worktree
+    from dplanner.planning.kinds import key_of
     from dplanner.planning.status import phrase, stored
 
     refs = github_read(source)
@@ -2365,7 +2372,7 @@ def _source_line(source: "Step", facts: "RepositoryFacts | None") -> str:
         path = worktree_path(root, _run_name(source)) if root is not None else None
         here = path is not None and path.is_dir()
         facts_of.append(f"worktree `{path}`" if here else "no worktree of it on this machine")
-    return f"- **{_step_key(source)}** {source.title} — " + " · ".join(facts_of)
+    return f"- **{key_of(source)}** {source.title} — " + " · ".join(facts_of)
 
 
 def _collected_work(library: "Library", step: "Step", facts: "RepositoryFacts | None") -> str:
@@ -2373,14 +2380,15 @@ def _collected_work(library: "Library", step: "Step", facts: "RepositoryFacts | 
     then the duty to land that work, the right to finish the source, and the way to send
     work back that is not ready. Empty for a step that collects nothing."""
     from dplanner.modules.auto_progress.aspect import sources
-    from dplanner.modules.step_review.aspect import settings
+    from dplanner.planning.kinds import key_of
+    from dplanner.planning.review import settings
 
     collected = sources(library, step)
     if not collected:
         return ""
     lines = [_source_line(source, facts) for source in collected]
-    keys = [_step_key(source) or source.title for source in collected]
-    ref = _quoted(_step_key(step) or step.title)
+    keys = [key_of(source) or source.title for source in collected]
+    ref = _quoted(key_of(step) or step.title)
     to = f"--to {_quoted(keys[0])}" if len(keys) == 1 else "--to <source>"
     lines += [
         "",
@@ -2407,7 +2415,7 @@ def _reviewed_work(library: "Library", step: "Step", facts: "RepositoryFacts | N
     """What a review is handed about the work it reviews: its subject where it stands, and
     how to read that work without touching it. Empty for a step that is no review, and for
     a review with no subject — its instructions say to stop."""
-    from dplanner.modules.step_review.aspect import is_review, subjects
+    from dplanner.planning.review import is_review, subjects
 
     reviewed = subjects(library, step) if is_review(step) else []
     if not reviewed:
@@ -2440,9 +2448,10 @@ def _conversation_parts(library: "Library", step: "Step") -> "list[PromptPart]":
         turn,
         with_party,
     )
+    from dplanner.planning.kinds import key_of
 
     def ref(other: "Step") -> str:
-        return _quoted(_step_key(other) or other.title)
+        return _quoted(key_of(other) or other.title)
 
     askers = [each for each in library.dependents(step.id) if _auto_progresses(each, step)]
     talks = [
@@ -2516,12 +2525,13 @@ def _briefing_instruction(
     were attached to it. A review's block is generated (``_review_instruction``), and that
     same text rides inside it as what to look for.
     """
-    from dplanner.modules.step_agent_instruction.aspect import asset_paths
-    from dplanner.modules.step_agent_instruction.aspect import read as instruction_read
     from dplanner.modules.step_agent_instruction.prompt import PromptPart
     from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
     from dplanner.modules.step_description.aspect import read as description_read
-    from dplanner.modules.step_review.aspect import is_review
+    from dplanner.planning.agent import asset_paths
+    from dplanner.planning.agent import read as instruction_read
+    from dplanner.planning.branches import is_land
+    from dplanner.planning.review import is_review
 
     own = instruction_read(step)
     instruction_files = asset_paths(files, step.id)
@@ -2532,7 +2542,7 @@ def _briefing_instruction(
         body, carried = description_read(step), (*description_files, *instruction_files)
     if is_review(step):
         body = _review_instruction(library, step, body)
-    elif _is_land(step):
+    elif is_land(step):
         body = _landing_instruction(library, step, body)
     return PromptPart(heading="Instructions", body=body, files=carried)
 
@@ -2590,19 +2600,15 @@ def _lanes(library: "Library", found: "BranchReading") -> "dict[Edge, str]":
     return lanes
 
 
-def _is_land(step: "Step") -> bool:
-    from dplanner.modules.branches.aspect import is_land
-
-    return is_land(step)
-
-
 def _landing_instruction(library: "Library", land: "Step", look_for: str) -> str:
     """A landing's instructions, generated from the stretch it closes, as a review's are
     from its subject: the branch, what it merges into, the order it is done in — and its
     own prose after, as what else to see to. A landing whose cut is gone is told to stop."""
+    from dplanner.planning.kinds import key_of
+
     found = _branch_reading(library.project_of(land.id))
     stretch = found.of_land(land.id)
-    ref = _quoted(_step_key(land) or land.title)
+    ref = _quoted(key_of(land) or land.title)
     if stretch is None:
         return (
             "This step lands a feature branch, but the cut that started it is gone or no longer"
@@ -2638,15 +2644,16 @@ def _review_instruction(library: "Library", review: "Step", look_for: str) -> st
     through which lenses, how the rounds go and how many there may be — then ``look_for``,
     what the review's own prose asks it to watch. A review that does not have exactly one
     subject is told to stop, since every verb it would run names that one step."""
-    from dplanner.modules.step_review.aspect import lens, settings, subjects
+    from dplanner.planning.kinds import key_of
+    from dplanner.planning.review import lens, settings, subjects
 
-    ref = _quoted(_step_key(review) or review.title)
+    ref = _quoted(key_of(review) or review.title)
     reviewed = subjects(library, review)
     if len(reviewed) != 1:
         which = (
             "reviews nothing yet"
             if not reviewed
-            else f"reviews {_listed([_step_key(each) or each.title for each in reviewed])} at once"
+            else f"reviews {_listed([key_of(each) or each.title for each in reviewed])} at once"
         )
         return (
             f"This review {which}, and a review takes exactly one subject — the step it waits"
@@ -2654,11 +2661,11 @@ def _review_instruction(library: "Library", review: "Step", look_for: str) -> st
             f" {ref} <step>` gives it one, `dplanner step unlink {ref} <step>` takes one away."
         )
     subject = reviewed[0]
-    them = _quoted(_step_key(subject) or subject.title)
+    them = _quoted(key_of(subject) or subject.title)
     chosen = settings(review)
     cap = chosen.max_rounds
     lines = [
-        f"You review **{_step_key(subject)}** {subject.title} — *Work you review* says where its"
+        f"You review **{key_of(subject)}** {subject.title} — *Work you review* says where its"
         f" work is. You comment; you never commit, push or edit its files: {them}'s own agent"
         " makes every change, in answer to what you find.",
         "",
@@ -2776,7 +2783,7 @@ def _recorded_work(step: "Step") -> bool:
 def _branch_reading(project: "Project") -> "BranchReading":
     """The project's branch stretches, read afresh — the CLI's; the window reads the
     branches module's cached one."""
-    from dplanner.modules.branches.aspect import reading
+    from dplanner.planning.branches import reading
 
     return reading(project, _is_done)
 
@@ -2794,13 +2801,13 @@ def _branch_births(project: "Project", branch: str) -> "tuple[Step, Step]":
     agent step of a quarter day, briefed by the stretch it closes rather than by a
     description of its own."""
     from dplanner.domain.model import Step
-    from dplanner.modules.branches.aspect import CUT_ID, LAND_ID, write_cut, write_land
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import write as estimate_write
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
-    from dplanner.modules.step_agent_instruction.aspect import write_state as agent_state
     from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
     from dplanner.modules.step_description.aspect import write_state as description_state
+    from dplanner.planning.agent import MODULE_ID as AGENT_ID
+    from dplanner.planning.agent import write_state as agent_state
+    from dplanner.planning.branches import CUT_ID, LAND_ID, write_cut, write_land
 
     cut = Step(title=branch)
     cut.module_data[CUT_ID] = write_cut(branch)
@@ -2847,74 +2854,9 @@ def _merged_into_its_branch(
 def _no_worktree(step: "Step") -> str:
     """Why a run of ``step`` gets no worktree whatever its agent aspect says, or "" — the
     review's rule: it reads the work it reviews where that work is, and commits none."""
-    from dplanner.modules.step_review.aspect import NO_WORKTREE_FOR_A_REVIEW, is_review
+    from dplanner.planning.review import NO_WORKTREE_FOR_A_REVIEW, is_review
 
     return NO_WORKTREE_FOR_A_REVIEW if is_review(step) else ""
-
-
-def _step_key(step: "Step") -> str:
-    """The step's readable key: a letter for what it is, the number the project dealt.
-
-    ``M`` a milestone, ``F`` a feature, ``C`` a check, ``W`` a wait, ``B`` a branch cut,
-    ``R`` a review, ``S`` any other step —
-    the coarser claim wins, in the order the body tone ranks them, so a milestone that is
-    also a feature reads ``M``. The letter is presentation over the stored number, which is why
-    a step keeps its number when its kind changes and the letter follows. Read by the
-    key block on every card, every CLI row and lookup, the branch a run is named after, and the
-    briefing that tells the agent which step it holds.
-    """
-    from dplanner.modules.feature.aspect import is_feature
-    from dplanner.modules.step_check.aspect import read as check_read
-    from dplanner.modules.step_milestone.aspect import is_milestone
-    from dplanner.modules.step_review.aspect import is_review
-    from dplanner.modules.step_wait.aspect import is_wait
-
-    if not step.number:
-        return ""
-    letter = (
-        "M"
-        if is_milestone(step)
-        else "F"
-        if is_feature(step)
-        else "C"
-        if check_read(step)
-        else "W"
-        if is_wait(step)
-        else "B"
-        if _is_cut(step)
-        else "R"
-        if is_review(step)
-        else "S"
-    )
-    return f"{letter}{step.number}"
-
-
-def _step_kind(step: "Step") -> str:
-    """What a step *is*, in one word, the coarser claim first — the same ranking as the key's
-    letter and the body tone: milestone, feature, check, wait, cut, review, agent step, or
-    nothing."""
-    from dplanner.modules.feature.aspect import is_feature
-    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
-    from dplanner.modules.step_check.aspect import read as check_read
-    from dplanner.modules.step_milestone.aspect import is_milestone
-    from dplanner.modules.step_review.aspect import is_review
-    from dplanner.modules.step_wait.aspect import is_wait
-
-    if is_milestone(step):
-        return "milestone"
-    if is_feature(step):
-        return "feature"
-    if check_read(step):
-        return "check"
-    if is_wait(step):
-        return "wait"
-    if _is_cut(step):
-        return "cut"
-    if is_review(step):
-        return "review"
-    if agent_enabled(step):
-        return "agent"
-    return ""
 
 
 def _milestone_stats(library: "Library", project: "Project") -> dict[str, str]:
@@ -2928,7 +2870,7 @@ def _milestone_stats(library: "Library", project: "Project") -> dict[str, str]:
     milestone, which costs the sync no walk at all.
     """
     from dplanner.modules.estimation.schedule import project_schedule
-    from dplanner.modules.step_milestone.aspect import is_milestone
+    from dplanner.planning.milestone import is_milestone
     from dplanner.planning.schedule import format_date, format_days
 
     if not any(is_milestone(step) for step in project.steps):
@@ -2961,8 +2903,8 @@ def _milestone_colors(library: "Library", project: "Project") -> dict[str, str]:
     picker would otherwise name a map it was not painting.
     ARCHITECTURE.md's *Colour is a place on one map* has the rest.
     """
-    from dplanner.modules.step_milestone.aspect import is_milestone
     from dplanner.modules.time_estimates.schedule import milestone_colors
+    from dplanner.planning.milestone import is_milestone
 
     return milestone_colors(library, project, is_milestone)
 
@@ -2972,9 +2914,9 @@ def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
     wait holds, any other step's estimate — what the canvas paints, read once for the
     report's graph."""
     from dplanner.modules.estimation.aspect import read as estimated_days
-    from dplanner.modules.step_wait.aspect import read as wait_read
-    from dplanner.modules.step_wait.aspect import stat as wait_stat
     from dplanner.planning.schedule import format_days
+    from dplanner.planning.wait import read as wait_read
+    from dplanner.planning.wait import stat as wait_stat
 
     stats = _milestone_stats(library, project)
     for step in project.steps:
@@ -2997,11 +2939,12 @@ def _step_type_icons(step: "Step") -> tuple[str, ...]:
     same answer, so a
     step is the same kind everywhere. Who works it is :func:`_primary_glyph`'s, and a card
     says a thing once."""
-    from dplanner.modules.feature.aspect import is_feature
-    from dplanner.modules.step_check.aspect import read as check_read
-    from dplanner.modules.step_milestone.aspect import is_milestone
-    from dplanner.modules.step_review.aspect import is_review
     from dplanner.modules.testing.aspect import enabled as test_enabled
+    from dplanner.planning.branches import is_land
+    from dplanner.planning.check import read as check_read
+    from dplanner.planning.feature import is_feature
+    from dplanner.planning.milestone import is_milestone
+    from dplanner.planning.review import is_review
 
     return (
         *(("tag",) if is_milestone(step) else ()),
@@ -3009,7 +2952,7 @@ def _step_type_icons(step: "Step") -> tuple[str, ...]:
         *(("beaker",) if test_enabled(step) else ()),
         *(("shield",) if check_read(step) else ()),
         *(("review",) if is_review(step) else ()),
-        *(("merge",) if _is_land(step) else ()),
+        *(("merge",) if is_land(step) else ()),
     )
 
 
@@ -3018,9 +2961,10 @@ def _card_status(step: "Step") -> "Status | Unknown":
     canvas, the coverage lanes and the report: none for a step nobody works — a wait, a
     branch cut — which has no status, whatever it carried before it became one. A wait's
     clock is the block's one amber then."""
+    from dplanner.planning.kinds import works_nobody
     from dplanner.planning.status import Status, stored
 
-    return Status.PENDING if _works_nobody(step) else stored(step)
+    return Status.PENDING if works_nobody(step) else stored(step)
 
 
 def _primary_glyph(step: "Step") -> tuple[str, str]:
@@ -3033,12 +2977,13 @@ def _primary_glyph(step: "Step") -> tuple[str, str]:
     the report's graph — and by Find's rows and the Step statuses tab's. The tone is a
     status tone's word — "warn" is the attention amber — so each surface resolves it the way
     it resolves its status washes."""
-    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
-    from dplanner.modules.step_wait.aspect import is_wait
+    from dplanner.planning.agent import enabled as agent_enabled
+    from dplanner.planning.branches import is_cut
+    from dplanner.planning.wait import is_wait
 
     if is_wait(step):
         return "clock", "warn"
-    if _is_cut(step):
+    if is_cut(step):
         return "branch", ""
     return ("spark" if agent_enabled(step) else "person"), ""
 
@@ -3062,13 +3007,14 @@ def _time_readers() -> "TimeReaders":
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.aspect import read_history as estimate_history
     from dplanner.modules.estimation.schedule import start_of
-    from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
-    from dplanner.modules.step_wait.aspect import read as wait_read
     from dplanner.modules.time_estimates.cli import Readers
+    from dplanner.planning.agent import enabled as agent_enabled
+    from dplanner.planning.kinds import key_of
+    from dplanner.planning.milestone import read as milestone_read
     from dplanner.planning.status import REVIEW_AND_MERGE, Status, held, stored
     from dplanner.planning.status import read_since as status_since
     from dplanner.planning.status import read_started as status_started
+    from dplanner.planning.wait import read as wait_read
 
     def status_for(step: "Step") -> "Status":
         status = held(stored(step))
@@ -3091,7 +3037,7 @@ def _time_readers() -> "TimeReaders":
         start_of=start_of,
         milestone_label=milestone_read,
         estimate_history=estimate_history,
-        key_of=_step_key,
+        key_of=key_of,
     )
 
 
@@ -3100,10 +3046,11 @@ def _status_in(library: "Library", today: "date") -> "Callable[[Step], Reading]"
     ``today``: a wait done once it is over and waiting until then (``schedule.wait_status``),
     so what follows a wait is ready on the day it may start; every other step as its status
     aspect says."""
-    from dplanner.modules.step_wait.aspect import read as wait_read
+    from dplanner.planning.branches import is_cut
     from dplanner.planning.schedule import Wait, wait_status
     from dplanner.planning.status import read_since as status_since
     from dplanner.planning.status import stored
+    from dplanner.planning.wait import read as wait_read
 
     # A branch cut holds nothing once what it waits on is done: a wait of no days, read so
     # here and only here — the schedule's own waits never count one.
@@ -3112,7 +3059,7 @@ def _status_in(library: "Library", today: "date") -> "Callable[[Step], Reading]"
         library,
         stored,
         status_since,
-        lambda step: wait_read(step) or (held if _is_cut(step) else None),
+        lambda step: wait_read(step) or (held if is_cut(step) else None),
         today,
     )
 
@@ -3130,34 +3077,12 @@ def _wait_aware(library: "Library", today: "Callable[[], date]") -> "Callable[[S
     return lambda step: _status_in(library, today())(step)
 
 
-def _is_wait(step: "Step") -> bool:
-    """Whether a step is a wait — the wait aspect's answer, for modules that may not ask it."""
-    from dplanner.modules.step_wait.aspect import is_wait
-
-    return is_wait(step)
-
-
-def _is_cut(step: "Step") -> bool:
-    """Whether a step is a branch cut — the branches module's answer."""
-    from dplanner.modules.branches.aspect import is_cut
-
-    return is_cut(step)
-
-
-def _works_nobody(step: "Step") -> str:
-    """What a step nobody works is called — "a wait", "a branch cut" — for the modules
-    that refuse it a status, an agent, a review or a test; "" for a step somebody works."""
-    from dplanner.modules.branches.aspect import A_CUT
-
-    return "a wait" if _is_wait(step) else A_CUT if _is_cut(step) else ""
-
-
 def _auto_progresses(waiter: "Step", source: "Step") -> bool:
     """Whether ``waiter`` may start once ``source`` is ready for review — the one answer
     the frontier, Run Agent's gate, the canvas and every CLI mark read: a flagged link, or
     any link into a review."""
     from dplanner.modules.auto_progress.aspect import progresses
-    from dplanner.modules.step_review.aspect import reviews
+    from dplanner.planning.review import reviews
 
     return progresses(waiter, source) or reviews(waiter, source)
 
@@ -3166,36 +3091,29 @@ def _persons_turn(library: "Library", step: "Step", status_for: "Callable[[Step]
     """Whether a person moves ``step`` next — what its card pulses for: ready to merge,
     always; ready for review, unless an agent takes it on from there (``progression.taken``,
     the rule that keeps it off the boards' *Ready for review* too)."""
+    from dplanner.planning.agent import enabled as is_agent
     from dplanner.planning.progression import taken
     from dplanner.planning.status import Status
 
     status = status_for(step)
     return status is Status.READY_TO_MERGE or (
         status is Status.READY_FOR_REVIEW
-        and not taken(library, step, status_for, _auto_progresses, _is_agent_step)
+        and not taken(library, step, status_for, _auto_progresses, is_agent)
     )
 
 
 def _always_progresses(step: "Step") -> str:
     """Why every link into ``step`` auto-progresses whatever its flag says, or "" — the
     review's rule, which the Edge menu's toggle shows checked and greyed."""
-    from dplanner.modules.step_review.aspect import TAKES_FROM_REVIEW, is_review
+    from dplanner.planning.review import TAKES_FROM_REVIEW, is_review
 
     return TAKES_FROM_REVIEW if is_review(step) else ""
-
-
-def _is_agent_step(step: "Step") -> bool:
-    """Whether an agent executes the step — the agent aspect's answer, for the status verb
-    and the rows of `progression show`."""
-    from dplanner.modules.step_agent_instruction.aspect import enabled
-
-    return enabled(step)
 
 
 def _preferred_agent(step: "Step") -> str:
     """The agent a step asks to be run by — a review's own choice, a harness id — or "" for
     the default profile."""
-    from dplanner.modules.step_review.aspect import is_review, settings
+    from dplanner.planning.review import is_review, settings
 
     return settings(step).agent if is_review(step) else ""
 
@@ -3232,14 +3150,15 @@ def _due_now(
     the runs it is watching, which a claim not yet on disk cannot hide.
     """
     from dplanner.modules.step_review.rounds import due_turns
+    from dplanner.planning.agent import enabled as is_agent
     from dplanner.planning.progression import due
 
     found: dict[str, tuple[Step, TurnDue | None]] = {
         turn.step.id: (turn.step, turn)
-        for turn in due_turns(library, project, _is_agent_step, running, status_for)
+        for turn in due_turns(library, project, is_agent, running, status_for)
     }
     for step in due(
-        library, project, status_for, _auto_progresses, _is_agent_step, running, _counts_as_work
+        library, project, status_for, _auto_progresses, is_agent, running, _counts_as_work
     ):
         found.setdefault(step.id, (step, None))
     place = {step.id: index for index, step in enumerate(project.steps)}
@@ -3288,14 +3207,11 @@ def _note_escalation(context: "CliContext", review: "Step", title: str, body: st
 
 
 def _status_workflow() -> "StatusWorkflow":
-    """Setting a status, as the window and every CLI verb do it: the root's answers for
-    what nobody works and what an agent executes, and the notes module's way to keep a
-    reason."""
+    """Setting a status, as the window and every CLI verb do it, with the notes module's way
+    to keep a reason."""
     from dplanner.modules.step_status.workflows import StatusWorkflow
 
-    return StatusWorkflow(
-        works_nobody=_works_nobody, is_agent=_is_agent_step, keep_reason=_reason_note
-    )
+    return StatusWorkflow(keep_reason=_reason_note)
 
 
 def _reason_note(
@@ -3323,7 +3239,9 @@ def _reason_note(
 def _counts_as_work(step: "Step") -> bool:
     """Whether a step is work: a wait and a branch cut are not — no worker takes them and no
     count holds them."""
-    return not _works_nobody(step)
+    from dplanner.planning.kinds import works_nobody
+
+    return not works_nobody(step)
 
 
 def _time_writers() -> "TimeWriters":
@@ -3336,15 +3254,15 @@ def _time_writers() -> "TimeWriters":
     from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
     from dplanner.modules.estimation.aspect import write as write_estimate
     from dplanner.modules.estimation.schedule import write_start
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
-    from dplanner.modules.step_agent_instruction.aspect import write_state
-    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-    from dplanner.modules.step_milestone.aspect import write as write_label
-    from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
-    from dplanner.modules.step_wait.aspect import write as write_wait
     from dplanner.modules.time_estimates.simulation.frames import PlanState, StepState, Writers
+    from dplanner.planning.agent import MODULE_ID as AGENT_ID
+    from dplanner.planning.agent import write_state
+    from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
+    from dplanner.planning.milestone import write as write_label
     from dplanner.planning.status import MODULE_ID as STATUS_ID
     from dplanner.planning.status import write as write_status
+    from dplanner.planning.wait import MODULE_ID as WAIT_ID
+    from dplanner.planning.wait import write as write_wait
 
     def estimate(step: Step, state: StepState, today: date) -> tuple[str, dict[str, Any]]:
         previous = step.module_data.get(ESTIMATION_ID)
@@ -3396,6 +3314,7 @@ def _status_written(
     from dataclasses import replace
 
     from dplanner.cli.lookup import find_step
+    from dplanner.planning.kinds import key_of
 
     inner = command.run
 
@@ -3414,7 +3333,7 @@ def _status_written(
             for step in due_in(context, project):
                 if step.id not in before:
                     print(
-                        f"Now due: {_step_key(step)} {step.title or 'Untitled step'} — a DPlanner"
+                        f"Now due: {key_of(step)} {step.title or 'Untitled step'} — a DPlanner"
                         " window set to launch due steps starts its agent; with none open, a"
                         " person does",
                         file=context.out,
@@ -3443,12 +3362,13 @@ def _report_sources() -> tuple["ReportSource", ...]:
     from dplanner.modules.progression.report import report_source as progression
     from dplanner.modules.project_editor.report import report_source as graph
     from dplanner.modules.step_description.report import report_source as descriptions
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.step_milestone.report import report_source as milestones
     from dplanner.modules.step_order.report import report_source as order
     from dplanner.modules.step_ticket.report import report_source as tickets
     from dplanner.modules.testing.report import report_source as tests
     from dplanner.modules.time_estimates.report import report_source as time_estimates
+    from dplanner.planning.kinds import key_of, kind_word
+    from dplanner.planning.milestone import read as milestone_read
 
     summaries = aspect_summaries(skip={ESTIMATION_ID})
 
@@ -3460,13 +3380,13 @@ def _report_sources() -> tuple["ReportSource", ...]:
             status_in=_ready_in,
             counts_as_work=_counts_as_work,
             days_for=estimated_days,
-            key_of=_step_key,
+            key_of=key_of,
             auto_progresses=_auto_progresses,
         ),
         time_estimates(_time_readers()),
         graph(
-            key_of=_step_key,
-            kind_of=_step_kind,
+            key_of=key_of,
+            kind_of=kind_word,
             status_for=_card_status,
             stats_of=_step_stats,
             badge_of=milestone_read,
@@ -3484,10 +3404,10 @@ def _report_sources() -> tuple["ReportSource", ...]:
         milestones(),
         features(),
         descriptions(),
-        tests(key_of=_step_key),
+        tests(key_of=key_of),
         tickets(),
         github(),
-        notes(key_of=_step_key),
+        notes(key_of=key_of),
     )
 
 
@@ -3502,8 +3422,9 @@ def _run_name(step: "Step") -> str:
     """What a step's agent run is called — the same rule the launcher applies, read here
     so the briefing can name the worktree the script prepared."""
     from dplanner.modules.step_agent_instruction.launcher import run_name
+    from dplanner.planning.kinds import key_of
 
-    return run_name(_step_key(step), _ticket_key(step), step.title)
+    return run_name(key_of(step), _ticket_key(step), step.title)
 
 
 def _agent_preamble(
@@ -3527,6 +3448,7 @@ def _agent_preamble(
     launcher prepared.
     """
     from dplanner.modules.step_agent_instruction.launcher import WORKTREES_DIR
+    from dplanner.planning.kinds import key_of
 
     lines = [
         "First, confirm you can drive DPlanner: run `dplanner skill status`. If the"
@@ -3534,7 +3456,7 @@ def _agent_preamble(
         " step — and tell the developer this step needs the DPlanner skill"
         " (`dplanner skill install`)."
     ]
-    key = _step_key(step) or step.title or "this step"
+    key = key_of(step) or step.title or "this step"
     ref = _quoted(key)
     lines.append(
         "Then say you are working, before you touch anything: `dplanner agent-work start"
@@ -3673,14 +3595,15 @@ def _agent_epilogue(library: "Library", step: "Step", branches: "BranchPlan") ->
     """
     from dplanner.modules.auto_progress.aspect import collectors
     from dplanner.modules.notes.reach import project_ref
-    from dplanner.modules.step_review.aspect import is_review, reviews, settings
+    from dplanner.planning.kinds import key_of
+    from dplanner.planning.review import is_review, reviews, settings
 
-    key = _step_key(step) or step.title or "Untitled step"
+    key = key_of(step) or step.title or "Untitled step"
     ref = _quoted(key)
     project = project_ref(library.project_of(step.id))
     if is_review(step):
         return _review_epilogue(key, ref, project)
-    takers = [_step_key(other) or other.title for other in collectors(library, step)]
+    takers = [key_of(other) or other.title for other in collectors(library, step)]
     collected = (
         f"- {_listed(takers)} {'collects' if len(takers) == 1 else 'collect'} this step's work:"
         f" {'it' if len(takers) == 1 else 'each'} may start as soon as you set"
@@ -3692,7 +3615,7 @@ def _agent_epilogue(library: "Library", step: "Step", branches: "BranchPlan") ->
     )
     reviewers = [other for other in library.dependents(step.id) if reviews(other, step)]
     if reviewers:
-        who = _listed([_step_key(other) or other.title for other in reviewers])
+        who = _listed([key_of(other) or other.title for other in reviewers])
         one = len(reviewers) == 1
         cap = max(settings(other).max_rounds for other in reviewers)
         named = "" if one else " (with `--from <review>` when more than one has posted)"
@@ -3730,7 +3653,7 @@ def _agent_epilogue(library: "Library", step: "Step", branches: "BranchPlan") ->
     found = _branch_reading(library.project_of(step.id))
     stretch = None if found.of_land(step.id) else found.innermost(step.id, open_only=True)
     if stretch is not None:
-        cut, land = _step_key(stretch.cut), _step_key(stretch.land)
+        cut, land = key_of(stretch.cut), key_of(stretch.land)
         base += (
             f" This step is on the feature branch `{stretch.branch}`, which {cut} cuts and"
             f" {land} lands: its PR merges into that branch, never into the mainline, and merged"
@@ -3842,15 +3765,10 @@ def _scope_kinds() -> tuple["ScopeKind", ...]:
     check by eye beat an ordering abstraction over exactly three things.
     """
     from dplanner.domain.scope import ScopeKind
-    from dplanner.modules.feature.aspect import is_feature
-    from dplanner.modules.step_check.aspect import read as is_check
-    from dplanner.modules.step_milestone.aspect import read as milestone_label
-    from dplanner.modules.step_start.aspect import read as is_start
-
-    # A milestone declares itself by carrying a label, so the aspect's reader is a string
-    # one; the walk wants a predicate, and this is the one place that has to know both.
-    def is_milestone(step: "Step") -> bool:
-        return bool(milestone_label(step))
+    from dplanner.planning.check import read as is_check
+    from dplanner.planning.feature import is_feature
+    from dplanner.planning.milestone import is_milestone
+    from dplanner.planning.start import read as is_start
 
     return (
         ScopeKind(
@@ -3901,15 +3819,16 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
     from dplanner.modules.docs.aspect import read as docs_read
     from dplanner.modules.docs.collect import sources_for
     from dplanner.modules.docs.collect import state_of as docs_state
-    from dplanner.modules.feature.aspect import is_feature
-    from dplanner.modules.feature.aspect import read as feature_read
     from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
     from dplanner.modules.spec.cli import anchor_sources
     from dplanner.modules.spec.documents import document_text, read_index
-    from dplanner.modules.step_milestone.aspect import read as milestone_read
     from dplanner.modules.testing.aspect import covered
     from dplanner.modules.testing.runs import latest_results
     from dplanner.modules.testing.runs import read as read_runs
+    from dplanner.planning.feature import is_feature
+    from dplanner.planning.feature import read as feature_read
+    from dplanner.planning.kinds import key_of
+    from dplanner.planning.milestone import read as milestone_read
 
     scopes = _scope_kinds()
     kinds = {kind.id: kind for kind in scopes}
@@ -3972,7 +3891,7 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
             feature_kind=kinds["feature"],
             milestone_kind=kinds["step_milestone"],
             milestone_label=milestone_read,
-            step_key=_step_key,
+            step_key=key_of,
             status=_card_status,
             tests=tests,
             results=results,
@@ -4024,11 +3943,11 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     Everything else a step carries copies as it is.
     """
     from dplanner.modules.auto_progress.aspect import remap_for_paste
-    from dplanner.modules.branches.aspect import remap_for_paste as remap_landing
-    from dplanner.modules.feature.aspect import drop_cites_for_paste
     from dplanner.modules.step_agent_run.aspect import forget_for_paste
     from dplanner.modules.step_review.rounds import forget_for_paste as forget_rounds
     from dplanner.modules.testing.aspect import remint_for_paste
+    from dplanner.planning.branches import remap_for_paste as remap_landing
+    from dplanner.planning.feature import drop_cites_for_paste
     from dplanner.planning.status import forget_days_for_paste
 
     return (
@@ -4165,42 +4084,43 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_description import cli as description_cli
     from dplanner.modules.step_description.aspect import read as description_read
-    from dplanner.modules.step_milestone.aspect import is_milestone
     from dplanner.modules.step_review import cli as review_cli
-    from dplanner.modules.step_review.aspect import is_review
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.testing import cli as testing_cli
     from dplanner.modules.testing.aspect import enabled as test_enabled
+    from dplanner.planning.agent import enabled as is_agent
+    from dplanner.planning.branches import is_land
+    from dplanner.planning.kinds import key_of
+    from dplanner.planning.milestone import is_milestone
+    from dplanner.planning.review import is_review
 
     scopes = _scope_kinds()
     return (
         *projects_cli.lint_checks(),
         *start_cli.lint_checks(),
         # Collecting is an agent's job: the agent aspect's reader, handed over.
-        *auto_progress_cli.lint_checks(is_agent=_is_agent_step, key_of=_step_key),
+        *auto_progress_cli.lint_checks(is_agent=is_agent, key_of=key_of),
         # A branch is one way in and one way out; what it says is its PRs' bases.
         *branches_cli.lint_checks(
             is_done=_is_done,
-            is_agent=_is_agent_step,
+            is_agent=is_agent,
             is_milestone=is_milestone,
             pr_base_of=_pr_base,
         ),
         # A review needs an agent, one subject and an agent this build knows.
-        *review_cli.lint_checks(
-            is_agent=_is_agent_step, key_of=_step_key, harnesses=agent_harnesses()
-        ),
+        *review_cli.lint_checks(is_agent=is_agent, key_of=key_of, harnesses=agent_harnesses()),
         *description_cli.lint_checks(),
         *docs_cli.lint_checks(kinds=scopes),
         # An agent step is briefed by its description unless it carries a separate
         # instruction, and a review or a landing by its aspect; the readers arrive here, not
         # by import.
         *agent_cli.lint_checks(
-            described=lambda step: bool(description_read(step)) or is_review(step) or _is_land(step)
+            described=lambda step: bool(description_read(step)) or is_review(step) or is_land(step)
         ),
         *estimation_cli.lint_checks(counts_as_work=_counts_as_work),
         *spec_cli.lint_checks(),
-        *feature_cli.lint_checks(anchor=spec_cli.anchor_sources, key_of=_step_key),
-        *layout_cli.lint_checks(key_of=_step_key),
+        *feature_cli.lint_checks(anchor=spec_cli.anchor_sources, key_of=key_of),
+        *layout_cli.lint_checks(key_of=key_of),
         *testing_cli.lint_checks(),
         # A step's *own* tests are a different question from what it gathers; testing's
         # Qt-free reader answers it, handed over rather than imported.
@@ -4225,9 +4145,9 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     from dplanner.modules.notes.log import asset_source as notes
     from dplanner.modules.project_assets.cli import asset_source as pool
     from dplanner.modules.spec.documents import asset_source as spec_figures
-    from dplanner.modules.step_agent_instruction.aspect import asset_source as instructions
     from dplanner.modules.step_description.aspect import asset_source as descriptions
     from dplanner.modules.testing.aspect import asset_source as tests
+    from dplanner.planning.agent import asset_source as instructions
 
     return (
         descriptions(),
@@ -4253,9 +4173,9 @@ def _rename_spec_references(project: "Project", name: str, chosen: str) -> list[
     from dataclasses import replace
 
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.aspect import read as feature_read
-    from dplanner.modules.feature.aspect import write as feature_write
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import read as feature_read
+    from dplanner.planning.feature import write as feature_write
 
     commands: list[Command] = []
     for step in project.steps:
@@ -4383,6 +4303,8 @@ def default_cli_commands(
     from dplanner.modules.testing.format import FORMAT_SUBJECT, FORMAT_VERB
     from dplanner.modules.testing.format import guide as test_format
     from dplanner.modules.time_estimates import cli as time_cli
+    from dplanner.planning.agent import enabled as is_agent
+    from dplanner.planning.kinds import key_of, kind_word, works_nobody
     from dplanner.planning.status import Status, stored
 
     specs = aspect_specs()
@@ -4447,7 +4369,7 @@ def default_cli_commands(
                 testing_cli.step_author(),
             ],
             # The key a row prints is the one the canvas paints: one rule, here.
-            key_of=_step_key,
+            key_of=key_of,
             # `project graph` and `step show` mark the links a step collects across, and
             # the feature branch a step's work is on.
             auto_progresses=_auto_progresses,
@@ -4473,7 +4395,7 @@ def default_cli_commands(
         *agent_state_cli.commands(harnesses=agent_harnesses()),
         # The agent's own account of what it is doing while it does it: the window's
         # banner and the watcher's stood-down modal both read what these write.
-        *at_work_cli.commands(board=board, key_of=_step_key),
+        *at_work_cli.commands(board=board, key_of=key_of),
         # An agent's done waits for review: the verb reads who is reporting (an agent's
         # shell, the entry point's reading) and what the step is (an agent step), and a
         # `--because` lands as a decision note in the same run. A status that says nobody
@@ -4487,13 +4409,13 @@ def default_cli_commands(
         *wait_cli.commands(),
         # Who may collect (an agent step) and where each source stands, through the
         # owners' Qt-free readers.
-        *auto_progress_cli.commands(is_agent=_is_agent_step, status_for=stored, key_of=_step_key),
+        *auto_progress_cli.commands(is_agent=is_agent, status_for=stored, key_of=key_of),
         # A branch's two ends are born dressed as the window's Put on a Branch makes them.
         *branches_cli.commands(
             born=_branch_births,
             is_done=_is_done,
             stacked_apart=_stacked_apart,
-            key_of=_step_key,
+            key_of=key_of,
         ),
         # A review talks to whoever it takes work from review on — the root's one answer —
         # and moves their statuses through the writer `status set` uses, so a claim ends
@@ -4505,14 +4427,14 @@ def default_cli_commands(
             set_status=set_status,
             inherit_refs=_inherit_refs,
             note_escalation=_note_escalation,
-            works_nobody=_works_nobody,
-            key_of=_step_key,
+            works_nobody=works_nobody,
+            key_of=key_of,
             harnesses=agent_harnesses(),
         ),
         # A feature's passages are anchored in the spec documents by the spec module's
         # one derivation, handed across here — `cite`, `reanchor`, `step add --feature`
         # and lint all judge a quote the same way.
-        *feature_cli.commands(anchor=spec_cli.anchor_sources, key_of=_step_key),
+        *feature_cli.commands(anchor=spec_cli.anchor_sources, key_of=key_of),
         # `test review` reads a step's status and the notes made on it — both through
         # their modules' Qt-free readers, handed over here so no cli.py imports another's.
         # `test format` tells the gate what it printed, the way `topology show` does; the
@@ -4542,7 +4464,7 @@ def default_cli_commands(
             counts_as_work=_counts_as_work,
             days_for=estimated_days,
             auto_progresses=_auto_progresses,
-            is_agent=_is_agent_step,
+            is_agent=is_agent,
             asks_person=_asks_person,
             due=_due_steps,
         ),
@@ -4552,7 +4474,7 @@ def default_cli_commands(
             days_for=estimated_days,
             paste_policies=_paste_policies(),
             file_modules=tuple(source.id for source in sources),
-            key_of=_step_key,
+            key_of=key_of,
             # A sort leaves a card on a branch the room of its strip, as the window does.
             strips=lambda project: _strips(_branch_reading(project)),
         ),
@@ -4562,13 +4484,13 @@ def default_cli_commands(
         *github_cli.commands(finish_merged=finish_merged),
         # A note names the step it was made on by id and prints it by key — the
         # same rule every row prints, handed over rather than imported.
-        *note_cli.commands(key_of=_step_key),
+        *note_cli.commands(key_of=key_of),
         # The report is every module's Qt-free say, assembled once (`_report_sources`) for
         # the terminal and the window alike; the readers every step row needs come with it.
         *report_commands(
             sources=_report_sources(),
-            key_of=_step_key,
-            kind_of=_step_kind,
+            key_of=key_of,
+            kind_of=kind_word,
             status_for=stored,
             reporting_site=_cli_reporting_site,
         ),
@@ -4776,24 +4698,26 @@ def aspect_specs() -> list["AspectSpec"]:
     this is only the list of packages, in the order a person would read them.
     """
     from dplanner.modules.auto_progress import aspect as auto_progress
-    from dplanner.modules.branches import aspect as branches
     from dplanner.modules.docs import aspect as docs
     from dplanner.modules.estimation import aspect as estimation
-    from dplanner.modules.feature import aspect as feature
     from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
-    from dplanner.modules.step_agent_instruction import aspect as agent
     from dplanner.modules.step_agent_run import aspect as agent_run
-    from dplanner.modules.step_check import aspect as check
     from dplanner.modules.step_description import aspect as description
-    from dplanner.modules.step_milestone import aspect as milestone
-    from dplanner.modules.step_review import aspect as review
     from dplanner.modules.step_review import rounds as review_rounds
-    from dplanner.modules.step_start import aspect as start
     from dplanner.modules.step_ticket import aspect as ticket
-    from dplanner.modules.step_wait import aspect as wait
     from dplanner.modules.testing import aspect as testing
-    from dplanner.planning import status
+    from dplanner.planning import (
+        agent,
+        branches,
+        check,
+        feature,
+        milestone,
+        review,
+        start,
+        status,
+        wait,
+    )
 
     return [
         agent.SPEC,

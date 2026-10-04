@@ -9,7 +9,7 @@ import pytest
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.step_start.aspect import read
+from dplanner.planning.start import read
 
 
 @pytest.fixture

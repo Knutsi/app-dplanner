@@ -8,7 +8,7 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Project, Step
-from dplanner.modules.feature.aspect import (
+from dplanner.planning.feature import (
     MODULE_ID,
     RETIRED_STEP_FEATURE,
     FeatureSource,
@@ -69,7 +69,7 @@ def test_clear_writes_nothing_and_the_retired_module_is_named():
 
 
 def test_a_retired_marker_converts_to_a_whole_feature():
-    from dplanner.modules.feature.aspect import _from_step_feature
+    from dplanner.planning.feature import _from_step_feature
 
     assert _from_step_feature({"on": True}, {}) == {"on": True, "format": 3}
     # An entry this build already wrote wins: a project half-written by both keeps it.
@@ -79,7 +79,7 @@ def test_a_retired_marker_converts_to_a_whole_feature():
 
 def test_format_1_wraps_the_one_source_and_leaves_the_rest_to_the_absorption():
     from dplanner.core.module_data import migrated
-    from dplanner.modules.feature.aspect import DATA_FORMAT
+    from dplanner.planning.feature import DATA_FORMAT
 
     old = {
         "format": 1,

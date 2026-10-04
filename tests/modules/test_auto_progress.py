@@ -19,8 +19,8 @@ from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_u
 from dplanner.modules.auto_progress import aspect
 from dplanner.modules.project_editor.renderers import EdgeAccent
 from dplanner.modules.project_editor.selection import EdgeRef
-from dplanner.modules.step_agent_instruction import aspect as agent
 from dplanner.modules.step_agent_run import aspect as agent_run
+from dplanner.planning import agent
 from dplanner.planning.status import Status
 
 TOGGLE = "links.auto_progress"

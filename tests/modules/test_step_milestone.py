@@ -5,7 +5,7 @@ import json
 import pytest
 
 from dplanner.domain.model import Step
-from dplanner.modules.step_milestone.aspect import (
+from dplanner.planning.milestone import (
     MODULE_ID,
     next_milestone_label,
     read,

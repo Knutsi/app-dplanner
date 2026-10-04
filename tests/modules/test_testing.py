@@ -16,10 +16,10 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Step
-from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
-from dplanner.modules.step_check.aspect import read as check_read
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import MODULE_ID, Test, read, write
+from dplanner.planning.check import MODULE_ID as CHECK_ID
+from dplanner.planning.check import read as check_read
 
 
 def data(text):
@@ -806,8 +806,8 @@ def test_the_covers_tab_lists_what_a_check_waits_on(services, project, step):
 
 
 def test_a_feature_gathers_only_what_is_new_since_the_previous_one(services, project):
-    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.aspect import write as feature_write
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import write as feature_write
 
     login, importer, reporting, export = chain(
         services, project, "Login", "Import", "Reporting", "Export"
@@ -826,8 +826,8 @@ def test_a_feature_gathers_only_what_is_new_since_the_previous_one(services, pro
 
 
 def test_the_cumulative_reading_is_the_whole_cone(services, project):
-    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.aspect import write as feature_write
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import write as feature_write
 
     login, importer, export = chain(services, project, "Login", "Import", "Export")
     for step in (login, importer, export):
@@ -848,8 +848,8 @@ def test_the_cumulative_reading_is_the_whole_cone(services, project):
 
 
 def test_the_first_feature_in_a_project_is_offered_no_switch(services, project):
-    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.aspect import write as feature_write
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import write as feature_write
 
     login, importer = chain(services, project, "Login", "Import")
     give(services, login, "T100")
@@ -865,10 +865,10 @@ def test_the_first_feature_in_a_project_is_offered_no_switch(services, project):
 def test_a_feature_right_after_the_start_is_offered_no_switch(services, project):
     """The start stops a feature's walk, but it is no earlier collector: the feature holds
     only its own work, and there is no second reading worth a control."""
-    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.aspect import write as feature_write
-    from dplanner.modules.step_start.aspect import MODULE_ID as START_ID
-    from dplanner.modules.step_start.aspect import write as start_write
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import write as feature_write
+    from dplanner.planning.start import MODULE_ID as START_ID
+    from dplanner.planning.start import write as start_write
 
     start, importer = chain(services, project, "Project start", "Import")
     give(services, importer, "T100")
@@ -882,10 +882,10 @@ def test_a_feature_right_after_the_start_is_offered_no_switch(services, project)
 
 
 def test_a_release_gathers_the_features_behind_it(services, project):
-    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.aspect import write as feature_write
-    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-    from dplanner.modules.step_milestone.aspect import write as milestone_write
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import write as feature_write
+    from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
+    from dplanner.planning.milestone import write as milestone_write
 
     importer, first, export, second = chain(services, project, "Import", "v1", "Export", "v2")
     give(services, importer, "TIm")
@@ -911,7 +911,7 @@ def test_the_tests_tab_follows_the_aspect(services, step):
 
 
 def test_the_covers_tab_follows_the_check_aspect(services, step):
-    from dplanner.modules.step_check.aspect import write as check_write
+    from dplanner.planning.check import write as check_write
 
     section = next(
         found for found in services.inspector_sections.sections() if found.id == "testing.covers"
@@ -923,8 +923,8 @@ def test_the_covers_tab_follows_the_check_aspect(services, step):
 
 def test_a_release_scopes_a_run_exactly_as_a_check_does(services, project, step):
     """One walk, two names: a check is a scope you declare, a milestone is one you had."""
-    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-    from dplanner.modules.step_milestone.aspect import write as milestone_write
+    from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
+    from dplanner.planning.milestone import write as milestone_write
 
     section = next(
         found for found in services.inspector_sections.sections() if found.id == "testing.covers"
@@ -965,9 +965,9 @@ def test_the_library_wide_tab_lists_every_project_s_tests(services, make_project
 
 
 def test_the_tests_tab_can_be_read_by_feature(services, make_project):
-    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.aspect import write as feature_write
     from dplanner.modules.testing.activity import TESTS_KIND, UNGATHERED
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import write as feature_write
 
     project = make_project("Widget")
     login, importer, export = chain(services, project, "Login", "Import", "Export")
@@ -999,9 +999,9 @@ def test_the_tests_tab_can_be_read_by_feature(services, make_project):
 
 
 def test_a_step_two_features_both_wait_on_is_filed_under_both(services, make_project):
-    from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
-    from dplanner.modules.feature.aspect import write as feature_write
     from dplanner.modules.testing.activity import TESTS_KIND
+    from dplanner.planning.feature import MODULE_ID as FEATURE_ID
+    from dplanner.planning.feature import write as feature_write
 
     project = make_project("Widget")
     shared = Step(title="Shared")
@@ -1128,9 +1128,9 @@ def test_the_strip_offers_the_run_verbs_greyed_with_their_reason(services, proje
 def test_a_heading_is_one_plain_row_and_a_milestone_heading_wears_its_shade(services, make_project):
     from dplanner.framework.list_rows import INK_ROLE
     from dplanner.framework.table import row_height
-    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-    from dplanner.modules.step_milestone.aspect import write as milestone_write
     from dplanner.modules.testing.activity import TESTS_KIND
+    from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
+    from dplanner.planning.milestone import write as milestone_write
 
     project = make_project("Widget")
     work, release = chain(services, project, "Work", "Release")
@@ -1177,8 +1177,8 @@ def test_a_run_opened_from_the_strip_covers_the_tabs_scope_and_is_shown(
     services, make_project, monkeypatch
 ):
     from dplanner.framework.dialog import LinePrompt
-    from dplanner.modules.step_check.aspect import write as check_write
     from dplanner.modules.testing.activity import TESTS_KIND
+    from dplanner.planning.check import write as check_write
 
     monkeypatch.setattr(LinePrompt, "ask", staticmethod(lambda *_a, **_k: "Smoke"))
     project = make_project("Widget")

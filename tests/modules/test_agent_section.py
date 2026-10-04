@@ -11,7 +11,7 @@ import pytest
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
-from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
+from dplanner.planning.agent import MODULE_ID
 
 # -- fixtures ----------------------------------------------------------------------------------
 
@@ -160,7 +160,7 @@ def test_an_edit_refreshes_the_step_context_without_a_reselect(services, step, s
 def test_a_described_step_briefs_with_the_description_once(services, step, section):
     """No separate instruction: the description renders as ## Instructions and no
     ## Description section repeats it."""
-    from dplanner.modules.step_agent_instruction.aspect import write_state
+    from dplanner.planning.agent import write_state
 
     services.document.set_module_data(step.id, MODULE_ID, write_state(True))
     services.document.set_text(step.id, "step_description", "The release step.")
@@ -174,7 +174,7 @@ def test_a_described_step_briefs_with_the_description_once(services, step, secti
 def test_the_editor_appears_only_with_a_separate_instruction(services, step, section):
     """The description is the instructions by default, so the This-step editor stays off
     screen and a note says where the text lives; separate text brings it back."""
-    from dplanner.modules.step_agent_instruction.aspect import write_state
+    from dplanner.planning.agent import write_state
 
     services.document.set_module_data(step.id, MODULE_ID, write_state(True))
     section.show_target(step.id)
@@ -285,7 +285,7 @@ def test_the_standing_instruction_typed_in_settings_is_one_undo_and_reaches_the_
 ):
     from PySide6.QtTest import QTest
 
-    from dplanner.modules.step_agent_instruction.aspect import write_state
+    from dplanner.planning.agent import write_state
 
     services.document.set_module_data(step.id, MODULE_ID, write_state(True))
     project = services.document.project_of(step.id)
@@ -331,7 +331,7 @@ def test_typing_in_the_settings_agent_tab_survives_republishes_and_settings_agai
 def test_preview_is_enabled_on_an_agent_step_and_greyed_with_the_reason_off_one(
     services, step, section
 ):
-    from dplanner.modules.step_agent_instruction.aspect import write_state
+    from dplanner.planning.agent import write_state
 
     select(services, step)
     state = services.actions.spec("agent.preview").state(services.context.current())

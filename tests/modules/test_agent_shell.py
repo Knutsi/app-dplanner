@@ -87,8 +87,8 @@ def test_a_step_that_works_in_place_opens_its_shell_in_the_checkout(
     services, step, library_repo, spawned
 ):
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, with_worktree
     from dplanner.modules.step_agent_run.aspect import launched
+    from dplanner.planning.agent import MODULE_ID, with_worktree
     from dplanner.planning.status import stored as status
 
     SetModuleDataCommand(step.id, MODULE_ID, with_worktree(step, False)).redo(services.document)
@@ -123,7 +123,7 @@ def test_a_review_opens_its_shell_in_the_checkout_it_runs_in(services, step, lib
     """A review's run gets no worktree whatever its aspect says, so a shell of one's own
     opens where that run does."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_review.aspect import MODULE_ID, ReviewSettings, write
+    from dplanner.planning.review import MODULE_ID, ReviewSettings, write
 
     SetModuleDataCommand(step.id, MODULE_ID, write(ReviewSettings())).redo(services.document)
     select(services, step)

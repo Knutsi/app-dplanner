@@ -74,18 +74,6 @@ from dplanner.framework.widgets import notice
 from dplanner.framework.window import NoticeHost, StatusHost
 from dplanner.framework.window_watch import WatchableRepository
 from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.aspect import (
-    DATA_FORMAT,
-    MODULE_ID,
-    SPEC,
-    asset_paths,
-    enabled,
-    read_project,
-    uses_worktree,
-    with_worktree,
-    workplace,
-    write_state,
-)
 from dplanner.modules.step_agent_instruction.auto_launch import AutoLauncher, Due, LaunchLock
 from dplanner.modules.step_agent_instruction.profiles import (
     Profile,
@@ -116,6 +104,18 @@ from dplanner.modules.step_agent_instruction.settings_page import (
     launch_command,
     max_agents,
     start_in_progress,
+)
+from dplanner.planning.agent import (
+    DATA_FORMAT,
+    MODULE_ID,
+    SPEC,
+    asset_paths,
+    enabled,
+    read_project,
+    uses_worktree,
+    with_worktree,
+    workplace,
+    write_state,
 )
 from dplanner.planning.progression import outstanding
 from dplanner.planning.status import Reading, Status, Unknown, phrase, readiness_of

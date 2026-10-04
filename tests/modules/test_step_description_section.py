@@ -53,10 +53,10 @@ def test_showing_nothing_disables_and_clears(services, step, section):
 
 def agent_on(services, step, separate=False):
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_agent_instruction.aspect import (
+    from dplanner.planning.agent import (
         MODULE_ID as AGENT_ID,
     )
-    from dplanner.modules.step_agent_instruction.aspect import (
+    from dplanner.planning.agent import (
         write_state,
     )
 
@@ -74,7 +74,7 @@ def test_the_checkbox_appears_only_on_agent_steps_and_follows_the_model(services
 
 
 def test_checking_stores_the_separate_flag_undoably(services, step, section):
-    from dplanner.modules.step_agent_instruction.aspect import separate_instruction
+    from dplanner.planning.agent import separate_instruction
 
     agent_on(services, step)
     section.show_target(step.id)
@@ -88,10 +88,10 @@ def test_unchecking_confirms_and_drops_the_text_as_one_undo_step(
     services, step, section, monkeypatch
 ):
     import dplanner.modules.step_description.section as description_section
-    from dplanner.modules.step_agent_instruction.aspect import (
+    from dplanner.planning.agent import (
         MODULE_ID as AGENT_ID,
     )
-    from dplanner.modules.step_agent_instruction.aspect import (
+    from dplanner.planning.agent import (
         separate_instruction,
     )
 
@@ -111,7 +111,7 @@ def test_unchecking_confirms_and_drops_the_text_as_one_undo_step(
 
 def test_a_declined_confirm_keeps_the_separate_instruction(services, step, section, monkeypatch):
     import dplanner.modules.step_description.section as description_section
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
+    from dplanner.planning.agent import MODULE_ID as AGENT_ID
 
     agent_on(services, step)
     services.document.set_text(step.id, AGENT_ID, "Ship it.")

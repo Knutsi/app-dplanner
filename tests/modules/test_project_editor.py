@@ -1643,8 +1643,8 @@ def picked_rows(picker):
 def test_find_opens_on_the_landmarks_and_searches_every_step(services, project, tab):
     """A plan of three hundred steps has a dozen a person navigates by. They are what the
     picker opens on; everything is in play from the first keystroke."""
-    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-    from dplanner.modules.step_milestone.aspect import write as milestone_write
+    from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
+    from dplanner.planning.milestone import write as milestone_write
 
     first, second = project.steps
     services.undo.push(SetModuleDataCommand(first.id, MILESTONE_ID, milestone_write("Ship it")))
@@ -3094,9 +3094,9 @@ def test_a_waits_clock_is_amber(services, project, tab):
     """A wait is nobody's work, and says so in the attention amber whatever its date — the
     one glyph in the block that is not the key's ink."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
-    from dplanner.modules.step_wait.aspect import write as wait
     from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import MODULE_ID as WAIT_ID
+    from dplanner.planning.wait import write as wait
     from dplanner.theme.cards import key_block_rects
 
     def amber(image: QImage) -> bool:

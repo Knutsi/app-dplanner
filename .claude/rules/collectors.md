@@ -285,7 +285,7 @@ paths:
   shelves the passages like any aspect; `feature set`/`clear` are the toggle's CLI half.
   A work step's briefing names the features it *flows into* (`scope.gatherers`); it
   carries no link of its own. The project's old catalogue moves onto its steps at open
-  (`modules/feature/migrate.py`, an `absorb` pass) — **a step it creates gets its data
+  (`planning/feature_migrate.py`, an `absorb` pass) — **a step it creates gets its data
   before `add_child` and its id is never returned**, or the flush raises inside the store.
   `ARCHITECTURE.md`'s *A feature is a step* has the reasoning.
 - **A citation is a quote and a digest; its place is derived, and the trace is feature

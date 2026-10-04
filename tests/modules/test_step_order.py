@@ -91,7 +91,7 @@ def test_the_estimate_has_a_column_and_is_not_repeated_in_the_summary(services, 
 
 def test_a_release_row_is_marked_and_keeps_its_name(services, project, tab):
     """Every cell flags the row for the delegate; the name still reads in the summary."""
-    from dplanner.modules.step_milestone.aspect import write
+    from dplanner.planning.milestone import write
 
     d = project.steps[3]  # The last of its block — the rule under it closes the work above.
     services.undo.push(SetModuleDataCommand(d.id, "step_milestone", write("MVP")))
@@ -143,7 +143,7 @@ def test_a_project_with_no_steps_swaps_the_table_for_what_would_be_there(service
 def test_every_row_is_one_height_and_it_comes_from_the_font(services, project, tab):
     """DESIGN.md's *Tables*: a fixed pixel height clips at twelve points, and a milestone
     is marked by what it wears rather than by the room around it."""
-    from dplanner.modules.step_milestone.aspect import write
+    from dplanner.planning.milestone import write
 
     services.undo.push(SetModuleDataCommand(project.steps[3].id, "step_milestone", write("MVP")))
 
@@ -164,8 +164,8 @@ def mixed(services, project):
     """A a plain step, B a feature, C an agent step, D the milestone they land in."""
     from dplanner.domain.commands import EditTextCommand
     from dplanner.domain.model import TextEdit
-    from dplanner.modules.feature.aspect import write as write_feature
-    from dplanner.modules.step_milestone.aspect import write
+    from dplanner.planning.feature import write as write_feature
+    from dplanner.planning.milestone import write
 
     _a, b, c, d = project.steps
     services.undo.push(SetModuleDataCommand(b.id, "feature", write_feature()))

@@ -56,8 +56,9 @@ paths:
   sequence per project, never reused (a deleted step's branch may live on), kept through
   undo, a paste and an import — and written to `step.json` / `project.dproj` (format 2;
   the migration numbers an old project's steps in `children` order). The **letter is
-  presentation**: `_step_key` in the root reads the kind — `M` milestone, `F` feature,
-  `C` check, `S` otherwise, the coarser claim first — so a step keeps its number when its
+  presentation**: `planning.kinds.key_of` reads the kind off the one `RANKING` — `M`
+  milestone, `F` feature, `C` check, `W` wait, `B` cut, `R` review, `S` otherwise, the
+  coarser claim first — so a step keeps its number when its
   kind changes and the letter follows. One rule, four readers: the card's key block, every
   CLI row and `find_step` (`S7`, `s7` and `7` all resolve; several projects' `7` is
   refused), the run name a worktree and branch carry, and the briefing's verbs. Never
@@ -97,8 +98,8 @@ paths:
   one rewire each — outside inputs move to the cut and outside dependents to the landing,
   and back — refused by `ordering.left_between`, the walk `stack make` shares, by a pick
   that crosses another stretch, and by one that splits a stack (`_stacked_apart`, the
-  graph editor's fact handed in). Remove is never partial, so the window asks first. The
-  root's `_works_nobody` is what a wait and a cut share — "a wait", "a branch cut" — and
+  graph editor's fact handed in). Remove is never partial, so the window asks first.
+  `planning.kinds.works_nobody` is what a wait and a cut share — "a wait", "a branch cut" — and
   every module refusing such a step a status, an agent, a review or a test words its
   refusal from it. `ARCHITECTURE.md`'s *A branch stretch is bracketed by a cut and a
   landing* has the reasoning.

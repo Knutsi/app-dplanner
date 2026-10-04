@@ -11,14 +11,9 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.modules.feature import aspect as feature
 from dplanner.modules.project_editor.renderers import NodeAccent
-from dplanner.modules.step_agent_instruction import aspect as agent
 from dplanner.modules.step_agent_run import aspect as agent_run
-from dplanner.modules.step_check import aspect as check
-from dplanner.modules.step_milestone import aspect as milestone
-from dplanner.modules.step_wait import aspect as wait
-from dplanner.planning import status
+from dplanner.planning import agent, check, feature, milestone, status, wait
 from dplanner.planning.schedule import Wait
 from dplanner.planning.status import Status
 

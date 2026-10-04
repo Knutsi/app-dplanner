@@ -402,6 +402,9 @@ src/dplanner/
 ├── planning/              ── the planning model over the graph: imports core and domain only. Qt-free.
 │   ├── status.py            a step's status: the Status enum, Unknown and Waiting, its stored format,
 │   │                        and how readiness reads one (`held`)
+│   ├── kinds.py             what a step is: the one ranking its key letter and kind word come from
+│   ├── milestone.py, feature.py, check.py, wait.py, start.py, branches.py, review.py, agent.py
+│   │                        the kind aspects: each one's stored format and its predicate
 │   ├── progression.py       the status-aware frontier: what can be launched right now
 │   └── schedule.py          the same walk carrying estimates: running totals, dates, and when each
 │                            step lands in a staffed simulation

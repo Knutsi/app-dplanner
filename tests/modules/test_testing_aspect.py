@@ -9,7 +9,6 @@ import pytest
 from dplanner.cli.command import CliError
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.step_check import aspect as check
 from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import (
     AUDIENCE_IDS,
@@ -30,6 +29,7 @@ from dplanner.modules.testing.aspect import (
     summary,
     write,
 )
+from dplanner.planning import check
 
 
 def build(*titles):

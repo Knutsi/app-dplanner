@@ -15,13 +15,6 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.step_review import cli as review_cli
-from dplanner.modules.step_review.aspect import (
-    MODULE_ID,
-    ReviewSettings,
-    is_review,
-    settings,
-    write,
-)
 from dplanner.modules.step_review.rounds import (
     ASKER,
     ENDED,
@@ -31,6 +24,13 @@ from dplanner.modules.step_review.rounds import (
     rounds,
     said,
     turn,
+)
+from dplanner.planning.review import (
+    MODULE_ID,
+    ReviewSettings,
+    is_review,
+    settings,
+    write,
 )
 
 

@@ -30,12 +30,6 @@ from dplanner.modules.spec.documents import (
 from dplanner.modules.spec.documents import (
     asset_source as spec_source,
 )
-from dplanner.modules.step_agent_instruction.aspect import (
-    MODULE_ID as INSTRUCTION_ID,
-)
-from dplanner.modules.step_agent_instruction.aspect import (
-    asset_source as instruction_source,
-)
 from dplanner.modules.step_description.aspect import (
     MODULE_ID as DESCRIPTION_ID,
 )
@@ -52,6 +46,12 @@ from dplanner.modules.testing.aspect import (
     asset_source as source_for_tests,  # Not "testing_source": pytest would collect it.
 )
 from dplanner.modules.testing.aspect import write as write_tests
+from dplanner.planning.agent import (
+    MODULE_ID as INSTRUCTION_ID,
+)
+from dplanner.planning.agent import (
+    asset_source as instruction_source,
+)
 
 PNG = b"\x89PNG-pretend"
 

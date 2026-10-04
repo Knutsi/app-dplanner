@@ -851,10 +851,10 @@ def test_a_preset_text_an_earlier_version_shipped_is_still_that_preset(app, tmp_
     from PySide6.QtWidgets import QComboBox
 
     from dplanner.framework.user_config import set_global
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID
     from dplanner.modules.step_agent_instruction.launcher import current_command, resume_command
     from dplanner.modules.step_agent_instruction.profiles import AGENT_COMMAND_KEY
     from dplanner.modules.step_agent_instruction.settings_page import agent_command, build_page
+    from dplanner.planning.agent import MODULE_ID
 
     claude = HARNESSES[0]
     assert claude.superseded
@@ -1066,7 +1066,7 @@ def test_an_agent_step_with_nothing_to_brief_it_is_greyed_with_the_reason(servic
     """The aspect alone is not a briefing: no description, no instruction, no standing
     instruction means nothing to launch with, and the label says which to write."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, write_state
+    from dplanner.planning.agent import MODULE_ID, write_state
 
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True)))
     select(services, step)
@@ -1078,7 +1078,7 @@ def test_an_agent_step_with_nothing_to_brief_it_is_greyed_with_the_reason(servic
 def test_a_described_agent_step_is_runnable_without_a_separate_instruction(services, step):
     """The description is the instructions: mark plus prose is a complete briefing."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, write_state
+    from dplanner.planning.agent import MODULE_ID, write_state
 
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True)))
     services.document.set_text(step.id, "step_description", "What this step is.")
@@ -1090,7 +1090,7 @@ def test_a_described_agent_step_is_runnable_without_a_separate_instruction(servi
 def test_a_step_whose_status_a_newer_build_wrote_is_greyed_with_the_reason(services, step):
     """An unknown status holds the step: a launch would claim in-progress over the word."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, write_state
+    from dplanner.planning.agent import MODULE_ID, write_state
 
     services.undo.push(SetModuleDataCommand(step.id, MODULE_ID, write_state(True)))
     services.document.set_text(step.id, "step_description", "What this step is.")
@@ -1512,8 +1512,8 @@ def test_a_successful_launch_claims_the_step_is_in_progress(services, step, monk
 def test_the_launch_claim_can_be_switched_off(services, step, monkeypatch):
     """The person keeping statuses by hand switches it off, and a launch writes nothing."""
     from dplanner.framework.user_config import set_global
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
     from dplanner.modules.step_agent_instruction.settings_page import START_IN_PROGRESS_KEY
+    from dplanner.planning.agent import MODULE_ID as AGENT_ID
     from dplanner.planning.status import stored as status_of
 
     set_global(AGENT_ID, START_IN_PROGRESS_KEY, False)
@@ -1845,10 +1845,10 @@ def test_step_add_no_worktree_marks_the_step_and_opts_it_out(cli):
 def test_the_run_uses_a_worktree_only_when_the_step_says_so(services, step, monkeypatch):
     """The launcher is handed the run name — key, ticket, slug — or nothing at all."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, write_state
     from dplanner.modules.step_ticket.aspect import MODULE_ID as TICKET_ID
     from dplanner.modules.step_ticket.aspect import Ticket
     from dplanner.modules.step_ticket.aspect import write as ticket_write
+    from dplanner.planning.agent import MODULE_ID, write_state
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     services.undo.push(SetModuleDataCommand(step.id, TICKET_ID, ticket_write(Ticket(key="PROJ-9"))))
@@ -1872,7 +1872,7 @@ def test_the_run_uses_a_worktree_only_when_the_step_says_so(services, step, monk
 
 
 def test_the_agent_tab_switches_the_worktree_through_the_undo_stack(services, step):
-    from dplanner.modules.step_agent_instruction.aspect import uses_worktree
+    from dplanner.planning.agent import uses_worktree
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
@@ -1890,9 +1890,9 @@ def test_the_agent_tab_switches_the_worktree_through_the_undo_stack(services, st
 
 def _make_review(services, step):
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_review.aspect import MODULE_ID as REVIEW_ID
-    from dplanner.modules.step_review.aspect import ReviewSettings
-    from dplanner.modules.step_review.aspect import write as review_write
+    from dplanner.planning.review import MODULE_ID as REVIEW_ID
+    from dplanner.planning.review import ReviewSettings
+    from dplanner.planning.review import write as review_write
 
     services.undo.push(SetModuleDataCommand(step.id, REVIEW_ID, review_write(ReviewSettings())))
 
@@ -1900,7 +1900,7 @@ def _make_review(services, step):
 def test_a_review_runs_in_the_checkout_whatever_its_worktree_says(services, step, monkeypatch):
     """A review reads the work it reviews where that work is: the launcher is handed no
     worktree to prepare, though the step's own aspect still says one."""
-    from dplanner.modules.step_agent_instruction.aspect import uses_worktree
+    from dplanner.planning.agent import uses_worktree
 
     services.document.set_text(step.id, "step_agent_instruction", "Look hard.")
     _make_review(services, step)
@@ -1920,7 +1920,7 @@ def test_a_review_runs_in_the_checkout_whatever_its_worktree_says(services, step
 
 
 def test_the_agent_tab_greys_the_worktree_box_on_a_review_and_says_why(services, step):
-    from dplanner.modules.step_review.aspect import NO_WORKTREE_FOR_A_REVIEW
+    from dplanner.planning.review import NO_WORKTREE_FOR_A_REVIEW
 
     services.document.set_text(step.id, "step_agent_instruction", "Look hard.")
     _make_review(services, step)
@@ -1938,7 +1938,7 @@ def test_the_agent_tab_greys_the_worktree_box_on_a_review_and_says_why(services,
 
 
 def test_the_agent_toggle_marks_and_unmarks_the_step(services, step):
-    from dplanner.modules.step_agent_instruction.aspect import enabled
+    from dplanner.planning.agent import enabled
 
     select(services, step)
     context = services.context.current()
@@ -1958,7 +1958,7 @@ def test_toggling_agent_off_shelves_the_text_and_on_brings_it_back(services, ste
     """Nothing asks: the separate instruction waits on the shelf, and one undo restores
     both the mark and the text."""
     from dplanner.domain.shelf import shelved_text
-    from dplanner.modules.step_agent_instruction.aspect import enabled
+    from dplanner.planning.agent import enabled
 
     services.document.set_text(step.id, "step_agent_instruction", "Ship it.")
     select(services, step)
@@ -2429,7 +2429,7 @@ def test_a_step_works_in_the_code_location_it_names_else_the_primary(
     from dplanner.core.storage.locations import init_repo
     from dplanner.domain.commands import SetFieldCommand, SetModuleDataCommand
     from dplanner.domain.locations import Location
-    from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, with_workplace
+    from dplanner.planning.agent import MODULE_ID, with_workplace
 
     widget, ui = init_repo(tmp_path / "widget"), init_repo(tmp_path / "ui")
     project = services.document.project_of(step.id)

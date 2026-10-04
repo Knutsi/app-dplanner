@@ -36,12 +36,13 @@ from dplanner.domain.assets import attach
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.seed import seed_project
-from dplanner.modules import _report_sources, _step_key, _step_kind, default_module_formats
+from dplanner.modules import _report_sources, default_module_formats
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.positions import write_member, write_position
-from dplanner.modules.step_milestone.aspect import write as milestone
+from dplanner.planning.kinds import key_of, kind_word
+from dplanner.planning.milestone import write as milestone
 from dplanner.planning.status import Status
 from dplanner.planning.status import stored as status_for
 from dplanner.planning.status import write as status
@@ -140,8 +141,8 @@ def test_every_source_speaks_plain_data(cli_library, plan):
             project,
             context.store.files,
             _report_sources(),
-            key_of=_step_key,
-            kind_of=_step_kind,
+            key_of=key_of,
+            kind_of=kind_word,
             status_for=status_for,
             today=date(2026, 9, 6),
         )
@@ -170,8 +171,8 @@ def test_a_stack_is_drawn_as_its_frame_without_its_chains_arrows(cli_library, pl
             project,
             context.store.files,
             _report_sources(),
-            key_of=_step_key,
-            kind_of=_step_kind,
+            key_of=key_of,
+            kind_of=kind_word,
             status_for=status_for,
             today=date(2026, 9, 6),
         )
@@ -196,8 +197,8 @@ def test_the_progress_chart_is_the_tabs_pages_on_one_axis(cli_library, plan):
             context.library.project(plan),
             context.store.files,
             _report_sources(),
-            key_of=_step_key,
-            kind_of=_step_kind,
+            key_of=key_of,
+            kind_of=kind_word,
             status_for=status_for,
             today=date(2026, 9, 6),
         )
@@ -381,8 +382,8 @@ def test_the_steps_table_marks_milestones_and_carries_facet_columns(cli_library,
             project,
             context.store.files,
             _report_sources(),
-            key_of=_step_key,
-            kind_of=_step_kind,
+            key_of=key_of,
+            kind_of=kind_word,
             status_for=status_for,
             today=date(2026, 9, 6),
         )

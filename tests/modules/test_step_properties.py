@@ -88,21 +88,21 @@ def test_a_toggled_aspect_shows_its_tab_live(services, project, panel):
     from dplanner.modules.docs.aspect import write_state as docs_write
     from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
     from dplanner.modules.github.aspect import write_state as github_write
-    from dplanner.modules.step_agent_instruction.aspect import (
-        MODULE_ID as AGENT_ID,
-    )
-    from dplanner.modules.step_agent_instruction.aspect import (
-        write_state,
-    )
-    from dplanner.modules.step_check.aspect import MODULE_ID as CHECK_ID
-    from dplanner.modules.step_check.aspect import write as check_write
-    from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
-    from dplanner.modules.step_milestone.aspect import write as milestone_write
     from dplanner.modules.step_ticket.aspect import MODULE_ID as TICKET_ID
     from dplanner.modules.step_ticket.aspect import enabled_entry
     from dplanner.modules.testing.aspect import MODULE_ID as TESTING_ID
     from dplanner.modules.testing.aspect import Test
     from dplanner.modules.testing.aspect import write as tests_write
+    from dplanner.planning.agent import (
+        MODULE_ID as AGENT_ID,
+    )
+    from dplanner.planning.agent import (
+        write_state,
+    )
+    from dplanner.planning.check import MODULE_ID as CHECK_ID
+    from dplanner.planning.check import write as check_write
+    from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
+    from dplanner.planning.milestone import write as milestone_write
 
     step = project.steps[0]
     services.undo.push(SetModuleDataCommand(step.id, MILESTONE_ID, milestone_write("v1")))
@@ -180,7 +180,7 @@ def test_a_plain_step_is_the_step_template_and_a_template_is_one_undo(services, 
     template; Make Milestone moves every toggle that differs as one undo step, and the
     step then lights Milestone instead — with its label generated, as the toggle does."""
     from dplanner.modules.estimation.aspect import enabled as estimate_on
-    from dplanner.modules.step_milestone.aspect import read as milestone_label
+    from dplanner.planning.milestone import read as milestone_label
 
     step = project.steps[0]
     assert panel.bar.template("Step").isChecked() is True
@@ -215,7 +215,7 @@ def test_a_bar_action_runs_the_owning_modules_toggle_and_follows_the_model(
 ):
     """One undoable command, not a copy — and the check mark is re-read from the model,
     so an undo made elsewhere reaches the bar."""
-    from dplanner.modules.step_check.aspect import read as check_read
+    from dplanner.planning.check import read as check_read
 
     step = project.steps[0]
     action = panel.bar.action("check.toggle")
@@ -313,8 +313,8 @@ def test_details_opens_a_dialog_that_is_the_panel_and_disposes_it(services, proj
 def test_the_dialogs_bar_acts_on_the_dialogs_own_step(services, project, monkeypatch):
     """The panel shows the step the dialog was opened about, and its toggles must act on
     what is on screen — the window's selection may have moved on since."""
-    from dplanner.modules.feature.aspect import is_feature as feature_read
     from dplanner.modules.step_properties.dialog import StepDetailsDialog
+    from dplanner.planning.feature import is_feature as feature_read
 
     shown, other = project.steps
     opened = []

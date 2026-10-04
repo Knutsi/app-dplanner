@@ -84,9 +84,6 @@ from dplanner.framework.session import AppSession
 from dplanner.modules.estimation.aspect import read as estimated_days
 from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.estimation.schedule import project_schedule, start_of
-from dplanner.modules.feature import aspect as feature_aspect
-from dplanner.modules.feature.aspect import FeatureSource
-from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.project_editor.clipboard import clip, paste
 from dplanner.modules.project_editor.layout_verbs import wave_view
 from dplanner.modules.project_editor.look import BACKGROUNDS, Look
@@ -96,11 +93,14 @@ from dplanner.modules.project_editor.positions import default_size, write_positi
 from dplanner.modules.project_editor.sorts import arranged_in_waves
 from dplanner.modules.spec import aspect as spec_aspect
 from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
-from dplanner.modules.step_agent_instruction.aspect import enabled as is_agent
-from dplanner.modules.step_milestone.aspect import read as milestone_label
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
 from dplanner.modules.time_estimates.module import TimeEstimatesModule
 from dplanner.modules.time_estimates.schedule import read_efficiency, read_start, time_report
+from dplanner.planning import feature as feature_aspect
+from dplanner.planning.agent import enabled as is_agent
+from dplanner.planning.feature import FeatureSource
+from dplanner.planning.feature import write as feature_write
+from dplanner.planning.milestone import read as milestone_label
 from dplanner.planning.progression import progression
 from dplanner.planning.status import Status, readiness_of, stored
 from dplanner.planning.status import write as status

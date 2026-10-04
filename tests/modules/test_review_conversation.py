@@ -17,11 +17,11 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
-from dplanner.modules.step_agent_instruction import aspect as agent
-from dplanner.modules.step_review.aspect import MODULE_ID, ReviewSettings, write
 from dplanner.modules.step_review.conversation import ConversationDialog
 from dplanner.modules.step_review.rounds import ASKER, PARTY, opened, said
 from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
+from dplanner.planning import agent
+from dplanner.planning.review import MODULE_ID, ReviewSettings, write
 
 VERB = "review.conversation"
 FINDINGS = "The error for an unclosed quote names no line.\n\nSay where the quote opened."

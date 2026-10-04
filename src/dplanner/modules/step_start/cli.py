@@ -16,7 +16,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
-from dplanner.modules.step_start.aspect import MODULE_ID, read, write
+from dplanner.planning.start import MODULE_ID, read, write
 
 
 def commands() -> list[CliCommand]:
