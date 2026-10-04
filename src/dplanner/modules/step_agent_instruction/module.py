@@ -45,10 +45,12 @@ from dplanner.core.storage.locations import remote_label
 from dplanner.core.telemetry import current
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
+from dplanner.domain.ledger import new_run_id
 from dplanner.domain.locations import LocationRole
-from dplanner.domain.model import Library, Node, NodeId, Step, StepId
+from dplanner.domain.model import Library, Node, NodeId, Step, StepId, now_stamp
 from dplanner.domain.repositories import UNSET, RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
+from dplanner.domain.workflow import Daemon
 from dplanner.framework.action_menu import append_action
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -87,7 +89,9 @@ from dplanner.modules.agent_briefing.prompt import (
 from dplanner.modules.agent_briefing.protocol import preamble
 from dplanner.modules.agent_briefing.sections import note_parts, step_sections
 from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.auto_launch import AutoLauncher, Due, LaunchLock
+from dplanner.modules.step_agent_instruction.auto_launch import AutoLauncher, LaunchLock
+from dplanner.modules.step_agent_instruction.due import Due, claim
+from dplanner.modules.step_agent_instruction.intents import LaunchIntent
 from dplanner.modules.step_agent_instruction.profiles import (
     Profile,
     default_profile,
@@ -352,8 +356,9 @@ class StepAgentInstructionDeps:
     repo: WatchableRepository | None = None
     notices: NoticeHost | None = None
     clock: Clock = field(default_factory=Clock)
-    # Autosave's flush now: a launch's claim is on disk at once, not a second and a half on.
-    flush: Callable[[], None] = field(default=lambda: None)
+    # Autosave's flush now — a launch's claim is on disk at once, not a second and a half
+    # on — and whether everything is on disk: a launch's intent is forgotten only then.
+    flush: Callable[[], bool] = field(default=lambda: True)
     # This library's launch lock on this machine; None is a build that never launches.
     launch_lock: LaunchLock | None = None
 
@@ -754,13 +759,16 @@ class StepAgentInstructionModule:
         deps = self._deps
         return outstanding(deps.library, step, readiness_of(deps.status_for), deps.auto_progresses)
 
-    def _run_on(self, step: Step, profile: Profile) -> tuple[bool, str, launcher.LaunchFiles]:
+    def _run_on(
+        self, step: Step, profile: Profile, run_dir: Path | None = None, run: str = ""
+    ) -> tuple[bool, str, launcher.LaunchFiles]:
         """Launch the agent on one step: whether a shell opened, the briefing it was handed
         and where it was written. Nothing is asked and nothing is claimed — what to do when
         no shell opened, and what a launch claims, is the caller's: a person's Run Agent
-        shows the prompt, an unattended launch says why in the status bar."""
+        shows the prompt, an unattended launch says why in the status bar. ``run_dir`` and
+        ``run`` are minted here unless the caller recorded them first."""
         deps = self._deps
-        run_dir = launcher.new_run_dir()
+        run_dir = run_dir or launcher.new_run_dir()
         staged = launcher.stage_assets(run_dir, self._assembled(step).files, deps.read_asset)
         assembled = self._assembled(step, staged)
         worktree = where.run_name_of(step) if where.worktree(step) else ""
@@ -776,6 +784,7 @@ class StepAgentInstructionModule:
             key=deps.step_key(step),
             step_id=step.id,
             branches=deps.branch_plan(deps.library, step, facts),
+            run=run,
         )
         return spawned, assembled.text, prepared
 
@@ -787,6 +796,9 @@ class StepAgentInstructionModule:
         facts, where the shell opens. A repository nobody checked out here is a refusal
         rather than a clone, which is a person's Run Agent to start. The claim is always
         made, whatever *On launch* says, or the step would be due again when its run ends.
+
+        **The intent is recorded before the spawn** (``intents.py``) and dropped again when no
+        shell opened; the auto-launcher forgets it once the claim is on disk.
         """
         deps = self._deps
         if not deps.library.has(due.step_id):
@@ -802,10 +814,19 @@ class StepAgentInstructionModule:
             return refusal
         if unplaced := _unplaced(facts, step):
             return f"{remote_label(unplaced)} is not checked out here — Run Agent clones it"
-        spawned, _text, _prepared = self._run_on(step, profile)
+        intent = LaunchIntent(step.id, new_run_id(), launcher.new_run_dir(), Daemon(), now_stamp())
+        intents = deps.launch_lock.intents if deps.launch_lock is not None else None
+        if intents is not None:
+            try:
+                intents.record(intent)
+            except OSError as error:
+                return f"cannot record the launch — {error.strerror}"
+        spawned, _text, _prepared = self._run_on(step, profile, intent.run_dir, intent.run)
         if not spawned:
+            if intents is not None:
+                intents.drop(intent.run)
             return f"no terminal opened — check {profile.name} in Settings ▸ Agent profiles"
-        due.claim()
+        claim(deps.library, due, deps.clock.today())
         return ""
 
     def _profile_for(self, step: Step) -> tuple[Profile | None, str]:
@@ -1066,6 +1087,7 @@ class StepAgentInstructionModule:
         note: str = "",
         step_id: StepId | None = None,
         branches: BranchPlan = DEFAULT_BRANCHES,
+        run: str = "",
     ) -> tuple[bool, launcher.LaunchFiles]:
         """Open the profile's terminal on ``text`` in ``workdir``; the run is recorded only
         when a shell was actually spawned, and only when it is *a step's*.
@@ -1111,6 +1133,7 @@ class StepAgentInstructionModule:
                 project_id=project_id or "",
                 harnesses=deps.harnesses,
                 branches=branches,
+                run=run,
             )
             span.detail["prompt_chars"] = prepared.prompt_chars
             command = None

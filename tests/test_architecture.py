@@ -91,6 +91,8 @@ HEADLESS_FILES = (
     "progress.py",
     "collect.py",
     "runs.py",
+    "due.py",
+    "intents.py",
     "usage.py",
     # Reads a run's usage back into the ledger: the wrapper script's `dplanner` call.
     "harvest.py",
@@ -139,7 +141,7 @@ CONCRETE_STORAGE = (
 
 # Ceilings (rule 12), recorded on 4 October 2026. Lower one by hand when its count falls;
 # never raise it.
-ROOT_LINES = 3607
+ROOT_LINES = 3555
 DIRECT_COMMANDS = 141
 
 # Every id a module stores data, settings or files under (rule 13). Stored ids are public:

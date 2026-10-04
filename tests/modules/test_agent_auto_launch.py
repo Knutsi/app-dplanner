@@ -19,15 +19,18 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Step
 from dplanner.domain.store import LibraryStore
+from dplanner.domain.workflow import Daemon
 from dplanner.framework.user_config import set_global
 from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
 from dplanner.modules.auto_progress.aspect import write as write_flags
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.auto_launch import (
     ANOTHER_WINDOW,
+    INTERRUPTED,
     NOTICE_ID,
     LaunchLocks,
 )
+from dplanner.modules.step_agent_instruction.intents import LaunchIntent
 from dplanner.modules.step_agent_instruction.settings_page import AUTO_LAUNCH_KEY, MAX_AGENTS_KEY
 from dplanner.modules.step_agent_run.aspect import MODULE_ID as RUN_ID
 from dplanner.modules.step_agent_run.aspect import asks_person
@@ -185,6 +188,76 @@ def test_with_the_switch_off_nothing_is_launched(services, plan, library_file, m
     take_in(services)
     assert opened_for == []
     assert status_of(services.document.step(plan["C"].id)) is Status.PENDING
+
+
+# -- a launch is an external effect ------------------------------------------------------------
+
+
+def test_the_intent_is_on_disk_when_the_shell_is_spawned_and_gone_once_the_claim_is(
+    services, plan, library_file, launch_locks, monkeypatch
+):
+    fake_terminal(monkeypatch)
+    intents = LaunchLocks(launch_locks).for_library(library_file).intents
+    at_spawn: list[list[str]] = []
+    monkeypatch.setattr(
+        launcher,
+        "spawn",
+        lambda *_a, **_k: at_spawn.append([each.step for each in intents.pending()]),
+    )
+    launch_when_due(services)
+    another_writer(library_file, "A1", "A2", "A3")
+    take_in(services)
+    assert at_spawn == [[plan["C"].id]]
+    assert intents.pending() == []
+
+
+def interrupted_launch(launch_locks, library_file, step, run_dir, *, shell_started):
+    """What a window that died mid-launch leaves behind: the intent, and the shell file only
+    when the spawn got as far as starting the wrapper script."""
+    run_dir.mkdir()
+    if shell_started:
+        (run_dir / launcher.SHELL_FILE).write_text("pid=1\n", encoding="utf-8")
+    intents = LaunchLocks(launch_locks).for_library(library_file).intents
+    intents.record(LaunchIntent(step.id, "20261004T000000Z-crashed", run_dir, Daemon(), "now"))
+    return intents
+
+
+def test_a_crash_between_intent_and_spawn_is_refused_never_retried_blind(
+    services, plan, library_file, launch_locks, monkeypatch, tmp_path
+):
+    opened_for = fake_terminal(monkeypatch)
+    intents = interrupted_launch(
+        launch_locks, library_file, plan["C"], tmp_path / "run", shell_started=False
+    )
+    launch_when_due(services)
+    another_writer(library_file, "A1", "A2", "A3")
+    take_in(services)
+
+    assert opened_for == []
+    assert status_of(services.document.step(plan["C"].id)) is Status.PENDING
+    assert INTERRUPTED in status_line(services)
+    assert intents.pending() == []
+    # A person answering for the step — its briefing touched — lets the next pass launch it.
+    services.document.set_text(plan["C"].id, AGENT_ID, "Carry out C, again.")
+    settle(services)
+    assert len(opened_for) == 1
+
+
+def test_a_crash_between_spawn_and_claim_claims_the_run_and_launches_nothing(
+    services, plan, library_file, launch_locks, monkeypatch, tmp_path
+):
+    opened_for = fake_terminal(monkeypatch)
+    intents = interrupted_launch(
+        launch_locks, library_file, plan["C"], tmp_path / "run", shell_started=True
+    )
+    launch_when_due(services)
+    another_writer(library_file, "A1", "A2", "A3")
+    take_in(services)
+
+    assert opened_for == []
+    on_disk = by_title(LibraryStore(library_file).load(), "C")
+    assert status_of(on_disk) is Status.IN_PROGRESS
+    assert intents.pending() == []
 
 
 # -- the cap -----------------------------------------------------------------------------------
