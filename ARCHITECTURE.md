@@ -3205,6 +3205,20 @@ the tree wholesale, so its refresh passes `forget_history=True` and the stack is
 only when something was actually taken, which is why New Branch, which changes no plan
 file, keeps it.
 
+**An undo never overwrites a value somebody else wrote, and a composite never stops half
+way.** `SetFieldCommand`, `SetModuleDataCommand` and `SetEdgesCommand` remember what their
+redo left in the model — read back, since `set_edges` de-duplicates and `set_module_data`
+keeps the caller's dict — and refuse with `ValueError` when an undo finds anything else
+there; a replayed redo refuses the same way when the value is no longer what its undo put
+back. Before that, undoing a rename restored the old title over the agent's newer one, and
+nothing said so. The refusal reaches `_drop_from` like the two above, so the user's history
+before it stays usable. A refusal inside a `CompositeCommand` — or a gesture the stack
+recorded — reverses what the composite had already applied and then goes on, so the model
+is either wholly before the gesture or wholly after it; a composite that half applied
+before the stack dropped it left a graph neither surface had asked for (Codex's probes,
+structural review §11). Text undo needed nothing: `apply_text_edit` already refuses a
+removal that does not match.
+
 **The conflict modal hands the merge to an agent** because the user asked for that over a
 banner. `modules/library_watch/` names the entries and the agent module writes the window's
 version of each into the run directory (`mine/<path>`) *before* the window yields to the
