@@ -628,7 +628,7 @@ def test_milestones_landing_on_one_day_share_one_mark_and_one_name(services, sta
     and name both."""
     from dplanner.cli.report.drawings import LIGHT, chart_svg
     from dplanner.cli.report.parts import Chart
-    from dplanner.modules import _time_readers
+    from dplanner.modules.time_estimates.cli import Readers
     from dplanner.modules.time_estimates.report import report_source
 
     tab = services.tabs.open("time", staged.id)
@@ -646,9 +646,7 @@ def test_milestones_landing_on_one_day_share_one_mark_and_one_name(services, sta
     (hit,) = [hit for hit in work._hits if "v1" in hit.words]
     assert "v2" in hit.words
     assert "v1 lands; v2 lands" in tab.months.day_tooltip(TODAY)
-    contribution = report_source(_time_readers())(
-        services.document, staged, services.repo.files, TODAY
-    )
+    contribution = report_source(Readers())(services.document, staged, services.repo.files, TODAY)
     (chart,) = [placed.part for placed in contribution.placed if isinstance(placed.part, Chart)]
     assert len(chart.landings) == 1
     svg = chart_svg(chart, LIGHT)
@@ -927,7 +925,7 @@ def test_a_wait_is_hatched_on_the_work_page_and_the_calendar_and_named_in_its_mi
     Work page and the calendar say it where the pointer is, and v2's words name it."""
     from dplanner.cli.report.drawings import LIGHT, chart_svg
     from dplanner.cli.report.parts import Chart
-    from dplanner.modules import _time_readers
+    from dplanner.modules.time_estimates.cli import Readers
     from dplanner.modules.time_estimates.report import report_source
     from dplanner.planning.wait import MODULE_ID as WAIT_ID
     from dplanner.planning.wait import Wait
@@ -950,7 +948,7 @@ def test_a_wait_is_hatched_on_the_work_page_and_the_calendar_and_named_in_its_mi
     assert "waits: Hardware arrives" in tab.months.day_tooltip(held.end)
     assert "waits: Hardware arrives" in tab.shifts.words(tab.shifts.rows[1])
     assert "waits:" not in tab.shifts.words(tab.shifts.rows[0])
-    contribution = report_source(_time_readers())(library, staged, services.repo.files, TODAY)
+    contribution = report_source(Readers())(library, staged, services.repo.files, TODAY)
     (chart,) = [placed.part for placed in contribution.placed if isinstance(placed.part, Chart)]
     assert chart.waits == ((held.start, held.end, "Hardware arrives"),)
     assert chart_svg(chart, LIGHT).count('class="wait"') == 2  # a band in each work plot

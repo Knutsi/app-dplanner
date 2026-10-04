@@ -30,8 +30,8 @@ paths:
   document's identity — `spec show`, `spec diff`, a feature's citation, a page's `parent`,
   an asset row's provenance — so `spec rename` and the tab's *Rename* move all of them in
   one `CompositeCommand`, and the filename's stem follows with its suffix. The citations
-  are another module's data, so the composition root composes them
-  (`_rename_spec_references`) and both surfaces push the same object. `rename_refusal` is
+  are a planning fact (`planning/feature.py`), so `spec/cli.py`'s `renamed_citations` moves
+  them and both surfaces push the same object. `rename_refusal` is
   the one sentence both use: a name that slugs to nothing, one already taken, and a
   document a source fetched, whose name belongs to the page it came from. **Delete takes
   the index row and never the blob** — undo has to restore a row that still points at

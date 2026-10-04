@@ -15,13 +15,14 @@ plan, and as the tab shows it with *Adjust for Efficiency* on — the prototype'
 
 import sys
 
-from dplanner.modules import _time_readers, _time_writers
+from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.simulation.accuracy import (
     Accuracy,
     TimelineAccuracy,
     combined,
     timeline_accuracy,
 )
+from dplanner.modules.time_estimates.simulation.frames import Writers
 from dplanner.modules.time_estimates.simulation.replay import Replay
 from dplanner.modules.time_estimates.simulation.scenarios import SCENARIOS, scenario_by_id
 
@@ -40,7 +41,7 @@ def cells(measured: list[TimelineAccuracy]) -> str:
 
 def main(picked: list[str]) -> int:
     scenarios = [scenario_by_id(one) for one in picked] if picked else list(SCENARIOS)
-    readers, writers = _time_readers(), _time_writers()
+    readers, writers = Readers(), Writers()
     print("the landing forecast: mean |error|, total movement, days moved (working days)")
     print(f"seeds {', '.join(map(str, SEEDS))}\n")
     print(f"{'':16}| as recorded                        | adjusted for efficiency")

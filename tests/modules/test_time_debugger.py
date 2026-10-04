@@ -155,8 +155,9 @@ def test_a_wait_added_on_the_day_shown_holds_the_step_it_is_put_before(services)
 
 
 def test_nothing_is_simulated_until_the_tab_is_shown(services):
-    from dplanner.modules import _time_readers, _time_writers
+    from dplanner.modules.time_estimates.cli import Readers
     from dplanner.modules.time_estimates.debugger import TimeSimulationDeps
+    from dplanner.modules.time_estimates.simulation.frames import Writers
 
     def refused(*_args: object) -> TimeEstimatesDeps:
         raise AssertionError("built before it was shown")
@@ -165,8 +166,8 @@ def test_nothing_is_simulated_until_the_tab_is_shown(services):
         actions=services.actions,
         context=services.context,
         tabs=services.tabs,
-        readers=_time_readers(),
-        writers=_time_writers(),
+        readers=Readers(),
+        writers=Writers(),
         time_deps=refused,
     )
     tab = TimeSimulationActivity(deps)

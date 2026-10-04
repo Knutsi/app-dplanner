@@ -52,7 +52,7 @@ from dplanner.modules.spec.activity import (
     SpecsActivity,
 )
 from dplanner.modules.spec.aspect import DATA_FORMAT, MODULE_ID, read_attachments
-from dplanner.modules.spec.cli import RENAME_LABEL, RenameReferences
+from dplanner.modules.spec.cli import RENAME_LABEL, renamed_citations
 from dplanner.modules.spec.documents import (
     SpecDocument,
     SpecSource,
@@ -118,10 +118,6 @@ class SpecDeps:
     # wash over it, the figures under the editor. All three walk the whole document, so
     # they wait for a pause in typing rather than running on every keystroke.
     debounce: DebounceService
-    # The other modules' half of a rename: what else points at a document by name, as
-    # commands that move with it. The composition root composes it; the window and
-    # `dplanner spec rename` push the same one.
-    rename_references: "RenameReferences | None" = None
     # The document source kinds this build offers — one + menu entry and one way to
     # fetch each. Named by the composition root; the module runs whatever it is given.
     kinds: Sequence[DocumentSourceKind] = ()
@@ -663,11 +659,7 @@ class SpecModule:
             documents=rename_document(index.documents, document.name, chosen),
             assets=rename_assets(index.assets, document.name, chosen),
         )
-        carried = (
-            self._deps.rename_references(project, document.name, chosen)
-            if self._deps.rename_references is not None
-            else []
-        )
+        carried = renamed_citations(project, document.name, chosen)
         self._deps.undo.push(
             CompositeCommand(
                 RENAME_LABEL,
