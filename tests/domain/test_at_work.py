@@ -121,6 +121,22 @@ def test_every_run_renews_the_claims_of_its_own_project(board):
     assert quiet_seconds(board.claims("p2")[0]) > 60
 
 
+def test_an_end_that_lands_while_a_run_renews_stays_ended(board, monkeypatch):
+    """A run reads every claim and then renews each; an end landing in between must not be
+    undone by the renewal writing the claim it read back."""
+    board.start("p1", step="a", doing="ending")
+    board.start("p1", step="b", doing="working")
+    _backdate(board, "p1", FRESH_MINUTES - 1, step="b")
+    captured = board._files()
+    assert board.end("p1", "a")
+    monkeypatch.setattr(board, "_files", lambda: captured)
+    board.touch("p1")
+    ended = board._path("p1", "a")
+    assert ended is not None and not ended.exists()
+    (renewed,) = AtWorkBoard(board.directory).claims("p1")
+    assert renewed.step == "b" and quiet_seconds(renewed) < 60
+
+
 def test_a_run_never_makes_a_claim(board):
     """Running a verb is evidence for a claim somebody made, not a claim of its own."""
     board.touch("p1")
@@ -134,6 +150,18 @@ def test_a_claim_nobody_renewed_since_yesterday_is_swept_by_the_next_one(board, 
     path.write_text(f'{{"project": "p1", "seen": "{ancient}"}}', encoding="utf-8")
     board.start("p2", doing="now")
     assert [claim.project for claim in board.claims()] == ["p2"]
+
+
+def test_a_sweep_never_deletes_a_claim_renewed_after_it_read_it(board, monkeypatch):
+    """The sweep reads a day-old claim; if the agent renews it before the sweep acts, the
+    sweep's stale read must not delete the claim that now stands."""
+    board.start("p1", doing="back again")
+    _backdate(board, "p1", 60 * (SWEEP_HOURS + 1))
+    captured = board._files()
+    board.touch("p1")
+    monkeypatch.setattr(board, "_files", lambda: captured)
+    board.start("p2", doing="now")
+    assert {claim.project for claim in AtWorkBoard(board.directory).claims()} == {"p1", "p2"}
 
 
 def test_a_quiet_claim_is_never_swept_while_it_is_merely_quiet(board):
