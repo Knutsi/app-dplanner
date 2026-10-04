@@ -108,7 +108,8 @@ def test_the_spatial_loop_moved_here_with_the_rest_of_the_shaping(skill):
     assert "layout show <project> --map" in prose
     assert "layout shift <project> --x 640 --by 300" in prose
     assert "layout tidy <project>" in prose
-    assert "2 hours per task" in prose and "--days 0.25" in prose
+    assert "one run takes about 2 hours" in prose and "--days 0.25" in prose
+    assert "however many tasks its `## Approach` lists" in prose
     assert "when the same sentence appears on several pages" in prose
     assert "unless the project's topology says otherwise" in prose
     assert "lump similar work into one large step" in prose
