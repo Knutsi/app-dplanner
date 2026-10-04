@@ -9,19 +9,28 @@ change. A :class:`Person` is never asked: the director has authority over the wo
 ARCHITECTURE.md's *An agent finishes at Ready for review* has the reasoning.
 
 **A status that says nobody is working the step ends the claim on it**, whoever sets it —
-so a director marking a step done in the window takes the agent's banner down, and the agent
-learns at its next CLI call that it should stand down.
+so a director marking a step done in the window takes the agent's banner down. Ending the
+claim is all it does: nothing yet tells the agent to stand down.
 """
 
 import shlex
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import date
 from typing import assert_never
 
 from dplanner.domain.commands import Command, CompositeCommand
 from dplanner.domain.model import Step
-from dplanner.domain.workflow import Actor, AgentRun, Change, Daemon, EndClaim, Person, PlanView
+from dplanner.domain.workflow import (
+    Actor,
+    AgentRun,
+    Change,
+    Daemon,
+    EndClaim,
+    FollowUp,
+    Person,
+    PlanView,
+)
 from dplanner.planning.status import (
     MODULE_ID,
     REVIEW_AND_MERGE,
@@ -36,6 +45,15 @@ from dplanner.planning.status import (
 STOPPED = frozenset({*REVIEW_AND_MERGE, Status.DONE, Status.BLOCKED})
 
 LABEL = "Set Status"
+
+
+@dataclass(frozen=True)
+class Kept:
+    """The decision note a ``because`` was kept as; ``added`` is False when the step already
+    carried it, which then stands as it was."""
+
+    note: str
+    added: bool
 
 
 @dataclass(frozen=True)
@@ -84,34 +102,53 @@ class StatusWorkflow:
         actor: Actor,
         today: date,
         because: str = "",
-    ) -> Change:
+    ) -> tuple[Change, Kept | None]:
         """Set ``step`` to ``status``: the note a ``because`` is kept as and the status, as
-        one command, and the claim to end when the work has stopped. Raises ``ValueError``
-        on a refusal — the model's word for a change that cannot be true."""
+        one command, and the claim to end when the work has stopped — with the note it kept,
+        for a surface that says so. Raises ``ValueError`` on a refusal — the model's word
+        for a change that cannot be true."""
         if why := self.refusal([step], status, actor, because):
             raise ValueError(why)
         commands: list[Command] = []
-        if because and (note := self.keep_reason(view, step, because, today)[1]) is not None:
-            commands.append(note)
+        kept = None
+        if because:
+            note, command = self.keep_reason(view, step, because, today)
+            kept = Kept(note, added=command is not None)
+            commands.extend([command] if command is not None else [])
         previous = step.module_data.get(MODULE_ID)
         if write(status, today=today, previous=previous) != (previous or {}):
             commands.append(status_command(step, status, today=today, label=LABEL))
         follow_ups = (EndClaim(view.project_of(step.id).id, step.id),) if status in STOPPED else ()
         command = CompositeCommand(LABEL, commands) if commands else None
-        return Change(command, follow_ups, LABEL)
+        return Change(command, follow_ups), kept
 
 
-def perform(change: Change, end_claim: Callable[[EndClaim], bool]) -> bool:
-    """Perform ``change``'s follow-ups once its command is accepted; True when a claim stood
-    and was ended."""
-    ended = False
-    for follow_up in change.follow_ups:
+@dataclass(frozen=True)
+class Performed:
+    """What came of the follow-ups: the claims that stood and were ended, and the ones that
+    could not be, each with why."""
+
+    ended: tuple[EndClaim, ...] = ()
+    failed: tuple[tuple[EndClaim, str], ...] = ()
+
+
+def perform(follow_ups: Iterable[FollowUp], end_claim: Callable[[EndClaim], bool]) -> Performed:
+    """Perform follow-ups once their change is accepted, each on its own: one that fails is
+    reported and the rest are still attempted. The model is never rolled back for an effect —
+    the change is true, and releasing a claim again is safe, so a retry is the remedy."""
+    ended: list[EndClaim] = []
+    failed: list[tuple[EndClaim, str]] = []
+    for follow_up in follow_ups:
         match follow_up:
             case EndClaim():
-                ended = end_claim(follow_up) or ended
+                try:
+                    if end_claim(follow_up):
+                        ended.append(follow_up)
+                except OSError as error:
+                    failed.append((follow_up, str(error)))
             case _:
                 assert_never(follow_up)
-    return ended
+    return Performed(tuple(ended), tuple(failed))
 
 
 def _review_first(step: Step) -> str:

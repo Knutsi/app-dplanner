@@ -1993,6 +1993,7 @@ def default_modules(
                 clock=services.clock,
                 workflow=_status_workflow(),
                 end_claim=lambda claim: board.end(claim.project, claim.step),
+                notices=services.window,
             )
         ),
         # No tab either: a check carries nothing, and the Covers tab that shows what it
@@ -4376,7 +4377,6 @@ def default_cli_commands(
     from dplanner.modules.step_review import cli as review_cli
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
-    from dplanner.modules.step_status.workflows import perform
     from dplanner.modules.step_ticket import cli as ticket_cli
     from dplanner.modules.step_wait import cli as wait_cli
     from dplanner.modules.testing import cli as testing_cli
@@ -4409,14 +4409,10 @@ def default_cli_commands(
     def actor() -> "Actor":
         return AgentRun() if agent_shell_marker() else Person()
 
-    def set_status(context: "CliContext", step: "Step", status: "Status") -> bool:
-        """A status written as `status set` writes it, ending a stopped step's claim."""
-        change = workflow.set_status(
-            context.library, step, status, actor=actor(), today=context.clock.today()
-        )
-        if change.command is not None:
-            context.apply(change.command)
-        return perform(change, end_claim)
+    def set_status(context: "CliContext", step: "Step", status: "Status") -> None:
+        """A status written as `status set` writes it — refused as one line, its claim
+        ended once the run is written."""
+        status_cli.write_status(context, workflow, end_claim, step, status, actor=actor())
 
     def finish_merged(context: "CliContext", step: "Step") -> bool:
         """A step waiting on its merge is done once its PR reads merged — written as

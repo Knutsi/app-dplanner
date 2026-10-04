@@ -32,7 +32,7 @@ from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import placed
 from dplanner.domain.workflow import Actor, AgentRun, EndClaim, Person
-from dplanner.modules.step_status.workflows import StatusWorkflow, perform
+from dplanner.modules.step_status.workflows import Kept, Performed, StatusWorkflow, perform
 from dplanner.planning.status import Status, stored, word
 
 
@@ -63,38 +63,31 @@ def commands(
     def _set(
         context: CliContext, step: Step, status: Status, who: Actor, because: str = ""
     ) -> None:
-        """Write ``status`` through the workflow, and say so — naming the note a
-        ``--because`` was kept as, or the one already there that it did not replace, and
-        the agent's claim it ended."""
-        today = context.clock.today()
-        if why := workflow.refusal([step], status, who, because):
-            raise CliError(why)
-        note, added = ("", True)
-        if because:
-            note, command = workflow.keep_reason(context.library, step, because, today)
-            added = command is not None
-        change = workflow.set_status(
-            context.library, step, status, actor=who, today=today, because=because
-        )
-        if change.command is not None:
-            context.apply(change.command)
-        ended = perform(change, end_claim)
-        data = (
-            {"step": step.id, "status": status.value}
-            | ({"note": note} if note else {})
-            | ({"claim_ended": True} if ended else {})
-        )
-        kept = (
-            (
-                f" — the reason kept as {note}"
-                if added
-                else f" — a reason is already recorded as {note}"
+        """Write ``status`` through the workflow, and say so once it is written — naming the
+        note a ``--because`` was kept as, or the one already there that it did not replace,
+        and the agent's claim it ended."""
+
+        def say(kept: Kept | None, done: Performed) -> None:
+            data = (
+                {"step": step.id, "status": status.value}
+                | ({"note": kept.note} if kept else {})
+                | ({"claim_ended": True} if done.ended else {})
             )
-            if note
-            else ""
+            reason = (
+                (
+                    f" — the reason kept as {kept.note}"
+                    if kept.added
+                    else f" — a reason is already recorded as {kept.note}"
+                )
+                if kept
+                else ""
+            )
+            released = " — no agent at work on it now" if done.ended else ""
+            context.report(data, f"{step.title}: {status.value}{reason}{released}")
+
+        write_status(
+            context, workflow, end_claim, step, status, actor=who, because=because, then=say
         )
-        released = " — no agent at work on it now" if ended else ""
-        context.report(data, f"{step.title}: {status.value}{kept}{released}")
 
     return [
         CliCommand(
@@ -129,6 +122,44 @@ def commands(
             examples=("dplanner status list discovery",),
         ),
     ]
+
+
+def write_status(
+    context: CliContext,
+    workflow: StatusWorkflow,
+    end_claim: Callable[[EndClaim], bool],
+    step: Step,
+    status: Status,
+    *,
+    actor: Actor,
+    because: str = "",
+    then: Callable[[Kept | None, Performed], None] = lambda _kept, _done: None,
+) -> None:
+    """Set a status the way every verb does: refused as one line, applied now, and its
+    follow-ups owed to after the invocation is written — ``then`` hears what came of them.
+    A claim that could not be ended is refused once the rest is done, saying the status
+    stands."""
+    if why := workflow.refusal([step], status, actor, because):
+        raise CliError(why)
+    change, kept = workflow.set_status(
+        context.library, step, status, actor=actor, today=context.clock.today(), because=because
+    )
+    if change.command is not None:
+        context.apply(change.command)
+
+    def settle() -> None:
+        done = perform(change.follow_ups, end_claim)
+        then(kept, done)
+        if done.failed:
+            raise CliError(
+                "; ".join(
+                    f"{step.title}: {status.value} is written, but the agent's claim on it"
+                    f" could not be ended ({why}) — `dplanner agent-work end` ends it"
+                    for _claim, why in done.failed
+                )
+            )
+
+    context.after_flush.append(settle)
 
 
 def _configure_set(parser: ArgumentParser) -> None:

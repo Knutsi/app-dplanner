@@ -4505,8 +4505,15 @@ the window left the agent's banner standing, and "neither surface can grow a beh
 other lacks" was quietly false. The fix moves the shared object up one level, from the
 command to the workflow: `modules/step_status/workflows.py`'s `StatusWorkflow.set_status`
 returns a `Change` (`domain/workflow.py`) — one command, and the follow-ups to perform once
-it is accepted (`EndClaim`). The window pushes the command as one undo gesture, the CLI
-applies it and flushes, and both run `perform`; `refusal()` is the same function behind the
+it is accepted (`EndClaim`). The window pushes the selection's commands as **one
+`CompositeCommand`**, never a gesture of pushes, because a gesture groups history while a
+composite is all-or-nothing: a refusal on the third step leaves the first two unmoved and no
+claim ended. The CLI applies the command and owes the follow-ups to
+`CliContext.after_flush`, which `open_library` runs only once the whole invocation is written
+— and the verb's report goes with them, so a run that wrote nothing neither released a claim
+nor said it did. Both run `perform`, which attempts every follow-up on its own and reports
+the ones that failed (a notice with a retry in the window, a refusal naming the written
+status in the CLI); a model change is never rolled back for an effect. `refusal()` is the same function behind the
 menu's greyed label and the CLI's error, and because it runs in an action state it reads only
 the steps it is handed. The context system is untouched: the `ActionSpec` still decides which
 steps a verb acts on.

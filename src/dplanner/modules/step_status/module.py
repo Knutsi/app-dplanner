@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from PySide6.QtGui import QColor, QIcon
 
 from dplanner.core.clock import Clock
+from dplanner.domain.commands import CompositeCommand
 from dplanner.domain.model import Library, Step
 from dplanner.domain.workflow import EndClaim, Person
 from dplanner.framework.action_registry import (
@@ -30,8 +31,10 @@ from dplanner.framework.action_registry import (
     ActionState,
 )
 from dplanner.framework.context import Context
+from dplanner.framework.notices import Notice
 from dplanner.framework.step_selection import chosen_steps
 from dplanner.framework.undo import UndoService
+from dplanner.framework.window import NoticeHost
 from dplanner.modules.step_status.workflows import LABEL, StatusWorkflow, perform
 from dplanner.planning.status import DATA_FORMAT, MODULE_ID, Status, label, phrase, stored
 from dplanner.theme.icons import (
@@ -62,6 +65,10 @@ class StepStatusDeps:
     clock: Clock  # The day a status change is stamped with.
     workflow: StatusWorkflow
     end_claim: Callable[[EndClaim], bool]  # The at-work board's; answers whether one stood.
+    notices: NoticeHost  # Where a claim that could not be ended stands, with a retry.
+
+
+NOTICE_ID = "step_status.unreleased"
 
 
 class StepStatusModule:
@@ -113,14 +120,39 @@ class StepStatusModule:
             today = self._deps.clock.today()
             library = self._deps.library
             changes = [
-                self._deps.workflow.set_status(library, step, status, actor=Person(), today=today)
+                self._deps.workflow.set_status(library, step, status, actor=Person(), today=today)[
+                    0
+                ]
                 for step in steps
             ]
-            with self._deps.undo.gesture(LABEL):
-                for change in changes:
-                    if change.command is not None:
-                        self._deps.undo.push(change.command)
-            for change in changes:
-                perform(change, self._deps.end_claim)
+            # One composite, not a gesture of pushes: it is all-or-nothing on the way in, so
+            # a refusal part way leaves no step moved and no claim ended.
+            commands = [change.command for change in changes if change.command is not None]
+            if commands:
+                self._deps.undo.push(CompositeCommand(LABEL, commands))
+            self._release([claim for change in changes for claim in change.follow_ups])
 
         return run
+
+    def _release(self, claims: list[EndClaim]) -> None:
+        """End the claims a stopped status owes, each on its own. Any that could not be
+        ended stand on a notice with a retry — the statuses are true, and are not undone
+        for an effect."""
+        failed = perform(claims, self._deps.end_claim).failed
+        if not failed:
+            self._deps.notices.clear_notice(NOTICE_ID)
+            return
+        unreleased = [claim for claim, _why in failed]
+        self._deps.notices.show_notice(
+            Notice(
+                id=NOTICE_ID,
+                words=(
+                    f"The status is set, but {len(failed)} agent claim(s) could not be ended:"
+                    f" {failed[0][1]}"
+                ),
+                tone="error",
+                action="Retry",
+                tip="End the claims again",
+                act=lambda: self._release(unreleased),
+            )
+        )

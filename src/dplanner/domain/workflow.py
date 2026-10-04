@@ -2,27 +2,18 @@
 
 A workflow is one thing a person or an agent does — *set a status* — as a plain function in
 the owning module's ``workflows.py``. Every surface calls it: the window's ``ActionSpec``
-pushes the ``Change``'s command as one undo gesture, a CLI verb applies it and lets the store
-flush, and both then perform its follow-ups. That is the rule that both surfaces build the
+pushes the ``Change``'s command as one undo gesture and a CLI verb applies it; each performs
+the follow-ups once the change is accepted — the window once the push has succeeded, the CLI
+once the whole invocation has been written. That is the rule that both surfaces build the
 same object, moved up from the command to the whole workflow. ARCHITECTURE.md's *A workflow
 is one function under both surfaces* has the reasoning.
 """
 
-from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Protocol
 
 from dplanner.domain.commands import Command
-from dplanner.domain.model import (
-    Edge,
-    EdgeEnd,
-    Node,
-    NodeId,
-    Project,
-    ProjectId,
-    Step,
-    StepId,
-)
+from dplanner.domain.model import Project, ProjectId, StepId
 
 
 @dataclass(frozen=True)
@@ -63,24 +54,12 @@ class Change:
 
     command: Command | None
     follow_ups: tuple[FollowUp, ...]
-    label: str
 
 
 class PlanView(Protocol):
-    """The library's queries and nothing else: a workflow builds, it never mutates, and
-    mypy refuses a mutator called on one of these."""
+    """The queries a workflow reads, and no more: grown by a real reader, never ahead of
+    one. It keeps the library's mutators out of a workflow's reach — a workflow builds a
+    command and never applies one. It does not deep-freeze the model: the nodes it answers
+    are the library's own objects, so a write through one would still type-check."""
 
-    def has(self, node_id: NodeId) -> bool: ...
-    def node(self, node_id: NodeId) -> Node: ...
-    def nodes(self) -> Iterator[Node]: ...
-    def project(self, project_id: ProjectId) -> Project: ...
-    def step(self, step_id: StepId) -> Step: ...
-    def parent_of(self, node_id: NodeId) -> Node | None: ...
     def project_of(self, step_id: StepId) -> Project: ...
-    def belongs_to(self, node_id: NodeId, project_id: ProjectId) -> bool: ...
-    def text(self, node_id: NodeId, key: str) -> str: ...
-    def link_refusal(self, step_id: StepId, kind: str, target: StepId) -> str | None: ...
-    def requires(self, step_id: StepId) -> list[Step]: ...
-    def dependents(self, step_id: StepId) -> list[Step]: ...
-    def boundary_edges(self, step_ids: Iterable[StepId]) -> list[Edge]: ...
-    def edges_of(self, step_ids: Iterable[StepId], end: EdgeEnd) -> list[Edge]: ...
