@@ -745,9 +745,9 @@ def test_adding_a_test_selects_it_so_the_editor_is_ready(services, step, section
 
 def scopes():
     """The collectors, wired the way the composition root wires them."""
-    from dplanner.modules import _scope_kinds
+    from dplanner.planning.kinds import scope_kinds
 
-    return _scope_kinds()
+    return scope_kinds()
 
 
 def covers(services, target):

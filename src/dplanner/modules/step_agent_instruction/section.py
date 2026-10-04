@@ -52,7 +52,7 @@ from dplanner.framework.text_binding import TextBinding
 from dplanner.framework.text_dialog import ExpandedTextDialog, attach_expand
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import make_text_well, space_lines
-from dplanner.modules.step_agent_instruction.prompt import (
+from dplanner.modules.agent_briefing.prompt import (
     AssembledPrompt,
     PromptPart,
     PromptSegment,

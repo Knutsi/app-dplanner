@@ -2,5 +2,5 @@
 deferred and what waits for after the project — one labelled log beside the project, and
 the index every briefing carries.
 
-The Qt-free half (``log.py``, ``reach.py``, ``migrate.py``, ``cli.py``, ``report.py``) is
+The Qt-free half (``aspect.py``, ``migrate.py``, ``cli.py``, ``report.py``) is
 what the CLI and the composition root import; ``module.py`` is the window's."""

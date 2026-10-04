@@ -20,6 +20,7 @@ from typing import Any
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import Library, Project, Step, StepId
+from dplanner.planning.review import reviews
 
 MODULE_ID = "auto_progress"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)
@@ -49,6 +50,13 @@ def progresses(waiter: Step, source: Step) -> bool:
     """Whether ``waiter`` may start once ``source`` reads ready for review — asked of every
     link on every canvas sync, so it builds no sets."""
     return source.id in read(waiter) and source.id in waiter.edges.get("requires", ())
+
+
+def auto_progresses(waiter: Step, source: Step) -> bool:
+    """Whether ``waiter`` may start once ``source`` is ready for review — the one answer
+    the frontier, Run Agent's gate, the canvas and every CLI mark read: a flagged link, or
+    any link into a review."""
+    return progresses(waiter, source) or reviews(waiter, source)
 
 
 def with_sources(step: Step, sources: Iterable[StepId], on: bool) -> dict[str, Any]:

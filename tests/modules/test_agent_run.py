@@ -10,15 +10,17 @@ from PySide6.QtWidgets import QSpinBox
 from tests.facts import code_row
 from tests.platforms import POSIX_MODE_BITS, SH, SYMLINKS
 
-from dplanner.modules import agent_harnesses
+from dplanner.modules import agent_harnesses, default_location_roles
+from dplanner.modules.agent_briefing.prompt import PromptPart, assemble
+from dplanner.modules.agent_briefing.protocol import epilogue, preamble
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.launcher import LaunchFiles, resolve_command
 from dplanner.modules.step_agent_instruction.launcher import prepare as _prepare
-from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
 from dplanner.planning.branches import DEFAULT_BRANCHES, BranchPlan
 from dplanner.planning.status import Status
 
 HARNESSES = agent_harnesses()
+ROLES = default_location_roles()
 
 
 def prepare(*args, **kwargs):
@@ -155,13 +157,10 @@ def test_the_preflight_names_the_worktree_for_this_run_not_for_the_step(services
     """The caller says whether *this run* has a worktree: Run Agent and `agent prompt`
     pass the step's choice, a conflict handed over by the window passes False — the
     merge must land in the checkout the window shows, whatever the step prefers."""
-    from dplanner.modules import _default_briefing
-
-    briefing = _default_briefing()
-    isolated = briefing.preamble(step, True, None, DEFAULT_BRANCHES)
+    isolated = preamble(step, True, None, DEFAULT_BRANCHES, ROLES)
     assert ".dplanner-worktrees/s1-deploy" in isolated and "agent/s1-deploy" in isolated
     assert "STOP" in isolated
-    shared = briefing.preamble(step, False, None, DEFAULT_BRANCHES)
+    shared = preamble(step, False, None, DEFAULT_BRANCHES, ROLES)
     assert ".dplanner-worktrees" not in shared and "checkout itself" in shared
     assert "dplanner skill status" in isolated and "dplanner skill status" in shared
 
@@ -169,20 +168,15 @@ def test_the_preflight_names_the_worktree_for_this_run_not_for_the_step(services
 def test_the_preflight_names_the_branch_the_plan_put_the_worktree_on(services, step):
     """A landing's worktree is on the feature branch, not its own — the agent checks for the
     branch the launcher prepared, from the one plan both were handed."""
-    from dplanner.modules import _default_briefing
-
     landing = BranchPlan(work_branch="feature/stacks", start="origin/feature/stacks")
-    text = _default_briefing().preamble(step, True, None, landing)
+    text = preamble(step, True, None, landing, ROLES)
     assert "must print `feature/stacks`" in text and "agent/s1-deploy" not in text
 
 
 def test_the_epilogue_names_the_base_a_pr_opens_against(services, step):
-    from dplanner.modules import _default_briefing
-
-    briefing = _default_briefing()
-    held = briefing.epilogue(services.document, step, BranchPlan(pr_base="feature/stacks"))
+    held = epilogue(services.document, step, BranchPlan(pr_base="feature/stacks"))
     assert "gh pr create --base feature/stacks" in held
-    assert "--base" not in briefing.epilogue(services.document, step, DEFAULT_BRANCHES)
+    assert "--base" not in epilogue(services.document, step, DEFAULT_BRANCHES)
 
 
 def test_a_code_location_naming_a_ref_is_the_mainline_a_run_starts_from(services, step):
@@ -192,16 +186,17 @@ def test_a_code_location_naming_a_ref_is_the_mainline_a_run_starts_from(services
 
     from tests.facts import code_facts
 
-    from dplanner.modules import _default_briefing
+    from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.branches.plan import branch_plan
 
     facts = code_facts(plan_root=Path("/plans"), repository="https://github.com/acme/widget")
     placement = facts.placements[0]
     facts = replace(
         facts, placements=(replace(placement, location=replace(placement.location, ref="develop")),)
     )
-    plan = _default_briefing().branch(services.document, step, facts)
+    plan = branch_plan(services.document, step, mainline(facts, step))
     assert plan.start == "origin/develop" and plan.pr_base == "develop"
-    assert _default_briefing().branch(services.document, step, None) == DEFAULT_BRANCHES
+    assert branch_plan(services.document, step, mainline(None, step)) == DEFAULT_BRANCHES
 
 
 def test_the_preflight_says_where_the_plan_lives(services, step):
@@ -212,24 +207,21 @@ def test_the_preflight_says_where_the_plan_lives(services, step):
 
     from tests.facts import code_facts
 
-    from dplanner.modules import _default_briefing
-
-    briefing = _default_briefing()
     apart = code_facts(
         plan_root=Path("/plans"),
         plan_remote="git@github.com:acme/plans.git",
         repository="https://github.com/acme/widget",
     )
-    text = briefing.preamble(step, True, apart, DEFAULT_BRANCHES)
+    text = preamble(step, True, apart, DEFAULT_BRANCHES, ROLES)
     assert "own repository, acme/plans" in text and "acme/widget" in text
     assert "WARNING" not in text
 
     inside = code_facts(plan_root=Path("/widget"))
-    text = briefing.preamble(step, True, inside, DEFAULT_BRANCHES)
+    text = preamble(step, True, inside, DEFAULT_BRANCHES, ROLES)
     assert "WARNING" in text and "do not stage or commit" in text
     assert "dplanner project move" in text and "when the developer asks" in text
 
-    text = briefing.preamble(step, True, replace(inside, colocation="accepted"), DEFAULT_BRANCHES)
+    text = preamble(step, True, replace(inside, colocation="accepted"), DEFAULT_BRANCHES, ROLES)
     assert "WARNING" not in text and "by the developer's choice" in text
     assert "project move" not in text
 
@@ -603,7 +595,7 @@ def test_a_worktree_that_cannot_be_prepared_stops_the_run(pointed_repo, tmp_path
 
 
 def test_a_run_name_is_the_key_the_ticket_and_the_slug_made_ref_safe():
-    from dplanner.modules.step_agent_instruction.launcher import ref_safe, run_name
+    from dplanner.modules.agent_briefing.worktree import ref_safe, run_name
 
     assert run_name("F7", "PROJ-12", "Build the modal") == "f7-PROJ-12-build-the-modal"
     assert run_name("S3", "", "Wire it (v2)!") == "s3-wire-it-v2"

@@ -7,7 +7,7 @@ root wires.
 
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.step_review.rounds import (
+from dplanner.modules.step_review.aspect import (
     MODULE_ID,
     due_turns,
     last,

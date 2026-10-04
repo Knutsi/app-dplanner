@@ -6,23 +6,25 @@ feature is a milestone — so a step has at most one kind, and its key's letter 
 word are read from the same row.
 
 **Only the key and the word follow this ranking.** Who works a step (its primary glyph),
-the medallions (several marks at once), the body tone (done outranks any kind) and where a
-scope's walk stops are separate policies in the composition root that *read* these facts;
-folding them into one list was the review's error, corrected in §12 of the structural
-review.
+the medallions (several marks at once) and the body tone (done outranks any kind) are
+separate policies in the composition root that *read* these facts, and where a scope's walk
+stops is :func:`scope_kinds`, below — written out rather than ranked; folding them into one
+list was the review's error, corrected in §12 of the structural review.
 """
 
 from collections.abc import Callable
 from enum import Enum
 from typing import Final
 
-from dplanner.domain.model import Step
+from dplanner.domain.model import Library, Project, Step
 from dplanner.planning.agent import enabled as is_agent
 from dplanner.planning.branches import A_CUT, is_cut
 from dplanner.planning.check import read as is_check
 from dplanner.planning.feature import is_feature
 from dplanner.planning.milestone import is_milestone
 from dplanner.planning.review import is_review
+from dplanner.planning.scope import ScopeKind, gatherers
+from dplanner.planning.start import read as is_start
 from dplanner.planning.wait import is_wait
 
 
@@ -81,3 +83,56 @@ def works_nobody(step: Step) -> str:
     """What a step nobody works is called — "a wait", "a branch cut" — for the verbs that
     refuse it a status, an agent, a review or a test; "" for a step somebody works."""
     return "a wait" if is_wait(step) else A_CUT if is_cut(step) else ""
+
+
+def scope_kinds() -> tuple[ScopeKind, ...]:
+    """The collectors this build knows, and where each one's cone stops.
+
+    Read most specific first: a step marked as both a milestone and a feature is a milestone,
+    because that is the coarser claim and the one a person is looking for.
+
+    The stopping rules are the whole design. A **check** stands for everything behind it
+    having been verified, so it stops at nothing. A **milestone** collects what is new since
+    the previous milestone, so it stops at milestones. A **feature** collects its own work up
+    to the previous feature — and at a milestone too, since a milestone is a boundary anything
+    below it also respects.
+
+    The two that *own* work — a milestone and a feature — also stop at the plan's **start**:
+    every parallel branch traces back to the origin, so without that every feature fanning
+    out of it would gather it, and lint would call the recommended shape ambiguous. A check
+    owns nothing and still stands for everything, the start included.
+
+    A milestone and a check are then *read* as lists of features; a feature is the finest
+    grain and is read flat. That is a different question from where the walk stops, and
+    saying both here is what keeps a surface from having to guess either.
+
+    Written literally rather than derived from a rank, because three lines a reader can
+    check by eye beat an ordering abstraction over exactly three things.
+    """
+    return (
+        ScopeKind(
+            "step_milestone",
+            "Milestone",
+            is_milestone,
+            lambda step: is_milestone(step) or is_start(step),
+            gathers="feature",
+        ),
+        ScopeKind(
+            "feature",
+            "Feature",
+            is_feature,
+            lambda step: is_feature(step) or is_milestone(step) or is_start(step),
+        ),
+        ScopeKind("step_check", "Check", is_check, lambda _step: False, gathers="feature"),
+    )
+
+
+def flows_into(library: Library, project: Project, step_id: str) -> list[Step]:
+    """The features that gather a step, in project order — what a work step's briefing
+    and its passages reach the spec through. The wired feature kind's own walk, so it holds
+    exactly what `scope show` says a feature holds, and the plan's start flows into none."""
+    feature = next(kind for kind in scope_kinds() if kind.id == "feature")
+    owners = gatherers(
+        library, project, carried_by=feature.carried_by, stops_at=feature.stops_at
+    ).get(step_id, ())
+    return [owned for owner in owners if (owned := project.step(owner)) is not None]

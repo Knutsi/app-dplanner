@@ -51,8 +51,7 @@ if TYPE_CHECKING:
     from dplanner.domain.dictation import DictationProvider
     from dplanner.domain.locations import Location, LocationRole, ManagedFor
     from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
-    from dplanner.domain.repositories import RepositoryFacts
-    from dplanner.domain.store import FilesFor, ModuleFileArea
+    from dplanner.domain.store import FilesFor
     from dplanner.domain.workflow import Actor, EndClaim, PlanView
     from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
@@ -62,14 +61,10 @@ if TYPE_CHECKING:
     from dplanner.modules.spec.source_kind import DocumentSourceKind
     from dplanner.modules.spec_confluence.module import SecretStore
     from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
-    from dplanner.modules.step_agent_instruction.prompt import Briefing, PromptPart
-    from dplanner.modules.step_review.rounds import TurnDue
+    from dplanner.modules.step_review.aspect import TurnDue
     from dplanner.modules.step_status.workflows import StatusWorkflow
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
-    from dplanner.planning.branches import BranchPlan
-    from dplanner.planning.feature import FeatureSource
-    from dplanner.planning.scope import ScopeKind
     from dplanner.planning.status import Reading, Status, Unknown
     from dplanner.theme.providers import ThemeProvider
 
@@ -126,12 +121,14 @@ def default_modules(
     from dplanner.framework.side_panel import SidePanel
     from dplanner.framework.undo import UndoService
     from dplanner.modules.agent_at_work.module import AgentAtWorkDeps, AgentAtWorkModule
+    from dplanner.modules.agent_briefing.worktree import mainline
     from dplanner.modules.anthropic.module import LlmAnthropicDeps, LlmAnthropicModule
     from dplanner.modules.appearance.module import AppearanceDeps, AppearanceModule
     from dplanner.modules.appshell.module import AppShellDeps, AppShellModule
+    from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.modules.auto_progress.module import AutoProgressDeps, AutoProgressModule
     from dplanner.modules.branches.module import BranchesDeps, BranchesModule, LandingModule
-    from dplanner.modules.branches.plan import merged_into_its_branch
+    from dplanner.modules.branches.plan import branch_plan, merged_into_its_branch
     from dplanner.modules.checklist.module import ChecklistDeps, ChecklistModule
     from dplanner.modules.coverage.activity import CoverageDeps
     from dplanner.modules.coverage.module import CoverageModule
@@ -258,7 +255,15 @@ def default_modules(
     from dplanner.planning.feature import MODULE_ID as FEATURE_ID
     from dplanner.planning.feature import is_feature
     from dplanner.planning.feature import read as feature_read
-    from dplanner.planning.kinds import Kind, key_of, kind_of, kind_word, works_nobody
+    from dplanner.planning.kinds import (
+        Kind,
+        flows_into,
+        key_of,
+        kind_of,
+        kind_word,
+        scope_kinds,
+        works_nobody,
+    )
     from dplanner.planning.milestone import is_milestone
     from dplanner.planning.milestone import read as milestone_read
     from dplanner.planning.schedule import format_days
@@ -671,7 +676,7 @@ def default_modules(
             )
             for waiter in project.steps
             for source in library.requires(waiter.id)
-            if _auto_progresses(waiter, source)
+            if auto_progresses(waiter, source)
         }
         for edge, color in _lanes(library, branches.reading_of(project)).items():
             accents[edge] = replace(accents.get(edge, EdgeAccent()), lane=color)
@@ -800,9 +805,6 @@ def default_modules(
             parent=services.window,
         )
     )
-
-    # The one briefing both the window and the CLI assemble from — see _default_briefing.
-    briefing = _default_briefing(read=branches.reading_of)
 
     # Modules constructed before the list, because what each one hands the others reads
     # better as wiring than as ordering:
@@ -1010,7 +1012,7 @@ def default_modules(
     )
     # The collectors, wired once: the docs and tests modules group by them, and every walk
     # either module makes stops where these say.
-    scopes = _scope_kinds()
+    scopes = scope_kinds()
 
     # Constructed before the list because the projects index opens it and the Specs tab
     # jumps into it. Its picture is every module's Qt-free half read once (coverage/readers.py);
@@ -1022,7 +1024,7 @@ def default_modules(
             return []
         step = library.step(step_id)
         project = library.project_of(step_id)
-        holders = [step] if is_feature(step) else _flows_into(library, project, step_id)
+        holders = [step] if is_feature(step) else flows_into(library, project, step_id)
         return [
             (source.document, source.quote)
             for holder in holders
@@ -1142,7 +1144,7 @@ def default_modules(
             clock=services.clock,
             counts_as_work=_counts_as_work,
             # A step that collects its sources' work is ready once they are under review.
-            auto_progresses=_auto_progresses,
+            auto_progresses=auto_progresses,
             # An agent that waits on a person is a row of its own: Waits for you.
             asks_person=_asks_person,
             # Work under review an agent takes on is that agent's, not a person's row —
@@ -1427,7 +1429,7 @@ def default_modules(
         progress for what auto-progress made due, the round's stamp for a turn. Running is
         the plan's run stamp *or* a run this window is watching, so a claim still on its
         way to disk can never make a live shell's step due again."""
-        from dplanner.modules.step_review.rounds import record_turn_launched
+        from dplanner.modules.step_review.aspect import record_turn_launched
 
         today = services.clock.today()
         status_for = _ready_in(library, today)
@@ -1513,7 +1515,13 @@ def default_modules(
             facts_for=facts_for,
             # Code nobody checked out here is cloned before the agent opens in it.
             ensure_checkouts=checkouts.ensure_many,
-            briefing=briefing,
+            # Which branches a run works between — read through the branches module's
+            # cached stretches, since Run Agent's state asks on every announce.
+            branch_plan=lambda library, step, facts: branch_plan(
+                library, step, mainline(facts, step), branches.reading_of
+            ),
+            # The kinds of place a project names, which the briefing's preamble words.
+            location_roles=default_location_roles(),
             # The spawned shell goes to the run tracker: it stamps the launch — directly,
             # off the undo stack, since Ctrl+Z cannot un-launch a shell — and watches
             # the run's files for the shell's end.
@@ -1542,15 +1550,13 @@ def default_modules(
             # done — the same status reader the Step statuses tab's frontier uses.
             status_for=_wait_aware(library, services.clock.today),
             # A source under review does not hold a step that collects it.
-            auto_progresses=_auto_progresses,
+            auto_progresses=auto_progresses,
             # And says so on the step when the shell opens: the status aspect's own
             # writer, applied off the undo stack the way the launch stamp is. The
             # agent module holds the preference; the word is the status module's.
             mark_started=lambda step_id: record_started(library, step_id, services.clock.today()),
-            # What names the run — its worktree, its branch, its window: the key and
-            # the ticket, composed here from aspects the agent module never reads.
+            # The key that heads the run's terminal title and its subject line.
             step_key=key_of,
-            ticket_key=_ticket_key,
             # Manage Agent Profiles… lands on the module's own settings page.
             open_settings=settings.open,
             # What the window launches with nobody clicking, when this machine says so.
@@ -2000,7 +2006,7 @@ def default_modules(
             StepCheckDeps(library=library, undo=services.undo, actions=services.actions)
         ),
         # No tab either: the start is a marker, and what it means is the walks' business,
-        # wired in _scope_kinds().
+        # wired in scope_kinds().
         StepStartModule(
             StepStartDeps(library=library, undo=services.undo, actions=services.actions)
         ),
@@ -2172,374 +2178,6 @@ def default_modules(
     ]
 
 
-def _module_asset_paths(
-    files: "Callable[[str, str], ModuleFileArea]", node_id: str, module_id: str
-) -> tuple[str, ...]:
-    """A node's module files as absolute paths; a never-flushed node has none."""
-    from dplanner.domain.assets import assets
-
-    try:
-        area = files(node_id, module_id)
-    except KeyError:
-        return ()
-    return tuple(str(area.absolute(name)) for name in assets(area))
-
-
-def _note_parts(
-    library: "Library", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
-) -> "list[PromptPart]":
-    """The briefing's blocks after the instructions: the notes addressed to this step in
-    full, and the index of everything else that reaches it — the notes module's own
-    blocks, made prompt parts here so neither module learns the other's name. Both
-    surfaces and ``dplanner note index`` read the same blocks, so the window, the verb
-    and the CLI cannot brief a step two ways."""
-    from dplanner.modules.notes.log import note_files
-    from dplanner.modules.notes.reach import briefing_blocks, reaching
-    from dplanner.modules.step_agent_instruction.prompt import PromptPart
-    from dplanner.planning.kinds import key_of
-
-    project = library.project_of(step.id)
-    return [
-        PromptPart(
-            heading=block.heading,
-            body=block.body,
-            files=tuple(
-                path for note in block.carried for path in note_files(files, project.id, note)
-            ),
-        )
-        for block in briefing_blocks(project, reaching(library, step), key_of)
-    ]
-
-
-def _passage_place(source: "FeatureSource") -> str:
-    page = f" p.{source.page}" if source.page is not None else ""
-    return f"{source.document}{page}"
-
-
-def _briefing_sections(
-    library: "Library",
-    step: "Step",
-    files: "Callable[[str, str], ModuleFileArea]",
-    facts: "RepositoryFacts | None",
-) -> "list[PromptPart]":
-    """The step's own facts as briefing sections: what it is, why it exists, where the
-    work lands, and the work it collects. Cross-module prose, so it is worded here in the
-    one file allowed to know every module's vocabulary — the agent module renders the
-    blocks without learning what a description, a requirement or a PR is. An empty fact
-    contributes no section.
-    """
-    from dplanner.modules.github.aspect import pr_label
-    from dplanner.modules.github.aspect import read as github_read
-    from dplanner.modules.spec.aspect import attachment_paths
-    from dplanner.modules.step_agent_instruction.prompt import PromptPart
-    from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
-    from dplanner.modules.step_description.aspect import read as description_read
-    from dplanner.planning.agent import read as instruction_read
-    from dplanner.planning.feature import is_feature
-    from dplanner.planning.feature import read as feature_read
-
-    sections: list[PromptPart] = []
-    # Without a separate instruction the description IS the ## Instructions block (see
-    # _briefing_instruction), so a Description section here would say everything twice.
-    description = description_read(step)
-    description_files = _module_asset_paths(files, step.id, DESCRIPTION_ID)
-    if instruction_read(step) and (description or description_files):
-        sections.append(
-            PromptPart(heading="Description", body=description, files=description_files)
-        )
-    project = library.project_of(step.id)
-
-    def passage_lines(holder: "Step") -> list[str]:
-        """Where one feature was read from — its step's title, then each passage."""
-        cites = feature_read(holder) or ()
-        where = f", from {_passage_place(cites[0])}" if len(cites) == 1 else ""
-        lines = [f"- **{holder.title}**{where}"]
-        for source in cites:
-            if len(cites) > 1:
-                lines.append(f"  from {_passage_place(source)}:")
-            lines += [f"  > {quoted}" for quoted in source.quote.splitlines()]
-        return lines
-
-    if is_feature(step):
-        # The feature's name and its prose are this step's own — already the title of the
-        # briefing and its ## Instructions block — so what is left to say is where in the
-        # specification it was read from.
-        cites = feature_read(step) or ()
-        if cites:
-            sections.append(
-                PromptPart(heading="Read from the spec", body="\n".join(passage_lines(step)))
-            )
-    else:
-        # A work step reaches the spec through the feature it flows into: the graph's
-        # answer, the same walk the Covers tab and `scope show` read.
-        holders = _flows_into(library, project, step.id)
-        lines = [line for holder in holders for line in passage_lines(holder)]
-        if lines:
-            sections.append(PromptPart(heading="Flows into", body="\n".join(lines)))
-    figures = attachment_paths(files, step.id)
-    if figures:
-        sections.append(
-            PromptPart(
-                heading="Figures from the spec",
-                body="Rendered from the specification for this step — look at them.",
-                files=figures,
-            )
-        )
-    refs = github_read(step)
-    if refs is not None:
-        lines = []
-        if refs.branch:
-            lines.append(f"Branch: {refs.branch}")
-        if refs.has_pr():
-            pr = pr_label(refs)
-            if refs.pr_title:
-                pr += f" — {refs.pr_title}"
-            if refs.pr_state:
-                pr += f" ({refs.pr_state})"
-            if refs.pr_base:
-                pr += f" into {refs.pr_base}"
-            if refs.pr_url:
-                pr += f" {refs.pr_url}"
-            lines.append(pr)
-        if lines:
-            sections.append(PromptPart(heading="Where the work lands", body="\n".join(lines)))
-    reviewed = _reviewed_work(library, step, facts)
-    if reviewed:
-        sections.append(PromptPart(heading="Work you review", body=reviewed))
-    collected = _collected_work(library, step, facts)
-    if collected:
-        sections.append(PromptPart(heading="Work you collect", body=collected))
-    landed = _landed_work(library, step, facts)
-    if landed:
-        sections.append(PromptPart(heading="Work you land", body=landed))
-    sections += _conversation_parts(library, step)
-    return sections
-
-
-def _landed_work(library: "Library", step: "Step", facts: "RepositoryFacts | None") -> str:
-    """What a landing is handed about the branch it lands: each step on it where it stands,
-    the line *Work you collect* prints. Empty for a step that lands nothing."""
-    from dplanner.modules.branches.plan import branch_reading
-    from dplanner.planning.branches import is_land
-
-    if not is_land(step):
-        return ""
-    stretch = branch_reading(library.project_of(step.id)).of_land(step.id)
-    if stretch is None:
-        return ""
-    return "\n".join(_source_line(member, facts) for member in stretch.members)
-
-
-def _source_line(source: "Step", facts: "RepositoryFacts | None") -> str:
-    """One step whose work another step takes, where it stands: its status, its branch and
-    PR, and its worktree on this machine — the line *Work you collect* and *Work you review*
-    both list, so a collector and a review are told where work is the one way.
-
-    The worktree is named from the same rule the launcher prepared it by (``_run_name``),
-    under the checkout of the code location the step works in; whether it is *here* is the
-    one thing only this machine can say, so it is asked.
-    """
-    from dplanner.modules.github.aspect import pr_label
-    from dplanner.modules.github.aspect import read as github_read
-    from dplanner.modules.step_agent_instruction.launcher import workdir, worktree_path
-    from dplanner.planning.agent import uses_worktree
-    from dplanner.planning.kinds import key_of
-    from dplanner.planning.status import phrase, stored
-
-    refs = github_read(source)
-    facts_of = [phrase(stored(source))]
-    facts_of.append(
-        f"branch `{refs.branch}`" if refs is not None and refs.branch else "no branch recorded"
-    )
-    if refs is not None and refs.has_pr():
-        pr = pr_label(refs)
-        if refs.pr_base:
-            pr += f" into `{refs.pr_base}`"
-        if refs.pr_url:
-            pr += f" {refs.pr_url}"
-        facts_of.append(pr)
-    if not uses_worktree(source):
-        facts_of.append("worked in the checkout itself, no worktree")
-    else:
-        root = workdir(facts, source) if facts is not None else None
-        path = worktree_path(root, _run_name(source)) if root is not None else None
-        here = path is not None and path.is_dir()
-        facts_of.append(f"worktree `{path}`" if here else "no worktree of it on this machine")
-    return f"- **{key_of(source)}** {source.title} — " + " · ".join(facts_of)
-
-
-def _collected_work(library: "Library", step: "Step", facts: "RepositoryFacts | None") -> str:
-    """What a step that collects other steps' work is handed: each source where it stands,
-    then the duty to land that work, the right to finish the source, and the way to send
-    work back that is not ready. Empty for a step that collects nothing."""
-    from dplanner.modules.auto_progress.aspect import sources
-    from dplanner.planning.kinds import key_of
-    from dplanner.planning.review import settings
-
-    collected = sources(library, step)
-    if not collected:
-        return ""
-    lines = [_source_line(source, facts) for source in collected]
-    keys = [key_of(source) or source.title for source in collected]
-    ref = _quoted(key_of(step) or step.title)
-    to = f"--to {_quoted(keys[0])}" if len(keys) == 1 else "--to <source>"
-    lines += [
-        "",
-        f"This step collects the work of {_listed(keys)}: it may start once"
-        f" {'that step reads' if len(keys) == 1 else 'each of them reads'} ready for review,"
-        " and landing that work is its job. Take each one's branch or PR into yours as a"
-        " merge commit of its own, reconcile what they could not see of each other, and"
-        " review the whole before you ask for a review of it. Once a source's work has"
-        " landed in your branch, set it done yourself — you are the step allowed to:"
-        + "".join(
-            f" `dplanner status set {_quoted(key)} done`{',' if i < len(keys) - 1 else '.'}"
-            for i, key in enumerate(keys)
-        ),
-        "",
-        "Work that is not ready to land goes back to its step rather than being mended here:"
-        f" `dplanner review start {ref} {to}` opens a round, `dplanner review post {ref} {to}"
-        f" --file <findings.md>` says what is wrong, and `dplanner review wait {ref} {to}`"
-        f" waits for the answer — at most {settings(step).max_rounds} rounds with each.",
-    ]
-    return "\n".join(lines)
-
-
-def _reviewed_work(library: "Library", step: "Step", facts: "RepositoryFacts | None") -> str:
-    """What a review is handed about the work it reviews: its subject where it stands, and
-    how to read that work without touching it. Empty for a step that is no review, and for
-    a review with no subject — its instructions say to stop."""
-    from dplanner.planning.review import is_review, subjects
-
-    reviewed = subjects(library, step) if is_review(step) else []
-    if not reviewed:
-        return ""
-    return "\n".join(
-        [
-            *(_source_line(subject, facts) for subject in reviewed),
-            "",
-            "Read the work where it is, and change nothing in it: in its worktree when the line"
-            " names one here; otherwise from its PR (`gh pr diff <number>`) or its branch"
-            " (`git fetch origin <branch>`, then read `FETCH_HEAD`) — never by checking its"
-            " branch out in this checkout.",
-        ]
-    )
-
-
-def _conversation_parts(library: "Library", step: "Step") -> "list[PromptPart]":
-    """A section per review conversation the step is in and that is still going — as the
-    step that asks or the one that answers — with what each side has said, so an agent
-    relaunched mid-review picks it up where it stands. Who talks to whom is the
-    ``_auto_progresses`` rule the ``review`` verbs read; an ended conversation tells the
-    next worker nothing to do, and the Review tab keeps it."""
-    from dplanner.modules.step_agent_instruction.prompt import PromptPart
-    from dplanner.modules.step_review.rounds import (
-        ENDED,
-        PARTY,
-        POSTED,
-        messages,
-        standing,
-        turn,
-        with_party,
-    )
-    from dplanner.planning.kinds import key_of
-
-    def ref(other: "Step") -> str:
-        return _quoted(key_of(other) or other.title)
-
-    askers = [each for each in library.dependents(step.id) if _auto_progresses(each, step)]
-    talks = [
-        *((step, party) for party in library.requires(step.id) if _auto_progresses(step, party)),
-        *((asker, step) for asker in askers),
-    ]
-    parts = []
-    for asker, party in talks:
-        held = with_party(asker, party.id)
-        if not held or turn(held[-1]) == ENDED:
-            continue
-        lines = [f"Where it stands: {standing(held[-1], ref(asker), ref(party))}."]
-        for said in messages(held):
-            who = f"{ref(asker)}'s findings" if said.kind == POSTED else f"{ref(party)}'s reply"
-            lines += ["", f"### Round {said.round.number} — {who}", "", said.text.rstrip()]
-        if party.id == step.id and turn(held[-1]) == PARTY:
-            named = f" --from {ref(asker)}" if len(askers) > 1 else ""
-            lines += [
-                "",
-                f"It waits on your answer: `dplanner review take {ref(step)}{named}`, settle each"
-                " finding — or say why not — commit and push, then `dplanner review reply"
-                f" {ref(step)}{named} --file <reply.md>`.",
-            ]
-        other = party if asker.id == step.id else asker
-        parts.append(PromptPart(heading=f"Review rounds with {ref(other)}", body="\n".join(lines)))
-    return parts
-
-
-def _listed(words: "Sequence[str]") -> str:
-    """``A``, ``A and B``, ``A, B and C`` — a list as a sentence says it."""
-    if len(words) < 2:
-        return "".join(words)
-    return ", ".join(words[:-1]) + f" and {words[-1]}"
-
-
-def _quoted(key: str) -> str:
-    """A step's key or title as a verb takes it: quoted only when it has a space."""
-    return f"'{key}'" if " " in key else key
-
-
-def _briefing_project_sections(
-    library: "Library", step: "Step", _files: "Callable[[str, str], ModuleFileArea]"
-) -> "list[PromptPart]":
-    """The project's own facts as briefing sections: its topology — how the graph is
-    shaped, which every step is read against. (What the project recorded along the way
-    — decisions included — is the notes index after the instructions, ``_note_parts``.)
-    Root prose for the same reason as the step's sections: it names other modules'
-    vocabulary."""
-    from dplanner.modules.spec.aspect import read_topology
-    from dplanner.modules.step_agent_instruction.prompt import PromptPart
-
-    project = library.project_of(step.id)
-    sections: list[PromptPart] = []
-    topology = read_topology(project)
-    if topology.strip():
-        sections.append(
-            PromptPart(heading="Topology — how this project's graph is shaped", body=topology)
-        )
-    return sections
-
-
-def _briefing_instruction(
-    library: "Library", step: "Step", files: "Callable[[str, str], ModuleFileArea]"
-) -> "PromptPart":
-    """The briefing's ``## Instructions`` block: the description is the instructions.
-
-    A step's separate instruction wins when one exists; otherwise the description body and
-    its images take the block — one text an agent step needs, written once. Cross-module
-    (it reads the description on the agent module's behalf), so it is decided here, in the
-    one file allowed to know both. Instruction-area files always ride with the block: they
-    were attached to it. A review's block is generated (``_review_instruction``), and that
-    same text rides inside it as what to look for.
-    """
-    from dplanner.modules.step_agent_instruction.prompt import PromptPart
-    from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
-    from dplanner.modules.step_description.aspect import read as description_read
-    from dplanner.planning.agent import asset_paths
-    from dplanner.planning.agent import read as instruction_read
-    from dplanner.planning.branches import is_land
-    from dplanner.planning.review import is_review
-
-    own = instruction_read(step)
-    instruction_files = asset_paths(files, step.id)
-    if own:
-        body, carried = own, instruction_files
-    else:
-        description_files = _module_asset_paths(files, step.id, DESCRIPTION_ID)
-        body, carried = description_read(step), (*description_files, *instruction_files)
-    if is_review(step):
-        body = _review_instruction(library, step, body)
-    elif is_land(step):
-        body = _landing_instruction(library, step, body)
-    return PromptPart(heading="Instructions", body=body, files=carried)
-
-
 def _branches_in(project: "Project") -> "dict[str, str]":
     """The feature branch each step's work is on, for the steps a stretch not yet landed
     holds — and each landing, whose work is on the branch it brings back."""
@@ -2595,131 +2233,6 @@ def _lanes(library: "Library", found: "BranchReading") -> "dict[Edge, str]":
     return lanes
 
 
-def _landing_instruction(library: "Library", land: "Step", look_for: str) -> str:
-    """A landing's instructions, generated from the stretch it closes, as a review's are
-    from its subject: the branch, what it merges into, the order it is done in — and its
-    own prose after, as what else to see to. A landing whose cut is gone is told to stop."""
-    from dplanner.modules.branches.plan import branch_reading
-    from dplanner.planning.kinds import key_of
-
-    found = branch_reading(library.project_of(land.id))
-    stretch = found.of_land(land.id)
-    ref = _quoted(key_of(land) or land.title)
-    if stretch is None:
-        return (
-            "This step lands a feature branch, but the cut that started it is gone or no longer"
-            " upstream of it — stop, and tell the developer: `dplanner land set"
-            f" {ref} --cut <cut>` names it again."
-        )
-    branch = stretch.branch
-    base = found.base_of(land.id, "")
-    into = f"`{base}`" if base else "the repository's default branch"
-    against = f"--base {base} " if base else ""
-    lines = [
-        f"Land the feature branch `{branch}` into {into}: every step on it has merged its work"
-        " into that branch, and this step brings the branch back as one pull request.",
-        "",
-        f"1. `git fetch origin`. Make sure every step under *Work you land* has merged into"
-        f" `origin/{branch}` — its PR reads merged into {branch}, or its branch is contained in"
-        " it. One that has not: stop, and tell the developer which.",
-        f"2. Merge `origin/{base or 'HEAD'}` into `{branch}` as a merge commit — never a rebase"
-        " or a squash, since a branch cut from this one keeps its history — settle every"
-        " conflict, and run the project's checks.",
-        f"3. `git push origin {branch}`, then `gh pr create {against}--head {branch}`, the"
-        " title opening with this step's key.",
-        f"4. Leave `{branch}` on the remote until this step is done: a step still working on it"
-        " would lose what it starts from.",
-    ]
-    if look_for.strip():
-        lines += ["", "Also see to this:", "", look_for.strip()]
-    return "\n".join(lines)
-
-
-def _review_instruction(library: "Library", review: "Step", look_for: str) -> str:
-    """A review's instructions, generated from its aspect and its subject: whom it reviews,
-    through which lenses, how the rounds go and how many there may be — then ``look_for``,
-    what the review's own prose asks it to watch. A review that does not have exactly one
-    subject is told to stop, since every verb it would run names that one step."""
-    from dplanner.planning.kinds import key_of
-    from dplanner.planning.review import lens, settings, subjects
-
-    ref = _quoted(key_of(review) or review.title)
-    reviewed = subjects(library, review)
-    if len(reviewed) != 1:
-        which = (
-            "reviews nothing yet"
-            if not reviewed
-            else f"reviews {_listed([key_of(each) or each.title for each in reviewed])} at once"
-        )
-        return (
-            f"This review {which}, and a review takes exactly one subject — the step it waits"
-            " on. Stop, and tell the developer: `dplanner step link"
-            f" {ref} <step>` gives it one, `dplanner step unlink {ref} <step>` takes one away."
-        )
-    subject = reviewed[0]
-    them = _quoted(key_of(subject) or subject.title)
-    chosen = settings(review)
-    cap = chosen.max_rounds
-    lines = [
-        f"You review **{key_of(subject)}** {subject.title} — *Work you review* says where its"
-        f" work is. You comment; you never commit, push or edit its files: {them}'s own agent"
-        " makes every change, in answer to what you find.",
-        "",
-    ]
-    if chosen.lenses:
-        lines.append("Look at it through these lenses:")
-        for each in chosen.lenses:
-            known = lens(each)
-            lines.append(
-                f"- **{known.label}** — {known.asks}"
-                if known is not None
-                else f"- **{each}** — a lens of the developer's own: use your `{each}` skill"
-                " for it."
-            )
-        lines.append("")
-    if look_for.strip():
-        lines += ["What to look for, as this review says it:", "", look_for.rstrip(), ""]
-    lines += [
-        f"The review goes in rounds, at most {cap} with {them}:",
-        f"1. `dplanner review wait {ref}` returns once {them} reads ready for review; exit 3"
-        " means nothing yet after nine minutes — run it again.",
-        f"2. `dplanner review start {ref}` opens the round. Read the work through every lens,"
-        f" then `dplanner review post {ref} --file <findings.md>`: each finding with its file"
-        f" and line, what is wrong and what would settle it. Posting puts {them} back in"
-        " progress.",
-        f"3. `dplanner agent-state set {ref} pending-approval`, then `dplanner review wait"
-        f" {ref}` for the answer — read the reply and what changed since your last round.",
-        f"4. Nothing left to ask: `dplanner review approve {ref}` — {them} is done, and this"
-        f" review is ready to merge, carrying {them}'s branch and PR. Something left: back to"
-        f" 2 for the next round. After round {cap}, approve, or hand it to a person:"
-        f" `dplanner review escalate {ref} --text '<what they must decide>'`.",
-    ]
-    return "\n".join(lines)
-
-
-def _default_briefing(read: "Callable[[Project], BranchReading] | None" = None) -> "Briefing":
-    """The briefing every surface assembles from: the shared block builders below, and
-    the root's own opening and closing prose. One object, two callers — the window's
-    Deps and ``dplanner agent prompt`` — so what an agent is launched with and what the
-    verb prints are the same text by construction. ``read`` is how the window reads a
-    project's branch stretches — cached, since Run Agent's state asks on every announce —
-    and the CLI, with none, reads them afresh."""
-    from dplanner.modules.branches.plan import branch_plan
-    from dplanner.modules.step_agent_instruction.launcher import mainline
-    from dplanner.modules.step_agent_instruction.prompt import Briefing
-
-    return Briefing(
-        parts=_note_parts,
-        sections=_briefing_sections,
-        project_sections=_briefing_project_sections,
-        epilogue=_agent_epilogue,
-        preamble=_agent_preamble,
-        instruction=_briefing_instruction,
-        no_worktree=_no_worktree,
-        branch=lambda library, step, facts: branch_plan(library, step, mainline(facts, step), read),
-    )
-
-
 def _pr_base(step: "Step") -> str:
     """The branch a step's PR merges into, as GitHub last said; "" when unknown."""
     from dplanner.modules.github.aspect import read as github_read
@@ -2728,12 +2241,6 @@ def _pr_base(step: "Step") -> str:
     return refs.pr_base if refs is not None else ""
 
 
-def _no_worktree(step: "Step") -> str:
-    """Why a run of ``step`` gets no worktree whatever its agent aspect says, or "" — the
-    review's rule: it reads the work it reviews where that work is, and commits none."""
-    from dplanner.planning.review import NO_WORKTREE_FOR_A_REVIEW, is_review
-
-    return NO_WORKTREE_FOR_A_REVIEW if is_review(step) else ""
 
 
 def _ordinal(place: int) -> str:
@@ -2854,20 +2361,11 @@ def _wait_aware(library: "Library", today: "Callable[[], date]") -> "Callable[[S
     return lambda step: status_on(library, today())(step)
 
 
-def _auto_progresses(waiter: "Step", source: "Step") -> bool:
-    """Whether ``waiter`` may start once ``source`` is ready for review — the one answer
-    the frontier, Run Agent's gate, the canvas and every CLI mark read: a flagged link, or
-    any link into a review."""
-    from dplanner.modules.auto_progress.aspect import progresses
-    from dplanner.planning.review import reviews
-
-    return progresses(waiter, source) or reviews(waiter, source)
-
-
 def _persons_turn(library: "Library", step: "Step", status_for: "Callable[[Step], Status]") -> bool:
     """Whether a person moves ``step`` next — what its card pulses for: ready to merge,
     always; ready for review, unless an agent takes it on from there (``progression.taken``,
     the rule that keeps it off the boards' *Ready for review* too)."""
+    from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.planning.agent import enabled as is_agent
     from dplanner.planning.progression import taken
     from dplanner.planning.status import Status
@@ -2875,7 +2373,7 @@ def _persons_turn(library: "Library", step: "Step", status_for: "Callable[[Step]
     status = status_for(step)
     return status is Status.READY_TO_MERGE or (
         status is Status.READY_FOR_REVIEW
-        and not taken(library, step, status_for, _auto_progresses, is_agent)
+        and not taken(library, step, status_for, auto_progresses, is_agent)
     )
 
 
@@ -2926,7 +2424,8 @@ def _due_now(
     say what they made due, and the window launches it — with ``running`` widened there to
     the runs it is watching, which a claim not yet on disk cannot hide.
     """
-    from dplanner.modules.step_review.rounds import due_turns
+    from dplanner.modules.auto_progress.aspect import auto_progresses
+    from dplanner.modules.step_review.aspect import due_turns
     from dplanner.planning.agent import enabled as is_agent
     from dplanner.planning.progression import due
 
@@ -2935,7 +2434,7 @@ def _due_now(
         for turn in due_turns(library, project, is_agent, running, status_for)
     }
     for step in due(
-        library, project, status_for, _auto_progresses, is_agent, running, _counts_as_work
+        library, project, status_for, auto_progresses, is_agent, running, _counts_as_work
     ):
         found.setdefault(step.id, (step, None))
     place = {step.id: index for index, step in enumerate(project.steps)}
@@ -2965,7 +2464,7 @@ def _inherit_refs(subject: "Step", review: "Step") -> "Command | None":
 def _note_escalation(context: "CliContext", review: "Step", title: str, body: str) -> str:
     """Keep what a person must decide as a handoff note on the escalated review — the note
     a blocked step says why in — and answer its id. A retried verb finds the same note."""
-    from dplanner.modules.notes.log import Note, adding, check_label
+    from dplanner.modules.notes.aspect import Note, adding, check_label
 
     note, command = adding(
         context.library.project_of(review.id),
@@ -2997,7 +2496,7 @@ def _reason_note(
     """Why a step went to done without review, as a decision note on it — added the way
     `note add` adds one, so a retried verb is one note: the note's id, and the command that
     adds it, None when the step already carries it."""
-    from dplanner.modules.notes.log import Note, adding, check_label
+    from dplanner.modules.notes.aspect import Note, adding, check_label
 
     note, command = adding(
         view.project_of(step.id),
@@ -3129,6 +2628,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
     functions, the way the CLI verbs get theirs; the order is the order parts land in
     their slots when two modules place at the same rank.
     """
+    from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.modules.estimation.report import report_source as estimates
     from dplanner.modules.feature.report import report_source as features
     from dplanner.modules.github.report import report_source as github
@@ -3156,7 +2656,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
             status_in=_ready_in,
             counts_as_work=_counts_as_work,
             key_of=key_of,
-            auto_progresses=_auto_progresses,
+            auto_progresses=auto_progresses,
         ),
         time_estimates(_time_readers()),
         graph(
@@ -3185,397 +2685,6 @@ def _report_sources() -> tuple["ReportSource", ...]:
     )
 
 
-def _ticket_key(step: "Step") -> str:
-    from dplanner.modules.step_ticket.aspect import read as ticket_read
-
-    ticket = ticket_read(step)
-    return ticket.key if ticket is not None else ""
-
-
-def _run_name(step: "Step") -> str:
-    """What a step's agent run is called — the same rule the launcher applies, read here
-    so the briefing can name the worktree the script prepared."""
-    from dplanner.modules.step_agent_instruction.launcher import run_name
-    from dplanner.planning.kinds import key_of
-
-    return run_name(key_of(step), _ticket_key(step), step.title)
-
-
-def _agent_preamble(
-    step: "Step", in_worktree: bool, facts: "RepositoryFacts | None", branches: "BranchPlan"
-) -> str:
-    """The briefing's preflight: the agent proves it can report back, that it is where
-    this run said it would be, and knows where the plan lives, before it starts.
-
-    An agent without the DPlanner skill would do the work and leave the plan blind — no
-    status, no handoff — so the briefing makes the check the first move and stopping the
-    honest fallback. The second check is the worktree: two agents once "launched into
-    fresh worktrees" and did their work on the same branch, so an agent whose step asks
-    for a worktree confirms it is in one — by the name the launcher prepared — and stops
-    if it is not. ``in_worktree`` is the caller's word on *this run* — ``Briefing.worktree``
-    for Run Agent and ``agent prompt``, never for a conflict the window hands over; a review
-    that gets none is told to leave the checkout as it found it.
-    ``facts`` says where the plan lives: apart from the code, or inside it — the shape that
-    drifts, so the agent is warned to leave the plan files alone and let the verbs write.
-    Root prose for the same reason as the epilogue: it names other modules' verbs and the
-    launcher's naming. ``branches`` names the branch the worktree is on, the one the
-    launcher prepared.
-    """
-    from dplanner.modules.step_agent_instruction.launcher import WORKTREES_DIR
-    from dplanner.planning.kinds import key_of
-
-    lines = [
-        "First, confirm you can drive DPlanner: run `dplanner skill status`. If the"
-        " command is missing or the skill is not installed, STOP — do not carry out the"
-        " step — and tell the developer this step needs the DPlanner skill"
-        " (`dplanner skill install`)."
-    ]
-    key = key_of(step) or step.title or "this step"
-    ref = _quoted(key)
-    lines.append(
-        "Then say you are working, before you touch anything: `dplanner agent-work start"
-        f" '<what you are about to do>' --step {ref}`. A developer may have a DPlanner"
-        " window open on this plan, and that is what tells them somebody else is editing"
-        " it — without it they will edit the same steps you are rewriting and be asked to"
-        " settle collisions they did not cause. Keep it current as you go"
-        f" (`dplanner agent-work set '<what now>' --done N --of M`); setting the step's"
-        " status when you finish ends it, and if you stop without one, end it yourself"
-        f" (`dplanner agent-work end --step {ref}`)."
-    )
-    if in_worktree:
-        name = _run_name(step)
-        lines.append(
-            "Second, confirm you are in this step's own git worktree: `git rev-parse"
-            f" --show-toplevel` must end in `{WORKTREES_DIR}/{name}` and `git branch"
-            f" --show-current` must print `{branches.branch_for(name)}`. If either differs, STOP"
-            " — do not touch the main checkout — and tell the developer the worktree"
-            " was not prepared. Commit on that branch; every `dplanner` command still"
-            " reaches the plan the window shows."
-        )
-    elif withheld := _no_worktree(step):
-        lines.append(
-            f"This step runs in the checkout itself, with no worktree of its own — {withheld}."
-            " Leave the checkout as you found it: no commits, no branch switches, no stashes."
-            " Other agents may be in worktrees beside you, and this checkout is the"
-            " developer's."
-        )
-    else:
-        lines.append(
-            "This step works in the checkout itself (its worktree option is off), on the"
-            " branch that is checked out — take care: other agents may be in worktrees"
-            " beside you, but this one shares the developer's working tree."
-        )
-    if facts is not None:
-        lines.append(_plan_whereabouts(facts))
-        told = _locations_told(facts)
-        if told:
-            lines.append(told)
-    lines.append(
-        "Other agents may be working beside you in this repository, each in a worktree"
-        " of its own, and their processes carry the same names and paths as yours. Never"
-        " kill a process by name or pattern (`pkill -f`, `killall`, `kill $(pgrep …)`):"
-        " kill only by a pid your own shell started."
-    )
-    return "\n\n".join(lines)
-
-
-def _locations_told(facts: "RepositoryFacts") -> str:
-    """The project's locations, told to the agent: which repositories it is about and
-    where each stands on this machine, so an agent never guesses a path. Root prose
-    because it names the roles every module declared and the verb that prints them
-    again."""
-    from dplanner.domain.locations import CODE, roles_by_id
-
-    if not facts.placements:
-        return ""
-    roles = roles_by_id(default_location_roles())
-    told: list[str] = []
-    for placement in facts.placements:
-        location = placement.location
-        role = roles.get(location.role)
-        inside = f" at `{location.path}/`" if location.path else ""
-        if placement.root is None:
-            where = "not checked out on this machine — do not look for it"
-        elif placement.managed:
-            where = "read-only, fetched by the window into the plan's spec documents"
-        elif role is not None and role.writes and location.role != CODE.id:
-            where = f"DPlanner exports report sites to `{placement.directory}` — do not write there"
-        elif placement.kept:
-            where = (
-                f"`{placement.directory}` — a clone DPlanner keeps; work there as in any checkout"
-            )
-        else:
-            where = f"`{placement.directory}`"
-        told.append(f"{location.name(roles)}: {location.repository_label}{inside} — {where}")
-    return (
-        "The project's locations — which repositories it is about, and where each is on"
-        " this machine (`dplanner location list` prints them again): " + "; ".join(told) + "."
-    )
-
-
-def _plan_whereabouts(facts: "RepositoryFacts") -> str:
-    """Where the plan lives, told to the agent: in a repository of its own, or — warned
-    about unless the people on the project accepted it — inside the code it plans; or, before
-    anybody named the code, in a repository of its own with nothing yet to work in."""
-    from dplanner.domain.repositories import UNSET
-
-    if facts.state == UNSET:
-        return (
-            f"The plan is kept in its own repository, {facts.plan_label}, and no code"
-            " repository is recorded for the project yet: the plan repository is not the"
-            " code, so change nothing in it by hand. The developer records the code with"
-            " `dplanner location add <project> --role code --repository URL`."
-        )
-    if not facts.plan_in_code:
-        code = f" ({facts.code_label})" if facts.code_label else ""
-        return (
-            f"The plan is kept in its own repository, {facts.plan_label}, apart from the"
-            f" code you are working in{code}: every `dplanner` command writes to the plan"
-            " there, never to this checkout, so nothing you commit here carries a plan"
-            " file and `git status` never shows one."
-        )
-    lead = (
-        "WARNING: this plan lives inside the code repository it plans"
-        if facts.warns
-        else "This plan is kept inside the code repository it plans, by the developer's choice"
-    )
-    text = (
-        f"{lead}: its files (`project.dproj`, `steps/`, `modules/`) sit in the checkout"
-        " beside the code. Every `dplanner` command reaches the plan of record — the copy"
-        " the window shows, in the main checkout — never a branch's copy, so do not edit"
-        " those files by hand, and do not stage or commit them with your work."
-    )
-    if facts.warns:
-        text += (
-            " Do not move the plan on your own; when the developer asks for it,"
-            " `dplanner project move <project> --into <plan repository>` (`--init-repo`"
-            " to start one) moves it, commits both sides and re-points the library, and"
-            " every verb keeps reaching the plan where it lands."
-        )
-    return text
-
-
-def _agent_epilogue(library: "Library", step: "Step", branches: "BranchPlan") -> str:
-    """The briefing's closing words: how the agent reports back through the CLI.
-
-    Cross-module prose — it names the status and note verbs — so it is written here, in
-    the one file allowed to know every module's vocabulary, and handed to the agent module
-    as a callback on both surfaces. Every verb names the step by its key: a key is
-    unambiguous where a title may match two steps, and it is what the branch and the
-    PR are named after; the note verbs name the project too, since a note is the
-    project's record. A review reports through its verdict instead
-    (``_review_epilogue``), and a step a review waits on does not stop at ready for
-    review: it answers the rounds.
-    """
-    from dplanner.modules.auto_progress.aspect import collectors
-    from dplanner.modules.branches.plan import branch_reading
-    from dplanner.modules.notes.reach import project_ref
-    from dplanner.planning.kinds import key_of
-    from dplanner.planning.review import is_review, reviews, settings
-
-    key = key_of(step) or step.title or "Untitled step"
-    ref = _quoted(key)
-    project = project_ref(library.project_of(step.id))
-    if is_review(step):
-        return _review_epilogue(key, ref, project)
-    takers = [key_of(other) or other.title for other in collectors(library, step)]
-    collected = (
-        f"- {_listed(takers)} {'collects' if len(takers) == 1 else 'collect'} this step's work:"
-        f" {'it' if len(takers) == 1 else 'each'} may start as soon as you set"
-        " ready-for-review, and takes your branch or PR from there — so push everything"
-        " and open the PR first. Leave this step's done to "
-        f"{'it' if len(takers) == 1 else 'them'}.\n"
-        if takers
-        else ""
-    )
-    reviewers = [other for other in library.dependents(step.id) if reviews(other, step)]
-    if reviewers:
-        who = _listed([key_of(other) or other.title for other in reviewers])
-        one = len(reviewers) == 1
-        cap = max(settings(other).max_rounds for other in reviewers)
-        named = "" if one else " (with `--from <review>` when more than one has posted)"
-        finished = (
-            f"- `dplanner status set {ref} ready-for-review`, then `dplanner agent-state set"
-            f" {ref} pending-approval` — push everything and open the PR first. {who}"
-            f" {'reviews' if one else 'review'} this step next, in at most {cap} rounds, and"
-            " you answer, so do not stop at ready for review:\n"
-            f"  1. `dplanner review wait {ref}` returns when a round is posted to you or the"
-            " review ends; exit 3 means nothing yet after nine minutes — run it again.\n"
-            f"  2. Findings arrived: `dplanner review take {ref}`{named} prints them. Settle"
-            " each one — or say why not — commit and push, then `dplanner review reply"
-            f" {ref} --file <reply.md>`, which sets this step ready for review again. Back"
-            " to 1.\n"
-            f"  3. Stop waiting when the review approves — it sets this step done;"
-            f" `dplanner agent-state clear {ref}` and you are finished — or when it hands the"
-            " review to a person (a note says what they must decide: stop there), or after"
-            " an hour of waiting with nothing new: stop, and relaunching this step briefs"
-            " you with any round that arrived meanwhile.\n"
-        )
-    else:
-        finished = (
-            f"- `dplanner status set {ref} ready-for-review` and `dplanner agent-state clear"
-            f" {ref}` — ready for review, never done: a person or a reviewing agent looks next"
-            " and sets it done. That is the step's work finished, not the mid-run"
-            " `plan-for-review` above, which is your plan waiting for a look. If nothing needs"
-            f" reviewing, `dplanner status set {ref} done --because '<why>'` keeps the reason"
-            " as a decision note.\n"
-        )
-    base = (
-        f" Open it against `{branches.pr_base}`: `gh pr create --base {branches.pr_base}`."
-        if branches.pr_base
-        else ""
-    )
-    found = branch_reading(library.project_of(step.id))
-    stretch = None if found.of_land(step.id) else found.innermost(step.id, open_only=True)
-    if stretch is not None:
-        cut, land = key_of(stretch.cut), key_of(stretch.land)
-        base += (
-            f" This step is on the feature branch `{stretch.branch}`, which {cut} cuts and"
-            f" {land} lands: its PR merges into that branch, never into the mainline, and merged"
-            " there it is accepted — the branch's own review comes when it lands."
-        )
-    return (
-        f"This step is {key}. Its branch and worktree carry that key; open the PR title"
-        f" with it (`{key}: …`) and record the branch and the PR on the step as they"
-        f" exist: `dplanner github set {ref} --branch $(git branch --show-current)`,"
-        f" then `dplanner github set {ref} --pr <number>`.{base} Once the PR is open, set"
-        " the status (below) straight away: it takes the window's banner down with it.\n"
-        "As you work, keep the run state current:\n"
-        f"- `dplanner agent-state set {ref} plan-for-review` when your plan is ready"
-        " to review\n"
-        f"- `dplanner agent-state set {ref} working` while implementing\n"
-        f"- `dplanner agent-state set {ref} pending-approval` while waiting on an"
-        " approval\n"
-        f"- `dplanner agent-state set {ref} needs-input` when you have a question the"
-        " developer must answer before you can go on\n"
-        + _notes_told(project, ref)
-        + "When the work is finished, record it in DPlanner:\n"
-        + finished
-        + collected
-        + _handoff_told(project, ref)
-        + f"If you cannot finish, `dplanner status set {ref} blocked` and say why in the"
-        " handoff note.\n"
-        "Each of those statuses ends your working claim. If you stop without setting one,"
-        f" end it yourself: `dplanner agent-work end --step {ref}` — a banner nobody ended"
-        " is one nobody believes next time."
-    )
-
-
-def _review_epilogue(key: str, ref: str, project: str) -> str:
-    """A review's closing words. It opens no branch and no PR — approving carries its
-    subject's — and its verdict is its status, so it is told the verdicts and never a
-    status to set by hand."""
-    return (
-        f"This step is {key}. A review opens no branch and no PR of its own — approving"
-        " carries its subject's onto it — and its verdict is its status: `dplanner review"
-        f" approve {ref}` leaves the subject done and this review ready to merge; `dplanner"
-        f" review escalate {ref} --text '<what they must decide>'` leaves it blocked, with a"
-        " note for a person. Never `status set` either step yourself.\n"
-        "As you work, keep the run state current:\n"
-        f"- `dplanner agent-state set {ref} working` while you read the work and write"
-        " findings\n"
-        f"- `dplanner agent-state set {ref} pending-approval` while you wait on the answer\n"
-        f"- `dplanner agent-state set {ref} needs-input` when you have a question the"
-        " developer must answer before you can go on\n"
-        + _notes_told(project, ref)
-        + _handoff_told(project, ref)
-        + f"Once the review has its verdict, `dplanner agent-state clear {ref}` — the verdict's"
-        " status ends your working claim. If you stop without one, end it yourself:"
-        f" `dplanner agent-work end --step {ref}` — a banner nobody ended is one nobody"
-        " believes next time."
-    )
-
-
-def _notes_told(project: str, ref: str) -> str:
-    """The notes an agent leaves as it goes, as every epilogue words them."""
-    return (
-        "As you go, leave notes — the project's record, indexed into the briefing of every"
-        " step that comes after the one you made them on. That is the reach: add"
-        " `--reach project` when what you settled belongs to the whole plan rather than"
-        " this branch. `dplanner note add --help` lists the labels:\n"
-        f"- `dplanner note add {project} decision '<what you chose>' --step {ref}"
-        " --text '<why>'` for each choice the plan should remember (`--supersedes N3`"
-        " when it reverses an earlier one)\n"
-        f"- `dplanner note add {project} spec-change '<what differs>' --step {ref}"
-        " --text '<what and why>'` where the work had to depart from the spec\n"
-        f"- `dplanner note add {project} later '<what>' --step {ref}` for work you"
-        " noticed and did not do\n"
-    )
-
-
-def _handoff_told(project: str, ref: str) -> str:
-    """The handoff note an agent leaves when it stops, as every epilogue words it."""
-    return (
-        f"- `dplanner note add {project} handoff '<one line the next worker needs>'"
-        f" --step {ref} --file -` with what whoever picks up after you must know —"
-        " where things are, what is half done, what bit you. Title it as the fact it"
-        " is; the body carries the detail. Add `--for S12` for a step that must read it"
-        " in full, `--reach project` if every step should see it regardless;"
-        f" `dplanner note attach {project} <id> <file>` for files.\n"
-    )
-
-
-def _scope_kinds() -> tuple["ScopeKind", ...]:
-    """The collectors this build knows, and where each one's cone stops.
-
-    Read most specific first: a step marked as both a milestone and a feature is a milestone,
-    because that is the coarser claim and the one a person is looking for.
-
-    The stopping rules are the whole design. A **check** stands for everything behind it
-    having been verified, so it stops at nothing. A **milestone** collects what is new since
-    the previous milestone, so it stops at milestones. A **feature** collects its own work up
-    to the previous feature — and at a milestone too, since a milestone is a boundary anything
-    below it also respects.
-
-    The two that *own* work — a milestone and a feature — also stop at the plan's **start**:
-    every parallel branch traces back to the origin, so without that every feature fanning
-    out of it would gather it, and lint would call the recommended shape ambiguous. A check
-    owns nothing and still stands for everything, the start included.
-
-    A milestone and a check are then *read* as lists of features; a feature is the finest
-    grain and is read flat. That is a different question from where the walk stops, and
-    saying both here is what keeps a surface from having to guess either.
-
-    Written literally rather than derived from a rank, because three lines a reader can
-    check by eye beat an ordering abstraction over exactly three things.
-    """
-    from dplanner.planning.check import read as is_check
-    from dplanner.planning.feature import is_feature
-    from dplanner.planning.milestone import is_milestone
-    from dplanner.planning.scope import ScopeKind
-    from dplanner.planning.start import read as is_start
-
-    return (
-        ScopeKind(
-            "step_milestone",
-            "Milestone",
-            is_milestone,
-            lambda step: is_milestone(step) or is_start(step),
-            gathers="feature",
-        ),
-        ScopeKind(
-            "feature",
-            "Feature",
-            is_feature,
-            lambda step: is_feature(step) or is_milestone(step) or is_start(step),
-        ),
-        ScopeKind("step_check", "Check", is_check, lambda _step: False, gathers="feature"),
-    )
-
-
-def _flows_into(library: "Library", project: "Project", step_id: str) -> list["Step"]:
-    """The features that gather a step, in project order — what a work step's briefing
-    and its passages reach the spec through. The wired feature kind's own walk, so it holds
-    exactly what `scope show` says a feature holds, and the plan's start flows into none."""
-    from dplanner.planning.scope import gatherers
-
-    feature = next(kind for kind in _scope_kinds() if kind.id == "feature")
-    owners = gatherers(
-        library, project, carried_by=feature.carried_by, stops_at=feature.stops_at
-    ).get(step_id, ())
-    return [owned for owner in owners if (owned := project.step(owner)) is not None]
-
-
 def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -> "Trace":
     """The coverage picture: milestones → features → spec passages → steps → tests and docs.
 
@@ -3589,9 +2698,10 @@ def _coverage_trace(library: "Library", project: "Project", files: "FilesFor") -
     from dplanner.modules.spec.documents import anchor_sources, document_texts
     from dplanner.modules.testing.runs import latest_statuses
     from dplanner.modules.time_estimates.schedule import milestone_colors
+    from dplanner.planning.kinds import scope_kinds
 
     wired = readers(
-        kinds=_scope_kinds(),
+        kinds=scope_kinds(),
         anchor=anchor_sources,
         documents=document_texts,
         results=latest_statuses,
@@ -3618,7 +2728,7 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     """
     from dplanner.modules.auto_progress.aspect import remap_for_paste
     from dplanner.modules.step_agent_run.aspect import forget_for_paste
-    from dplanner.modules.step_review.rounds import forget_for_paste as forget_rounds
+    from dplanner.modules.step_review.aspect import forget_for_paste as forget_rounds
     from dplanner.modules.testing.aspect import remint_for_paste
     from dplanner.planning.branches import remap_for_paste as remap_landing
     from dplanner.planning.feature import drop_cites_for_paste
@@ -3699,7 +2809,7 @@ def _machine_checks(*, files: "Callable[[], dict[str, str]]") -> tuple["MachineC
 
 def _llm_providers() -> tuple[tuple[str, str], ...]:
     """``(module id, label)`` per AI provider module, in the order the settings page lists
-    them — written literally, as ``_scope_kinds`` writes its predicates.
+    them — written literally, as ``scope_kinds`` writes its predicates.
 
     Not imported from each provider: a provider module's ``MODULE_ID`` sits beside its SDK
     adapter, and reaching for it would load Qt in a CLI run. A test asserts the two agree.
@@ -3712,7 +2822,7 @@ def _unsettling_notes(
 ) -> dict["StepId", tuple[tuple[str, str, str, str], ...]]:
     """The standing notes that put a test in doubt, by the step they were made on.
 
-    **Which labels those are is named here, literally**, for the reason `_scope_kinds()`
+    **Which labels those are is named here, literally**, for the reason `scope_kinds()`
     names its predicates here: this is the one place that may know every aspect, and
     `modules/testing/` may not learn the notes module's vocabulary. A *decision* changes
     what the work should do and a *spec-change* records where it departed from the spec —
@@ -3723,7 +2833,7 @@ def _unsettling_notes(
     Superseded notes are dropped: the note that replaced one is itself a decision, made
     later, so it already stands for the doubt — reporting both would name one test twice.
     """
-    from dplanner.modules.notes.log import read_log, standing
+    from dplanner.modules.notes.aspect import read_log, standing
 
     unsettling = ("decision", "spec-change")
     found: dict[StepId, list[tuple[str, str, str, str]]] = {}
@@ -3765,11 +2875,11 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     from dplanner.modules.testing.aspect import enabled as test_enabled
     from dplanner.planning.agent import enabled as is_agent
     from dplanner.planning.branches import is_land
-    from dplanner.planning.kinds import key_of
+    from dplanner.planning.kinds import key_of, scope_kinds
     from dplanner.planning.milestone import is_milestone
     from dplanner.planning.review import is_review
 
-    scopes = _scope_kinds()
+    scopes = scope_kinds()
     return (
         *projects_cli.lint_checks(),
         *start_cli.lint_checks(),
@@ -3816,7 +2926,7 @@ def _asset_sources() -> tuple["AssetSource", ...]:
     the pool. A feature has no area of its own: its pictures are its step's description's.
     """
     from dplanner.modules.docs.aspect import asset_source as documentation
-    from dplanner.modules.notes.log import asset_source as notes
+    from dplanner.modules.notes.aspect import asset_source as notes
     from dplanner.modules.project_assets.cli import asset_source as pool
     from dplanner.modules.spec.documents import asset_source as spec_figures
     from dplanner.modules.step_description.aspect import asset_source as descriptions
@@ -3944,9 +3054,11 @@ def default_cli_commands(
     from dplanner.domain.locations import roles_by_id
     from dplanner.domain.workflow import AgentRun, Person
     from dplanner.modules.agent_at_work import cli as at_work_cli
+    from dplanner.modules.agent_briefing.worktree import mainline
     from dplanner.modules.auto_progress import cli as auto_progress_cli
+    from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.modules.branches import cli as branches_cli
-    from dplanner.modules.branches.plan import branch_reading, merged_into_its_branch
+    from dplanner.modules.branches.plan import branch_plan, branch_reading, merged_into_its_branch
     from dplanner.modules.coverage import cli as coverage_cli
     from dplanner.modules.coverage.readers import covered_tests
     from dplanner.modules.docs import cli as docs_cli
@@ -3980,12 +3092,12 @@ def default_cli_commands(
     from dplanner.modules.testing.format import guide as test_format
     from dplanner.modules.time_estimates import cli as time_cli
     from dplanner.planning.agent import enabled as is_agent
-    from dplanner.planning.kinds import key_of, kind_word, works_nobody
+    from dplanner.planning.kinds import key_of, kind_word, scope_kinds, works_nobody
     from dplanner.planning.status import Status, stored
 
     specs = aspect_specs()
     time_readers = _time_readers()
-    scopes = _scope_kinds()
+    scopes = scope_kinds()
     sources = _asset_sources()
     roles = roles_by_id(default_location_roles())
     if reads is None:
@@ -4048,7 +3160,7 @@ def default_cli_commands(
             key_of=key_of,
             # `project graph` and `step show` mark the links a step collects across, and
             # the feature branch a step's work is on.
-            auto_progresses=_auto_progresses,
+            auto_progresses=auto_progresses,
             branches_in=_branches_in,
             # The location roles every module declared, and where a read-only one's
             # managed clone stands — both cross-module facts, handed in here.
@@ -4065,7 +3177,12 @@ def default_cli_commands(
         *ticket_cli.commands(),
         *description_cli.commands(),
         *docs_cli.commands(kinds=scopes),
-        *agent_cli.commands(briefing=_default_briefing()),
+        *agent_cli.commands(
+            roles=default_location_roles(),
+            branch_plan=lambda library, step, facts: branch_plan(
+                library, step, mainline(facts, step)
+            ),
+        ),
         # What a run consumed is read through the harness that ran it, so the verbs are
         # handed the same tuple the window's tracker reads.
         *agent_state_cli.commands(harnesses=agent_harnesses()),
@@ -4096,7 +3213,7 @@ def default_cli_commands(
         # the same way whichever verb stopped the work. Approving carries the reviewed
         # step's refs across; escalating keeps a note for a person.
         *review_cli.commands(
-            auto_progresses=_auto_progresses,
+            auto_progresses=auto_progresses,
             status_for=stored,
             set_status=set_status,
             inherit_refs=_inherit_refs,
@@ -4136,7 +3253,7 @@ def default_cli_commands(
         *progression_cli.commands(
             status_in=_ready_in,
             counts_as_work=_counts_as_work,
-            auto_progresses=_auto_progresses,
+            auto_progresses=auto_progresses,
             is_agent=is_agent,
             asks_person=_asks_person,
             due=_due_steps,
@@ -4308,7 +3425,7 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_run import aspect as agent_run
     from dplanner.modules.step_description import aspect as description
-    from dplanner.modules.step_review import rounds as review_rounds
+    from dplanner.modules.step_review import aspect as review_rounds
     from dplanner.modules.step_ticket import aspect as ticket
     from dplanner.modules.testing import aspect as testing
     from dplanner.planning import (

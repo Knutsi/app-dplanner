@@ -11,16 +11,18 @@ import pytest
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.modules.notes.activity import NOTES_KIND
-from dplanner.modules.notes.editor import NoteEditor
-from dplanner.modules.notes.log import (
+from dplanner.modules.notes.aspect import (
     LABEL_IDS,
     MODULE_ID,
     Note,
+    briefing_blocks,
+    listed_within,
+    reaching,
     read_log,
     same_note,
     write_log,
 )
-from dplanner.modules.notes.reach import briefing_blocks, listed_within, reaching
+from dplanner.modules.notes.editor import NoteEditor
 from dplanner.modules.notes.view import FRESH_TITLE
 
 

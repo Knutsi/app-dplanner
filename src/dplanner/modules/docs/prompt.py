@@ -3,7 +3,7 @@
 **The docs module words this, not the agent module.** What a fragment is, what the
 compilation instructions are and which verb finishes the job are this module's vocabulary;
 the agent module wraps whatever it is handed with the header and its own preflight
-(``step_agent_instruction/prompt.py``'s ``handover_prompt``) and knows none of it. Same seam
+(``agent_briefing/prompt.py``'s ``handover_prompt``) and knows none of it. Same seam
 as the launch callbacks on ``DocsDeps``, one level up.
 
 Qt-free, and the same function for both callers there will ever be: the window's *Compile

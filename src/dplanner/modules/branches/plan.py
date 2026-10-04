@@ -25,12 +25,7 @@ from dplanner.planning.branches import (
 )
 from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
 from dplanner.planning.estimate import write as estimate_write
-from dplanner.planning.status import Status, stored
-
-
-def is_done(step: Step) -> bool:
-    """Whether a step's own status says done — for a landing, that its branch landed."""
-    return stored(step) is Status.DONE
+from dplanner.planning.status import is_done
 
 
 def branch_reading(project: Project) -> Reading:

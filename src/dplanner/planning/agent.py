@@ -151,9 +151,9 @@ def asset_source() -> AssetSource:
     """This aspect's slice of the project's asset catalog.
 
     Every file here is used, whether or not the prose links it: the briefing hands the
-    whole area to the agent (``_briefing_instruction``: the files "always ride with the
-    block — they were attached to it"), so an unreferenced file is still payload, never
-    litter. Removing one from a briefing is the instruction editor's gesture, not a
+    whole area to the agent (``agent_briefing``'s ``instruction``: the files "always ride
+    with the block — they were attached to it"), so an unreferenced file is still payload,
+    never litter. Removing one from a briefing is the instruction editor's gesture, not a
     sweep's.
     """
 

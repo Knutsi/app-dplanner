@@ -144,7 +144,7 @@ paths:
   publishes the plan and names each test in a line, this writes the tests filed by category
   with every body in full, HTML as one self-contained page of `<details>`. Neither inlines
   pictures.
-- **What reaches a step is computed, never stored** — `notes/reach.py` is one function
+- **What reaches a step is computed, never stored** — `notes/aspect.py`'s `reaching` is one function
   with three readers (the Agent tab's Notes pane, `dplanner note index`, the briefing).
   Same rule as the ordering, and the reasoning is in `ARCHITECTURE.md`'s *What reaches a
   step is derived at read time*. **The graph says who a note is for**: every label reaches
@@ -156,7 +156,7 @@ paths:
   all three readers get it by construction and the window shows what the agent was handed.
   A briefing is read once, from the top: an index nobody finishes costs what a log costs.
 - **A note is a record beside the project with a label, and every briefing carries an
-  index.** `modules/notes/` — `log.py` (Qt-free; `N1, N2, …` minted per project, a
+  index.** `modules/notes/` — `aspect.py` (Qt-free; `N1, N2, …` minted per project, a
   **label** from the closed `LABELS` list — `decision`, `handoff`, `spec-change`, `later`,
   `post-project` — a title, markdown body, the day, the step it was made on, the steps it
   is `for`, what it supersedes), `dplanner note add|set|remove|list|show|attach|index`,
@@ -214,7 +214,7 @@ paths:
   labels unsettle a test is wired in `modules/__init__.py::_unsettling_notes()`**, not in
   `modules/testing/`: a decision and a spec-change change what the work should do, a
   handoff does not, and testing may not learn the notes module's vocabulary — the same
-  reason `_scope_kinds()` names its predicates in the root. Notes arrive as a neutral
+  reason `planning.kinds.scope_kinds()` names its predicates literally. Notes arrive as a neutral
   `(id, label, title, made)` by step (`cli/scopes.py`'s `CoveredTest` hand-over, one
   layer down), superseded ones dropped so a reversal names a test once rather than twice.
   `ARCHITECTURE.md`'s *A test goes stale when the step under it moves* has the reasoning.
@@ -263,12 +263,12 @@ paths:
   `graph.start` — a start that waits on something, a plan with two. The card wears no mark
   of its own and the key stays `S`. `ARCHITECTURE.md`'s *The origin is nobody's* has the
   reasoning.
-- **A `ScopeKind` is wired, never inferred.** `modules/__init__.py::_scope_kinds()` writes
+- **A `ScopeKind` is wired, never inferred.** `planning/kinds.py`'s `scope_kinds()` writes
   the three predicates literally: what carries a kind, where its cone stops, and — a
   separate question — which kind it is *read as a list of* (`gathers`). A milestone is read
   as its features; a feature is the finest grain and reads flat. It imports the aspect
   readers itself, and **every walk asking who owns a step reads the kinds it returns**,
-  never a stopping rule of its own — the briefing's *Flows into* through `_flows_into`, the
+  never a stopping rule of its own — the briefing's *Flows into* through `planning.kinds.flows_into`, the
   coverage trace through its `Readers` — or the next rule added to one copy is missing from
   the other. `step_check` is a bare marker with no tab of its own; a feature step's tab
   edits the spec passages it was read from; `modules/testing/` renders what any of them

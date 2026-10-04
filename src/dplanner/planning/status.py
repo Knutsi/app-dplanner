@@ -178,6 +178,11 @@ def stored(step: Step) -> Status | Unknown:
         return Unknown(str(found))
 
 
+def is_done(step: Step) -> bool:
+    """Whether a step's own status says done — for a landing, that its branch landed."""
+    return stored(step) is Status.DONE
+
+
 def _known(entry: dict[str, Any] | None) -> Status:
     """The known status an entry carries, pending for none or a word this build cannot read."""
     try:

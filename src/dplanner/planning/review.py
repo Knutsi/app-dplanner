@@ -8,8 +8,8 @@ default — ``{"on": true}`` is a review by the default profile, through archite
 security, in three rounds at most — so a later change of default reaches every review that
 never chose otherwise.
 
-The conversation itself is the second aspect in this package (``rounds.py``), kept on the
-step that asks. ``ARCHITECTURE.md``'s *A review is a conversation kept on the step that
+The conversation itself is the review rounds aspect (``modules/step_review/aspect.py``),
+kept on the step that asks. ``ARCHITECTURE.md``'s *A review is a conversation kept on the step that
 asks* has the reasoning.
 """
 

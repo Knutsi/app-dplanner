@@ -20,7 +20,9 @@ The rules, in prose (see also CLAUDE.md):
    (complete workflows), at the top of that package, and both are headless — checked by
    following everything they import, not by their names. A ``workflows.py`` builds and never
    persists, so it imports no ``domain.store`` itself. Only ``modules/__init__.py`` may import
-   the rest of a module.
+   the rest of a module — except a package with no ``module.py``, which registers nothing and
+   is surface all through (``agent_briefing``, a harness): any of its files may be imported,
+   and every one is held headless the same way.
 5. Modules never import ``AppServices``, the builder, or the concrete window — they receive
    typed ``Deps`` objects and reach the window through the capability protocols.
 6. ``app.py`` and ``entry.py`` never reach into a module subpackage; they may import the
@@ -87,13 +89,11 @@ HEADLESS_FILES = (
     "look.py",
     "schedule.py",
     "progress.py",
-    "log.py",
     "collect.py",
     "runs.py",
     "usage.py",
     # Reads a run's usage back into the ledger: the wrapper script's `dplanner` call.
     "harvest.py",
-    "rounds.py",
     "terminal.py",
     "harness.py",
     "documents.py",
@@ -105,7 +105,6 @@ HEADLESS_FILES = (
     # Where the coverage trace's facts come from, and a branch stretch's run plan.
     "readers.py",
     "plan.py",
-    "reach.py",
     "references.py",
     "migrate.py",
     "prompt.py",
@@ -140,7 +139,7 @@ CONCRETE_STORAGE = (
 
 # Ceilings (rule 12), recorded on 4 October 2026. Lower one by hand when its count falls;
 # never raise it.
-ROOT_LINES = 4490
+ROOT_LINES = 3607
 DIRECT_COMMANDS = 141
 
 # Every id a module stores data, settings or files under (rule 13). Stored ids are public:
@@ -274,6 +273,7 @@ def collect_violations(root: Path = SRC) -> list[str]:
         relative = path.relative_to(root.parent)
         violations.append(f"{relative}:{line}: imports {name!r} — {rule}")
 
+    headless = headless_packages(root)
     for path in sorted(root.rglob("*.py")):
         parts = path.relative_to(root).parts
         top = parts[0]
@@ -372,12 +372,14 @@ def collect_violations(root: Path = SRC) -> list[str]:
                         forbid(path, line, name, f"a module's {path.name} uses core and domain")
                 if name.startswith(f"{PACKAGE}.modules."):
                     other, *inside = name.split(".")[2:]
-                    if other != own and inside not in ([], ["aspect"], ["workflows"]):
+                    on_surface = other in headless or inside in ([], ["aspect"], ["workflows"])
+                    if other != own and not on_surface:
                         forbid(
                             path,
                             line,
                             name,
-                            "modules reach each other only through aspect.py or workflows.py",
+                            "modules reach each other only through aspect.py, workflows.py or a "
+                            "package with no module.py",
                         )
                 if path.name == "workflows.py" and name.startswith(f"{PACKAGE}.domain.store"):
                     forbid(path, line, name, "a workflow builds a change; its caller persists it")
@@ -394,7 +396,11 @@ def collect_violations(root: Path = SRC) -> list[str]:
                 forbid(path, line, name, "the entry points never reach into module subpackages")
 
     # -- rule 4's other half: what another module can reach through the surface is headless.
-    surfaces = [*root.glob("modules/*/aspect.py"), *root.glob("modules/*/workflows.py")]
+    surfaces = [
+        *root.glob("modules/*/aspect.py"),
+        *root.glob("modules/*/workflows.py"),
+        *(path for package in headless for path in (root / "modules" / package).rglob("*.py")),
+    ]
     for surface in sorted(surfaces):
         breaches = [
             (path, line, name)
@@ -416,6 +422,16 @@ def collect_violations(root: Path = SRC) -> list[str]:
         violations.append("modules import each other in a cycle: " + " → ".join(cycle))
 
     return violations
+
+
+def headless_packages(root: Path = SRC) -> set[str]:
+    """The module packages with no ``module.py``: they register nothing, so the whole
+    package is the surface another module may import (rule 4)."""
+    return {
+        package.name
+        for package in (root / "modules").glob("*/")
+        if (package / "__init__.py").is_file() and not (package / "module.py").is_file()
+    }
 
 
 def _file_of(name: str, root: Path) -> Path | None:
@@ -615,6 +631,8 @@ def test_the_cross_module_surface_is_two_headless_files_per_package(tmp_path) ->
     for probe, source in {**probes, **allowed}.items():
         probe.write_text(source)
     (root / "modules/b/widgets.py").write_text("from PySide6.QtWidgets import QWidget\n")
+    (root / "modules/b/module.py").write_text("")
+    (root / "modules/a/module.py").write_text("")
     (root / "modules/b/view.py").write_text("")
     (root / "modules/b/sub/aspect.py").write_text("")
     (root / "modules/b/workflows.py").write_text("")
@@ -626,6 +644,28 @@ def test_the_cross_module_surface_is_two_headless_files_per_package(tmp_path) ->
     for probe in allowed:
         named = str(probe.relative_to(tmp_path))
         assert not any(violation.startswith(named) for violation in violations), named
+
+
+def test_a_package_with_no_module_py_is_surface_all_through(tmp_path) -> None:
+    """Self-check for rule 4's exception: every file of a package that registers nothing may
+    be imported, and every one of them is held headless."""
+    root = tmp_path / PACKAGE
+    for package in ("modules/a", "modules/brief"):
+        (root / package).mkdir(parents=True)
+        (root / package / "__init__.py").write_text("")
+    (root / "modules/a/module.py").write_text("")
+    (root / "modules/a/_run.py").write_text(f"from {PACKAGE}.modules.brief.compose import x\n")
+    (root / "modules/brief/compose.py").write_text("from .pane import y\n")
+    (root / "modules/brief/pane.py").write_text("from PySide6.QtWidgets import QWidget\n")
+    violations = collect_violations(root)
+    assert not any(violation.startswith(f"{PACKAGE}/modules/a/") for violation in violations)
+    assert any(
+        violation.startswith(f"{PACKAGE}/modules/brief/compose.py: reaches 'PySide6")
+        for violation in violations
+    ), violations
+    (root / "modules/brief/module.py").write_text("")
+    violations = collect_violations(root)
+    assert any(violation.startswith(f"{PACKAGE}/modules/a/_run.py") for violation in violations)
 
 
 def test_a_module_cycle_is_named_edge_by_edge(tmp_path) -> None:

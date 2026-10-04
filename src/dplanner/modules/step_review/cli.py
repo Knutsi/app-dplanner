@@ -28,7 +28,7 @@ from dplanner.domain.commands import Command, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step, now_stamp
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor, LibraryStore
-from dplanner.modules.step_review.rounds import (
+from dplanner.modules.step_review.aspect import (
     APPROVED,
     ASKER,
     ENDED,
@@ -47,7 +47,7 @@ from dplanner.modules.step_review.rounds import (
     turn,
     with_party,
 )
-from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
+from dplanner.modules.step_review.aspect import MODULE_ID as ROUNDS_ID
 from dplanner.planning.review import (
     DEFAULT_AGENT,
     MODULE_ID,

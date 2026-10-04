@@ -32,8 +32,8 @@ from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleD
 from dplanner.domain.model import Library, Step
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.modules import default_cli_commands, default_module_formats
-from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
-from dplanner.modules.notes.log import Note, write_log
+from dplanner.modules.notes.aspect import MODULE_ID as NOTES_ID
+from dplanner.modules.notes.aspect import Note, write_log
 from dplanner.modules.step_ticket.aspect import Ticket
 from dplanner.modules.step_ticket.aspect import write as ticket
 from dplanner.modules.testing import runs

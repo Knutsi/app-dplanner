@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 from dplanner.cli.discovery import PROJECT_ENV
+from dplanner.modules.agent_briefing.worktree import run_name, worktree_path
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.module import NO_WORKTREE
 from dplanner.planning.status import Status
@@ -112,7 +113,7 @@ def test_a_worktree_step_is_greyed_until_its_worktree_is_here_then_opens_in_it(
     assert not refused.enabled
     assert refused.label == f"Open Terminal in Worktree — {NO_WORKTREE}"
 
-    tree = launcher.worktree_path(library_repo, launcher.run_name("S1", "", "Deploy"))
+    tree = worktree_path(library_repo, run_name("S1", "", "Deploy"))
     tree.mkdir(parents=True)
     assert state(services).enabled
     services.actions.run("agent.open_shell", services.context.current())

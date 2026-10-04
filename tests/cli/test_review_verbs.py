@@ -15,7 +15,7 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.step_review import cli as review_cli
-from dplanner.modules.step_review.rounds import (
+from dplanner.modules.step_review.aspect import (
     ASKER,
     ENDED,
     PARTY,

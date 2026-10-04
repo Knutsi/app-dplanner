@@ -20,7 +20,7 @@ from dplanner.domain.ordering import upstream
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
 from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
-from dplanner.modules.branches.plan import branch_births, branch_reading, is_done
+from dplanner.modules.branches.plan import branch_births, branch_reading
 from dplanner.planning.branches import (
     CUT_ID,
     LAND_ID,
@@ -31,6 +31,7 @@ from dplanner.planning.branches import (
     write_cut,
     write_land,
 )
+from dplanner.planning.status import is_done
 
 
 def commands(

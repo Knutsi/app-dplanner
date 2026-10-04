@@ -36,7 +36,7 @@ from dplanner.framework.list_rows import DETAIL_ROLE, HOST_ROLE, TRAILING_ROLE, 
 from dplanner.framework.markdown_view import MarkdownView
 from dplanner.framework.signalling import Tone
 from dplanner.framework.widgets import DOCUMENT_MARGIN, EmptyState, ink_of, note, well
-from dplanner.modules.step_review.rounds import (
+from dplanner.modules.step_review.aspect import (
     APPROVED,
     ASKER,
     ENDED_STATES,
@@ -51,7 +51,7 @@ from dplanner.modules.step_review.rounds import (
     standing,
     with_party,
 )
-from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
+from dplanner.modules.step_review.aspect import MODULE_ID as ROUNDS_ID
 from dplanner.planning.review import MODULE_ID, is_review, settings, subjects
 from dplanner.theme.cards import title_font
 from dplanner.theme.icons import review_icon, spark_icon

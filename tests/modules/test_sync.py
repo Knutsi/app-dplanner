@@ -21,8 +21,8 @@ from dplanner.domain.commands import SetFieldCommand
 from dplanner.domain.seed import seed_project
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.framework.tasks import ESTIMATE_CAP
+from dplanner.modules.agent_briefing.prompt import reconcile_prompt
 from dplanner.modules.step_agent_instruction.module import StepAgentInstructionModule
-from dplanner.modules.step_agent_instruction.prompt import reconcile_prompt
 from dplanner.modules.sync import module as sync_module_mod
 from dplanner.modules.sync.diverged import (
     RECONCILE_LABEL,

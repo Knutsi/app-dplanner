@@ -203,8 +203,8 @@ def test_the_project_part_edits_the_projects_own_text(services, step, section):
 
 
 def test_the_notes_part_shows_the_index_of_what_reaches_the_step(services, step, section):
-    from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
-    from dplanner.modules.notes.log import Note, write_log
+    from dplanner.modules.notes.aspect import MODULE_ID as NOTES_ID
+    from dplanner.modules.notes.aspect import Note, write_log
 
     library = services.document
     project = library.project_of(step.id)

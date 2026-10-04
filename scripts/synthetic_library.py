@@ -35,8 +35,8 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.domain.store import ModuleFileArea
 from dplanner.modules import default_module_formats
-from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
-from dplanner.modules.notes.log import Note, write_log
+from dplanner.modules.notes.aspect import MODULE_ID as NOTES_ID
+from dplanner.modules.notes.aspect import Note, write_log
 from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
 from dplanner.modules.project_editor.positions import write_position
 from dplanner.modules.project_editor.sorts import layered_flow

@@ -91,8 +91,8 @@ NO_SORT_KEY = "none"
 # `cli/scopes.py`'s `CoveredTest` is the same hand-over one layer down.
 type StepNote = tuple[str, str, str, str]
 
-# Which notes unsettle a test is the root's to say: it is the one place that may know
-# every aspect, and `_scope_kinds()` names its predicates literally for the same reason.
+# Which notes unsettle a test is the root's to say: testing may not learn the notes
+# module's vocabulary, so the labels are named where the two are wired together.
 type NotesFor = Callable[[Project], Mapping[StepId, Sequence[StepNote]]]
 
 DAY = 10  # An ISO stamp's date — the grain a note is written at, so the grain to compare.

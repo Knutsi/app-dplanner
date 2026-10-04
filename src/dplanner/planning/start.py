@@ -1,8 +1,8 @@
 """The start aspect: the one step a plan begins from.
 
-A start carries nothing — the marker entry is the whole shape. What it *means* is the
-composition root's to wire: a feature's walk and a milestone's walk both stop at it
-(``_scope_kinds()``), so the origin every parallel branch traces back to is nobody's work,
+A start carries nothing — the marker entry is the whole shape. What it *means* is written
+in :func:`dplanner.planning.kinds.scope_kinds`: a feature's walk and a milestone's walk both
+stop at it, so the origin every parallel branch traces back to is nobody's work,
 and a plan fanning out from it is not a step gathered by every feature at once.
 
 It is a marker rather than "the step nothing precedes" because a plan being built has
