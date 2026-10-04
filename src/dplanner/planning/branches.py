@@ -8,9 +8,14 @@ that names its cut — ``{"cut": "<id>"}`` — and merges the branch back as a p
 its own. The pairing is stored, and it counts only while the cut is upstream of the landing:
 ``domain/branches.py`` reads it through the graph, and what is on the branch is derived
 there from the links, never listed here.
+
+A :class:`BranchPlan` is what a stretch decides for one run — the branches it works
+between. ``modules/branches/plan.py`` decides it and Run Agent carries it out, which is why
+the shape lives here, where both may import it.
 """
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, stamped
@@ -76,6 +81,45 @@ def name_problem(branch: str, taken: Sequence[str] = ()) -> str | None:
 def reading(project: Project, is_done: Callable[[Step], bool]) -> branches.Reading:
     """The project's stretches, read through this module's two aspects."""
     return branches.read(project, branch_of=branch_of, cut_of=cut_of, is_done=is_done)
+
+
+# The branch a run works on when no stretch names one: ``agent/<run name>``.
+BRANCH_PREFIX = "agent/"
+
+
+@dataclass(frozen=True)
+class BranchPlan:
+    """Which git branches a run of a step works between — decided by the plan, carried out
+    by the wrapper script and told to the agent, so the two cannot disagree.
+
+    ``work_branch`` is the branch its worktree is on, "" for the step's own
+    ``agent/<run name>``; a landing names the feature branch it lands. ``start`` is where a
+    new branch starts — ``origin/<branch>`` — and "" is the remote's default branch, looked
+    up by the script. ``create`` is the branch this run may create on the remote from
+    ``create_from`` when it is not there yet: the first run in a stretch cuts it, and no
+    later one ever cuts it again. ``pr_base`` is the branch the step's PR opens against, ""
+    for the repository's default. ``refusal`` is why no agent may run on the step now, ""
+    when one may. Every field names a branch the plan wrote, so each is checked with
+    :func:`dplanner.core.storage.sparse.valid_ref` before it reaches a script.
+    """
+
+    work_branch: str = ""
+    start: str = ""
+    create: str = ""
+    create_from: str = ""
+    pr_base: str = ""
+    refusal: str = ""
+
+    def branch_for(self, run: str) -> str:
+        """The branch a worktree named ``run`` is on."""
+        return self.work_branch or f"{BRANCH_PREFIX}{run}"
+
+
+# A run nothing narrows: its own branch, started from the remote's default, its PR opened
+# against the same — and every run that has no worktree, which reads none of it.
+DEFAULT_BRANCHES = BranchPlan()
+# The remote's default branch, as a start a plan can name when its mainline names none.
+DEFAULT_START = "origin/HEAD"
 
 
 def remap_for_paste(

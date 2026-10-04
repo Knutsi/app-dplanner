@@ -300,7 +300,7 @@ paths:
   document once (`fold`); the lint asking per feature cost the Problems panel 570 ms after
   every pause in typing on a 262-citation plan (`NOTES-FOR-APPFRAME.md` §46). `coverage/trace.py` arranges
   milestones → features → passages → tests and docs from every module's Qt-free half
-  (assembled in the root's `_coverage_trace`), and **the path rule is feature
+  (read by `coverage/readers.py`, the rest handed in by the root), and **the path rule is feature
   membership**: every item carries the features it serves, so what an item reaches is
   one set intersection with no case per kind. `dplanner coverage show|spec|review`
   print it, walking it the other way — from the spec down; the Specs

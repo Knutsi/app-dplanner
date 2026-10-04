@@ -48,6 +48,7 @@ from typing import Any, TypeGuard
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import cyclic, placed
+from dplanner.planning.milestone import is_milestone as a_milestone
 from dplanner.planning.schedule import (
     HALF,
     SATURDAY,
@@ -439,7 +440,7 @@ class TimeReport:
 
 
 def milestone_colors(
-    library: Library, project: Project, is_milestone: Callable[[Step], bool]
+    library: Library, project: Project, is_milestone: Callable[[Step], bool] = a_milestone
 ) -> dict[StepId, str]:
     """Every milestone's hex, by step id: the colour somebody chose for it, else its shade
     of the project's map dealt by place in the sequence.
@@ -450,10 +451,11 @@ def milestone_colors(
     ``dplanner milestone list`` prints and the order the stretches run in, which
     :func:`phase_colors` relies on and a test pins.
 
-    One walk per project rather than one per milestone, the shape ``_milestone_stats`` has
-    in the composition root; a project with no milestones costs no walk at all. An override
-    does not consume a slot differently — the dealt list is indexed by ordinal either way,
-    so pinning one milestone leaves the others where they were.
+    One walk per project rather than one per milestone, the shape
+    :func:`~dplanner.modules.estimation.schedule.milestone_stats` has; a project with no
+    milestones costs no walk at all. An override does not consume a slot differently — the
+    dealt list is indexed by ordinal either way, so pinning one milestone leaves the others
+    where they were.
     """
     if not any(is_milestone(step) for step in project.steps):
         return {}

@@ -26,10 +26,13 @@ from dplanner.core.module_data import stamped
 from dplanner.domain.model import Library, Project
 from dplanner.domain.ordering import placed
 from dplanner.modules.estimation.aspect import DATA_FORMAT, MODULE_ID, read
+from dplanner.planning.milestone import is_milestone
 from dplanner.planning.schedule import (
     CriticalPath,
     Scheduled,
     critical_path,
+    format_date,
+    format_days,
     schedule,
     working_days_after,
 )
@@ -76,6 +79,32 @@ def write_start(start: date | None) -> dict[str, Any]:
 def project_schedule(library: Library, project: Project) -> list[Scheduled]:
     """The project's steps in order, each with its running total and its date."""
     return schedule(placed(library, project), read, start_of(project))
+
+
+def milestone_stats(library: Library, project: Project) -> dict[str, str]:
+    """What each milestone answers with: the schedule's accumulated days and landing date
+    at its row — the same pair the order table's milestone row highlights.
+
+    A milestone closes the block of work above it, so its number is the walk's total at
+    that row. One walk per project rather than one per milestone, because a canvas sync
+    asks for every milestone at once and the order is the same for all of them. A
+    milestone the project cannot date is absent; so is every step when nothing is a
+    milestone, which costs the sync no walk at all.
+    """
+    if not any(is_milestone(step) for step in project.steps):
+        return {}
+    stats: dict[str, str] = {}
+    for scheduled in project_schedule(library, project):
+        step = scheduled.place.step
+        if not is_milestone(step):
+            continue
+        if scheduled.finish is not None:
+            stats[step.id] = (
+                f"{format_days(scheduled.accumulated)} · {format_date(scheduled.finish)}"
+            )
+        elif scheduled.accumulated:
+            stats[step.id] = format_days(scheduled.accumulated)
+    return stats
 
 
 def finish_date(rows: list[Scheduled]) -> date | None:

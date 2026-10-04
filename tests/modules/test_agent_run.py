@@ -12,14 +12,10 @@ from tests.platforms import POSIX_MODE_BITS, SH, SYMLINKS
 
 from dplanner.modules import agent_harnesses
 from dplanner.modules.step_agent_instruction import launcher
-from dplanner.modules.step_agent_instruction.launcher import (
-    DEFAULT_BRANCHES,
-    BranchPlan,
-    LaunchFiles,
-    resolve_command,
-)
+from dplanner.modules.step_agent_instruction.launcher import LaunchFiles, resolve_command
 from dplanner.modules.step_agent_instruction.launcher import prepare as _prepare
 from dplanner.modules.step_agent_instruction.prompt import PromptPart, assemble
+from dplanner.planning.branches import DEFAULT_BRANCHES, BranchPlan
 from dplanner.planning.status import Status
 
 HARNESSES = agent_harnesses()
@@ -497,7 +493,7 @@ def test_a_cut_from_the_remotes_default_finds_it_on_a_checkout_that_was_never_to
 ):
     """A checkout made by init and remote-add has no origin/HEAD: the script asks the
     remote which branch is its default before it pushes from it."""
-    from dplanner.modules.step_agent_instruction.launcher import DEFAULT_START
+    from dplanner.planning.branches import DEFAULT_START
 
     _git(cloned_repo, "remote", "set-head", "origin", "-d")
     plan = BranchPlan(

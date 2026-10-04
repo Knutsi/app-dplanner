@@ -83,13 +83,13 @@ def test_put_on_a_branch_is_greyed_with_the_step_left_between(services, plan):
 
 
 def test_remove_branch_asks_then_takes_the_whole_bracket_away(services, plan, monkeypatch):
-    from dplanner.modules import _branch_births
     from dplanner.modules.branches import module
     from dplanner.modules.branches.edits import put_command
+    from dplanner.modules.branches.plan import branch_births
 
     library = services.document
     chosen = [titled(plan, t).id for t in ("Card", "Edit", "Canvas", "Drag")]
-    cut, land = _branch_births(plan, "feature/stacks")
+    cut, land = branch_births(plan, "feature/stacks")
     services.undo.push(put_command(library, chosen, cut, land))
     questions = []
     monkeypatch.setattr(
@@ -136,7 +136,7 @@ def test_a_cut_is_nobodys_work_and_reads_done_once_what_it_waits_on_is(services,
 def test_a_merge_into_the_branch_accepts_a_member_under_review(services, plan):
     """Inside an open stretch, a PR merged into its branch is the acceptance — the review
     comes when the branch lands. A merge into anything else accepts nothing unreviewed."""
-    from dplanner.modules import _merged_into_its_branch
+    from dplanner.modules.branches.plan import merged_into_its_branch
     from dplanner.modules.github.aspect import MODULE_ID as GITHUB_ID
     from dplanner.modules.github.aspect import GithubRefs
     from dplanner.modules.github.aspect import write as github_write
@@ -147,11 +147,11 @@ def test_a_merge_into_the_branch_accepts_a_member_under_review(services, plan):
     library.set_module_data(titled(plan, "Drag").id, LAND_ID, write_land(card.id))
     refs = GithubRefs(pr_number=7, pr_state="merged", pr_base="feature/x")
     library.set_module_data(edit.id, GITHUB_ID, github_write(refs))
-    assert _merged_into_its_branch(library, edit)
+    assert merged_into_its_branch(library, edit)
     library.set_module_data(
         edit.id, GITHUB_ID, github_write(GithubRefs(pr_number=7, pr_base="main"))
     )
-    assert not _merged_into_its_branch(library, edit)
+    assert not merged_into_its_branch(library, edit)
 
 
 def test_a_pasted_landing_lands_its_copied_cut_or_nothing():
@@ -173,15 +173,15 @@ def edge(tab, waiter, source):
 
 
 def test_the_work_on_a_branch_lies_on_its_lane_until_it_lands(services, plan):
-    from dplanner.modules import _branch_births
     from dplanner.modules.branches.edits import put_command
+    from dplanner.modules.branches.plan import branch_births
     from dplanner.planning.status import MODULE_ID as STATUS_ID
     from dplanner.planning.status import write as status_write
     from dplanner.theme.palettes import LANES
 
     library = services.document
     chosen = [titled(plan, t).id for t in ("Card", "Edit", "Canvas", "Drag")]
-    cut, land = _branch_births(plan, "feature/stacks")
+    cut, land = branch_births(plan, "feature/stacks")
     services.undo.push(put_command(library, chosen, cut, land))
     tab = services.tabs.open("project", plan.id)
     card, edit, drag = titled(plan, "Card"), titled(plan, "Edit"), titled(plan, "Drag")
@@ -198,13 +198,13 @@ def test_the_work_on_a_branch_lies_on_its_lane_until_it_lands(services, plan):
 def test_a_card_on_a_branch_wears_its_name_underneath_and_stands_taller(services, plan):
     """The strip is part of the card — its size, what a sort spaces by — while the arrows
     still meet the middle of the body above it, and the step stores the body alone."""
-    from dplanner.modules import _branch_births
     from dplanner.modules.branches.edits import put_command
+    from dplanner.modules.branches.plan import branch_births
     from dplanner.modules.project_editor.positions import NODE_H, STRIP_H
 
     library = services.document
     chosen = [titled(plan, t).id for t in ("Card", "Edit", "Canvas", "Drag")]
-    cut, land = _branch_births(plan, "feature/stacks")
+    cut, land = branch_births(plan, "feature/stacks")
     services.undo.push(put_command(library, chosen, cut, land))
     tab = services.tabs.open("project", plan.id)
     nodes = tab._scene._nodes
