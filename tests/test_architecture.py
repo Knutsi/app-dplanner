@@ -126,7 +126,12 @@ def imported_names(path: Path, root: Path = SRC) -> list[tuple[int, str]]:
     """Absolute names imported by ``path``: (line, dotted-name) pairs.
 
     Relative imports are resolved against the file's own package, so ``from . import x``
-    inside ``dplanner/modules/projects/`` reads as ``dplanner.modules.projects``.
+    inside ``dplanner/modules/projects/`` reads as ``dplanner.modules.projects``. A name
+    imported *from* a package that is itself a module under ``root`` is recorded too:
+    ``from dplanner import planning`` and ``from .. import modules`` import that package as
+    surely as ``import dplanner.planning`` does, and a rule that read only the part before
+    ``import`` would wave them through. Whether a name is a module is asked of the tree,
+    because ``from dplanner.modules import default_modules`` names a function.
     """
     tree = ast.parse(path.read_text(), filename=str(path))
     relative_to = path.relative_to(root.parent)
@@ -142,7 +147,16 @@ def imported_names(path: Path, root: Path = SRC) -> list[tuple[int, str]]:
                 anchor = package_parts[: len(package_parts) - (node.level - 1)]
                 base = ".".join(anchor + ([node.module] if node.module else []))
             names.append((node.lineno, base))
+            names.extend(
+                (node.lineno, f"{base}.{alias.name}")
+                for alias in node.names
+                if _is_module(root.parent.joinpath(*base.split("."), alias.name))
+            )
     return names
+
+
+def _is_module(stem: Path) -> bool:
+    return stem.with_suffix(".py").is_file() or (stem / "__init__.py").is_file()
 
 
 def module_dir_of(path: Path, root: Path = SRC) -> str | None:
@@ -315,13 +329,22 @@ def test_the_planning_tier_is_fenced_both_ways(tmp_path) -> None:
     """Self-check for rule 10: the graph never reads the planning model, and the planning
     model never reads a feature."""
     root = tmp_path / PACKAGE
-    for package in ("domain", "planning"):
+    for package in ("domain", "planning", "modules"):
         (root / package).mkdir(parents=True)
-    graph, model = root / "domain" / "_probe.py", root / "planning" / "_probe.py"
-    graph.write_text(f"from {PACKAGE}.planning.status import Status\n")
-    model.write_text(f"from {PACKAGE}.modules.github import aspect\n")
+        (root / package / "__init__.py").write_text("")
+    # Every spelling of the same import: dotted, a package's name, and relative.
+    probes = {
+        root / "domain" / "_dotted.py": f"from {PACKAGE}.planning.status import Status\n",
+        root / "domain" / "_named.py": f"from {PACKAGE} import planning\n",
+        root / "domain" / "_relative.py": "from .. import planning\n",
+        root / "planning" / "_dotted.py": f"from {PACKAGE}.modules.github import aspect\n",
+        root / "planning" / "_named.py": f"from {PACKAGE} import modules\n",
+        root / "planning" / "_relative.py": "from .. import modules\n",
+    }
+    for probe, source in probes.items():
+        probe.write_text(source)
     violations = collect_violations(root)
-    for probe in (graph, model):
+    for probe in probes:
         named = str(probe.relative_to(tmp_path))
         assert any(violation.startswith(named) for violation in violations), named
 

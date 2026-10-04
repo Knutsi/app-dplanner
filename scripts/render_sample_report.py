@@ -47,6 +47,7 @@ from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.aspect import write as tests
 from dplanner.modules.time_estimates.schedule import write_project
 from dplanner.planning.schedule import Wait
+from dplanner.planning.status import Status
 from dplanner.planning.status import write as status
 
 # (title, days, requires by index, status, kind)
@@ -132,7 +133,7 @@ def _steps(library: Library, project_id: str) -> list[Step]:
         if days is not None:
             SetModuleDataCommand(step.id, "estimation", estimate(days)).redo(library)
         if word != "pending":
-            entry = status(word, today=date.today())
+            entry = status(Status(word), today=date.today())
             SetModuleDataCommand(step.id, "step_status", entry).redo(library)
         if kind == "milestone":
             SetModuleDataCommand(step.id, "step_milestone", milestone(title)).redo(library)
