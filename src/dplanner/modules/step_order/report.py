@@ -1,8 +1,8 @@
 """What the order says in a report: the order table, with the schedule's days and dates.
 
-The same rows the CSV export writes (``export.order_entries``), over a schedule the root
-hands in — the estimation module's walk — so the page, the window's table and the CSV are
-one derivation.
+The same rows the CSV export writes (``export.order_entries``), over the planning tier's
+schedule from the project's start, so the page, the window's table and the CSV are one
+derivation.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
@@ -20,9 +20,11 @@ from dplanner.cli.report.parts import (
     Table,
 )
 from dplanner.domain.model import Library, Project, Step, StepId
+from dplanner.domain.ordering import placed
 from dplanner.domain.store import FilesFor
 from dplanner.modules.step_order.export import HEADERS, order_entries
-from dplanner.planning.schedule import Scheduled
+from dplanner.planning.estimate import start_of
+from dplanner.planning.schedule import schedule
 
 TABLE_ID = "order"
 
@@ -41,7 +43,6 @@ _KINDS: tuple[ColumnKind, ...] = (
 
 def report_source(
     *,
-    schedule_of: Callable[[Library, Project], list[Scheduled]],
     step_aspects: Callable[[Step], list[str]],
     milestone_label: Callable[[Step], str],
 ) -> ReportSource:
@@ -54,7 +55,8 @@ def report_source(
             step = project.step(step_id)
             return milestone_label(step) if step is not None else ""
 
-        entries = order_entries(schedule_of(library, project), aspects, label)
+        scheduled = schedule(placed(library, project), start_of(project))
+        entries = order_entries(scheduled, aspects, label)
         if not entries:
             return Contribution()
         rows = tuple(

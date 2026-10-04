@@ -16,7 +16,8 @@ from dplanner.domain.model import Project
 from dplanner.modules import _time_readers, _time_writers
 from dplanner.modules.time_estimates.progress import Snapshot
 from dplanner.modules.time_estimates.simulation.replay import Replay
-from dplanner.planning.status import Status, read_started
+from dplanner.planning.estimate import is_marker
+from dplanner.planning.status import Status, in_flight, read_started, work_since
 
 READERS = _time_readers()
 
@@ -48,7 +49,7 @@ def _replayed(run: dict[str, Any]) -> tuple[Project, list[Snapshot]]:
         for state in frame.steps:  # The status aspect dated each change as the world did.
             step = replay.project.step(state.id)
             assert step is not None
-            assert (READERS.since_for(step), read_started(step)) == (state.since, state.started)
+            assert (work_since(step), read_started(step)) == (state.since, state.started)
         if "forecast" in raw:
             said = replay.forecast(frame.day)
             assert said is not None, frame.day
@@ -62,9 +63,9 @@ def _landed(project: Project) -> date:
     return max(
         since
         for step in project.steps
-        if not READERS.is_marker(step)
-        and READERS.status_for(step) is Status.DONE
-        and (since := READERS.since_for(step)) is not None
+        if not is_marker(step)
+        and in_flight(step) is Status.DONE
+        and (since := work_since(step)) is not None
     )
 
 

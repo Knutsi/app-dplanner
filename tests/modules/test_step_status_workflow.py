@@ -12,8 +12,8 @@ from dplanner.domain.workflow import Actor, AgentRun, Daemon, EndClaim, Person, 
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.modules.step_status.workflows import STOPPED, Kept, StatusWorkflow, perform
 from dplanner.planning import agent, wait
-from dplanner.planning.schedule import Wait
 from dplanner.planning.status import MODULE_ID, Status, stored
+from dplanner.planning.wait import Wait
 
 MONDAY = date(2026, 9, 21)
 ACTORS: list[Actor] = [Person(), AgentRun(), Daemon()]

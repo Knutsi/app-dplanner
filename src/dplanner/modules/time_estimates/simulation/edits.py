@@ -11,7 +11,7 @@ from datetime import date
 
 from dplanner.modules.time_estimates.simulation.frames import PlanState
 from dplanner.modules.time_estimates.simulation.world import BudgetChange, WaitChange
-from dplanner.planning.schedule import Wait
+from dplanner.planning.wait import Wait
 
 
 @dataclass(frozen=True)

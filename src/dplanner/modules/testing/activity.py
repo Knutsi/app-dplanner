@@ -46,7 +46,6 @@ from PySide6.QtCore import QPoint, Qt
 from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QMenu, QVBoxLayout, QWidget
 
 from dplanner.domain.model import NodeId, Project, Step, StepId
-from dplanner.domain.scope import ScopeKind, gatherers, kind_of
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import ActionRegistry
 from dplanner.framework.activity import (
@@ -89,6 +88,7 @@ from dplanner.modules.testing.filing import (
 from dplanner.modules.testing.panel import TestPanel, Walk
 from dplanner.modules.testing.table import Heading, Row, TestsTable
 from dplanner.modules.testing.view import RESULT_ORDER, word
+from dplanner.planning.scope import ScopeKind, gatherers, kind_of
 from dplanner.theme.cards import title_font
 from dplanner.theme.icons import archive_icon, beaker_icon, sort_icon
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP

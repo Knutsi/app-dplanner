@@ -17,9 +17,6 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Step, TextEdit
-from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
-from dplanner.modules.estimation.aspect import write as write_days
-from dplanner.modules.estimation.schedule import write_start
 from dplanner.modules.time_estimates.activity import NO_STEPS
 from dplanner.modules.time_estimates.progress import (
     HISTORY_ID,
@@ -41,9 +38,12 @@ from dplanner.modules.time_estimates.schedule import (
 from dplanner.modules.time_estimates.section import MilestoneScheduleSection
 from dplanner.planning.agent import MODULE_ID as AGENT_ID
 from dplanner.planning.agent import write_state
+from dplanner.planning.dates import format_date
+from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+from dplanner.planning.estimate import write as write_days
+from dplanner.planning.estimate import write_start
 from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
 from dplanner.planning.milestone import write as write_milestone_label
-from dplanner.planning.schedule import format_date
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status
 from dplanner.planning.status import write as write_status
@@ -292,9 +292,9 @@ def test_unreadable_focus_reads_as_the_default(services, project):
 def test_stretching_prices_human_steps_only(project):
     read, _draft, docs = project.steps
     calendar_days = stretched(
-        lambda step: {"Read the spec": 2.0, "Write the docs": 1.0}.get(step.title),
         lambda step: step.title == "Write the docs",
         0.5,
+        days_for=lambda step: {"Read the spec": 2.0, "Write the docs": 1.0}.get(step.title),
     )
     assert calendar_days(read) == 4.0
     assert calendar_days(docs) == 1.0
@@ -929,8 +929,8 @@ def test_a_wait_is_hatched_on_the_work_page_and_the_calendar_and_named_in_its_mi
     from dplanner.cli.report.parts import Chart
     from dplanner.modules import _time_readers
     from dplanner.modules.time_estimates.report import report_source
-    from dplanner.planning.schedule import Wait
     from dplanner.planning.wait import MODULE_ID as WAIT_ID
+    from dplanner.planning.wait import Wait
     from dplanner.planning.wait import write as write_wait
 
     library = services.document

@@ -9,8 +9,6 @@ from collections.abc import Callable
 
 from dplanner.domain.branches import Reading
 from dplanner.domain.model import Library, Project, Step
-from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
-from dplanner.modules.estimation.aspect import write as estimate_write
 from dplanner.modules.github.aspect import read as github_read
 from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
 from dplanner.modules.step_description.aspect import write_state as description_state
@@ -25,6 +23,8 @@ from dplanner.planning.branches import (
     write_cut,
     write_land,
 )
+from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+from dplanner.planning.estimate import write as estimate_write
 from dplanner.planning.status import Status, stored
 
 

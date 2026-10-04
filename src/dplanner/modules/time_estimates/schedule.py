@@ -25,11 +25,11 @@ landing date is recomputed from the graph and the estimates, for ``ordering.py``
 reason: a stored answer disagrees with what it came from the moment ``dplanner estimate
 set`` runs with no window open to notice.
 
-**Calendar time is the same simulation over stretched estimates.** :func:`stretched` wraps
-``days_for`` so a human step's days divide by the factor while agent steps pass through —
-the domain walk never learns an efficiency exists, the same way it never learned where the
-estimates live. Agents are not stretched because their human-in-the-loop cost is already
-inside the quarter-day estimate convention; the factor prices the *person's* divided week.
+**Calendar time is the same simulation over stretched estimates.** :func:`stretched` is a
+``days_for`` whose human steps' days divide by the factor while agent steps pass through —
+the planning walk never learns an efficiency exists. Agents are not stretched because their
+human-in-the-loop cost is already inside the quarter-day estimate convention; the factor
+prices the *person's* divided week.
 
 **A milestone's colour is its place in the sequence, read off one colour map** unless
 somebody picked one. The maps themselves are ``theme/palettes.py``'s — every surface that
@@ -48,20 +48,21 @@ from typing import Any, TypeGuard
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import cyclic, placed
+from dplanner.planning import estimate
 from dplanner.planning.milestone import is_milestone as a_milestone
 from dplanner.planning.schedule import (
     HALF,
     SATURDAY,
     Phase,
     ScheduleFacts,
-    Wait,
     critical_path,
-    no_wait,
     phases,
     spent_since,
     working_days_between,
 )
-from dplanner.planning.status import Status
+from dplanner.planning.status import Status, in_flight, read_started, work_since
+from dplanner.planning.wait import Wait
+from dplanner.planning.wait import read as wait_read
 from dplanner.theme.palettes import DEFAULT_PALETTE, Palette, palette, shades
 
 MODULE_ID = "time_estimates"
@@ -292,9 +293,10 @@ def write_milestone(start: date | None, color: str | None) -> dict[str, Any]:
 
 
 def stretched(
-    days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
     efficiency: float,
+    *,
+    days_for: Callable[[Step], float | None] = estimate.read,
 ) -> Callable[[Step], float | None]:
     """``days_for`` with human steps stretched to calendar days; agent steps untouched."""
 
@@ -319,15 +321,15 @@ PACE_LEAST, PACE_MOST = 0.25, 4.0
 
 def pace_so_far(
     steps: Iterable[Step],
-    days_for: Callable[[Step], float | None],
     *,
     is_agent: Callable[[Step], bool],
-    status_for: Callable[[Step], Status],
-    started_for: Callable[[Step], date | None],
-    since_for: Callable[[Step], date | None],
     start: date,
     today: date,
     people: int,
+    days_for: Callable[[Step], float | None] = estimate.read,
+    status_for: Callable[[Step], Status] = in_flight,
+    started_for: Callable[[Step], date | None] = read_started,
+    since_for: Callable[[Step], date | None] = work_since,
 ) -> float | None:
     """How fast people's finished steps ran against the plan: the days they were given —
     ``days_for``, stretched at the planned focus — over the working days they took, each from
@@ -480,9 +482,6 @@ def schedule_facts(
     today: date,
     *,
     is_agent: Callable[[Step], bool],
-    status_for: Callable[[Step], Status],
-    since_for: Callable[[Step], date | None],
-    is_marker: Callable[[Step], bool],
     day_over: bool = False,
     resume_days: Callable[[Step], float | None] | None = None,
 ) -> ScheduleFacts:
@@ -499,7 +498,7 @@ def schedule_facts(
     was = read_efficiency_was(project)
 
     def worked(step: Step) -> float:
-        since = since_for(step)
+        since = work_since(step)
         whole = spent_since(since, today)
         if was is None or is_agent(step) or since is None or was.until <= since:
             return whole
@@ -508,9 +507,6 @@ def schedule_facts(
 
     return ScheduleFacts(
         today=today,
-        status_of=status_for,
-        since_of=since_for,
-        is_marker=is_marker,
         worked=worked,
         resume_days=resume_days,
         day_over=day_over,
@@ -520,7 +516,6 @@ def schedule_facts(
 def cell_for(
     library: Library,
     project: Project,
-    days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
     *,
     humans: int,
@@ -530,14 +525,13 @@ def cell_for(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
 ) -> tuple[Cell, Cell]:
     """One staffing, both lenses: the parallel-adjusted cell and the calendar one. Project
     days count work, not dates, so only the calendar is re-dated from ``facts``."""
     raw = phases(
         library,
         project,
-        days_for,
         is_agent,
         humans=humans,
         agents=agents,
@@ -549,8 +543,8 @@ def cell_for(
     slow = phases(
         library,
         project,
-        stretched(days_for, is_agent, efficiency),
         is_agent,
+        days_for=stretched(is_agent, efficiency),
         humans=humans,
         agents=agents,
         start=start,
@@ -579,7 +573,6 @@ def cell_for(
 def time_report(
     library: Library,
     project: Project,
-    days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
     *,
     start: date,
@@ -587,15 +580,16 @@ def time_report(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
 ) -> TimeReport | None:
     """The full matrix over ``HUMANS`` by ``AGENTS``. None only when the project has no
     steps. ``start`` and ``efficiency`` arrive resolved — the caller owns where a start
-    date and a stored factor live, the same seam ``days_for`` and ``is_agent`` use — and
+    date and a stored factor live, the same seam ``is_agent`` uses — and
     ``facts``, where given, re-date every calendar cell from what has happened."""
     if not project.steps:
         return None
     work = [step for step in project.steps if wait_of(step) is None]  # A wait is no work.
+    days_for = estimate.read
     human_days = sum(days_for(step) or 0.0 for step in work if not is_agent(step))
     agent_days = sum(days_for(step) or 0.0 for step in work if is_agent(step))
     has_agent_steps = any(is_agent(step) for step in work)
@@ -614,9 +608,8 @@ def time_report(
             calendar=(),
             cycle=loop,
         )
-    calendar_days = stretched(days_for, is_agent, efficiency)
-    path = critical_path(library, project, days_for)
-    calendar_path = critical_path(library, project, calendar_days)
+    path = critical_path(library, project)
+    calendar_path = critical_path(library, project, days_for=stretched(is_agent, efficiency))
     parallel: list[Cell] = []
     calendar: list[Cell] = []
     for humans in HUMANS:
@@ -624,7 +617,6 @@ def time_report(
             raw, slow = cell_for(
                 library,
                 project,
-                days_for,
                 is_agent,
                 humans=humans,
                 agents=agents,

@@ -11,7 +11,6 @@ from collections.abc import Callable, Sequence
 
 from dplanner.core.anchors import Anchor
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.scope import ScopeKind
 from dplanner.domain.store import FilesFor
 from dplanner.modules.coverage.trace import Citation, Document, Feature, Readers, TestRow
 from dplanner.modules.docs.aspect import read as docs_read
@@ -20,6 +19,7 @@ from dplanner.planning.feature import is_feature
 from dplanner.planning.feature import read as feature_read
 from dplanner.planning.kinds import key_of
 from dplanner.planning.milestone import read as milestone_read
+from dplanner.planning.scope import ScopeKind
 from dplanner.planning.status import Status, Unknown
 
 # (files, project, [(document, quote, digest)]) → one anchor per passage, in order.

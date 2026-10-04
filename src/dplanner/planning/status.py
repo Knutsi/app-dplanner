@@ -27,7 +27,7 @@ pending. Transitions are not policed: the graph gates *launching*, not *recordin
 
 The three meanings of "done" are three functions: :func:`stored` (what the step says), the
 composition root's ``_card_status`` (what its card wears: nothing for a step nobody works)
-and its ``_status_in`` (what it reads on a given day, waits included).
+and ``schedule.status_on`` (what it reads on a given day, waits included).
 
 **A status remembers two days** (format 2), the facts the Time tab dates work by:
 ``since``, the day it last changed, and ``started``, the day the step first went into any
@@ -202,6 +202,29 @@ def read_started(step: Step) -> date | None:
     """The day the step first went into a worked status; None where it never did, or no
     write said."""
     return _day(step.module_data.get(MODULE_ID), STARTED_KEY)
+
+
+def in_flight(step: Step) -> Status:
+    """The status as the schedule reads it: review and merge are work in flight.
+
+    A step under review or waiting on its merge is not landed — the percent, Step statuses
+    and ``requires`` all say so — so the Time tab, the recorder, the matrix, the report and
+    the simulator read it as in progress, *since the day it started* (:func:`work_since`):
+    its ``since`` moved when it went to review, and the schedule credits in-flight work from
+    ``since``, so the raw day would re-cost the step at its whole estimate the moment an
+    agent finished it. :func:`read_since` keeps the raw day for what a recorded day counts
+    as a change. ARCHITECTURE.md's *An agent finishes at Ready for review* has the reasoning.
+    """
+    status = held(stored(step))
+    return Status.IN_PROGRESS if status in REVIEW_AND_MERGE else status
+
+
+def work_since(step: Step) -> date | None:
+    """The day :func:`in_flight`'s status began: for a step under review or waiting on its
+    merge, the day its work started; otherwise the day its status last changed."""
+    if stored(step) in REVIEW_AND_MERGE:
+        return read_started(step) or read_since(step)
+    return read_since(step)
 
 
 def write(status: Status, *, today: date, previous: dict[str, Any] | None = None) -> dict[str, Any]:

@@ -44,7 +44,7 @@ from dplanner.cli.report.parts import (
 )
 from dplanner.core.markdown import render as markdown
 from dplanner.identity import APP_NAME, APP_VERSION
-from dplanner.planning.schedule import format_date
+from dplanner.planning.dates import format_date
 from dplanner.planning.status import phrase, word
 
 IMAGE_CAP = 512 * 1024

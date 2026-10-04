@@ -1,6 +1,6 @@
 """The Documentation tab: a project's collectors down the side, their documents beside.
 
-**A group is a collector, and grouping is the existing walk.** ``domain/scope.gatherers()``
+**A group is a collector, and grouping is the existing walk.** ``planning/scope.gatherers()``
 answers which features (or milestones) gather each step, and ``collect.sources_for`` answers
 what one would read. Nothing is stored, so ``dplanner step link`` cannot leave a document
 filed under a feature that no longer waits on it.
@@ -36,7 +36,6 @@ from PySide6.QtWidgets import (
 )
 
 from dplanner.domain.model import Project, Step, StepId
-from dplanner.domain.scope import gatherers, kind_of
 from dplanner.domain.store import ModuleFileArea
 from dplanner.framework.activity import EntityActivity, follow_project, project_tab_title
 from dplanner.framework.context import ContextNode, Uri, activity_uri, selection_uri
@@ -68,6 +67,7 @@ from dplanner.modules.docs.section import (
     Standing,
     ago,
 )
+from dplanner.planning.scope import gatherers, kind_of
 from dplanner.theme.icons import glyph_painter, read_icon
 from dplanner.theme.tokens import CAPTION_GAP, CONTROL_GAP, SECTION_GAP
 

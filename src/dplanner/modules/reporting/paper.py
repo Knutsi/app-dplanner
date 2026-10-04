@@ -47,7 +47,7 @@ from dplanner.cli.report.parts import (
 )
 from dplanner.core.markdown import render as markdown
 from dplanner.identity import APP_NAME, APP_VERSION
-from dplanner.planning.schedule import format_date
+from dplanner.planning.dates import format_date
 
 FALLBACK_DPI = 96.0  # Qt's layout dpi when no screen answers (a headless test).
 QT_PRINT_MARGIN_CM = 2.0  # The root-frame margin QTextDocument.print_ adds on every side.

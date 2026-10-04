@@ -66,18 +66,19 @@ from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.model import Library, Project, Step, local_day
 from dplanner.domain.ordering import cyclic
 from dplanner.modules.time_estimates.schedule import stretched
+from dplanner.planning import estimate
+from dplanner.planning.dates import format_date
 from dplanner.planning.schedule import (
     Phase,
     ScheduleFacts,
-    Wait,
-    format_date,
     format_days,
     next_working_day,
-    no_wait,
     phases,
     working_days_between,
 )
-from dplanner.planning.status import Status
+from dplanner.planning.status import Status, in_flight, read_since
+from dplanner.planning.wait import Wait
+from dplanner.planning.wait import read as wait_read
 
 HISTORY_ID = "progress_history"
 ROWS_KEY = "days"
@@ -260,10 +261,7 @@ def landing_shift(then: date, now: date) -> int:
 def take(
     library: Library,
     project: Project,
-    days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
-    status_for: Callable[[Step], Status],
-    changed_on: Callable[[Step], date | None],
     *,
     humans: int,
     agents: int,
@@ -273,7 +271,10 @@ def take(
     start_for: Callable[[Step], date | None],
     today: date,
     facts: ScheduleFacts | None = None,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
+    days_for: Callable[[Step], float | None] = estimate.read,
+    status_for: Callable[[Step], Status] = in_flight,
+    changed_on: Callable[[Step], date | None] = read_since,
 ) -> Snapshot | None:
     """The plan today: the calendar's own stretches, each with what has landed in it.
     None for a project with no steps, or one a hand-edited loop keeps from being dated —
@@ -283,8 +284,8 @@ def take(
     phases = calendar_phases(
         library,
         project,
-        days_for,
         is_agent,
+        days_for=days_for,
         humans=humans,
         agents=agents,
         start=start,
@@ -294,16 +295,24 @@ def take(
         facts=facts,
         wait_of=wait_of,
     )
-    return snapshot_of(phases, today, days_for, status_for, changed_on, wait_of)
+    return snapshot_of(
+        phases,
+        today,
+        days_for=days_for,
+        status_for=status_for,
+        changed_on=changed_on,
+        wait_of=wait_of,
+    )
 
 
 def snapshot_of(
     phases: Sequence[Phase],
     day: date,
-    days_for: Callable[[Step], float | None],
-    status_for: Callable[[Step], Status],
-    changed_on: Callable[[Step], date | None],
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    *,
+    days_for: Callable[[Step], float | None] = estimate.read,
+    status_for: Callable[[Step], Status] = in_flight,
+    changed_on: Callable[[Step], date | None] = read_since,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
 ) -> Snapshot:
     """The plan on ``day`` from its dated stretches: each with what has landed in it and
     how many of its steps' statuses changed that day. A wait is no work, so it is no part
@@ -345,7 +354,6 @@ def snapshot_of(
 def calendar_phases(
     library: Library,
     project: Project,
-    days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
     *,
     humans: int,
@@ -355,15 +363,16 @@ def calendar_phases(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
+    days_for: Callable[[Step], float | None] = estimate.read,
 ) -> list[Phase]:
     """The plan's stretches dated on the calendar — the simulation over stretched
     estimates, the one the tab and the recorder read, re-dated from ``facts`` where given."""
     return phases(
         library,
         project,
-        stretched(days_for, is_agent, efficiency),
         is_agent,
+        days_for=stretched(is_agent, efficiency, days_for=days_for),
         humans=humans,
         agents=agents,
         start=start,
@@ -577,16 +586,16 @@ class Changes:
 def changes_since(
     project: Project,
     since: date,
-    days_for: Callable[[Step], float | None],
-    estimate_history: Callable[[Step], list[tuple[date, float]]],
+    *,
+    days_for: Callable[[Step], float | None] = estimate.read,
+    estimate_history: Callable[[Step], list[tuple[date, float]]] = estimate.read_history,
 ) -> Changes:
     """The steps born after ``since`` and the estimates changed after it — the reasons
     behind a delta, read off the steps themselves. ``since`` is the baseline's recorded
     day, not the basis: the delta measures from that record, so what this names is what
     moved it. A step's birth is its ``created`` stamp; an estimate's history says the day
     each value was replaced, so a row after ``since`` is a change after it (a change on
-    the day itself is inside that day's record — last-wins). Both readers are handed in:
-    this module never learns how an estimate remembers, and the stamp is the model's."""
+    the day itself is inside that day's record — last-wins)."""
     added = []
     estimates = []
     for step in project.steps:

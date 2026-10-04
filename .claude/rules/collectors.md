@@ -1,10 +1,10 @@
 ---
 paths:
   - "src/dplanner/modules/{testing,docs,notes,feature,coverage,step_check,step_start}/**"
-  - "src/dplanner/domain/scope.py"
+  - "src/dplanner/planning/scope.py"
   - "src/dplanner/core/anchors.py"
   - "src/dplanner/cli/scopes.py"
-  - "tests/domain/test_scope.py"
+  - "tests/planning/test_scope.py"
   - "tests/core/test_anchors.py"
   - "tests/modules/test_{testing,docs,notes,feature,coverage,spec_passages,focus_seams}*.py"
   - "tests/cli/test_{scopes,feature_verbs,coverage_verbs,note_verbs,start_verbs}.py"
@@ -242,7 +242,7 @@ paths:
   plan's stamp says when and from what (`docs_compiled` format 2 dropped `provider`/`model`
   with the LLM call). `ARCHITECTURE.md`'s *Documentation is fragments, and a collector
   compiles them* has the reasoning.
-- **A collector is a cone truncated at the next collector.** `domain/scope.py`'s `cone()`
+- **A collector is a cone truncated at the next collector.** `domain/ordering.py`'s `cone()`
   walks `requires` backwards and refuses to pass through a step the `stops_at` predicate
   claims — so a **check** stops at nothing and stands for everything behind it, a
   **milestone** stops at milestones and holds what is new since the last one, and a
@@ -258,7 +258,7 @@ paths:
   stands for everything, the start included. Carrying is untouched — a start marked as a
   milestone is a milestone with an empty cone, and `scope.gathers-nothing` says so. **A
   boundary no kind carries is no hand-off**: `scope show`'s *after* and the Covers tab's
-  switch read `domain/scope.py`'s `handoffs()`, never `Cone.boundaries`, and
+  switch read `planning/scope.py`'s `handoffs()`, never `Cone.boundaries`, and
   `scope.ungathered` skips the start (no link could hand it to a feature). Its own lint is
   `graph.start` — a start that waits on something, a plan with two. The card wears no mark
   of its own and the key stays `S`. `ARCHITECTURE.md`'s *The origin is nobody's* has the

@@ -45,7 +45,8 @@ from dplanner.modules.time_estimates.progress import (
     until,
 )
 from dplanner.modules.time_estimates.schedule import REMAINDER_COLOR, WHOLE_COLOR, milestone_colors
-from dplanner.planning.schedule import format_days, short_date
+from dplanner.planning.dates import short_date
+from dplanner.planning.schedule import format_days
 
 # Two amounts of work closer than this are the same: a scope that did not change.
 SAME = 1e-9

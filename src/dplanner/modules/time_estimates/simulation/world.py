@@ -27,18 +27,17 @@ from dplanner.modules.time_estimates.schedule import FocusChange
 from dplanner.modules.time_estimates.simulation.frames import Plan, StepState
 from dplanner.modules.time_estimates.simulation.rng import choose, lognormal, rng, seed_of
 from dplanner.modules.time_estimates.simulation.timeline import Played, Timeline
+from dplanner.planning.dates import WEEKDAYS, short_date
 from dplanner.planning.schedule import (
     SATURDAY,
-    WEEKDAYS,
-    Wait,
     chain_tails,
     next_working_day,
-    short_date,
     stretches,
     working_days_after,
     working_days_between,
 )
 from dplanner.planning.status import Status
+from dplanner.planning.wait import Wait
 
 EPSILON = 1e-9
 _ONE_DAY = timedelta(days=1)
@@ -399,7 +398,7 @@ class _World:
 
         found: dict[str, float] = {}
         for _milestone, members in stretches(self._shape, self._project, self._is_milestone):
-            found.update(chain_tails(members, calendar, wait_of))
+            found.update(chain_tails(members, days_for=calendar, wait_of=wait_of))
         return found
 
     def _current_stretch(self) -> tuple[StepState | None, list[StepState]] | None:

@@ -28,6 +28,7 @@ from dplanner.domain.expenditure import ELSEWHERE, HERE, Rate, Spent, learned_ra
 from dplanner.domain.ledger import LedgerRecord
 from dplanner.domain.model import Library, Step
 from dplanner.domain.store import LibraryStore
+from dplanner.planning.estimate import read as days_for
 
 MODULE_ID = "agent_usage"
 
@@ -121,7 +122,6 @@ def token_rate(
     store: LibraryStore,
     library: Library,
     project_id: str,
-    days_for: Callable[[Step], float | None],
     done_for: Callable[[Step], bool],
 ) -> Rate | None:
     """Tokens of work per estimated day: learned from the library's *other* projects when

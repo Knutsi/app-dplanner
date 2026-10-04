@@ -1,84 +1,32 @@
-"""The project's start date, and the schedule it turns the estimates into.
+"""The schedule a project's estimates imply, read whole: its rows, its finish and its
+critical path, for the order table, ``dplanner schedule show`` and the report.
 
-The derivation is the domain's (``planning/schedule.py``); this is the module's half of it —
-where the start date is stored, and how a number becomes something a person reads. Both the
-order table and ``dplanner schedule show`` render through the formatters here, so the window
-and the terminal cannot show the same day count two different ways.
-
-**Qt-free**, like ``aspect.py`` beside it: the CLI reaches this file and must start on a
-machine with no graphics stack. ``tests/test_architecture.py``'s ``HEADLESS_FILES`` names it.
-
-**The start date lives under the module's own id on the project node** —
-``projects/<p>/modules/estimation.json`` = ``{"start": "2026-09-01"}``, beside each step's
-``{"days": 3.0}``. One module, one data namespace, two node kinds; ``module_data`` is on
-``Node`` and ``set_module_data`` is flat over ids, so the model needs to know nothing about
-it. Whoever writes a migration for :data:`~dplanner.modules.estimation.aspect.DATA_FORMAT`
-owes both shapes a thought — it is one format covering both.
-
-It is deliberately *not* an ``AspectSpec``: an aspect is a fact about a step, and this is a
-fact about a project. ``FORMAT.md``'s note on the graph's node positions is the precedent.
+The derivation is the planning tier's (``planning/schedule.py``), and so are the estimate
+and the project's start date (``planning/estimate.py``); this is the module's shorthand
+over both. **Qt-free**: the CLI reaches it, and ``tests/test_architecture.py``'s
+``HEADLESS_FILES`` names it.
 """
 
 from datetime import date
-from typing import Any
 
-from dplanner.core.module_data import stamped
 from dplanner.domain.model import Library, Project
 from dplanner.domain.ordering import placed
-from dplanner.modules.estimation.aspect import DATA_FORMAT, MODULE_ID, read
+from dplanner.planning.dates import format_date
+from dplanner.planning.estimate import start_of
 from dplanner.planning.milestone import is_milestone
 from dplanner.planning.schedule import (
     CriticalPath,
     Scheduled,
     critical_path,
-    format_date,
     format_days,
     schedule,
     working_days_after,
 )
 
-START_KEY = "start"
-
-
-def read_start(project: Project) -> date | None:
-    """When the project starts, or None. Anything unreadable reads as unset."""
-    entry = project.module_data.get(MODULE_ID)
-    if not entry:
-        return None
-    written = entry.get(START_KEY)
-    if not isinstance(written, str):
-        return None
-    try:
-        return date.fromisoformat(written)
-    except ValueError:
-        return None
-
-
-def start_of(project: Project, today: date | None = None) -> date:
-    """When this project's work begins: the date somebody set, or today.
-
-    **Derived, never written.** Storing today would make merely opening a tab dirty the
-    workspace — ``ordering.py``'s rule again — and it would be wrong by tomorrow. So a
-    project nobody has dated answers "if you start now", every surface asks this rather than
-    ``read_start``, and the only thing on disk is a date a person chose.
-
-    ``today`` is the caller's clock (``core/clock.py``) — the Time tab's, which a test or
-    the simulator may have pinned; a surface that holds no clock yet gets the machine's.
-    """
-    return read_start(project) or today or date.today()
-
-
-def write_start(start: date | None) -> dict[str, Any]:
-    """The project entry to store. ``None`` gives ``{}``, which removes the file — and
-    puts the project back on "starts today"."""
-    if start is None:
-        return {}
-    return stamped({START_KEY: start.isoformat()}, DATA_FORMAT.version)
-
 
 def project_schedule(library: Library, project: Project) -> list[Scheduled]:
     """The project's steps in order, each with its running total and its date."""
-    return schedule(placed(library, project), read, start_of(project))
+    return schedule(placed(library, project), start_of(project))
 
 
 def milestone_stats(library: Library, project: Project) -> dict[str, str]:
@@ -113,8 +61,8 @@ def finish_date(rows: list[Scheduled]) -> date | None:
 
 
 def project_critical_path(library: Library, project: Project) -> CriticalPath | None:
-    """The longest days-weighted chain, over this module's estimates."""
-    return critical_path(library, project, read)
+    """The longest days-weighted chain, over the estimates."""
+    return critical_path(library, project)
 
 
 def critical_finish(project: Project, path: CriticalPath) -> date | None:

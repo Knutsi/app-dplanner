@@ -33,7 +33,6 @@ caption's own info glyph, and the serial calendar the table used to run out besi
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, Qt, QTimer
@@ -85,6 +84,7 @@ from dplanner.modules.step_order.expenditure import (
 )
 from dplanner.modules.step_order.export import order_rows
 from dplanner.modules.step_order.view import OrderTable, StepTable
+from dplanner.planning.estimate import start_of
 from dplanner.planning.schedule import Scheduled, schedule, volume, volume_words
 from dplanner.theme.icons import list_icon, spark_icon
 
@@ -120,13 +120,9 @@ def _no_icons(_step_id: StepId) -> tuple[str, ...]:
     return ()
 
 
-def _unscheduled(_project_id: ProjectId, order: Sequence[Placed]) -> list[Scheduled]:
-    """Nobody in this build knows what a step costs: every row, no days, no dates.
-
-    The honest empty answer is the domain function itself, asked a question with no answer —
-    which is why the table needs no branch for a build without estimates.
-    """
-    return schedule(order, lambda _step: None, date.today())
+def _scheduled(library: Library, project_id: ProjectId, order: Sequence[Placed]) -> list[Scheduled]:
+    """The order carrying what each step costs and when it lands, from the project's start."""
+    return schedule(order, start_of(library.project(project_id)))
 
 
 @dataclass(frozen=True)
@@ -139,11 +135,6 @@ class StepOrderDeps:
     tabs: TabHost
     # What the aspect modules have to say about a step, one short phrase each.
     step_aspects: Callable[[StepId], list[str]] = field(default=_no_aspects)
-    # The order carrying what each step costs and when it lands. Wired by the composition
-    # root; this module never learns what an estimate is.
-    step_schedule: Callable[[ProjectId, Sequence[Placed]], list[Scheduled]] = field(
-        default=_unscheduled
-    )
     # The label of the milestone a step is, "" otherwise. Wired by the composition root;
     # this module never learns who owns milestones.
     milestone_label: Callable[[StepId], str] = field(default=_no_milestone)
@@ -295,11 +286,11 @@ class OrderActivity(EntityActivity):
         if not self._product.has(self.project_id):
             return  # The project was deleted; the tab is about to close.
         order = placed(self._product, self._project())
-        scheduled = self._deps.step_schedule(self.project_id, order)
+        scheduled = _scheduled(self._deps.library, self.project_id, order)
         self.table.show_order(scheduled)
         days = {row.place.step.id: row.days for row in scheduled}
         steps = [row.place.step for row in scheduled]
-        said = volume(steps, lambda step: days[step.id], self._deps.counts_as_work)
+        said = volume(steps, self._deps.counts_as_work, days_for=lambda step: days[step.id])
         self.volume.setText(volume_words(*said))
         self.volume.setVisible(bool(scheduled))
         self.empty.say("" if scheduled else "Steps appear here in the order they can be done.")
@@ -526,7 +517,7 @@ class ExpenditureActivity(EntityActivity):
 def expenditure_of(deps: StepOrderDeps, project_id: ProjectId, rate: Rate | None) -> list[Row]:
     """The project's order with what each step consumed — the tab's rows and the export's."""
     order = placed(deps.library, deps.library.project(project_id))
-    days = {row.place.step.id: row.days for row in deps.step_schedule(project_id, order)}
+    days = {row.place.step.id: row.days for row in _scheduled(deps.library, project_id, order)}
     spent = deps.step_spent(project_id)
     return expenditure(
         order,
@@ -676,7 +667,7 @@ class StepOrderModule:
         project_id = project.id
         order = placed(deps.library, project)
         rows = order_rows(
-            deps.step_schedule(project_id, order), deps.step_aspects, deps.milestone_label
+            _scheduled(deps.library, project_id, order), deps.step_aspects, deps.milestone_label
         )
         suggested = f"{project.title or 'Untitled project'} order.csv"
         chosen, _filter = QFileDialog.getSaveFileName(

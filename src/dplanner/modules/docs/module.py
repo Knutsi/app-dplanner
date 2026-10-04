@@ -26,7 +26,6 @@ from dataclasses import dataclass
 from PySide6.QtWidgets import QMenu, QTreeWidgetItem, QWidget
 
 from dplanner.domain.model import Library, NodeId, Step, StepId
-from dplanner.domain.scope import ScopeKind, kind_of
 from dplanner.domain.store import FilesFor
 from dplanner.framework.action_menu import append_action
 from dplanner.framework.action_registry import (
@@ -70,6 +69,7 @@ from dplanner.modules.docs.section import (
     DocsSection,
     Standing,
 )
+from dplanner.planning.scope import ScopeKind, kind_of
 from dplanner.theme.icons import read_icon, refresh_icon, spark_icon
 
 COMPILE_ACTION = "docs.compile"
