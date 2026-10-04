@@ -335,8 +335,11 @@ platform and is how the spec stays correct between Windows runs.
 
 Layering rules are enforced by `tests/test_architecture.py`; the module recipe and the core
 rules live in `CLAUDE.md`, and the rules for each area in `.claude/rules/`
-(`scripts/rules.py for <path>` says which govern a file). `ARCHITECTURE.md` explains the
-shape and why. `DESIGN.md` is the UI standard, `FORMAT.md` the on-disk one.
+(`scripts/rules.py for <path>` says which govern a file). `docs/architecture/` explains the
+shape and why, one file per area beside `core.md`, with `ARCHITECTURE.md` as its index and
+`decisions.md` as the dated history. `NOTES-FOR-APPFRAME.md` says, file by file, how
+`framework/` and `core/` differ from the template. `DESIGN.md` is the UI standard, `FORMAT.md`
+the on-disk one.
 
 ## Layout
 
