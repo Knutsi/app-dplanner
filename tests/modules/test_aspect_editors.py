@@ -9,7 +9,7 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step, TextEdit
-from dplanner.modules.estimation.aspect import read as read_estimate
+from dplanner.planning.estimate import read as read_estimate
 
 
 @pytest.fixture

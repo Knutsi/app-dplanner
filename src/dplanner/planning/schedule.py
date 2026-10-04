@@ -4,12 +4,12 @@
 same walk: take the placed order, ask how many days each step is thought to take, and lay
 them end to end from a start date.
 
-**The domain never learns what an estimate is stored as.** ``days_for`` is a function the
-caller supplies, so the module that owns the estimate aspect owns its schema, and this file
-works for any other source of days somebody wires in later. That is the same seam
-``ordering.py`` uses for the graph — plain functions over the model, no Qt — and it is what
-lets the order table, ``dplanner schedule show``, ``--json`` and every report after them read
-one implementation.
+**The estimate is read where it lives, in this tier** (``planning/estimate.py``), so every
+walk here reads it by default. ``days_for`` survives as a keyword only for the callers that
+mean other days: calendar days stretched by a focus (``time_estimates``), the simulator's
+world, a test's fakes. Plain functions over the model, no Qt, which is what lets the order
+table, ``dplanner schedule show``, ``--json`` and every report after them read one
+implementation.
 
 **Named assumptions, no pretend precision.** ``schedule`` is serial — one worker, steps
 end to end down the topological order, weekends skipped, a week is five working days.
@@ -19,7 +19,7 @@ worker cap — and a report that prints its assumption labelled is honest where 
 number would be a guess wearing a date.
 
 **Every plan has a start.** A project nobody has dated starts today — the caller resolves
-that (see ``estimation/schedule.py``'s ``start_of``) and this file is simply handed a date.
+that (``planning/estimate.py``'s ``start_of``) and this file is simply handed a date.
 "If you start now" is the useful answer to a plan with no date on it, and it means there is
 one code path here rather than two.
 
@@ -33,15 +33,27 @@ the rest resumes from tomorrow, with work in flight credited — so a forecast h
 while things go to plan and moves only when they do not.
 """
 
-from collections.abc import Callable, Container, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Container, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from math import ceil, floor
 
 from dplanner.domain.model import Library, Project, Step, StepId, local_day
-from dplanner.domain.ordering import Placed, placed
-from dplanner.domain.scope import cone
-from dplanner.planning.status import Reading, Status, Unknown, Waiting
+from dplanner.domain.ordering import Placed, cone, placed
+from dplanner.planning import estimate
+from dplanner.planning.branches import is_cut
+from dplanner.planning.status import (
+    Reading,
+    Status,
+    Unknown,
+    Waiting,
+    in_flight,
+    read_since,
+    stored,
+    work_since,
+)
+from dplanner.planning.wait import Wait
+from dplanner.planning.wait import read as wait_read
 
 WORKING_DAYS_PER_WEEK = 5
 SATURDAY = 5  # date.weekday(): Monday is 0.
@@ -108,56 +120,6 @@ def working_days_between(start: date, finish: date) -> int:
     return count
 
 
-MONTHS = (
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-)
-ABBREVIATION = 3  # "September" → "Sep". True of every month in English.
-WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-
-
-def format_date(when: date, today: date | None = None) -> str:
-    """A date as a person reads it: "23 September", or "14 Feb '27" in another year.
-
-    A schedule is read for *when*, and an ISO date makes the reader do the month arithmetic.
-    The year is the part that is usually obvious, so it appears only when it is not — and
-    when it does, the month abbreviates to keep the column from doubling in width.
-
-    The month names are spelled out here rather than taken from ``strftime``, which is
-    locale-dependent: the interface is English, and a date that read "23 september" on one
-    machine and "23 September" on another would be a test that passes where it was written.
-
-    ``today`` is a parameter so the rule can be tested without waiting for a year to pass;
-    the default is the clock, because every caller means "now".
-    """
-    today = today or date.today()
-    if when.year == today.year:
-        return f"{when.day} {MONTHS[when.month - 1]}"
-    return f"{when.day} {MONTHS[when.month - 1][:ABBREVIATION]} '{when.year % 100:02d}"
-
-
-def short_date(when: date, today: date | None = None) -> str:
-    """A date where a column has no room for the month spelled out: "23 Sep", with the
-    year when it is not this one — :func:`format_date`'s rule, one size down. It is what
-    the axis marks are labelled with, so a date printed inside a plot reads as the same
-    kind of thing as the scale under it."""
-    today = today or date.today()
-    month = MONTHS[when.month - 1][:ABBREVIATION]
-    if when.year == today.year:
-        return f"{when.day} {month}"
-    return f"{when.day} {month} '{when.year % 100:02d}"
-
-
 def as_weeks(days: float) -> float:
     """``days`` of work as working weeks. A week is five days, because a day is a working one."""
     return days / WORKING_DAYS_PER_WEEK
@@ -185,8 +147,9 @@ def format_day_count(days: float) -> str:
 
 def volume(
     steps: Iterable[Step],
-    days_for: Callable[[Step], float | None],
     counts_as_work: Callable[[Step], bool],
+    *,
+    days_for: Callable[[Step], float | None] = estimate.read,
 ) -> tuple[float, int, int]:
     """What ``steps`` amount to for :func:`volume_words`: the estimated days, how many are
     work, and how many of those nobody has sized. A wait is no work, so it is no part of
@@ -212,8 +175,9 @@ def volume_words(days: float, steps: int, unestimated: int) -> str:
 
 def schedule(
     order: Sequence[Placed],
-    days_for: Callable[[Step], float | None],
     start: date,
+    *,
+    days_for: Callable[[Step], float | None] = estimate.read,
 ) -> list[Scheduled]:
     """The order with a running total and a date against each step."""
     scheduled: list[Scheduled] = []
@@ -225,22 +189,6 @@ def schedule(
         finish = working_days_after(start, accumulated) if days is not None else None
         scheduled.append(Scheduled(place=place, days=days, accumulated=accumulated, finish=finish))
     return scheduled
-
-
-@dataclass(frozen=True)
-class Wait:
-    """What a wait step waits for: a day the steps after it may start on (``until``), or
-    ``days`` working days from the moment it is reached. It takes no worker, carries no
-    work and has no status of its own — handed in by ``wait_of``, like ``days_for``, so the
-    domain never learns what marks one."""
-
-    until: date | None = None
-    days: float = 0.0
-
-
-def no_wait(_step: Step) -> Wait | None:
-    """``wait_of`` for a plan none of whose steps waits."""
-    return None
 
 
 def no_marker(_step: Step) -> bool:
@@ -273,14 +221,14 @@ class ParallelFinish:
 def parallel_finish(
     library: Library,
     project: Project,
-    days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
     *,
     humans: int,
     agents: int,
+    days_for: Callable[[Step], float | None] = estimate.read,
     among: Sequence[Step] | None = None,
     running: frozenset[StepId] = frozenset(),
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
     waits: Waits | None = None,
     is_marker: Callable[[Step], bool] = no_marker,
 ) -> ParallelFinish | None:
@@ -292,11 +240,10 @@ def parallel_finish(
     has happened, or belongs to another stretch of time (:func:`phases`). The default is
     the whole project.
 
-    Two pools, handed as a predicate the way ``days_for`` is handed as a function: an
-    agent step waits for an agent slot, every other step for a human one, and neither
-    pool ever takes the other's work. Anything else about staffing — an efficiency
-    factor, say — belongs to the caller, who can wrap ``days_for`` before handing it in;
-    this walk never learns such a thing exists.
+    Two pools, handed as a predicate: an agent step waits for an agent slot, every other
+    step for a human one, and neither pool ever takes the other's work. Anything else
+    about staffing — an efficiency factor, say — belongs to the caller, who hands in its
+    own ``days_for``; this walk never learns such a thing exists.
 
     The simulation is greedy list scheduling: whenever a slot frees, it takes the ready
     step with the longest remaining ``requires`` chain, ties broken by project step
@@ -384,8 +331,9 @@ def parallel_finish(
 
 def chain_tails(
     steps: Sequence[Step],
-    days_for: Callable[[Step], float | None],
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    *,
+    days_for: Callable[[Step], float | None] = estimate.read,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
 ) -> dict[StepId, float]:
     """Each step's own days plus the longest chain among ``steps`` waiting on it — the
     priority a free worker picks by in :func:`parallel_finish`, where an edge out of
@@ -515,11 +463,11 @@ HALF = 0.5
 
 @dataclass(frozen=True)
 class ScheduleFacts:
-    """What has happened by ``today``, for a plan re-dated from it — handed in like
-    ``days_for``, so the domain never learns what a status is stored as or what a focus is.
+    """What has happened by ``today``, for a plan re-dated from it.
 
-    ``status_of`` is the stored status as readiness sees it (``status.held``) and
-    ``since_of`` the day it last changed. ``is_marker`` is a step that carries no work by
+    ``status_of`` is the status as the schedule reads it (``status.in_flight``: review and
+    merge are work in flight) and ``since_of`` the day that began (``status.work_since``);
+    a simulation hands in its own. ``is_marker`` is a step that carries no work by
     design — a milestone's own step, a feature, a check — whose status is no fact
     about the schedule: people rarely mark one done on the day its work lands. ``worked`` is
     how many working days of a running step's work are behind it (``spent_since`` from its
@@ -533,10 +481,10 @@ class ScheduleFacts:
     """
 
     today: date
-    status_of: Callable[[Step], Status]
-    since_of: Callable[[Step], date | None]
-    is_marker: Callable[[Step], bool]
     worked: Callable[[Step], float]
+    status_of: Callable[[Step], Status] = in_flight
+    since_of: Callable[[Step], date | None] = work_since
+    is_marker: Callable[[Step], bool] = estimate.is_marker
     resume_days: Callable[[Step], float | None] | None = None
     day_over: bool = False
 
@@ -600,6 +548,24 @@ def wait_status(
     return lambda step: status(step)
 
 
+# A branch cut holds nothing once what it waits on is done: a wait of no days, read so in
+# status_on and only there — the schedule's own waits never count one.
+_CUT_HOLDS = Wait(days=0.0)
+
+
+def status_on(library: Library, today: date) -> Callable[[Step], Reading]:
+    """A step's status on ``today``, as the Step statuses tab, its report and the Run Agent
+    gate read it: :func:`wait_status` over the stored statuses, with a branch cut read as a
+    wait of no days, so what follows a wait or a cut is ready on the day it may start."""
+    return wait_status(
+        library,
+        stored,
+        read_since,
+        lambda step: wait_read(step) or (_CUT_HOLDS if is_cut(step) else None),
+        today,
+    )
+
+
 @dataclass(frozen=True)
 class _Clock:
     """When the next stretch may begin, and how much of that day is already used."""
@@ -611,16 +577,16 @@ class _Clock:
 def phases(
     library: Library,
     project: Project,
-    days_for: Callable[[Step], float | None],
     is_agent: Callable[[Step], bool],
     *,
     humans: int,
     agents: int,
+    days_for: Callable[[Step], float | None] = estimate.read,
     start: date,
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
 ) -> list[Phase]:
     """The plan as milestones run one after another, each dated from the last.
 
@@ -634,8 +600,8 @@ def phases(
 
     What no milestone gathers runs last, as a stretch with no milestone. A project with no
     milestones is that one stretch, which is the plain simulation from ``start``. Both
-    ``is_milestone`` and ``start_for`` are handed in like ``days_for``: the domain learns
-    that some steps close a stretch, never what marks them.
+    ``is_milestone`` and ``start_for`` are handed in: the milestone is still a module's
+    aspect, so this tier learns that some steps close a stretch, never what marks them.
 
     **Handed ``facts``, the plan re-dates itself from what has happened.** Its own dates
     stand while reality matches them (:func:`_holds`); otherwise the rest resumes from
@@ -685,10 +651,10 @@ def phases(
         run = parallel_finish(
             library,
             project,
-            costs,
             is_agent,
             humans=humans,
             agents=agents,
+            days_for=costs,
             among=members,
             running=running,
             wait_of=wait_of,
@@ -953,7 +919,8 @@ class CriticalPath:
 def earliest_starts(
     library: Library,
     project: Project,
-    days_for: Callable[[Step], float | None],
+    *,
+    days_for: Callable[[Step], float | None] = estimate.read,
 ) -> dict[StepId, float]:
     """When each step can start at the soonest, in working days from the plan's start:
     once everything it ``requires`` has finished — :func:`critical_path`'s bracket,
@@ -1002,14 +969,14 @@ def earliest_starts(
 def critical_path(
     library: Library,
     project: Project,
-    days_for: Callable[[Step], float | None],
+    *,
+    days_for: Callable[[Step], float | None] = estimate.read,
 ) -> CriticalPath | None:
     """None only when the project has no steps.
 
     :func:`earliest_starts` carried one step further: a step finishes its own days after it
     can start, and the chain is walked back from the latest finish through the source that
-    held each step up — handed the function rather than a schema, so whoever owns the
-    estimate keeps its shape. Ties break by project step order, the same rule every
+    held each step up. Ties break by project step order, the same rule every
     derivation here uses, so the answer changes when the graph or the estimates change and
     not otherwise.
     """
@@ -1017,7 +984,7 @@ def critical_path(
         return None
     order = {step.id: index for index, step in enumerate(project.steps)}
     by_id = {step.id: step for step in project.steps}
-    starts = earliest_starts(library, project, days_for)
+    starts = earliest_starts(library, project, days_for=days_for)
     finishes = {step.id: starts[step.id] + (days_for(step) or 0.0) for step in project.steps}
 
     def held_up_by(step: Step) -> StepId | None:
@@ -1042,68 +1009,3 @@ def critical_path(
         steps=tuple(chain),
         unestimated=sum(1 for step in chain if days_for(step) is None),
     )
-
-
-# -- the axis of a chart over dates -------------------------------------------------------------
-
-Tick = tuple[date, str]  # A date on the axis and the label it wears.
-
-
-def _day_label(when: date) -> str:
-    return f"{when.day} {MONTHS[when.month - 1][:ABBREVIATION]}"
-
-
-def _month_label(when: date) -> str:
-    return MONTHS[when.month - 1][:ABBREVIATION]
-
-
-def _with_years(ticks: list[Tick]) -> tuple[Tick, ...]:
-    """The first mark of each new year carries the year, whatever the unit — thinned
-    months may skip January, and a week may cross the boundary."""
-    labelled: list[Tick] = []
-    for index, (when, label) in enumerate(ticks):
-        if index and when.year != ticks[index - 1][0].year:
-            label = f"{label} '{when.year % 100:02d}"
-        labelled.append((when, label))
-    return tuple(labelled)
-
-
-def _days(first: date, last: date) -> Iterator[date]:
-    when = first
-    while when <= last:
-        yield when
-        when += timedelta(days=1)
-
-
-def _mondays(first: date, last: date) -> Iterator[date]:
-    when = first + timedelta(days=(7 - first.weekday()) % 7)
-    while when <= last:
-        yield when
-        when += timedelta(days=7)
-
-
-def _month_starts(first: date, last: date) -> Iterator[date]:
-    year, month = first.year, first.month
-    if first.day != 1:
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-    while date(year, month, 1) <= last:
-        yield date(year, month, 1)
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-
-
-def axis_ticks(first: date, last: date, room: int) -> tuple[Tick, ...]:
-    """The dates marked along the axis and their labels: every day, else every Monday,
-    else every month's first — the finest unit whose marks fit ``room`` (how many labels
-    the plot has width for) — and months thinned to every second, third… when even those
-    do not. Calendar boundaries, never an even division of the span, because a reader
-    places a point by the nearest mark. At least one mark, whatever the room."""
-    days = list(_days(first, last))
-    if len(days) <= room:
-        return _with_years([(when, _day_label(when)) for when in days])
-    mondays = list(_mondays(first, last))
-    if mondays and len(mondays) <= room:
-        return _with_years([(when, _day_label(when)) for when in mondays])
-    months = list(_month_starts(first, last))
-    every = max(1, ceil(len(months) / max(1, room)))
-    ticks = _with_years([(when, _month_label(when)) for when in months[::every]])
-    return ticks or ((first, _day_label(first)),)

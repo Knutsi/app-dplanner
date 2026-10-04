@@ -384,8 +384,8 @@ src/dplanner/
 │   ├── store.py             the on-disk format above, one provider per project, the stale-write guard
 │   ├── library_file.py      the per-user library file: which projects exist
 │   ├── aspects.py           what an aspect is: id, label, summary, data format
-│   ├── ordering.py          what order a project can be done in, and what can start now
-│   ├── scope.py             what a collector gathers: the cone, truncated at the next one
+│   ├── ordering.py          what order a project can be done in, what can start now, and the
+│   │                        cone behind a step, truncated where a predicate says
 │   ├── branches.py          which steps are on a feature branch: after a cut, until its landing
 │   ├── short_titles.py      what a project is called on a tab: its initials, unique in the library
 │   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
@@ -402,12 +402,15 @@ src/dplanner/
 ├── planning/              ── the planning model over the graph: imports core and domain only. Qt-free.
 │   ├── status.py            a step's status: the Status enum, Unknown and Waiting, its stored format,
 │   │                        and how readiness reads one (`held`)
+│   ├── estimate.py          a step's estimate and a project's start date: format, read and write
 │   ├── kinds.py             what a step is: the one ranking its key letter and kind word come from
 │   ├── milestone.py, feature.py, check.py, wait.py, start.py, branches.py, review.py, agent.py
 │   │                        the kind aspects: each one's stored format and its predicate
 │   ├── progression.py       the status-aware frontier: what can be launched right now
-│   └── schedule.py          the same walk carrying estimates: running totals, dates, and when each
-│                            step lands in a staffed simulation
+│   ├── schedule.py          the same walk carrying estimates: running totals, dates, and when each
+│   │                        step lands in a staffed simulation
+│   ├── scope.py             collectors — check, feature, milestone — and what each gathers
+│   └── dates.py             a date in words, the same way everywhere it is printed
 │
 ├── cli/                   ── the headless surface. Qt-free.
 │   ├── command.py           CliCommand, CliContext, CliRegistry
@@ -511,7 +514,7 @@ src/dplanner/
 │   │   ── the fourteen aspect modules (`dplanner aspect list`); the `step_` prefix is not the
 │   │      marker — `estimation`, `github` and `spec` are aspects too, and `step_order` /
 │   │      `step_properties` are views of steps, not aspects:
-│   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule
+│   ├── estimation/          estimates: the editor, the bulk Estimates tab, the schedule verbs
 │   ├── step_ticket/         ── the other step aspects: data, editor and verbs each
 │   ├── step_description/
 │   ├── step_agent_instruction/   … this one also holds the project's standing instruction,

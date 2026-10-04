@@ -279,7 +279,7 @@ def _timeline(
     sizes = {step.id: size_for(step) for step in steps}
     lane_height = max(h for _w, h in sizes.values()) + V_GAP
     # A broken stack can fold into a cycle; the walk counts the step closing it as met.
-    starts = earliest_starts(library, project, duration)
+    starts = earliest_starts(library, project, days_for=duration)
 
     placed: dict[StepId, Point] = {}
     lane_right: list[float] = []
@@ -441,7 +441,7 @@ def _block_times(
         block.id: sum(own(real[member]) for member in folded.packing.members_of(block.id))
         for block in folded.project.steps
     }
-    starts = earliest_starts(library, folded.project, lambda block: lasting[block.id])
+    starts = earliest_starts(library, folded.project, days_for=lambda block: lasting[block.id])
     return starts, {block: start + lasting[block] for block, start in starts.items()}
 
 

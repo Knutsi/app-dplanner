@@ -28,8 +28,8 @@ from dplanner.modules.time_estimates.schedule import (
     write_assumptions,
     write_milestone,
 )
-from dplanner.planning.schedule import Wait
 from dplanner.planning.status import Status
+from dplanner.planning.wait import Wait
 
 
 @dataclass(frozen=True)

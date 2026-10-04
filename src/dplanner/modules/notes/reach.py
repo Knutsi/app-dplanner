@@ -33,7 +33,7 @@ from dplanner.modules.notes.log import (
     read_log,
     standing,
 )
-from dplanner.planning.schedule import format_date
+from dplanner.planning.dates import format_date
 
 KeyOf = Callable[[Step], str]
 

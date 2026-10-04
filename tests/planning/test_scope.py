@@ -2,14 +2,14 @@
 
 No ``qapp`` fixture: like the ordering walk it wraps, this is a plain function over the
 model. The collectors here are named by a marker in ``module_data`` because that is what
-the real aspects use, but nothing in ``scope.py`` knows the key — the predicates are the
+the real aspects use, but nothing in ``planning/scope.py`` knows the key — the predicates are the
 argument.
 """
 
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.ordering import upstream
-from dplanner.domain.scope import ScopeKind, cone, gatherers, handoffs
+from dplanner.domain.ordering import cone, upstream
+from dplanner.planning.scope import ScopeKind, gatherers, handoffs
 
 
 def build(*titles):

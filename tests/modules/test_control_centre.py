@@ -172,8 +172,8 @@ def test_a_change_in_any_project_reaches_the_board(services, projects):
 
 
 def test_a_step_behind_a_dated_wait_joins_the_board_on_its_day(services, projects):
-    from dplanner.planning.schedule import Wait
     from dplanner.planning.wait import MODULE_ID as WAIT_ID
+    from dplanner.planning.wait import Wait
     from dplanner.planning.wait import write as write_wait
 
     _alpha, beta = projects

@@ -27,15 +27,9 @@ from dataclasses import dataclass
 from typing import Literal
 
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.scope import (
-    ScopeKind,
-    StepPredicate,
-    cone,
-    kind_of,
-    leaders,
-    stops_for,
-)
+from dplanner.domain.ordering import StepPredicate, cone
 from dplanner.modules.docs.aspect import read, read_compiled, read_digest
+from dplanner.planning.scope import ScopeKind, kind_of, leaders, stops_for
 
 # What a heading over one contribution says. A title is the only thing a reader has to tell
 # two contributions apart, so an untitled step still gets one.

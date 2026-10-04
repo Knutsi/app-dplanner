@@ -550,8 +550,8 @@ def test_a_step_behind_a_dated_wait_joins_ready_the_morning_it_may_start(service
     """Nothing in the plan changes overnight; the day does, and the tab hears it."""
     from datetime import date
 
-    from dplanner.planning.schedule import Wait
     from dplanner.planning.wait import MODULE_ID as WAIT_ID
+    from dplanner.planning.wait import Wait
     from dplanner.planning.wait import write as write_wait
 
     services.clock.pin(date(2026, 9, 18))

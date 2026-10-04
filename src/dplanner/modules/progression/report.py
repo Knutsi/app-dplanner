@@ -1,8 +1,8 @@
 """What progression says in a report: how far along, and what can start now.
 
-The same derivation as the Step statuses tab and ``dplanner progression show`` — statuses and
-estimates through the readers the root hands over — placed at the top of the overview,
-because "how far along" is the first thing every reader asks.
+The same derivation as the Step statuses tab and ``dplanner progression show`` — statuses
+through the reader the root hands over — placed at the top of the overview, because "how far
+along" is the first thing every reader asks.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
@@ -31,7 +31,6 @@ def report_source(
     *,
     status_in: Callable[[Library, date], Callable[[Step], Status]],
     counts_as_work: Callable[[Step], bool],
-    days_for: Callable[[Step], float | None],
     key_of: Callable[[Step], str],
     auto_progresses: Callable[[Step, Step], bool],
 ) -> ReportSource:

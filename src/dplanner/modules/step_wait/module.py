@@ -24,8 +24,7 @@ from dplanner.framework.inspector import InspectorSection, InspectorSectionRegis
 from dplanner.framework.step_selection import focused_step
 from dplanner.framework.undo import UndoService
 from dplanner.modules.step_wait.section import WaitSection
-from dplanner.planning.schedule import Wait
-from dplanner.planning.wait import DATA_FORMAT, MODULE_ID, SPEC, is_wait, write
+from dplanner.planning.wait import DATA_FORMAT, MODULE_ID, SPEC, Wait, is_wait, write
 from dplanner.theme.icons import clock_icon
 
 

@@ -2,7 +2,9 @@
 
 A project is a graph, and this is the question the graph is *for*. The answer is a
 topological sort, arranged in waves: everything in wave one has nothing left to wait on and
-can be started today; everything in wave two waits only on wave one.
+can be started today; everything in wave two waits only on wave one. The other walk here is
+the cone behind a step (:func:`cone`), truncated where a predicate says — what
+``planning/scope.py`` reads as what a collector gathers.
 
 **Plain functions over the model, with no Qt**, so the canvas layout, the order view and the
 CLI all read the same walk — and so the interesting part is testable without a widget in
@@ -20,11 +22,10 @@ from exposing this function everywhere instead: the activity, ``dplanner order s
 ``--json`` for anything reading programmatically.
 """
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.scope import cone
 
 
 def depths(library: Library, project: Project) -> dict[StepId, int]:
@@ -145,13 +146,71 @@ def ready(library: Library, project: Project) -> list[Step]:
     return found[0] if found else []
 
 
+StepPredicate = Callable[[Step], bool]
+
+
+@dataclass(frozen=True)
+class Cone:
+    """What one walk found: the steps a collector owns, and the collectors it gathers.
+
+    ``steps`` excludes the origin — a caller that wants a step's own aspects counted adds it
+    back, as ``testing.covered()`` does — and excludes the boundaries, which are the thing
+    they were stopped at rather than part of what stopped there. Both are in project order,
+    so an answer never reshuffles between two reads.
+    """
+
+    steps: tuple[Step, ...]
+    boundaries: tuple[Step, ...]
+
+
+def cone(
+    library: Library,
+    project: Project,
+    step_id: StepId,
+    *,
+    stops_at: StepPredicate | None = None,
+) -> Cone:
+    """The cone behind ``step_id``, truncated at the boundaries ``stops_at`` names.
+
+    A step is in ``steps`` exactly when some path of ``requires`` edges reaches it from the
+    origin without crossing a boundary — so a step behind an earlier feature *and* reachable
+    around it still belongs to both, which is the honest answer and the one lint reports.
+
+    The visited set is also the cycle guard, the same defensive stance ``depths()`` takes
+    against a hand-edited file. Boundaries are never recursed into, so a graph with a hundred
+    milestones costs one pass, not a hundred.
+    """
+    reached: set[StepId] = set()
+    stopped: set[StepId] = set()
+    ids = {step.id for step in project.steps}  # Once per walk: Project.step() is a scan.
+
+    def visit(current: StepId) -> None:
+        for target in library.requires(current):
+            if target.id in reached or target.id in stopped:
+                continue
+            if target.id not in ids:
+                continue
+
+            if stops_at is not None and stops_at(target):
+                stopped.add(target.id)
+                continue
+            reached.add(target.id)
+            visit(target.id)
+
+    visit(step_id)
+    return Cone(
+        steps=tuple(step for step in project.steps if step.id in reached),
+        boundaries=tuple(step for step in project.steps if step.id in stopped),
+    )
+
+
 def upstream(library: Library, project: Project, step_id: StepId) -> list[Step]:
     """Every step this one waits on, directly or through others, in project order.
 
     ``Library.requires()`` answers one edge out; this answers the whole cone behind a step.
-    It is :func:`dplanner.domain.scope.cone` with nothing to stop it — the untruncated case,
-    named for the question most callers are asking. What a *collector* gathers, which stops
-    at the next collector, lives in ``scope.py`` beside it.
+    It is :func:`cone` with nothing to stop it — the untruncated case, named for the
+    question most callers are asking. What a *collector* gathers, which stops at the next
+    collector, is ``planning/scope.py``'s.
     """
     return list(cone(library, project, step_id).steps)
 

@@ -23,6 +23,7 @@ from datetime import date, timedelta
 from html import escape
 from math import cos, pi, sin
 
+from dplanner.cli.report.axis import Tick, axis_ticks
 from dplanner.cli.report.parts import (
     AMOUNT_PLOTS,
     Chart,
@@ -35,14 +36,8 @@ from dplanner.cli.report.parts import (
     Stretch,
     Timeline,
 )
-from dplanner.planning.schedule import (
-    SATURDAY,
-    Tick,
-    axis_ticks,
-    format_date,
-    format_days,
-    short_date,
-)
+from dplanner.planning.dates import format_date, short_date
+from dplanner.planning.schedule import SATURDAY, format_days
 from dplanner.planning.status import REVIEW_AND_MERGE, Status, Unknown, phrase
 from dplanner.planning.status import word as status_word
 

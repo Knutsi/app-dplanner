@@ -83,10 +83,7 @@ def snapshot(plan, *, finished=("A", "B"), closing=("B", "D"), today=date(2026, 
     found = take(
         library,
         project,
-        days_for,
         is_agent,
-        done(*finished),
-        lambda _s: None,
         humans=1,
         agents=1,
         start=MONDAY,
@@ -94,6 +91,9 @@ def snapshot(plan, *, finished=("A", "B"), closing=("B", "D"), today=date(2026, 
         is_milestone=milestones(*closing),
         start_for=lambda _s: None,
         today=today,
+        days_for=days_for,
+        status_for=done(*finished),
+        changed_on=lambda _s: None,
     )
     assert found is not None
     return found
@@ -142,10 +142,7 @@ def test_a_stepless_or_looped_project_has_no_snapshot(plan):
         return take(
             library,
             target,
-            days_for,
             is_agent,
-            done(),
-            lambda _s: None,
             humans=1,
             agents=1,
             start=MONDAY,
@@ -153,6 +150,9 @@ def test_a_stepless_or_looped_project_has_no_snapshot(plan):
             is_milestone=milestones("B", "D"),
             start_for=lambda _s: None,
             today=date(2026, 9, 10),
+            days_for=days_for,
+            status_for=done(),
+            changed_on=lambda _s: None,
         )
 
     assert taken(empty) is None
@@ -297,7 +297,12 @@ def test_the_change_report_names_steps_born_and_re_estimated_after_the_basis(pla
     for step in (a, b, c, d):
         step.created = "2026-09-01T09:00:00+00:00"
     history = {a.id: [(date(2026, 9, 12), 3.0)], b.id: [(date(2026, 9, 2), 1.0)]}
-    changes = changes_since(project, date(2026, 9, 7), days_for, lambda s: history.get(s.id, []))
+    changes = changes_since(
+        project,
+        date(2026, 9, 7),
+        days_for=days_for,
+        estimate_history=lambda s: history.get(s.id, []),
+    )
     assert [(step.title, days) for step, days in changes.added] == [("E", None)]
     assert [(step.title, when, was, days) for step, when, was, days in changes.estimates] == [
         ("A", date(2026, 9, 12), 3.0, 1.0)
@@ -308,9 +313,9 @@ def test_the_change_report_names_steps_born_and_re_estimated_after_the_basis(pla
         "re-estimated since 7 September: SA 3d → 1d on 12 September",
     ]
     assert (
-        changes_since(project, date(2026, 9, 30), days_for, lambda _s: []).lines(
-            str, date(2026, 9, 30)
-        )
+        changes_since(
+            project, date(2026, 9, 30), days_for=days_for, estimate_history=lambda _s: []
+        ).lines(str, date(2026, 9, 30))
         == []
     )
 
@@ -417,10 +422,7 @@ def test_a_milestone_whose_start_is_later_opens_a_gap_the_plan_holds_flat(plan):
     now = take(
         library,
         project,
-        days_for,
         is_agent,
-        done("A", "B"),
-        lambda _s: None,
         humans=1,
         agents=1,
         start=MONDAY,
@@ -428,6 +430,9 @@ def test_a_milestone_whose_start_is_later_opens_a_gap_the_plan_holds_flat(plan):
         is_milestone=milestones("B", "D"),
         start_for=lambda step: later if step.title == "D" else None,
         today=date(2026, 9, 10),
+        days_for=days_for,
+        status_for=done("A", "B"),
+        changed_on=lambda _s: None,
     )
     assert now is not None
     b = key_of(plan, "B")
@@ -486,10 +491,7 @@ def test_a_row_counts_the_statuses_that_changed_on_its_day(plan):
     now = take(
         library,
         project,
-        days_for,
         is_agent,
-        done("A", "B"),
-        lambda step: moved.get(step.title),
         humans=1,
         agents=1,
         start=MONDAY,
@@ -497,6 +499,9 @@ def test_a_row_counts_the_statuses_that_changed_on_its_day(plan):
         is_milestone=milestones("B", "D"),
         start_for=lambda _s: None,
         today=day,
+        days_for=days_for,
+        status_for=done("A", "B"),
+        changed_on=lambda step: moved.get(step.title),
     )
     assert now is not None
     assert [s.tally.changed for s in now.stretches] == [1, 1] and now.changed == 2

@@ -179,7 +179,7 @@ def test_a_plain_step_is_the_step_template_and_a_template_is_one_undo(services, 
     """A fresh step carries an estimate and a description, which is exactly the Step
     template; Make Milestone moves every toggle that differs as one undo step, and the
     step then lights Milestone instead — with its label generated, as the toggle does."""
-    from dplanner.modules.estimation.aspect import enabled as estimate_on
+    from dplanner.planning.estimate import enabled as estimate_on
     from dplanner.planning.milestone import read as milestone_label
 
     step = project.steps[0]

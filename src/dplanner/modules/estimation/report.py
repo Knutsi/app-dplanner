@@ -8,7 +8,7 @@ from datetime import date
 from dplanner.cli.report.parts import Contribution, Facet, ReportSource
 from dplanner.domain.model import Library, Project
 from dplanner.domain.store import FilesFor
-from dplanner.modules.estimation.aspect import read
+from dplanner.planning.estimate import read
 from dplanner.planning.schedule import format_days
 
 LABEL = "Estimate"

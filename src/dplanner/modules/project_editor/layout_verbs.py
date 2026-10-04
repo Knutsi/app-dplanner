@@ -54,6 +54,7 @@ from dplanner.modules.project_editor.sorts import (
     timeline,
     waves,
 )
+from dplanner.planning import estimate
 from dplanner.theme.icons import sort_icon
 
 # The picker's popup renders these in order, through the same state gates as every other
@@ -104,9 +105,6 @@ class LayoutVerbs:
     # Which project's graph these verbs act on: the one the current tab is showing.
     current_project: Callable[[], NodeId | None]
     status: Callable[[str], None]
-    # How long a step takes, from whichever module owns estimates — the timeline sort's
-    # and Wave view's one outside fact, handed in so this module never learns whose it is.
-    days_for: Callable[[Step], float | None]
     # Put a project's tabs in or out of Wave view, remembered for this user: the module's,
     # because every tab showing that project follows.
     set_waves: Callable[[NodeId, bool], None]
@@ -358,7 +356,7 @@ class LayoutVerbs:
         project = self._project()
         if project is None or not wave_view(project.id):
             return
-        placed = waves(self.library, project, self.size_for(project), days_for=self.days_for)
+        placed = waves(self.library, project, self.size_for(project), days_for=estimate.read)
         self._run_sort(project, "Keep Wave Arrangement", placed, "Kept Wave view's arrangement")
 
     def _sort_flow(self, _context: Context) -> None:
@@ -389,7 +387,7 @@ class LayoutVerbs:
         project = self._project()
         if project is None:
             return
-        placed = timeline(self.library, project, self.size_for(project), days_for=self.days_for)
+        placed = timeline(self.library, project, self.size_for(project), days_for=estimate.read)
         self._run_sort(project, "Timeline Layout", placed)
 
     def _sort_radial(self, context: Context) -> None:
