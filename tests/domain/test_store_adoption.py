@@ -406,6 +406,62 @@ def test_a_checkout_recorded_by_another_writer_is_adopted(store, library, tmp_pa
     assert not store.changed_underneath()
 
 
+def billing_and_its_checkout_from_another_writer(store, repo, tmp_path):
+    """The review's probe, first half: the CLI adds a project and records a checkout."""
+    other, theirs = other_writer(store)
+    theirs.add_child(theirs.id, other.attach(seed_project(repo / "billing", "Billing")))
+    other.flush({(theirs.id, "structure")})
+    other.set_checkout("https://github.com/acme/billing", tmp_path / "src" / "billing")
+
+
+def test_recording_a_checkout_keeps_the_other_writers_and_hides_nothing(
+    store, library, repo, tmp_path
+):
+    billing_and_its_checkout_from_another_writer(store, repo, tmp_path)
+
+    store.set_checkout("https://github.com/acme/widget", tmp_path / "src" / "widget")
+
+    on_disk = read(store.library_path)
+    assert set(on_disk["checkouts"]) == {"github.com/acme/billing", "github.com/acme/widget"}
+    assert len(on_disk["projects"]) == 2
+    assert store.changed_underneath()  # Billing is still somebody else's, waiting.
+
+
+def test_a_membership_flush_after_recording_a_checkout_loses_no_project(
+    store, library, repo, tmp_path
+):
+    billing_and_its_checkout_from_another_writer(store, repo, tmp_path)
+    store.set_checkout("https://github.com/acme/widget", tmp_path / "src" / "widget")
+
+    store.adopt_outside_changes()
+    library.add_child(library.id, store.attach(seed_project(repo / "ledger", "Ledger")))
+    store.flush({(library.id, "structure")})
+
+    assert [p.title for p in library.projects] == ["Discovery", "Billing", "Ledger"]
+    on_disk = read(store.library_path)
+    assert len(on_disk["projects"]) == 3
+    assert set(on_disk["checkouts"]) == {"github.com/acme/billing", "github.com/acme/widget"}
+
+
+def test_a_membership_flush_before_adopting_is_refused_not_lossy(store, library, repo, tmp_path):
+    billing_and_its_checkout_from_another_writer(store, repo, tmp_path)
+    store.set_checkout("https://github.com/acme/widget", tmp_path / "src" / "widget")
+    library.add_child(library.id, store.attach(seed_project(repo / "ledger", "Ledger")))
+
+    with pytest.raises(StaleWorkspaceError):
+        store.flush({(library.id, "structure")})
+
+    assert len(read(store.library_path)["projects"]) == 2
+
+
+def test_recording_a_checkout_over_a_file_as_last_seen_is_not_an_outside_change(
+    store, library, tmp_path
+):
+    store.set_checkout("https://github.com/acme/widget", tmp_path / "src" / "widget")
+
+    assert not store.changed_underneath()
+
+
 def test_an_archive_by_another_writer_is_adopted_and_so_is_its_restore(store, library):
     other, theirs = other_writer(store)
     project_id = library.projects[0].id

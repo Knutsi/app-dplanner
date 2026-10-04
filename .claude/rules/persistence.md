@@ -45,8 +45,11 @@ paths:
   open. The store records what each project directory last looked like and **refuses to
   flush over anything that changed underneath** (`StaleWorkspaceError`) — checked **per
   project**, so one project's outside edit never blocks saving another; the library file
-  has its own stamp. That one check also makes a lock between CLI runs unnecessary. **What
-  it looks at is the plan, not the directory**: `PLAN_ENTRIES` (`project.dproj`,
+  has its own stamp — **taken before the read, and never over a change this store did not
+  take in** (`set_checkout` writes one key and re-stamps only a file it had seen;
+  `ARCHITECTURE.md`'s *Two writers, one folder*). That one check also makes a lock
+  between CLI runs unnecessary. **What it looks at is the plan, not the directory**:
+  `PLAN_ENTRIES` (`project.dproj`,
   `modules/`, `steps/`) — a project directory is often the repository root, and counting
   the source tree or an agent worktree under `.dplanner-worktrees/` as another writer
   reloaded the window on every edit anyone made. The usage `ledger/` beside them is
