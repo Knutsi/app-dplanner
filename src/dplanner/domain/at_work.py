@@ -305,11 +305,12 @@ class AtWorkBoard:
         too, which is how a quiet agent's claim stands again the moment it is back.
 
         It never creates one — running a verb is not a claim to be working, it is only
-        evidence for a claim somebody made.
+        evidence for a claim somebody made. Nor does it re-create one: a claim ended after
+        it was read stays ended (:meth:`_still`).
         """
         stamp = now_stamp()
         for path, claim in self._files():
-            if claim.project == project:
+            if claim.project == project and self._still(path, claim):
                 self._put(path, replace(claim, seen=stamp))
 
     def end(self, project: ProjectId, step: StepId = "") -> bool:
@@ -338,6 +339,13 @@ class AtWorkBoard:
         except (OSError, ValueError):
             return None  # A half-written file, or one a newer build wrote. Try again later.
 
+    def _still(self, path: Path, claim: AtWork) -> bool:
+        """Whether ``path`` still holds the claim read from it. Gone or rewritten since means
+        another writer acted on it — an end, a renewal — and a stale read must not undo that.
+        Re-read just before acting, which leaves a window of microseconds rather than a
+        whole run's; closing it entirely would take the lock this module chose not to have."""
+        return self._load(path) == claim
+
     def _read(self, project: ProjectId, step: StepId) -> AtWork | None:
         path = self._path(project, step)
         return None if path is None else self._load(path)
@@ -363,7 +371,7 @@ class AtWorkBoard:
         already writing here."""
         cutoff = SWEEP_HOURS * 3600
         for path, claim in self._files():
-            if quiet_seconds(claim) > cutoff:
+            if quiet_seconds(claim) > cutoff and self._still(path, claim):
                 path.unlink(missing_ok=True)
 
 
