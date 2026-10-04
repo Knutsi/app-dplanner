@@ -186,16 +186,17 @@ def test_a_code_location_naming_a_ref_is_the_mainline_a_run_starts_from(services
 
     from tests.facts import code_facts
 
-    from dplanner.modules import _branch_plan
+    from dplanner.modules.agent_briefing.worktree import mainline
+    from dplanner.modules.branches.plan import branch_plan
 
     facts = code_facts(plan_root=Path("/plans"), repository="https://github.com/acme/widget")
     placement = facts.placements[0]
     facts = replace(
         facts, placements=(replace(placement, location=replace(placement.location, ref="develop")),)
     )
-    plan = _branch_plan(services.document, step, facts)
+    plan = branch_plan(services.document, step, mainline(facts, step))
     assert plan.start == "origin/develop" and plan.pr_base == "develop"
-    assert _branch_plan(services.document, step, None) == DEFAULT_BRANCHES
+    assert branch_plan(services.document, step, mainline(None, step)) == DEFAULT_BRANCHES
 
 
 def test_the_preflight_says_where_the_plan_lives(services, step):

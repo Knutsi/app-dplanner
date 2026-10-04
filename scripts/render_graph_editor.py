@@ -988,8 +988,8 @@ def render_branches(app: QApplication, theme: Theme, out: Path, workspace: Path)
     lane, since it is not on main yet) and landed (the lane gone, the strips quiet) — and
     the right-click on the picked stretch offering Put on a Branch."""
     from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
-    from dplanner.modules import _branch_births
     from dplanner.modules.branches.edits import put_command
+    from dplanner.modules.branches.plan import branch_births
 
     QSettings().clear()
     apply_theme(app, theme)
@@ -1039,7 +1039,7 @@ def render_branches(app: QApplication, theme: Theme, out: Path, workspace: Path)
     discard(menu)
     tab._scene.select_steps([])
 
-    cut, land = _branch_births(project, "feature/stacks")
+    cut, land = branch_births(project, "feature/stacks")
     seats = [
         SetModuleDataCommand(cut.id, POSITION_KEY, write_position(280, 160)),
         SetModuleDataCommand(land.id, POSITION_KEY, write_position(1400, 160)),

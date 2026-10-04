@@ -169,7 +169,7 @@ paths:
   reason) and `agent worktree … on` (refused). `ARCHITECTURE.md`'s *A worktree is the
   step's decision* has the reasoning.
 - **A run starts from the remote, and the plan names its base.** `planning.branches.BranchPlan` —
-  decided once by the root's `_branch_plan`, handed to Run Agent as `branch_plan` and to
+  decided once by `branches/plan.py`'s `branch_plan`, handed to Run Agent as `branch_plan` and to
   `brief()` as a plain value — is the branch a worktree is
   on (its own `agent/<run name>`, or the feature branch for a landing), where a new one
   starts, what the first run in a stretch may cut on the remote, and the PR's base. The

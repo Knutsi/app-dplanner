@@ -138,7 +138,8 @@ from dplanner.planning.branches import DEFAULT_BRANCHES, DEFAULT_START, BranchPl
 SHELL_FILE = "shell"
 EXIT_FILE = "exit"
 
-DEFAULT_START_REF = "refs/remotes/origin/HEAD"
+# The same start as the ref the script asks git about.
+DEFAULT_START_REF = f"refs/remotes/{DEFAULT_START}"
 
 
 def current_command(agent_command: str, harnesses: tuple[AgentHarness, ...]) -> str:

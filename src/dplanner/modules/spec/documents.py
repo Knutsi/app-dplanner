@@ -641,6 +641,20 @@ def document_text(area: ModuleFileArea, document: SpecDocument) -> str | None:
         return None
 
 
+def document_texts(project: Project, files: FilesFor) -> list[tuple[str, str, str | None]]:
+    """Every document in the index as (name, kind, text), the text None where
+    :func:`document_text` cannot read it — and throughout for a project with no directory.
+    Plain values, so a module that may not import this one is handed it by the root."""
+    try:
+        area: ModuleFileArea | None = files(project.id, MODULE_ID)
+    except KeyError:
+        area = None
+    return [
+        (doc.name, doc.kind, document_text(area, doc) if area is not None else None)
+        for doc in read_index(project).documents
+    ]
+
+
 def document_digest(document: SpecDocument) -> str:
     """The document as it is now: the content-addressed stem of its blob. A feature's
     source stamps this when it is read, and a later read compares — the same shape as a

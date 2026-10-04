@@ -37,6 +37,7 @@ from dplanner.framework.step_selection import chosen_steps
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import confirm
 from dplanner.modules.branches.edits import put_command, put_refusal, remove_command, stretch_picked
+from dplanner.modules.branches.plan import branch_births, branch_reading
 from dplanner.modules.branches.section import CutSection
 from dplanner.planning.branches import (
     CUT_FORMAT,
@@ -49,7 +50,6 @@ from dplanner.planning.branches import (
     is_cut,
     is_land,
     name_problem,
-    reading,
     write_cut,
     write_land,
 )
@@ -62,13 +62,9 @@ class BranchesDeps:
     undo: UndoService[Library]
     actions: ActionRegistry
     details: InspectorSectionRegistry
-    is_done: Callable[[Step], bool]
     is_agent: Callable[[Step], bool]
     # Why a pick would put part of a stack on a branch — a stack is the graph editor's.
     stacked_apart: Callable[[Project, set[StepId]], str]
-    # The stretch's two ends, dressed as every other module has them: the cut with no
-    # estimate, the landing an agent step — the root's word, shared with the CLI.
-    born: Callable[[Project, str], tuple[Step, Step]]
     # Where the two new cards stand beside the pick, as commands that ride with their
     # births — the graph editor's seats. None is a build with no canvas.
     seats: Callable[[Sequence[StepId], Step, Step], Sequence[Command]] | None = None
@@ -181,7 +177,7 @@ class BranchesModule:
     def _memo(self, project: Project) -> _Memo:
         memo = self._memos.get(project.id)
         if memo is None:
-            memo = self._memos[project.id] = _Memo(reading(project, self._deps.is_done))
+            memo = self._memos[project.id] = _Memo(branch_reading(project))
         return memo
 
     def reading_of(self, project: Project) -> Reading:
@@ -248,7 +244,7 @@ class BranchesModule:
         )
         if name is None:
             return
-        cut, land = deps.born(project, name)
+        cut, land = branch_births(project, name)
         seats = deps.seats(chosen, cut, land) if deps.seats is not None else ()
         deps.undo.push(put_command(deps.library, chosen, cut, land, carrying=seats))
 

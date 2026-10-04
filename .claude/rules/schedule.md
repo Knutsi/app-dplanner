@@ -274,10 +274,10 @@ paths:
   a CLI test — never an assertion against `date.today()`. `ARCHITECTURE.md`'s *Today is
   handed in* has the reasoning.
 - **A milestone's colour is its place in the project's map, and every surface reads the
-  one answer.** `schedule.py`'s `milestone_colors(library, project, is_milestone)` is the
+  one answer.** `schedule.py`'s `milestone_colors(library, project)` is the
   deal — `ordering.placed`'s sequence, a milestone's own chosen colour over its dealt
-  shade — walked once per project by the composition root's `_milestone_colors` and handed
-  down as a typed callback, so no module learns where a colour map is stored. Ten surfaces
+  shade — walked once per project and handed down by the composition root as a typed
+  callback, so no module learns where a colour map is stored. Ten surfaces
   read it: the canvas card, its badge and its tag medallion, the order table's row wash
   and **key badge**, the Step statuses tab's key badge, the Tests tab's grouping heading,
   the Docs tab's medallion, the coverage lane, the Milestone tab's swatch, the calendar's

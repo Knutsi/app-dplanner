@@ -6368,7 +6368,7 @@ Time tab runs the one the project is staffed for. The decisions worth writing do
   than a second deal beside it. The maps moved to `theme/palettes.py`, Qt-free and a leaf,
   because the appearance module lists them and modules never import each other; the
   composition root walks each project once and hands every consumer a typed callback, the
-  `_milestone_stats` shape. `theme/tones.py`'s `toned(name, hex)` recolours a tone at its
+  `milestone_stats` shape. `theme/tones.py`'s `toned(name, hex)` recolours a tone at its
   own alphas, so ten painters never re-derive one and a recoloured card is exactly as loud
   as the purple it replaced.
 
@@ -7985,8 +7985,9 @@ lint, because it is perpetual by nature: a spec is never wholly claimed.
 membership.** `modules/coverage/trace.py` arranges what four modules own — passages
 (spec), records (feature), the gathering milestone and the tests in a cone (the graph and
 testing), the compiled document's state (docs) — into four columns and links between
-neighbours, reading each through a callable the composition root hands in
-(`_coverage_trace`), so the coverage module imports no other module and the picture
+neighbours. `coverage/readers.py` reads each — through another module's `aspect.py` where
+that is enough, else through a callable the composition root hands in — so the coverage
+module reaches no other module's insides and the picture
 cannot disagree with the verbs. Every item carries the features it serves: a passage the
 features citing it, a feature itself, a milestone the features it gathers, a test the
 feature whose cone holds its step (two features → both, honestly), a milestone's own docs
@@ -8536,7 +8537,7 @@ The project is a small share of that graph — 25 steps and 400 steps differ by 
 objects and 120 ms; the rest is the application. Generation 0 is 0.01 ms.
 
 **What does scale, and how.** The canvas sync is superlinear — 3 ms at 25 steps, 58 ms
-at 400 — and half of it at the top is `step_accents` → `_milestone_stats` →
+at 400 — and half of it at the top is `step_accents` → `milestone_stats` →
 `project_schedule`, where `planning/schedule.py`'s `working_days_after` walks the calendar
 **day by day from the project start for every step**: 0.7 ms at 25 steps, 28 ms at 400,
 quadratic in the plan's length in days. The Time tab's `time_report` carries the same

@@ -8,6 +8,10 @@ that names its cut — ``{"cut": "<id>"}`` — and merges the branch back as a p
 its own. The pairing is stored, and it counts only while the cut is upstream of the landing:
 ``domain/branches.py`` reads it through the graph, and what is on the branch is derived
 there from the links, never listed here.
+
+A :class:`BranchPlan` is what a stretch decides for one run — the branches it works
+between. ``modules/branches/plan.py`` decides it and Run Agent carries it out, which is why
+the shape lives here, where both may import it.
 """
 
 from collections.abc import Callable, Mapping, Sequence
@@ -74,12 +78,13 @@ def name_problem(branch: str, taken: Sequence[str] = ()) -> str | None:
     return None
 
 
-# A run's own branch is `agent/<run name>`; a landing's is the feature branch it lands.
+def reading(project: Project, is_done: Callable[[Step], bool]) -> branches.Reading:
+    """The project's stretches, read through this module's two aspects."""
+    return branches.read(project, branch_of=branch_of, cut_of=cut_of, is_done=is_done)
+
+
+# The branch a run works on when no stretch names one: ``agent/<run name>``.
 BRANCH_PREFIX = "agent/"
-
-
-def branch_name(name: str) -> str:
-    return f"{BRANCH_PREFIX}{name}"
 
 
 @dataclass(frozen=True)
@@ -107,7 +112,7 @@ class BranchPlan:
 
     def branch_for(self, run: str) -> str:
         """The branch a worktree named ``run`` is on."""
-        return self.work_branch or branch_name(run)
+        return self.work_branch or f"{BRANCH_PREFIX}{run}"
 
 
 # A run nothing narrows: its own branch, started from the remote's default, its PR opened
@@ -115,11 +120,6 @@ class BranchPlan:
 DEFAULT_BRANCHES = BranchPlan()
 # The remote's default branch, as a start a plan can name when its mainline names none.
 DEFAULT_START = "origin/HEAD"
-
-
-def reading(project: Project, is_done: Callable[[Step], bool]) -> branches.Reading:
-    """The project's stretches, read through this module's two aspects."""
-    return branches.read(project, branch_of=branch_of, cut_of=cut_of, is_done=is_done)
 
 
 def remap_for_paste(

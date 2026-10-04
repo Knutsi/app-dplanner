@@ -124,6 +124,17 @@ def stack_of(steps: Sequence[Step], step_id: StepId) -> Stack | None:
     return next((stack for stack in read_stacks(steps) if step_id in stack.members), None)
 
 
+def stack_split(project: Project, chosen: set[StepId]) -> str:
+    """Why a pick would put part of a stack on a branch, "" when it would not: a stack is
+    one way in and one way out, and a bracket through its middle would link into it."""
+    for stack in read_stacks(project.steps):
+        members = set(stack.members)
+        if members & chosen and not members <= chosen:
+            first = next(step for step in project.steps if step.id == stack.members[0])
+            return f"it would split the stack {first.title!r} — pick all of it, or none"
+    return ""
+
+
 def stray_links(stack: Stack, steps: Sequence[Step]) -> tuple[Edge, ...]:
     """Every ``requires`` link that makes a stack more than one line besides its gaps: into a
     member below the first from anywhere but the member before it, and out of a member above
