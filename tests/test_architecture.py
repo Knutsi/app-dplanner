@@ -68,73 +68,87 @@ PACKAGE = SRC.name
 
 QT_PACKAGES = ("PySide6", "shiboken6")
 
-# Files inside a module package that the CLI reaches, and which must therefore load no Qt —
-# plus the one a contract keeps Qt-free without the CLI (a theme provider's ``themes.py``).
-# Checked by name because that is what makes the rule visible from the filename: if the
-# composition root imports a file at CLI time, it belongs in this tuple.
-HEADLESS_FILES = (
+# The file roles that load no Qt in every module package: what the CLI reaches (verbs, the
+# aspect and workflow surface, location roles, checks, a report's source, a harness) and
+# the one a contract keeps Qt-free without the CLI (a theme provider's ``themes.py``).
+HEADLESS_ROLES = (
     "cli.py",
     "workflows.py",
+    "aspect.py",
     "roles.py",
     "checks.py",
-    "aspect.py",
-    "export.py",
-    "format.py",
-    "clip.py",
-    "positions.py",
-    "placement.py",
-    "named.py",
-    "sorts.py",
-    "stack.py",
-    "edits.py",
-    "geometry.py",
-    "marks.py",
-    "look.py",
-    "schedule.py",
-    "progress.py",
-    "collect.py",
-    "runs.py",
-    "due.py",
-    "intents.py",
-    "usage.py",
-    # Reads a run's usage back into the ledger: the wrapper script's `dplanner` call.
-    "harvest.py",
-    "terminal.py",
     "harness.py",
-    "documents.py",
-    "sourced.py",
-    "client.py",
-    "convert.py",
-    "source.py",
-    "trace.py",
-    # Where the coverage trace's facts come from, and a branch stretch's run plan.
-    "readers.py",
-    "plan.py",
-    "references.py",
-    "migrate.py",
-    "prompt.py",
-    "launcher.py",
-    "membership.py",
-    "gh.py",
-    "pdf.py",
     "report.py",
-    # What the Time tab shows, as data: the report reads it too.
-    "present.py",
     "themes.py",
-    "dictation.py",
-    # The Time tab's simulator (`schedule/simulation/`): a script and the tests play
-    # it with no graphics stack.
-    "frames.py",
-    "rng.py",
-    "sample.py",
-    "world.py",
-    "timeline.py",
-    "scenarios.py",
-    "replay.py",
-    "edits.py",
-    "accuracy.py",
-    "simulate.py",
 )
+# Every other file the CLI reaches, by package and its path inside it. Checked by path, so a
+# name means one file: if the composition root imports a file at CLI time, it belongs here,
+# and a listed path that no longer exists fails the suite rather than silently leaving the rule.
+HEADLESS_FILES: dict[str, tuple[str, ...]] = {
+    "agent_briefing": ("prompt.py",),
+    "agent_launch": ("due.py", "intents.py", "launcher.py"),
+    # Reads a run's usage back into the ledger: the wrapper script's `dplanner` call.
+    "agent_usage": ("harvest.py",),
+    # A branch stretch's run plan, and the edits it makes.
+    "branches": ("edits.py", "plan.py"),
+    "canvas": (
+        "clipboard/clip.py",
+        "geometry.py",
+        "layouts/named.py",
+        "layouts/placement.py",
+        "layouts/positions.py",
+        "layouts/sorts.py",
+        "look.py",
+        "marks.py",
+        "stacks/edits.py",
+        "stacks/stack.py",
+    ),
+    # Where the coverage trace's facts come from, and the trace.
+    "coverage": ("readers.py", "trace.py"),
+    "dictation_whisper": ("dictation.py",),
+    "docs": ("collect.py", "prompt.py"),
+    "github": ("gh.py",),
+    "library": ("membership.py",),
+    "notes": ("migrate.py",),
+    "openai": ("dictation.py",),
+    "schedule": (
+        "assumptions.py",
+        "landings.py",
+        "progress.py",
+        # What the Time tab shows, as data: the report reads it too.
+        "present.py",
+        # The simulator: a script and the tests play it with no graphics stack.
+        "simulation/accuracy.py",
+        "simulation/edits.py",
+        "simulation/frames.py",
+        "simulation/replay.py",
+        "simulation/rng.py",
+        "simulation/sample.py",
+        "simulation/scenarios.py",
+        "simulation/simulate.py",
+        "simulation/timeline.py",
+        "simulation/world.py",
+    ),
+    "spec": ("documents.py", "pdf.py", "sourced.py"),
+    "spec_confluence": ("client.py", "convert.py", "source.py"),
+    "spec_folder": ("source.py",),
+    "spec_git": ("source.py",),
+    "step_agent_run": ("runs.py", "terminal.py"),
+    "step_order": ("export.py",),
+    "testing": ("export.py", "filing.py", "format.py", "references.py", "runs.py"),
+}
+
+
+def is_headless(path: Path, root: Path = SRC) -> bool:
+    """Whether a module-package file must load no Qt: a role every package's copy of keeps
+    Qt-free, or a file its own package lists."""
+    package = module_dir_of(path, root)
+    if package is None:
+        return False
+    inside = path.relative_to(root / "modules" / package).as_posix()
+    return path.name in HEADLESS_ROLES or inside in HEADLESS_FILES.get(package, ())
+
+
 CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.local",
     f"{PACKAGE}.core.storage.git",
@@ -370,7 +384,7 @@ def collect_violations(root: Path = SRC) -> list[str]:
                 # The headless half of a module. The composition root reaches these through
                 # `dplanner.modules`, so one Qt import here would put a graphics stack in
                 # every CLI invocation.
-                if path.name in HEADLESS_FILES:
+                if is_headless(path, root):
                     if name.startswith(QT_PACKAGES):
                         forbid(path, line, name, f"a module's {path.name} loads no Qt")
                     if name.startswith(f"{PACKAGE}.framework"):
@@ -640,6 +654,17 @@ def test_the_role_rule_sees_a_tab_a_modal_and_a_view(tmp_path) -> None:
     assert "Board is a tab" in breaches and "OneBoard is a tab" in breaches
     assert "AboutDialog is a modal" in breaches and "view.py is retired" in breaches
     assert "Fine" not in breaches
+
+
+def test_every_headless_file_exists() -> None:
+    """A rename that leaves an entry behind would drop that file out of the rule unseen."""
+    missing = [
+        f"{package}/{inside}"
+        for package, files in HEADLESS_FILES.items()
+        for inside in files
+        if not (SRC / "modules" / package / inside).is_file()
+    ]
+    assert not missing, f"HEADLESS_FILES names files that do not exist: {missing}"
 
 
 def test_the_rules_can_see_real_imports() -> None:

@@ -6107,6 +6107,51 @@ which the branches module reads and caches, and the location roles, the root's r
 over every module's `roles.py`. `tests/cli/test_briefing_golden.py` holds the briefing to
 the byte, which is how the move was shown to change no text.
 
+### A file name has one meaning
+
+The rule is CLAUDE.md's *Two surfaces, one vocabulary*. The checks are rule 15 and the
+headless-file test in `tests/test_architecture.py`.
+
+By 4 October `view.py` meant four things in four packages: a tab's body (the Order table),
+a status-bar widget with a diff dialog beside it (sync), a modal list (the Agents and task
+browsers) and a modal (the outside-change conflict). Five tabs lived inside `module.py`,
+and two `editor.py` files were a Step Details section and a tab's sub-widget. A newcomer
+could not tell where a surface was from a directory listing, which is the one view of a
+package everybody has.
+
+**Now a Qt file's name says its role:**
+
+- `activity.py` (or `<x>_activity.py` where a package has several tabs, as `debug` does) is
+  a tab, with the widgets only that tab hosts;
+- `dialog.py` or `<x>_dialog.py` is a modal, modal lists included;
+- `scene.py` is a `QGraphicsScene`;
+- `panel.py`, `status_widget.py`, `section.py` and `settings_page.py` are what CLAUDE.md lists.
+
+**The first three are checked from the class hierarchy.** An `ActivityBase`, `DialogFrame`
+or `QGraphicsScene` subclass, followed through subclasses across files, must sit in a file
+named for its role. A test reads the classes rather than trusting the names, because a
+convention a reviewer has to remember is the one the next feature forgets. The last four
+have no base class to key on: a section is an `InspectorSection` value, and a status-bar
+widget is any widget. They stay documented.
+
+**A mixed file gave up its dialog, not its logic.** `repo_picker.py` keeps the picker and
+`repositories_folder.py` the remembered folder. Their dialogs, with the code only a dialog
+uses, moved beside them (`repo_list_dialog.py`, `repositories_folder_dialog.py`), so the
+headless remainder no longer imports a dialog. The design example's sample rows became
+`design_sample.py`. Without it the dialog and the tab would import each other.
+
+**`HEADLESS_FILES` became package-relative for the same reason.** Matched by bare name,
+`schedule.py` meant whichever file had that name in any package. When `time_estimates`
+became `schedule`, its `schedule.py` was renamed `assumptions.py`, the entry matched nothing,
+and the file silently left the rule. The test now lists generic roles once (`HEADLESS_ROLES`:
+`cli.py`, `aspect.py`, `report.py`, …) and every other file by package and path. A listed
+path that does not exist fails the suite.
+
+**`tests/modules/<package>/` mirrors `modules/<package>/`**, and a test folder must name a
+package. That turns each area file's `paths:` into one `{src/dplanner,tests}/modules/{…}/**`
+glob rather than a hand-kept list of test files. A test of the composition root, or of
+several packages at once, stays at `tests/modules/` beside the root it tests.
+
 ## Progression is the status-aware frontier
 
 **The surface is named for the question; the derivation keeps the answer's name.** A person
