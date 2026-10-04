@@ -9,7 +9,7 @@ Three numbers per series, all in working days:
 - **moves**: on how many days it moved at all.
 
 A forecast that is right and still scores zero on all three. *By the book* must, every day
-(``tests/modules/test_time_simulation.py``); ``scripts/time_accuracy.py`` prints the rest.
+(``tests/modules/schedule/test_time_simulation.py``); ``scripts/time_accuracy.py`` prints the rest.
 """
 
 from collections.abc import Sequence

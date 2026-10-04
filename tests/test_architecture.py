@@ -615,6 +615,16 @@ def test_a_file_name_says_what_it_holds() -> None:
     assert not breaches, "file roles (rule 15):\n" + "\n".join(breaches)
 
 
+def test_the_module_tests_mirror_the_packages() -> None:
+    """``tests/modules/<package>/`` holds the tests of ``modules/<package>/``, so a folder there
+    names a package; a test of the composition root, or of several packages at once, sits at
+    ``tests/modules/`` itself, beside the root it tests."""
+    tests = Path(__file__).parent / "modules"
+    folders = {path.name for path in tests.iterdir() if path.is_dir() and path.name[0] != "_"}
+    packages = {path.parent.name for path in (SRC / "modules").glob("*/__init__.py")}
+    assert folders <= packages, f"test folders naming no package: {sorted(folders - packages)}"
+
+
 def test_the_role_rule_sees_a_tab_a_modal_and_a_view(tmp_path) -> None:
     """Self-check for rule 15 over a throwaway tree: a tab two subclasses deep in module.py,
     a modal in a plain file and a ``view.py`` are each named."""

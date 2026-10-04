@@ -20,7 +20,7 @@ from dplanner.modules.schedule.assumptions import FocusChange
 from dplanner.modules.schedule.simulation.frames import Frame, PlanState, StepState
 from dplanner.planning.status import Status
 
-FIXTURE = Path(__file__).parent.parent / "fixtures" / "time" / "parity.json.gz"
+FIXTURE = Path(__file__).parents[2] / "fixtures" / "time" / "parity.json.gz"
 
 
 @cache

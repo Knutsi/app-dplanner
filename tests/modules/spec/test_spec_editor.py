@@ -5,7 +5,7 @@ arriving file attached beside the document and linked at the caret. So the widge
 this file tests *behaviour through the tab* rather than a widget of its own: there is no
 spec-specific editor left to unit-test, which is the point of the change.
 
-The session tests drive the built application the way ``tests/modules/test_spec.py`` does.
+The session tests drive the built application the way ``tests/modules/spec/test_spec.py`` does.
 """
 
 # -- editing sessions in the built application -------------------------------------------------

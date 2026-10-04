@@ -8,7 +8,7 @@ thing that can keep them honest is a test that compares them against one another
 against a literal — and that is what most of this file does.
 
 The deal itself (the maps, the centred sampling, an override pinning one milestone) is
-``tests/modules/test_time_estimates.py``'s; here it is only ever the *source* the surfaces
+``tests/modules/schedule/test_time_estimates.py``'s; here it is only ever the *source* the surfaces
 are checked against.
 """
 

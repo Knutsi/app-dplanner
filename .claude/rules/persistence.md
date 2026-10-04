@@ -4,12 +4,11 @@ paths:
   - "src/dplanner/core/storage/**"
   - "src/dplanner/core/{fsio,repository}.py"
   - "src/dplanner/framework/{autosave,session,window_watch,project_list_segment}.py"
-  - "src/dplanner/modules/{sync,library,library_watch,agent_at_work,projects,project_archive,github}/**"
+  - "{src/dplanner,tests}/modules/{sync,library,library_watch,agent_at_work,projects,project_archive,github}/**"
   - "src/dplanner/cli/discovery.py"
   - "tests/domain/test_{store,library_file,plan_repo,relocate,repositories,at_work,project_locations,migration_v3}*.py"
   - "tests/core/test_{storage_contract,locations,pointer,remotes,sparse}.py"
   - "tests/framework/test_{autosave,session}.py"
-  - "tests/modules/test_{sync,library,agent_at_work,projects,project_dialog,open_projects,move_plan,github}*.py"
   - "tests/cli/test_{library_verbs,project_repos,agent_work}.py"
 ---
 

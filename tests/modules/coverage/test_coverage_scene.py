@@ -3,7 +3,7 @@ drill-down that fills the lanes to their right; a double-click opens the thing; 
 verbs that reach it; and the size hint the splitter has to be able to trust."""
 
 import pytest
-from tests.modules.test_spec import imported
+from tests.modules.spec.test_spec import imported
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand
 from dplanner.domain.model import Step

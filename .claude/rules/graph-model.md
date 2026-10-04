@@ -3,16 +3,13 @@ paths:
   - "src/dplanner/domain/{model,commands,ids}.py"
   - "src/dplanner/cli/lookup.py"
   - "src/dplanner/modules/steps/**"
-  - "src/dplanner/modules/auto_progress/**"
-  - "src/dplanner/modules/branches/**"
+  - "{src/dplanner,tests}/modules/{auto_progress,branches}/**"
   - "src/dplanner/domain/branches.py"
   - "tests/domain/test_{model,ids}.py"
   - "tests/modules/canvas/test_stack_edits.py"
-  - "tests/modules/test_auto_progress*.py"
   - "tests/cli/test_auto_progress_verbs.py"
   - "tests/domain/test_branches.py"
   - "tests/cli/test_branch_verbs.py"
-  - "tests/modules/test_branch_stretches.py"
 ---
 
 # Graph model — edges, auto-progress links, step numbers and isolation

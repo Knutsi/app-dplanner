@@ -6,7 +6,9 @@ paths:
   - "src/dplanner/cli/scopes.py"
   - "tests/planning/test_scope.py"
   - "tests/core/test_anchors.py"
-  - "tests/modules/test_{testing,docs,notes,feature,coverage,spec_passages,focus_seams}*.py"
+  - "tests/modules/{testing,docs,notes,feature,coverage,step_start}/**"
+  - "tests/modules/spec/test_spec_passages.py"
+  - "tests/modules/test_focus_seams.py"
   - "tests/cli/test_{scopes,feature_verbs,coverage_verbs,note_verbs,start_verbs}.py"
   - "scripts/render_documentation.py"
 ---

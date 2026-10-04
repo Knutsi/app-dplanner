@@ -1,11 +1,10 @@
 ---
 paths:
-  - "src/dplanner/modules/{schedule,status_board,step_order,estimation,step_wait}/**"
+  - "{src/dplanner,tests}/modules/{schedule,status_board,step_order,estimation,step_wait}/**"
   - "src/dplanner/domain/ordering.py"
   - "src/dplanner/planning/{schedule,progression,status,estimate,dates}.py"
   - "src/dplanner/cli/report/axis.py"
   - "src/dplanner/theme/palettes.py"
-  - "tests/modules/test_{time_estimates,time_progress,time_present,time_pace,step_statuses_tab,control_centre,step_order,milestone_colors,estimation_bulk}.py"
   - "tests/domain/test_ordering.py"
   - "tests/planning/test_{schedule,progression,status,dates}.py"
   - "tests/cli/test_{time_matrix,progression_verbs}.py"
@@ -140,7 +139,7 @@ paths:
   `schedule matrix`, `progress show|record` and the report — reading a day still going
   (`day_over` False: a step due today has until tonight); only the parity harness and the
   simulator read days that are over. **The model is the prototype's to the day**:
-  `tests/modules/test_time_parity.py` replays its scenarios through the real aspect writers
+  `tests/modules/schedule/test_time_parity.py` replays its scenarios through the real aspect writers
   (`simulation/frames.py`) and compares every forecast, so a model change that moves one
   of them is made in the prototype first, its fixture regenerated, then here; one that
   moves none — milestones worked in parallel, which its scenarios never play, and *Adjust

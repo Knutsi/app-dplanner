@@ -11,7 +11,7 @@ paths:
   - "tests/domain/test_dictation.py"
   - "tests/framework/test_{debounce,diagnostics,session,builder,llm_service,task_runner,gc_policy,dictation_service,dictation_verb,recording,key_dialog}.py"
   - "tests/cli/test_telemetry_verbs.py"
-  - "tests/modules/test_{dictation_module,dictation_whisper,openai_dictation}.py"
+  - "tests/modules/{openai,dictation,dictation_whisper,taskcenter}/**"
   - "tests/test_measure_scaling.py"
   - "scripts/{measure_scaling,synthetic_library,render_dictation}.py"
 ---

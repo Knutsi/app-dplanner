@@ -5,7 +5,7 @@ in the spec index. The door itself — the clone, the guard, the shell — is
 configuration."""
 
 import pytest
-from tests.modules.spec_git_helpers import clean_git, git, make_remote  # noqa: F401
+from tests.modules.spec_git.spec_git_helpers import clean_git, git, make_remote  # noqa: F401
 
 from dplanner.core.storage import sparse
 from dplanner.domain.document_source import SourceUnavailableError

@@ -11,7 +11,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
-from tests.modules.time_helpers import frame_of, run_id, runs
+from tests.modules.schedule.time_helpers import frame_of, run_id, runs
 
 from dplanner.modules.schedule.cli import Readers
 from dplanner.modules.schedule.progress import read_history, read_saved

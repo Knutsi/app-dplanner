@@ -4,7 +4,7 @@ A step names a verb by its action id rather than describing one, so the button b
 *is* that verb — the File menu's New Project…, the Tools menu's Install DPlanner… — greyed
 with the verb's own words when it cannot run here, and still right if the verb is ever
 refiled. The words are README's *What a plan is* and *Working with an agent*, cut to what a
-person needs before their first click. ``tests/modules/test_home.py`` holds every id to the
+person needs before their first click. ``tests/modules/home/test_home.py`` holds every id to the
 registry, since a step naming a verb nobody registered would be a button that does nothing.
 """
 

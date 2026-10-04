@@ -6,7 +6,8 @@ paths:
   - "src/dplanner/modules/*/{cli,checks,report}.py"
   - "src/dplanner/modules/{install,checklist,reporting}/**"
   - "tests/cli/**"
-  - "tests/modules/test_{install_dialog,checklist_dialog,module_checks,reporting}.py"
+  - "tests/modules/{install,checklist,reporting}/**"
+  - "tests/modules/test_module_checks.py"
   - "scripts/{render_checklist,render_sample_report,render_topology}.py"
 ---
 

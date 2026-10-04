@@ -7,7 +7,7 @@ runs through the application the composition root builds.
 """
 
 import pytest
-from tests.modules.test_review_tab import by_title, review_tab
+from tests.modules.step_review.test_review_tab import by_title, review_tab
 
 from dplanner.domain.commands import (
     AddNodeCommand,

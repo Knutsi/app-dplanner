@@ -2,8 +2,9 @@
 paths:
   - "src/dplanner/modules/{agent_briefing,agent_launch,agent_usage,step_agent_instruction,step_agent_run,step_review,agent_claude,agent_codex,agent_opencode}/**"
   - "src/dplanner/domain/agents.py"
-  - "tests/modules/test_{agent_*,expenditure_tab,launch_intents}.py"
-  - "tests/{cli,modules}/test_review*.py"
+  - "tests/modules/{agent_launch,agent_usage,step_agent_instruction,step_agent_run,step_review}/**"
+  - "tests/modules/test_agent_readers.py"
+  - "tests/cli/test_review*.py"
   - "scripts/render_briefing_size.py"
 ---
 

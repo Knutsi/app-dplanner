@@ -61,7 +61,7 @@ UNCATEGORISED: Final = "Uncategorised"
 # curated subset rather than the whole directory, because a picker of seventy-four glyphs —
 # undo, redo, bold — is a wall of its own; these are the ones that say something about a
 # *kind of test*. Named here, in the Qt-free half, so the CLI can refuse an unknown one
-# without a graphics stack; ``tests/modules/test_testing_filing.py`` checks every name
+# without a graphics stack; ``tests/modules/testing/test_testing_filing.py`` checks every name
 # still has an SVG beside ``theme/icons.py``.
 ICONS: Final[tuple[str, ...]] = (
     "beaker",

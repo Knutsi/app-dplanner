@@ -3,7 +3,7 @@ thread, and what the person's pick becomes. The engine behind it is covered in
 ``test_spec_git_source.py``."""
 
 import pytest
-from tests.modules.spec_git_helpers import clean_git, make_remote, wait_for  # noqa: F401
+from tests.modules.spec_git.spec_git_helpers import clean_git, make_remote, wait_for  # noqa: F401
 
 from dplanner.core.storage import sparse
 from dplanner.domain.document_source import SourceUnavailableError

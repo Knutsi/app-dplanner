@@ -1,9 +1,8 @@
 ---
 paths:
-  - "src/dplanner/modules/{spec,spec_folder,spec_git,spec_confluence}/**"
+  - "{src/dplanner,tests}/modules/{spec,spec_folder,spec_git,spec_confluence}/**"
   - "src/dplanner/domain/document_{folder,source}.py"
   - "src/dplanner/core/secrets.py"
-  - "tests/modules/{test_spec,test_confluence,spec_git_helpers}*.py"
   - "tests/cli/{test_spec_,spec_helpers}*.py"
   - "tests/domain/test_document_*.py"
   - "tests/core/test_secrets.py"

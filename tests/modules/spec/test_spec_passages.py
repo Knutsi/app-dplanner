@@ -3,7 +3,7 @@ the PDF viewer's boxes — the tab's side of the coverage seam."""
 
 import pytest
 from tests.cli.spec_helpers import tiny_pdf
-from tests.modules.test_spec import imported
+from tests.modules.spec.test_spec import imported
 
 from dplanner.core import anchors
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand

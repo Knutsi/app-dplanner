@@ -12,7 +12,7 @@ them.
 
 Nothing here reads the model or the recorder: this is what happened, not what DPlanner
 wrote down about it. It is the HTML prototype's world, step for step, so a scenario and a
-seed play the same days in both (``tests/modules/test_time_simulation.py`` holds it to the
+seed play the same days in both (``tests/modules/schedule/test_time_simulation.py`` holds it to the
 prototype's frames).
 """
 

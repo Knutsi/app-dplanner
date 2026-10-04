@@ -1265,7 +1265,7 @@ the context, the same idiom that keeps the Undo label current.
 editor. Ctrl+X, Ctrl+C, Ctrl+V, Ctrl+D and Ctrl+A are different, and this was measured
 rather than assumed: `QPlainTextEdit` and `QLineEdit` claim all of them through
 `ShortcutOverride`, so a window-wide menu shortcut never fires while an editor has focus —
-the property `tests/modules/test_appshell.py` pins for Ctrl+Shift+Right. A table claims
+the property `tests/modules/appshell/test_appshell.py` pins for Ctrl+Shift+Right. A table claims
 none of them, but every table here is a tab, so no table ever competes with a canvas for a
 key, and a table has no Ctrl+X of its own to lose. Delete is the exception in the other
 direction: a bare `Del` on the menu bar would fire in every list in the window, and
@@ -6471,7 +6471,7 @@ prototype (`docs/exploration/time-estimation-2` on its own branch, never merged)
 both over twelve simulated teams and adopted a third: **the plan's own dates stand while
 reality matches them; otherwise the rest resumes from tomorrow, with work in flight
 credited.** `phases(…, facts=ScheduleFacts)` is that model, and
-`tests/modules/test_time_parity.py` holds it to the prototype's forecast on every day of
+`tests/modules/schedule/test_time_parity.py` holds it to the prototype's forecast on every day of
 every scenario, three seeds each — the prototype's fixture replayed through the real aspect
 writers (`schedule/simulation/frames.py`), so the stored `since` the model reads is the
 one the status aspect stamped. The rule is `.claude/rules/schedule.md`'s *The plan re-dates
@@ -8739,7 +8739,7 @@ the usual spans, how long the GUI thread was held, how many times the context wa
 announced and how many times the dock relaid itself — the number to quote before
 touching any of this.
 `tests/modules/canvas/test_canvas.py` asserts one announcement and no relayout per
-connect and per paste in the window's deferred regime, and `tests/modules/test_sync.py`
+connect and per paste in the window's deferred regime, and `tests/modules/sync/test_sync.py`
 that a step add asks git nothing.
 
 **An action's state is read on every announce, so it may not derive anything over the
@@ -8763,7 +8763,7 @@ runs inline, so the answer a test reads is always current and the settle never r
 the announce it was read from (`_reading`). `collect.frontier` is the derivation, one
 walk per collector where the state made three; `docs status` reads `compiled_state` over
 sources it already holds for the same reason.
-`tests/modules/test_docs_compile.py` asserts, in the deferred regime, that ten reads walk
+`tests/modules/docs/test_docs_compile.py` asserts, in the deferred regime, that ten reads walk
 nothing, that a change leaves the label as it was until the settle, and that the settle
 announces.
 

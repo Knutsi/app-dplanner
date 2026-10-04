@@ -10,7 +10,7 @@ from datetime import date
 from typing import Any
 
 import pytest
-from tests.modules.time_helpers import frame_of, run_id, runs
+from tests.modules.schedule.time_helpers import frame_of, run_id, runs
 
 from dplanner.domain.model import Project
 from dplanner.modules.schedule.cli import Readers
