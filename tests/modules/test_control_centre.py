@@ -19,11 +19,12 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Step
 from dplanner.framework.context import activity_uri
-from dplanner.modules.progression.module import (
+from dplanner.modules.status_board.activity import (
     CONTROL_CENTRE_KIND,
+    PROJECT_COLUMN,
+    STEP_COLUMN,
     ControlCentreActivity,
 )
-from dplanner.modules.progression.view import PROJECT_COLUMN, STEP_COLUMN
 
 
 def add(services, project, title, *after):

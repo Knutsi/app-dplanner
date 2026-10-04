@@ -77,7 +77,6 @@ if TYPE_CHECKING:
     from dplanner.modules.feature.module import FeatureModule
     from dplanner.modules.notes.module import NotesModule
     from dplanner.modules.problems.module import ProblemsModule
-    from dplanner.modules.progression.module import ProgressionModule
     from dplanner.modules.project_archive.module import ProjectArchiveModule
     from dplanner.modules.project_assets.module import ProjectAssetsModule
     from dplanner.modules.projects.checkouts import CheckoutService
@@ -88,6 +87,7 @@ if TYPE_CHECKING:
     from dplanner.modules.spec.module import SpecModule
     from dplanner.modules.spec.source_kind import DocumentSourceKind
     from dplanner.modules.spec_confluence.module import SecretStore, SpecConfluenceModule
+    from dplanner.modules.status_board.module import ProgressionModule
     from dplanner.modules.step_agent_instruction.module import StepAgentInstructionModule
     from dplanner.modules.step_agent_run.module import StepAgentRunModule
     from dplanner.modules.step_order.module import StepOrderModule
@@ -1137,16 +1137,12 @@ def _project_tabs(root: _Root) -> _Tabs:
     from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
     from dplanner.modules.notes.module import NotesDeps, NotesModule
-    from dplanner.modules.progression.module import (
-        ProgressionDeps,
-        ProgressionModule,
-        StripVerb,
-    )
     from dplanner.modules.project_assets.module import (
         ProjectAssetsDeps,
         ProjectAssetsModule,
     )
     from dplanner.modules.reporting.module import ReportingDeps, ReportingModule
+    from dplanner.modules.status_board.module import ProgressionDeps, ProgressionModule, StripVerb
     from dplanner.modules.step_agent_run.aspect import asks_person
     from dplanner.modules.step_description.aspect import read as description_read
     from dplanner.modules.step_order.module import StepOrderDeps, StepOrderModule
@@ -2584,7 +2580,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
     from dplanner.modules.feature.report import report_source as features
     from dplanner.modules.github.report import report_source as github
     from dplanner.modules.notes.report import report_source as notes
-    from dplanner.modules.progression.report import report_source as progression
+    from dplanner.modules.status_board.report import report_source as progression
     from dplanner.modules.step_description.report import report_source as descriptions
     from dplanner.modules.step_milestone.report import report_source as milestones
     from dplanner.modules.step_order.report import report_source as order
@@ -2998,12 +2994,12 @@ def default_cli_commands(
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.library import cli as library_cli
     from dplanner.modules.notes import cli as note_cli
-    from dplanner.modules.progression import cli as progression_cli
     from dplanner.modules.project_assets import cli as assets_cli
     from dplanner.modules.project_assets.cli import read_titles
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.spec.aspect import read_topology
+    from dplanner.modules.status_board import cli as progression_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
     from dplanner.modules.step_agent_run import cli as agent_state_cli
     from dplanner.modules.step_agent_run.aspect import asks_person

@@ -6112,8 +6112,8 @@ the byte, which is how the move was shown to change no text.
 **The surface is named for the question; the derivation keeps the answer's name.** A person
 opens this tab to find out what needs them, so it is called *Step statuses* — in the tab
 title, the two menu entries and the index row — and the title counts the rows that need a
-person, the one number worth reading from across the window. Everything underneath stays
-`progression`: the walk, the module id, the activity kind, the action ids and `dplanner
+person, the one number worth reading from across the window, and the package that renders
+it is `modules/status_board/`. Everything underneath stays `progression`: the walk, the module id, the activity kind, the action ids and `dplanner
 progression show`. That split is deliberate three ways. The derivation puts every step into
 one of eight partitions and the table shows only some of them, so *Step statuses* would be
 the wrong name for the function. The kind and the ids are the contract the per-user store
@@ -6211,7 +6211,7 @@ The rules worth writing down, because each was a decision:
 day, and the wait is still a module's aspect — and the estimate is read from the planning
 tier; the derivation is tested with dict-backed functions in their place. Nothing
 is persisted, for the ordering's reason — `dplanner status set` changes the answer with no
-window running to notice. The tab (`modules/progression/`), `dplanner progression show` and
+window running to notice. The tab (`modules/status_board/`), `dplanner progression show` and
 `--json` are three readers of the one function, so no surface can recommend a launch
 another surface would dispute.
 

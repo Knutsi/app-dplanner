@@ -107,7 +107,7 @@ def test_the_table_follows_a_status_change_and_its_undo(services, project, tab):
 
 
 def test_a_row_says_its_key_and_what_finishing_it_unblocks(services, project, tab):
-    from dplanner.modules.progression.view import STEP_COLUMN, UNBLOCKS_COLUMN
+    from dplanner.modules.status_board.activity import STEP_COLUMN, UNBLOCKS_COLUMN
 
     row = tab.table.row_of(project.steps[0].id)
     assert tab.table.item(row, STEP_COLUMN).data(DETAIL_ROLE) == "S1"
@@ -187,7 +187,7 @@ def _press(app, table, row, column, kind=None):
 def test_a_click_on_a_box_ticks_that_row_and_the_ticks_are_published(app, services, project, tab):
     """The box is the selection's own target: a click adds its row and leaves the others,
     and what is ticked is what the Step menu and the strip act on."""
-    from dplanner.modules.progression.view import CHECK_COLUMN
+    from dplanner.modules.status_board.activity import CHECK_COLUMN
 
     tab.on_activated()
     b, c = project.steps[1], project.steps[2]
@@ -204,7 +204,7 @@ def test_a_double_click_on_a_box_is_two_ticks_and_opens_nothing(
 ):
     from PySide6.QtCore import QEvent
 
-    from dplanner.modules.progression.view import CHECK_COLUMN
+    from dplanner.modules.status_board.activity import CHECK_COLUMN
 
     opened = []
     monkeypatch.setattr(services.actions, "run", lambda action_id, ctx: opened.append(action_id))
@@ -218,7 +218,7 @@ def test_double_clicking_a_row_opens_its_details(app, services, project, tab, mo
     """The one gesture across the application: against a context naming the row's step."""
     from PySide6.QtCore import QEvent
 
-    from dplanner.modules.progression.view import STEP_COLUMN
+    from dplanner.modules.status_board.activity import STEP_COLUMN
 
     opened = []
     monkeypatch.setattr(
@@ -400,7 +400,8 @@ def test_more_ticks_than_the_limit_grey_run_agent_with_the_count_as_the_reason(
 
 def test_a_build_without_the_verbs_seats_none(services, project):
     """Hidden means absent: a build the root names no verbs for has a strip of the filter."""
-    from dplanner.modules.progression.module import ProgressionActivity, ProgressionDeps
+    from dplanner.modules.status_board.activity import ProgressionActivity
+    from dplanner.modules.status_board.module import ProgressionDeps
 
     activity = ProgressionActivity(
         ProgressionDeps(
@@ -500,7 +501,7 @@ def test_the_window_and_the_terminal_agree(services, project, tab):
 
 
 def test_one_project_s_rows_do_not_name_it(tab):
-    from dplanner.modules.progression.view import PROJECT_COLUMN
+    from dplanner.modules.status_board.activity import PROJECT_COLUMN
 
     assert tab.table.isColumnHidden(PROJECT_COLUMN)
 
@@ -508,7 +509,7 @@ def test_one_project_s_rows_do_not_name_it(tab):
 def test_a_press_on_a_row_s_menu_asks_for_that_row_s_menu(app, project, tab, monkeypatch):
     from PySide6.QtCore import QEvent
 
-    from dplanner.modules.progression.view import MENU_COLUMN
+    from dplanner.modules.status_board.activity import MENU_COLUMN
 
     asked: list[int] = []
     monkeypatch.setattr(tab, "row_menu", asked.append)
@@ -523,7 +524,7 @@ def test_a_row_s_menu_is_about_that_row_alone_and_greys_what_cannot_run(
 ):
     """Two rows ticked, the second's ⋮ pressed: the menu is about the second. The verbs
     about one step read the first picked, so a pick of two would aim them elsewhere."""
-    from dplanner.modules.progression.view import CHECK_COLUMN
+    from dplanner.modules.status_board.activity import CHECK_COLUMN
 
     tab.on_activated()
     b, c = project.steps[1], project.steps[2]

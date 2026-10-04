@@ -19,12 +19,12 @@ from dplanner.modules.coverage.activity import COVERAGE_KIND
 from dplanner.modules.docs.activity import DOCS_KIND, DocsActivity
 from dplanner.modules.estimation.bulk import ESTIMATE_KIND, BulkEstimateActivity
 from dplanner.modules.notes.activity import NOTES_KIND
-from dplanner.modules.progression.module import (
+from dplanner.modules.project_assets.activity import ASSETS_KIND, AssetsActivity
+from dplanner.modules.status_board.activity import (
     CONTROL_CENTRE_KIND,
     PROGRESSION_KIND,
     ProgressionActivity,
 )
-from dplanner.modules.project_assets.activity import ASSETS_KIND, AssetsActivity
 from dplanner.modules.step_order.module import ORDER_KIND, OrderActivity
 
 # The module rather than the class: a name starting with "Test" bound here would be collected.

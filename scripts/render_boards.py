@@ -30,7 +30,7 @@ from dplanner.app import configure_application, new_session, set_early_attribute
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.framework.services import AppServices
-from dplanner.modules.progression.module import (
+from dplanner.modules.status_board.activity import (
     CONTROL_CENTRE_KIND,
     PROGRESSION_KIND,
     ControlCentreActivity,

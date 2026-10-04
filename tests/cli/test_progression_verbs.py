@@ -9,7 +9,7 @@ from datetime import date
 
 import pytest
 
-from dplanner.modules.progression.cli import NO_PROJECT, SEVERAL
+from dplanner.modules.status_board.cli import NO_PROJECT, SEVERAL
 
 
 @pytest.fixture

@@ -588,7 +588,7 @@ src/dplanner/
 │   │
 │   ├── step_order/          the sorted table of steps, and `dplanner order show` (its rows
 │   │                        are `framework/step_table.py`'s, which Expenditure shares)
-│   ├── progression/         the *Step statuses* tab, the *Control Centre* over every project,
+│   ├── status_board/        the *Step statuses* tab, the *Control Centre* over every project,
 │   │                        and `dplanner progression show [--all]`
 │   ├── time_estimates/      when the plan lands with its team, and the work behind it: the Time tab
 │   │                        (activity.py: four figures, then a page at a time — shift_view.py the

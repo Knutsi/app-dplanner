@@ -195,7 +195,7 @@ def test_a_source_its_collector_takes_on_is_off_both_boards_ready_for_review(ser
     """A1 is under review and C, a live agent, collects it: C's turn, so neither board lists
     it as a person's — the same answer the canvas pulses by. P, under review with nobody to
     take it on, is a person's row on both, and A1 is not in what the tab's title counts."""
-    from dplanner.modules.progression.module import CONTROL_CENTRE_KIND
+    from dplanner.modules.status_board.activity import CONTROL_CENTRE_KIND
     from dplanner.planning.status import write as status_write
 
     services.actions.run(TOGGLE, picking(services, *arrows(project, "A1")))

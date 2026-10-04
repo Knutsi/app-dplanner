@@ -251,7 +251,7 @@ to that tuple; a file the rule cannot see is a rule that is only a habit.
 7. If it has verbs, add `cli.py` with a `commands()` function returning `CliCommand`s, and
    list it in `default_cli_commands()`. Keep it Qt-free. When `commands()` needs a
    cross-module fact, take it as a **keyword-only parameter and close over it in one inner
-   wrapper** — `modules/progression/cli.py` is the worked example; don't invent a fifth
+   wrapper** — `modules/status_board/cli.py` is the worked example; don't invent a fifth
    injection style.
 8. Construct it in the root's builder for its cluster (`_agents`, `_graph`, `_aspects`, …) and
    list it in `default_modules()`. **List order is registration order and it matters** —

@@ -1,6 +1,6 @@
 ---
 paths:
-  - "src/dplanner/modules/{time_estimates,progression,step_order,estimation,step_wait}/**"
+  - "src/dplanner/modules/{time_estimates,status_board,step_order,estimation,step_wait}/**"
   - "src/dplanner/domain/ordering.py"
   - "src/dplanner/planning/{schedule,progression,status,estimate,dates}.py"
   - "src/dplanner/cli/report/axis.py"
@@ -42,8 +42,8 @@ paths:
   **Every partition a person acts on is ranked by `unlocks`** (the map covers every step
   of work not done), ties in project order. **The surface is named for the question and
   the derivation for the answer**: the tab, its menu entries and its index row say *Step
-  statuses* — the title adds how many rows need a person — while the walk, the module id,
-  the activity kind and the verb stay `progression`, because the groups are some of the
+  statuses* — the title adds how many rows need a person — and the package is `status_board`,
+  while the walk, the module id, the activity kind and the verb stay `progression`, because the groups are some of the
   partitions it computes and a renamed verb would move under every agent that has the
   skill. **The tab is a table of what needs a person**, never lanes: Blocked, Ready to
   merge, Ready for review, Ready to start, then Waiting (temporary, until a tab of what is

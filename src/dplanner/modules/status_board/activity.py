@@ -1,15 +1,27 @@
-"""Step statuses and the Control Centre: what needs a person right now — in one project, as a
-tab beside its graph, or in every project at once.
+"""The Step statuses tab and the Control Centre: what needs a person right now, grouped, a
+box on every row — one project's, or every project's in the Control Centre.
 
-The graph plans the work; these tabs are for the weeks the work is *happening*, and they ask
-one question: what needs me? A table answers it, grouped the way the work comes back to a
-person — Blocked, Waits for you, Ready to merge, Ready for review, Ready to start — with
-Waiting, what cannot start yet, last. Work an agent is doing is not listed: it needs
-nobody — unless the agent waits on a person, a plan to approve or a question to answer,
-which is *Waits for you* (``asks_person``, the agent-run aspect's reading). The walk
-itself is the domain's (``planning/progression.py``) — this module renders it and adds
-nothing to the model, so the tabs, ``dplanner progression show`` and ``--json`` can never
-disagree.
+Pure rendering — the planning tier's :class:`~dplanner.planning.progression.Progression` arrives
+computed and the table is rebuilt wholesale, so nothing here can disagree with the model.
+The groups are the partitions a person acts on — Blocked and Waits for you, what is stuck
+on a person, then in the order the work is closest to done Ready to merge, Ready for
+review, Ready to start — and then Waiting, what cannot start yet. Work in progress is not
+listed: an agent at work needs nobody, and the tab is for the rows that do — which is why
+an agent that waits on a person (a plan to approve, a question) is, and why work under
+review that an agent takes on (a review of it, a collector) is not.
+
+**The box is the selection.** The first column is a check column (``Column(check=True)``):
+ticking a row picks it, and the host publishes what is picked, so the strip's verbs, the
+right-click Step menu and Run Agent's profiles all act on exactly the ticked rows. The
+picks survive a rebuild by step id — an accepted review is still ticked in its new group.
+
+A row's glyph is Find's: a milestone's key as a badge in its own shade, otherwise who works
+the step — the glyph its key block wears — painted in the palette's ink, so a palette change
+paints the rows again (``changeEvent``): a colour taken out of the palette goes stale.
+
+**A row names its project only where the rows span several** — the Project column stands
+down on one project's tab, where every row would say the same. **And a row ends in its ⋮**
+(``Column(menu=True)``): the host builds that row's verbs when it is pressed.
 
 **Two tabs, one board.** :class:`StatusBoard` is everything the two share — the strip, the
 table, the row's ⋮, the refresh — over the projects a subclass names. *Step statuses*
@@ -20,85 +32,236 @@ because a project's tab closes with its project (``follow_project_tabs``) and th
 Centre has no project to close with. Each project is walked on its own and the board is
 their merge (``progression.merge``), so a filter over projects re-merges what was walked
 and never walks the graph again.
-
-**The surface is named for the question, the derivation for the answer.** The tab is
-*Step statuses*, with the count of rows needing a person in its title; the walk stays
-``progression()`` and so does the verb, because the groups are only some of the partitions
-it computes. The module id, the activity kind and the action ids are the on-disk and
-in-registry contract and are untouched by the renaming.
-
-Five seams, all established elsewhere in this application:
-
-- **Statuses arrive as a function** (``status_for``), wired by the composition root from
-  the status aspect's Qt-free reader — this module never learns what one is stored as. It
-  reads today when asked, so both tabs re-run when the day turns (``clock.day_changed``):
-  a step behind a dated wait joins Ready the morning it may start.
-- **The ticked rows are the selection**, published as the selection scope, so the Step
-  menu's verbs, the strip's and Run Agent's profiles all act on exactly them — across
-  projects in the Control Centre, where every verb resolves each step's own project.
-- **The strip seats registry verbs the root names** (``verbs``) — Run Agent with its
-  profiles, the status verbs a person moves finished work on with — each restated on every
-  context change, greyed with its own reason, and never a copy: this module never learns
-  the agent or status modules exist.
-- **A row's ⋮ renders the Step menu's bands about that step** (:data:`ROW_MENU`): its
-  agent's terminal, a shell in its worktree, its pull request, its details, where it shows.
-  It picks that row alone first, because the verbs about one step read the first picked.
-- **Activating a row opens its details**, by running ``steps.details`` against a context
-  naming exactly that row's step.
 """
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
-from typing import Final
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Final
 
-from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QAction, QIcon
+from PySide6.QtCore import QEvent, QItemSelectionModel, QPoint, Qt
+from PySide6.QtGui import QAction, QColor, QIcon
 from PySide6.QtWidgets import QHBoxLayout, QMenu, QVBoxLayout, QWidget
 
-from dplanner.core.clock import Clock
-from dplanner.domain.model import Library, NodeId, Project, Step, StepId
+from dplanner.domain.model import NodeId, Project, Step, StepId
 from dplanner.domain.short_titles import UNTITLED
 from dplanner.framework.action_menu import Band, build_menu, fill_bands
-from dplanner.framework.action_registry import (
-    DISABLED,
-    ENABLED,
-    ActionRegistry,
-    ActionSpec,
-    ActionState,
-)
 from dplanner.framework.activity import (
     EntityActivity,
     follow_project,
-    follow_project_tabs,
     project_tab_title,
 )
 from dplanner.framework.context import (
     SCOPE_SELECTION,
     Context,
     ContextNode,
-    ContextService,
     Uri,
     activity_uri,
     selection_uri,
 )
-from dplanner.framework.debounce import Debounced, DebounceService
-from dplanner.framework.index_panel import IndexSegment, IndexSegmentRegistry, SurfaceSegment
+from dplanner.framework.debounce import Debounced
+from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.segmented import Segmented
 from dplanner.framework.signalling import UpdatingIndicator
-from dplanner.framework.step_selection import focused_project
-from dplanner.framework.tabs import TabHost
+from dplanner.framework.table import Cell, Column, Table
 from dplanner.framework.toolbar import FilterButton, Toolbar
 from dplanner.framework.widgets import EmptyState
-from dplanner.modules.progression.view import ALL, GROUPS, StatusTable, needing_a_person
 from dplanner.planning.progression import Progression, merge, progression
-from dplanner.planning.status import Status
-from dplanner.theme.icons import gauge_icon
-from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECTION_GAP
+from dplanner.theme.icons import glyph_painter, step_icon
+from dplanner.theme.tokens import FIELD_GAP, PANEL_MARGIN, SECONDARY_ALPHA, SECTION_GAP
 
-MODULE_ID = "progression"
+if TYPE_CHECKING:  # module.py imports this file, so the Deps arrive as a forward name.
+    from dplanner.modules.status_board.module import ProgressionDeps
+
 PROGRESSION_KIND = "progression"
 CONTROL_CENTRE_KIND = "control_centre"
 CONTROL_CENTRE = "Control Centre"
+
+
+STEP_ROLE = HOST_ROLE
+CHECK_COLUMN, STEP_COLUMN, PROJECT_COLUMN, UNBLOCKS_COLUMN, MENU_COLUMN = range(5)
+COLUMNS = (
+    Column("", check=True),
+    Column("Step", glyph=True, detail=True, resize="stretch"),
+    Column("Project"),
+    Column("Unblocks", numeric=True),
+    Column("", menu=True),
+)
+ROW_MENU_TIP = "What you can do with this step"
+
+ALL = "all"
+
+
+@dataclass(frozen=True)
+class Group:
+    """One kind of row: its key (the filter's value and the heading's fold), the heading's
+    words, the filter's word, what the table says when it is the only one and empty, its
+    steps in the order the derivation ranked them, and whether they wait on a person —
+    everything but Waiting does, which is the rest of the plan."""
+
+    key: str
+    heading: str
+    label: str
+    empty: str
+    rows: Callable[[Progression], tuple[Step, ...]]
+    needs_person: bool = True
+
+
+GROUPS = (
+    Group("blocked", "Blocked", "Blocked", "Nothing is blocked.", lambda found: found.attention),
+    Group(
+        "asking",
+        "Waits for you",
+        "Answer",
+        "No agent is waiting for you.",
+        lambda found: found.asking,
+    ),
+    Group(
+        "merge",
+        "Ready to merge",
+        "Merge",
+        "Nothing is waiting on a merge.",
+        lambda found: found.merge,
+    ),
+    Group(
+        "review",
+        "Ready for review",
+        "Review",
+        "Nothing is ready for review.",
+        lambda found: found.review,
+    ),
+    Group(
+        "start", "Ready to start", "Start", "Nothing is ready to start.", lambda found: found.ready
+    ),
+    Group(
+        "waiting",
+        "Waiting",
+        "Waiting",
+        "Nothing is waiting.",
+        lambda found: (*(coming.step for coming in found.upcoming), *found.waiting),
+        needs_person=False,
+    ),
+)
+
+
+def needing_a_person(progress: Progression) -> int:
+    return sum(len(group.rows(progress)) for group in GROUPS if group.needs_person)
+
+
+class StatusTable(Table):
+    """The rows, grouped; ``show_rows`` rebuilds them for one filter."""
+
+    def __init__(
+        self,
+        *,
+        key_of: Callable[[Step], str],
+        glyph_of: Callable[[Step], str],
+        milestone_badge: Callable[[StepId], QIcon | None],
+        project_of: Callable[[Step], str],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(COLUMNS, selection="extended", parent=parent)
+        self._key_of = key_of
+        self._glyph_of = glyph_of
+        self._milestone_badge = milestone_badge
+        self._project_of = project_of
+        self._shown: tuple[Progression, str, bool] | None = None
+        # Each glyph painted once per fill, in that fill's ink: a board is hundreds of rows
+        # wearing three pictures, and an SVG rendered per row was a third of the fill.
+        self._glyphs: dict[str, QIcon] = {}
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802 - Qt override
+        """The glyphs again, in the new theme's ink.
+
+        ``getattr``, not a plain read: Qt delivers a PaletteChange from inside
+        ``QTableWidget.__init__``, before this class's own state exists.
+        """
+        shown = getattr(self, "_shown", None)
+        if event.type() == QEvent.Type.PaletteChange and shown is not None:
+            progress, group, spans = shown
+            self.show_rows(progress, group, spans=spans)
+        super().changeEvent(event)
+
+    def show_rows(self, progress: Progression, shown: str, *, spans: bool = False) -> None:
+        """Every group ``shown`` names — one, or all of them — keeping the picks; ``spans``
+        when the rows come from several projects, which is when each names its own.
+
+        Quiet while the rows are replaced: clearing and reselecting would announce the
+        selection twice, so the host hears one change or none (``picked`` tells it which).
+        """
+        self._shown = (progress, shown, spans)
+        self.setColumnHidden(PROJECT_COLUMN, not spans)
+        picked = self.picked()
+        self._glyphs.clear()
+        self.blockSignals(True)
+        try:
+            self.clear_rows()
+            for group in GROUPS:
+                steps = group.rows(progress)
+                if shown not in (ALL, group.key) or not steps:
+                    continue
+                if shown == ALL:  # One group on its own needs no heading: the filter says it.
+                    self.add_heading(group.heading, key=group.key)
+                for step in steps:
+                    self._add(step, progress.unlocks.get(step.id, 0))
+            self._reselect(picked)
+        finally:
+            self.blockSignals(False)
+
+    def _add(self, step: Step, unlocks: int) -> None:
+        self.add_row(
+            (
+                Cell(),
+                Cell(
+                    step.title or "Untitled step",
+                    detail=self._key_of(step),
+                    glyph=self._glyph(step),
+                ),
+                Cell(self._project_of(step)),
+                Cell(str(unlocks) if unlocks else ""),
+                Cell(tooltip=ROW_MENU_TIP),
+            ),
+            data={STEP_ROLE: step.id},
+        )
+
+    def _glyph(self, step: Step) -> QIcon:
+        badge = self._milestone_badge(step.id)
+        if badge is not None:
+            return badge
+        name = self._glyph_of(step)
+        if name not in self._glyphs:
+            ink = QColor(self.palette().text().color())
+            ink.setAlpha(SECONDARY_ALPHA)
+            self._glyphs[name] = (glyph_painter(name) or step_icon)(ink)
+        return self._glyphs[name]
+
+    # -- reading it back ------------------------------------------------------------------
+
+    def step_at(self, row: int) -> StepId | None:
+        item = self.item(row, STEP_COLUMN)
+        found = item.data(STEP_ROLE) if item is not None else None
+        return found if isinstance(found, str) else None
+
+    def steps(self) -> list[StepId]:
+        """Every step listed, top to bottom."""
+        return [step_id for row in range(self.rowCount()) if (step_id := self.step_at(row))]
+
+    def picked(self) -> list[StepId]:
+        """The ticked steps, top to bottom."""
+        rows = sorted({index.row() for index in self.selectedIndexes()})
+        return [step_id for row in rows if (step_id := self.step_at(row)) is not None]
+
+    def row_of(self, step_id: StepId) -> int | None:
+        return next((row for row in range(self.rowCount()) if self.step_at(row) == step_id), None)
+
+    def _reselect(self, step_ids: list[StepId]) -> None:
+        """Keep the picks across a rebuild, by step — the rows are new."""
+        wanted = set(step_ids)
+        flags = QItemSelectionModel.SelectionFlag.Select | QItemSelectionModel.SelectionFlag.Rows
+        model = self.selectionModel()
+        for row in range(self.rowCount()):
+            if self.step_at(row) in wanted:
+                model.select(self.model().index(row, STEP_COLUMN), flags)
+
 
 FILTERS = (
     (ALL, "All", "Everything that needs a person, then what is waiting"),
@@ -111,62 +274,6 @@ NOTHING_NEEDED = "Nothing needs you right now."
 # from a board — its agent and what follows one, then where it is seen. Rendered, never
 # copied, so a verb registered into either band appears here with nothing written.
 ROW_MENU: Final = (Band("Step", ("agent", "open", "surfaces")),)
-
-
-def _pending(_step: Step) -> Status:
-    return Status.PENDING
-
-
-def _no_badge(_step_id: StepId) -> QIcon | None:
-    return None
-
-
-@dataclass(frozen=True)
-class StripVerb:
-    """A registry verb the strip seats over the ticked rows, the data child menu its arrow
-    drops down, if it has one — Run Agent's profiles — and the words it wears beside its
-    glyph, if any."""
-
-    action_id: str
-    data_menu: str | None = None
-    face: str = ""
-
-
-@dataclass(frozen=True)
-class ProgressionDeps:
-    library: Library
-    actions: ActionRegistry
-    context: ContextService
-    tabs: TabHost
-    debounce: DebounceService
-    segments: IndexSegmentRegistry
-    # The status claims, as answers — a wait read done once it is over. Wired by the
-    # composition root from the status aspect's Qt-free reader; the honest default is a
-    # build where nothing is claimed.
-    status_for: Callable[[Step], Status] = field(default=_pending)
-    # Whose day it is: a wait is over on a day, so the boards re-run when it turns.
-    clock: Clock = field(default_factory=Clock)
-    # Whether a step is work at all: a wait is not, and is on no row and in no count.
-    counts_as_work: Callable[[Step], bool] = field(default=lambda _step: True)
-    # Whether a waiter may start once a source it requires is ready for review — an
-    # auto-progress link, read through the owning aspect by the composition root.
-    auto_progresses: Callable[[Step, Step], bool] = field(default=lambda _waiter, _source: False)
-    # Whether a running step's agent waits on a person — a plan to approve, a question to
-    # answer: the agent-run aspect's reading, which puts the row under *Waits for you*.
-    asks_person: Callable[[Step], bool] = field(default=lambda _step: False)
-    # Whether an agent works a step: a step under review that an agent takes on from there
-    # is that agent's turn, not a person's, and leaves *Ready for review*.
-    is_agent: Callable[[Step], bool] = field(default=lambda _step: False)
-    # The verbs a person runs over the ticked rows, named by the composition root: which
-    # they are is a fact about other modules. None seated is a build without them.
-    verbs: tuple[StripVerb, ...] = ()
-    # A milestone's key and its own shade of the project's colour map, or None for a step
-    # that is not one — the badge its row leads with. Wired by the composition root: which
-    # map a project uses is one module's assumption and the key is another's letter.
-    milestone_badge: Callable[[StepId], QIcon | None] = field(default=_no_badge)
-    # The step's key, under its title, and the canvas medallion naming what it is.
-    key_of: Callable[[Step], str] = field(default=lambda _step: "")
-    glyph_of: Callable[[Step], str] = field(default=lambda _step: "step")
 
 
 def _nodes(step_ids: list[StepId]) -> tuple[ContextNode, ...]:
@@ -183,7 +290,7 @@ class StatusBoard(EntityActivity):
     after its own strip controls exist, since the first refresh reads them.
     """
 
-    def __init__(self, deps: ProgressionDeps, entity_kind: str, entity_id: NodeId) -> None:
+    def __init__(self, deps: "ProgressionDeps", entity_kind: str, entity_id: NodeId) -> None:
         super().__init__(deps.context, entity_kind, entity_id)
         self._deps = deps
         self._filter = ALL
@@ -370,7 +477,7 @@ class StatusBoard(EntityActivity):
 class ProgressionActivity(StatusBoard):
     """One project's Step statuses."""
 
-    def __init__(self, deps: ProgressionDeps, project_id: NodeId) -> None:
+    def __init__(self, deps: "ProgressionDeps", project_id: NodeId) -> None:
         super().__init__(deps, "project", project_id)
         self.project_id = project_id
         library = deps.library
@@ -415,7 +522,7 @@ class ControlCentreActivity(StatusBoard):
     listing what it is narrowing by hides rows for a reason nobody can see.
     """
 
-    def __init__(self, deps: ProgressionDeps) -> None:
+    def __init__(self, deps: "ProgressionDeps") -> None:
         library = deps.library
         super().__init__(deps, "library", library.id)
         self.projects = FilterButton(self.widget, label="Projects")
@@ -481,89 +588,3 @@ class ControlCentreActivity(StatusBoard):
         if picked - here:
             self.projects.set_active(picked & here)
         self.controls.set_shown(self.projects, len(projects) > 1)
-
-
-class ProgressionModule:
-    id = MODULE_ID
-
-    def __init__(self, deps: ProgressionDeps) -> None:
-        self._deps = deps
-
-    def open(self, project_id: NodeId, *, preview: bool = False) -> None:
-        self._deps.tabs.open(PROGRESSION_KIND, project_id, preview=preview)
-
-    def open_control_centre(self, *, preview: bool = False) -> None:
-        self._deps.tabs.open(CONTROL_CENTRE_KIND, preview=preview)
-
-    def register(self) -> None:
-        deps = self._deps
-
-        def factory(target: str | None) -> ProgressionActivity:
-            assert target is not None
-            return ProgressionActivity(deps, target)
-
-        deps.tabs.register_factory(PROGRESSION_KIND, factory)
-        # One tab for the library: whatever target it is asked for, its address is the one.
-        deps.tabs.register_factory(CONTROL_CENTRE_KIND, lambda _target: ControlCentreActivity(deps))
-        deps.actions.register(
-            ActionSpec(
-                id="progression.open",
-                label="Step Stat&uses",
-                menu="Go",
-                group="views",
-                order=30,
-                tip="What needs a person right now: blocked, to merge, to review, to start",
-                state=self._on_a_project,
-                run=self._open,
-            )
-        )
-        # The same verb's second seat, in Step ▸ Show in beside Order's, so a table's
-        # right-click reaches it. palette=False: one palette entry.
-        deps.actions.register(
-            ActionSpec(
-                id="progression.open_step",
-                label="Step Stat&uses",
-                menu="Step",
-                group="surfaces",
-                submenu="Show in",
-                order=30,
-                tip="What needs a person right now: blocked, to merge, to review, to start",
-                palette=False,
-                state=self._on_a_project,
-                run=self._open,
-            )
-        )
-        # Beside Home, in the index and in Go: a place of the library's rather than one
-        # project's.
-        deps.segments.register(
-            IndexSegment(
-                id=CONTROL_CENTRE_KIND,
-                label=CONTROL_CENTRE,
-                factory=lambda _root: SurfaceSegment(
-                    lambda preview: self.open_control_centre(preview=preview)
-                ),
-                order=5,  # Between Home (0) and Projects (10).
-                icon=gauge_icon,
-            )
-        )
-        deps.actions.register(
-            ActionSpec(
-                id="progression.control_centre",
-                label="Co&ntrol Centre",
-                menu="Go",
-                group="home",
-                order=20,
-                tip="What needs a person in every project: blocked, to merge, to review, to start",
-                icon=gauge_icon,
-                run=lambda _context: self.open_control_centre(),
-            )
-        )
-        follow_project_tabs(deps.tabs, ProgressionActivity, deps.library)
-
-    def _on_a_project(self, context: Context) -> ActionState:
-        return DISABLED if focused_project(context, self._deps.library) is None else ENABLED
-
-    def _open(self, context: Context) -> None:
-        project = focused_project(context, self._deps.library)
-        if project is not None:
-            self.open(project.id)
