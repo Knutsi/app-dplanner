@@ -17,9 +17,6 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Step, TextEdit
-from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
-from dplanner.modules.estimation.aspect import write as write_days
-from dplanner.modules.estimation.schedule import write_start
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 from dplanner.modules.step_agent_instruction.aspect import write_state
 from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
@@ -43,6 +40,9 @@ from dplanner.modules.time_estimates.schedule import (
     stretched,
 )
 from dplanner.modules.time_estimates.section import MilestoneScheduleSection
+from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+from dplanner.planning.estimate import write as write_days
+from dplanner.planning.estimate import write_start
 from dplanner.planning.schedule import format_date
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status
@@ -292,9 +292,9 @@ def test_unreadable_focus_reads_as_the_default(services, project):
 def test_stretching_prices_human_steps_only(project):
     read, _draft, docs = project.steps
     calendar_days = stretched(
-        lambda step: {"Read the spec": 2.0, "Write the docs": 1.0}.get(step.title),
         lambda step: step.title == "Write the docs",
         0.5,
+        days_for=lambda step: {"Read the spec": 2.0, "Write the docs": 1.0}.get(step.title),
     )
     assert calendar_days(read) == 4.0
     assert calendar_days(docs) == 1.0

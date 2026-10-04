@@ -1,9 +1,13 @@
-"""The estimate aspect: its format, and the one place its shape is written down.
+"""The estimate: its format, the one place its shape is written down, and a project's start.
 
 ``read`` and ``write`` are what the CLI verb, the panel editor and every report call, so the
 shape of an estimate exists once rather than once per caller. There is one field, so there is
-no dataclass around it: ``read`` returns the days, which makes it exactly the ``days_for``
-function :mod:`dplanner.planning.schedule` asks for, with no adapter in between.
+no dataclass around it: ``read`` returns the days, and it is the default every derivation in
+:mod:`dplanner.planning.schedule` reads — a caller passes another ``days_for`` only when it
+means something else (calendar days stretched by efficiency, the simulator's world).
+
+**Planning owns it** because the schedule, the critical path and progress all interpret it;
+``modules/estimation/`` keeps the editors and the verbs. The id stays ``estimation``.
 
 **Numbers are coerced here.** ``FORMAT.md``'s normalisation rule used to be enforced at the
 model boundary, because an ``int`` writes as ``5`` where a reloaded ``float`` writes as
@@ -33,10 +37,11 @@ from typing import Any
 
 from dplanner.core.module_data import ModuleDataFormat, Takeover, stamped
 from dplanner.domain.aspects import AspectSpec
-from dplanner.domain.model import Step
+from dplanner.domain.model import Project, Step
 
 MODULE_ID = "estimation"
 HISTORY_KEY = "history"
+START_KEY = "start"
 
 # What ``step_estimation`` last wrote. Frozen at format 1 forever, whatever this module does
 # next: it is the retired schema's history, and history does not gain entries.
@@ -107,6 +112,12 @@ def enabled(step: Step) -> bool:
     return not (entry and entry.get("off"))
 
 
+
+def is_marker(step: Step) -> bool:
+    """A step that carries no work by design — its estimate turned off: a milestone's own
+    step, a feature, a check. The schedule lands it the moment what it requires has."""
+    return not enabled(step)
+
 def read_history(step: Step) -> list[tuple[date, float]]:
     """The values the estimate had before, each with the day it was replaced on, oldest
     first. Unreadable rows read as absent."""
@@ -166,6 +177,49 @@ def summary(step: Step) -> str:
     """One short phrase for a step's row, or "" when there is nothing to say."""
     days = read(step)
     return "" if days is None else f"{days:g}d"
+
+
+def read_start(project: Project) -> date | None:
+    """When the project starts, or None. Anything unreadable reads as unset.
+
+    **The start date lives under this aspect's id on the project node** —
+    ``projects/<p>/modules/estimation.json`` = ``{"start": "2026-09-01"}``, beside each
+    step's ``{"days": 3.0}``. One id, one data namespace, two node kinds, so whoever writes a
+    migration for :data:`DATA_FORMAT` owes both shapes a thought. It is deliberately not part
+    of :data:`SPEC`: an aspect is a fact about a step, and this is a fact about a project.
+    """
+    entry = project.module_data.get(MODULE_ID)
+    if not entry:
+        return None
+    written = entry.get(START_KEY)
+    if not isinstance(written, str):
+        return None
+    try:
+        return date.fromisoformat(written)
+    except ValueError:
+        return None
+
+
+def start_of(project: Project, today: date | None = None) -> date:
+    """When this project's work begins: the date somebody set, or today.
+
+    **Derived, never written.** Storing today would make merely opening a tab dirty the
+    workspace — ``ordering.py``'s rule again — and it would be wrong by tomorrow. So a
+    project nobody has dated answers "if you start now", every surface asks this rather than
+    ``read_start``, and the only thing on disk is a date a person chose.
+
+    ``today`` is the caller's clock (``core/clock.py``) — the Time tab's, which a test or
+    the simulator may have pinned; a surface that holds no clock yet gets the machine's.
+    """
+    return read_start(project) or today or date.today()
+
+
+def write_start(start: date | None) -> dict[str, Any]:
+    """The project entry to store. ``None`` gives ``{}``, which removes the file — and
+    puts the project back on "starts today"."""
+    if start is None:
+        return {}
+    return stamped({START_KEY: start.isoformat()}, DATA_FORMAT.version)
 
 
 # Last, because it names the pieces above: the one declaration everything reads.

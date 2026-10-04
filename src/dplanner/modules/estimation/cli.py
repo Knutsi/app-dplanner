@@ -19,14 +19,20 @@ from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
-from dplanner.modules.estimation.aspect import MODULE_ID, enabled, read, read_history, write
 from dplanner.modules.estimation.schedule import (
     critical_finish,
     finish_date,
     project_critical_path,
     project_schedule,
+)
+from dplanner.planning.estimate import (
+    MODULE_ID,
+    enabled,
+    read,
+    read_history,
     read_start,
     start_of,
+    write,
     write_start,
 )
 from dplanner.planning.schedule import (
@@ -231,7 +237,7 @@ def _rollup(context: CliContext, args: Namespace, counts_as_work: Callable[[Step
     zero understates the plan, and the person reading it has no way to tell.
     """
     project = find_project(context.library, args.project)
-    total, steps, missing = volume(project.steps, read, counts_as_work)
+    total, steps, missing = volume(project.steps, counts_as_work)
     data = {"project": project.id, "days": total, "steps": steps, "unestimated": missing}
     context.report(data, f"{project.title}: {volume_words(total, steps, missing)}")
     return 0

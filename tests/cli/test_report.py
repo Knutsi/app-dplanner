@@ -37,11 +37,11 @@ from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleD
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.seed import seed_project
 from dplanner.modules import _report_sources, _step_key, _step_kind, default_module_formats
-from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.positions import write_member, write_position
 from dplanner.modules.step_milestone.aspect import write as milestone
+from dplanner.planning.estimate import write as estimate
 from dplanner.planning.status import Status
 from dplanner.planning.status import stored as status_for
 from dplanner.planning.status import write as status

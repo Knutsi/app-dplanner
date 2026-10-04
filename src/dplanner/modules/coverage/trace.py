@@ -37,8 +37,9 @@ from dataclasses import dataclass, replace
 
 from dplanner.core.anchors import Anchor, blocks, covered_by
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.scope import ScopeKind, StepPredicate, cone, gatherers
+from dplanner.domain.ordering import StepPredicate, cone
 from dplanner.domain.store import FilesFor
+from dplanner.planning.scope import ScopeKind, gatherers
 from dplanner.planning.status import Status, Unknown
 
 MILESTONES, FEATURES, SPEC, STEPS, OUTCOMES = 0, 1, 2, 3, 4

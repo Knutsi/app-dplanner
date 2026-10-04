@@ -124,7 +124,9 @@ def test_the_months_do_not_come_from_the_locale():
 def test_the_total_runs_serially_down_the_order(project):
     library, found = project
     rows = schedule(
-        placed(library, found), days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0}), MONDAY
+        placed(library, found),
+        MONDAY,
+        days_for=days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0}),
     )
 
     assert [row.accumulated for row in rows] == [1.0, 3.0, 6.0, 10.0]
@@ -133,7 +135,7 @@ def test_the_total_runs_serially_down_the_order(project):
 def test_an_unestimated_step_advances_nothing_and_claims_no_date(project):
     """ "We have not estimated this" and "this is free" are different claims."""
     library, found = project
-    rows = schedule(placed(library, found), days_of({"A": 2.0, "C": 3.0}), MONDAY)
+    rows = schedule(placed(library, found), MONDAY, days_for=days_of({"A": 2.0, "C": 3.0}))
 
     assert [row.days for row in rows] == [2.0, None, 3.0, None]
     assert [row.accumulated for row in rows] == [2.0, 2.0, 5.0, 5.0]
@@ -148,7 +150,7 @@ def test_an_unestimated_step_advances_nothing_and_claims_no_date(project):
 def test_two_halves_land_on_the_first_day(project):
     """Rounding happens once, on the total — never per step, where it would accumulate."""
     library, found = project
-    rows = schedule(placed(library, found), days_of({"A": 0.5, "B": 0.5}), MONDAY)
+    rows = schedule(placed(library, found), MONDAY, days_for=days_of({"A": 0.5, "B": 0.5}))
 
     assert rows[1].accumulated == 1.0
     assert rows[1].finish == MONDAY
@@ -158,7 +160,7 @@ def test_only_an_unestimated_step_lacks_a_date(project):
     """There is no "no start date" case any more — a project nobody dated starts today, so
     the only blank in the Date column is a step nobody has sized."""
     library, found = project
-    rows = schedule(placed(library, found), days_of({"A": 3.0, "B": 1.0}), MONDAY)
+    rows = schedule(placed(library, found), MONDAY, days_for=days_of({"A": 3.0, "B": 1.0}))
 
     assert [row.accumulated for row in rows] == [3.0, 4.0, 4.0, 4.0]
     assert [row.finish is None for row in rows] == [False, False, True, True]
@@ -166,7 +168,7 @@ def test_only_an_unestimated_step_lacks_a_date(project):
 
 def test_a_weekend_start_dates_from_the_monday(project):
     library, found = project
-    rows = schedule(placed(library, found), days_of({"A": 1.0}), SATURDAY)
+    rows = schedule(placed(library, found), SATURDAY, days_for=days_of({"A": 1.0}))
 
     assert rows[0].finish == date(2026, 9, 14)
 
@@ -176,13 +178,13 @@ def test_a_project_with_no_steps_schedules_to_nothing():
     empty = Project(title="Empty")
     library.add_child(library.id, empty)
 
-    assert schedule(placed(library, empty), lambda _step: None, MONDAY) == []
+    assert schedule(placed(library, empty), MONDAY, days_for=lambda _step: None) == []
 
 
 def test_each_row_keeps_its_place_in_the_order(project):
     """The schedule carries the ordering's answer rather than renumbering the rows itself."""
     library, found = project
-    rows = schedule(placed(library, found), days_of({}), MONDAY)
+    rows = schedule(placed(library, found), MONDAY, days_for=days_of({}))
 
     assert [row.place.index for row in rows] == [1, 2, 3, 4]
     assert [row.place.wave for row in rows] == [1, 2, 3, 4]
@@ -220,7 +222,7 @@ def test_the_path_takes_the_heavier_branch():
     from dplanner.planning.schedule import critical_path
 
     library, project = diamond()
-    path = critical_path(library, project, days_of({"A": 1, "B": 2, "C": 10, "D": 1}))
+    path = critical_path(library, project, days_for=days_of({"A": 1, "B": 2, "C": 10, "D": 1}))
     assert path is not None
     assert [step.title for step in path.steps] == ["A", "C", "D"]
     assert path.days == 12
@@ -231,12 +233,12 @@ def test_unestimated_steps_on_the_path_are_counted_not_priced():
     from dplanner.planning.schedule import critical_path
 
     library, project = diamond()
-    path = critical_path(library, project, days_of({"A": 1, "B": 2, "D": 1}))
+    path = critical_path(library, project, days_for=days_of({"A": 1, "B": 2, "D": 1}))
     assert path is not None
     # C is free to the walk, so B's branch is the heavier one — and nothing on it is a guess.
     assert [step.title for step in path.steps] == ["A", "B", "D"]
     assert path.unestimated == 0
-    heavy = critical_path(library, project, days_of({"A": 1, "D": 1}))
+    heavy = critical_path(library, project, days_for=days_of({"A": 1, "D": 1}))
     assert heavy is not None and heavy.unestimated == 1  # whichever weightless branch won
 
 
@@ -244,7 +246,7 @@ def test_equal_branches_break_ties_by_project_order():
     from dplanner.planning.schedule import critical_path
 
     library, project = diamond()
-    path = critical_path(library, project, days_of({"A": 1, "B": 3, "C": 3, "D": 1}))
+    path = critical_path(library, project, days_for=days_of({"A": 1, "B": 3, "C": 3, "D": 1}))
     assert path is not None
     assert [step.title for step in path.steps] == ["A", "B", "D"]
 
@@ -255,14 +257,14 @@ def test_an_empty_project_has_no_path():
     library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
-    assert critical_path(library, project, days_of({})) is None
+    assert critical_path(library, project, days_for=days_of({})) is None
 
 
 def test_a_step_can_start_once_the_longest_way_to_it_has_finished():
     from dplanner.planning.schedule import earliest_starts
 
     library, project = diamond()
-    starts = earliest_starts(library, project, days_of({"A": 1, "B": 2, "C": 10, "D": 1}))
+    starts = earliest_starts(library, project, days_for=days_of({"A": 1, "B": 2, "C": 10, "D": 1}))
     assert [starts[step.id] for step in project.steps] == [0.0, 1.0, 1.0, 11.0]
     # The critical path's length is the latest of these plus the step's own days.
     path = critical_path_of(library, project, {"A": 1, "B": 2, "C": 10, "D": 1})
@@ -273,7 +275,7 @@ def test_an_unestimated_step_takes_no_days_on_the_way_to_what_waits_on_it(projec
     from dplanner.planning.schedule import earliest_starts
 
     library, plan = project
-    starts = earliest_starts(library, plan, days_of({"A": 2, "C": 1}))
+    starts = earliest_starts(library, plan, days_for=days_of({"A": 2, "C": 1}))
     assert [starts[step.id] for step in plan.steps] == [0.0, 2.0, 2.0, 3.0]
 
 
@@ -283,7 +285,7 @@ def test_a_cycle_a_hand_edit_made_is_walked_and_the_link_closing_it_counts_as_me
     library, plan = project
     a, _b, _c, d = plan.steps
     a.edges["requires"] = [d.id]  # Around the chain and back: only a hand edit gets here.
-    starts = earliest_starts(library, plan, days_of({"A": 1, "B": 1, "C": 1, "D": 1}))
+    starts = earliest_starts(library, plan, days_for=days_of({"A": 1, "B": 1, "C": 1, "D": 1}))
     # Walked from A, the first step: B's link back to A, still on the walk, is the one met.
     assert [starts[step.id] for step in plan.steps] == [3.0, 0.0, 1.0, 2.0]
 
@@ -299,7 +301,7 @@ def test_a_view_of_a_project_is_measured_by_its_own_edges(project):
     view.steps.extend(
         [Step(node_id=a.id, title="A"), Step(node_id=d.id, title="D", edges={"requires": [a.id]})]
     )
-    starts = earliest_starts(library, view, days_of({"A": 5}))
+    starts = earliest_starts(library, view, days_for=days_of({"A": 5}))
     assert starts == {a.id: 0.0, d.id: 5.0}
     assert b.id not in starts
 
@@ -307,7 +309,7 @@ def test_a_view_of_a_project_is_measured_by_its_own_edges(project):
 def critical_path_of(library, project, estimates):
     from dplanner.planning.schedule import critical_path
 
-    path = critical_path(library, project, days_of(estimates))
+    path = critical_path(library, project, days_for=days_of(estimates))
     return None if path is None else path.days
 
 
@@ -336,9 +338,9 @@ def test_one_worker_meets_the_serial_total_and_ample_workers_the_path():
 
     library, project = diamond()
     estimates = days_of({"A": 1, "B": 2, "C": 10, "D": 1})
-    alone = parallel_finish(library, project, estimates, NOBODY, humans=1, agents=1)
-    crowd = parallel_finish(library, project, estimates, NOBODY, humans=4, agents=1)
-    path = critical_path(library, project, estimates)
+    alone = parallel_finish(library, project, NOBODY, humans=1, agents=1, days_for=estimates)
+    crowd = parallel_finish(library, project, NOBODY, humans=4, agents=1, days_for=estimates)
+    path = critical_path(library, project, days_for=estimates)
     assert alone is not None and alone.days == 14.0  # one human, steps end to end
     assert crowd is not None and path is not None and crowd.days == path.days == 12.0
 
@@ -348,11 +350,11 @@ def test_neither_pool_takes_the_others_work():
 
     library, project, estimates = loose(("H", 5.0), ("X", 1.0), ("Y", 1.0), ("Z", 1.0))
     is_agent = agents_named("X", "Y", "Z")
-    lone = parallel_finish(library, project, estimates, is_agent, humans=1, agents=1)
-    fleet = parallel_finish(library, project, estimates, is_agent, humans=1, agents=3)
+    lone = parallel_finish(library, project, is_agent, humans=1, agents=1, days_for=estimates)
+    fleet = parallel_finish(library, project, is_agent, humans=1, agents=3, days_for=estimates)
     assert lone is not None and lone.days == 5.0  # agent work serialises under the human's 5d
     assert fleet is not None and fleet.days == 5.0  # more agents cannot shorten human work
-    idle = parallel_finish(library, project, estimates, is_agent, humans=4, agents=1)
+    idle = parallel_finish(library, project, is_agent, humans=4, agents=1, days_for=estimates)
     assert idle is not None and idle.days == 5.0  # idle humans never pick up agent steps
 
 
@@ -370,7 +372,7 @@ def test_a_free_slot_takes_the_longest_remaining_chain_first():
     a, _d, _c, b = project.steps
     library.set_edges(b.id, "requires", [a.id])
     estimates = days_of({"A": 1, "B": 5, "C": 4, "D": 2})
-    pair = parallel_finish(library, project, estimates, NOBODY, humans=2, agents=1)
+    pair = parallel_finish(library, project, NOBODY, humans=2, agents=1, days_for=estimates)
     assert pair is not None and pair.days == 6.0
 
 
@@ -379,7 +381,12 @@ def test_unestimated_steps_cost_nothing_and_are_all_counted():
 
     library, project = diamond()
     finish = parallel_finish(
-        library, project, days_of({"A": 1, "D": 1}), NOBODY, humans=2, agents=1
+        library,
+        project,
+        NOBODY,
+        humans=2,
+        agents=1,
+        days_for=days_of({"A": 1, "D": 1}),
     )
     assert finish is not None
     assert finish.days == 2.0  # B and C run as zero days
@@ -390,7 +397,7 @@ def test_a_chain_of_unestimated_steps_terminates_at_zero(project):
     from dplanner.planning.schedule import parallel_finish
 
     library, found = project
-    finish = parallel_finish(library, found, days_of({}), NOBODY, humans=1, agents=1)
+    finish = parallel_finish(library, found, NOBODY, humans=1, agents=1, days_for=days_of({}))
     assert finish is not None
     assert finish.days == 0.0
     assert finish.unestimated == 4
@@ -400,7 +407,7 @@ def test_quarter_days_sum_exactly():
     from dplanner.planning.schedule import parallel_finish
 
     library, found, estimates = loose(("A", 0.25), ("B", 0.75), ("C", 0.25))
-    finish = parallel_finish(library, found, estimates, NOBODY, humans=1, agents=1)
+    finish = parallel_finish(library, found, NOBODY, humans=1, agents=1, days_for=estimates)
     assert finish is not None and finish.days == 1.25
 
 
@@ -410,11 +417,13 @@ def test_an_empty_project_has_no_makespan_and_an_empty_pool_is_refused():
     library = Library()
     project = Project(title="Discovery")
     library.add_child(library.id, project)
-    assert parallel_finish(library, project, days_of({}), NOBODY, humans=1, agents=1) is None
+    assert (
+        parallel_finish(library, project, NOBODY, humans=1, agents=1, days_for=days_of({})) is None
+    )
     with pytest.raises(ValueError):
-        parallel_finish(library, project, days_of({}), NOBODY, humans=0, agents=1)
+        parallel_finish(library, project, NOBODY, humans=0, agents=1, days_for=days_of({}))
     with pytest.raises(ValueError):
-        parallel_finish(library, project, days_of({}), NOBODY, humans=1, agents=0)
+        parallel_finish(library, project, NOBODY, humans=1, agents=0, days_for=days_of({}))
 
 
 # -- the plan in stretches -----------------------------------------------------------------------
@@ -436,19 +445,19 @@ def test_the_simulation_says_when_each_step_lands(project):
     library, plan = project
     a, b, c, d = plan.steps
     days = days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0})
-    run = parallel_finish(library, plan, days, lambda _s: False, humans=1, agents=1)
+    run = parallel_finish(library, plan, lambda _s: False, humans=1, agents=1, days_for=days)
     assert run is not None
     assert run.landings == {a.id: 1.0, b.id: 3.0, c.id: 6.0, d.id: 10.0}
     (only,) = phases(
         library,
         plan,
-        days,
         lambda _s: False,
         humans=1,
         agents=1,
         start=MONDAY,
         is_milestone=lambda _s: False,
         start_for=lambda _s: None,
+        days_for=days,
     )
     assert [only.landing_of(step.id) for step in plan.steps] == [
         MONDAY,
@@ -465,8 +474,10 @@ def test_a_subset_simulation_treats_edges_out_of_it_as_met(project):
     library, plan = project
     _a, _b, c, d = plan.steps
     days = days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0})
-    whole = parallel_finish(library, plan, days, lambda _s: False, humans=1, agents=1)
-    later = parallel_finish(library, plan, days, lambda _s: False, humans=1, agents=1, among=(c, d))
+    whole = parallel_finish(library, plan, lambda _s: False, humans=1, agents=1, days_for=days)
+    later = parallel_finish(
+        library, plan, lambda _s: False, humans=1, agents=1, among=(c, d), days_for=days
+    )
     assert whole is not None and whole.days == 10.0
     assert later is not None and later.days == 7.0  # C no longer waits for B
 
@@ -479,13 +490,13 @@ def _stretches(library, plan, *, milestones, dated=None, start=MONDAY):
     return phases(
         library,
         plan,
-        days,
         lambda _s: False,
         humans=1,
         agents=1,
         start=start,
         is_milestone=lambda step: step.title in milestones,
         start_for=lambda step: dated.get(step.title),
+        days_for=days,
     )
 
 
@@ -553,13 +564,13 @@ def test_a_stretch_with_nothing_estimated_has_no_landing_and_costs_no_days(proje
     first, second = phases(
         library,
         plan,
-        days_of({"C": 3.0, "D": 4.0}),
         lambda _s: False,
         humans=1,
         agents=1,
         start=MONDAY,
         is_milestone=lambda step: step.title in ("B", "D"),
         start_for=lambda _s: None,
+        days_for=days_of({"C": 3.0, "D": 4.0}),
     )
     assert first.finish is None and first.unestimated == 2
     assert first.calendar_days == 0
@@ -629,7 +640,6 @@ def _resumed(library, plan, days, facts, *, milestones=(), humans=1):
     return phases(
         library,
         plan,
-        days_of(days),
         lambda _s: False,
         humans=humans,
         agents=1,
@@ -637,6 +647,7 @@ def _resumed(library, plan, days, facts, *, milestones=(), humans=1):
         is_milestone=lambda step: step.title in milestones,
         start_for=lambda _s: None,
         facts=facts,
+        days_for=days_of(days),
     )
 
 
@@ -690,9 +701,15 @@ def test_work_in_flight_keeps_its_worker_and_goes_first():
 
     library, plan, days = loose(("A", 1.0), ("B", 5.0))
     a, b = plan.steps
-    fresh = parallel_finish(library, plan, days, NOBODY, humans=1, agents=1)
+    fresh = parallel_finish(library, plan, NOBODY, humans=1, agents=1, days_for=days)
     resumed = parallel_finish(
-        library, plan, days, NOBODY, humans=1, agents=1, running=frozenset({a.id})
+        library,
+        plan,
+        NOBODY,
+        humans=1,
+        agents=1,
+        running=frozenset({a.id}),
+        days_for=days,
     )
     assert fresh is not None and (fresh.starts[b.id], fresh.starts[a.id]) == (0.0, 5.0)
     assert resumed is not None and (resumed.starts[a.id], resumed.starts[b.id]) == (0.0, 1.0)
@@ -781,9 +798,15 @@ def test_a_marker_takes_no_worker():
     def is_agent(step):
         return step is a
 
-    waited = parallel_finish(library, plan, days, is_agent, humans=1, agents=1)
+    waited = parallel_finish(library, plan, is_agent, humans=1, agents=1, days_for=days)
     marked = parallel_finish(
-        library, plan, days, is_agent, humans=1, agents=1, is_marker=lambda step: step is m
+        library,
+        plan,
+        is_agent,
+        humans=1,
+        agents=1,
+        is_marker=lambda step: step is m,
+        days_for=days,
     )
     assert waited is not None and waited.landings[m.id] == 5.0
     assert marked is not None and marked.landings[m.id] == 1.0
@@ -837,7 +860,6 @@ def _wait_landings(wait, today, statuses=None, since=None, requires=None):
     (only,) = phases(
         library,
         plan,
-        days_of({"A": 1.0, "B": 1.0}),
         lambda _s: False,
         humans=1,
         agents=1,
@@ -846,6 +868,7 @@ def _wait_landings(wait, today, statuses=None, since=None, requires=None):
         start_for=lambda _s: None,
         facts=_facts(today, statuses, since),
         wait_of=_waits_as(wait),
+        days_for=days_of({"A": 1.0, "B": 1.0}),
     )
     named = {step.title: step for step in plan.steps}
     return [only.landing_of(named[title].id) for title in ("A", "B")]
@@ -858,11 +881,11 @@ def test_a_days_wait_holds_what_waits_on_it_and_the_worker_it_does_not_need_work
     run = parallel_finish(
         library,
         plan,
-        days_of({"A": 1.0, "B": 1.0, "C": 2.0}),
         lambda _s: False,
         humans=1,
         agents=1,
         wait_of=_waits_as(Wait(days=3.0)),
+        days_for=days_of({"A": 1.0, "B": 1.0, "C": 2.0}),
     )
     assert run is not None and run.unestimated == 0  # a wait is never unsized
     named = {step.title: step.id for step in plan.steps}

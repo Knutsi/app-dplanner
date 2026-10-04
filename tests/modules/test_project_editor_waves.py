@@ -24,8 +24,6 @@ from tests.modules.test_project_editor import (
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATE_ID
-from dplanner.modules.estimation.aspect import write as estimate
 from dplanner.modules.project_editor.keymap import bound_actions
 from dplanner.modules.project_editor.layout_verbs import wave_view
 from dplanner.modules.project_editor.placement import positions
@@ -40,6 +38,8 @@ from dplanner.modules.project_editor.positions import (
     write_position,
 )
 from dplanner.modules.project_editor.sorts import EN_DASH, arranged_in_waves, waves
+from dplanner.planning.estimate import MODULE_ID as ESTIMATE_ID
+from dplanner.planning.estimate import write as estimate
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status
 from dplanner.planning.status import write as status

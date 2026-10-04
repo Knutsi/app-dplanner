@@ -1,30 +1,28 @@
-"""What a step gathers: the cone behind it, truncated at the boundaries it stops at.
+"""What a step gathers: the collector kinds, and the cones they read as.
 
-`ordering.py` answers *in what order*; this answers *what belongs to what*. A **collector**
-is a step that stands for everything behind it — a check, a feature, a milestone. What it
-gathers is never stored: it is the ``requires`` cone, recomputed on every read, for the same
-reason the topological order is (``dplanner step link`` relinks a graph with no window
-running to notice a stored membership going stale).
+``domain/ordering.py`` walks the graph — :func:`~dplanner.domain.ordering.cone` is the
+``requires`` cone behind a step, truncated at the boundaries a predicate names. This file says
+what those walks *mean*. A **collector** is a step that stands for everything behind it — a
+check, a feature, a milestone. What it gathers is never stored: it is the cone, recomputed on
+every read, for the same reason the topological order is (``dplanner step link`` relinks a
+graph with no window running to notice a stored membership going stale).
 
 The one idea here is that a collector's contents stop at the *next* collector. A milestone
 gathers the features behind it, not the ones an earlier milestone already took; a feature
-gathers its own work, not the work behind the feature it follows. So the walk takes a
-``stops_at`` predicate: a step that satisfies it is recorded as a **boundary** and not
-traversed through. With no predicate the walk is the whole cone, which is what a check means
-and what ``ordering.upstream()`` is. A boundary is usually a collector, but not always — the
-plan's start stops a feature's walk too, and :func:`handoffs` tells the two apart.
+gathers its own work, not the work behind the feature it follows. A boundary is usually a
+collector, but not always — the plan's start stops a feature's walk too, and
+:func:`handoffs` tells the two apart.
 
-**Handed functions, never a schema** — the rule ``schedule()`` and ``progression()`` already
-live by. Nothing in this file knows what a feature is; the composition root, the one place
-allowed to name every aspect at once, writes the predicates.
+**The markers are still handed in.** What makes a step a feature, a milestone or a check is
+not yet a planning fact, so a :class:`ScopeKind` carries predicates the composition root
+writes; once those markers move into this tier they become imports here.
 """
 
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from dplanner.domain.model import Library, Project, Step, StepId
-
-StepPredicate = Callable[[Step], bool]
+from dplanner.domain.ordering import Cone, StepPredicate, cone
 
 
 @dataclass(frozen=True)
@@ -50,61 +48,6 @@ class ScopeKind:
     carried_by: StepPredicate
     stops_at: StepPredicate
     gathers: str = ""  # A kind id, or "" for a flat list.
-
-
-@dataclass(frozen=True)
-class Cone:
-    """What one walk found: the steps a collector owns, and the collectors it gathers.
-
-    ``steps`` excludes the origin — a caller that wants a step's own aspects counted adds it
-    back, as ``testing.covered()`` does — and excludes the boundaries, which are the thing
-    they were stopped at rather than part of what stopped there. Both are in project order,
-    so an answer never reshuffles between two reads.
-    """
-
-    steps: tuple[Step, ...]
-    boundaries: tuple[Step, ...]
-
-
-def cone(
-    library: Library,
-    project: Project,
-    step_id: StepId,
-    *,
-    stops_at: StepPredicate | None = None,
-) -> Cone:
-    """The cone behind ``step_id``, truncated at the boundaries ``stops_at`` names.
-
-    A step is in ``steps`` exactly when some path of ``requires`` edges reaches it from the
-    origin without crossing a boundary — so a step behind an earlier feature *and* reachable
-    around it still belongs to both, which is the honest answer and the one lint reports.
-
-    The visited set is also the cycle guard, the same defensive stance ``depths()`` takes
-    against a hand-edited file. Boundaries are never recursed into, so a graph with a hundred
-    milestones costs one pass, not a hundred.
-    """
-    reached: set[StepId] = set()
-    stopped: set[StepId] = set()
-    ids = {step.id for step in project.steps}  # Once per walk: Project.step() is a scan.
-
-    def visit(current: StepId) -> None:
-        for target in library.requires(current):
-            if target.id in reached or target.id in stopped:
-                continue
-            if target.id not in ids:
-                continue
-
-            if stops_at is not None and stops_at(target):
-                stopped.add(target.id)
-                continue
-            reached.add(target.id)
-            visit(target.id)
-
-    visit(step_id)
-    return Cone(
-        steps=tuple(step for step in project.steps if step.id in reached),
-        boundaries=tuple(step for step in project.steps if step.id in stopped),
-    )
 
 
 def gatherers(

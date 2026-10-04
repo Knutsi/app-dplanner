@@ -128,6 +128,7 @@ from dplanner.modules.project_editor.sorts import WaveArrangement, arranged_in_w
 from dplanner.modules.project_editor.stack_verbs import StackVerbs
 from dplanner.modules.project_editor.stacks import read_stacks
 from dplanner.modules.project_editor.verbs import NEW_STEP_TITLE, StepVerbs
+from dplanner.planning import estimate
 
 MODULE_ID = "project_editor"
 # The tab kind stays "project": the module is the editor, but the thing in the tab is still a
@@ -161,10 +162,6 @@ def _no_strips(_project_id: str) -> frozenset[StepId]:
     return frozenset()
 
 
-def _no_days(_step: Step) -> float | None:
-    return None
-
-
 @dataclass(frozen=True)
 class ProjectEditorDeps:
     library: Library
@@ -196,9 +193,6 @@ class ProjectEditorDeps:
     # by it and every sort spaces by it, through ``positions.footprints``.
     strips: Callable[[str], frozenset[StepId]] = field(default=_no_strips)
 
-    # How long a step takes, from whichever module owns estimates — the timeline sort reads
-    # time through this, the same seam planning/schedule.py uses one level down.
-    days_for: Callable[[Step], float | None] = field(default=_no_days)
     # A copied step carries its attachments: the file areas to read are the asset catalog's
     # sources, and what a copy may not carry is each owner's policy — see clipboard.py.
     file_modules: tuple[str, ...] = ()
@@ -494,7 +488,7 @@ class ProjectActivity(EntityActivity):
         # Wave view substitutes the seats, and nothing else: the scene is handed the same
         # kind of spec, and the diff sync moves the same items.
         waves = (
-            arranged_in_waves(self._product, project, size_for, self._deps.days_for)
+            arranged_in_waves(self._product, project, size_for, estimate.read)
             if self._waves
             else None
         )
@@ -836,7 +830,6 @@ class ProjectEditorModule:
             parent=deps.parent,
             current_project=self._current_project,
             status=lambda text: deps.status.show_status(text, 4000),
-            days_for=deps.days_for,
             size_for=lambda project: footprints(deps.strips(project.id)),
             set_waves=self._set_waves,
         )

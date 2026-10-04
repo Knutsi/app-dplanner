@@ -387,7 +387,7 @@ def test_estimated_progress_counts_review_and_merge_as_not_done():
     found = progression(
         library, project, status_of({"A": "done", "B": "ready-for-review", "C": "ready-to-merge"})
     )
-    assert estimated_progress(found, lambda _step: 1.0) == (1.0, 3.0)
+    assert estimated_progress(found, days_for=lambda _step: 1.0) == (1.0, 3.0)
 
 
 def test_percent_counts_done_against_everything():
@@ -410,13 +410,13 @@ def test_estimated_progress_weighs_the_done_work():
     library, project = build("A", "B", "C")
     found = progression(library, project, status_of({"A": "done"}))
     days = {"A": 2.0, "B": 3.0}  # C is unestimated: it contributes to neither number.
-    assert estimated_progress(found, lambda step: days.get(step.title)) == (2.0, 5.0)
+    assert estimated_progress(found, days_for=lambda step: days.get(step.title)) == (2.0, 5.0)
 
 
 def test_estimated_progress_is_none_when_nothing_is_sized():
     library, project = build("A", "B")
     found = progression(library, project, status_of({}))
-    assert estimated_progress(found, lambda _step: None) is None
+    assert estimated_progress(found, days_for=lambda _step: None) is None
 
 
 # -- waits ------------------------------------------------------------------------------------

@@ -51,7 +51,7 @@ from dplanner.domain.assets import (
     asset_references,
 )
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.scope import StepPredicate, cone
+from dplanner.domain.ordering import StepPredicate, cone
 from dplanner.domain.store import FilesFor
 
 MODULE_ID = "testing"

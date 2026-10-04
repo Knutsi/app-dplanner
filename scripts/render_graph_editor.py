@@ -83,7 +83,6 @@ from dplanner.framework.session import AppSession
 from dplanner.modules import _report_sources, _step_key, _step_kind
 from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
 from dplanner.modules.auto_progress.aspect import write as auto_progress_write
-from dplanner.modules.estimation.aspect import write as estimate_write
 from dplanner.modules.feature.aspect import MODULE_ID as FEATURE_ID
 from dplanner.modules.feature.aspect import write as feature_write
 from dplanner.modules.project_editor.items import StepNodeItem
@@ -112,6 +111,7 @@ from dplanner.modules.step_review.aspect import ReviewSettings
 from dplanner.modules.step_review.aspect import write as review_write
 from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
 from dplanner.modules.step_wait.aspect import write as wait_write
+from dplanner.planning.estimate import write as estimate_write
 from dplanner.planning.schedule import Wait
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status, stored

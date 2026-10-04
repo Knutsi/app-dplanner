@@ -67,6 +67,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from dplanner.domain.model import Library, Project, Step, StepId
+from dplanner.planning import estimate
 from dplanner.planning.status import REVIEW_AND_MERGE, Status
 
 
@@ -407,12 +408,12 @@ def _unlocks(
 
 def estimated_progress(
     progress: Progression,
-    days_for: Callable[[Step], float | None],
+    *,
+    days_for: Callable[[Step], float | None] = estimate.read,
 ) -> tuple[float, float] | None:
     """(done days, total estimated days), or ``None`` when nothing carries an estimate.
 
-    The weighted companion to ``percent`` — same injection seam as ``schedule()``, so
-    the domain still never learns what an estimate is stored as. Unestimated steps
+    The weighted companion to ``percent``, over the estimate by default. Unestimated steps
     contribute nothing to either number; the honest reading is "of the work somebody
     sized, this much is finished".
     """

@@ -204,6 +204,29 @@ def read_started(step: Step) -> date | None:
     return _day(step.module_data.get(MODULE_ID), STARTED_KEY)
 
 
+
+def in_flight(step: Step) -> Status:
+    """The status as the schedule reads it: review and merge are work in flight.
+
+    A step under review or waiting on its merge is not landed — the percent, Step statuses
+    and ``requires`` all say so — so the Time tab, the recorder, the matrix, the report and
+    the simulator read it as in progress, *since the day it started* (:func:`work_since`):
+    its ``since`` moved when it went to review, and the schedule credits in-flight work from
+    ``since``, so the raw day would re-cost the step at its whole estimate the moment an
+    agent finished it. :func:`read_since` keeps the raw day for what a recorded day counts
+    as a change. ARCHITECTURE.md's *An agent finishes at Ready for review* has the reasoning.
+    """
+    status = held(stored(step))
+    return Status.IN_PROGRESS if status in REVIEW_AND_MERGE else status
+
+
+def work_since(step: Step) -> date | None:
+    """The day :func:`in_flight`'s status began: for a step under review or waiting on its
+    merge, the day its work started; otherwise the day its status last changed."""
+    if stored(step) in REVIEW_AND_MERGE:
+        return read_started(step) or read_since(step)
+    return read_since(step)
+
 def write(status: Status, *, today: date, previous: dict[str, Any] | None = None) -> dict[str, Any]:
     """The entry to store, with its days: ``previous`` is the entry it replaces.
 

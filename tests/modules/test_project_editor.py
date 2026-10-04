@@ -3208,8 +3208,8 @@ def ink_in_corner(tab, step_id) -> int:
 
 def test_the_estimate_sits_inside_the_card_at_the_bottom_right(services, project, tab):
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATE_ID
-    from dplanner.modules.estimation.aspect import write as estimate
+    from dplanner.planning.estimate import MODULE_ID as ESTIMATE_ID
+    from dplanner.planning.estimate import write as estimate
 
     step = project.steps[0]
     assert ink_in_corner(tab, step.id) < 8  # An unestimated card has an empty corner.

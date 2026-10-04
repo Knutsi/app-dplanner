@@ -399,7 +399,7 @@ class _World:
 
         found: dict[str, float] = {}
         for _milestone, members in stretches(self._shape, self._project, self._is_milestone):
-            found.update(chain_tails(members, calendar, wait_of))
+            found.update(chain_tails(members, days_for=calendar, wait_of=wait_of))
         return found
 
     def _current_stretch(self) -> tuple[StepState | None, list[StepState]] | None:

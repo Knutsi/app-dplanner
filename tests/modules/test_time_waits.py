@@ -51,8 +51,8 @@ def _held(plan: Plan) -> str:
         state = states[step.id]
         return None if state.off else state.estimate
 
-    calendar = stretched(days, lambda step: states[step.id].agent, plan.state.efficiency)
-    tails = chain_tails(members, calendar)
+    calendar = stretched(lambda step: states[step.id].agent, plan.state.efficiency, days_for=days)
+    tails = chain_tails(members, days_for=calendar)
     after = [step for step in members if m1.id in states[step.id].requires]
     return max(after, key=lambda step: tails[step.id]).id
 

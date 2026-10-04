@@ -29,9 +29,10 @@ by itself after every settled change, for a plan driven from the terminal — an
 ``progress save`` keeps today's plan under a title on purpose, for ``list`` to print and
 ``--basis`` to name (``progress.py`` has the shape and the reasoning).
 
-The estimate, agent-step, status, milestone and start-date readers arrive as functions
-from the composition root, the same hand-over ``progression_cli.commands(status_for=…)``
-uses — no ``cli.py`` imports another module's.
+The estimate, the status and its days and the project's start are planning facts, imported
+from ``planning/``; the agent-step, wait, milestone and key readers arrive as functions from
+the composition root, the same hand-over ``progression_cli.commands(status_for=…)`` uses —
+no ``cli.py`` imports another module's.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """
@@ -97,8 +98,8 @@ from dplanner.modules.time_estimates.schedule import (
     write_milestone,
     write_project,
 )
+from dplanner.planning.estimate import start_of
 from dplanner.planning.schedule import Phase, ScheduleFacts, Wait, format_date, format_days
-from dplanner.planning.status import Status
 from dplanner.theme.palettes import PALETTES, palette, shades
 
 
@@ -106,27 +107,10 @@ from dplanner.theme.palettes import PALETTES, palette, shades
 class Readers:
     """The other modules' Qt-free readers a verb here needs, handed over by the root."""
 
-    days_for: Callable[[Step], float | None]
     is_agent: Callable[[Step], bool]
-    # A step's status as the model reads it, and the day it last changed — for a step in
-    # progress, the day its work began, which is what in-flight work is credited from.
-    status_for: Callable[[Step], Status]
-    since_for: Callable[[Step], date | None]
-    started_for: Callable[[Step], date | None]  # The day a step first went into a worked status.
-    # The day a step's status last changed, whatever it changed to: what a recorded day
-    # counts as a change. It differs from ``since_for`` where the root folds a status the
-    # model reads as in progress — a step under review changed today, but its work began
-    # when it started.
-    changed_on: Callable[[Step], date | None]
-    # A step that carries no work by design — estimate off: a milestone's, a feature, a check.
-    is_marker: Callable[[Step], bool]
     # What a wait step waits for; None for every other step. A wait is no work at all.
     wait_of: Callable[[Step], Wait | None]
-    # When a project's work begins; an undated one begins on the day handed in.
-    start_of: Callable[[Project, date], date]
     milestone_label: Callable[[Step], str]
-    # What a step's estimate was before, each with the day it changed — the change report.
-    estimate_history: Callable[[Step], list[tuple[date, float]]]
     key_of: Callable[[Step], str]
 
     def is_milestone(self, step: Step) -> bool:
@@ -137,12 +121,9 @@ class Readers:
         or None while there is too little to go on (``schedule.pace_so_far``)."""
         return pace_so_far(
             project.steps,
-            stretched(self.days_for, self.is_agent, read_efficiency(project)),
+            days_for=stretched(self.is_agent, read_efficiency(project)),
             is_agent=self.is_agent,
-            status_for=self.status_for,
-            started_for=self.started_for,
-            since_for=self.since_for,
-            start=self.start_of(project, today),
+            start=start_of(project, today),
             today=today,
             people=read_team(project)[0],
         )
@@ -161,14 +142,11 @@ class Readers:
         the pace — once the plan no longer holds; one the plan's own is no change."""
         resume = None
         if pace is not None and not as_planned(pace):
-            resume = stretched(self.days_for, self.is_agent, read_efficiency(project) * pace)
+            resume = stretched(self.is_agent, read_efficiency(project) * pace)
         return schedule_facts(
             project,
             today,
             is_agent=self.is_agent,
-            status_for=self.status_for,
-            since_for=self.since_for,
-            is_marker=self.is_marker,
             day_over=day_over,
             resume_days=resume,
         )
@@ -190,13 +168,10 @@ class Readers:
         return take(
             library,
             project,
-            self.days_for,
             self.is_agent,
-            self.status_for,
-            self.changed_on,
             humans=humans,
             agents=agents,
-            start=self.start_of(project, today),
+            start=start_of(project, today),
             efficiency=read_efficiency(project),
             is_milestone=self.is_milestone,
             start_for=read_start,
@@ -557,15 +532,14 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
     if args.efficiency is not None and not 0 < args.efficiency <= 100:
         raise CliError("--efficiency is a percentage between 1 and 100")
     project = find_project(context.library, args.project)
-    days_for, is_agent = readers.days_for, readers.is_agent
+    is_agent = readers.is_agent
     milestone_label, is_milestone = readers.milestone_label, readers.is_milestone
     efficiency = args.efficiency / 100 if args.efficiency is not None else read_efficiency(project)
     today = context.clock.today()
-    start = readers.start_of(project, today)
+    start = start_of(project, today)
     report = time_report(
         context.library,
         project,
-        days_for,
         is_agent,
         start=start,
         efficiency=efficiency,
@@ -587,7 +561,6 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
             for cell in cell_for(
                 context.library,
                 project,
-                days_for,
                 is_agent,
                 humans=args.humans,
                 agents=args.agents,
@@ -874,7 +847,7 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
     history = read_history(project)
     saved = read_saved(project)
     humans, agents = read_team(project)
-    start = readers.start_of(project, today)
+    start = start_of(project, today)
     then_pick = _pick_arg(args.basis, saved, AT_START, "--basis")
     now_pick = _pick_arg(args.as_of, saved, LIVE, "--as-of")
     now = resolve(now_pick, history=history, saved=saved, live=live, start=start)
@@ -886,7 +859,7 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
     # What moved the plan, since the day the baseline was recorded — the record the
     # delta measures from.
     changes = (
-        changes_since(project, then.day, readers.days_for, readers.estimate_history)
+        changes_since(project, then.day)
         if then is not None
         else None
     )

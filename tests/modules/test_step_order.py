@@ -378,7 +378,7 @@ def test_the_export_rows_carry_numbers_a_spreadsheet_can_compute_with(services, 
 
     order = placed(services.document, project)
     days = {"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0}
-    scheduled = schedule(order, lambda step: days[step.title], date(2026, 9, 7))
+    scheduled = schedule(order, date(2026, 9, 7), days_for=lambda step: days[step.title])
     milestone = project.steps[3].id
     rows = order_rows(
         scheduled, lambda _s: [], lambda step_id: "MVP" if step_id == milestone else ""

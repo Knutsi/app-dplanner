@@ -4,7 +4,6 @@ store, every fact handed in through fake readers."""
 from dplanner.core.anchors import Anchor
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.scope import ScopeKind
 from dplanner.modules.coverage.trace import (
     FEATURES,
     MILESTONES,
@@ -20,6 +19,7 @@ from dplanner.modules.coverage.trace import (
     build,
     milestone_token,
 )
+from dplanner.planning.scope import ScopeKind
 from dplanner.planning.status import Status
 
 SPEC_TEXT = """# Auth
@@ -105,7 +105,7 @@ def readers(project) -> Readers:
     }
 
     def tests_of(library, project, step_id, stops_at):
-        from dplanner.domain.scope import cone
+        from dplanner.domain.ordering import cone
 
         held = cone(library, project, step_id, stops_at=stops_at)
         rows = []

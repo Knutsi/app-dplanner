@@ -44,6 +44,8 @@ from dplanner.modules.time_estimates.present import (
 )
 from dplanner.modules.time_estimates.progress import AT_START, read_history, read_saved
 from dplanner.modules.time_estimates.schedule import read_efficiency, read_start, read_team
+from dplanner.planning import estimate
+from dplanner.planning.estimate import start_of
 from dplanner.planning.schedule import format_date, format_days, short_date
 
 CHART_ID = "progress"
@@ -71,8 +73,8 @@ def report_source(readers: Readers) -> ReportSource:
         unsized = sum(
             1
             for step in project.steps
-            if readers.days_for(step) is None
-            and not readers.is_marker(step)
+            if estimate.read(step) is None
+            and not estimate.is_marker(step)
             and readers.wait_of(step) is None
         )
         if unsized:
@@ -108,7 +110,7 @@ def _presented(library: Library, project: Project, readers: Readers, day: date) 
         history=read_history(project),
         saved=read_saved(project),
         pick=AT_START,
-        start=readers.start_of(project, day),
+        start=start_of(project, day),
         named=names_of(library, project, now, readers),
     )
 

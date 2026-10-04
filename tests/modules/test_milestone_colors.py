@@ -18,9 +18,6 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
-from dplanner.modules.estimation.aspect import write as write_days
-from dplanner.modules.estimation.schedule import write_start
 from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
 from dplanner.modules.step_milestone.aspect import write as write_milestone_label
 from dplanner.modules.time_estimates.schedule import MODULE_ID as TIME_ID
@@ -30,6 +27,9 @@ from dplanner.modules.time_estimates.schedule import (
     write_milestone,
     write_project,
 )
+from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+from dplanner.planning.estimate import write as write_days
+from dplanner.planning.estimate import write_start
 from dplanner.theme.palettes import PALETTES, palette, shades
 
 MAKO = palette("mako")

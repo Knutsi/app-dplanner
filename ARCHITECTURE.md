@@ -7331,7 +7331,7 @@ had; a feature is the one people actually name and demo.
 
 ### The cone stops at the next collector
 
-What separates the three is a single predicate. `domain/scope.py`'s `cone(origin, stops_at)`
+What separates the three is a single predicate. `domain/ordering.py`'s `cone(origin, stops_at)`
 walks `requires` backwards and refuses to pass **through** a step `stops_at` claims — it
 records it as a *boundary* and stops there:
 
@@ -7416,7 +7416,7 @@ kinds that *own* work — a milestone and a feature — stop at it. Four decisio
 - **A boundary is not always a hand-off.** Stopping at the start makes it a boundary of every
   feature right after it, and a boundary is what `scope show` names as *after* and what makes
   the Covers tab offer a second reading. The start is neither — it is where the graph ends, not
-  an earlier collector that took something — so both ask `domain/scope.py`'s `handoffs()`,
+  an earlier collector that took something — so both ask `planning/scope.py`'s `handoffs()`,
   the boundaries some kind carries, and `scope.ungathered` skips a step the feature kind stops
   at without carrying (no link could hand it to one). Nothing new in `ScopeKind`: a third
   field would have been read by exactly those two surfaces.
@@ -7480,7 +7480,7 @@ which is the trade that section already refuses for prose.
 
 The first attempt had one: a *Compose Docs* step you created, linked into the graph, and
 ran. It worked, and it was wrong. A feature and a milestone **already are** the collectors
-the graph defines — `domain/scope.py` has answered "what is behind this, up to the next one"
+the graph defines — `cone()` and `planning/scope.py` have answered "what is behind this, up to the next one"
 since checks arrived — so a second kind of collector, existing only to collect, was a node
 somebody had to remember to create for a question the graph could already answer. Deleting
 it removed a `StepKind`, a Type toggle, a medallion glyph, a mnemonic table the collision

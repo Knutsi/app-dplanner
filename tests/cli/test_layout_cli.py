@@ -382,9 +382,9 @@ def estimated(cli, days):
 def test_sorting_into_waves_writes_what_keep_this_arrangement_writes(cli, cli_library, stacked):
     """The headless form of *Keep This Arrangement* (N41): the same function, the same
     days, so the window and the terminal keep one arrangement."""
-    from dplanner.modules.estimation.aspect import read as days_for
     from dplanner.modules.project_editor.placement import positions
     from dplanner.modules.project_editor.sorts import waves
+    from dplanner.planning.estimate import read as days_for
 
     estimated(cli, {"Kick-off": 1, "Two": 2})
     # Three seats: a stack's is its first member's, and its column is derived from it.

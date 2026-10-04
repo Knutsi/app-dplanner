@@ -32,8 +32,6 @@ from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleD
 from dplanner.domain.model import Library, Step
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.modules import default_cli_commands, default_module_formats
-from dplanner.modules.estimation.aspect import write as estimate
-from dplanner.modules.estimation.schedule import write_start
 from dplanner.modules.feature.aspect import FeatureSource
 from dplanner.modules.feature.aspect import write as feature_marker
 from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
@@ -46,6 +44,8 @@ from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.aspect import write as tests
 from dplanner.modules.time_estimates.schedule import write_project
+from dplanner.planning.estimate import write as estimate
+from dplanner.planning.estimate import write_start
 from dplanner.planning.schedule import Wait
 from dplanner.planning.status import Status
 from dplanner.planning.status import write as status

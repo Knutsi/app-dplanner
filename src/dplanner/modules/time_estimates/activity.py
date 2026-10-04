@@ -100,6 +100,8 @@ from dplanner.modules.time_estimates.schedule import (
 from dplanner.modules.time_estimates.shift_view import ShiftView
 from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog, SnapshotPicker
 from dplanner.modules.time_estimates.work_view import WorkView
+from dplanner.planning import estimate
+from dplanner.planning.estimate import start_of
 from dplanner.planning.schedule import format_date, format_days, short_date
 from dplanner.theme.cards import title_font
 from dplanner.theme.icons import PALETTE_STRIP, camera_icon, close_icon, palette_strip_icon
@@ -470,7 +472,7 @@ class TimeEstimatesActivity(EntityActivity):
         project = self._project()
         if self.writers_refusal():
             return
-        if when != self._deps.readers.start_of(project, self._deps.clock.today()):
+        if when != start_of(project, self._deps.clock.today()):
             self._deps.set_start(self.project_id, when)  # The model change refreshes the tab.
 
     def _on_budget(self, humans: int, agents: int, efficiency: float) -> None:
@@ -583,7 +585,7 @@ class TimeEstimatesActivity(EntityActivity):
             self._show_writers()
             return
         history, saved = read_history(project), read_saved(project)
-        start = deps.readers.start_of(project, today)
+        start = start_of(project, today)
         now = live
         if self._as_of is not None:
             now = next((row for row in history if row.day == self._as_of), live)
@@ -709,8 +711,8 @@ class TimeEstimatesActivity(EntityActivity):
         unsized = [
             step
             for step in project.steps
-            if deps.readers.days_for(step) is None
-            and not deps.readers.is_marker(step)
+            if estimate.read(step) is None
+            and not estimate.is_marker(step)
             and deps.readers.wait_of(step) is None
         ]
         # No record holds the unsized steps, so a look back cannot say how many there were.

@@ -221,7 +221,7 @@ def test_keep_spaces_the_same_arrangement_for_each_cards_own_size():
 
 def test_each_wave_runs_from_its_earliest_start_to_its_latest_finish():
     library, project, _steps, days_for, _rng = random_plan(7)
-    starts = earliest_starts(library, project, days_for)
+    starts = earliest_starts(library, project, days_for=days_for)
     arrangement = arranged_in_waves(library, project, default_size, days_for)
     for wave in arrangement.waves:
         assert wave.start == min(starts[s] for s in wave.steps)

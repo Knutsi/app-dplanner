@@ -20,13 +20,13 @@ from dplanner.domain.commands import (
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, activity_uri, selection_uri
 from dplanner.framework.list_rows import VALUE_ROLE
-from dplanner.modules.estimation.aspect import read as read_estimate
 from dplanner.modules.estimation.bulk import (
     ESTIMATE_COLUMN,
     ESTIMATE_KIND,
     NONE_SIZED,
     BulkEstimateActivity,
 )
+from dplanner.planning.estimate import read as read_estimate
 
 
 @pytest.fixture

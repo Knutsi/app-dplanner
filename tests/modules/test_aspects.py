@@ -15,7 +15,7 @@ from dplanner.cli.main import run
 from dplanner.core.module_data import stamped
 from dplanner.domain.store import LibraryStore
 from dplanner.modules import default_cli_commands, default_module_formats
-from dplanner.modules.estimation.aspect import DATA_FORMAT, read, write
+from dplanner.planning.estimate import DATA_FORMAT, read, write
 
 
 @pytest.fixture
@@ -100,7 +100,7 @@ def test_an_estimate_remembers_what_it_was(cli, reload, workspace):
     change of a day only — and `estimate show` reads them back."""
     from datetime import date
 
-    from dplanner.modules.estimation.aspect import read_history, write
+    from dplanner.planning.estimate import read_history, write
 
     cli("estimate", "set", "Read the spec", "--days", "3")
     cli("estimate", "set", "Read the spec", "--days", "5")

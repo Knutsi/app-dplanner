@@ -11,8 +11,8 @@ only the ones named, each row saying which project it is in and whether an agent
 The projects are positionals because ``--project`` is every verb's own option already
 (``cli/main.py``), naming where a verb acts rather than what it reads.
 
-The status and estimate readers arrive as functions from the composition root, the same
-hand-over ``layout_cli.commands(days_for=…)`` uses — neither ``cli.py`` imports the other.
+The status reader arrives as a function from the composition root — a wait is over only
+on its day, and a wait is still a module's — and the estimate is the planning tier's own.
 So does what is **due**: the agent steps a window that launches what becomes due would start
 on its own, marked on their rows, and **Waits for you** — running work whose agent waits on
 a person — which ``asks_person`` splits from Running. **Taken by an agent** is the other
@@ -43,7 +43,6 @@ SEVERAL = "one project at a time — pass --all to read several as one board"
 class _Readers:
     status_for: Callable[[Step], Status]
     counts_as_work: Callable[[Step], bool]
-    days_for: Callable[[Step], float | None]
     auto_progresses: Callable[[Step, Step], bool]
     is_agent: Callable[[Step], bool]
     asks_person: Callable[[Step], bool]
@@ -54,7 +53,6 @@ def commands(
     *,
     status_in: Callable[[Library, date], Callable[[Step], Status]],
     counts_as_work: Callable[[Step], bool],
-    days_for: Callable[[Step], float | None],
     auto_progresses: Callable[[Step, Step], bool],
     is_agent: Callable[[Step], bool],
     asks_person: Callable[[Step], bool],
@@ -68,9 +66,7 @@ def commands(
 
     def show(context: CliContext, args: Namespace) -> int:
         status_for = status_in(context.library, context.clock.today())
-        readers = _Readers(
-            status_for, counts_as_work, days_for, auto_progresses, is_agent, asks_person, due
-        )
+        readers = _Readers(status_for, counts_as_work, auto_progresses, is_agent, asks_person, due)
         return _show(context, args, readers)
 
     return [
@@ -127,7 +123,7 @@ def _show(context: CliContext, args: Namespace, readers: _Readers) -> int:
         readers.asks_person,
         readers.is_agent,
     )
-    weighted = estimated_progress(found, readers.days_for)
+    weighted = estimated_progress(found)
     due = {
         step.id
         for project in projects

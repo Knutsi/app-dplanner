@@ -34,7 +34,7 @@ from dplanner.domain.model import Library, StepId
 from dplanner.framework.cards import card_rule
 from dplanner.framework.undo import UndoService
 from dplanner.framework.widgets import NumberBox
-from dplanner.modules.estimation.aspect import MODULE_ID, write
+from dplanner.planning.estimate import MODULE_ID, write
 
 CHIP_GAP = 8
 
