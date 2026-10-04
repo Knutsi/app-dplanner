@@ -66,6 +66,8 @@ if TYPE_CHECKING:
     from dplanner.framework.undo import UndoService
     from dplanner.modules.agent_at_work.module import AgentAtWorkModule
     from dplanner.modules.branches.module import BranchesModule
+    from dplanner.modules.canvas.clipboard.clip import PastePolicy
+    from dplanner.modules.canvas.module import CanvasModule
     from dplanner.modules.coverage.module import CoverageModule
     from dplanner.modules.coverage.trace import Trace
     from dplanner.modules.estimation.module import EstimationModule
@@ -74,8 +76,6 @@ if TYPE_CHECKING:
     from dplanner.modules.problems.module import ProblemsModule
     from dplanner.modules.progression.module import ProgressionModule
     from dplanner.modules.project_assets.module import ProjectAssetsModule
-    from dplanner.modules.project_editor.clipboard import PastePolicy
-    from dplanner.modules.project_editor.module import ProjectEditorModule
     from dplanner.modules.projects.checkouts import CheckoutService
     from dplanner.modules.projects.module import ProjectsModule
     from dplanner.modules.projects.repos import RepositoryServices
@@ -443,7 +443,7 @@ def _branches(root: _Root) -> "BranchesModule":
     announce — and the canvas draws its lanes."""
     from dplanner.domain.commands import SetModuleDataCommand
     from dplanner.modules.branches.module import BranchesDeps, BranchesModule
-    from dplanner.modules.project_editor.stacks import stack_split
+    from dplanner.modules.canvas.stacks.stack import stack_split
     from dplanner.planning.agent import enabled as is_agent
     from dplanner.planning.kinds import key_of
 
@@ -453,9 +453,9 @@ def _branches(root: _Root) -> "BranchesModule":
         """Where Put on a Branch's two new cards stand: the cut a column left of the picked
         card furthest left, the landing a column right of the one furthest right — when those
         were placed by hand; otherwise the ambient layout places them, as it does the rest."""
-        from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_ID
-        from dplanner.modules.project_editor.positions import read_position, write_position
-        from dplanner.modules.project_editor.sorts import H_PITCH
+        from dplanner.modules.canvas.layouts.positions import MODULE_ID as POSITION_ID
+        from dplanner.modules.canvas.layouts.positions import read_position, write_position
+        from dplanner.modules.canvas.layouts.sorts import H_PITCH
 
         placed = [where for s in step_ids if (where := read_position(library.step(s)))]
         if not placed:
@@ -690,7 +690,7 @@ def _agents(
 
 class _Graph(NamedTuple):
     problems: "ProblemsModule"
-    editor: "ProjectEditorModule"
+    editor: "CanvasModule"
 
 
 def _graph(
@@ -704,12 +704,12 @@ def _graph(
     from dplanner.modules.auto_progress.aspect import auto_progresses
     from dplanner.modules.branches.plan import lanes as branch_lanes
     from dplanner.modules.branches.plan import strips as branch_strips
+    from dplanner.modules.canvas.module import CanvasDeps, CanvasModule
+    from dplanner.modules.canvas.renderers import EdgeAccent, NodeAccent
     from dplanner.modules.estimation.schedule import milestone_stats
     from dplanner.modules.github.aspect import PR_CLOSED, PR_MERGED, pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.problems.module import ProblemsDeps, ProblemsModule
-    from dplanner.modules.project_editor.module import ProjectEditorDeps, ProjectEditorModule
-    from dplanner.modules.project_editor.renderers import EdgeAccent, NodeAccent
     from dplanner.modules.step_agent_run.aspect import (
         LAUNCHED,
         NEEDS_INPUT,
@@ -889,8 +889,8 @@ def _graph(
         )
     )
 
-    editor = ProjectEditorModule(
-        ProjectEditorDeps(
+    editor = CanvasModule(
+        CanvasDeps(
             library=library,
             debounce=services.debounce,
             actions=services.actions,
@@ -926,7 +926,7 @@ class _Knowledge(NamedTuple):
     spec: "SpecModule"
 
 
-def _knowledge(root: _Root, *, editor: "ProjectEditorModule") -> _Knowledge:
+def _knowledge(root: _Root, *, editor: "CanvasModule") -> _Knowledge:
     """What a plan answers to: the feature steps, the Specs tab and its document sources,
     and Coverage between the two."""
     from dplanner.core.config_dir import config_dir
@@ -962,10 +962,10 @@ def _knowledge(root: _Root, *, editor: "ProjectEditorModule") -> _Knowledge:
         It arrives as the *Feature* template: the marker, and the estimate opted out, since
         a collector carries no estimate of its own — the set written here and the template's
         set are the same fact; change one, change the other. Where it lands is the graph
-        editor's answer (``placement.free_spot``), so nothing is born on top of a card
+        editor's answer (``layouts/placement.free_spot``), so nothing is born on top of a card
         somebody placed, and it is one undo entry like every other placed step.
         """
-        from dplanner.modules.project_editor.placement import free_spot
+        from dplanner.modules.canvas.layouts.placement import free_spot
 
         return editor.create_step(
             project_id,
@@ -1633,7 +1633,7 @@ def _assistants(root: _Root, settings: "SettingsModule") -> list["Module"]:
 def _projects(
     root: _Root,
     *,
-    editor: "ProjectEditorModule",
+    editor: "CanvasModule",
     knowledge: _Knowledge,
     tabs: _Tabs,
     checkouts: "CheckoutService",
@@ -1824,9 +1824,9 @@ def _aspects(
     from dplanner.modules.auto_progress.module import AutoProgressDeps, AutoProgressModule
     from dplanner.modules.branches.module import LandingModule
     from dplanner.modules.branches.plan import merged_into_its_branch
+    from dplanner.modules.canvas.step_verbs import picked_edges
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
     from dplanner.modules.github.module import GithubDeps, GithubModule
-    from dplanner.modules.project_editor.verbs import picked_edges
     from dplanner.modules.step_agent_instruction.profiles import default_profile
     from dplanner.modules.step_agent_run.aspect import read as agent_run_state
     from dplanner.modules.step_check.module import StepCheckDeps, StepCheckModule
@@ -1926,8 +1926,8 @@ def _aspects(
         one (no estimate, no description), and one undo entry like every other placed step.
         A loose step's wait lands a column to its left where the step was placed; a stacked
         step's joins its stack in its slot, where the column seats it."""
-        from dplanner.modules.project_editor.positions import read_position
-        from dplanner.modules.project_editor.sorts import H_PITCH
+        from dplanner.modules.canvas.layouts.positions import read_position
+        from dplanner.modules.canvas.layouts.sorts import H_PITCH
         from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
         from dplanner.modules.step_description.aspect import write_state as description_state
         from dplanner.planning.wait import MODULE_ID as WAIT_ID
@@ -2596,12 +2596,12 @@ def _report_sources() -> tuple["ReportSource", ...]:
     their slots when two modules place at the same rank.
     """
     from dplanner.modules.auto_progress.aspect import auto_progresses
+    from dplanner.modules.canvas.report import report_source as graph
     from dplanner.modules.estimation.report import report_source as estimates
     from dplanner.modules.feature.report import report_source as features
     from dplanner.modules.github.report import report_source as github
     from dplanner.modules.notes.report import report_source as notes
     from dplanner.modules.progression.report import report_source as progression
-    from dplanner.modules.project_editor.report import report_source as graph
     from dplanner.modules.step_description.report import report_source as descriptions
     from dplanner.modules.step_milestone.report import report_source as milestones
     from dplanner.modules.step_order.report import report_source as order
@@ -2827,11 +2827,11 @@ def _lint_checks() -> tuple["LintCheck", ...]:
     from dplanner.cli.scopes import lint_checks as scope_lint
     from dplanner.modules.auto_progress import cli as auto_progress_cli
     from dplanner.modules.branches import cli as branches_cli
+    from dplanner.modules.canvas import cli as layout_cli
     from dplanner.modules.coverage.readers import covered_tests
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
     from dplanner.modules.feature import cli as feature_cli
-    from dplanner.modules.project_editor import cli as layout_cli
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.step_agent_instruction import cli as agent_cli
@@ -3003,6 +3003,9 @@ def default_cli_commands(
         merged_into_its_branch,
     )
     from dplanner.modules.branches.plan import strips as branch_strips
+    from dplanner.modules.canvas import cli as layout_cli
+    from dplanner.modules.canvas.stacks.edits import bridged_removal
+    from dplanner.modules.canvas.stacks.stack import stack_split
     from dplanner.modules.coverage import cli as coverage_cli
     from dplanner.modules.coverage.readers import covered_tests
     from dplanner.modules.docs import cli as docs_cli
@@ -3014,9 +3017,6 @@ def default_cli_commands(
     from dplanner.modules.progression import cli as progression_cli
     from dplanner.modules.project_assets import cli as assets_cli
     from dplanner.modules.project_assets.cli import read_titles
-    from dplanner.modules.project_editor import cli as layout_cli
-    from dplanner.modules.project_editor.stack_edits import bridged_removal
-    from dplanner.modules.project_editor.stacks import stack_split
     from dplanner.modules.projects import cli as projects_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.spec.aspect import read_topology
@@ -3511,7 +3511,7 @@ def default_link_rules() -> tuple["LinkRule", ...]:
     (``ARCHITECTURE.md``'s *One in, one out is a rule the domain asks*). Qt-free, because
     ``entry.py`` hands it to every CLI run.
     """
-    from dplanner.modules.project_editor.stacks import link_rule
+    from dplanner.modules.canvas.stacks.stack import link_rule
 
     return (link_rule,)
 
@@ -3525,9 +3525,9 @@ def default_module_formats() -> list[ModuleDataFormat]:
     format missing here is data the CLI silently declines to bring forward.
     """
     from dplanner.domain import shelf
+    from dplanner.modules.canvas.layouts import positions
     from dplanner.modules.notes import migrate as notes
     from dplanner.modules.project_assets import cli as project_assets
-    from dplanner.modules.project_editor import positions
     from dplanner.modules.step_agent_run import usage as agent_usage
     from dplanner.modules.time_estimates import progress as time_progress
     from dplanner.modules.time_estimates import schedule as time_schedule

@@ -80,14 +80,14 @@ from dplanner.domain.ordering import cone, depths, placed
 from dplanner.domain.store import LibraryStore
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.framework.session import AppSession
+from dplanner.modules.canvas.clipboard.clip import clip, paste
+from dplanner.modules.canvas.layouts.placement import auto_positions
+from dplanner.modules.canvas.layouts.positions import MODULE_ID as EDITOR_ID
+from dplanner.modules.canvas.layouts.positions import default_size, write_position
+from dplanner.modules.canvas.layouts.sorts import arranged_in_waves
+from dplanner.modules.canvas.layouts.verbs import wave_view
+from dplanner.modules.canvas.look import BACKGROUNDS, Look
 from dplanner.modules.estimation.schedule import project_schedule
-from dplanner.modules.project_editor.clipboard import clip, paste
-from dplanner.modules.project_editor.layout_verbs import wave_view
-from dplanner.modules.project_editor.look import BACKGROUNDS, Look
-from dplanner.modules.project_editor.placement import auto_positions
-from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
-from dplanner.modules.project_editor.positions import default_size, write_position
-from dplanner.modules.project_editor.sorts import arranged_in_waves
 from dplanner.modules.spec import aspect as spec_aspect
 from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
 from dplanner.modules.step_properties.dialog import StepDetailsDialog

@@ -118,7 +118,7 @@ def test_the_cite_menu_can_start_a_feature_step(services, project, monkeypatch):
     born_cites = feature_read(born)
     assert born_cites is not None and born_cites[0].quote == "MAY export"
     # Somewhere free: nothing was pointed at, so it earns a position of its own.
-    from dplanner.modules.project_editor.positions import read_position
+    from dplanner.modules.canvas.layouts.positions import read_position
 
     assert read_position(born) is not None
     assert services.undo.undo_text() == "New Feature"

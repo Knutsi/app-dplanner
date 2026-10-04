@@ -89,9 +89,9 @@ def test_no_two_entries_in_one_menu_share_a_letter(services):
 
 def compositions() -> list[tuple[str, Band]]:
     """Every pop-up that renders part of a menu by name rather than a whole one."""
+    from dplanner.modules.canvas.menus import BANDS
+    from dplanner.modules.canvas.toolbar import LOOK_MENU, MENUS
     from dplanner.modules.progression.module import ROW_MENU
-    from dplanner.modules.project_editor.canvas_menus import BANDS
-    from dplanner.modules.project_editor.canvas_toolbar import LOOK_MENU, MENUS
     from dplanner.modules.projects.index import FOLDER_MENU
     from dplanner.modules.spec.activity import ADD_SUBMENU
 

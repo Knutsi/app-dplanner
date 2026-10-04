@@ -757,7 +757,7 @@ the Step menu and the palette for free.
 
 So: **a gesture is not a special case.** If a view can do something, it does it by publishing
 what the user picked into the context and running an action. The verb is then testable by
-handing it a constructed `Context`, and `tests/modules/test_project_editor.py` does exactly
+handing it a constructed `Context`, and `tests/modules/canvas/test_canvas.py` does exactly
 that with no canvas in sight.
 
 ### Hidden means absent; disabled means not now
@@ -923,7 +923,7 @@ the canvas — but "what is its subject": a step, or something only the canvas c
 The canvas's right-click rendered the Step menu for everything: a card, an arrow and empty
 canvas all got New, Find, Go, Lasso, Redirect, Status and Run Agent — twenty verbs of which a
 handful applied to the thing clicked. It now renders a row of bands chosen by that thing
-(`project_editor/canvas_menus.py`):
+(`canvas/menus.py`):
 
 | Under the cursor | Bands |
 |---|---|
@@ -1008,7 +1008,7 @@ primitive and has no overflow of its own.
 nineteen riddles; *Go · Step · Link · Arrange · History · Options* is a thing to learn
 once, and the name under a band is structure rather than an explainer — it says what the
 glyphs above it are *for*, where a word on each button would repeat the tooltip. The bands
-are spelled out in `canvas_toolbar.py` rather than inferred from the menus, where these
+are spelled out in `toolbar.py` rather than inferred from the menus, where these
 verbs sit under four different headings: what a person reaches for together is not what a
 menu bar files together.
 
@@ -1160,7 +1160,7 @@ is built with the tab whether or not the frame is shown, so it keeps answering w
 hidden, and the button beside the canvas reads the last answer. No action state ever runs a
 lint pass — the checklist's rule, and the reason its own count sits in a menu label. The
 panel says the reading through a `ReadingPanel`, one string and a signal, so
-`project_editor` never learns what is being counted; that is also why the button is a
+`canvas` never learns what is being counted; that is also why the button is a
 widget where every other seat on the strip is an action, since a `Toolbar` renders a verb
 as a glyph with its words in the tooltip and a count has to be seen.
 
@@ -1174,7 +1174,7 @@ watch and no usage row. That is a gap said out loud rather than a zero invented.
 **The module never learns whose widget it is.** What goes beside the canvas is named by
 the composition root as a `SidePanel` — a title, a glyph and a way to build the widget —
 and reached through `framework/panels.py`'s existing `ContextPanel` protocol, which the
-features list already satisfied structurally. `project_editor` imports nothing from
+features list already satisfied structurally. `canvas` imports nothing from
 `problems`; `problems` registers no panel and offers a `create_panel()` instead, the
 arrangement `step_properties` already uses for the step panel. How it is stood is the next
 section's.
@@ -1189,7 +1189,7 @@ tab in the background never follows the tab in front. That is the same rule as "
 active pane speaks for the user", read from the other side.
 
 **The hosting was written once when the second host arrived.** The Problems list was the
-first, and its frame, strip button and splitter lived in `project_editor`. The Test panel
+first, and its frame, strip button and splitter lived in `canvas`. The Test panel
 was the second: as a dock panel it was one instance retargeted by whoever published, so it
 hung around when the Tests tab was not in front and needed the project form to yield to it
 by name. Moving it beside the roster meant a second copy of the same hosting, which is the
@@ -1242,7 +1242,7 @@ remembers the submenu and not the entry looks for it — finds it at all.
 
 The Edit menu holds Undo and Redo from the app shell, and then Cut, Copy, Paste, Duplicate,
 Delete and Select All — and those six are the graph editor's, registered by
-`project_editor` as ordinary `ActionSpec`s. The alternative was a dispatching layer: a
+`canvas` as ordinary `ActionSpec`s. The alternative was a dispatching layer: a
 generic `edit.copy` whose meaning is supplied by whichever surface is current. It was not
 built, because the machinery above already gives that behaviour for free. A state callback
 reads the context, so Copy is enabled exactly when steps are chosen; *disabled, never hidden*
@@ -1253,7 +1253,7 @@ at a time, and two surfaces enabled at once would be Qt's *ambiguous shortcut*, 
 neither. Until then, a second surface's verb is a second spec with a distinct label, and the
 context greys the one that does not apply.
 
-What they act on is what Delete acts on: `verbs.chosen_steps` — the selected steps, else
+What they act on is what Delete acts on: `step_verbs.chosen_steps` — the selected steps, else
 the focused one — so Cut and Copy work wherever Delete does, a table's right-click included.
 Only Paste needs a canvas: it is the target. Its state never reads the clipboard;
 `ClipboardWatch` counts what the clipboard holds when the clipboard changes and re-emits
@@ -1286,7 +1286,7 @@ removing a project from the library, a release, an outside edit.
 
 ### Copy and paste are a clone through the same command
 
-A copied step is a `StepClip` (`project_editor/clipboard.py`): its title, its links, every
+A copied step is a `StepClip` (`canvas/clipboard/clip.py`): its title, its links, every
 module's data and prose, and the bytes of every file beside it, plus where it sat. A paste
 turns a list of clips into **one** `CompositeCommand` — the same object the window pushes
 and `dplanner step duplicate` applies — so a paste is one undo step and one transaction.
@@ -1632,7 +1632,7 @@ feature B" question this application will have.
 
 **Nobody hosts the panel.** `step_properties` owns it, and `steps.details` is where it
 appears; what it shows is the step the verb was run on. Before the dock existed this was a
-*consumer-owned Protocol* — `project_editor` declared `widget`/`show_step`/`dispose` and the
+*consumer-owned Protocol* — `canvas` declared `widget`/`show_step`/`dispose` and the
 composition root handed it a factory — which worked, and cost a panel per tab. Anchoring it
 deleted the Protocol, the `detail_panel` dependency, and the question of who owns the one that
 is on screen; making it a modal (below) deleted the anchor too. The Protocol-plus-factory shape
@@ -1651,8 +1651,8 @@ used to need between them is gone:
 step_properties = StepPropertiesModule(
     StepPropertiesDeps(..., sections=services.inspector_sections)
 )
-project_editor = ProjectEditorModule(ProjectEditorDeps(..., panels=services.panels))
-projects = ProjectsModule(ProjectsDeps(..., open_project=project_editor.open))
+canvas = CanvasModule(CanvasDeps(..., panels=services.panels))
+projects = ProjectsModule(ProjectsDeps(..., open_project=canvas.open))
 ```
 
 **Where provider-and-Protocol is still the answer.** The order view's start-date bar is
@@ -2273,7 +2273,7 @@ two owners, and the line between them is the rule of the previous section applie
 that is shown live. **Free view's positions are the user's**: loaded from the store, written
 by a drag, a sort, a named layout or tidy. **Wave view's come from `sorts.arranged_in_waves`
 on every sync and are never saved** — whether a project is in Wave view is per-user state in
-`user_config` beside the applied layout (`layout_verbs.wave_view`), so toggling it leaves the
+`user_config` beside the applied layout (`layouts/verbs.wave_view`), so toggling it leaves the
 plan byte-identical and dirties nothing. The one arrow from Wave view to the store is **Keep
 This Arrangement** (`canvas.waves_keep`), a sort in kind: one undo step of position writes,
 after which the canvas is in Free view. `dplanner layout sort <project> waves` is its headless
@@ -2288,7 +2288,7 @@ terminal lands in its wave through the ordinary sync without a seat being writte
 scene does learn is that a card's seat is not the hand's: `set_pinned` takes a card's
 `ItemIsMovable` and its resize band away, `BlockDragMode` holds no pinned block, and Shift
 restacks nothing — a press still picks, links and opens. A step born in Wave view is born
-where nobody pointed (`placement.free_spot`), since a point on a derived seat means nothing to
+where nobody pointed (`layouts/placement.free_spot`), since a point on a derived seat means nothing to
 the arrangement it will be stored in; it lands in its wave all the same.
 
 **A live layout has to hold still, and that decided the algorithm.** The sorts' `_layered`
@@ -2309,7 +2309,7 @@ seat Keep would write. The tests pin the invariant over sixty seeded graphs rath
 picture: every card that changes column is the waiter or waits on it.
 
 A stack is one block in the wave of its first member, and what follows takes its depth from
-the stack as one node (N39), through the same `stacks.fold` every sort uses — never a second
+the stack as one node (N39), through the same `stack.fold` every sort uses — never a second
 copy of the column (N76). Keep spaces the same columns and order by each card's own stored
 size, like every sort, so it is exactly what Wave view showed while no card is resized and
 never makes an overlap when one is.
@@ -2321,7 +2321,7 @@ from the column's earliest start to its latest finish, a stack lasting as long a
 together — the one arrangement read twice, by the ruler and by `layout show`, and worded once
 (`sorts.span_words`); *k of n
 done* is counted from the cards' own muted accent, so the ruler and the cards under it cannot
-disagree. The ruler is chrome (`ruler.py`, DESIGN.md's *Overlays on a canvas*): a child of the
+disagree. The ruler is chrome (`layouts/ruler.py`, DESIGN.md's *Overlays on a canvas*): a child of the
 view like the minimap, following the plane across and never down; the band behind every
 other column is painted with the ground in `GraphView.drawBackground`, never as items. The
 glide between the two views and a drag within a column are F30's, which replaces the still
@@ -2352,7 +2352,7 @@ stack broken from outside — a merge, a hand edit — is possible; it is read w
 
 **The order is derived, never stored.** A list of members would be a second copy of the
 chain, and the CLI is what catches a second copy out: `dplanner step link` changes a graph
-with no window running to notice. `stacks.chain` reads the direct links among the members —
+with no window running to notice. `stack.chain` reads the direct links among the members —
 runs from each member nothing among them precedes, then from whatever is left — so every
 member lands somewhere, and a gap is where one run meets the next.
 
@@ -2369,7 +2369,7 @@ stack of three, and nothing off the grid.
 **Every reader of positions goes through one fold.** There are a dozen of them — the
 ambient layout, five sorts, tidy, `layout show` and its map, shift, contract, the canvas's
 cut drag, `free_spot`, a named layout, a paste, the report — and each could have learned the
-column for itself, which is a dozen chances to split one. Instead `stacks.fold` hands every
+column for itself, which is a dozen chances to split one. Instead `stack.fold` hands every
 arrangement a graph in which each stack *is* a card: one block under its first member's id,
 as big as its frame, and `Packing.unfold` turns the arranged blocks back into every card's
 seat. The algorithms did not change a line. A block waits on what the first member waits
@@ -2404,7 +2404,7 @@ why they are shaped so.
 every surface already asks it — the canvas under the cursor, `steps.link`'s greyed state,
 Redirect's per-link answer, `step link`, `set_edges` before it writes. A second check in the
 canvas would have been a second answer, and the CLI would not have had it at all. But the
-domain may not import a module, and a stack is `project_editor`'s. So the library grew one
+domain may not import a module, and a stack is `canvas`'s. So the library grew one
 seam: `link_rules`, a tuple of `(library, waiter, kind, source) → refusal` the composition
 root installs on the window's library in `default_modules` and on the CLI's through
 `entry.py → run → open_library`, asked after the four refusals every graph owes. A
@@ -3592,7 +3592,7 @@ the wrong one for the rest: a skill loads when the model decides it is relevant,
 description capped at 1,536 characters, and "tint the squiggle" never makes a model think it
 needs "a painter never trusts `option.palette`". That is exactly the slip a rulebook exists to
 prevent. Nested per-directory `CLAUDE.md` files trigger by path too, but a rule does not follow
-a directory — the canvas spans `project_editor`, `framework` and `theme` — and a hook rebuilds
+a directory — the canvas spans `canvas`, `framework` and `theme` — and a hook rebuilds
 what `paths:` already does, with its text arriving after the edit it was for.
 
 **What the path trigger cannot reach, and what does.** Measured on Claude Code 2.1.269 with an
@@ -7884,7 +7884,7 @@ recognises the moment. None needs action today.
   application scales* has the table and the order to take them in. The next surface
   that shows on every selection, or listens to the whole library, is the one to hold
   to those rules.
-- **`project_editor` accretes by construction.** *Modules never import each other* means a
+- **`canvas` accretes by construction.** *Modules never import each other* means a
   feature that lives *on* the canvas — named layouts, sorts, the minimap — cannot
   become its own package, so the surface-owning module grows instead (a quarter of all
   module code). The answer today is internal seams: Qt-free files per concern, split item
@@ -7900,7 +7900,7 @@ recognises the moment. None needs action today.
 
 - **A second edge kind that can be drawn rather than only typed.** The mode stack is where it
   goes: a `relates` variant of the linking mode, and nothing else moves.
-- **Rebindable keys.** `modules/project_editor/keymap.py` is the table a settings page would
+- **Rebindable keys.** `modules/canvas/keymap.py` is the table a settings page would
   read; nothing reads it yet, which is the only reason it is a constant.
 - **Reports** — new folders in the index tree, which is the shape the registry was built for.
   `dplanner schedule show` is the first of them, and it lives in the module that owns the
@@ -8732,7 +8732,7 @@ the two gestures over the synthetic library with a step selected and reports, be
 the usual spans, how long the GUI thread was held, how many times the context was
 announced and how many times the dock relaid itself — the number to quote before
 touching any of this.
-`tests/modules/test_project_editor.py` asserts one announcement and no relayout per
+`tests/modules/canvas/test_canvas.py` asserts one announcement and no relayout per
 connect and per paste in the window's deferred regime, and `tests/modules/test_sync.py`
 that a step add asks git nothing.
 

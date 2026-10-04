@@ -13,10 +13,10 @@ from tests.index_helpers import click, folder
 from dplanner.framework.builder import INDEX_PANEL_ID
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, activity_uri, selection_uri
 from dplanner.modules import start_window
+from dplanner.modules.canvas.activity import PROJECT_KIND
 from dplanner.modules.home.garden import Garden
 from dplanner.modules.home.guide import GUIDE
 from dplanner.modules.home.page import HOME_KIND, GuideRow, HomePage
-from dplanner.modules.project_editor.module import PROJECT_KIND
 
 
 @pytest.fixture

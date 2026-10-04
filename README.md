@@ -485,27 +485,30 @@ src/dplanner/
 │   │                        repository on this machine from (checkouts.py), and the archive:
 │   │                        Archive/Restore Project, the index's Archive folder
 │   │                        (archive_index.py) and the Archive tab (archive_tab.py)
-│   ├── project_editor/      a project in a tab: the canvas, its modes (connect, redirect, lasso, divide, contract, resize) and renderers,
-│   │                        sorts, named layouts, and the user's look (look.py: marks, background, snap to grid,
-│   │                        the side panel; ground.py paints the background)
-│   │                        (canvas_toolbar.py is the strip in named bands; canvas_menus.py what a
+│   ├── canvas/              a project in a tab (activity.py): the canvas (scene.py), its modes (connect, redirect,
+│   │                        lasso, divide, contract, resize), items and renderers, and the user's look (look.py:
+│   │                        marks, background, snap to grid, the side panel; ground.py paints the background);
+│   │                        stored under the module id `project_editor`
+│   │                        (toolbar.py is the strip in named bands; menus.py what a
 │   │                        right-click offers by what is under it; find.py the rows Find offers;
+│   │                        step_verbs.py the step verbs, view_verbs.py the ones that steer the view;
 │   │                        the Problems list stands beside the canvas through framework/side_panel.py)
-│   │                        (clipboard.py is what a copied step is; clipboard_verbs.py the Edit menu's
-│   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone)
 │   │                        (its panel also hosts the modules' project-level cards)
 │   │                        (geometry.py measures the graph for `dplanner layout show`, `--map`
 │   │                        draws it, `layout shift` is Divide as a verb, `layout contract` Contract,
 │   │                        `layout tidy` the sixth sort)
-│   │                        (Wave view: sorts.arranged_in_waves derives every card's column, never
-│   │                        saved; ruler.py is the band of column headings over it; Keep This
-│   │                        Arrangement and `layout sort waves` write it)
-│   │                        (stacks.py is a stack: a chain drawn as one tall card, the fold every
-│   │                        arrangement reads it through, and the rule for what may link to one;
-│   │                        stack_edits.py every edit of one — new, make, add, move, take out,
-│   │                        dissolve, and the removal Delete runs — shared with `dplanner stack …`;
-│   │                        stack_verbs.py the menu verbs that push them; items.py's StackItem the
-│   │                        frame and "+", and modes.py's BlockDragMode what drags one)
+│   │   ├── layouts/         where cards sit: positions.py stored, placement.py the ambient layout,
+│   │   │                    sorts.py the sorts (Wave view: arranged_in_waves derives every card's
+│   │   │                    column, never saved; ruler.py the band of column headings over it),
+│   │   │                    named.py saved layouts, verbs.py and button.py the menu verbs and picker
+│   │   ├── stacks/          stack.py is a stack: a chain drawn as one tall card, the fold every
+│   │   │                    arrangement reads it through, and the rule for what may link to one;
+│   │   │                    edits.py every edit of one — new, make, add, move, take out,
+│   │   │                    dissolve, and the removal Delete runs — shared with `dplanner stack …`;
+│   │   │                    verbs.py the menu verbs that push them; items.py's StackItem the
+│   │   │                    frame and "+", and modes.py's BlockDragMode what drags one
+│   │   └── clipboard/       clip.py is what a copied step is; verbs.py the Edit menu's
+│   │                        Cut/Copy/Paste/Duplicate; `dplanner step duplicate` is the same clone
 │   ├── step_properties/     THE step editor — `steps.details`, a modal and nothing anchored
 │   │                        (its first tab, details.py, stacks whatever registered a Details
 │   │                        block, name.py leading it; every view's double-click on a step

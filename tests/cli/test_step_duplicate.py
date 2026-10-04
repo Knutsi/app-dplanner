@@ -6,7 +6,7 @@ import pytest
 
 from dplanner.domain.assets import attach
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.project_editor.positions import read_position
+from dplanner.modules.canvas.layouts.positions import read_position
 from dplanner.modules.testing.aspect import read as read_tests
 
 

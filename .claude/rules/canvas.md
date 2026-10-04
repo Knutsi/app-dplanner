@@ -1,11 +1,10 @@
 ---
 paths:
-  - "src/dplanner/modules/project_editor/**"
+  - "src/dplanner/modules/canvas/**"
   - "src/dplanner/modules/problems/**"
   - "src/dplanner/theme/{cards,tones}.py"
-  - "tests/modules/test_{project_editor,canvas,graph_layout,marks,problems}*.py"
-  - "tests/modules/test_stack*.py"
-  - "tests/modules/stack_helpers.py"
+  - "tests/modules/canvas/**"
+  - "tests/modules/test_problems*.py"
   - "tests/cli/test_{layout_cli,step_duplicate,stack_cli}.py"
   - "scripts/render_graph_editor.py"
 ---
@@ -14,8 +13,8 @@ paths:
 
 - **The Problems list stands beside the canvas, inside the tab.** Where clicking a problem
   and landing on its step is a short trip. It is a `SidePanel(title, icon, build)` on
-  `ProjectEditorDeps`, named by the composition root and hosted through
-  `framework/side_panel.py` (`shell-ui.md`'s bullet has the mechanism), so `project_editor`
+  `CanvasDeps`, named by the composition root and hosted through
+  `framework/side_panel.py` (`shell-ui.md`'s bullet has the mechanism), so `canvas`
   imports nothing from `problems` and `problems` registers no panel (it offers
   `create_panel()`, the `step_properties` arrangement). Whether it stands is a field on
   `Look`, like every other preference the editor keeps, and `canvas.side_panel` is the verb.
@@ -78,7 +77,7 @@ paths:
 - **A right-click is composed by what is under it.** The click makes its subject current —
   a card or an arrow outside the pick *becomes* the pick, one inside keeps it, empty canvas
   clears it and notes the point — and the menu is then a function of the selection alone:
-  `canvas_menus.py`'s `BANDS` row for a **card** (the Step menu's bands about the step
+  `menus.py`'s `BANDS` row for a **card** (the Step menu's bands about the step
   itself, `STEP_ITSELF`), an **arrow** (Graph ▸ `links`), a **mixed** pick (Graph ▸
   `narrow`, Edit ▸ `clipboard`, Make Stack, Put on a Branch, then `Step` and `Links` children) or the **background**
   (Graph ▸ `new` and `select`, Edit ▸ `selection`, Go ▸ `survey`), rendered by
@@ -102,7 +101,7 @@ paths:
   picked steps. `ARCHITECTURE.md`'s *A right-click is composed by what is under it* has the
   reasoning.
 - **Marks are a way of looking, remembered per user — and both are on.** Starts and Ends
-  (`project_editor/marks.py`, Qt-free) are the `marks` of the module's one
+  (`canvas/marks.py`, Qt-free) are the `marks` of the module's one
   `Look` (`look.py`, with the spotlight, the background and Snap to Grid beside them),
   written to `user_config` and fanned to every scene like `RenderHints`; a tab opened later
   wears them. **On by default**: a socket with nothing on it is what a graph can be wrong
@@ -208,9 +207,9 @@ paths:
   meet the *body's* middle, and a resize stores the body. `ARCHITECTURE.md`'s *A card on a
   branch names it* has the reasoning.
 - **The look is one per-user value, and snapping is the gesture's, never the write's.**
-  `project_editor/look.py`: the marks, the background under the graph (plain, dots, lines,
+  `canvas/look.py`: the marks, the background under the graph (plain, dots, lines,
   crosses — painted by `ground.py`) and *Snap to Grid* are one `Look`, kept under one key,
-  pushed to every canvas by one setter, and read by every toggle in `canvas_verbs.py`; the
+  pushed to every canvas by one setter, and read by every toggle in `view_verbs.py`; the
   next preference is a field there, never a third copy of that plumbing. While snapping is
   on, a drag, a resize and a placed step land on `GRID` through the scene's one
   `snap()`; what reaches disk is `snapped(value)` — a whole unit, as a float — so a CLI verb
@@ -227,7 +226,7 @@ paths:
   project-level entry under the same `project_editor` id — `ARCHITECTURE.md`'s *An
   explicit sort persists; the ambient layout never does* has the reasoning.
 - **Wave view derives positions; only Free view saves them.** Whether a project is in Wave
-  view is per-user `user_config` (`layout_verbs.wave_view`), and toggling it writes nothing:
+  view is per-user `user_config` (`layouts/verbs.wave_view`), and toggling it writes nothing:
   `ProjectActivity._sync` substitutes `sorts.arranged_in_waves`' seats in the `NodeSpec`s at
   the default size, and the diff sync moves the same items. The one way it reaches the store
   is *Keep This Arrangement* (`canvas.waves_keep`, one undo, then Free view) — `dplanner
@@ -237,7 +236,7 @@ paths:
   **The arrangement must hold still**: down a column by earliest start, then the highest
   source's place in the column before, then project order — one forward pass, top-aligned —
   so a link moves only what it changes the wave of, and nobody else swaps places; never add
-  a sweep or a centring. Stacks fold through `stacks.fold` (N39/N76). The ruler (`ruler.py`)
+  a sweep or a centring. Stacks fold through `stack.fold` (N39/N76). The ruler (`layouts/ruler.py`)
   numbers waves as the Order tab does — START, WAVE 2… — and reads each `Wave`'s span (which
   `layout show` prints too, off the same arrangement) and the cards' muted accents. `ARCHITECTURE.md`'s *Wave view derives positions; only Free view saves
   them* has the reasoning.
@@ -251,7 +250,7 @@ paths:
   2 as it stood would keep what the pass drops. `tests/old_canvas.py` is the old project
   every proof of this opens. `ARCHITECTURE.md`'s *Regions were retired* has the reasoning.
 - **A stack is one tall card to everything that reads positions.** Canvas data over a real
-  `requires` chain, never a model object (`project_editor/stacks.py`, N3): every member's
+  `requires` chain, never a model object (`canvas/stacks/stack.py`, N3): every member's
   entry says `"stack": "<id>"`, the **first member's seat is the stack's** and the others
   store none, and the order is read from the chain. `positions()` derives the column — the
   members left-aligned under the first, `MEMBER_GAP` apart rounded onto the grid, inside
@@ -292,7 +291,7 @@ paths:
   an arrowhead and its last for a tail** (`GraphScene.link_end`, `link_target_at`, frames
   included) — link drag, Connect and Redirect alike — and the verdict is still
   `link_refusal`'s. New Stack is Graph ▸ `new`; Make Stack (`stack`) and Add Step Below,
-  Take Out, Dissolve (`stacked`) feed Step ▸ *Stack*; each pushes its `stack_edits` builder.
+  Take Out, Dissolve (`stacked`) feed Step ▸ *Stack*; each pushes its `stacks/edits.py` builder.
   **Make Stack links whatever is picked into one line** — the links' order, else left to
   right — and a mixed pick's right-click offers it flat, since a drag across a line picks
   its arrows too.
@@ -327,7 +326,7 @@ paths:
   pointer is over its rect (`hint_at`, from `IdleMode.mouse_move`; any other mode or the
   pointer leaving the view quiets it). This is DESIGN.md's one slide. `ARCHITECTURE.md`'s
   *Shift-drag restacks one card, and the cards make way* has the reasoning.
-- **Every stack edit is one command from `stack_edits.py`, and the stack rule is the
+- **Every stack edit is one command from `stacks/edits.py`, and the stack rule is the
   domain's to ask.** New, make, add, move, take out and dissolve each build one composite
   the canvas and `dplanner stack …` push alike; `bridged_removal` is what Delete, Cut,
   `step remove` and `project clear-steps` run, so a member that goes closes the chain; and
@@ -344,14 +343,14 @@ paths:
   state reads them from `StackVerbs`' per-project reading, built on first read and forgotten
   when the graph or the canvas's data changes, never walks a project per announce); dissolve and the removal never refuse, and dissolve lays a placed stack out as
   a row and pushes the far side by Divide's rule, never contracting. What may link to a
-  stack is `stacks.link_rule`, asked through `Library.link_refusal` (`graph-model.md`):
+  stack is `stack.link_rule`, asked through `Library.link_refusal` (`graph-model.md`):
   links arrive at the first member and leave from the last. What another writer brought in
   anyway is `stray_links`, named beside the gaps by `stack list` and lint's `stack.broken`,
   never repaired. `ARCHITECTURE.md`'s *One in, one out is a rule the domain asks* has the
   reasoning.
 - **The canvas's spatial gestures exist as verbs, and geometry is derived on every read.**
   `dplanner layout show` (`--map`) measures the graph from the stored positions and
-  `positions.node_size` through `project_editor/geometry.py` and stores nothing — the waves,
+  `positions.node_size` through `canvas/geometry.py` and stores nothing — the waves,
   the bounds, every overlap and the gaps between neighbouring columns and rows in the sorts'
   pitches, read through the same **lanes** (`sorts.lanes`, `measured`) that `layout tidy`
   acts on and the map is drawn on. `layout shift` is Divide as a verb: `geometry.shift` is
@@ -388,7 +387,7 @@ paths:
   `ARCHITECTURE.md`'s *A card pulses where a person moves next* has the reasoning.
 - **An arrow says more than its kind only through an `EdgeAccent`, translated by the root.**
   `requires` is solid with a head, `relates` dashed without one; beyond that the canvas
-  reads `ProjectEditorDeps.edge_accents(project_id)` once per sync, keyed (waiter, kind,
+  reads `CanvasDeps.edge_accents(project_id)` once per sync, keyed (waiter, kind,
   source), and `GraphScene.sync` pushes it onto new and existing arrows alike. A *doubled*
   arrow — an auto-progress link — is two rails `RAIL_GAP` apart with a chevron every
   `CHEVRON_PITCH` pointing at the step that waits, both cached in `EdgeItem.follow()` —
@@ -425,23 +424,23 @@ paths:
   canvas, not to the verb — so New twice in a row leaves two nodes rather than one hiding
   another, and naming a step is the gesture's second half. A step that arrives *carrying*
   something — a dropped feature's marker — arrives named, so it is placed but not `created`.
-- **A step born where nobody pointed lands somewhere free.** `placement.free_spot` reads
+- **A step born where nobody pointed lands somewhere free.** `layouts/placement.free_spot` reads
   every card as the canvas draws it and opens a fresh column to the right of everything,
   walking down a row at a time while anything is in the way — so the Specs tab's *Cite…* ▸
   *New feature step…* never lands on a card somebody placed, and two in a row never stack.
-  It is Qt-free and deterministic; the root places through `project_editor.create_step`
+  It is Qt-free and deterministic; the root places through `CanvasModule.create_step`
   with it, and the step arrives **as the Feature template** (marker and estimate opt-out in
   the one command, the same set the template names). A CLI verb writes no position: it has
   no gesture behind it, so the ambient layout answers, as it does for `step add`.
 - **The Edit menu's Cut, Copy, Paste, Duplicate, Delete and Select All are the graph's.**
-  Registered by `project_editor` as ordinary `ActionSpec`s — no dispatcher until a second
+  Registered by `canvas` as ordinary `ActionSpec`s — no dispatcher until a second
   surface needs a clipboard, because a shortcut can be owned by one enabled QAction at a
-  time. Cut/Copy/Duplicate act on `verbs.chosen_steps` exactly as Delete does; only Paste
+  time. Cut/Copy/Duplicate act on `step_verbs.chosen_steps` exactly as Delete does; only Paste
   needs a current canvas. The Ctrl keys are **menu shortcuts** (every text widget reclaims
   them through `ShortcutOverride`; measured, not assumed) and Delete is **not** (a bare `Del`
   would fire in every list, and `StandardKey.Delete` also claims Ctrl+D). Deleting steps no
   longer asks — undo is the safety net. A copy is a **clone**
-  (`project_editor/clipboard.py`): fresh ids, links between copies remapped and every link
+  (`canvas/clipboard/clip.py`): fresh ids, links between copies remapped and every link
   to the outside dropped, files in the payload and written after the one composite
   command, and a `PastePolicy` per module with a say (`testing` re-mints ids,
   `step_agent_run` forgets, `feature` keeps the marker and drops the passages — they were

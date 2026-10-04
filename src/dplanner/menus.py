@@ -31,7 +31,7 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "File": ("project", "library", "save", "branch", "export", "window"),
     # "history" is the app shell's Undo/Redo. "clipboard" and "selection" are the graph's:
     # Cut, Copy, Paste, Duplicate and Delete's second seat (its home is Step, which a card's
-    # right-click renders), then Select All — registered by project_editor because the step
+    # right-click renders), then Select All — registered by canvas because the step
     # graph is the one surface with a clipboard representation. ARCHITECTURE.md's *Edit
     # verbs belong to the surface whose things they act on* has the reasoning.
     "Edit": ("history", "clipboard", "selection"),
@@ -76,7 +76,7 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "Go": ("home", "views", "survey", "archive"),
     # The planner's own vocabulary. "Project" is the verbs on a project — what the index
     # tree's right-click renders — and "Step" the verbs on picked steps, which every table
-    # renders whole and a card renders in part (project_editor/canvas_menus.py).
+    # renders whole and a card renders in part (canvas/menus.py).
     # "edit" is the project's own form and where its plan lives: Settings, Move Plan.
     # "membership" is whether a project is in this library at all — Archive, Restore and
     # Remove from Library — and it is the whole of what an archived project's right-click
@@ -126,7 +126,7 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     "Graph": ("new", "select", "narrow", "links", "arrange", "contract", "look", "panels"),
     # Every table that lists steps renders this menu whole; a card on the canvas renders
     # only the bands about the step itself — edit, link, track, agent, open — and leaves
-    # the rest to the index beside it (canvas_menus.py's CARD).
+    # the rest to the index beside it (menus.py's CARD).
     # That split is why some neighbours below are separate groups.
     # "edit" is Rename, Delete and Insert Wait Before — New is the Graph menu's, since what
     # it needs is a place.

@@ -10,7 +10,7 @@ import pytest
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.project_editor.selection import EdgeRef
+from dplanner.modules.canvas.selection import EdgeRef
 from dplanner.modules.step_review.aspect import MODULE_ID as ROUNDS_ID
 from dplanner.modules.step_review.aspect import opened, said
 from dplanner.planning import agent

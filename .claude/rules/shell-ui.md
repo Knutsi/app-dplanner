@@ -5,7 +5,7 @@ paths:
   - "src/dplanner/framework/motion/**"
   - "src/dplanner/theme/**"
   - "src/dplanner/modules/{appshell,appearance,theme_omarchy,theme_system,reopen_tabs,home,settings,debug}/**"
-  - "src/dplanner/modules/project_editor/canvas_{toolbar,menus}.py"
+  - "src/dplanner/modules/canvas/{toolbar,menus}.py"
   - "tests/test_theme.py"
   - "tests/framework/test_{action_menu,actions,menubar,toolbar,palette,picker,list_rows,panels,side_panel,tabs,dialog,table,row_well,widgets,signalling,notices,index_panel,theme_service}.py"
   - "tests/modules/test_{appshell,appearance,theme_providers,reopen_tabs,home,debug}.py"
@@ -122,7 +122,7 @@ paths:
   (`framework/action_menu.py`) lays `Band`s — a menu, a group of one, a child menu's band,
   optionally as a child of its own — into one pop-up, a rule only between two bands that
   each drew something and none between two child menus. The canvas's right-click is a row
-  of bands per thing under the cursor (`project_editor/canvas_menus.py`, *A right-click is
+  of bands per thing under the cursor (`canvas/menus.py`, *A right-click is
   composed by what is under it* in `canvas.md`); a Tests tab's is its step's Step menu, as
   every table's is. Naming a `group` **with** a `submenu` means that child menu's band — two
   groups may feed one child menu, and a surface about one of them offers that one. What the
@@ -247,7 +247,7 @@ paths:
   `ARCHITECTURE.md`'s *The command palette says where a verb lives* has the reasoning.
 - **A strip of verbs is glyphs in named bands, and a band folds whole.** The canvas strip
   is `framework/toolbar.py`'s `Toolbar`, cut into bands by `add_group(label)` —
-  *Go · Step · Link · Arrange · History · Options* in `canvas_toolbar.py`'s `GROUPS` —
+  *Go · Step · Link · Arrange · History · Options* in `toolbar.py`'s `GROUPS` —
   because nineteen glyphs in a row are nineteen riddles and six named bands are a thing to
   learn once. **The glyph is the spec's**: every verb on the strip carries `ActionSpec.icon`
   and the module keeps no icon table, so adding a button is adding a string to `GROUPS`.

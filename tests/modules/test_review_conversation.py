@@ -246,7 +246,7 @@ def test_the_review_tab_opens_it_on_the_newest_or_on_a_row(services, project, st
 
 
 def test_a_review_cards_right_click_offers_it(services, project):
-    from tests.modules.test_project_editor import centre_of, labels, offered, scene
+    from tests.modules.canvas.test_canvas import centre_of, labels, offered, scene
 
     two_rounds(services.document, project)
     tab = services.tabs.open("project", project.id)

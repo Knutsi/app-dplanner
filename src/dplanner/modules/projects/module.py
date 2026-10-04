@@ -1,6 +1,6 @@
 """Projects: the folders in the index, what you can do to a project, and where it lives.
 
-The tab a project opens into belongs to ``project_editor`` (its graph); this module never
+The tab a project opens into belongs to ``canvas`` (its graph); this module never
 learns what it is. It is handed an ``open_steps`` callback and calls it, which is the same
 seam the plan tree used before it and the reason two features can render the same thing
 without meeting. A project's row in the index only selects it. Its one tab is about no

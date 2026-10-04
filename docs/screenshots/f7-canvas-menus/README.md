@@ -3,7 +3,7 @@
 Rendered by `uv run python scripts/render_graph_editor.py --menus --out docs/screenshots/f7-canvas-menus`,
 which builds a whole application over a throwaway library. Each shot is right-clicked the way
 a person would: the click makes its subject current, and the pop-up is what the handler would
-show. Re-run it after changing `project_editor/canvas_menus.py` or a band it names, and commit
+show. Re-run it after changing `canvas/menus.py` or a band it names, and commit
 the result.
 
 | Image | What it shows |

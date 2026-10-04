@@ -2,7 +2,7 @@
 rests on, the opaque fill a tint lands as, the title face and wrap, and the key block that
 names a step and says who works it.
 
-Two surfaces paint cards — the graph canvas (``modules/project_editor/renderers.py``) and
+Two surfaces paint cards — the graph canvas (``modules/canvas/renderers.py``) and
 the coverage view — and modules never import each other, so what they share lives here
 beside the tones and glyphs they also share. Everything is a pure function over a
 ``QPainter``, a rect and a colour: nothing here knows what a card *is*.

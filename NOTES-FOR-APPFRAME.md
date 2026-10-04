@@ -27,7 +27,7 @@ upstream, not a decision.
 ### `ActionToolbar` had never been instantiated, and it showed
 
 **What.** Three changes to `framework/toolbar.py`, all found the first time the class was put
-on screen (the graph canvas's verb strip in `modules/project_editor/`):
+on screen (the graph canvas's verb strip in `modules/canvas/`):
 
 - Buttons take `Qt.FocusPolicy.NoFocus`. Without it, clicking a toolbar button moves the
   keyboard off the surface the button just acted on. A canvas with its own key bindings
@@ -457,7 +457,7 @@ not on an explicit `invalidate()`. An item that paints from `option.palette` the
 in whatever theme was current when its scene was created, for as long as that scene lives. Our
 canvas lost its whole graph on a switch to a light theme — the nodes were still there, drawn in
 the dark theme's near-white on near-white. The fix is one helper
-(`modules/project_editor/items.live_palette`) reading `item.scene().palette()`, which *does*
+(`modules/canvas/items.live_palette`) reading `item.scene().palette()`, which *does*
 follow the application. Worth a line wherever the template talks about custom painting.
 
 ---
@@ -478,7 +478,7 @@ otherwise re-derive slightly differently.
 
 **What.** No code change — the second `InspectorSectionRegistry` the template ships on
 `AppServices` was unused here until the project panel started rendering its sections as
-`ToolCard`s in a `CardStack` (see `modules/project_editor/project_panel.py`). The
+`ToolCard`s in a `CardStack` (see `modules/canvas/project_panel.py`). The
 tab-vs-card split the `framework/inspector.py` docstring promised held up exactly as written:
 the host differs, the extension contract does not. Worth a line in the template's docs that
 the card host drives `show_target` with a *project* id — the contract's target vocabulary is
@@ -1133,7 +1133,7 @@ the data.
 ### `framework/step_selection.py` — "which entity does this verb act on", in one place
 
 **What.** `focused_step` moved out of `framework/aspect_toggle.py` and `chosen_steps` out of
-`modules/project_editor/verbs.py` into a file that holds both, with one parameter order
+`modules/canvas/step_verbs.py` into a file that holds both, with one parameter order
 (`(context, library)`). Nothing else changed: the two bodies are what they were.
 
 **Why.** `chosen_steps` — *the selection, else what the activity is about* — had been the
@@ -1581,7 +1581,7 @@ private `_migrated` became public `migrated()` for it — that rename is worth c
 
 ### `theme/tones.py`, and four icon painters widened
 
-**What.** The canvas's body tones moved out of `project_editor/renderers.py` into the theme
+**What.** The canvas's body tones moved out of `canvas/renderers.py` into the theme
 package so a framework widget (the bar) can wear them. `edit_icon`, `read_icon`,
 `branch_icon` and `gauge_icon` now accept `str | QColor` like the medallion painters, so any
 of them can be an `ActionSpec.icon`. Two new glyphs: `ticket_icon`, `handoff_icon`.
@@ -1656,7 +1656,7 @@ that.
 
 **Belongs upstream?** Yes, with the gallery.
 
-### `project_editor/graph.py` — drop hooks on `GraphView` (module code, pattern worth noting)
+### `canvas/scene.py` — drop hooks on `GraphView` (module code, pattern worth noting)
 
 **What.** `accepts(QMimeData) -> bool` and `dropped(QMimeData, QPointF)` on the view,
 `setAcceptDrops(True)`, and the three drag events forwarding to them. The point is recorded
@@ -2045,7 +2045,7 @@ widget as its context; CLAUDE.md already says so for views, and modules are no e
 **What.** `Shadow`, `RESTING_SHADOW`/`LIFTED_SHADOW`, `paint_shadow`, `over`, `title_font`,
 `title_lines` and the card metrics (`RADIUS`, `PADDING`, `PAD_Y`, `LINE_GAP`,
 `TITLE_POINTS`, `LIFT`, `SECONDARY_ALPHA`, `FILL_ALPHA`, `SELECTED_BORDER_W`,
-`SELECTED_FILL_GAIN`) moved verbatim from `modules/project_editor/renderers.py` into
+`SELECTED_FILL_GAIN`) moved verbatim from `modules/canvas/renderers.py` into
 `theme/`, beside the tones and glyphs they were already painted with. **Why.** A second
 surface paints cards — the coverage view's four columns — and modules never import each
 other, so the shared half had to live in a layer both may reach. `renderers.py` keeps

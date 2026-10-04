@@ -83,19 +83,20 @@ from dplanner.framework.session import AppSession
 from dplanner.modules import _report_sources
 from dplanner.modules.auto_progress.aspect import MODULE_ID as AUTO_PROGRESS_ID
 from dplanner.modules.auto_progress.aspect import write as auto_progress_write
-from dplanner.modules.project_editor.items import StepNodeItem
-from dplanner.modules.project_editor.layout_verbs import set_wave_view
-from dplanner.modules.project_editor.modes import RestackMode
-from dplanner.modules.project_editor.module import ProjectActivity, ProjectEditorModule
-from dplanner.modules.project_editor.positions import (
+from dplanner.modules.canvas.activity import ProjectActivity
+from dplanner.modules.canvas.items import StepNodeItem
+from dplanner.modules.canvas.layouts.positions import (
     MIN_NODE_H,
     MIN_NODE_W,
     write_member,
     write_position,
 )
-from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
-from dplanner.modules.project_editor.renderers import PULSE_PERIOD
-from dplanner.modules.project_editor.selection import EdgeRef
+from dplanner.modules.canvas.layouts.positions import MODULE_ID as POSITION_KEY
+from dplanner.modules.canvas.layouts.verbs import set_wave_view
+from dplanner.modules.canvas.modes import RestackMode
+from dplanner.modules.canvas.module import CanvasModule
+from dplanner.modules.canvas.renderers import PULSE_PERIOD
+from dplanner.modules.canvas.selection import EdgeRef
 from dplanner.modules.step_agent_run.aspect import MODULE_ID as AGENT_RUN_ID
 from dplanner.modules.step_agent_run.aspect import write as agent_run_write
 from dplanner.planning.agent import MODULE_ID as AGENT_ID
@@ -316,7 +317,7 @@ def render(app: QApplication, theme: Theme, out: Path, workspace: Path) -> None:
     settle(app)
 
     # Find, while the tab is still the window's current one — it is what the verb asks.
-    editor = next(m for m in services.modules if isinstance(m, ProjectEditorModule))
+    editor = next(m for m in services.modules if isinstance(m, CanvasModule))
     picker = editor.find_picker()
     assert picker is not None
     picker.resize(*PICKER_SIZE)
@@ -949,7 +950,7 @@ def render_stack_edits(app: QApplication, theme: Theme, out: Path, workspace: Pa
     # Another writer's edit: the stack's last member no longer waits on its first. Carried
     # the way the store adopts it — no rule judges another writer's links.
     library.set_edges(made[3], "requires", [], rules=False)
-    editor = next(m for m in services.modules if isinstance(m, ProjectEditorModule))
+    editor = next(m for m in services.modules if isinstance(m, CanvasModule))
     services.actions.run("canvas.side_panel", services.context.current())
     tab.set_look(editor._look)
     tab.frame()

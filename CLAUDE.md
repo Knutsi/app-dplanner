@@ -228,7 +228,7 @@ to that tuple; a file the rule cannot see is a rule that is only a habit.
 3. Another module's facts come from its `aspect.py`, a whole verb from its `workflows.py`, a
    planning fact from `planning/`. Anything else, and anything effectful, is a typed
    callback — or a small consumer-owned `Protocol` — on your own `Deps`, wired in
-   `modules/__init__.py`. `modules/project_editor/module.py` is the worked example: it
+   `modules/__init__.py`. `modules/canvas/module.py` is the worked example: it
    names the panel interface it needs and is handed a factory.
    If what you provide is a *widget* other features host, the module that owns it registers
    nothing and exposes a `create_…()` — see `modules/step_properties/`.
@@ -333,7 +333,7 @@ reasoning.
   panel beside that tab's roster — `ARCHITECTURE.md`'s *A test is run from a panel*.
 - **A canvas key names action ids; it is never an `ActionSpec.shortcut`.** A bare `h` on a
   menu-bar QAction fires application-wide and eats a keystroke in the step editor. Bind it in
-  `modules/project_editor/keymap.py`, where a key names the verbs it means in order and the
+  `modules/canvas/keymap.py`, where a key names the verbs it means in order and the
   first the context allows runs — that is how one Delete key covers links and steps.
 - **A painter never trusts `option.palette`.** Qt fills `QStyleOptionGraphicsItem.palette`
   once, when the scene is created, and never refreshes it, so every canvas item kept the
@@ -418,7 +418,7 @@ reasoning.
 - **A right-click renders a menu, never a copy of one.** `build_menu` takes a name from
   `MENU_STRUCTURE` — the index tree has `Project`, the tab bar View's Tabs submenu (the
   `submenu` filter) — and `fill_bands` composes bands of them: the canvas's by what is under
-  the cursor (`canvas_menus.py`). Make the thing under the cursor current *first*, then
+  the cursor (`menus.py`). Make the thing under the cursor current *first*, then
   build; the menu then reads the same context every other presenter does.
   **A text widget's own standard menu is the exception**: `ProseEdit` appends *Insert
   Image…* to `createStandardContextMenu()`, because a verb acting on one widget's caret

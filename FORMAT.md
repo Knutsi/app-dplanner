@@ -473,7 +473,7 @@ project — `{"runs": [{"id": "R100", "label": "…", "opened": …, "tests": [i
 {"T100": {"status": "failed"}}}]}`. A run stores the ids it was opened over, so a closed run
 cannot change meaning when the graph does, and a **missing result reads as pending** — the
 absence rule again, so a run over two hundred tests writes two hundred ids and no statuses.
-`project_editor` is another instance: a position
+`project_editor` — the `canvas` package's id — is another instance: a position
 beside each step — `{"x": 40.0, "y": 160.0}`, plus `"w"` and `"h"` only for a card somebody
 resized — and the named layouts beside the project (`{"layouts": {"<name>": {"steps":
 {"<step id>": [x, y]}}}}`, coordinates as whole-unit floats: a canvas gesture snaps to the
@@ -790,7 +790,7 @@ model boundary, because an `int` writes as `5` where a reloaded float writes as 
 written. Module data is opaque to the model and `stamped()` writes whatever dict it is
 handed, so on this axis the duty belongs to whoever owns the number. See
 `planning/estimate.py`, which is the reference for it, and
-`modules/project_editor/positions.py`, which owes it for a coordinate.
+`modules/canvas/layouts/positions.py`, which owes it for a coordinate.
 
 ## Two writers, one folder
 
