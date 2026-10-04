@@ -753,8 +753,9 @@ review, ready to merge) — stamped by the aspect's `write`, so the window, `dpl
 set` and an agent's launch all record them, and restored by undo with the rest of the
 entry. The word is one of `pending`, `in-progress`, `ready-for-review`, `ready-to-merge`,
 `done`, `blocked`; the two in the middle came later **with no format bump**, because a
-build that does not know a word reads it as pending and leaves the entry as it is — which
-is what an older build does with them. Pending is still absence, but a step set back
+build that does not know a word reads it as *unknown* and leaves the entry as it is. Unknown
+holds the step — never due, never launched, listed under Blocked — since reading it as
+pending would start work another build may already have running. Pending is still absence, but a step set back
 to pending keeps its days: an entry with no `status` key, which reads as pending. A copy
 keeps the status and forgets the days, which were the original's. An older entry has no
 days, and every reader takes that as "not said", never as today.

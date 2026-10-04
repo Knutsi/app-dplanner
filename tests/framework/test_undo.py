@@ -232,3 +232,38 @@ def test_ending_an_empty_gesture_places_nothing_and_ending_none_is_harmless(docu
     assert undo.begin_gesture()
     undo.end_gesture("Empty")
     assert not undo.can_undo()
+
+
+class Refuses:
+    """A command the document accepts once and refuses on every replay."""
+
+    def __init__(self):
+        self.applied = False
+
+    def text(self):
+        return "Refuses"
+
+    def redo(self, document):
+        if self.applied:
+            raise ValueError("replay refused")
+        self.applied = True
+        document.append("refuses")
+
+    def undo(self, document):
+        document.remove("refuses")
+
+    def merge_with(self, other):
+        return False
+
+
+def test_a_gesture_whose_replay_is_refused_leaves_the_document_untouched(document):
+    """Whole or not at all: the commands replayed before the refusal are reversed too."""
+    undo = UndoService(document)
+    with undo.gesture("Both"):
+        undo.push(Append(1, mergeable=False))
+        undo.push(Refuses())
+    undo.undo()
+    assert document == []
+    undo.redo()
+    assert document == []
+    assert not undo.can_redo() and not undo.can_undo()

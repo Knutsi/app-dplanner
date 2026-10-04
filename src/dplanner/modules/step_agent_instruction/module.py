@@ -47,7 +47,7 @@ from dplanner.core.telemetry import current
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Node, NodeId, Step, StepId
-from dplanner.domain.progression import DONE, outstanding, phrase
+from dplanner.domain.progression import DONE, UNKNOWN, outstanding, phrase
 from dplanner.domain.repositories import UNSET, RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
 from dplanner.framework.action_menu import append_action
@@ -574,6 +574,8 @@ class StepAgentInstructionModule:
             return no_agent(kind)
         if not enabled(step):
             return "mark the step as an agent step first (Agent, in Step Details)"
+        if deps.status_for(step) == UNKNOWN:
+            return "its status was written by a newer DPlanner — update to run it"
         briefed = deps.briefing.instruction(deps.library, step, deps.files)
         if (
             not briefed.body

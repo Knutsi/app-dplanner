@@ -85,6 +85,7 @@ def test_an_ended_conversation_and_a_side_a_person_settled_are_never_due():
     write(library, review, said(review, work.id, findings="…", posted="2026-09-27T10:05:00+00:00"))
     assert due(library, project, statuses={"W": "done"}) == []
     assert due(library, project, statuses={"W": "blocked"}) == []
+    assert due(library, project, statuses={"W": "unknown"}) == []  # A newer build's word.
     write(library, review, said(review, work.id, approved="2026-09-27T10:10:00+00:00"))
     assert due(library, project) == []
 

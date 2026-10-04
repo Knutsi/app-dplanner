@@ -3211,6 +3211,20 @@ the tree wholesale, so its refresh passes `forget_history=True` and the stack is
 only when something was actually taken, which is why New Branch, which changes no plan
 file, keeps it.
 
+**An undo never overwrites a value somebody else wrote, and a composite never stops half
+way.** `SetFieldCommand`, `SetModuleDataCommand` and `SetEdgesCommand` remember what their
+redo left in the model — read back, since `set_edges` de-duplicates and `set_module_data`
+keeps the caller's dict — and refuse with `ValueError` when an undo finds anything else
+there; a replayed redo refuses the same way when the value is no longer what its undo put
+back. Before that, undoing a rename restored the old title over the agent's newer one, and
+nothing said so. The refusal reaches `_drop_from` like the two above, so the user's history
+before it stays usable. A refusal inside a `CompositeCommand` — or a gesture the stack
+recorded — reverses what the composite had already applied and then goes on, so the model
+is either wholly before the gesture or wholly after it; a composite that half applied
+before the stack dropped it left a graph neither surface had asked for (Codex's probes,
+structural review §11). Text undo needed nothing: `apply_text_edit` already refuses a
+removal that does not match.
+
 **The conflict modal hands the merge to an agent** because the user asked for that over a
 banner. `modules/library_watch/` names the entries and the agent module writes the window's
 version of each into the run directory (`mine/<path>`) *before* the window yields to the
@@ -4091,7 +4105,12 @@ finished with somebody — a person or a reviewing agent — to look next, and
 review*, below, has why an agent stops there). The words are the progression walk's
 (`domain/progression.py`), and the aspect imports them rather than keeping a copy that a
 test had to pin. They cost **no format bump**: an older build reads a word it does not know
-as pending and leaves the entry on disk, which is what `read` has always done. `started` is
+as `unknown` and leaves the entry on disk. It once read such a word as pending, and the
+structural review's probe showed what that costs: an otherwise eligible agent step became
+due again, so a window on an older build would relaunch work a newer one had claimed.
+Unknown holds the step instead — `progression.due` and `rounds.due_turns` skip it, the board
+lists it with Blocked, and Run Agent refuses it, so no launch writes `in-progress` over the
+word. Absent data is the only thing that reads as pending. `started` is
 stamped the first time a step enters any *worked* status — in progress, under review or
 waiting on its merge — because a step an agent ran without the claim still began when it
 came back. And **a status verb acts on every chosen step as one undo step** (`chosen_steps`,
