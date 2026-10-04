@@ -6019,7 +6019,8 @@ verb that sets it.
 **The estimate joined the tier, and the walks read it rather than being handed it.** The
 estimate (`planning/estimate.py`, with the project's start date, under the unchanged id
 `estimation`) is interpreted by the schedule, the critical path and progress alike, so it
-passes the admission test; `modules/estimation/` keeps the editors and the verbs. Once it
+passes the admission test; `modules/estimation/` keeps the editors and the `estimate` verbs,
+and `modules/schedule/` the whole `schedule` noun. Once it
 was here, the `days_for` threaded through the root, the order tab, the layout sorts and the
 time module carried nothing but the one reader, and went: the walks default to
 `estimate.read`, and a function parameter stays only where a caller means other days —
@@ -7955,7 +7956,8 @@ recognises the moment. None needs action today.
   read; nothing reads it yet, which is the only reason it is a constant.
 - **Reports** — new folders in the index tree, which is the shape the registry was built for.
   `dplanner schedule show` is the first of them, and it lives in the module that owns the
-  numbers rather than in the one that owns the table. (The schedule that knows about
+  dates (`modules/schedule/`, with the rest of the `schedule` noun) rather than in the one
+  that owns the table. (The schedule that knows about
   parallelism, once listed here, landed as `parallel_finish` and the time estimates tab —
   see *Time estimates: two worker pools, one greedy simulation*.)
 
