@@ -53,6 +53,7 @@ if TYPE_CHECKING:
     from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
     from dplanner.domain.store import FilesFor
     from dplanner.domain.workflow import Actor, EndClaim, PlanView
+    from dplanner.framework.autosave import AutosaveService
     from dplanner.framework.mime_files import Payload
     from dplanner.framework.module import Module
     from dplanner.framework.services import AppServices
@@ -61,7 +62,6 @@ if TYPE_CHECKING:
     from dplanner.modules.spec.source_kind import DocumentSourceKind
     from dplanner.modules.spec_confluence.module import SecretStore
     from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
-    from dplanner.modules.step_review.aspect import TurnDue
     from dplanner.modules.step_status.workflows import StatusWorkflow
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
@@ -184,7 +184,7 @@ def default_modules(
     from dplanner.modules.spec_folder.module import SpecFolderKind
     from dplanner.modules.spec_git.module import SpecGitDeps, SpecGitKind
     from dplanner.modules.spec_git.source import SPEC_GIT_CACHE, probe
-    from dplanner.modules.step_agent_instruction.auto_launch import Due
+    from dplanner.modules.step_agent_instruction.due import Due, due_in, has_run
     from dplanner.modules.step_agent_instruction.module import (
         RUN_MENU_ID,
         StepAgentInstructionDeps,
@@ -1425,32 +1425,14 @@ def default_modules(
     )
 
     def due_here() -> "list[Due]":
-        """What this window would launch, across the library, each with its claim: in
-        progress for what auto-progress made due, the round's stamp for a turn. Running is
-        the plan's run stamp *or* a run this window is watching, so a claim still on its
-        way to disk can never make a live shell's step due again."""
-        from dplanner.modules.step_review.aspect import record_turn_launched
-
-        today = services.clock.today()
-        status_for = _ready_in(library, today)
-
-        def running(step: "Step") -> bool:
-            return bool(agent_run_state(step)) or agent_runs.live(step.id) > 0
-
-        def claim(step: "Step", turn: "TurnDue | None") -> "Callable[[], None]":
-            def claimed() -> None:
-                if turn is not None:
-                    record_turn_launched(library, turn.asker, turn.party)
-                else:
-                    record_started(library, step.id, today)
-
-            return claimed
-
-        return [
-            Due(step.id, claim(step, turn))
-            for project in library.projects
-            for step, turn in _due_now(library, project, status_for, running)
-        ]
+        """What this window would launch: running is the plan's run stamp *or* a run this
+        window is watching, so a claim still on its way to disk can never make a live
+        shell's step due again."""
+        return due_in(
+            library,
+            services.clock.today(),
+            lambda step: has_run(step) or agent_runs.live(step.id) > 0,
+        )
 
     # Built ahead of the list: the agent module deep-links to its own settings page
     # through it. Registered last, since its dialog must see every other module's
@@ -1568,7 +1550,7 @@ def default_modules(
             repo=store,
             notices=services.window,
             clock=services.clock,
-            flush=services.autosave.flush_now,
+            flush=lambda: _flushed(services.autosave),
             launch_lock=(
                 launch_locks.for_library(store.library_path) if launch_locks is not None else None
             ),
@@ -2241,8 +2223,6 @@ def _pr_base(step: "Step") -> str:
     return refs.pr_base if refs is not None else ""
 
 
-
-
 def _ordinal(place: int) -> str:
     """``1st``, ``2nd``, ``3rd``, ``4th`` — the teens are the exception every table forgets."""
     suffix = "th" if 10 <= place % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(place % 10, "th")
@@ -2401,51 +2381,19 @@ def _asks_person(step: "Step") -> bool:
     return asks_person(step)
 
 
-def _has_run(step: "Step") -> bool:
-    """Whether the plan records an agent run on the step — the launch's own stamp."""
-    from dplanner.modules.step_agent_run.aspect import read
-
-    return bool(read(step))
-
-
-def _due_now(
-    library: "Library",
-    project: "Project",
-    status_for: "Callable[[Step], Status]",
-    running: "Callable[[Step], bool]" = _has_run,
-) -> "list[tuple[Step, TurnDue | None]]":
-    """Every step of ``project`` a window that launches what becomes due would start, in
-    project order: what auto-progress made due (``progression.due``), and a side of a
-    conversation whose turn it is and whose agent has gone (``rounds.due_turns``) — carried
-    with its turn, since its claim is a stamp on that round. One step due both ways is due
-    for its turn: that claim is the one a later settle must read.
-
-    The one derivation every surface reads: ``progression show`` marks it, the status verbs
-    say what they made due, and the window launches it — with ``running`` widened there to
-    the runs it is watching, which a claim not yet on disk cannot hide.
-    """
-    from dplanner.modules.auto_progress.aspect import auto_progresses
-    from dplanner.modules.step_review.aspect import due_turns
-    from dplanner.planning.agent import enabled as is_agent
-    from dplanner.planning.progression import due
-
-    found: dict[str, tuple[Step, TurnDue | None]] = {
-        turn.step.id: (turn.step, turn)
-        for turn in due_turns(library, project, is_agent, running, status_for)
-    }
-    for step in due(
-        library, project, status_for, auto_progresses, is_agent, running, _counts_as_work
-    ):
-        found.setdefault(step.id, (step, None))
-    place = {step.id: index for index, step in enumerate(project.steps)}
-    return sorted(found.values(), key=lambda pair: place[pair[0].id])
-
-
 def _due_steps(
     library: "Library", project: "Project", status_for: "Callable[[Step], Status]"
 ) -> "list[Step]":
     """The due steps alone — what the terminal marks and names."""
-    return [step for step, _turn in _due_now(library, project, status_for)]
+    from dplanner.modules.step_agent_instruction.due import due_now
+
+    return [each.step for each in due_now(library, project, status_for)]
+
+
+def _flushed(autosave: "AutosaveService") -> bool:
+    """Autosave's flush now, and whether everything is on disk after it."""
+    autosave.flush_now()
+    return not autosave.has_pending()
 
 
 def _inherit_refs(subject: "Step", review: "Step") -> "Command | None":

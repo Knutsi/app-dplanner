@@ -1,10 +1,8 @@
 """The window launches what the plan made due — on its own, once, within the agent cap.
 
-A step is *due* when nobody needs to decide to start it: a collector whose last source, or a
-review whose subject, just reached review across an auto-progress link, or a side of a
-review's conversation whose turn it is and whose agent has gone. The composition root
-derives that (``_due_now``) and hands it over as :class:`Due` records, each carrying the
-claim that says it was launched. Only a window can launch, because the profiles, the
+What is due, and the claim that says it was launched, are headless (``due.py``): the
+composition root hands them over as :class:`Due` records read with the runs this window is
+watching, and this module only reacts. Only a window can launch, because the profiles, the
 terminals and the cap are this desk's settings; the terminal says what became due.
 
 **Level-triggered, never edge-triggered.** :class:`AutoLauncher` does not listen for "A3
@@ -14,6 +12,12 @@ origin, when a run ends, when the day turns and once at start, and launches what
 A step is launched once because its claim is written the moment its shell opens: the run
 stamp and in progress for what auto-progress made due, the round's stamp for a turn — so the
 very next pass, another window or the terminal reads it as no longer due.
+
+**A launch is an external effect, so its intent is written first** (``intents.py``): before
+the shell is spawned, beside the lock, and forgotten only once the claim is on disk. An intent
+a pass finds left over is a launch a crash interrupted, reconciled before anything else is
+launched: a shell that started is claimed, one that never did is refused for a person —
+neither is launched again.
 
 **It never writes over a plan it has not seen.** While the plan changed underneath and is
 not taken in yet the pass stands down, and the library watcher's ``settled`` hook, not only
@@ -30,7 +34,6 @@ what two machines can still race on.
 """
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -41,6 +44,8 @@ from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, se
 from dplanner.framework.debounce import Debounced
 from dplanner.framework.notices import Notice
 from dplanner.framework.user_config import library_scope
+from dplanner.modules.step_agent_instruction.due import Due, claim
+from dplanner.modules.step_agent_instruction.intents import LaunchIntent, LaunchIntents
 from dplanner.modules.step_agent_instruction.settings_page import auto_launch, max_agents
 
 if TYPE_CHECKING:
@@ -48,16 +53,7 @@ if TYPE_CHECKING:
 
 NOTICE_ID = "agent.auto_launch"
 ANOTHER_WINDOW = "another DPlanner window on this library launches them"
-
-
-@dataclass(frozen=True)
-class Due:
-    """A step the window launches on its own, and the claim that says it did — in progress
-    for what auto-progress made due, the round's stamp for a turn — written the moment its
-    shell opens."""
-
-    step_id: StepId
-    claim: Callable[[], None] = field(compare=False)
+INTERRUPTED = "a launch on it was interrupted before its shell started — Run Agent starts it"
 
 
 class LaunchLock:
@@ -68,10 +64,13 @@ class LaunchLock:
     whether the pid, its program and the boot are still the ones that wrote it), so a
     window that crashed never locks the next one out and one that is merely quiet keeps
     its hold however long nothing is due.
+
+    ``intents`` are written beside it, and only by its holder.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, intents: LaunchIntents) -> None:
         self._path = path
+        self.intents = intents
         self._file: QLockFile | None = None
 
     def take(self) -> str:
@@ -108,7 +107,10 @@ class LaunchLocks:
     def for_library(self, library_path: Path) -> LaunchLock:
         key = Path(library_path).expanduser().resolve()
         if key not in self._each:
-            self._each[key] = LaunchLock(self._directory / f"{library_scope(key)}.lock")
+            scope = library_scope(key)
+            self._each[key] = LaunchLock(
+                self._directory / f"{scope}.lock", LaunchIntents(self._directory / scope)
+            )
         return self._each[key]
 
 
@@ -200,6 +202,10 @@ class AutoLauncher:
             return
         if lock.take():
             return
+        if leftover := lock.intents.pending():
+            if deps.repo.changed_underneath():
+                return  # The watcher takes the change in first, and wakes this pass again.
+            self._reconcile(lock.intents, leftover)
         candidates = [due for due in deps.due() if due.step_id not in self._refused]
         limit = max_agents()
         # The cap before the plan-file walk: while it holds, every burst would pay the walk.
@@ -230,10 +236,36 @@ class AutoLauncher:
             else:
                 launched.append(fresh.step_id)
                 self._launched.add(fresh.step_id)
-        if launched:
-            deps.flush()  # The claims on disk now, not after autosave's pause.
+        if launched and deps.flush():  # The claims on disk now, not after autosave's pause.
+            lock.intents.clear()
         self._say(launched, refused)
         self._show_notice()
+
+    def _reconcile(self, intents: LaunchIntents, leftover: list[LaunchIntent]) -> None:
+        """Settle launches a crash interrupted: claim a step whose shell started, refuse one
+        whose shell never did — and launch neither again. Forgotten once the claims are on
+        disk; until then the next pass reconciles them again, which finds them claimed."""
+        deps = self._deps
+        due = {each.step_id: each for each in deps.due()}
+        adopted: list[StepId] = []
+        refused: list[StepId] = []
+        for intent in leftover:
+            found = due.get(intent.step)
+            if found is None:
+                continue  # Claimed before the crash, or no longer due.
+            if intent.started:
+                claim(deps.library, found, deps.clock.today())
+                adopted.append(found.step_id)
+            else:
+                self._refused[found.step_id] = INTERRUPTED
+                refused.append(found.step_id)
+        if deps.flush():
+            intents.clear()
+        self._say([], refused)
+        if adopted:
+            deps.status.show_status(
+                f"Claimed {self._keys(adopted)}: its agent started before the window closed", 8000
+            )
 
     def _hold_back(self, held: list[Due], why: str) -> None:
         ids = tuple(due.step_id for due in held)

@@ -85,8 +85,9 @@ paths:
   `step_sections` is handed the repository facts, as the preamble is. Each source's
   `epilogue` names who collects it and leaves its done to them. The status guard
   needed nothing: an agent may already finish a step under review.
-- **The window launches what the plan made due, and only a window does.** Due is the root's
-  one derivation `_due_now`: `progression.due` (an agent step, pending, no run, nothing
+- **The window launches what the plan made due, and only a window does.** Due is the one
+  headless derivation `step_agent_instruction/due.py`'s `due_now` (the root only widens
+  *running* with the watched runs): `progression.due` (an agent step, pending, no run, nothing
   outstanding, and a prerequisite fulfilled *through* an auto-progress link) and
   `step_review/aspect.py`'s `due_turns` (a conversation's side with the turn, no run, not launched for that
   turn — `*_turn_launched` holds the stamp that began it, equality not order). The terminal
@@ -100,7 +101,10 @@ paths:
   agents* against the tracker's live runs) has a slot; re-reads each step before its shell
   opens; launches through `launch_due`, which asks nothing (no confirmation, no clone, no
   fallback — a refusal is a status line, remembered until that step, the switch or a
-  profile changes); and writes the claim at the spawn — in progress whatever *On launch*
+  profile changes); **records its intent before the spawn** (`intents.py`, beside the lock,
+  forgotten once the flush says the claim is on disk — a leftover is reconciled first: a
+  started shell is claimed, an unstarted one refused, neither relaunched); and writes the
+  claim at the spawn — in progress whatever *On launch*
   says, or the round's stamp for a turn — flushing at once. It must run **after** the
   adoption that woke it (the store mutes dirty forwarding while adopting), so its tests turn
   immediate mode off and `flush_all()`. The profile is the step's (`preferred_agent`: a

@@ -4755,8 +4755,10 @@ verbs, generalised rather than joined by a second one), and `progression show` m
 rows. `--json` keeps its one document — the line is text for whoever reads the terminal,
 and `progression show --json` carries `due` for a caller that parses.
 
-**What is due is one derivation, read by every surface.** The root's `_due_now` joins two
-owners' halves and never stores the answer:
+**What is due is one derivation, read by every surface.** `step_agent_instruction/due.py`'s
+`due_now` joins two owners' halves and never stores the answer — headless, so that a process
+with no window can one day launch by the same rule; the root only widens *running* with the
+runs the window watches, and `due.claim` is the claim either would write:
 - `progression.due` — an agent step, pending, with no run recorded, nothing it waits on
   unfinished, and at least one prerequisite fulfilled *through* an auto-progress link (it
   reads review or merge across one). The last clause is the difference from Ready to
@@ -4785,6 +4787,20 @@ the window, *running* is also a run the tracker is watching, so a claim still on
 disk can never make a live shell's step due again. The claim is made whatever *On launch*
 says, because without it the step is due again the moment its run ends; a turn's claim is
 the stamp alone, since `post` and `reply` already moved its side's status.
+
+**A launch is an external effect: its intent is written before the shell.** The claim
+reaches the plan file at the pass's flush, and the first version spawned, claimed in
+memory and flushed afterwards — a window that died in between left no trace, and the next
+one launched the step again. Now `launch_due` writes an intent (`intents.py`: step, run id,
+actor, run directory) under the lock's own directory before it spawns, drops it when no
+shell opened, and the pass forgets it only once autosave says everything is on disk. A
+pass that finds one left over reconciles it before launching anything: a shell that
+started (its wrapper wrote the `shell` file into the run directory) is a run, so its step
+is claimed; one that never started is refused with a sentence for a person — **never
+retried blind**, since a shell slow to start would otherwise be a second one. The intent is
+this machine's fact, beside the lock, never the plan's: a run directory and a pid mean
+nothing on another machine. Only the unattended launch records one; a person's Run Agent is
+watched by the person who clicked it.
 
 **It never launches on a plan it has not seen.** A pass stands down while the plan changed
 underneath and is not taken in yet (`changed_underneath`, asked only when something is due
