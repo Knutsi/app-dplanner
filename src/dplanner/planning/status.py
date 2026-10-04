@@ -204,7 +204,6 @@ def read_started(step: Step) -> date | None:
     return _day(step.module_data.get(MODULE_ID), STARTED_KEY)
 
 
-
 def in_flight(step: Step) -> Status:
     """The status as the schedule reads it: review and merge are work in flight.
 
@@ -226,6 +225,7 @@ def work_since(step: Step) -> date | None:
     if stored(step) in REVIEW_AND_MERGE:
         return read_started(step) or read_since(step)
     return read_since(step)
+
 
 def write(status: Status, *, today: date, previous: dict[str, Any] | None = None) -> dict[str, Any]:
     """The entry to store, with its days: ``previous`` is the entry it replaces.

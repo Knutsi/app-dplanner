@@ -2,11 +2,12 @@
 paths:
   - "src/dplanner/modules/{time_estimates,progression,step_order,estimation,step_wait}/**"
   - "src/dplanner/domain/ordering.py"
-  - "src/dplanner/planning/{schedule,progression,status}.py"
+  - "src/dplanner/planning/{schedule,progression,status,estimate,dates}.py"
+  - "src/dplanner/cli/report/axis.py"
   - "src/dplanner/theme/palettes.py"
   - "tests/modules/test_{time_estimates,time_progress,time_present,time_pace,step_statuses_tab,control_centre,step_order,milestone_colors,estimation_bulk}.py"
   - "tests/domain/test_ordering.py"
-  - "tests/planning/test_{schedule,progression,status}.py"
+  - "tests/planning/test_{schedule,progression,status,dates}.py"
   - "tests/cli/test_{time_matrix,progression_verbs}.py"
   - "scripts/render_boards.py"
 ---
@@ -14,8 +15,9 @@ paths:
 # Schedule — order, progression, time estimates, progress and milestone colour
 
 - **Progression is derived, never stored** — `planning/progression.py` is the graph's
-  readiness with a `status_for(step)` handed in like `days_for`; the Step statuses tab,
-  the Control Centre, `dplanner progression show` and `--json` read one function, and the
+  readiness with a `status_for(step)` handed in (a wait's status depends on the day); the
+  Step statuses tab, the Control Centre, `dplanner progression show` and `--json` read one
+  function, and the
   frontier is a per-step check, not `ordering.ready()`'s wave one. **Ready for review and
   ready to merge are on the board and not done**: each is a partition of its own
   (`review`, `merge`), one move away for the lookahead, out of the percent — and a plain
@@ -91,17 +93,17 @@ paths:
 - **Staffing what-ifs are derived; only the assumptions are stored.** `dplanner schedule
   matrix` and the Time tab are one derivation — `planning/schedule.py`'s `phases` over
   `parallel_finish`, a deterministic two-pool greedy simulation (longest remaining chain
-  first, ties by project order) handed `days_for`, `is_agent` and `is_milestone` as
-  functions. The matrix prints the grid of teams; **the tab runs one staffing, the stored
+  first, ties by project order) reading the estimate (`planning/estimate.py`) and handed
+  `is_agent` and `is_milestone` as functions. The matrix prints the grid of teams; **the tab runs one staffing, the stored
   one** (`Readers.snapshot`, the recorder's own call) — trying another team is choosing it.
   **Milestones run in sequence**: each stretch is a
-  milestone's `scope.cone` truncated at the milestones before it, simulated on its own
+  milestone's `ordering.cone` truncated at the milestones before it, simulated on its own
   (`parallel_finish`'s `among`) from where the previous one lands — with what is left of
   that day — or from a date of its own, when it has one and that is later; an earlier
   date is *pushed* and reported, never silently overlapped. Calendar time is the same
-  walk over a wrapped
-  `days_for` (`time_estimates/schedule.py`'s `stretched`), so the domain never learns what
-  an efficiency is. Five assumptions reach disk, all under `time_estimates`: the focus
+  walk over another `days_for` (`time_estimates/schedule.py`'s `stretched`), so the
+  planning tier never learns what an efficiency is — the one kind of caller `days_for`
+  survives for, with the simulator's world and a test's fakes. Five assumptions reach disk, all under `time_estimates`: the focus
   factor, the colour map and the **team** the calendar is dated for on the project node
   (one `Assumptions` record, `schedule.py`'s `read_assumptions`/`write_project` — a
   control changing one carries the others as stored), and a milestone's start date and
@@ -135,11 +137,11 @@ paths:
   **a marker takes no worker** — both measured with the simulator's parallel scenarios
   (`ARCHITECTURE.md`'s *Milestones worked in parallel*, which also has the candidates
   rejected and why).
-  **Review and merge are work in flight, dated from when it started** — one fold in the
-  root's `_time_readers()`, which every time surface reads through: `status_for` answers
-  in progress for both, and `since_for` their `started`, because moving to review stamps
-  `since` today and the model credits in-flight work from it — the raw day re-costed the
-  step at its whole estimate the moment an agent finished. `Readers.changed_on` keeps the
+  **Review and merge are work in flight, dated from when it started** — one fold,
+  `planning/status.py`'s `in_flight` / `work_since`, which every time surface reads by
+  default: `in_flight` answers in progress for both, and `work_since` their `started`,
+  because moving to review stamps `since` today and the model credits in-flight work from it — the raw day re-costed the
+  step at its whole estimate the moment an agent finished. `status.read_since` keeps the
   raw day for what a recorded day counts as a change. `test_time_simulation.py` pins both.
   **Adjust for Efficiency** is the tab's opt-in exception: people's remaining work at the
   pace so far (`schedule.pace_so_far` — finished steps' stretched days over the working
@@ -162,8 +164,8 @@ paths:
   `ARCHITECTURE.md`'s *The plan re-dates itself from what has happened* has the reasoning.
 - **A wait is a step that holds, and no work.** `modules/step_wait/` marks a step
   `{"until": …}` — what requires it may start on that day — or `{"days": n}` working days
-  from when it is reached; the root hands the time module `wait_of`, the domain's `Wait`,
-  beside `days_for`. `parallel_finish` releases a wait without a worker; `phases` ends an
+  from when it is reached; the root hands the time module `wait_of`, the planning tier's
+  `Wait`. `parallel_finish` releases a wait without a worker; `phases` ends an
   `until` wait at its day's first moment and, re-dated, credits a `days` wait with the days
   it has already waited; `_holds` asks a wait only when it was made. **No tally counts
   one** — `snapshot_of`, `time_report`'s effort and the unsized count leave it out. A step,
@@ -205,7 +207,7 @@ paths:
 - **Progress is derived; the past is a list of snapshots, and a comparison is two of
   them.** How far a milestone has come — by estimated days, everything through its
   stretch; the count of steps is tallied and worded, never the share — is
-  `time_estimates/progress.py` over the statuses (`status_for`, handed in like `days_for`),
+  `time_estimates/progress.py` over the statuses (`status.in_flight` by default),
   and the plan's expected curve is the simulation's own per-step landings
   (`planning/schedule.py`'s `ParallelFinish.landings`, carried on each `Phase`). The one
   thing that cannot be derived is the past: a `Snapshot` — one row per stretch, steps,

@@ -45,8 +45,9 @@ from dplanner.modules.time_estimates.present import (
 from dplanner.modules.time_estimates.progress import AT_START, read_history, read_saved
 from dplanner.modules.time_estimates.schedule import read_efficiency, read_start, read_team
 from dplanner.planning import estimate
+from dplanner.planning.dates import format_date, short_date
 from dplanner.planning.estimate import start_of
-from dplanner.planning.schedule import format_date, format_days, short_date
+from dplanner.planning.schedule import format_days
 
 CHART_ID = "progress"
 TIMELINE_ID = "milestones"

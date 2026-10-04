@@ -19,7 +19,7 @@ from PySide6.QtWidgets import QHBoxLayout, QPushButton, QWidget
 from dplanner.framework.popover import PopoverButton
 from dplanner.framework.slider_row import SliderRow
 from dplanner.framework.widgets import note, quiet
-from dplanner.planning.schedule import format_date, short_date
+from dplanner.planning.dates import format_date, short_date
 from dplanner.theme.tokens import FIELD_GAP
 
 HISTORY_TIP = "Look back at the tab as it was recorded on an earlier day"

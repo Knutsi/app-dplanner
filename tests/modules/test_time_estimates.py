@@ -40,10 +40,10 @@ from dplanner.modules.time_estimates.schedule import (
     stretched,
 )
 from dplanner.modules.time_estimates.section import MilestoneScheduleSection
+from dplanner.planning.dates import format_date
 from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
 from dplanner.planning.estimate import write as write_days
 from dplanner.planning.estimate import write_start
-from dplanner.planning.schedule import format_date
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status
 from dplanner.planning.status import write as write_status

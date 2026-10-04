@@ -98,8 +98,9 @@ from dplanner.modules.time_estimates.schedule import (
     write_milestone,
     write_project,
 )
+from dplanner.planning.dates import format_date
 from dplanner.planning.estimate import start_of
-from dplanner.planning.schedule import Phase, ScheduleFacts, Wait, format_date, format_days
+from dplanner.planning.schedule import Phase, ScheduleFacts, Wait, format_days
 from dplanner.theme.palettes import PALETTES, palette, shades
 
 
@@ -858,11 +859,7 @@ def _progress_show(context: CliContext, args: Namespace, readers: Readers) -> in
     as_of = "" if now_pick.kind == "now" else pick_words(now_pick, now, today)
     # What moved the plan, since the day the baseline was recorded — the record the
     # delta measures from.
-    changes = (
-        changes_since(project, then.day)
-        if then is not None
-        else None
-    )
+    changes = changes_since(project, then.day) if then is not None else None
     scopes: list[tuple[str | None, str]] = []
     if args.milestone:
         step = _milestone_named(context, project, readers, args.milestone)

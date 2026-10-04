@@ -112,11 +112,11 @@ def enabled(step: Step) -> bool:
     return not (entry and entry.get("off"))
 
 
-
 def is_marker(step: Step) -> bool:
     """A step that carries no work by design — its estimate turned off: a milestone's own
     step, a feature, a check. The schedule lands it the moment what it requires has."""
     return not enabled(step)
+
 
 def read_history(step: Step) -> list[tuple[date, float]]:
     """The values the estimate had before, each with the day it was replaced on, oldest

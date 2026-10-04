@@ -38,7 +38,7 @@ from dplanner.modules.time_estimates.plotting import (
     paint_verticals,
 )
 from dplanner.modules.time_estimates.present import Presented, Scope, milestone_words
-from dplanner.planning.schedule import short_date
+from dplanner.planning.dates import short_date
 from dplanner.theme.icons import ICON_SIZE, KEY_BADGE_W, key_badge_icon
 
 ROW_HEIGHT = 34

@@ -27,13 +27,12 @@ from dplanner.modules.time_estimates.schedule import FocusChange
 from dplanner.modules.time_estimates.simulation.frames import Plan, StepState
 from dplanner.modules.time_estimates.simulation.rng import choose, lognormal, rng, seed_of
 from dplanner.modules.time_estimates.simulation.timeline import Played, Timeline
+from dplanner.planning.dates import WEEKDAYS, short_date
 from dplanner.planning.schedule import (
     SATURDAY,
-    WEEKDAYS,
     Wait,
     chain_tails,
     next_working_day,
-    short_date,
     stretches,
     working_days_after,
     working_days_between,

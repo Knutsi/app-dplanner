@@ -15,7 +15,8 @@ from typing import Any
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.aspects import AspectSpec
 from dplanner.domain.model import Step
-from dplanner.planning.schedule import Wait, short_date
+from dplanner.planning.dates import short_date
+from dplanner.planning.schedule import Wait
 
 MODULE_ID = "step_wait"
 DATA_FORMAT = ModuleDataFormat(MODULE_ID)

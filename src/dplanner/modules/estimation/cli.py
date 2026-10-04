@@ -25,6 +25,7 @@ from dplanner.modules.estimation.schedule import (
     project_critical_path,
     project_schedule,
 )
+from dplanner.planning.dates import format_date
 from dplanner.planning.estimate import (
     MODULE_ID,
     enabled,
@@ -38,7 +39,6 @@ from dplanner.planning.estimate import (
 from dplanner.planning.schedule import (
     CriticalPath,
     Scheduled,
-    format_date,
     format_day_count,
     format_days,
     volume,

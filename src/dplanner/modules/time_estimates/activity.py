@@ -101,8 +101,9 @@ from dplanner.modules.time_estimates.shift_view import ShiftView
 from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog, SnapshotPicker
 from dplanner.modules.time_estimates.work_view import WorkView
 from dplanner.planning import estimate
+from dplanner.planning.dates import format_date, short_date
 from dplanner.planning.estimate import start_of
-from dplanner.planning.schedule import format_date, format_days, short_date
+from dplanner.planning.schedule import format_days
 from dplanner.theme.cards import title_font
 from dplanner.theme.icons import PALETTE_STRIP, camera_icon, close_icon, palette_strip_icon
 from dplanner.theme.palettes import PALETTES, Palette

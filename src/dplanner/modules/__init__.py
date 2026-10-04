@@ -1200,12 +1200,11 @@ def default_modules(
             tabs=services.tabs,
             clock=clock,
             day_over=day_over,
-            # Estimates, agent-ness, statuses and milestones through the owners' Qt-free
-            # readers — the tab never learns what any of them is stored as.
+            # Agent-ness, waits and milestones through the owners' Qt-free readers; the
+            # estimate and the status are planning facts the tab reads itself.
             readers=_time_readers(),
-            # Clicking the calendar re-dates the plan: one undoable write of the
-            # estimation module's own entry, composed here so neither module imports
-            # the other.
+            # Clicking the calendar re-dates the plan: one undoable write of the project's
+            # start (``planning/estimate.py``), pushed here on the window's undo stack.
             set_start=lambda project_id, when: undo.push(
                 SetModuleDataCommand(
                     project_id, ESTIMATION_ID, write_start(when), label="Set Start Date"
@@ -2915,7 +2914,8 @@ def _milestone_stats(library: "Library", project: "Project") -> dict[str, str]:
     """
     from dplanner.modules.estimation.schedule import project_schedule
     from dplanner.modules.step_milestone.aspect import is_milestone
-    from dplanner.planning.schedule import format_date, format_days
+    from dplanner.planning.dates import format_date
+    from dplanner.planning.schedule import format_days
 
     if not any(is_milestone(step) for step in project.steps):
         return {}
@@ -3386,7 +3386,6 @@ def _report_sources() -> tuple["ReportSource", ...]:
     their slots when two modules place at the same rank.
     """
     from dplanner.modules.estimation.report import report_source as estimates
-    from dplanner.modules.estimation.schedule import project_schedule
     from dplanner.modules.feature.report import report_source as features
     from dplanner.modules.github.report import report_source as github
     from dplanner.modules.notes.report import report_source as notes
@@ -3426,7 +3425,6 @@ def _report_sources() -> tuple["ReportSource", ...]:
             glyph_of=_primary_glyph,
         ),
         order(
-            schedule_of=project_schedule,
             step_aspects=step_aspects,
             milestone_label=milestone_read,
         ),

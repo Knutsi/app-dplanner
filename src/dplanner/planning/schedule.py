@@ -33,7 +33,7 @@ the rest resumes from tomorrow, with work in flight credited — so a forecast h
 while things go to plan and moves only when they do not.
 """
 
-from collections.abc import Callable, Container, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Container, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from math import ceil, floor
@@ -106,56 +106,6 @@ def working_days_between(start: date, finish: date) -> int:
             count += 1
         when += _ONE_DAY
     return count
-
-
-MONTHS = (
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-)
-ABBREVIATION = 3  # "September" → "Sep". True of every month in English.
-WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-
-
-def format_date(when: date, today: date | None = None) -> str:
-    """A date as a person reads it: "23 September", or "14 Feb '27" in another year.
-
-    A schedule is read for *when*, and an ISO date makes the reader do the month arithmetic.
-    The year is the part that is usually obvious, so it appears only when it is not — and
-    when it does, the month abbreviates to keep the column from doubling in width.
-
-    The month names are spelled out here rather than taken from ``strftime``, which is
-    locale-dependent: the interface is English, and a date that read "23 september" on one
-    machine and "23 September" on another would be a test that passes where it was written.
-
-    ``today`` is a parameter so the rule can be tested without waiting for a year to pass;
-    the default is the clock, because every caller means "now".
-    """
-    today = today or date.today()
-    if when.year == today.year:
-        return f"{when.day} {MONTHS[when.month - 1]}"
-    return f"{when.day} {MONTHS[when.month - 1][:ABBREVIATION]} '{when.year % 100:02d}"
-
-
-def short_date(when: date, today: date | None = None) -> str:
-    """A date where a column has no room for the month spelled out: "23 Sep", with the
-    year when it is not this one — :func:`format_date`'s rule, one size down. It is what
-    the axis marks are labelled with, so a date printed inside a plot reads as the same
-    kind of thing as the scale under it."""
-    today = today or date.today()
-    month = MONTHS[when.month - 1][:ABBREVIATION]
-    if when.year == today.year:
-        return f"{when.day} {month}"
-    return f"{when.day} {month} '{when.year % 100:02d}"
 
 
 def as_weeks(days: float) -> float:
@@ -1045,68 +995,3 @@ def critical_path(
         steps=tuple(chain),
         unestimated=sum(1 for step in chain if days_for(step) is None),
     )
-
-
-# -- the axis of a chart over dates -------------------------------------------------------------
-
-Tick = tuple[date, str]  # A date on the axis and the label it wears.
-
-
-def _day_label(when: date) -> str:
-    return f"{when.day} {MONTHS[when.month - 1][:ABBREVIATION]}"
-
-
-def _month_label(when: date) -> str:
-    return MONTHS[when.month - 1][:ABBREVIATION]
-
-
-def _with_years(ticks: list[Tick]) -> tuple[Tick, ...]:
-    """The first mark of each new year carries the year, whatever the unit — thinned
-    months may skip January, and a week may cross the boundary."""
-    labelled: list[Tick] = []
-    for index, (when, label) in enumerate(ticks):
-        if index and when.year != ticks[index - 1][0].year:
-            label = f"{label} '{when.year % 100:02d}"
-        labelled.append((when, label))
-    return tuple(labelled)
-
-
-def _days(first: date, last: date) -> Iterator[date]:
-    when = first
-    while when <= last:
-        yield when
-        when += timedelta(days=1)
-
-
-def _mondays(first: date, last: date) -> Iterator[date]:
-    when = first + timedelta(days=(7 - first.weekday()) % 7)
-    while when <= last:
-        yield when
-        when += timedelta(days=7)
-
-
-def _month_starts(first: date, last: date) -> Iterator[date]:
-    year, month = first.year, first.month
-    if first.day != 1:
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-    while date(year, month, 1) <= last:
-        yield date(year, month, 1)
-        year, month = (year + 1, 1) if month == 12 else (year, month + 1)
-
-
-def axis_ticks(first: date, last: date, room: int) -> tuple[Tick, ...]:
-    """The dates marked along the axis and their labels: every day, else every Monday,
-    else every month's first — the finest unit whose marks fit ``room`` (how many labels
-    the plot has width for) — and months thinned to every second, third… when even those
-    do not. Calendar boundaries, never an even division of the span, because a reader
-    places a point by the nearest mark. At least one mark, whatever the room."""
-    days = list(_days(first, last))
-    if len(days) <= room:
-        return _with_years([(when, _day_label(when)) for when in days])
-    mondays = list(_mondays(first, last))
-    if mondays and len(mondays) <= room:
-        return _with_years([(when, _day_label(when)) for when in mondays])
-    months = list(_month_starts(first, last))
-    every = max(1, ceil(len(months) / max(1, room)))
-    ticks = _with_years([(when, _month_label(when)) for when in months[::every]])
-    return ticks or ((first, _day_label(first)),)

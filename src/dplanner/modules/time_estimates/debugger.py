@@ -67,7 +67,8 @@ from dplanner.modules.time_estimates.simulation.scenarios import SCENARIOS, scen
 from dplanner.modules.time_estimates.simulation.simulate import Setup, Simulated, simulate
 from dplanner.modules.time_estimates.simulation.timeline import CADENCES
 from dplanner.modules.time_estimates.simulation.world import wait_title
-from dplanner.planning.schedule import WEEKDAYS, Wait, format_date, short_date
+from dplanner.planning.dates import WEEKDAYS, format_date, short_date
+from dplanner.planning.schedule import Wait
 from dplanner.planning.status import Status
 from dplanner.theme.icons import (
     chevron_left_icon,

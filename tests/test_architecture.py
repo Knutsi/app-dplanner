@@ -136,7 +136,7 @@ CONCRETE_STORAGE = (
 
 # Ceilings (rule 12), recorded on 4 October 2026. Lower one by hand when its count falls;
 # never raise it.
-ROOT_LINES = 4961
+ROOT_LINES = 4904
 DIRECT_COMMANDS = 141
 
 # Every id a module stores data, settings or files under (rule 13). Stored ids are public:

@@ -67,11 +67,11 @@ from dplanner.domain.model import Library, Project, Step, local_day
 from dplanner.domain.ordering import cyclic
 from dplanner.modules.time_estimates.schedule import stretched
 from dplanner.planning import estimate
+from dplanner.planning.dates import format_date
 from dplanner.planning.schedule import (
     Phase,
     ScheduleFacts,
     Wait,
-    format_date,
     format_days,
     next_working_day,
     no_wait,

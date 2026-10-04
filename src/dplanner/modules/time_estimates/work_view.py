@@ -55,7 +55,8 @@ from dplanner.modules.time_estimates.present import (
     milestone_words,
     step_at,
 )
-from dplanner.planning.schedule import SATURDAY, format_date, format_days
+from dplanner.planning.dates import format_date
+from dplanner.planning.schedule import SATURDAY, format_days
 
 LEFT = 52
 RIGHT = 90

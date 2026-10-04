@@ -32,7 +32,7 @@ from dplanner.modules.time_estimates.progress import (
     Snapshot,
     find_saved,
 )
-from dplanner.planning.schedule import format_date
+from dplanner.planning.dates import format_date
 from dplanner.theme.tokens import SECTION_GAP
 
 NOTE_LINES = 4

@@ -2,7 +2,9 @@
 
 A project is a graph, and this is the question the graph is *for*. The answer is a
 topological sort, arranged in waves: everything in wave one has nothing left to wait on and
-can be started today; everything in wave two waits only on wave one.
+can be started today; everything in wave two waits only on wave one. The other walk here is
+the cone behind a step (:func:`cone`), truncated where a predicate says — what
+``planning/scope.py`` reads as what a collector gathers.
 
 **Plain functions over the model, with no Qt**, so the canvas layout, the order view and the
 CLI all read the same walk — and so the interesting part is testable without a widget in
