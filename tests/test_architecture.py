@@ -16,7 +16,11 @@ The rules, in prose (see also CLAUDE.md):
    plain pytest, and must never depend on the machinery that displays it.
 3. ``framework/`` never imports ``modules`` or ``app``. It may use ``core``, ``domain``,
    ``planning`` and ``theme``.
-4. Modules never import each other. Only ``modules/__init__.py`` may import them all.
+4. A module reaches another only through its ``aspect.py`` (facts) or ``workflows.py``
+   (complete workflows), at the top of that package, and both are headless — checked by
+   following everything they import, not by their names. A ``workflows.py`` builds and never
+   persists, so it imports no ``domain.store`` itself. Only ``modules/__init__.py`` may import
+   the rest of a module.
 5. Modules never import ``AppServices``, the builder, or the concrete window — they receive
    typed ``Deps`` objects and reach the window through the capability protocols.
 6. ``app.py`` and ``entry.py`` never reach into a module subpackage; they may import the
@@ -34,6 +38,13 @@ The rules, in prose (see also CLAUDE.md):
 10. ``planning/`` imports no Qt and only ``core`` and ``domain``, and ``domain/`` never
     imports it. The planning model — status, readiness, the schedule — sits on the graph and
     under every feature, so a feature can read it and it can read no feature.
+11. The module import graph is acyclic; a failure names the cycle, edge by edge.
+12. Two counts may only fall: the composition root's lines, and the built-in commands pushed
+    or applied directly outside a ``workflows.py``. They are ceilings, lowered by hand.
+13. The ids a module stores its data under are pinned: a package may move, its ids may not.
+
+ARCHITECTURE.md's *What holds the tier and the workflows in place* has the reasoning for
+rules 4 and 11 to 13.
 
 **When one of these fails, fix the dependency direction, not the test.** Every rule has a
 supported way to get what the shortcut wanted: a capability protocol, a typed callback on
@@ -43,6 +54,7 @@ your ``Deps``, or a registry.
 import ast
 import subprocess
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 SRC = Path(__file__).parent.parent / "src" / "dplanner"
@@ -120,6 +132,67 @@ CONCRETE_STORAGE = (
     f"{PACKAGE}.core.storage.git",
     f"{PACKAGE}.core.storage.github",
     f"{PACKAGE}.core.storage.locations",
+)
+
+# Ceilings (rule 12), recorded on 4 October 2026. Lower one by hand when its count falls;
+# never raise it.
+ROOT_LINES = 4961
+DIRECT_COMMANDS = 141
+
+# Every id a module stores data, settings or files under (rule 13). Stored ids are public:
+# plans on disk, user settings and the keychain know a module by them.
+STORED_IDS = frozenset(
+    {
+        "agent_at_work",
+        "agent_usage",
+        "appearance",
+        "auto_progress",
+        "branch_cut",
+        "branch_land",
+        "checklist",
+        "coverage",
+        "dictation",
+        "docs",
+        "docs_compiled",
+        "estimation",
+        "feature",
+        "github",
+        "home",
+        "install",
+        "library",
+        "library_watch",
+        "llm",
+        "llm_anthropic",
+        "llm_openai",
+        "notes",
+        "problems",
+        "progress_history",
+        "progression",
+        "project_assets",
+        "project_editor",
+        "projects",
+        "reopen_tabs",
+        "reporting",
+        "review_rounds",
+        "settings",
+        "shelf",
+        "spec",
+        "spec_confluence",
+        "step_agent_instruction",
+        "step_agent_run",
+        "step_check",
+        "step_description",
+        "step_milestone",
+        "step_order",
+        "step_properties",
+        "step_review",
+        "step_start",
+        "step_status",
+        "step_ticket",
+        "step_wait",
+        "testing",
+        "time_estimates",
+    }
 )
 
 
@@ -274,9 +347,16 @@ def collect_violations(root: Path = SRC) -> list[str]:
                     if name.startswith(f"{PACKAGE}.framework"):
                         forbid(path, line, name, f"a module's {path.name} uses core and domain")
                 if name.startswith(f"{PACKAGE}.modules."):
-                    other = name.split(".")[2] if len(name.split(".")) > 2 else ""
-                    if other and other != own:
-                        forbid(path, line, name, "modules never import each other")
+                    other, *inside = name.split(".")[2:]
+                    if other != own and inside not in ([], ["aspect"], ["workflows"]):
+                        forbid(
+                            path,
+                            line,
+                            name,
+                            "modules reach each other only through aspect.py or workflows.py",
+                        )
+                if path.name == "workflows.py" and name.startswith(f"{PACKAGE}.domain.store"):
+                    forbid(path, line, name, "a workflow builds a change; its caller persists it")
                 if name == f"{PACKAGE}.modules":
                     forbid(path, line, name, "modules never import the composition root")
                 bundle = (f"{PACKAGE}.framework.services", f"{PACKAGE}.framework.builder")
@@ -289,7 +369,148 @@ def collect_violations(root: Path = SRC) -> list[str]:
             elif parts in (("app.py",), ("entry.py",)) and name.startswith(f"{PACKAGE}.modules."):
                 forbid(path, line, name, "the entry points never reach into module subpackages")
 
+    # -- rule 4's other half: what another module can reach through the surface is headless.
+    surfaces = [*root.glob("modules/*/aspect.py"), *root.glob("modules/*/workflows.py")]
+    for surface in sorted(surfaces):
+        breaches = [
+            (path, line, name)
+            for path, line, name in reach(surface, root)
+            if name.startswith((*QT_PACKAGES, f"{PACKAGE}.framework"))
+        ]
+        if breaches:
+            path, line, name = breaches[0]
+            more = f" (and {len(breaches) - 1} more)" if len(breaches) > 1 else ""
+            violations.append(
+                f"{surface.relative_to(root.parent)}: reaches {name!r} through "
+                f"{path.relative_to(root.parent)}:{line}{more} — the surface another module "
+                "imports is headless"
+            )
+
+    # -- rule 11 ------------------------------------------------------------------------------
+    cycle = module_cycle(root)
+    if cycle:
+        violations.append("modules import each other in a cycle: " + " → ".join(cycle))
+
     return violations
+
+
+def _file_of(name: str, root: Path) -> Path | None:
+    """The source file a dotted name under ``root`` loads, or None outside the tree."""
+    stem = root.parent.joinpath(*name.split("."))
+    for candidate in (stem.with_suffix(".py"), stem / "__init__.py"):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def reach(start: Path, root: Path = SRC) -> list[tuple[Path, int, str]]:
+    """Every import made by ``start`` and by everything under ``root`` it imports, followed
+    to the end: (file, line, dotted-name) triples, nearest ``start`` first."""
+    found: list[tuple[Path, int, str]] = []
+    seen: set[Path] = set()
+    pending = [start]
+    while pending:
+        path = pending.pop(0)
+        if path in seen:
+            continue
+        seen.add(path)
+        for line, name in imported_names(path, root):
+            found.append((path, line, name))
+            target = _file_of(name, root) if name.startswith(f"{PACKAGE}.") else None
+            if target is not None:
+                pending.append(target)
+    return found
+
+
+def module_cycle(root: Path = SRC) -> list[str]:
+    """A cycle among the module packages, each edge named by its first import as
+    ``a (file:line)``, ending where it began — or an empty list when there is none."""
+    edges: dict[str, dict[str, str]] = {}
+    for path in sorted(root.glob("modules/*/**/*.py")):
+        own = module_dir_of(path, root)
+        for line, name in imported_names(path, root):
+            if own and name.startswith(f"{PACKAGE}.modules."):
+                other = name.split(".")[2]
+                if other != own:
+                    where = f"{path.relative_to(root.parent)}:{line}"
+                    edges.setdefault(own, {}).setdefault(other, where)
+
+    trail: list[str] = []
+    done: set[str] = set()
+
+    def visit(package: str) -> list[str]:
+        if package in trail:
+            loop = [*trail[trail.index(package) :], package]
+            return [*(f"{a} ({edges[a][b]})" for a, b in pairwise(loop)), package]
+        if package in done:
+            return []
+        trail.append(package)
+        for other in edges.get(package, {}):
+            if cycle := visit(other):
+                return cycle
+        trail.pop()
+        done.add(package)
+        return []
+
+    for package in sorted(edges):
+        if cycle := visit(package):
+            return cycle
+    return []
+
+
+def direct_commands(root: Path = SRC) -> int:
+    """How many times a command built from ``domain/commands.py`` is pushed onto the undo
+    stack (``….undo.push(…)``) or applied by a CLI verb (``context.apply(…)``) in place,
+    outside a ``workflows.py``. A command bound to a name first is not counted: the count
+    is a trend for a reviewer to watch, not a proof."""
+    commands = ast.parse((root / "domain" / "commands.py").read_text())
+    built_in = {
+        node.name
+        for node in commands.body
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef)) and not node.name.startswith("_")
+    }
+
+    def last_name(node: ast.expr) -> str | None:
+        if isinstance(node, ast.Attribute):
+            return node.attr
+        return node.id if isinstance(node, ast.Name) else None
+
+    count = 0
+    for path in root.rglob("*.py"):
+        if path.name == "workflows.py":
+            continue
+        for node in ast.walk(ast.parse(path.read_text(), filename=str(path))):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                continue
+            receiver = last_name(node.func.value)
+            pushed = node.func.attr == "push" and receiver in ("undo", "_undo")
+            applied = node.func.attr == "apply" and receiver == "context"
+            if (pushed or applied) and node.args:
+                argument = node.args[0]
+                if isinstance(argument, ast.Call) and last_name(argument.func) in built_in:
+                    count += 1
+    return count
+
+
+def declared_module_ids(root: Path = SRC) -> set[str]:
+    """Every ``MODULE_ID = "…"`` (or ``_MODULE_ID``) at the top of a file under ``root``."""
+    ids: set[str] = set()
+    for path in root.rglob("*.py"):
+        for node in ast.parse(path.read_text(), filename=str(path)).body:
+            targets = (
+                node.targets
+                if isinstance(node, ast.Assign)
+                else [node.target]
+                if isinstance(node, ast.AnnAssign)
+                else []
+            )
+            named = any(
+                isinstance(t, ast.Name) and t.id in ("MODULE_ID", "_MODULE_ID") for t in targets
+            )
+            value = getattr(node, "value", None)
+            if named and isinstance(value, ast.Constant) and isinstance(value.value, str):
+                ids.add(value.value)
+    return ids
 
 
 def test_layering_rules_hold() -> None:
@@ -348,6 +569,110 @@ def test_the_planning_tier_is_fenced_both_ways(tmp_path) -> None:
     for probe in probes:
         named = str(probe.relative_to(tmp_path))
         assert any(violation.startswith(named) for violation in violations), named
+
+
+def test_the_cross_module_surface_is_two_headless_files_per_package(tmp_path) -> None:
+    """Self-check for rule 4: the surface is judged per package and by what it reaches."""
+    root = tmp_path / PACKAGE
+    for package in ("modules/a", "modules/b", "modules/b/sub", "domain"):
+        (root / package).mkdir(parents=True)
+        (root / package / "__init__.py").write_text("")
+    probes = {
+        root / "modules/a/_view.py": f"from {PACKAGE}.modules.b.view import Panel\n",
+        root / "modules/a/_nested.py": f"from {PACKAGE}.modules.b.sub import aspect\n",
+        root / "modules/a/workflows.py": f"from {PACKAGE}.domain.store import Store\n",
+        # Reaches Qt only through a sibling it imports, which no filename rule would see.
+        root / "modules/b/aspect.py": "from .widgets import Card\n",
+    }
+    allowed = {
+        root / "modules/a/_facts.py": f"from {PACKAGE}.modules.b.aspect import read\n",
+        root / "modules/a/_verb.py": f"from {PACKAGE}.modules.b import workflows\n",
+    }
+    for probe, source in {**probes, **allowed}.items():
+        probe.write_text(source)
+    (root / "modules/b/widgets.py").write_text("from PySide6.QtWidgets import QWidget\n")
+    (root / "modules/b/view.py").write_text("")
+    (root / "modules/b/sub/aspect.py").write_text("")
+    (root / "modules/b/workflows.py").write_text("")
+    (root / "domain/store.py").write_text("")
+    violations = collect_violations(root)
+    for probe in probes:
+        named = str(probe.relative_to(tmp_path))
+        assert any(violation.startswith(named) for violation in violations), named
+    for probe in allowed:
+        named = str(probe.relative_to(tmp_path))
+        assert not any(violation.startswith(named) for violation in violations), named
+
+
+def test_a_module_cycle_is_named_edge_by_edge(tmp_path) -> None:
+    """Self-check for rule 11."""
+    root = tmp_path / PACKAGE
+    for package in ("a", "b"):
+        (root / "modules" / package).mkdir(parents=True)
+    (root / "modules/a/aspect.py").write_text(f"from {PACKAGE}.modules.b.aspect import x\n")
+    (root / "modules/b/aspect.py").write_text(f"\nfrom {PACKAGE}.modules.a.aspect import y\n")
+    assert module_cycle(root) == [
+        f"a ({PACKAGE}/modules/a/aspect.py:1)",
+        f"b ({PACKAGE}/modules/b/aspect.py:2)",
+        "a",
+    ]
+
+
+def test_the_root_does_not_grow() -> None:
+    """Rule 12: the composition root is wiring, and its clusters are moving out. When it
+    shrinks, lower ``ROOT_LINES`` to the new count."""
+    lines = len((SRC / "modules" / "__init__.py").read_text().splitlines())
+    assert lines <= ROOT_LINES, (
+        f"modules/__init__.py has {lines} lines, over its ceiling of {ROOT_LINES}: "
+        "the logic belongs in the module or the planning tier it serves"
+    )
+
+
+def test_built_in_commands_are_not_pushed_directly_more_than_today() -> None:
+    """Rule 12: a verb that builds its own command in place is one a second surface will
+    copy. When the count falls, lower ``DIRECT_COMMANDS`` to it."""
+    count = direct_commands()
+    assert count <= DIRECT_COMMANDS, (
+        f"{count} built-in commands are pushed or applied directly outside a workflows.py, "
+        f"over the ceiling of {DIRECT_COMMANDS}: build the change in the owning module's "
+        "workflows.py and push what it returns"
+    )
+
+
+def test_the_direct_command_count_sees_a_push_and_an_apply(tmp_path) -> None:
+    """Self-check for rule 12's counter."""
+    root = tmp_path / PACKAGE
+    (root / "domain").mkdir(parents=True)
+    (root / "modules/a").mkdir(parents=True)
+    (root / "domain/commands.py").write_text("class SetFieldCommand: ...\n")
+    pushes = (
+        "self._deps.undo.push(SetFieldCommand())\n"
+        "context.apply(commands.SetFieldCommand())\n"
+        "undo.push(change.command)\n"
+    )
+    (root / "modules/a/module.py").write_text(pushes)
+    (root / "modules/a/workflows.py").write_text(pushes)
+    assert direct_commands(root) == 2
+
+
+def test_stored_module_ids_never_change() -> None:
+    """Rule 13: a package may move or be renamed, but the id it stores data under is
+    written into every plan and settings file, and changing it orphans them."""
+    from dplanner.modules import default_module_formats
+
+    found = declared_module_ids() | {f.module_id for f in default_module_formats()}
+    removed = sorted(STORED_IDS - found)
+    added = sorted(found - STORED_IDS)
+    assert not removed, f"stored ids no longer declared: {removed} — a stored id never changes"
+    assert not added, f"new stored ids: {added} — add them to STORED_IDS"
+
+
+def test_the_id_scanner_reads_a_declaration(tmp_path) -> None:
+    """Self-check for rule 13's scanner."""
+    root = tmp_path / PACKAGE
+    root.mkdir()
+    (root / "a.py").write_text('MODULE_ID = "a"\n_MODULE_ID: str = "b"\nOTHER_ID = "c"\n')
+    assert declared_module_ids(root) == {"a", "b"}
 
 
 def test_the_composition_root_imports_without_qt() -> None:

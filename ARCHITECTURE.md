@@ -5997,6 +5997,23 @@ state-machine sketch would have broken that, so `planning/` owns the vocabulary 
 readiness rules and stops there; who may set what is a workflow's question, asked by the
 verb that sets it.
 
+### What holds the tier and the workflows in place
+
+A rule kept by convention erodes, so the review's guards are tests (`tests/test_architecture.py`,
+rules 4 and 11–13). **Import facts, inject effects**: a module may reach another through
+exactly two files at the top of its package — `aspect.py`, what a step's entry means, and
+`workflows.py`, a complete verb returning a `Change` — and nothing they reach, followed to
+the end rather than trusted by filename, may load Qt or `framework/`. Anything effectful
+(the store, a clock, a launcher) still arrives on a `Deps`, because a test needs a fake for
+it; a `workflows.py` builds and its caller persists, so it imports no `domain.store`. The
+module graph those imports draw is acyclic, and a failure names the cycle edge by edge:
+a cycle is two modules that have to change together and could not move apart again.
+Two ceilings record where the move started on 4 October and may only fall — the root's
+lines, and the domain commands built and pushed in place outside a `workflows.py` (a
+verb that builds its own command is one a second surface will copy). They are lowered by
+hand, never raised. The ids a module stores data under are pinned as a set of values, so
+a package can move or be renamed and no plan on disk loses its entries.
+
 ## Progression is the status-aware frontier
 
 **The surface is named for the question; the derivation keeps the answer's name.** A person
