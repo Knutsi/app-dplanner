@@ -61,6 +61,11 @@ def read(step: Step) -> str:
     return _label_in(entry) if entry else ""
 
 
+def is_milestone(step: Step) -> bool:
+    """Whether the step is a milestone: whether it carries a label."""
+    return bool(read(step))
+
+
 def write(label: str) -> dict[str, Any]:
     """The entry to store. An empty label gives ``{}``, which removes the file."""
     label = label.strip()

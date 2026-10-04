@@ -37,6 +37,7 @@ from dataclasses import dataclass, replace
 
 from dplanner.core.anchors import Anchor, blocks, covered_by
 from dplanner.domain.model import Library, Project, Step, StepId
+from dplanner.domain.progression import DONE
 from dplanner.domain.scope import ScopeKind, StepPredicate, cone, gatherers
 from dplanner.domain.store import FilesFor
 
@@ -358,7 +359,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                 FEATURES,
                 feature.title or UNTITLED,
                 "",
-                tone="good" if status == "done" else "feature",
+                tone="good" if status == DONE else "feature",
                 features=frozenset({feature.id}),
                 token=feature.id,
                 target=("feature", feature.id),
@@ -449,7 +450,7 @@ def build(readers: Readers, library: Library, project: Project, files: FilesFor)
                         f"step:{step.id}",
                         STEPS,
                         step.title or UNTITLED,
-                        tone="good" if status == "done" else "",
+                        tone="good" if status == DONE else "",
                         features=tokens,
                         target=("step", step.id),
                         key=readers.step_key(step),

@@ -3,7 +3,7 @@
 The launch is a **peer process, not a task**: the user owns the terminal from the moment it
 opens, so nothing here reports to the task centre — tracking it would promise cancel and
 progress the application cannot honestly deliver. The spawn is detached
-(``start_new_session``) so closing DPlanner never takes the agent down with it. The session
+(``core/process.py``) so closing DPlanner never takes the agent down with it. The session
 is interactive on purpose — the developer is the human in the loop, and the agent's opening
 prompt is the step's briefing, not its orders.
 
@@ -126,6 +126,7 @@ from pathlib import Path
 
 from dplanner.cli.discovery import PROJECT_ENV, RUN_ENV
 from dplanner.core.fsio import slugify
+from dplanner.core.process import spawn_detached
 
 # Where a step's worktree lives, under the repository root: a sibling of the `.dplanner`
 # index file, never inside it — see the module docstring. Declared beside that file, since
@@ -1036,27 +1037,6 @@ STAGE_SEPARATOR = "&&"
 _PANE_ID = re.compile(r'"pane_id"\s*:\s*"([^"]+)"')
 STAGE_TIMEOUT_S = 20
 
-# CreateProcess flags, spelled as their Win32 values rather than read off ``subprocess``,
-# which defines them only on Windows. Every platform's launch is exercised from any machine
-# here (``prepare(platform=…)``), and a getattr fallback would make ``detached_flags("win32")``
-# answer 0 in the very suite that has to check it.
-DETACHED_PROCESS = 0x00000008
-CREATE_NEW_PROCESS_GROUP = 0x00000200
-
-
-def detached_flags(platform: str = sys.platform) -> int:
-    """The Windows half of ``start_new_session``; nothing anywhere else.
-
-    Windows has no sessions and no SIGHUP, so a terminal already outlives DPlanner there and
-    ``start_new_session`` is silently ignored. What the child *would* inherit is the console
-    DPlanner was started from, and that console's Ctrl+C — which would reach the agent.
-    ``DETACHED_PROCESS`` unhooks it; ``CREATE_NEW_PROCESS_GROUP`` is the flag
-    ``core/storage/sparse.py`` sets for the same reason. Not ``CREATE_NEW_CONSOLE``: every
-    Windows row in ``TERMINALS`` opens its own window already, so it would only add a stray
-    black one behind each launch.
-    """
-    return DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP if platform.startswith("win") else 0
-
 
 def stages(command: list[str]) -> list[list[str]]:
     """The command split at its ``&&`` tokens: one stage per call the terminal needs."""
@@ -1090,15 +1070,7 @@ def spawn(command: list[str], workdir: Path, harnesses: tuple[AgentHarness, ...]
     env = scrubbed_environment(os.environ, harnesses)
     staged = stages(command)
     if len(staged) <= 1:
-        subprocess.Popen(
-            command,
-            cwd=workdir,
-            env=env,
-            start_new_session=True,
-            creationflags=detached_flags(),
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        spawn_detached(command, cwd=workdir, env=env)
         return ""
     pane = ""
     for stage in staged:
