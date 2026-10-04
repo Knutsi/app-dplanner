@@ -209,7 +209,8 @@ def test_a_band_says_what_its_glyphs_are_for(host, app):
 
 def test_a_segmented_pair_in_a_band_keeps_its_words(themed, app):
     """A band squares its glyph buttons, and a segmented group's buttons wear the same
-    name — squared, *Free | Waves* read "… …". The words win (NOTES-FOR-APPFRAME §72)."""
+    name — squared, *Free | Waves* read "… …". The words win (the diary under docs/history/,
+    §72)."""
     from dplanner.framework.segmented import Segmented
 
     apply_theme(themed, DARK)

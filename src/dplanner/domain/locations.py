@@ -17,7 +17,7 @@ itself when the location's repository is the plan's, a managed clone for a role 
 reads, or nowhere yet. Whether a role needs a working checkout follows from whether it
 *writes*: a place an agent commits in is cloned when a verb first needs it, where the
 person's clone policy says; a place that is only read is fetched on demand and never asks.
-``ARCHITECTURE.md``'s *A project names its locations* has the reasoning.
+``docs/architecture/persistence.md``'s *A project names its locations* has the reasoning.
 """
 
 from collections.abc import Callable, Iterable, Mapping, Sequence

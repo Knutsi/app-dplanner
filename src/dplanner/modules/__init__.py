@@ -2014,7 +2014,7 @@ def _aspects(
                 # Its Project ▸ Settings… tab: the compilation instructions every document
                 # compiled in this project follows.
                 project_settings=services.project_settings,
-                # The description *is* the instructions (ARCHITECTURE.md), so it is what a
+                # The description *is* the instructions (docs/architecture/), so it is what a
                 # collector says about itself — context in the briefing, and a cross-module
                 # fact, so it is decided here.
                 instructions=description_read,
@@ -2930,8 +2930,8 @@ def start_window(services: "AppServices") -> None:
 
     Called by ``app.open_at_startup`` and nowhere else, because it is the *program's*
     start and nothing more: a reload rebuilds the window the person had, and a window
-    whose last tab they closed stays blank — ARCHITECTURE.md's *Home is where a window
-    starts*.
+    whose last tab they closed stays blank — `docs/architecture/shell-ui.md`'s *Home is where a
+    window starts*.
     """
     from dplanner.modules.home.activity import HOME_KIND
 
@@ -3503,8 +3503,8 @@ def default_link_rules() -> tuple["LinkRule", ...]:
     the graph's own four refusals, on the window's library and the CLI's alike.
 
     One today: a stack takes links in at its first step and out from its last
-    (``ARCHITECTURE.md``'s *One in, one out is a rule the domain asks*). Qt-free, because
-    ``entry.py`` hands it to every CLI run.
+    (``docs/architecture/canvas.md``'s *One in, one out is a rule the domain asks*). Qt-free,
+    because ``entry.py`` hands it to every CLI run.
     """
     from dplanner.modules.canvas.stacks.stack import link_rule
 

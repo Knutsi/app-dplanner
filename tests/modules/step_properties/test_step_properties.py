@@ -3,7 +3,7 @@
 Every test reaches the panel the way the application does — through ``steps.details``, the
 one host it has (the ``step_editor`` fixture) — because the point of that seam is that no
 *surface* constructs a second one. It used to be anchored in the window's right area as
-well; ``ARCHITECTURE.md``'s *The step editor is a modal* says why that seat went.
+well; ``docs/architecture/step-panel.md``'s *The step editor is a modal* says why that seat went.
 """
 
 import pytest

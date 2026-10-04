@@ -11,7 +11,7 @@ because the contributing modules may not import each other and ``cli/`` sits bel
 
 There is deliberately no rollback in an author: a run is a transaction, and an author
 that raises aborts the whole ``step add`` with nothing written — the step included.
-``ARCHITECTURE.md``'s *Authoring a step is one verb, many modules* holds that reasoning,
+``docs/architecture/cli.md``'s *Authoring a step is one verb, many modules* holds that reasoning,
 and holds it against any future refactor that would flush eagerly.
 """
 

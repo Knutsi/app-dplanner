@@ -1,6 +1,7 @@
 # Graph model — edges, auto-progress links, step numbers and isolation
 
-The reasoning behind `.claude/rules/graph-model.md`: the rules there are the short, imperative form, and this file is why. `ARCHITECTURE.md` is the index of every area.
+The reasoning behind `.claude/rules/graph-model.md`: the rules there are the short, imperative
+form, and this file is why. `ARCHITECTURE.md` is the index of every area.
 
 ## The graph, and what it stores
 
@@ -10,9 +11,9 @@ flow in a grid; free positions are the case Qt already handles.
 
 Two decisions keep it small. **Every item diffs by key** — nodes by step id, edges by
 `(waiter, kind, source)` — because an item the user is holding on to has to keep its identity:
-a node may be under the mouse mid-drag, and an edge may be selected, waiting for Delete. That
-was two rules once, and edges were the ones rebuilt wholesale; the second rule was exactly what
-made edges unselectable, so making them selectable *removed* a rule rather than adding one.
+a node may be under the mouse mid-drag, and an edge may be selected, waiting for Delete. It is
+one rule for both on purpose: an edge rebuilt wholesale cannot stay selected, so a second rule
+for edges is exactly what would make them unselectable.
 **The scene reports, the activity commands** — every gesture ends in a signal, and the activity
 turns it into something on the undo stack, so a drag is undoable and the model stays the only
 authority on what a legal graph is.
@@ -25,20 +26,19 @@ There is no error dialog anywhere in the interaction because there is never anyt
 apologise for.
 
 **The refusal is about the edge being added, never about the list it joins.** `set_edges`
-replaces a whole list, and the first version judged every entry in it. That read as thorough
-and was a trap: `remove_child` leaves the survivors' edges naming a deleted step on purpose
-(undo has to restore the graph exactly, and `requires()` skips what it cannot resolve), so
-after any delete of a step others waited on, every survivor's list held an id that could no
-longer pass "no such step" — and Link, Unlink, Redirect and Isolate, which all *replace* that
-list, were dead on those steps for the life of the project. On 2026-09-08 that surfaced two
-seconds after a Delete as a `ValueError` out of Connect, and the ghost was on disk by the next
-autosave. The rule now: an entry already in the list is carried, never re-judged — keeping it
-cannot make the graph worse, and carrying is the only way such a list can ever change again.
-The same reasoning moved the tidying up one layer: `remove_steps_command` (Delete, Cut, `step
+replaces a whole list, and an entry already in it is carried, never re-judged. Judging every
+entry reads as thorough and is a trap: `remove_child` leaves the survivors' edges naming a
+deleted step on purpose (undo has to restore the graph exactly, and `requires()` skips what
+it cannot resolve), so after any delete of a step others waited on, every survivor's list
+holds an id that cannot pass "no such step" — and Link, Unlink, Redirect and Isolate, which
+all *replace* that list, would be dead on those steps for the life of the project. Keeping
+an entry cannot make the graph worse, and carrying is the only way such a list can ever
+change again. (*decisions.md* has the day it surfaced.) The tidying up is one layer up for
+the same reason: `remove_steps_command` (Delete, Cut, `step
 remove`, `clear-steps`) is one composite that drops the links *into* the doomed steps and then
 the steps, and because a composite undoes in reverse the steps come back before the lists that
 named them. Exact undo needed a composite, not an untouched list; the model's `remove_child`
-still rewrites nobody, and lint's `graph.requires-dangling` now only ever names a ghost that
+still rewrites nobody, and lint's `graph.requires-dangling` only ever names a ghost that
 arrived from an edit outside the window or a merge.
 
 ## A step has a number, and the letter in front of it is derived
@@ -122,8 +122,8 @@ motion that says *somebody is at work on this*, carried along to the step that w
 the work. `project graph` draws the same link `==>`, and `step show` marks it.
 
 Two measurements shaped the painter. Placing a chevron with `QPainterPath.percentAtLength`
-costs about 40 µs a call, so a doubled arrow first cost 1.5 ms to lay out — on every sync,
-which runs once per keystroke. `follow()` now flattens the curve once and walks the
+costs about 40 µs a call, which would make a doubled arrow 1.5 ms to lay out — on every
+sync, which runs once per keystroke. `follow()` flattens the curve once and walks the
 polyline (0.2 ms), and it returns at once when the arrow's two ends have not moved, which is
 nearly every sync: 17 µs → 4 µs for *every* arrow, plain ones included. A flowing arrow's
 tick re-walks the cached polyline only, 0.13 ms per 80 ms.
@@ -136,12 +136,11 @@ The rule is in `.claude/rules/graph-model.md`.
 
 ## A branch stretch is bracketed by a cut and a landing
 
-Every agent step used to land on main by accident rather than by design: the wrapper script
-forked each worktree from whatever the code checkout had checked out, and the agent opened
-its PR with no base, so it went to the repository's default. The request was for the plan
-to say *this stretch of steps goes onto a feature branch for a while — several PRs into it —
-and then the branch comes back as a PR of its own*, with the quality review there, and for
-the canvas to show which work goes on which branch.
+Where an agent step's work lands is the plan's decision, not an accident of what the code
+checkout has checked out. The plan says *this stretch of steps goes onto a feature branch for
+a while — several PRs into it — and then the branch comes back as a PR of its own*, with the
+quality review there, and the canvas shows which work goes on which branch. (*decisions.md*
+has what it replaced.)
 
 **What any answer had to keep.** A `requires` link already means *this step's worktree
 must contain that step's work*. On one branch that holds once the work is merged; across
@@ -188,10 +187,10 @@ refuses a step on both.
 **The plan decides the branches; the script carries them out; the agent is told the same.**
 `planning.branches.BranchPlan`, decided once by the root's `_branch_plan`, names the branch a run works on,
 where a new one starts, what the first run may cut and the PR's base, and the preamble, the
-epilogue and the wrapper all read it. **Every worktree now starts from the remote** — a
+epilogue and the wrapper all read it. **Every worktree starts from the remote** — a
 stretch's branch, else the code row's `Location.ref` as the mainline, else the remote's
-default, looked up — because a checkout left on some other branch silently became every
-agent's base; that is a change in behaviour for every run, and the honest one. A new branch
+default, looked up — because a checkout left on some other branch would silently become
+every agent's base. A new branch
 starts with no upstream, so a bare push from an agent's own branch reaches nothing shared; a
 landing works on the feature branch itself, tracking it, so the fixes a review asks for
 reach the PR it reviews. **The branch is cut lazily** by the first run in the stretch, as a
@@ -207,7 +206,7 @@ branch's quality review is the ordinary Review step placed after the landing, wh
 the landing's PR — nothing new was built for it. An agent still never merges its own work.
 A landing always opens a PR; landing directly would leave the review nothing to read, and a
 merge commit rather than a squash keeps a branch cut from this one on shared history. The
-GitHub aspect now records the base a PR merges into (format 2), so `branch.pr-base` can name
+GitHub aspect records the base a PR merges into (format 2), so `branch.pr-base` can name
 a member whose PR was aimed at the mainline.
 
 **Put on a Branch and Remove Branch are one rewire each.** The first moves every outside

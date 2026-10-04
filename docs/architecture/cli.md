@@ -1,17 +1,18 @@
 # CLI — the entry word, install, the checklist, the topology gate, the skill and reports
 
-The reasoning behind `.claude/rules/cli.md`: the rules there are the short, imperative form, and this file is why. `ARCHITECTURE.md` is the index of every area.
+The reasoning behind `.claude/rules/cli.md`: the rules there are the short, imperative form, and
+this file is why. `ARCHITECTURE.md` is the index of every area.
 
 ## The window is a word, and everything else is the CLI
 
 `dplanner window` opens the application. Every other command line is the CLI: a verb runs,
 a word the CLI does not know is refused with exit 2, and a bare `dplanner` prints the help.
-It was the other way round — the window was the default and the CLI ran only when the first
-word was a registered noun — until agents driving the skill ran `dplanner` bare to see the
-usage, or mistyped a noun: each time a window opened on the developer's desktop, and the
-agent's shell hung until somebody closed it.
+The other way round — the window by default, the CLI only when the first word is a
+registered noun — every agent that runs `dplanner` bare to see the usage, or mistypes a
+noun, opens a window on the developer's desktop, and its shell hangs until somebody closes
+it. (*decisions.md* has the history.)
 
-The fix is a flipped default rather than an added check, because the asymmetry is total. A
+The default is the CLI rather than an added check, because the asymmetry is total. A
 person pays one word, once, and a launcher pays it in a file; an agent that guesses wrong
 pays a stray window and a hung shell every time, and can see neither. So the rule is *a
 word*, not a test of the environment:
@@ -21,7 +22,7 @@ word*, not a test of the environment:
   nothing and costs isatty mocking in every test.
 - **Not an environment variable from the agent wrapper script.** That covers the agents
   DPlanner launched itself and not the one the developer started in a terminal, which is
-  the case that was reported.
+  the case that matters.
 - **Not a vendor's variable** (`CLAUDECODE`, …). Every new agent would be a new `if`.
 - **Not a registered `CliCommand`** (`library open`). Its `run` would import Qt from a
   module's Qt-free `cli.py` — the upward import `HEADLESS_FILES` exists to refuse.
@@ -33,25 +34,22 @@ skill never renders it: `entry.py` dispatches on it, the top-level `--help` name
 own `-style` and `-platform` come *after* the word, since the first word is the decision.
 And a bare `dplanner` prints the whole help at exit 2 — git's convention — because
 argparse's own "the following arguments are required" names neither the nouns nor the word,
-and the agent that ran it bare was asking for exactly that list. A by-product: the window no
-longer builds the whole command inventory just to learn it is not a verb, and the CLI no
-longer builds it twice. `python -m dplanner` and `spawn_instance` go through the same door.
+and the agent that ran it bare was asking for exactly that list. A by-product: the window does
+not build the whole command inventory just to learn it is not a verb, and the CLI builds it
+once. `python -m dplanner` and `spawn_instance` go through the same door.
 
-**And the word refuses from inside an agent's shell.** The second incident was the first
-one's consequence: an agent ran `dplanner show F3` while the window was still the default,
-Claude Code kept the window it opened as a background task, and the developer used that
-window for an hour — launching three more agents from it. Each inherited the shell's
-session markers (`CLAUDECODE`, and the variables that name a session's parent), and a
-`claude` started under them makes itself a *child* session of the one that set them: no
-transcript on disk, ended when the parent's turn ends. When one agent's `pkill` (below)
-killed the first agent, its background window died with it, and every child session went
-too. So `entry.py` checks the shell's markers (`domain/agents.py`'s `shell_marker`, each
-harness's first) before it opens a window and refuses with the reason. This *is* the vendor-variable check the list above declined — but for a
-different question. Dispatch asks *what runs*, and there a missed vendor is a wrong
-answer; this asks *who owns the window*, and a missed vendor is a missing guard, which is
-the same as today. One row per agent CLI known to mark its shell, and the launcher scrubs
-the same markers when it spawns (*The peer is a top-level session*, below), for a window
-that got its environment some other way.
+**And the word refuses from inside an agent's shell.** A window opened from an agent's shell is
+that agent's background task, and every agent launched from it inherits the shell's session
+markers (`CLAUDECODE`, and the variables that name a session's parent): a `claude` started under
+them makes itself a *child* session of the one that set them — no transcript on disk, ended when
+the parent's turn ends, and killed with the agent that owns the window. So `entry.py` checks the
+shell's markers (`domain/agents.py`'s `shell_marker`, each harness's first) before it opens a
+window and refuses with the reason. This *is* the vendor-variable check the list above declined
+— but for a different question. Dispatch asks *what runs*, and there a missed vendor is a wrong
+answer; this asks *who owns the window*, and a missed vendor is a missing guard, no worse than
+none. One row per agent CLI known to mark its shell, and the launcher scrubs the same markers
+when it spawns (*The peer is a top-level session*, below), for a window that got its environment
+some other way.
 
 **`dpw` is the word typed for you, and the desktop gets a file.** A person launching the
 window from a shell every day pays the word every day, so `dpw` — a second entry point,
@@ -128,17 +126,14 @@ machine would read this build, because one home current and the other three week
 exactly the drift the one act exists to make visible. A per-agent flag would have been a
 second question no surface asked.
 
-**DPlanner is installed by a person through uv, not by a skill.** A hand-written bootstrap
-skill once did it: a Claude Code plugin an agent read and followed, installing git and uv,
-cloning, and running `install all`. On Windows it did not get the program onto the machine,
-and nothing here could catch that. The suite held the skill's *text* to the installer, but
-only an agent following it on a real machine tested the *act*. It was removed. The README
-now gives the route a person runs, `uv tool install git+https://github.com/Knutsi/app-dplanner`
-and then `dplanner install all`, which needs no checkout and updates with `uv tool upgrade`.
-That route had a bug of its own. `install all` from a build that is not a checkout reinstalled
-the command by name, which rewrote uv's receipt from the git URL to a bare `dplanner` that
-PyPI does not have, so an upgrade then followed nothing. An installed build now leaves its
-command alone and names the upgrade (`cli/install.py`'s `_install_command_piece`). A packaged
+**DPlanner is installed by a person through uv, not by a skill.** A bootstrap skill an agent
+follows is tested only by an agent following it on a real machine — the suite can hold its
+*text* to the installer, never the *act*. The README gives the route a person runs,
+`uv tool install git+https://github.com/Knutsi/app-dplanner` and then `dplanner install
+all`, which needs no checkout and updates with `uv tool upgrade`. An installed build that is
+not a checkout leaves its command alone and names the upgrade (`cli/install.py`'s
+`_install_command_piece`): reinstalling it by name would rewrite uv's receipt from the git
+URL to a bare `dplanner` that PyPI does not have, and an upgrade would follow nothing. A packaged
 installer that updates itself from GitHub releases is the next step, and it needs the CI
 this repository deliberately does not have.
 
@@ -187,10 +182,10 @@ Five decisions carry it.
   machine DPlanner has never met, whatever it has, because a setup surface nobody ever sees
   working is one nobody trusts; afterwards it opens only while the person left *"open this at
   start"* ticked **and** something required is missing. Everything else is said where it
-  bites. That is what retired `github/notice.py`: DESIGN.md had already ruled that box out
-  ("A machine without gh. No modal at launch"), and this is where those facts live now.
+  bites. A feature's own startup box is ruled out (DESIGN.md: "A machine without gh. No
+  modal at launch"); this is where those facts live.
 
-Three things the surface itself settled, after the first pass was seen.
+Three things the surface itself settled.
 
 **It is the one dialog that prints a heading.** Every other dialog in the application
 starts at its content, because a gesture opened it and that gesture already said what it
@@ -223,11 +218,11 @@ handover on it must not inherit somebody's decision to live with a gap. That is 
 split as *Where the user left off is remembered by key*: a preference is the person's, and
 the plan — here, the machine — is not.
 
-One thing had to move to make it possible. A file named in `HEADLESS_FILES` may import
+**The keychain wrapper lives in `core/`.** A file named in `HEADLESS_FILES` may import
 `core/`, `domain/` and `cli/` and **not** `framework/`, and `cli/` may not import `framework/`
-at all — so with the keychain wrapper under `framework/`, neither the verb nor any module's
-`checks.py` could ask whether this machine can keep a credential. `secrets_store.py` is pure
-stdlib and `keyring`; it is now `core/secrets.py`, for the reason `core/config_dir.py` gives
+at all — so with the wrapper under `framework/`, neither the verb nor any module's
+`checks.py` could ask whether this machine can keep a credential. It is pure stdlib and
+`keyring`, so it is `core/secrets.py`, for the reason `core/config_dir.py` gives
 in its own docstring — the GUI keeps preferences in QSettings, and anything the headless
 surfaces must also read cannot. `NOTES-FOR-APPFRAME.md` carries it as a divergence.
 
@@ -254,14 +249,13 @@ same registry and introduces no second description of any command.
 
 ### The command list is an index, not a manual
 
-SKILL.md's command section was a heading per noun and a bullet per verb carrying that verb's
-summary: 176 bullets, 19,793 of the file's 58,603 characters, **a third of a document every
-session loads**. And every one of those summaries was already carried twice more — as
-reference.md's own heading for that command, and again inside reference.md's fenced argparse
-help, which prints the same sentence under `usage:`. Three copies of one string, one of them
-in the file nobody gets to choose not to read.
+A bullet per verb carrying its summary costs **a third of a document every session loads**
+(176 bullets, 19,793 of 58,603 characters when measured), and every one of those summaries
+is already carried twice more — as reference.md's own heading for that command, and again
+inside reference.md's fenced argparse help, which prints the same sentence under `usage:`.
+Three copies of one string, one of them in the file nobody gets to choose not to read.
 
-So the section is now one line per noun naming its verbs — `` `dplanner note` — add · attach
+So the section is one line per noun naming its verbs — `` `dplanner note` — add · attach
 · index · list · remove · set · show`` — with a `†` on the verbs that read the topology first
 and one legend line for it. 2,355 characters.
 
@@ -271,7 +265,7 @@ bullets saved. The answer is `dplanner note index --help`, which is a subprocess
 in milliseconds, prints the arguments *and* the examples, and cannot be stale — the same
 parser the skill was generated from. An index's job is to tell you a verb **exists** and how
 it is spelled; `--help` tells you what it does; reference.md is for reading every flag of
-everything at once. Each of the three is now used for what it is good at.
+everything at once. Each of the three is used for what it is good at.
 
 ## Lint belongs to no feature
 
@@ -477,21 +471,17 @@ Measured on a synthetic plan: 300 steps read in ~90 ms on the GUI thread and ren
 ~17 ms; 1,000 steps read in ~580 ms and render in ~50 ms. The read is the cost, and it is
 the same read the Time tab makes on its 500 ms debounce.
 
-**Reports are written on request, never on Save.** Save used to publish before it committed:
-the sync module asked the reporting module for a publication per dirty repository and
-committed `reports/` in the same version as the plan, and a project's reporting location
-got a scoped commit of its own. Two people saving one shared plan repository then
-conflicted on every pair of concurrent saves — not over the plan, which merged cleanly, but
-over the generated pages: each Save re-renders a project's page with that day's schedule,
-so both sides rewrite the same lines of `<slug>/index.html` and `summary.js`. A rebase
-could only regenerate them, so they were never worth committing. Now Save records the plan
-alone (`commit(message, also=(POINTER_FILE,))`), and the site is written when someone
-wants it: *File ▸ Export ▸ Report Site (Folder)…* writes every project of the focused
-project's plan repository into a picked folder, on the reporting module's worker like any
-export, and `dplanner report site` writes it from a terminal. Neither commits. A shared plan
-repository is best off with `reports/` in its `.gitignore`; publishing the site for
-readers, for example to GitHub Pages, is a job for CI running `dplanner report site`, not
-for every person's Save.
+**Reports are written on request, never on Save.** Generated pages committed with the plan
+conflict on every pair of concurrent saves of one shared plan repository — not over the plan,
+which merges cleanly, but over the pages: each Save would re-render a project's page with that
+day's schedule, so both sides rewrite the same lines of `<slug>/index.html` and `summary.js`. A
+rebase can only regenerate them, so they are never worth committing. Save records the plan alone
+(`commit(message, also=(POINTER_FILE,))`), and the site is written when someone wants it: *File
+▸ Export ▸ Report Site (Folder)…* writes every project of the focused project's plan repository
+into a picked folder, on the reporting module's worker like any export, and `dplanner report
+site` writes it from a terminal. Neither commits. A shared plan repository is best off with
+`reports/` in its `.gitignore`; publishing the site for readers, for example to GitHub Pages, is
+a job for CI running `dplanner report site`, not for every person's Save.
 
 **The site's index is a function of the project set, never of any project's state.** Under
 `reports/` each project owns its own directory (`<slug>/index.html`, `<slug>/summary.js`);

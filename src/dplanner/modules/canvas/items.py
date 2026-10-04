@@ -9,7 +9,7 @@ painting is composed in ``renderers.py`` from pure helpers; interaction lives in
 is its near edge, travelling across, which is every link into or out of a stack too: in at
 its first card's side, out of its last card's, as into and out of any card. Only the chain
 between a stack's cards is its own, drawn short and straight down the frame's middle
-(``ARCHITECTURE.md``'s *A stack's frame is the stack's handle*).
+(``docs/architecture/canvas.md``'s *A stack's frame is the stack's handle*).
 """
 
 from itertools import pairwise

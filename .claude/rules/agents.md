@@ -61,7 +61,7 @@ paths:
   (`AgentHarness.superseded`): the settings store the picked text, and
   `launcher.current_command` reads a stale one as the harness. The skill and the
   briefing's preamble both say *never kill by name or pattern*.
-  `ARCHITECTURE.md`'s *Running an agent launches a peer, not a task* has the reasoning.
+  `docs/architecture/agents.md`'s *Running an agent launches a peer, not a task* has the reasoning.
 - **An agent's run ends at Ready for review, and the CLI holds it there.** The briefing's
   epilogue (`agent_briefing/protocol.py`'s `epilogue`) and the skill's *Running as an agent step* end at
   `status set <key> ready-for-review` — a person or a reviewing agent looks next and sets
@@ -75,8 +75,8 @@ paths:
   window are never asked: the guard is about who reports, read through
   `domain/agents.py`'s `shell_marker` over the harnesses (the entry point's window guard
   reads the same), and `tests/conftest.py`'s `_no_agent_shell` scrubs the markers so the
-  suite never depends on being run by an agent. `ARCHITECTURE.md`'s *An agent finishes at
-  Ready for review* has the reasoning.
+  suite never depends on being run by an agent. `docs/architecture/agents.md`'s *An agent finishes
+  at Ready for review* has the reasoning.
 - **A step that collects is briefed with what it collects, and its sources are told.**
   `agent_briefing/blocks.py`'s `step_sections` adds *Work you collect* for a step with auto-progress links: each
   source's key, title, status, branch, PR and worktree — `agent_briefing.worktree.workdir(facts, source)`
@@ -116,8 +116,8 @@ paths:
   reload keeps the hold — none in a test or script unless handed a directory. **Plan mode
   waits on a person**: `record_launch(plans_first=)` from the harness's `plan_mode` words,
   `asks_person` for *Waits for you*, and a notice while an agent launched here waits.
-  `ARCHITECTURE.md`'s *Auto-progress is launched by the window* has the reasoning and the
-  race across machines.
+  `docs/architecture/agents.md`'s *Auto-progress is launched by the window* has the reasoning and
+  the race across machines.
 - **A step names the code location it works in.** With several code rows in a project,
   the agent-instruction entry's `workplace` holds a location id (`aspect.workplace`,
   `with_workplace`; `dplanner agent workplace <step> code:UI|primary`), absent meaning
@@ -142,7 +142,7 @@ paths:
   nothing is tracked, nothing is claimed *in progress* and no usage row is written, as for
   the Problems panel's run; unlike those, it also has no prompt, so a launch that opens no
   terminal ends in a **notice** rather than the prompt fallback.
-  `ARCHITECTURE.md`'s *An agent may be opened with nothing to do* has the reasoning.
+  `docs/architecture/agents.md`'s *An agent may be opened with nothing to do* has the reasoning.
 - **A shell of your own where a step's work is, and it is not a run.** *Step ▸ Open
   Terminal in Worktree* (`agent.open_shell`; *…in Checkout* for a step whose worktree is
   off) opens the default profile's terminal on `launcher.shell_script` — `cd` there, export
@@ -171,7 +171,7 @@ paths:
   says why — a review reads the work it reviews — and every surface asks its
   `worktree(step)`, never the aspect: Run Agent, `agent prompt`,
   *Open Terminal in Worktree|Checkout*, the Agent tab (its box unticked and greyed with the
-  reason) and `agent worktree … on` (refused). `ARCHITECTURE.md`'s *A worktree is the
+  reason) and `agent worktree … on` (refused). `docs/architecture/agents.md`'s *A worktree is the
   step's decision* has the reasoning.
 - **A run starts from the remote, and the plan names its base.** `planning.branches.BranchPlan` —
   decided once by `branches/plan.py`'s `branch_plan`, handed to Run Agent as `branch_plan` and to
@@ -192,8 +192,8 @@ paths:
   own PR. **A PR merged into the branch of an open stretch accepts its step** from
   ready-for-review (`record_merged(accepted_by_merge=)`, the root's `finish_merged` on both
   surfaces), since the branch's review comes after its landing; the GitHub aspect records
-  the base a PR merges into (`pr_base`, format 2). `ARCHITECTURE.md`'s *A branch stretch is
-  bracketed by a cut and a landing* has the reasoning.
+  the base a PR merges into (`pr_base`, format 2). `docs/architecture/graph-model.md`'s *A branch
+  stretch is bracketed by a cut and a landing* has the reasoning.
 - **The peer reports its end through its run directory, and the window clears the chip.**
   The wrapper script is the one process that knows when the agent exits, so it writes the
   shell's facts (`shell`: tty, pid, tmux pane, terminal program, window title) beside the
@@ -223,7 +223,7 @@ paths:
   without it, because a verb that deletes what the list is not showing acts blind. Nothing
   kept off screen goes unsaid: the footer counts the live and the ended either way, and
   the empty state names the switch that has the rest — an empty state per filter.
-  `ARCHITECTURE.md`'s *The peer reports back through its run directory* has the
+  `docs/architecture/agents.md`'s *The peer reports back through its run directory* has the
   reasoning.
 - **What a run consumed is a ledger record, harvested by anyone — never caught at the
   end.** The launch writes the run's record into `<project>/ledger/YYYY-MM/<run id>.json`
@@ -246,14 +246,14 @@ paths:
   harvest, the `usage` verbs, the sweep and Expenditure. `agent_usage` on the step is
   retired, absorbed into `legacy` records at every open — the window's too, since the
   module declares the format. `dplanner usage show|list|harvest|record` is the terminal's half.
-  `ARCHITECTURE.md`'s *Usage is a ledger, harvested by anyone* has the reasoning.
+  `docs/architecture/agents.md`'s *Usage is a ledger, harvested by anyone* has the reasoning.
   **And what the run was *handed*:** `prompt_chars`, measured in `launcher.prepare` —
   the one place that knows what reached `prompt.md` — carried on `LaunchFiles` to the
   tracker, kept on the **`AgentRun`** and on the run's ledger record. **A size does not
   total** — two briefings added together is not a quantity anybody spends — so `usage
   show`'s total and the step's own phrase stay tokens-only, and `brief_words` says the unit
   out loud (*briefed 18.4k chars*) because the number beside it is tokens.
-  `ARCHITECTURE.md`'s *What a run was handed* has the reasoning.
+  `docs/architecture/agents.md`'s *What a run was handed* has the reasoning.
 - **Expenditure is the order read for what it consumed — tokens, never money.** The ledger's
   tab, in `agent_usage/` (`ExpenditureActivity`; columns, words and the tab in `expenditure_activity.py`, the
   walk in `domain/expenditure.py`): the same rows as Order through
@@ -267,7 +267,7 @@ paths:
   *By model* rebuilds the table with an in/out pair per model; the export is long — a row
   per step and model. The ledger is written by other processes, so the tab polls
   `ledger.fingerprint` beside `follow_project`, into one `Debounced`. No dollars: a price is
-  a derivation somebody can add over the counts (`ARCHITECTURE.md`'s *Expenditure is the
+  a derivation somebody can add over the counts (`docs/architecture/agents.md`'s *Expenditure is the
   order, in tokens*).
 - **An agent CLI is a harness, and a harness is a module.** `domain/agents.py` is the
   contract: an `AgentHarness` is the command (`{prompt}`, `{session}`, `{run_dir}`), how
@@ -283,7 +283,8 @@ paths:
   reads the run's whole tree, per model (`RunReport.agents`). Codex and OpenCode mint
   their own ids, so their `report` finds the run by the directory it worked in, the
   launch time and the sessions other runs have not claimed, and the found id, kept on
-  the ledger record, is what makes such a run resumable afterwards. `ARCHITECTURE.md`'s *An agent CLI is a harness* has the reasoning.
+  the ledger record, is what makes such a run resumable afterwards. `docs/architecture/agents.md`'s
+  *An agent CLI is a harness* has the reasoning.
 - **Which terminal opens is a table, not a chain — and the multiplexers are its last
   rows.** `launcher.TERMINALS` is one row per known terminal *and multiplexer* per
   platform with a probe saying whether it is installed; *Automatic* is the first
@@ -361,5 +362,5 @@ paths:
     exits 0 on an arrival and 3 on a timeout, under an agent tool's ten minutes. Its loop is
     `await_turn`, tested with an injected sleep and never a thread.
 
-  `ARCHITECTURE.md`'s *A review is a conversation kept on the step that asks* has the
+  `docs/architecture/agents.md`'s *A review is a conversation kept on the step that asks* has the
   reasoning.

@@ -49,7 +49,7 @@ The rules, in prose (see also CLAUDE.md):
     modal in ``dialog.py`` (or ``<x>_dialog.py``), a ``QGraphicsScene`` in ``scene.py``, and
     no file in a module package is called ``view.py`` or ``<x>_view.py``.
 
-ARCHITECTURE.md's *What holds the tier and the workflows in place* has the reasoning for
+`docs/architecture/core.md`'s *What holds the tier and the workflows in place* has the reasoning for
 rules 4 and 11 to 13.
 
 **When one of these fails, fix the dependency direction, not the test.** Every rule has a

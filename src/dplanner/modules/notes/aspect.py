@@ -333,7 +333,7 @@ KeyOf = Callable[[Step], str]
 
 # How many notes one label's group lists before it starts naming what it left out. A
 # briefing is read once, from the top: an index nobody finishes costs what a log costs.
-# Measured on a 74-step plan with 320 standing notes — see ARCHITECTURE.md.
+# Measured on a 74-step plan with 320 standing notes — see docs/architecture/decisions.md.
 INDEX_LIMIT = 20
 
 

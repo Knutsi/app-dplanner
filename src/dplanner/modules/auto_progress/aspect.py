@@ -10,8 +10,9 @@ its source reads ready for review or ready to merge (``planning/progression.py``
 **A listed id counts only while the link exists.** The flag is read *through* the edge —
 :func:`flagged` intersects the list with the step's own ``requires`` — and nothing repairs it
 when a link goes: removing, redirecting or isolating a link leaves the id inert, and undoing
-the removal brings the flag back with the link. ``ARCHITECTURE.md``'s *An auto-progress link
-is an aspect on the step that waits* weighs this against storing data on the edge.
+the removal brings the flag back with the link. ``docs/architecture/graph-model.md``'s *An
+auto-progress link is an aspect on the step that waits* weighs this against storing data on the
+edge.
 """
 
 from collections.abc import Iterable, Mapping, Sequence

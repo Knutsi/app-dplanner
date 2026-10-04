@@ -9,8 +9,8 @@ security, in three rounds at most — so a later change of default reaches every
 never chose otherwise.
 
 The conversation itself is the review rounds aspect (``modules/step_review/aspect.py``),
-kept on the step that asks. ``ARCHITECTURE.md``'s *A review is a conversation kept on the step that
-asks* has the reasoning.
+kept on the step that asks. ``docs/architecture/agents.md``'s *A review is a conversation kept on
+the step that asks* has the reasoning.
 """
 
 from collections.abc import Sequence

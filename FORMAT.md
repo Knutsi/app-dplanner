@@ -51,9 +51,9 @@ its **locations**, each a role, a repository as git prints its remote (or, for o
 remote, its resolved path) and a position inside it — is `"locations"` in `project.dproj`,
 shared with everyone who opens the plan. *Where is each of those on this machine?* is the
 library file's `checkouts` map, per user, per machine, below, for a location that is worked
-in; a read-only one is fetched into a managed clone and never asks. `ARCHITECTURE.md`'s *A
-project names its locations* has the reasoning; `domain/repositories.py` is the one
-derivation over the three.
+in; a read-only one is fetched into a managed clone and never asks.
+`docs/architecture/persistence.md`'s *A project names its locations* has the reasoning;
+`domain/repositories.py` is the one derivation over the three.
 
 ## The library file
 
@@ -200,7 +200,7 @@ Four conventions, and each one is a lesson about diffs:
   `step.json`, `"last_number": 12` in `project.dproj` — one sequence per project, dealt
   where a step joins it and never reused (a deleted step's branch may live on). The
   letter a person sees in front of it (`S7`, `F7`, `M7`) is derived from the step's kind
-  and never written; `ARCHITECTURE.md`'s *A step has a number* has the reasoning.
+  and never written; `docs/architecture/graph-model.md`'s *A step has a number* has the reasoning.
 - **Absence encodes the default.** A step with no links writes no `edges` key, and an empty
   document is deleted rather than written blank — so a diff shows exactly the nodes whose
   plan actually changed.
@@ -352,7 +352,7 @@ writes the same layout into any folder. A shared plan repository is best off ign
 function of the set of `*/summary.js` present, so its bytes change only when a project
 joins or leaves — the rule that keeps two writers from conflicting over a generated page.
 The directory name is a constant, not a setting. Nothing in it is versioned or migrated:
-every write rewrites it whole from the plan. `ARCHITECTURE.md`'s *A report is a
+every write rewrites it whole from the plan. `docs/architecture/cli.md`'s *A report is a
 publication, not a record* and *Reports are written on request, never on Save* have the
 reasoning.
 
@@ -401,7 +401,7 @@ What every agent run on a project consumed, one file per run, beside `steps/`:
 - Absence encodes the default; a file this build cannot read is skipped; there is no
   migration — the format is in every record. Totals are summed on read.
 
-`ARCHITECTURE.md`'s *Usage is a ledger, harvested by anyone* has the reasoning.
+`docs/architecture/agents.md`'s *Usage is a ledger, harvested by anyone* has the reasoning.
 
 ### Changing it
 
@@ -482,12 +482,12 @@ card — adds `"stack": "<id>"`, an opaque id minted per stack and never a step 
 *first* member keeps the seat, which is the stack's, and every other member stores none
 (`{"stack": "<id>"}`, plus a size if its card was resized), because its seat is derived
 from the column. The order is never stored: it is read from the members' `requires` chain
-(`ARCHITECTURE.md`'s *A stack is presentation over a chain*). It is format 3. Format 1
+(`docs/architecture/canvas.md`'s *A stack is presentation over a chain*). It is format 3. Format 1
 also kept titled rectangles beside the project (`"regions": [...]`) and each layout's rects
 for them (`"regions": {"<id>": [x, y, w, h]}`), and regions were retired, so the first
 migration drops both on read — a project saved with them opens as it was, minus the
-rectangles (`ARCHITECTURE.md`'s *Regions were retired*). Format 3 is the `stack` key, and
-its migration changes nothing: the number moved because a format-2 writer rebuilds the
+rectangles (`docs/architecture/canvas.md`'s *Regions were retired*). Format 3 is the `stack` key,
+and its migration changes nothing: the number moved because a format-2 writer rebuilds the
 entry from the seat and the size and so drops the key from any card it moves — the rule
 below. As with the library's format 4, no reader checks the stamp, so an older build still
 does exactly that: it draws a stack's members where the ambient layout puts them, and a

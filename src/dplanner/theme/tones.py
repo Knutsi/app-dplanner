@@ -91,8 +91,8 @@ def toned(name: str, color: str = "") -> tuple[QColor, QColor] | None:
 
     ``color`` recolours it — a milestone's own shade of the project's map — keeping the
     tone's own alphas, so a recoloured card is exactly as loud as the purple it replaces.
-    Hex in, ``QColor`` out at paint time: a colour is never stored (ARCHITECTURE.md's *The
-    palette a painter is handed is a snapshot*).
+    Hex in, ``QColor`` out at paint time: a colour is never stored (`docs/architecture/canvas.md`'s
+    *The palette a painter is handed is a snapshot*).
     """
     tone = BODY_TONES.get(name)
     if tone is None:

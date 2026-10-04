@@ -1,19 +1,19 @@
 # Agents — Run Agent, worktrees, run directories, usage, harnesses, profiles and reviews
 
-The reasoning behind `.claude/rules/agents.md`: the rules there are the short, imperative form, and this file is why. `ARCHITECTURE.md` is the index of every area.
+The reasoning behind `.claude/rules/agents.md`: the rules there are the short, imperative form,
+and this file is why. `ARCHITECTURE.md` is the index of every area.
 
 ## The description is the instructions
 
-A step used to carry two prose fields — a description and an agent instruction — and the
-distinction ("what it is" versus "how to do it") read well in a docstring and nowhere
-else. In practice the two said the same thing twice, or an agent driving the CLI set one
-when it meant the other, and a step with a rich description and no instruction could not
-be briefed at all. The fix deleted the duplication instead of documenting it harder:
-**an agent step is briefed with its own description.** Marking a step for agent execution
-is the `step_agent_instruction` aspect's `module_data` entry (Step ▸ Type ▸ Agent,
+**An agent step is briefed with its own description.** A description and a separate agent
+instruction draw a distinction ("what it is" versus "how to do it") that reads well in a
+docstring and nowhere else: in practice the two say the same thing twice, or an agent driving
+the CLI sets one when it means the other, and a step with a rich description and no instruction
+cannot be briefed at all. (*decisions.md* has what it replaced.) Marking a step for agent
+execution is the `step_agent_instruction` aspect's `module_data` entry (Step ▸ Type ▸ Agent,
 `dplanner agent on`, `step add --agent`); the briefing's `## Instructions` block is the
-description body and its images, and the separate `## Description` context section is
-omitted so the text appears exactly once.
+description body and its images, and the separate `## Description` context section is omitted so
+the text appears exactly once.
 
 The *separate instruction* survives as the opt-out, not the default: the "Separate agent
 instruction" checkbox in the Description tab (a `SeparateInstructionLink` of typed
@@ -30,9 +30,8 @@ The seam lives where the other cross-module prompt decisions do: `agent_briefing
 `instruction(library, step, files) → PromptPart` reads the description through its
 module's `aspect.py`. Run Agent, the Agent
 tab's Prompt page and `dplanner agent prompt` all assemble through it, so no surface can
-brief a step differently. One consequence worth naming for existing plans: a described,
-uninstructed step that used to render `## Description` now renders that text as
-`## Instructions` — the same words, under the heading the executing agent actually obeys.
+brief a step differently. A described, uninstructed step renders its text as
+`## Instructions` — the heading the executing agent actually obeys.
 
 **A review is the one step whose instructions are generated.** What a review must do is
 the same for every review — read its subject through its lenses, post findings, wait,
@@ -270,9 +269,9 @@ says, because without it the step is due again the moment its run ends; a turn's
 the stamp alone, since `post` and `reply` already moved its side's status.
 
 **A launch is an external effect: its intent is written before the shell.** The claim
-reaches the plan file at the pass's flush, and the first version spawned, claimed in
-memory and flushed afterwards — a window that died in between left no trace, and the next
-one launched the step again. Now `launch_due` writes an intent (`intents.py`: step, run id,
+reaches the plan file at the pass's flush, so spawning, claiming in memory and flushing
+afterwards leaves no trace when the window dies in between, and the next one launches the
+step again. So `launch_due` writes an intent (`intents.py`: step, run id,
 actor, run directory) under the lock's own directory before it spawns, drops it when no
 shell opened, and the pass forgets it only once autosave says everything is on disk. A
 pass that finds one left over reconciles it before launching anything: a shell that
@@ -515,8 +514,8 @@ child or the messaging bridge (a 2.1.258 shell carries the parent's bridge socke
 token, which the list did not name and the rule now does) — because the same prefix
 carries the person's configuration (`CLAUDE_CONFIG_DIR`,
 `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_MAX_OUTPUT_TOKENS`), and an agent launched without
-that cannot sign in. The first version named two markers and a rule; the rule caught the
-session id but not the pid, and a list read off the binary is the honest fix.
+that cannot sign in. A rule over the prefix alone catches the session id but not the pid;
+a list read off the binary does not guess.
 
 **Nothing said not to kill by pattern.** The skill's *Cutting agent steps* and the
 briefing's preamble now both do: other agents work beside you in the same repository, their
@@ -604,13 +603,13 @@ not per desktop**: it reads the shell's recorded facts in the same order `focus`
 them, so a run inside a tmux pane stays offered on a Wayland session with no window tool —
 tmux can select the pane wherever its client is — while the run in a bare window beside it
 is greyed with what the desktop would need. Gating every row on the desktop's answer alone
-was the first version, and it greyed switches that would have worked.
+would grey switches that work.
 
 ### A worktree is the step's decision, and the run is named after the step
 
-Whether an agent works in a fresh git worktree was a global switch on the Agent settings
-page. It is the agent aspect's own field now — `"worktree": false` is the opt-out, absence
-is on — because the question is about the step, not the machine: nearly every step wants
+Whether an agent works in a fresh git worktree is the agent aspect's own field —
+`"worktree": false` is the opt-out, absence is on — not a switch on the settings page,
+because the question is about the step, not the machine: nearly every step wants
 isolation, and the few that do not (a release cut that must tag the checkout the window
 shows, a conflict the window hands over, a step that only reads) are the same few on
 every machine. A global switch is also one nobody dares turn off, since turning it off for
@@ -620,13 +619,11 @@ CLI's word, and the skill tells an agent to leave it on unless the step genuinel
 share the working tree.
 
 **The worktree is prepared by the wrapper script, and a worktree it cannot prepare stops
-the run.** The first version put the worktrees under `.dplanner/worktrees/` and wrapped
-every git call in `|| true`. Two things followed. A project kept in a subfolder of its
-repository leaves a `.dplanner` pointer *file* at the root (FORMAT.md's pointer), so `git
-worktree add` under that path failed with *Not a directory* on every such project; and the
-script, having hidden the failure, carried on in the main checkout — so two agents
-launched "into fresh worktrees" edited one checkout on one branch, which is the bug this
-section exists for. The worktrees live in `.dplanner-worktrees/` now, and the script
+the run.** A project kept in a subfolder of its repository leaves a `.dplanner` pointer
+*file* at the root (FORMAT.md's pointer), so a worktree under `.dplanner/` fails with *Not a
+directory*; and a script that hides such a failure carries on in the main checkout — so two
+agents launched "into fresh worktrees" edit one checkout on one branch, which is the bug
+this section exists for. So the worktrees live in `.dplanner-worktrees/`, and the script
 prunes stale registrations, reuses the branch when it exists, verifies the tree is a
 linked worktree (a `.git` *file*), and otherwise prints git's reason, waits for Enter and
 writes `1` to the exit file — the window reports *failed (exit 1)*, the same way it reports
@@ -691,7 +688,7 @@ put in the person's hands.
 
 ### Which terminal opens is a table, not a chain
 
-The platform `if`-chain that used to resolve a terminal is one table now, `TERMINALS`:
+A terminal is resolved by one table, `TERMINALS`, not a platform `if`-chain:
 a row per known terminal per platform — Terminal, iTerm and Ghostty on macOS; Windows
 Terminal, the Command Prompt and Ghostty on Windows; Ghostty, kitty, Alacritty, foot,
 GNOME Terminal, Konsole and xterm on Linux, with tmux *last* on the two platforms it runs
@@ -704,24 +701,22 @@ the agent presets' pattern, applied to the second choice on the same page. One t
 two readers is what keeps the dropdown from ever offering a terminal the launch would not
 find, and a new terminal is a row rather than a branch.
 
-**tmux was first, and that was the bug that looked like Ghostty's.** A DPlanner started
-from a shell inside tmux inherits `$TMUX`, its probe answered yes, and Automatic opened
-every agent with `tmux new-window` — a new window in whatever session tmux called current,
-inside a Ghostty window the person was typing in, and a different one each time the
-current session changed. It read as "the agent lands in a random split". Ghostty itself
+**tmux is last, because first looks like a bug in the terminal.** A DPlanner started
+from a shell inside tmux inherits `$TMUX`, so its probe answers yes, and an Automatic that
+reached for it would open every agent with `tmux new-window` — a new window in whatever
+session tmux calls current, inside a Ghostty window the person is typing in, and a
+different one each time the current session changes. It reads as "the agent lands in a
+random split". Ghostty itself
 never does that: its `-e` forces a fresh process (`gtk-single-instance=false`) with a
 window of its own. So tmux is the last resort — what Automatic reaches for over ssh with
 no terminal installed — and a desktop application's agent gets a desktop window.
 
 ### An agent CLI is a harness, and a harness is a module
 
-The launcher used to carry a `PRESETS` table of three agent commands and a list of the
-environment variables Claude Code sets in its shells, and every other fact about an agent
-CLI — whether it can be resumed, where it keeps its transcripts — had nowhere to go. Codex
-support was the second CLI to need such facts, and a second block of `if preset.id ==
-"codex"` in the launcher was the shape to refuse.
-
-So an agent CLI is a **harness** now (`domain/agents.py`), and each one is a module:
+An agent CLI carries facts beyond its command — whether it can be resumed, where it keeps
+its transcripts, the environment variables it sets in its shells — and a launcher that
+held them would grow an `if preset.id == "codex"` block per CLI. So an agent CLI is a
+**harness** (`domain/agents.py`), and each one is a module:
 `modules/agent_claude/`, `agent_codex/`, `agent_opencode/`, each a Qt-free `harness.py`
 exporting one `AgentHarness` — the command with its placeholders, the resume template,
 the texts the command shipped earlier, the shell markers, and a `report` reader — and the
@@ -801,9 +796,9 @@ list has been stored, so a machine configured before profiles existed keeps its 
 without anybody retyping them — the same idea as a harness carrying the command texts it
 shipped earlier. Profiles are per user, per machine (`user_config`), never the plan.
 
-**The verb has one seat, and it is the child menu.** *Run Agent…* used to sit flat beside
-*Run Agent With ▸*, two entries for one act, and the flat one hid the choice the other
-offered. Now the child menu *is* Run Agent: the profiles, a rule, and *Manage Agent
+**The verb has one seat, and it is the child menu.** A flat *Run Agent…* beside a *Run Agent
+With ▸* is two entries for one act, and the flat one hides the choice the other offers. So
+the child menu *is* Run Agent: the profiles, a rule, and *Manage Agent
 Profiles…* — the way to the settings page from the menu that needs it, through the
 settings module's `open(section)` handed over by the root. The verb `agent.run` still
 exists — every button and the palette run it — but it is registered `in_menus=False`:

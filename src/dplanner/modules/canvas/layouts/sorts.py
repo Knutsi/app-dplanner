@@ -298,8 +298,8 @@ def _timeline(
 # Wave view's arrangement: every card in the column of its dependency depth. Unlike the sorts
 # above it is shown live — derived on every sync while Wave view is on, never saved — so its
 # one extra duty is to hold still: a link added must move only the steps it changes the wave
-# of, and nothing may reshuffle a column it did not touch (``ARCHITECTURE.md``'s *Wave view
-# derives positions; only Free view saves them*).
+# of, and nothing may reshuffle a column it did not touch (``docs/architecture/canvas.md``'s *Wave
+# view derives positions; only Free view saves them*).
 
 
 @dataclass(frozen=True)

@@ -1,6 +1,7 @@
 # Schedule — order, progression, time estimates, progress and milestone colour
 
-The reasoning behind `.claude/rules/schedule.md`: the rules there are the short, imperative form, and this file is why. `ARCHITECTURE.md` is the index of every area.
+The reasoning behind `.claude/rules/schedule.md`: the rules there are the short, imperative
+form, and this file is why. `ARCHITECTURE.md` is the index of every area.
 
 ## Progression is the status-aware frontier
 
@@ -44,8 +45,8 @@ chosen step for the same reason (*Status is an aspect*, above).
 execution that is the wrong question: a step deep in the graph whose prerequisites have all
 been finished is launchable today, and no wave number says so. `planning/progression.py`
 answers the execution question — every step in exactly one of *done / running / asking /
-review / merge / attention / ready / upcoming / waiting* — and it is deliberately a **new derivation
-beside the old one, not a refactor of it**: the frontier is a per-step check ("every
+review / merge / attention / ready / upcoming / waiting* — and it is deliberately a **second
+derivation beside `ready()`, not a refactor of it**: the frontier is a per-step check ("every
 `requires` target reads done"), not wave membership, and the two only coincide in a project
 where nothing has been finished yet. A test pins that equivalence; shared code would have
 pinned a coincidence.
@@ -122,10 +123,8 @@ change removes by accident.
 **The Control Centre is the same board over every project** — what needs a person
 anywhere, rather than in the project whose tab is open. Six decisions shaped it:
 
-- **The same groups, and still no running work.** The step that asked for it named running
-  and upcoming lanes, written before this tab stopped being lanes; the developer kept the
-  table's rule on 27 September, so the Control Centre is the five groups above and a later
-  group is one row in `GROUPS`, on both tabs at once.
+- **The same groups, and still no running work.** The Control Centre is the five groups
+  above, not lanes, and a later group is one row in `GROUPS`, on both tabs at once.
 - **Each project is walked on its own and the board is their merge.** Edges never cross a
   project, so `progression()` per project is already right, and `merge()` only has to rank
   what a person acts on again by `unlocks` over the whole — a stable sort over the walks
@@ -135,21 +134,21 @@ anywhere, rather than in the project whose tab is open. Six decisions shaped it:
   filter never walks a graph: a filter change is a merge and a table fill.
 - **Two tabs on one base, not one tab with a scope.** `StatusBoard` holds the strip, the
   table, the row's ⋮ and the refresh; *Step statuses* and the Control Centre are siblings on
-  it. One class with a *None-means-every-project* scope was the first sketch, and
-  `follow_project_tabs` would have closed it on the first structure change: it closes any
-  instance of the type whose entity the library no longer has. The Control Centre also
+  it. One class with a *None-means-every-project* scope would be closed by
+  `follow_project_tabs` on the first structure change: it closes any instance of the type
+  whose entity the library no longer has. The Control Centre also
   publishes no project edge, which is the other thing that differs.
 - **A verb about one project reads the picked step's own when the view names none.**
-  *Show in ▸ Order* and *Step Statuses* were greyed — with no reason — on every Control
-  Centre row, because they asked the context for a project and a board of every project
-  names none. `framework/step_selection.py`'s `focused_project` is the rule Testing had
-  already written for itself, moved where the next module finds it.
+  *Show in ▸ Order* and *Step Statuses* ask the context for a project, and a board of every
+  project names none — so without this they would be greyed, with no reason, on every
+  Control Centre row. `framework/step_selection.py`'s `focused_project` is the rule, where
+  every module finds it.
 - **Nothing was added to launch across projects.** Run Agent's gate already resolves each
   chosen step's project and asks for its checkout once per project; *Run 2 Agents…* over
   two projects' ticks is the strip's existing seat, and a test pins that it opens each
   shell in its own repository.
 - **The day turning is a change.** A dated wait is over on a day, and `status_for` reads
-  today when asked, so a window left open overnight showed yesterday's board until
+  today when asked, so a window left open overnight would show yesterday's board until
   somebody edited something. Both tabs re-run on `clock.day_changed`, as the Time tab does.
 
 `dplanner progression show --all [PROJECT …]` is the Control Centre in the terminal: every
@@ -338,18 +337,18 @@ Time tab runs the one the project is staffed for. The decisions worth writing do
   fades the rest, which is how "the work leading up to it" is shown without a word; a pick
   hides nothing. Every number's meaning is in its tooltip.
 - **A plan that cannot be dated says so.** The model refuses to create a cycle, but every
-  walk here guards against one a hand-edited file carries — and until now guarded
-  *silently*, placing the looped steps at depth zero and dating a plan that has no order.
+  walk here guards against one a hand-edited file carries — and guarding *silently* would
+  place the looped steps at depth zero and date a plan that has no order.
   `ordering.cyclic()` names them (Kahn's peeling: whatever cannot be shed sits on or behind
   a loop), `time_report` returns a report with `cycle` set and empty grids,
   `Readers.snapshot` returns nothing, the tab shows the names in place of the pages, and
   `schedule matrix` exits non-zero with them.
   A view that computes on every change has to be robust to every state the file can be
   in, or it is a view that sometimes shows a picture of nothing.
-- **The team is an assumption, so it is stored — and the Budget is the write.** The
-  matrix's selection used to be view state that reset on every open, which meant the
-  calendar, the landing list and `schedule matrix` could each be dating the plan for a
-  different team. It is the project's now — `{"team": [2, 3]}` beside the focus factor
+- **The team is an assumption, so it is stored — and the Budget is the write.** As view
+  state that resets on every open, the calendar, the landing list and `schedule matrix`
+  could each be dating the plan for a different team. So it is the project's —
+  `{"team": [2, 3]}` beside the focus factor
   and the palette, one `Assumptions` record read and written whole so no control has to
   juggle the other two — pushed by the Budget popover as *Set Budget* (people, agents when
   the plan has agent steps, and the focus: a pick writes only what it changed, and applies
@@ -549,9 +548,9 @@ movement · days moved, in working days).
   `wait_of`) alike. Neither moves a forecast of the prototype's twelve — there, a
   milestone's whole stretch is done when its marker is ready, so every worker is free — and
   Two tracks' milestones went from 3.3 days of error to 1.4.
-- **Work already started runs now.** Re-dated, a later stretch's work in flight used to wait
-  for the stretches before it, crediting a worker the team did not have: the person on it
-  was counted free for the stretch being worked. Now it keeps its worker from tomorrow
+- **Work already started runs now.** Re-dated, a later stretch's work in flight that waited
+  for the stretches before it would credit a worker the team does not have: the person on it
+  would be counted free for the stretch being worked. So it keeps its worker from tomorrow
   beside that stretch (`_resumed`'s `carried`, dated with `borrowed`), what is left of it
   when that stretch lands carries on into the next, and one that lands on the way is done,
   where it belongs, on the day it landed. The stretch being worked lands when its *own*
@@ -671,12 +670,12 @@ decisions that carry it:
   schedule until then. Weekends are pale bands, because a flat week reads differently when
   two of its days were never working ones.
 - **The Milestones page is a row per milestone.** Where the plan compared with landed it
-  (hollow), where the plan now does (filled — a check once its work is done), an arrow
-  between, each mark's date beside it — outside the pair where there is room, inside where
-  there is not, left out rather than squeezed (`row_dates`'s rule, both surfaces) — and a
-  hairline to the axis, so the day is read off the scale. The sentence the old rows
-  carried is the row's tooltip (`milestone_words`), and the figure over the page says the
-  whole plan's move in working days (`moved_words`: *▶ +3d*).
+  (hollow), where the plan now does (filled — a check once its work is done), an arrow between,
+  each mark's date beside it — outside the pair where there is room, inside where there is not,
+  left out rather than squeezed (`row_dates`'s rule, both surfaces) — and a hairline to the
+  axis, so the day is read off the scale. The row's sentence is its tooltip (`milestone_words`),
+  and the figure over the page says the whole plan's move in working days (`moved_words`: *▶
+  +3d*).
 - **The axes hold still.** Every plot is drawn against the reach of every record up to the
   day shown and the live plan (`reach_of`: the first day any starts, the last any lands,
   the most work any holds), so moving between days moves only the lines.

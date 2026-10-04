@@ -1,58 +1,51 @@
 # Persistence — save, two writers, outside changes, reload and repositories
 
-The reasoning behind `.claude/rules/persistence.md`: the rules there are the short, imperative form, and this file is why. `ARCHITECTURE.md` is the index of every area.
+The reasoning behind `.claude/rules/persistence.md`: the rules there are the short, imperative
+form, and this file is why. `ARCHITECTURE.md` is the index of every area.
 
 ## A project's forms live in its dialog
 
 A project has a handful of things a person edits about it rather than about any step: its
 name and summary, where its plan and its code live, the standing instruction every briefing
-opens with, and the instructions every compiled document follows. They were a dock panel in
-the right area, then a **Dashboard tab** (`project_dashboard`), and are now the tabs of
+opens with, and the instructions every compiled document follows. They are the tabs of
 *Project ▸ Settings…* — the Project dialog (`modules/projects/project_dialog.py`), whose
 first tab, **Repositories**, is its own, and whose others are whatever registered into
 `services.project_settings`.
 
-**The tab said everything twice.** The dashboard's name and summary were the dialog's two
-fields again, and its Repositories card was the dialog's Locations table re-worded as
-lines — which is why `repos.location_words` had to be shared, so the two could not word one
-fact two ways. The only content of its own was two prose cards. So the host that already
-had the facts, the name and a Close-only footer took the two editors, and the second copy
-went. Nothing was lost in the move: the dialog already read `plan_in_code` and `warns` for
-its warning and its set-up offer, which is all the card's note and button said.
+**One host says each fact once.** The dialog already holds the project's name, summary and
+Locations table, and reads `plan_in_code` and `warns` for its warning and its set-up offer;
+a second surface for the same project would word each of those facts again. So the host
+that has the facts, the name and a Close-only footer also takes the prose editors.
+(*decisions.md* has what it replaced.)
 
-**The registry survives, because the contract did.** Two modules still have something to
-say about a project, and neither should learn about the other or about the host: a
-registry is for whoever turns up. `project_settings` is an `InspectorSectionRegistry` like
-the step's tabs and its Details blocks, named after its host as `step_details` is, with a
-project id in `show_target`. The same registry is what first retired `project_repo`'s
-provider-and-Protocol handover (`RepoFields` + a `repo_fields` factory on the editor's
-Deps): the moment a second module wanted a project surface, "whoever turns up" became the
-right question. The dialog builds one extension per section when it is first built — on
-first use, after every module has registered — so the ordering rule the dashboard carried
-(register before `project_dashboard`, because `reopen_tabs` opened tabs at startup) went
-with it. A section's `hint` is its tab's tooltip; `stretch` means nothing to a tab host.
+**The registry survives, because the contract did.** Two modules still have something to say
+about a project, and neither should learn about the other or about the host: a registry is for
+whoever turns up. `project_settings` is an `InspectorSectionRegistry` like the step's tabs and
+its Details blocks, named after its host as `step_details` is, with a project id in
+`show_target`. A provider-and-Protocol handover from one module to the host answers only while
+one module has a project surface; the moment a second wants one, "whoever turns up" is the right
+question. The dialog builds one extension per section when it is first built — on first use,
+after every module has registered — so a section carries no registration-order rule. A section's
+`hint` is its tab's tooltip; `stretch` means nothing to a tab host.
 
 **One dialog per window is re-aimed, so the aim is guarded.** Every *Settings…* calls
 `show_project`, and `ProseSection.show_target` rebinds whenever it is called, which throws
-the caret to the start. So the tabs are aimed only when the project changes — the
-unchanged-id guard the dock panel needed, which the dashboard dropped because nothing
-re-targeted it, and which a re-aimed dialog needs again. A context republished mid-typing
+the caret to the start. So the tabs are aimed only when the project changes — an
+unchanged-id guard, which any host that is re-aimed needs. A context republished mid-typing
 reaches nothing, since the dialog reads no context. And because the dialog outlives a
 visit, **leaving it seals the undo step** a prose tab was growing (`hideEvent` →
-`break_coalescing`), as the dashboard did on deactivation: a text edit merges by field and
+`break_coalescing`): a text edit merges by field and
 time, not by who typed it, so the next visit's typing would otherwise grow the last one's
 step. `dispose()` lets go of the model before a dialog is deleted — New Project's create
-dialog calls it too, where its subscriptions used to outlive it.
+dialog calls it too, so its subscriptions never outlive it.
 
-**The project row lost its door.** A click on a project's row in the index opened the
-Dashboard as a preview: a tab for every glance at the index. Now the row only selects its
-project. Every Project verb, *Settings…* among them, acts on it from the menu bar and the
-row's right-click; the Steps row opens the graph; a double-click still folds the row (Qt's
-behaviour, not fought). What shows while no tab is open is the window's to decide, not any
-one project's — a blank window, with Home opened only at the program's start (*Home is
-where a window starts*). The rule
-is `.claude/rules/step-panel.md`'s project-level editor bullet and `CLAUDE.md`'s panel
-bullet.
+**The project row only selects its project.** A row that opened a tab would open one for every
+glance at the index. Every Project verb, *Settings…* among them, acts on it from the menu bar
+and the row's right-click; the Steps row opens the graph; a double-click still folds the row
+(Qt's behaviour, not fought). What shows while no tab is open is the window's to decide, not any
+one project's — a blank window, with Home opened only at the program's start (*Home is where a
+window starts*). The rule is `.claude/rules/step-panel.md`'s project-level editor bullet and
+`CLAUDE.md`'s panel bullet.
 
 ## Two writers, one folder
 
@@ -94,11 +87,12 @@ exactly the same reason and can be run again. One mechanism, three cases.
 
 ### Adopting the other writer's changes in place
 
-Every outside change used to cost the whole rebuild: `AppSession.reload()` built a second
-window, showed it, and discarded the first. Correct, and visibly a close-and-reopen — the
-undo history, the selection, the canvas viewport, the caret, split panes and open dialogs
-all went with the old build, and an agent running five CLI verbs in a row rebuilt the
-window once per two-second tick. The rule now is the one above with a second half:
+The simple answer to an outside change is the whole rebuild: `AppSession.reload()` builds a
+second window, shows it, and discards the first. Correct, and visibly a close-and-reopen —
+the undo history, the selection, the canvas viewport, the caret, split panes and open
+dialogs all go with the discarded build, and an agent running five CLI verbs in a row would
+rebuild the window once per two-second tick. So the rule is the one above with a second
+half:
 
 > **Nothing writes over a file it has not seen — and nothing rebuilds over a model it can
 > still reconcile.**
@@ -150,9 +144,9 @@ which is what the strict read exists for (the tolerant one that opens a library 
 a torn file for an emptied node); a torn *library file* likewise, or every project would
 read as departed. A pending format migration, or any failure halfway, sets
 `rebuild_required`, and `SessionControl.refresh` falls back to `reload()`: the rebuild is
-still correct by construction, it is just no longer the first move. The watcher no longer
-holds off while this window owes a write — a flush re-stamps as it writes, so our own files
-never read as foreign, and the conflict rule answers the case the guard existed for.
+still correct by construction, it is just not the first move. The watcher does not hold off
+while this window owes a write — a flush re-stamps as it writes, so our own files never read
+as foreign, and the conflict rule answers the case such a guard would exist for.
 
 **The undo history survives an agent's edits and is dropped by a branch switch.** An entry
 that names a step the agent removed, or prose whose positions moved under adopted hunks, is
@@ -167,8 +161,8 @@ way.** `SetFieldCommand`, `SetModuleDataCommand` and `SetEdgesCommand` remember 
 redo left in the model — read back, since `set_edges` de-duplicates and `set_module_data`
 keeps the caller's dict — and refuse with `ValueError` when an undo finds anything else
 there; a replayed redo refuses the same way when the value is no longer what its undo put
-back. Before that, undoing a rename restored the old title over the agent's newer one, and
-nothing said so. The refusal reaches `_drop_from` like the two above, so the user's history
+back — otherwise undoing a rename would restore the old title over the agent's newer one,
+and nothing would say so. The refusal reaches `_drop_from` like the two above, so the user's history
 before it stays usable. A refusal inside a `CompositeCommand` — or a gesture the stack
 recorded — reverses what the composite had already applied and then goes on, so the model
 is either wholly before the gesture or wholly after it; a composite that half applied
@@ -212,30 +206,27 @@ is working through, when it started and when it was last heard from — and
 `modules/agent_at_work/` stands one notice for every claim below the window's content while
 any stands. Six decisions carry it.
 
-**Silence lapses, and the next sign of life undoes it.** This was the whole design
-question. A heartbeat the agent must remember is a heartbeat it will forget mid-task; a pid
-is a process the announcing `dplanner` run does not own — its parent may be a shell that
-lives for the session or one that exits with the call, and nothing can tell which. The
-first version therefore decided nothing: a quiet claim changed tense (*was at work … last
-heard 40 minutes ago*) and stood until somebody who knew something ended it. In use that
-was the wrong way round. Agents finish and stop without a word far more often than they
-think for an hour, so the window collected bands from agents long gone, and a banner that
-is usually stale teaches the developer to read past the one surface they must not. So a
-claim not heard from in `FRESH_MINUTES` (three) **lapses**: `AtWorkBoard.claims()` stops
-returning it, and the window, `agent-work show` and the library watcher all stop saying it
-at once. What makes a lease safe here, where the usual objection is that it is too short,
-is that **a lapse deletes nothing**: the file stays until the day-old sweep, and the
-agent's next `dplanner` run renews it, so it stands again. That run is exactly the moment
-it matters — an agent that is not touching the CLI is not touching the plan either, and the
-banner exists to keep a person off the plan while an agent writes it. The lease began at
-thirty minutes and was still the wrong way round in use — bands stood long after the work
-had finished — so it is three: a quiet agent's band may drop out between two runs and come
-back with the next, which costs a person nothing, where a stale one teaches them to stop
-reading. The tense went with
-it: one threshold where there were two, and every standing claim reads *is at work*, with
-when it was last heard said in its own words. It goes for good four ways — the agent ends
-it, `status set` says its step is finished (below), a person clears it, or a claim made a
-day later sweeps it.
+**Silence lapses, and the next sign of life undoes it.** This was the whole design question. A
+heartbeat the agent must remember is a heartbeat it will forget mid-task; a pid is a process the
+announcing `dplanner` run does not own — its parent may be a shell that lives for the session or
+one that exits with the call, and nothing can tell which. A quiet claim that only changes tense
+(*was at work … last heard 40 minutes ago*) and stands until somebody who knows something ends
+it is the wrong way round: agents finish and stop without a word far more often than they think
+for an hour, so the window collects bands from agents long gone, and a banner that is usually
+stale teaches the developer to read past the one surface they must not. So a claim not heard
+from in `FRESH_MINUTES` (three) **lapses**: `AtWorkBoard.claims()` stops returning it, and the
+window, `agent-work show` and the library watcher all stop saying it at once. What makes a lease
+safe here, where the usual objection is that it is too short, is that **a lapse deletes
+nothing**: the file stays until the day-old sweep, and the agent's next `dplanner` run renews
+it, so it stands again. That run is exactly the moment it matters — an agent that is not
+touching the CLI is not touching the plan either, and the banner exists to keep a person off the
+plan while an agent writes it. The lease began at thirty minutes and was still the wrong way
+round in use — bands stood long after the work had finished — so it is three: a quiet agent's
+band may drop out between two runs and come back with the next, which costs a person nothing,
+where a stale one teaches them to stop reading. The tense went with it: one threshold where
+there were two, and every standing claim reads *is at work*, with when it was last heard said in
+its own words. It goes for good four ways — the agent ends it, `status set` says its step is
+finished (below), a person clears it, or a claim made a day later sweeps it.
 
 **Every `dplanner` run is the sign of life, and only an agent's is.** An agent that is
 working is already running verbs — a status, a note, a link — so `cli/main.py` renews the
@@ -298,10 +289,9 @@ its question in the notice bar and the status bar instead of raising the modal. 
 question is deferred, never dropped: the person presses *Settle…* when they are ready, the
 next collision after the agent goes quiet raises it as before, and the dialog names the
 agent in its own words, because *Take Theirs* means taking that agent's work and a dialog
-that did not say whose would be asking the developer to guess. The notice also replaced the
-status-bar button *Later* used to leave: with the question standing over the content there
-were two surfaces saying one thing, and the one that went is the one a person can look away
-from.
+that did not say whose would be asking the developer to guess. The notice is the only
+reminder — there is no status-bar button beside it: two surfaces would say one thing, and
+the one a person can look away from is the one to leave out.
 
 What the banner is made of is the existing vocabulary and nothing new. DESIGN.md allows
 three motions in the whole application; the arc that says *something is running here* is
@@ -355,11 +345,10 @@ past.
 
 The window's own Switch Branch takes the tree in and drops the history (above). A switch
 made *outside* it — `git checkout` in a terminal, an agent whose step runs in the checkout
-itself — used to arrive as nothing in particular: the workspace watcher adopted whatever
-plan files differed, "Took 3 changes from outside DPlanner" flashed in the status bar,
-the branch label stayed stale until the next context change, and every edit from then on
-was autosaved onto a branch nobody had named. An agent's feedback put it plainly: *a
-window should warn when the checkout's branch changes underneath the plan.*
+itself — would otherwise arrive as nothing in particular: the workspace watcher adopting
+whatever plan files differ, a status-bar flash, a stale branch label, and every edit from
+then on autosaved onto a branch nobody had named. *A window should warn when the
+checkout's branch changes underneath the plan.*
 
 So the sync module polls. Every repository's branch is asked of git directly — not
 through the service's second-long cache, since seeing a change is the point of asking —
@@ -400,19 +389,19 @@ a decision, not a leak:
   exception, under a wait cursor: the repository was written a moment ago and the person
   is waiting on it.
 
-**Save at quit was the fourth, and it is not any more** — not because the rule bent, but
-because its reason lapsed. It read: *the window is closing; there is no task centre left to
-watch a task in, and returning to the event loop mid-teardown is exactly the window a lost
-write needs.* Both halves turn on the window closing, and the close is **deferred** now: the
-guard starts the save and answers "not yet", so nothing is tearing down while it runs, and
-the progress dialog is the watcher the task centre could not be. The cost of the old answer
-was the thing the exception never mentioned — a frozen window, for as long as publishing,
-committing and pushing several repositories takes, with no way to tell it from a hang.
+**Save at quit is not an exception**, though its case once looked like one: *the window is
+closing; there is no task centre left to watch a task in, and returning to the event loop
+mid-teardown is exactly the window a lost write needs.* Both halves turn on the window
+closing, and the close is **deferred**: the guard starts the save and answers "not yet", so
+nothing is tearing down while it runs, and the progress dialog is the watcher the task centre
+cannot be. A synchronous save at quit costs what the exception never mentioned — a frozen
+window, for as long as publishing, committing and pushing several repositories takes, with
+no way to tell it from a hang.
 
 The boundary to keep: an operation whose completion the *running* application must observe
 before doing anything else at all may be synchronous; anything the user merely waits on goes
-through the runner. A new storage verb defaults to the runner. And the lesson of the fourth
-one is worth keeping beside it: **before granting the exception, ask whether the constraint
+through the runner. A new storage verb defaults to the runner. And the lesson of Save at quit
+is worth keeping beside it: **before granting the exception, ask whether the constraint
 that forces it is itself a choice.** "The window is closing" was.
 
 ## Closing a window is not discarding it
@@ -591,8 +580,8 @@ repositories folder (*Settings ▸ Repositories*) decides *where* that clone lan
 DPlanner under `config_dir()/checkouts/` (`core/storage/kept.py`, the default: a full
 working clone, hardened only while it is made, never inside a plan repository, a project
 directory or the person's repositories folder) or into the repositories folder, asked
-once — and **never whether the verb runs**. That retired the *not checked out on this
-machine* dead end: Run Agent and Open Agent in Code read *clones acme/widget first* and
+once — and **never whether the verb runs**. There is no *not checked out on this machine*
+dead end: Run Agent and Open Agent in Code read *clones acme/widget first* and
 clone before they launch; the Open
 Project wizard's Repositories page shows only under the folder policy, where a developer
 says *use a checkout I have* before anything lands among their own. A kept clone is a
@@ -600,19 +589,17 @@ checkout like any other — `Placement.kept` changes the wording (*kept by DPlan
 and nothing else — and a repository stored as a path is placed there only when a working
 tree is there, so a bare `file://` remote is cloned like any other.
 
-**A reporting location is where the report site is exported, never where Save commits.**
-The site writer takes a *target* (`website.SiteTarget`: the repository the site sits in,
-and the directory the pages go in), so the plan's `reports/`, a reporting row's position
-and any picked folder are one layout. *File ▸ Export ▸ Report Site (Folder)…* opens its
-folder picker at the focused project's reporting location when this machine has that
-repository; `dplanner report site` writes there by default, `--out DIR` anywhere. Neither
-commits — what lands in the reporting repository is its people's to record. Save used to
-clone a missing reporting repository, write the site there and commit it scoped to the
-site; it no longer writes reports at all (*Reports are written on request, never on Save*,
-below). The flows this settles, end to end: a spec author adds their repository from the
-Specs tab (*Add Spec ▸ From Repository…*, below); a developer opens a shared plan with
-everything checked out and is asked nothing; a team lead opens the same plan on an empty
-machine and is asked nothing; Run Agent on code nobody checked out clones and launches.
+**A reporting location is where the report site is exported, never where Save commits.** The
+site writer takes a *target* (`website.SiteTarget`: the repository the site sits in, and the
+directory the pages go in), so the plan's `reports/`, a reporting row's position and any picked
+folder are one layout. *File ▸ Export ▸ Report Site (Folder)…* opens its folder picker at the
+focused project's reporting location when this machine has that repository; `dplanner report
+site` writes there by default, `--out DIR` anywhere. Neither commits — what lands in the
+reporting repository is its people's to record, and Save writes no reports at all (`cli.md`'s *A
+report is a publication, not a record*). The flows this settles, end to end: a spec author adds
+their repository from the Specs tab (*Add Spec ▸ From Repository…*, below); a developer opens a
+shared plan with everything checked out and is asked nothing; a team lead opens the same plan on
+an empty machine and is asked nothing; Run Agent on code nobody checked out clones and launches.
 
 `domain/repositories.py` is the one derivation over the three — `RepositoryFacts`, every
 row placed, with four states read off the code rows: **separated**, the shape the
@@ -737,8 +724,8 @@ which. A line with nothing to name says what is missing (*not checked out on thi
 machine*) rather than standing blank, and `#RepoLineMissing` is what greys it: the shape
 of the footer is then constant, and a reader learns where to look once.
 
-What used to be four glyph buttons scattered across three rows is one ⋯ per column
-(`RepoAction`, `RepositoryColumn.entries`). The menu is **built when it opens** — the same
+A column's verbs are one ⋯ per column (`RepoAction`, `RepositoryColumn.entries`), not glyph
+buttons scattered across its rows. The menu is **built when it opens** — the same
 reason `action_menu` builds one fresh: a glyph carries the colour it was painted in — and
 an entry that cannot run right now is **greyed with its reason in its words**, never
 dropped, so the list to learn is the same list whatever the project's state. These verbs
@@ -790,10 +777,10 @@ read as a one-time migration — and the first plan put on the wrong repository 
 back but the CLI, which is the wrong answer for a mistake made in a dialog: the surface
 that made a choice is the surface that has to be able to change it. Nothing in the move
 was a special case of the first one; the only thing the second move must not do is
-*inherit*. `move_project` used to fall back to the source repository's main checkout when
-no checkout was recorded — true when the plan was leaving the code, and wrong the moment
-the repository it leaves is a plan repository — so the fallback now asks
-`_is_code_repository` first and a plan with no checkout here gains none by moving. The
+*inherit*. When no checkout is recorded, `move_project` falls back to the source
+repository's main checkout only if `_is_code_repository` says it is one — true when the plan
+is leaving the code, and wrong the moment the repository it leaves is a plan repository — so
+a plan with no checkout here gains none by moving. The
 card's button says which of the two offers this is (*Set up a plan repository…* while the
 plan is inside its code, *Move Plan…* once it is out), and the skill still tells an agent
 to run `dplanner project move` when the developer asks and never unasked.
@@ -862,8 +849,8 @@ The rebase onto `origin/<branch>` that `push` and `pull` run is aborted on a con
 raises `DivergedError` (`core/storage/provider.py`), which carries the repository and the
 branch. `SyncService._start` sees it on the way out and sends `diverged(root, branch)` just
 ahead of the failure. A commit that already landed is not "not recorded": the row says
-*committed here, not pushed*. The error's own words were the old message, and it did not fit
-the one-line footer status, so `modules/sync/not_pushed_dialog.py` says what happened and what to do
+*committed here, not pushed*. The error's own words do not fit the one-line footer status,
+so `modules/sync/not_pushed_dialog.py` says what happened and what to do
 in the body instead. The quit dialog shows it under its rows, and Save and Update from
 Remote show it in *Not Pushed* rather than a `QMessageBox`. Both offer *Reconcile with Agent*
 with every launch profile, and the agent runs in that plan repository, with no worktree and

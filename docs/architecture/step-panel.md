@@ -1,6 +1,7 @@
 # Step panel — aspect toggles, the shelf, Details blocks, prose editors and assets
 
-The reasoning behind `.claude/rules/step-panel.md`: the rules there are the short, imperative form, and this file is why. `ARCHITECTURE.md` is the index of every area.
+The reasoning behind `.claude/rules/step-panel.md`: the rules there are the short, imperative
+form, and this file is why. `ARCHITECTURE.md` is the index of every area.
 
 ## How a panel gets editors it has never heard of
 
@@ -10,21 +11,18 @@ Two seams do that, and they are worth naming because they answer every "feature 
 feature B" question this application will have.
 
 **Nobody hosts the panel.** `step_properties` owns it, and `steps.details` is where it
-appears; what it shows is the step the verb was run on. Before the dock existed this was a
-*consumer-owned Protocol* — `canvas` declared `widget`/`show_step`/`dispose` and the
-composition root handed it a factory — which worked, and cost a panel per tab. Anchoring it
-deleted the Protocol, the `detail_panel` dependency, and the question of who owns the one that
-is on screen; making it a modal (below) deleted the anchor too. The Protocol-plus-factory shape
-is still the right answer when one module needs a *widget* from another; it stopped being the
-right answer here when the answer to "how many are there" became one.
+appears; what it shows is the step the verb was run on. No view declares a Protocol for it
+and none is handed a factory: the Protocol-plus-factory shape is the right answer when one
+module needs a *widget* from another, and it is not the answer here because the answer to "how
+many are there" is one. (*decisions.md* has what it replaced.)
 
 **A registry for the contributors.** Aspect modules register an `InspectorSection` into
 `services.inspector_sections`; the panel reads that registry when it is *built*, not when the
 modules load, so a contributor's position in the composition root is free — its position
 *ahead* of `step_properties` is not, and the root says so.
 
-The composition root is the only place that knows both, and the wiring the two panel modules
-used to need between them is gone:
+The composition root is the only place that knows both, and the two panel modules need no
+wiring between them:
 
 ```python
 step_properties = StepPropertiesModule(
@@ -34,9 +32,9 @@ canvas = CanvasModule(CanvasDeps(..., panels=services.panels))
 projects = ProjectsModule(ProjectsDeps(..., open_project=canvas.open))
 ```
 
-**Where provider-and-Protocol is still the answer.** The order view's start-date bar is
-exactly the shape the panel used to have, and it survives the panel's move because the two
-questions are different: a *widget one surface hosts* is not a *surface the window anchors*.
+**Where provider-and-Protocol is the answer.** The order view's start-date bar is that
+shape, and it holds there and not here because the two questions are different: a *widget one
+surface hosts* is not a *surface the window anchors*.
 `estimation` provides a `create_start_bar()` and registers nothing for it, `step_order`
 declares a `StartBar` Protocol of its own and takes a `Callable[..., StartBar] | None`, and
 the composition root is the only file that knows both names. Why a `create_…` rather than a
@@ -56,11 +54,10 @@ It is the Project dialog's own header instead — *A project's forms live in its
 ## The step editor is a modal
 
 `steps.details` puts a `StepPanel` in a dialog, and that is the **only** place a step's
-aspects are edited. It used to be a panel as well, anchored in the window's right area and
-following the selection; both seats existed until the Tests roster made it plain that one of
-them was wrong.
+aspects are edited — never a panel anchored in the window's right area following the
+selection. (*decisions.md* has when it was both.)
 
-**What the anchored seat cost.** A step's aspects are a page of tabs — Details, Ticket, Docs,
+**What an anchored seat would cost.** A step's aspects are a page of tabs — Details, Ticket, Docs,
 Tests, Covers, Agent, Feature, Milestone, GitHub — and a page of tabs in a 360 px column is an
 editor in which nobody finishes a sentence: the tab bar already needs scroll buttons and
 elided labels to hold nine, five of the aspect bar's ten toggles fold into its `…`, the Tests
@@ -71,24 +68,14 @@ the reader had actually opened, answering a question nobody had asked with the a
 step the test happened to hang off. Two editors of different things in one column, and the one
 somebody summoned underneath.
 
-**What replaced it is what was already there.** Every view's double-click on a step already
-ran `steps.details` (`CLAUDE.md`), so the gesture did not change and nothing moved — one spec
-was deleted from `services.panels` and the surface kept its one host. The dialog never reads
+**The gesture is the one every view already has.** Every view's double-click on a step runs
+`steps.details` (`CLAUDE.md`), and the surface has that one host. The dialog never reads
 the context: it is opened *about* a step and stays on it, driven by `show_step` directly,
 which is what lets a table row open it for the row under the cursor even when that pane's
 publish was suppressed. It carries no buttons but Close: every edit inside it is already
 applied and already on the undo stack, so there is nothing to confirm and nothing to cancel.
 It is also where a fresh step is configured — New and the canvas double-click open it on the
 step they just made, with the name field focused and selected.
-
-**And the project form stopped standing aside for it.** It used to return False from
-`show_context` whenever exactly one step was selected, because the step panel wanted the area;
-with nothing to hand the area to, that rule would have left the right side blank on every
-canvas click. For a while the kinds it yielded to were named instead — a `narrower_kinds`
-tuple from the composition root, `("test",)`, so the Test panel had the area while a test
-was picked. Both halves of that arrangement have since left the areas: the Test panel
-stands inside the Tests tab (*A panel inside a tab follows the tab*) and the form is the
-Project dialog's (*A project's forms live in its dialog*), so there is nothing left to yield.
 
 **Why the dialog is not a breach of "one panel, not one per tab".** That rule forbids a panel
 *per surface*, where N tabs meant N copies on screen at once. The dialog is one transient host
@@ -98,8 +85,8 @@ panel's cards had already proved. A test drives it the way the application does,
 `step_editor` fixture, because there is no anchored panel left to reach for.
 
 **The Details tab hosts the same contract, as blocks.** The first thing a step should show —
-what it is, how big it is, what it looks like — was scattered across an Estimate tab and a
-Description tab, each one click away. Now a module that wants its editor on the first tab
+what it is, how big it is, what it looks like — is one tab, not an Estimate tab and a
+Description tab each a click away. A module that wants its editor on the first tab
 registers an `InspectorSection` into `services.step_details`, the registry's third
 instantiation, and `step_properties` contributes one ordinary section labelled "Details"
 whose extension (`modules/step_properties/details.py`) stacks the blocks: a caption from
@@ -111,9 +98,8 @@ re-asks it for tabs). Why a third registry instance and not a `placement` flag o
 `InspectorSection`: a host is addressed by *which registry you register into*. That keeps
 each host's vocabulary greppable, spares every host from filtering every section by a mode
 field, and is the same reasoning that made `project_settings` a second instance rather than a
-`kind` — three hosts now, and the dataclass still has no idea. Because the composite is
-just a section, the docked panel and the `steps.details` dialog render it identically for
-free.
+`kind` — three hosts, and the dataclass has no idea. Because the composite is just a
+section, any host of the panel renders it for free.
 
 **A block host owes its stack a trailing stretch and a cap on the rest.** `stretch` on the
 section says who gets the leftover height — the description, which is what a step's prose
@@ -133,8 +119,7 @@ GrowFlag that was promoting it behind the data's back — which is the real stat
 fix: **the cap is what makes `InspectorSection.stretch` authoritative.** Without it the
 declared stretch is advisory and Qt's propagation decides, which is why the bug read as
 arbitrary. `Maximum` rather than `Fixed`, so a panel shorter than its blocks still
-compresses rather than clipping. The card stack the project's forms once sat in had the
-trailing spacer from the start and never hit this, because no card asked for stretch.
+compresses rather than clipping.
 
 ## A markdown toolbar is verbs over a selection, and one splice each
 
@@ -375,7 +360,7 @@ shown step, and hides the tab (`QTabBar.setTabVisible` — indices stay stable, 
 tab-to-page mapping never re-shuffles) when the answer is no. Only on a change, and
 followed by `updateGeometry()`: `setTabVisible` clears its own layout-dirty flag when
 handed an unchanged value and lays nothing out itself, so a blanket loop leaves the strip
-painting stale rects — `NOTES-FOR-APPFRAME.md` §10 has the trap. Milestone, Agent and Ticket
+painting stale rects — the framework diary (`docs/history/`) §10 has the trap. Milestone, Agent and Ticket
 answer with "does this step carry the aspect", so toggling one off removes its tab and
 toggling it on brings the tab back *with* whatever the toggle generated — which is the
 answer to the earlier worry that a generated milestone label needs somewhere to be edited:
@@ -412,17 +397,17 @@ files outside its own package is exactly what the layering forbids. The inverted
 needs none of them: **existing projects change not at all**, every step keeps its Details
 tab, and a milestone loses its estimate the moment somebody says so.
 
-The Details tab *is* its blocks — and since the name became its first block (see *The
-aspect bar renders the registry* below), it always has one to show, so it no longer asks
-whether it would open onto blank space.
+The Details tab *is* its blocks — and since the name is its first block (see *The aspect bar
+renders the registry* below), it always has one to show, so it never asks whether it would
+open onto blank space.
 
 ### Turning an aspect off shelves it
 
-Every Type toggle used to delete what the aspect held, after asking. That was honest — a
-toggle that silently destroyed a milestone label would be worse — but it made every toggle a
-small act of courage, cost a confirm dialog per aspect, and got in the way of the gesture
-the toggles exist for: switching a step from one kind to another and back. So an aspect
-turned off is **shelved**: its `module_data` entry and its `module_text` move to a per-node
+A Type toggle never deletes what the aspect held. Deleting after asking would be honest — a
+toggle that silently destroyed a milestone label would be worse — but it would make every
+toggle a small act of courage, cost a confirm dialog per aspect, and get in the way of the
+gesture the toggles exist for: switching a step from one kind to another and back. So an
+aspect turned off is **shelved**: its `module_data` entry and its `module_text` move to a per-node
 entry under the domain's own id, `modules/shelf.json` beside the step, and `turn_on`
 restores them before it would ever write a fresh entry.
 
@@ -442,8 +427,8 @@ toggle-on would bring back to. A module's file area was already left alone by a 
 Two builders are the whole vocabulary — `turn_off(step, module, leaving=…)` and
 `turn_on(step, module, fresh=…)` in `domain/shelf.py` — and both surfaces use them: a GUI
 toggle pushes the command, a CLI `clear` applies it, so `dplanner milestone clear` and Step
-▸ Type ▸ Milestone are one behaviour. That in turn collapsed eleven near-identical toggle
-implementations into one `framework/aspect_toggle.py` factory: a module hands over its
+▸ Type ▸ Milestone are one behaviour. Every toggle is therefore one
+`framework/aspect_toggle.py` factory: a module hands over its
 `enabled` predicate, a `fresh` entry (a marker, or a generated milestone label, or one blank
 test) and — for estimate and description — what to leave behind, and gets back the
 checkable Step ▸ Type verb. The one soft spot, named rather than engineered away: a CLI
@@ -470,10 +455,10 @@ four of them were always wrong. The face is named for what it **offers**, not fo
 on — which one the step amounts to is the ticked entry — so the bar makes one claim about
 the step (the lit toggles) and offers one way to change it, rather than saying the same
 thing twice in two vocabularies. Each entry's **glyph** wears its body tone, so a feature's
-entry and a feature node are one identity (which is why the tones moved to `theme/tones.py`,
+entry and a feature node are one identity (which is why the tones live in `theme/tones.py`,
 where both can reach them) — the glyph and not a ground, because a template is *always*
-selected and a wash that is permanently on says nothing, which is also what let ten
-per-button stylesheets go. Picking a template
+selected and a wash that is permanently on says nothing, and a glyph needs no per-button
+stylesheet. Picking a template
 runs whichever toggles differ, on for its set and off for everything else, inside one
 `UndoService.gesture`, so *Make Milestone* is one Ctrl+Z however many aspects it moved and
 each is still the owning module's own command — the gesture is the framework's answer to
@@ -488,7 +473,7 @@ never stored* rule as the ordering. Which templates exist is `StepPropertiesDeps
 named by the composition root in the order the bar shows them, for the same reason the
 scope kinds are wired rather than inferred.
 
-The strip is `framework/toolbar.py`'s `Toolbar`, so what no longer fits is taken off from
+The strip is `framework/toolbar.py`'s `Toolbar`, so what does not fit is taken off from
 the right and listed in a `…` menu as glyph **and words** — where Qt's own `»` pops the
 hidden buttons up as glyphs again, which is no help to somebody who could not read the
 glyph on the strip. It is **dense**, a mode the primitive offers: a strip of verbs folds
@@ -502,15 +487,12 @@ hides when there is no room for it, so the one control naming what the step *is*
 the first casualty of a narrow dock — the canvas's layout picker and the *Updating…*
 indicator sit outside their strips for exactly that reason. It is also why the face is
 named once and left alone: a face whose words changed with the step would re-fold the strip
-beside it every time a toggle moved. That inverts what the two `QToolBar`s used to do,
-deliberately: the
-old left bar took the slack so the facets kept their glyphs and the kinds folded first.
-The kinds are the summary and the facets are the detail, and it is the summary a narrow
-dock should keep.
+beside it every time a toggle moved. The kinds are the summary and the facets are the
+detail, and it is the summary a narrow dock should keep.
 
-It replaced the "+" beside the tabs and the dialog of checkboxes it opened, which was the
-same registry-rendering rule with a worse reading — a list you had to summon to see what a
-step already was. It settles the same question that dialog did: **"some step types can never
+The bar is always on show rather than a list summoned from a "+" beside the tabs, because a
+list you have to summon is a poor way to see what a step already is. It settles **"some step
+types can never
 carry this aspect" needs no mechanism at all**. A toggle whose `state()` returns
 `ActionState(enabled=False, label="Estimate — a milestone has no work of its own")` renders
 as a greyed button carrying its reason in the tooltip, because *hidden means absent; disabled
@@ -521,10 +503,10 @@ The context arrives as a function rather than a `ContextService`, which is what 
 panel inside the details *dialog* — showing a step nobody selected — hand over one naming
 its own step. The specs cannot tell the difference, and neither can they be made to care.
 
-Two smaller things fell out of that rework. A toggle's `state()` **never returns
+Two smaller rules. A toggle's `state()` **never returns
 `visible=False`** — *hidden means absent; disabled means not now* already says a toggle
 that cannot apply is greyed, and an aspect a build does not ship never reaches the registry
-— so the bar's state triple lost its first third; a strip that re-shows whatever fits on
+— so the bar's state is a pair, enabled and checked; a strip that re-shows whatever fits on
 every reflow could not have honoured it anyway. And the bar **announces its refresh**
 rather than leaving a host to listen to the model: the dialog's lead repeats the bar's
 answer in words, and applying a template ends with the bar refreshing itself, which is
@@ -533,7 +515,7 @@ lead one gesture behind.
 The panel re-reads the bar on every model write to the shown step, because one toggle can
 change another's state.
 
-The name moved with it. It used to sit above the tab bar as a field of the panel's own; it is
-now the first block of the Details tab, registered by `step_properties` like any other block
-at order 0, so the modal's control stack reads top-down from the one field every step has —
-and the Details tab, having a block that always shows, no longer asks whether it has one.
+The name is the first block of the Details tab, not a field of the panel's own above the tab
+bar: `step_properties` registers it like any other block at order 0, so the modal's control
+stack reads top-down from the one field every step has — and the Details tab, having a block
+that always shows, never asks whether it has one.

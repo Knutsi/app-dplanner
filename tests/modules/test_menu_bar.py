@@ -1,7 +1,7 @@
 """The menu bar as the whole application registers it: sorted by subject, and never dead.
 
-Each menu is filed by the principles in ``menus.py`` and ARCHITECTURE.md's *The menu bar is
-sorted by subject*. What a test can hold is the part a refiling is most likely to break: a
+Each menu is filed by the principles in ``menus.py`` and `docs/architecture/shell-ui.md`'s *The menu
+bar is sorted by subject*. What a test can hold is the part a refiling is most likely to break: a
 menu that offers nothing where people spend their time, two entries fighting over one key,
 and a composed pop-up still naming a band that moved.
 """

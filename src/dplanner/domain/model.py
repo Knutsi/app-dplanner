@@ -66,7 +66,7 @@ SOURCE: Final[EdgeEnd] = "source"
 # A rule a module adds to what may link to what: ``(library, waiter, kind, source)`` → why the
 # waiter cannot wait on the source, or None. Installed on a library by the composition root
 # and asked by :meth:`Library.link_refusal` after its own four refusals — the stack's "one in,
-# one out" is one (``ARCHITECTURE.md``'s *One in, one out is a rule the domain asks*).
+# one out" is one (``docs/architecture/canvas.md``'s *One in, one out is a rule the domain asks*).
 type LinkRule = Callable[["Library", StepId, str, StepId], str | None]
 
 # Edge kind -> whether it orders the graph. An ordering kind cannot contain a cycle; a

@@ -8,7 +8,8 @@ anybody ever executes; and **behind a gate**, because ``dplanner test format`` i
 one door every test-writing agent goes through, whichever agent CLI it is driving. The
 skill is Claude's alone; the gate is everybody's.
 
-``ARCHITECTURE.md``'s *The test format is read before a test is written* has the reasoning.
+``docs/architecture/collectors.md``'s *The test format is read before a test is written* has the
+reasoning.
 """
 
 from pathlib import Path

@@ -7,7 +7,8 @@ ranked in :mod:`.kinds`), the estimate (:mod:`.estimate`), the readiness walk
 (:mod:`.progression`), the schedule over estimates (:mod:`.schedule`) and what a collector
 gathers (:mod:`.scope`). It imports ``core`` and ``domain`` only, never Qt and never a
 module, and ``domain/`` never imports it — ``tests/test_architecture.py`` holds both, and
-lists the aspects admitted here. ARCHITECTURE.md's *Planning owns status* has the reasoning.
+lists the aspects admitted here. `docs/architecture/core.md`'s *Planning owns status* has the
+reasoning.
 
 Import from the defining module — this package deliberately re-exports nothing.
 """

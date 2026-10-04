@@ -11,7 +11,7 @@ agent's shell, ``status set <agent step> done`` on a step nobody has reviewed is
 naming ``ready-for-review`` — unless ``--because`` says why nothing needs reviewing, which
 is kept as a ``decision`` note on the step. A person in their own terminal is never asked,
 and neither is the window: the rule is about who is reporting, not about the word.
-ARCHITECTURE.md's *An agent finishes at Ready for review* has the reasoning.
+`docs/architecture/agents.md`'s *An agent finishes at Ready for review* has the reasoning.
 
 **A status that says nobody is working the step ends the claim on it.** An agent says it is
 at work with ``dplanner agent-work`` (``domain/at_work.py``), and the window stands a banner

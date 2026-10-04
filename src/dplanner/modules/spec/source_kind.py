@@ -48,7 +48,7 @@ class DocumentSourceKind(Protocol):
         On the GUI thread, and it **must never block it** — which is the rule, not "no
         network". A kind whose question cannot be answered without asking the source (the
         git kind's *which folder?*) probes on a ``TaskRunner`` from inside its dialog, the
-        way ``connect`` does. ``ARCHITECTURE.md``'s *A spec source is a kind the spec
+        way ``connect`` does. ``docs/architecture/specs.md``'s *A spec source is a kind the spec
         module runs* has the reasoning.
         """
         ...

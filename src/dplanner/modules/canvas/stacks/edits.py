@@ -11,7 +11,7 @@ cycle check cannot trip halfway. One relink (:func:`_relink`) rebuilds a line in
 order for all of them: the chain in that order, the first member's outside inputs on
 whoever is first now, the last member's dependents on whoever is last, and a step coming in
 or going out left with no links at all. The seat is the first member's, so it is handed on
-whenever the first member changes (``ARCHITECTURE.md``'s *A stack is presentation over a
+whenever the first member changes (``docs/architecture/canvas.md``'s *A stack is presentation over a
 chain*).
 
 **A builder refuses what it cannot keep one line** — make over steps with another step
@@ -19,8 +19,8 @@ between two of them, add, move and take out on a stack somebody broke — raisin
 ``ValueError`` with the words; the
 ``*_refusal`` functions answer the same question without building, for a verb's greyed
 state. Dissolve and the removal never refuse: a broken stack can always be taken apart, and
-a Delete is never refused. ``ARCHITECTURE.md``'s *One in, one out is a rule the domain asks*
-has the reasoning.
+a Delete is never refused. ``docs/architecture/canvas.md``'s *One in, one out is a rule the domain
+asks* has the reasoning.
 
 **Qt-free** — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
 """

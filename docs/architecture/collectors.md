@@ -1,6 +1,7 @@
 # Collectors — scopes, features, citations, tests, documentation and notes
 
-The reasoning behind `.claude/rules/collectors.md`: the rules there are the short, imperative form, and this file is why. `ARCHITECTURE.md` is the index of every area.
+The reasoning behind `.claude/rules/collectors.md`: the rules there are the short, imperative
+form, and this file is why. `ARCHITECTURE.md` is the index of every area.
 
 ## What reaches a step is derived at read time
 
@@ -157,19 +158,18 @@ not know; it does not enforce it.
 QA-only page, and it is the one thing this feature deliberately does not have: `cli/report/`
 never imports a module, and a flag spelled `--audience` would put a testing word inside it
 anyway. What the report layer *can* own is "this column is worth picking from", so
-`parts.Column` gained `filter`, `page.py` renders a `<select>` per filterable column, and
+`parts.Column` carries `filter`, `page.py` renders a `<select>` per filterable column, and
 `report.js` applies them per table. One published page any reader narrows for themselves
 beats an edition per audience, and it is what `page.py` had already decided for the steps
 table's status.
 
-That existing status filter folded into the new mechanism rather than sitting beside it, and
-folding it taught the one thing a generic version has to get right. The old predicate read
-the *class* off the rendered cell, because `_cell` prettifies what it prints — a status
-loses its hyphen, a date becomes "in three weeks" — and an audience cell names several at
-once, `", "`-joined. So a filterable cell carries its values in `data-values`, apart from
-its words, and a pick matches one value at a time. The options are built from the rows, so
-a plan with nothing blocked no longer offers *Blocked* — which the hard-coded four always
-did.
+The steps table's status filter is the same mechanism, not one beside it, and it shows the
+one thing a generic version has to get right. A predicate cannot read a value off the
+rendered cell, because `_cell` prettifies what it prints — a status loses its hyphen, a date
+becomes "in three weeks" — and an audience cell names several at once, `", "`-joined. So a
+filterable cell carries its values in `data-values`, apart from its words, and a pick
+matches one value at a time. The options are built from the rows, so a plan with nothing
+blocked does not offer *Blocked*.
 
 ## A test is filed under a category, and its words are the key
 
@@ -313,8 +313,8 @@ whole reason a roster is a table is that a column can be read down.
 writes what the project's Tests tab is *currently showing* — its scope, its audience filter,
 whether the archived are in — rather than opening a second dialog asking the same three
 questions the strip has already been answering. `TestsActivity.showing()` is the one reader
-of that, and `New Test Run` uses it too: the old `_narrowed_to` was the same walk for the
-scope alone, and generalising it was cheaper than a near-copy beside it. With no tab open
+of that, and `New Test Run` uses it too, rather than a near-copy of the walk for the scope
+alone. With no tab open
 the verb exports the project's whole roster, which is the honest reading of "no narrowing".
 The CLI takes the narrowing as flags, because a terminal has no tab to read.
 
@@ -357,11 +357,11 @@ verb a constructed context naming exactly that row. The verb (`test.details`) on
 double-click is what puts it on screen — and run from anywhere else, it opens the project's
 Tests tab on the test first, since that is where the panel lives.
 
-**Why it stands inside the tab.** It began as a dock panel in the right area, under the
-project form, with the form yielding to it while a test was picked. A dock panel follows
-the window: one instance, retargeted by whoever publishes — so it followed the pane in front
-rather than the roster being worked, stayed on screen when no Tests tab was current, and
-needed the form to know its name. A roster is worked *in* its tab, so the panel is the
+**Why it stands inside the tab.** A dock panel follows the window: one instance, retargeted
+by whoever publishes — so it would follow the pane in front rather than the roster being
+worked, stay on screen when no Tests tab is current, and need its neighbours to know its
+name. (*decisions.md* has the dock panel it was.) A roster is worked *in* its tab, so the panel
+is the
 tab's (*A panel inside a tab follows the tab*): one per Tests tab and one in the roll call,
 fed by that table's own pick, gone with the tab and there again when the tab is. That is
 also where the preference went — a tab's panel has no *View ▸ Panels* entry, so
@@ -371,14 +371,13 @@ rows: the reader's own scope, filter and ordering, greyed at either end.
 
 **A test is named with its step, never on its own.** Ids are minted per *project*
 (`modules/testing/aspect.py`), so `T101` names a different test in every project in the
-library, and this panel spent its first week looking one up by id across the whole library —
-which answered with whichever project sorted first, so a reader working down the third
-project's roster was shown the first project's namesakes. There is no fixing that at the
-lookup: an id is not an address. Every view that picks a test therefore publishes
-`selection/step/<id>` beside `selection/test/<id>` — the project tab's selection did already,
-and the roll call, which is the one view holding several projects at once, now does too —
+library, and a lookup by id across the whole library answers with whichever project sorts
+first — a reader working down the third project's roster would be shown the first project's
+namesakes. There is no fixing that at the lookup: an id is not an address. Every view that
+picks a test therefore publishes `selection/step/<id>` beside `selection/test/<id>` — the
+project tab and the roll call, the one view holding several projects at once, alike —
 `test.details` is greyed without the pair, and the panel reads the test out of that one step.
-`TestsModule._selected_tests` had the rule from the start, one step along: it narrows to the
+`TestsModule._selected_tests` keeps the same rule one step along: it narrows to the
 context's project before it matches an id.
 
 **Next and Previous move the table's selection, never the panel's own.** A panel may not
@@ -392,20 +391,13 @@ than defensive, because "next" has no meaning without a list.
 
 ## A right-click on a test is its step's
 
-A row in a Tests tab **is** a test, and for a while its right-click led with the result: the
-*Test* child menu's `test_result` band flat, then the whole Step menu one level down as a
-`Step` child — two renders of the registry through `fill_bands`, never a copy, since *a
-right-click renders a menu, never a copy of one* is a rule about entries and says nothing
-against rendering two. It was the reason `fill_menu` learned to take a `group` **with** a
-`submenu`: two groups fed the Test child, and the row wanted one of them.
-
-It went when the menu bar was sorted by subject. Type and Test left the menus for Step
-Details (*The menu bar is sorted by subject*), and the result verbs with them: a result is
-recorded from the Tests strip and the Test panel beside the roster, both of which stand
-right next to the row. With nothing about the test left to lead with, the popup is its
-step's Step menu, the render every table gives its rows, and the Tests tab composes
-nothing of its own. The double-click is still the exception — it runs `test.details`, not
-`steps.details` (*A test is run from a panel*).
+A row in a Tests tab **is** a test, and its right-click is its step's Step menu — the render
+every table gives its rows — so the Tests tab composes nothing of its own. Nothing about the
+test is left to lead with: Type and Test live in Step Details rather than the menus (*The
+menu bar is sorted by subject*), and a result is recorded from the Tests strip and the Test
+panel beside the roster, both of which stand right next to the row. The double-click is the
+exception — it runs `test.details`, not `steps.details` (*A test is run from a panel*).
+(*decisions.md* has what the menu led with before.)
 
 ## A reference is a link, and a link is a preview
 
@@ -497,25 +489,13 @@ between them is what the digest is *of*: a topology is the project's own text, s
 is per project, and the format is this build's, so one reading covers the machine — and
 changing `format.md` in a release un-reads it for everybody, which is the intent.
 
-### Screenshots were a convention, not a feature
-
-The ask was for screenshots in a test with a sequence and annotations, and the honest answer
-is that the mechanism already shipped: `dplanner test attach` copies an image into the
-step's file area and prints the `assets/…` link, content-addressed like every other asset,
-and a test body is markdown. What was missing was only what nobody had written down.
-
-The feature that was *not* built is worth recording, because it looks right. A structured
-list on the test record — an ordered array of `{asset, caption}` — would give a renderer a
-real sequence to draw and a place to hang a caption. It would also mean a schema migration,
-a second way to put an image in a body beside the markdown link that already works, an
-editor in the step panel to maintain it, and a decision in every renderer (the tab, the Test
-panel, the export, the report) about what to do when the two disagree. That is a feature's
-worth of surface for something the body already expresses: **the step number is the
-sequence, and the alt text is the annotation.** `![2 — the signing dialog; Sign stays
-disabled until a name is typed](assets/…)` sorts itself, renders everywhere markdown
-renders, survives an export that carries no images, and needs no format bump. The rule the
-document adds is that a picture goes on its step's line rather than in a gallery at the end,
-which is what makes a body read as a sequence at all.
+**A screenshot is a markdown link, and the body is its sequence.** `dplanner test attach`
+copies an image into the step's file area and prints the `assets/…` link, and a test body
+is markdown, so the step number is the sequence and the alt text is the annotation: `![2 —
+the signing dialog; Sign stays disabled until a name is typed](assets/…)` sorts itself,
+renders everywhere markdown renders, and needs no format bump. A picture goes on its step's
+line rather than in a gallery at the end, which is what makes a body read as a sequence.
+(*decisions.md* has the structured list that was not built, and why.)
 
 ### Concurrency is a question the document asks, not a check lint runs
 
@@ -648,7 +628,7 @@ one joint heading rather than listing its tests twice — a test in two rows is 
 twice — and `dplanner project lint` reports it as `scope.shared` so the ambiguity is nameable
 rather than merely visible. Two siblings came free from the same inversion:
 `scope.ungathered` (a step carrying tests that no feature waits on — work that reaches no
-milestone) and `scope.gathers-nothing`, which generalised the old `check.covers-nothing`.
+milestone) and `scope.gathers-nothing` (a collector of any kind with nothing behind it).
 
 ### Both readings, and when the switch is worth showing
 
@@ -694,13 +674,13 @@ kinds that *own* work — a milestone and a feature — stop at it. Four decisio
   at without carrying (no link could hand it to one). Nothing new in `ScopeKind`: a third
   field would have been read by exactly those two surfaces.
 
-What else it touched, and why it was allowed to: the start's documentation fragment and tests
-drop out of every feature's and milestone's reading, so a collector compiled *with* the
-start's fragment reads `docs.compiled-stale` once — true, since it no longer reads it — and
-the Tests and Documentation views group the start's own under *Not in any feature*, which is
-also true. Two walks wrote the feature stopping rule by hand (the briefing's *Flows into*, the
-coverage trace); both now read the wired kinds, which is how the Steps lane stopped drawing
-the origin under every feature. The start's shape has its own lint, **`graph.start`** — a
+The start's documentation fragment and tests are in no feature's or milestone's reading, and
+that is true: a collector compiled *with* the start's fragment reads `docs.compiled-stale`,
+since it does not read it, and the Tests and Documentation views group the start's own under
+*Not in any feature*. Every walk that needs the feature stopping rule (the briefing's *Flows
+into*, the coverage trace) reads the wired kinds rather than writing the rule by hand, which
+is why the Steps lane does not draw the origin under every feature. The start's shape has its
+own lint, **`graph.start`** — a
 start that waits on something, a plan with two — naming `step unlink` or `start clear`; the
 verbs refuse nothing, like `feature set`. It wears **no card mark**: the primary icon (F5)
 gives it the person glyph like any step, its key stays `S`, and the origin already reads as
@@ -751,27 +731,23 @@ which is the trade that section already refuses for prose.
 
 ### There is no step kind for compiling
 
-The first attempt had one: a *Compose Docs* step you created, linked into the graph, and
-ran. It worked, and it was wrong. A feature and a milestone **already are** the collectors
-the graph defines — `cone()` and `planning/scope.py` have answered "what is behind this, up to the next one"
-since checks arrived — so a second kind of collector, existing only to collect, was a node
-somebody had to remember to create for a question the graph could already answer. Deleting
-it removed a `StepKind`, a Type toggle, a medallion glyph, a mnemonic table the collision
-had forced, and two CLI verbs. Every project that already has features and milestones now
-gets documentation without adding anything.
+A *Compose Docs* step you create, link into the graph and run would work, and would be
+wrong. A feature and a milestone **already are** the collectors the graph defines — `cone()`
+and `planning/scope.py` answer "what is behind this, up to the next one" — so a second kind
+of collector, existing only to collect, is a node somebody has to remember to create for a
+question the graph already answers. Every project that has features and milestones gets
+documentation without adding anything. (*decisions.md* has the step kind this replaced.)
 
 Compile is therefore a verb on a collector, and the vocabulary is one predicate the
 composition root already wires: *is this step a collector?* is `kind_of(scopes, step)`.
 
 ### Compiling launches a peer, and the window writes no document
 
-The first version compiled with an in-app LLM call: a `TaskRunner` body around
-`framework/llm_service.py`, the answer home on a queued Qt signal, the document and its stamp
-landed as one undo entry. It worked, needed a provider key in *Settings ▸ LLM* to do anything
-at all, and nobody used it — while the agents actually doing the work were already writing to
-the plan through the CLI all day. So *Compile with Agent…* launches one, with a briefing built
-from the fragments, the project's compilation instructions and the verb to finish with, and
-the window's own compiler is gone. Five things follow.
+*Compile with Agent…* launches an agent, with a briefing built from the fragments, the
+project's compilation instructions and the verb to finish with; the window has no compiler of
+its own. An in-app LLM call needs a provider key in *Settings ▸ LLM* to do anything at all,
+while the agents actually doing the work already write to the plan through the CLI all day.
+(*decisions.md* has the in-app compiler this replaced.) Five things follow.
 
 **The docs module words the briefing; the launcher wraps it.** What a fragment is, which verb
 lands a document and that `assets/…` links must survive are this module's vocabulary
@@ -781,13 +757,13 @@ two typed callbacks on `DocsDeps` — `compile_profiles` and `compile_with_agent
 composition root, which is `library_watch`'s `hand_to_agent`/`agent_refusal` shape exactly. A
 third module wanting a launch copies that; nothing imports the agent module.
 
-**Nothing lands on the undo stack any more.** The document arrives minutes later from another
+**Nothing lands on the undo stack.** The document arrives minutes later from another
 process and the store adopts it entry by entry, like any outside change — so *An LLM call is a
-task*'s "the result lands on the undo stack, because a person pressed a button" stops applying
+task*'s "the result lands on the undo stack, because a person pressed a button" does not apply
 here. Ctrl+Z cannot put back a document an agent replaced, which is why the one gesture that
 would overwrite a document that has text **asks first**, once for the whole gesture, and says
-that there is no undo. Everywhere else in this application the confirmation was deleted and
-undo made the case for it; here the safety net genuinely is not there.
+that there is no undo. Everywhere else in this application undo is the case against a
+confirmation; here the safety net genuinely is not there.
 
 **The run is the collector's, and it claims nothing about the work.** `_launch` hands the
 shell to the run tracker as it does for Run Agent, so a compiling agent wears the chip and the
@@ -800,8 +776,9 @@ for exactly this reason. Two runs on one step are told apart by their terminal w
 else, which is the pre-existing shape for two Run Agent launches on one step.
 
 **Who compiled a document is the launching window's record, not the plan's.** The stamp in the
-plan says *when* and *from what*; `provider` and `model` left it (`docs_compiled` format 2),
-because with the CLI as the only writer they would hold one value each forever. Attribution is
+plan says *when* and *from what*; `provider` and `model` are not in it (`docs_compiled`
+format 2), because with the CLI as the only writer they would hold one value each forever.
+Attribution is
 the worded launch `compile_with_agent` returns, kept per collector in the docs module's own
 `user_config` — exact, where reading the step's newest `AgentRun` back would credit a feature's
 document to whichever agent happened to be working on that feature. The cost is stated rather
@@ -912,47 +889,39 @@ what last week established.
 
 ## A feature is a step
 
-A specification used to be read into **requirements**: quoted obligations in the spec
-module's index, linked N:M to steps, cited in briefings, checked by lint. It was honest and
-it was the wrong grain. Nobody demos a requirement; people name, build and test *features*,
-and the graph already knew that — a feature step gathers the work that flows into it, and
-`dplanner scope show` reads it.
+**A feature is simply a step that carries the feature aspect.** Nobody demos a requirement;
+people name, build and test *features*, and the graph already knows that — a feature step
+gathers the work that flows into it, and `dplanner scope show` reads it. Its name is the
+step's title, its description the step's prose, its pictures the step's file area, and the
+one fact that is a feature's own — the specification passages it was read out of — is the
+aspect's own data (`{"on": true, "cites": […]}`, format 3).
 
-The next answer was a **record**: a feature in the project's catalogue whether or not it
-was on the graph, which a step later became the instance of. That bought one thing — the
-feature *before* somebody cuts a step for it — and it cost a parallel store. With steps as
-cheap as they are, the trade stopped paying:
-
-- the record's `title` was the step's title and its `description` the step's description,
-  so a feature had two of each and they drifted;
-- *placed*, *unplaced*, *duplicate* and *unregistered* were four half-states, each with a
-  lint check, a refusal and a phrase in the panel;
-- undo had to restore either side independently, because the record outlived its step.
-
-**So a feature is simply a step that carries the feature aspect.** Its name is the step's
-title, its description the step's prose, its pictures the step's file area, and the only
-fact that was ever the record's own — the specification passages it was read out of — is
-the aspect's own data (`{"on": true, "cites": […]}`, format 3). Three consequences are the
-design:
+A feature kept anywhere but on a step — quoted requirements linked N:M to steps, or a record
+in a project catalogue that a step becomes the instance of — buys one thing, the feature
+*before* somebody cuts a step for it, and costs a parallel store. With steps as cheap as they
+are, that does not pay: a record and its step each carry a title and a description, and they
+drift; *placed*, *unplaced*, *duplicate* and *unregistered* become four half-states, each with
+a lint check, a refusal and a phrase in the panel; and undo must restore either side
+independently, because the record outlives its step. (*decisions.md* has both earlier
+shapes.) Three consequences are the design:
 
 - **There is no verb that creates a feature.** `step add --feature` is the door in and
   `step remove` the door out, which is what keeps a feature on the graph *by
   construction* rather than by a check that notices when it is not. The passage flags
   (`--document`, `--quote`, `--page`, `--strict`) live on that same author, because
   *authoring a step is one verb, many modules* and creating a feature is creating its step.
-  Two steps may both be features; the one-instance rule went with the thing there was one
-  instance of.
-- **Four lint checks ceased to exist.** `feature.unplaced`, `feature.duplicate`,
-  `feature.dangling` and `feature.unregistered` each named a state the model can no longer
-  be in. What survives is the passage checks — a quote that no longer anchors — which are
+  Two steps may both be features; there is no one-instance rule, because there is no
+  second thing for a step to be the one instance of.
+- **No lint check watches a half-made feature**, because the model has no half state to be
+  in. The feature checks are the passage checks — a quote that no longer anchors — which are
   about the *spec* moving, not about the plan being half-made.
 - **A work step still reaches the spec through the feature it flows into.** No link on the
   step: its briefing lists the features `scope.gatherers` says own it, with the passages
-  they were read from. A citation that was N:M on requirements is a walk on features, and
-  it cannot go stale when `dplanner step link` rewires the graph with no window open.
+  they were read from. A citation is a walk on features, and it cannot go stale when `dplanner
+  step link` rewires the graph with no window open.
 
-The trace is therefore graph → feature step → spec passage, one hop shorter than it was.
-The quote is still checked against the document — on `step add --feature`, on `feature
+The trace is therefore graph → feature step → spec passage. The quote is checked against the
+document — on `step add --feature`, on `feature
 cite`, and on every lint — through the spec module's `anchor_quote`, handed across by the
 composition root: the aspect belongs to one module and the document to another.
 
@@ -973,10 +942,8 @@ namespace** (`step_description`'s prose, opt-out and file area, named as a strin
 and never imported) — the alternative, a `description` inside the feature entry, would
 re-create exactly the duplication this removes.
 
-One pleasing consequence: the retired `step_feature` module wrote a bare `{"on": true}`,
-and FORMAT.md used to call its converter "the one that cannot finish the job" because it
-could not mint a record. With no catalogue left to be missing from, `{"on": true}` is now
-a whole answer — a feature that cites nothing.
+A bare `{"on": true}` — what the retired `step_feature` module wrote — is a whole answer: a
+feature that cites nothing, with no catalogue for it to be missing from.
 
 ## A citation is a quote and a digest; its place is derived
 
@@ -994,9 +961,9 @@ that hands back raw offsets — what a viewer washes), then **fuzzy**: the quote
 words seed windows the size of the quote, each end is tried a little either side, and the
 best `SequenceMatcher` ratio wins if it reaches `DRIFT_RATIO`. That is the sentence
 somebody reworded, offered back as the *drifted* candidate `feature reanchor
---accept-drift` takes. Nothing reaching the ratio is *lost*. The word-seeded search was
-chosen over the longest-common-run seed it replaced because a heavily reworded sentence
-keeps its nouns and little else.
+--accept-drift` takes. Nothing reaching the ratio is *lost*. The search is seeded by words
+rather than by the longest common run because a heavily reworded sentence keeps its nouns
+and little else.
 
 **A passage carries the digest of the document it was read against**, the content-addressed
 stem of the blob, so nothing new is hashed — `docs_compiled`'s digest for the same reason:
@@ -1078,7 +1045,7 @@ that lane already holds takes it back out; the ground and Escape clear. Picks th
 to their left no longer stand are dropped as the picks settle, so the feature you picked
 under one milestone cannot survive picking another — and every picked card's step is
 published, because picking three features is picking three steps and the Step verbs act
-on all of them. Nothing is dimmed any more: a card that is not on the picture is not on
+on all of them. Nothing is dimmed: a card that is not on the picture is not on
 the picture. What lights is the *lines* into and out of a picked card, and the picture
 carries fewer of them for it — the spec lane's document card is the hub on its right, so
 a feature's tests hang off the document it was read from rather than off every passage
@@ -1102,13 +1069,11 @@ pane would look like a pick that did nothing.
 
 A plan says what; what it does not say is everything a project learns as it goes — why it
 went one way and not another, what a finished step's worker wants the next one to know,
-where the work had to depart from the spec, what was noticed and put off. Two modules
-used to hold two of those: a *decision log* beside the project, carried in full into every
-briefing, and a *handoff* aspect on each step, inherited down the graph and carried in full
-too. The first project to run forty agent steps showed what that costs: the briefing grew
-with every step, an agent starting the thirtieth read twenty handoffs and a page of
-decisions before its own instructions, and lost its focus in them — while the two record
-kinds were the same thing wearing two shapes. Five decisions:
+where the work had to depart from the spec, what was noticed and put off. A decision log
+and a handoff are the same thing wearing two shapes, and a briefing that carries either in
+full grows with every step: an agent starting the thirtieth reads twenty handoffs and a page
+of decisions before its own instructions, and loses its focus in them. (*decisions.md* has
+the two modules this replaced.) Five decisions:
 
 - **One log, and a closed list of labels.** A decision and a handoff are both *a note the
   project made along the way*; what differs is what the note *is*, and that is a word on
@@ -1120,9 +1085,8 @@ kinds were the same thing wearing two shapes. Five decisions:
   index follow. The record is the decision log's shape kept — `N1, N2, …` minted per
   project and never reused, a title, markdown in the record, the day, the step it was made
   on, what it supersedes — with two fields the handoff needed: the steps it is *for*, and
-  a *reach*. `modules/notes/` replaced both packages rather than sitting beside them,
-  because two record kinds with one meaning is the entropy CLAUDE.md asks every pass to
-  remove.
+  a *reach*. `modules/notes/` is the one package for both, because two record kinds with
+  one meaning is the entropy CLAUDE.md asks every pass to remove.
 - **The briefing carries an index, and only what is addressed in full.** What the
   hundredth agent needs is to *find* what is relevant, not to read everything ever
   written. So a briefing's notes block is one line per standing note that reaches the
@@ -1134,10 +1098,10 @@ kinds were the same thing wearing two shapes. Five decisions:
   where the inherited context sat, because it is read once the work is understood. The
   title therefore carries the weight — the skill and the epilogue both say *title it as
   the fact it is* — and the agent that skims a line and does not open it has made a
-  choice the old briefing never let it make.
+  choice a briefing carrying everything in full would never let it make.
 - **Who sees a note is where it was made, with one stored exception.** Every label reaches
-  the steps *after* the one it was made on — the cone the old handoff aspect walked, plus
-  the step itself, since a re-run is a pick-up too. A note made on no step has nothing to be
+  the steps *after* the one it was made on — the cone downstream of it, plus the step
+  itself, since a re-run is a pick-up too. A note made on no step has nothing to be
   downstream of and reaches everyone whatever it wears; **so does one whose step is gone**,
   because a decision does not stop standing when the step that made it is deleted, and that
   is the same sentence generalised (`reaching()` is the only place that can know, so the
@@ -1145,25 +1109,25 @@ kinds were the same thing wearing two shapes. Five decisions:
   and is stored only then (`FORMAT.md`'s absence rule). `reach.reaching()` is the one
   derivation.
 
-  **This was settled twice, and the second time reversed the first.** Originally only a
-  handoff used the graph: a decision, a spec change and a deferred item reached the whole
-  project, on the argument that each is the project's and not a branch's. Then a 74-step
-  plan with 320 standing notes was measured. The notes index was **73% of every briefing**
-  — and 267 of its ~285 lines were *byte-identical on all 57 agent steps*, because four of
-  the five labels bypassed the cone. An agent starting the fiftieth step read 171 decisions
-  and 82 deferred items, almost none of them about its work, before reaching its own
-  instructions. The argument was not wrong about what a decision *is*; it was wrong about
-  what a briefing is *for*. The graph already answers "which earlier work does this step
+  **Every label reaches by the graph, a decision included.** A decision, a spec change and
+  a deferred item could reach the whole project, on the argument that each is the
+  project's and not a branch's. Measured on a 74-step plan with 320 standing notes, that
+  makes the notes index **73% of every briefing** — 267 of its ~285 lines *byte-identical
+  on all 57 agent steps* — and an agent starting the fiftieth step reads 171 decisions and
+  82 deferred items, almost none of them about its work, before its own instructions. The
+  argument is not wrong about what a decision *is*; it is wrong about what a briefing is
+  *for*. The graph already answers "which earlier work does this step
   build on", and a project whose topology orders two steps that would touch the same file —
   which is the shape DPlanner's own plans declare — has already said that a decision binding
-  you is a decision upstream of you. So the `reach` column came off `Label` entirely rather
-  than keeping one value in five rows: a one-value column is an invitation for a future row
-  to differ, and the point is that it cannot. Index 33,131 → 2,715 chars median, whole
-  briefing 47,157 → 17,497.
+  you is a decision upstream of you. So `Label` has no `reach` column at all rather than
+  one value in five rows: a one-value column is an invitation for a future row to differ,
+  and the point is that it cannot. On that plan the graph takes the index from 33,131 to
+  2,715 chars median, and the whole briefing from 47,157 to 17,497. (*decisions.md* has
+  the reversal.)
 
-  **Two pieces of prose had to follow, or the change would have quietly taken something
-  away.** The briefing's epilogue tells an agent to record a `decision --step <key>`, which
-  now reaches only the work after it — so the epilogue says what the reach is and when to
+  **Two pieces of prose follow from it, or the rule would quietly take something away.**
+  The briefing's epilogue tells an agent to record a `decision --step <key>`, which
+  reaches only the work after it — so the epilogue says what the reach is and when to
   add `--reach project`. And the index's own lead-in names `note list` as the whole log,
   because with reach narrowed *and* the index capped, an agent that suspects it is missing
   something needs a verb. A rule that removes what somebody could read owes them the way
@@ -1172,10 +1136,10 @@ kinds were the same thing wearing two shapes. Five decisions:
   One thing deliberately left alone: `dplanner report` carries every standing note,
   uncapped. A publication is read by a person with a page and a scrollbar, not by an agent
   with a budget.
-- **Adding twice is one note, and reversing is a new one — on the same step.** The
-  decision log's retry safety kept, narrowed: a title already in the log *on the same
-  step* is that note, reported with the verb that revises it and never duplicated. The
-  narrowing is the handoff's doing — two agents each ending their step with a note titled
+- **Adding twice is one note, and reversing is a new one — on the same step.** Adding is
+  retry-safe: a title already in the log *on the same step* is that note, reported with
+  the verb that revises it and never duplicated. It is narrowed to the step for handoffs —
+  two agents each ending their step with a note titled
   *Done* must not have the second silently discarded. A reversal is a new record
   `--supersedes` the old; the history stays, `note list` shows what stands and `--all`
   what did, and a superseded note leaves every index.
@@ -1183,24 +1147,22 @@ kinds were the same thing wearing two shapes. Five decisions:
   The decision log was already a record list on the project, so it is a `Takeover`
   (`D<n>` becomes `N<n>` wearing `decision`, supersedes links with it). A handoff was prose
   and files on a *step*, and a per-entry converter never sees the project the record
-  belongs on — so `ModuleDataFormat` grew an `absorb` pass, run once per open over the
-  whole repository with the loaded aggregate (`core/module_data.py`; `NOTES-FOR-APPFRAME.md`
-  §21), and `migrate.absorb_handoffs` turns each step's handoff into a `handoff` note on
+  belongs on — so `ModuleDataFormat` has an `absorb` pass, run once per open over the
+  whole repository with the loaded aggregate (`core/module_data.py`, and its entry in
+  `NOTES-FOR-APPFRAME.md`), and `migrate.absorb_handoffs` turns each step's handoff into a `handoff` note on
   that step, moves its files into the project's notes area with links written into the
   body, and clears the step. Idempotent, so a second open finds nothing. A handoff a
   person had turned *off* stays on the step's shelf under the retired id, untouched: that
-  is what turning it off meant. The Handoff tab, its Type toggle and its place in the
-  *Agent* template went with the aspect; the window's surfaces are the *Implementation
-  notes* tab (the log as rows newest first beside the buttonless live editor with a
+  is what turning it off meant. The window's surfaces are the *Implementation notes*
+  tab (the log as rows newest first beside the buttonless live editor with a
   label, a step, addressees, the reach box and the body, *Add Note…* opening on the
   title, Remove in the `⋯`) and the Agent tab's Notes pane, which renders the same
-  blocks the briefing carries. The view lived in the project form as a card first, one
-  widget per note; a plan whose agents had written 344 handoffs made every window
-  relayout walk 688 word-wrapped labels, and the always-on panel was the wrong place for
-  a log that grows with every run — see *The context is announced once per turn* below
-  for the measurements. It was then a second reading inside the Docs tab behind a
-  switch, which the index said nothing about; a tab of its own is what every other
-  project surface is, and the row that opens it sits under the project in the Docs
+  blocks the briefing carries. A log that grows with every run does not belong in an
+  always-on panel — a card of one widget per note made every window relayout walk 688
+  word-wrapped labels on a plan with 344 handoffs (`shell-ui.md`'s *The context is
+  announced once per turn* has the measurements) — nor behind a switch the index says
+  nothing about; a tab of its own is what every other project surface is, and the row that opens
+  it sits under the project in the Docs
   folder beside *Documentation*, because the notes are the project's other document. A
   tab page may carry a list of its own (DESIGN.md forbids one only inside a card, where
   the wheel would stop scrolling the stack), the rows are painted by the framework's

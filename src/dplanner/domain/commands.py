@@ -425,7 +425,7 @@ def rewire_command(
     or allowed as a whole, plus links that existed before and are only moving — judged
     again, a moved link whose far end sits in *another* stack somebody broke would refuse
     and strand the composite. A kind this build does not know is carried, never rewritten.
-    ``ARCHITECTURE.md``'s *One in, one out is a rule the domain asks* has the argument.
+    ``docs/architecture/canvas.md``'s *One in, one out is a rule the domain asks* has the argument.
     """
     removals: list[Command] = []
     additions: list[Command] = []

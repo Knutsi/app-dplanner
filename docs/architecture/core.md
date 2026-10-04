@@ -1,6 +1,8 @@
 # Core — what binds every edit
 
-The reasoning behind `CLAUDE.md`'s rules: the model, the two surfaces, the chain every change follows, and the planning tier. Each area of the code has a file of its own beside this one; `ARCHITECTURE.md` is the index.
+The reasoning behind `CLAUDE.md`'s rules: the model, the two surfaces, the chain every change
+follows, and the planning tier. Each area of the code has a file of its own beside this one;
+`ARCHITECTURE.md` is the index.
 
 ## The goal
 
@@ -424,17 +426,13 @@ submenu instead would have worded *Description* beside *Milestone*, and the entr
 would have to be filtered out is the proof the two lists are answering different
 questions.
 
-**Step ▸ New is one verb, and the dialog is where a fresh step is configured.** It used to be
-a submenu — a plain step, then one entry per kind, each prompting for a title — and the kinds
-were a `StepKind` list of their own with an `entry` function per kind. Once the bar could say
-what a step is in one click, that submenu was a second, narrower way to say the same thing:
-it offered four of eleven aspects, asked for a name in a `QInputDialog` that the details
-dialog already has a field for, and needed its own list to stay in step with the toggles.
-So New creates a plain step titled "New step" and opens `steps.details` on it — through the
-`created` seam, where selecting the new step already lived — with the name field focused and
-its text selected. Typing replaces the placeholder, the bar sets the kind, Escape closes.
-The canvas double-click does the same at the point it was given. What went: `kinds.py`, the
-toolbar's New dropdown, and the prompt.
+**Step ▸ New is one verb, and the dialog is where a fresh step is configured.** The bar says
+what a step is in one click, so a submenu of kinds would be a second, narrower way to say the
+same thing, with its own list to keep in step with the toggles. New creates a plain step
+titled "New step" and opens `steps.details` on it — through the `created` seam, where
+selecting the new step lives — with the name field focused and its text selected. Typing
+replaces the placeholder, the bar sets the kind, Escape closes. The canvas double-click does
+the same at the point it was given. (*decisions.md* has what it replaced.)
 
 The body colours follow the same ranking the model uses. Done outranks a kind — a shipped
 milestone reads finished — and a milestone outranks a feature, because that is the coarser
@@ -474,7 +472,7 @@ menu's greyed label and the CLI's error, and because it runs in an action state 
 the steps it is handed. The context system is untouched: the `ActionSpec` still decides which
 steps a verb acts on.
 
-Three types carry rules the code used to keep by habit. **`Actor = Person | AgentRun |
+Three types carry rules a habit would otherwise have to keep. **`Actor = Person | AgentRun |
 Daemon`**: the director rule is one `match` — a person may finish a step, an agent run goes
 through review — and mypy fails a branch that forgets a kind. **`PlanView`** is `Library`'s
 queries alone, so a workflow that tried to mutate does not type-check. **`FollowUp`** is a
@@ -639,14 +637,11 @@ the byte, which is how the move was shown to change no text.
 The rule is CLAUDE.md's *Two surfaces, one vocabulary*. The checks are rule 15 and the
 headless-file test in `tests/test_architecture.py`.
 
-By 4 October `view.py` meant four things in four packages: a tab's body (the Order table),
-a status-bar widget with a diff dialog beside it (sync), a modal list (the Agents and task
-browsers) and a modal (the outside-change conflict). Five tabs lived inside `module.py`,
-and two `editor.py` files were a Step Details section and a tab's sub-widget. A newcomer
-could not tell where a surface was from a directory listing, which is the one view of a
-package everybody has.
+A newcomer has to be able to tell where a surface is from a directory listing, which is the
+one view of a package everybody has. A name that means a tab in one package and a modal in
+another tells them nothing. (*decisions.md* has what it replaced.)
 
-**Now a Qt file's name says its role:**
+**A Qt file's name says its role:**
 
 - `activity.py` (or `<x>_activity.py` where a package has several tabs, as `debug` does) is
   a tab, with the widgets only that tab hosts;
@@ -661,18 +656,17 @@ convention a reviewer has to remember is the one the next feature forgets. The l
 have no base class to key on: a section is an `InspectorSection` value, and a status-bar
 widget is any widget. They stay documented.
 
-**A mixed file gave up its dialog, not its logic.** `repo_picker.py` keeps the picker and
-`repositories_folder.py` the remembered folder. Their dialogs, with the code only a dialog
-uses, moved beside them (`repo_list_dialog.py`, `repositories_folder_dialog.py`), so the
-headless remainder no longer imports a dialog. The design example's sample rows became
-`design_sample.py`. Without it the dialog and the tab would import each other.
+**A mixed file gives up its dialog, not its logic.** `repo_picker.py` keeps the picker and
+`repositories_folder.py` the remembered folder; their dialogs, with the code only a dialog
+uses, sit beside them (`repo_list_dialog.py`, `repositories_folder_dialog.py`), so the
+headless remainder imports no dialog. The design example's sample rows are
+`design_sample.py`, without which the dialog and the tab would import each other.
 
-**`HEADLESS_FILES` became package-relative for the same reason.** Matched by bare name,
-`schedule.py` meant whichever file had that name in any package. When `time_estimates`
-became `schedule`, its `schedule.py` was renamed `assumptions.py`, the entry matched nothing,
-and the file silently left the rule. The test now lists generic roles once (`HEADLESS_ROLES`:
-`cli.py`, `aspect.py`, `report.py`, …) and every other file by package and path. A listed
-path that does not exist fails the suite.
+**`HEADLESS_FILES` is package-relative for the same reason.** Matched by bare name,
+`schedule.py` means whichever file has that name in any package, and a rename leaves the entry
+matching nothing and the file silently outside the rule. The test lists generic roles once
+(`HEADLESS_ROLES`: `cli.py`, `aspect.py`, `report.py`, …) and every other file by package and
+path. A listed path that does not exist fails the suite.
 
 **`tests/modules/<package>/` mirrors `modules/<package>/`**, and a test folder must name a
 package. That turns each area file's `paths:` into one `{src/dplanner,tests}/modules/{…}/**`

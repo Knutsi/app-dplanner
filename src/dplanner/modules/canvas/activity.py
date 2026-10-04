@@ -14,7 +14,7 @@ that project follows. In it, :meth:`ProjectActivity._sync` hands the scene the s
 ``sorts.arranged_in_waves`` derives instead of the stored ones — the same items, moved by the
 same diff sync — pins the cards so no hand moves them, and puts the ruler over the canvas.
 Nothing is written: *Keep This Arrangement* is the one way Wave view reaches the store
-(``ARCHITECTURE.md``'s *Wave view derives positions; only Free view saves them*).
+(``docs/architecture/canvas.md``'s *Wave view derives positions; only Free view saves them*).
 """
 
 from collections.abc import Callable, Mapping, Sequence

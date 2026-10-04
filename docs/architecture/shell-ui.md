@@ -1,6 +1,7 @@
 # Shell — seams, panes, primitives, menus, toolbars, glyphs and themes
 
-The reasoning behind `.claude/rules/shell-ui.md`: the rules there are the short, imperative form, and this file is why. `ARCHITECTURE.md` is the index of every area.
+The reasoning behind `.claude/rules/shell-ui.md`: the rules there are the short, imperative
+form, and this file is why. `ARCHITECTURE.md` is the index of every area.
 
 ## The index tree
 
@@ -13,7 +14,7 @@ under them — where a tab set shows one feature and hides the rest. The argumen
 the old one is that anything a page could hold is a folder here, so keeping both would have
 been two navigation mechanisms competing for the same 275 pixels.
 
-The tree is not a slot in the window any more; it is one **panel** anchored in the left area
+The tree is not a slot in the window; it is one **panel** anchored in the left area
 (below), which is why it can be moved and hidden like anything else contributed to the window.
 Three things still live in the panel rather than in each segment, because a shared tree is not
 the same problem as a stack of independent widgets: **selection is published exactly once** (Qt
@@ -25,16 +26,14 @@ rebuilding on change is the normal case and that bookkeeping is what every segme
 otherwise copy — and survives a *restart* too, which is *Where the user left off is
 remembered by key* below.
 
-**A folder's own row is one of its segment's rows.** The panel used to swallow every gesture
-on a folder row, on the reasoning that a folder is furniture. Two requests broke that: Home
-wanted a row at the top of the index with nothing under it, and a right-click on *Projects*
-offered nothing where a person reaches to add one. Home as a row *inside* some other folder
-would have put it under a heading it does not belong to, so the panel now hands a click, an
-activation and a right-click on a folder row to its segment like any other row's, and a
-segment with nothing to say about its folder ignores it — every existing one already did,
-because a folder row carries none of the roles their rows are read by. Only selection still
-skips it: a folder row is not selectable, so it never stands for anything in the context.
-The Projects folder's right-click renders the File menu's `project` group through
+**A folder's own row is one of its segment's rows.** A folder is not furniture: Home is a row
+at the top of the index with nothing under it, and a right-click on *Projects* is where a
+person reaches to add one. Home as a row *inside* some other folder would sit under a heading
+it does not belong to, so the panel hands a click, an activation and a right-click on a folder
+row to its segment like any other row's, and a segment with nothing to say about its folder
+ignores it — a folder row carries none of the roles their rows are read by. Only selection
+still skips it: a folder row is not selectable, so it never stands for anything in the
+context. The Projects folder's right-click renders the File menu's `project` group through
 `build_menu`, so the index and the menu bar cannot disagree about how a project joins.
 
 ### A click is a glance: preview tabs
@@ -151,15 +150,15 @@ back on returns the session they last had rather than one from whenever they tur
 
 ## Home is where a window starts
 
-Since the Dashboard retired, a program that started with no tabs to reopen showed an empty
-tab bar over nothing. It starts on Home now: a short getting-started guide, centred, over a
+A program that starts with no tabs to reopen must not show an empty tab bar over nothing. It
+starts on Home: a short getting-started guide, centred, over a
 garden that says what DPlanner does, in the `home` tab — kept as the top row of the index
 and *Go ▸ Home* for whenever it is wanted. The rules are `.claude/rules/shell-ui.md`'s
 *Home is a tab like any other*.
 
-**A tab like any other, opened at the program's start and at no other time.** The first
-build stood Home behind the tabs as a backdrop whenever none was open. The developer's call
-was the simpler one: Home is an ordinary activity, and a blank window is allowed — closing
+**A tab like any other, opened at the program's start and at no other time.** Home is not a
+backdrop behind the tabs; the developer's call was the simpler one: Home is an ordinary
+activity, and a blank window is allowed — closing
 the last tab leaves nothing, rather than a page the person just closed coming back. So the
 one automatic open is the program's start: `app.open_at_startup` calls the composition
 root's `start_window` after the build, and it opens Home only when reopen_tabs brought back
@@ -356,27 +355,19 @@ card renders only `open`'s half of the child, the entries about the step itself.
 ## View is the window; Graph is the canvas
 
 The graph editor's own verbs — Sort, Layout, Divide, Frame, the marks, Snap to Grid and the
-Background — used to be a `canvas` group inside **View** (and regions, since retired, had
-one inside **Project**). That made View half a window menu (panels, tabs, theme, zoom) and
-half a drawing-surface menu, and it left the surface this application is mostly *about* with
-no heading of its own: the fastest way to a divide was the command palette, which then said
-only *Vertical*.
-
-They are a top-level **Graph** menu now. View went back to being about the window — which
+Background — are a top-level **Graph** menu. Inside **View** they would make it half a window
+menu (panels, tabs, theme, zoom) and half a drawing-surface menu, and leave the surface this
+application is mostly *about* with no heading of its own. View is about the window — which
 is what decides where the Problems panel's switch sits: the panel is inside one project's
 tab, so it is the graph's chrome and not the window's, and View ▸ Panels is about the areas
 around the tabs.
 
-**A verb is filed by where its subject is picked.** The first split kept Connect, Link,
-Unlink, Isolate, the Redirect pair, Lasso, Find, Go and New on **Step**, and said why: the
-canvas's right-click rendered the Step menu whole, so moving them would have taken the
-graph's most-used verbs off the graph's own context menu to file them more tidily. That
-argument held only while one menu was all a right-click could be. Once the right-click was
-composed by what is under it (below), where a verb is filed stopped deciding where the
-canvas offers it, and the old filing showed its cost: every table that renders Step by name
-carried New, Find, Go, Lasso and Redirect greyed, because each needs a canvas the table does
-not have, and an arrow's right-click offered Rename. So the question became *what does the
-verb act on, and where is that picked*:
+**A verb is filed by where its subject is picked.** Because the right-click is composed by
+what is under it (below), where a verb is filed does not decide where the canvas offers it.
+Filing the canvas verbs on **Step** would cost every table that renders Step by name New,
+Find, Go, Lasso and Redirect greyed — each needs a canvas the table does not have — and give
+an arrow's right-click Rename. So the question is *what does the verb act on, and where is
+that picked*:
 
 - a **point** on the canvas — `new`: New Step, and Paste's second seat (its home is Edit,
   where Ctrl+V lives; one enabled QAction may own a shortcut);
@@ -385,9 +376,8 @@ verb act on, and where is that picked*:
 - a picked **arrow** — `links`: Remove Link, Auto-progress and the Redirect pair;
 - the drawing itself — `arrange`, `look`, `panels` as before;
 - picked **steps** — Step: Rename, Delete, Connect, Link, Unlink (the link between two
-  picked steps, which a table can offer with no arrow in sight), Isolate, and Reveal in
-  Graph (now *Show in ▸ Graph*), which moved from the retired `navigate` group to `surfaces`
-  because it is the way from a table's row to a step's card.
+  picked steps, which a table can offer with no arrow in sight), Isolate, and *Show in ▸
+  Graph*, in `surfaces` because it is the way from a table's row to a step's card.
 
 The test is still not "which surface does this run on" — nearly every one of these runs on
 the canvas — but "what is its subject": a step, or something only the canvas can point at.
@@ -656,8 +646,8 @@ prevent.
 
 ## The command palette says where a verb lives
 
-A palette row used to be the spec's label and its shortcut. That works for *Frame Graph* and
-fails completely for *Vertical* and *Horizontal*, which are written to be read under the word
+A palette row of the spec's label and its shortcut works for *Frame Graph* and fails
+completely for *Vertical* and *Horizontal*, which are written to be read under the word
 *Divide* and say nothing without it. The label cannot absorb the missing half — the menu
 would then read *Divide ▸ Divide Vertically* — so the row carries the **menu path** instead,
 on a second line under the name, with the shortcut right-aligned beside the name and the
@@ -748,8 +738,8 @@ precondition rule every other presenter follows.
 
 The window has a centre — the tab groups — and three areas around it: **left, right and
 bottom**. Anything anchored in one is a `PanelSpec` in `services.panels`, and the framework's
-`PanelDock` puts it there. The index tree is one — and since the project's forms moved into
-its dialog and the Test panel beside its roster, the only one. Right-clicking a
+`PanelDock` puts it there. The index tree is one, and the only one: a project's forms are its
+dialog's tabs and the Test panel stands beside its roster. Right-clicking a
 panel's header moves it between areas or hides it, and *View ▸ Panels* switches it back on;
 an area no panel stands in hides its whole-side toggle, because HIDDEN is for a capability
 absent from this build and a verb that folds nothing teaches nothing.
@@ -1100,9 +1090,9 @@ announces.
 
 ## A theme is provided, never listed
 
-`theme/themes.py` used to be the list: the three house themes and a hand-copied set of
-Omarchy's, chosen from a flat View menu, and nothing followed the desktop. Now a **theme
-provider** offers themes, and the application asks its providers rather than a table.
+A **theme provider** offers themes, and the application asks its providers rather than a
+table — a hand-kept list is one that copies another program's themes by hand and cannot
+follow the desktop.
 
 **The contract is a record of callables** (`theme/providers.py`), the shape
 `domain/agents.py` set for an agent harness: an `id` the persisted choice carries, a

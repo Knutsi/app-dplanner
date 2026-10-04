@@ -1,6 +1,7 @@
 # Specs — the spec editor and its document sources
 
-The reasoning behind `.claude/rules/specs.md`: the rules there are the short, imperative form, and this file is why. `ARCHITECTURE.md` is the index of every area.
+The reasoning behind `.claude/rules/specs.md`: the rules there are the short, imperative form,
+and this file is why. `ARCHITECTURE.md` is the index of every area.
 
 ## Editing a spec in-app is a replace
 
@@ -27,25 +28,22 @@ index names it (`prune_blob`). Typing inside the editor is the widget's own undo
 the application stack holds only the session-level replaces — two stacks because they hold
 two different kinds of fact, keystrokes and index states.
 
-**The editor is the prose stack's, and two of those three edges went with the widget.**
-It was a `QTextEdit` over `setMarkdown`/`toMarkdown` — the one prose surface in the
-application that edited a document *tree* and wrote back a normalised serialisation, which
-is precisely what `framework/markdown_highlight.py` says a markdown editor here must not
-do. It is a `ProseEdit` now, with the highlighter, the markdown strip, and the figures it
-links to in a gallery under it, because a plain-text editor cannot draw a picture and
-should not pretend to. What that deleted: the standing warning that editing would reformat
-the document (plain text never reformats, so an untouched save is byte-identical by
-construction rather than by a guard), the `![](` → `![image](` rewrite on open (Qt's
-exporter dropped an empty alt; there is no exporter), and the carve-out that made a `.txt`
-read-only — its whole reason was the round-trip handing it back as markdown. A PDF is the
-one document that is not text, and renders.
+**The editor is the prose stack's.** It is a `ProseEdit`, with the highlighter, the
+markdown strip, and the figures it links to in a gallery under it, because a plain-text
+editor cannot draw a picture and should not pretend to. A rich-text editor would edit a
+document *tree* and write back a normalised serialisation, which is precisely what
+`framework/markdown_highlight.py` says a markdown editor here must not do. Plain text never
+reformats, so an untouched save is byte-identical by construction rather than by a guard,
+there is no exporter to drop an empty alt, and a `.txt` is edited like any other document.
+A PDF is the one document that is not text, and renders. (*decisions.md* has what it
+replaced.)
 
-There was a correctness fix hiding in that swap. `document_text()` — what `feature cite`,
-lint, coverage and `anchor_in` all read — is the raw markdown **source**, while the
-rich-text editor's `toPlainText()` was the **rendered** text. So citing a heading, or any
-passage with inline markup in it, stored one string while every other reader checked
-another; they agreed for plain paragraphs and disagreed silently everywhere else. The
-editor's string is now the string every reader uses.
+**The editor's string is the string every reader uses.** `document_text()` — what
+`feature cite`, lint, coverage and `anchor_in` all read — is the raw markdown **source**,
+and so is what the editor holds. A rich-text editor's `toPlainText()` is the **rendered**
+text, so citing a heading, or any passage with inline markup in it, would store one string
+while every other reader checked another — agreeing for plain paragraphs and disagreeing
+silently everywhere else.
 
 **A foreign change to the edited document ends the session** and reopens the document as
 it now is: the model is the authority, unflushed keystrokes yield, and anything already
@@ -63,14 +61,13 @@ have had to push a command per keystroke onto the application's undo stack, whic
 one thing the two-stacks rule above exists to prevent. The price is a Qt fact worth
 knowing: when the borrowing view dies, the owner's *Python wrapper* for the document is
 invalidated even though the C++ document and its text survive, so nothing may hold
-`editor.document()` in a field. `NOTES-FOR-APPFRAME.md` §36 has the measurements.
+`editor.document()` in a field. the framework diary (`docs/history/`) §36 has the measurements.
 
-**A rename moves the name, and everything that points at it.** There was no rename at all,
-and a name is the one thing an agent types: `spec show`, `spec diff`, `feature cite
---document`, the `document` key on every passage a feature cites. Two shapes were on the
-table. Rename only a *display title* and leave the key alone — which is what a sourced page
-already does, and which cannot break anything — or move the key and carry its references.
-The first was rejected for the reason the step existed: a key that no longer describes the
+**A rename moves the name, and everything that points at it.** A name is the one thing an
+agent types: `spec show`, `spec diff`, `feature cite
+--document`, the `document` key on every passage a feature cites. Renaming only a *display title*
+and leaving the key alone — which is what a sourced page does, and which cannot break
+anything — is not enough: a key that no longer describes the
 document is exactly what misleads the next agent, and a title beside a stale key leaves the
 misleading thing in place and adds a second name to learn. So the key moves, and with it
 the pages that name it as their parent, the asset rows that record where a figure came
@@ -95,8 +92,8 @@ content; `previous` is a second pointer at the same place, and `spec diff` reads
 with the editing session's own churn as the single named carve-out. The workspace's git is
 the history that makes leaving it cheap.
 
-**The mark on the tab title is what this window has found.** `updates_words` — written and
-tested when the sources landed, and uncalled until now — is the line over the whole tree,
+**The mark on the tab title is what this window has found.** `updates_words` is the line
+over the whole tree,
 where it is true whatever row is picked; its short form marks the tab's title and the Specs
 row in the index, so there is something to see before the tab is opened. One `stale`
 derivation, three readings. It rides a **set-diff** signal rather than the refresher's own
@@ -110,9 +107,10 @@ subprocess per source per interval on a machine nobody asked, for a dot on a row
 
 ## A spec source is a kind the spec module runs
 
-The spec was always a file somebody put beside the project. Now it may live somewhere
-else and change there — a folder on this computer, a git repository, a Confluence page, a
-Confluence folder — and the question was where the machinery for that belongs. Two shapes were on the table: each
+A spec may be a file somebody put beside the project, or it may live somewhere else and
+change there — a folder on this computer, a git repository, a Confluence page, a Confluence
+folder — and the question is where the machinery for that belongs. Two shapes were on the
+table: each
 source module owns its own tree, task and index writes and the spec module hands it a
 writer seam; or the spec module runs every source and a source module is nothing but a
 *kind* — how to ask for a location, whether it is connected, how to connect, how to fetch
@@ -162,10 +160,10 @@ open projects both have a `src1`, and a dict keyed on the id alone had one proje
 freshness answering for the other's — invisible while only the selected source was ever
 asked, and a wrong number the moment something counts them.
 
-**One kind, one thing — and a kind is a record, not a code path.** The Confluence module
-shipped as a single kind whose locator carried `type: page | folder`, so the Add Spec menu
-offered one entry for two different acts and a person pasting a folder address into it got
-whatever the walk made of it. They are two kinds now, and the interesting part is what did
+**One kind, one thing — and a kind is a record, not a code path.** A Confluence page and a
+Confluence folder are two kinds, because one kind whose locator carried `type: page |
+folder` would offer one Add Spec entry for two different acts, and a person pasting a folder
+address into it would get whatever the walk made of it. The interesting part is what does
 *not* fork: the walk is still one function, because the only difference between a page
 source and a folder source is where the queue is seeded, and that is a branch on a value
 the kind has just validated. What forked is data — a frozen `ContentType` with the id, the
@@ -196,7 +194,7 @@ in it; the checkout goes under `config_dir()`, keyed on url + ref + path, one di
 per source — sharing one checkout between two sources would mean one fetch's sparse
 pattern applied to the other's tree, which imports the wrong folder and says nothing. The
 clone door itself — the blobless, shallow, sparse fetch, the listing, the subprocess
-hardening — is `core/storage/sparse.py`'s now, because a project's read-only *locations*
+hardening — is `core/storage/sparse.py`'s, because a project's read-only *locations*
 (*A project names its locations*) are placed in the same cache under the same digest, and
 a source that names a `spec` row (*Add Spec ▸ From Location…*) resolves to the row's
 address at every call, so the row, its managed placement and the source fetched from it
@@ -243,10 +241,8 @@ writes precisely what it wrote before, and no `if len(...) == 1` appears anywher
 source that refuses is skipped inside the gesture and reported after it closes, because a
 failure must never cost the sources that succeeded.
 
-**Fetching stays window-only, and the reason changed.** It used to be the credential: the
-token is in the keychain, a shell could reach it, and an agent's shell runs with the
-person's keychain but not their judgement. A folder source has no credential at all, so
-that argument does not reach it. The one that does is simpler and covers all four: a fetch
+**Fetching is window-only.** Not because of the credential — a folder source has none —
+but for a simpler reason that covers all four kinds: a fetch
 pulls bytes from outside the plan *into* it, and choosing to do that is a person's act.
 `spec list` shows the tree, its kinds and its locators, `spec show` and `spec diff` read
 the snapshot, `spec import` and `spec remove` refuse a sourced document with a pointer to

@@ -18,8 +18,8 @@ keys exist (``FORMAT.md``'s absence rule).
 **A stack member says which stack it stands in, and only the first stores a seat.** A step
 in a stack keeps ``"stack": "<id>"`` in the same entry; the first member's ``x`` and ``y``
 are the stack's, and the others keep no seat of their own — the column derives theirs
-(``stacks/stack.py``, and ``ARCHITECTURE.md``'s *A stack is presentation over a chain*). Every
-writer here carries the key, since a write rebuilds the whole entry.
+(``stacks/stack.py``, and ``docs/architecture/canvas.md``'s *A stack is presentation over a chain*).
+Every writer here carries the key, since a write rebuilds the whole entry.
 
 **Snapping is the gesture's, never the write's.** What reaches disk is rounded to a whole
 unit — short JSON, and a float — and lands on :data:`GRID` only because the canvas snapped

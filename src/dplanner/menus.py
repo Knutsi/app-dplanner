@@ -32,8 +32,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # "history" is the app shell's Undo/Redo. "clipboard" and "selection" are the graph's:
     # Cut, Copy, Paste, Duplicate and Delete's second seat (its home is Step, which a card's
     # right-click renders), then Select All — registered by canvas because the step
-    # graph is the one surface with a clipboard representation. ARCHITECTURE.md's *Edit
-    # verbs belong to the surface whose things they act on* has the reasoning.
+    # graph is the one surface with a clipboard representation. `docs/architecture/shell-ui.md`'s
+    # *Edit verbs belong to the surface whose things they act on* has the reasoning.
     "Edit": ("history", "clipboard", "selection"),
     # "palette" is the command palette alone — the way to *any* verb, set off from the
     # panel toggles below it. "areas" is the whole-side collapse switches, ahead of the
@@ -71,8 +71,8 @@ MENU_STRUCTURE: Final[dict[str, tuple[str, ...]]] = {
     # there, Estimate Steps and Preview Report, which is also what empty canvas's right-click
     # offers; "archive" the library's Archive tab. No right-click renders Go whole: a row's
     # own right-click never repeats the rows beside it (the Project menu below), and a table's
-    # Step menu reaches the views about a step through Step ▸ Show in. ARCHITECTURE.md's *The
-    # menu bar is sorted by subject* has the reasoning.
+    # Step menu reaches the views about a step through Step ▸ Show in.
+    # `docs/architecture/shell-ui.md`'s *The menu bar is sorted by subject* has the reasoning.
     "Go": ("home", "views", "survey", "archive"),
     # The planner's own vocabulary. "Project" is the verbs on a project — what the index
     # tree's right-click renders — and "Step" the verbs on picked steps, which every table

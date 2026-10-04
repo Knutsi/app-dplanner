@@ -167,7 +167,7 @@ application. The framework is still ours to evolve — see *Deliberate divergenc
 1. `core/` imports no Qt and nothing from the rest of the application.
 2. `domain/` imports no Qt, and imports `core` only. It is tested with plain pytest.
 3. `planning/` imports `core` and `domain` only. A status is a `planning.status.Status`,
-   never a word — ARCHITECTURE.md's *Planning owns status*.
+   never a word — `docs/architecture/core.md`'s *Planning owns status*.
 4. `cli/` imports no Qt and nothing above `planning/`. A module's `cli.py` and `aspect.py` are
    the same: importable without a graphics stack. The CLI is how an agent drives DPlanner,
    and it has to start in milliseconds on a machine with no GUI libraries at all.
@@ -175,7 +175,7 @@ application. The framework is still ours to evolve — see *Deliberate divergenc
 6. A module reaches another only through its headless `aspect.py` (facts) or `workflows.py`
    (a verb returning a `Change`) — or any file of a package with no `module.py`, which is
    headless all through (`modules/agent_briefing`). Only `modules/__init__.py` imports the
-   rest. ARCHITECTURE.md's *What holds the tier and the workflows in place*.
+   rest. `docs/architecture/core.md`'s *What holds the tier and the workflows in place*.
 7. Modules never import `AppServices`, the builder, or the concrete window. Window
    capabilities come through the protocols in `framework/window.py`.
 8. `app.py` and `entry.py` import the composition root and nothing deeper.
@@ -193,7 +193,7 @@ and neither can grow a behaviour the other lacks without somebody editing that f
 **A whole verb is a workflow**: a `workflows.py` function returns a `Change`; each surface
 applies its command as one command, persists it, and only then performs the follow-ups
 (`CliContext.after_flush`; after the gesture) — each attempted, failures reported, never
-rolled back (ARCHITECTURE.md's *A workflow is one function under both surfaces*).
+rolled back (`docs/architecture/core.md`'s *A workflow is one function under both surfaces*).
 
 It follows that a feature has two halves in one package:
 
@@ -213,7 +213,8 @@ modules/<name>/
 **A Qt file's name says its role** (architecture rule 15): `activity.py` or `<x>_activity.py`
 holds a tab, `dialog.py` or `<x>_dialog.py` a modal, `scene.py` a `QGraphicsScene`,
 `panel.py` a side panel, `status_widget.py` a status-bar widget, `settings_page.py` a
-settings page — and nothing is `view.py`. ARCHITECTURE.md's *A file name has one meaning*.
+settings page — and nothing is `view.py`. `docs/architecture/core.md`'s *A file name has one
+meaning*.
 
 The Qt-free files are checked by **path** — `HEADLESS_ROLES`, and per package
 `HEADLESS_FILES`, in `tests/test_architecture.py`. If the composition root reaches a new file
@@ -290,8 +291,8 @@ what reaches them:
 **A new rule goes in the area file whose paths cover what it governs**, and in this file only
 when it binds edits no one area's paths reach — so adding to the core means trimming it:
 `tests/test_rules.py` holds it under 32 KiB, and claims every module package for an area.
-`ARCHITECTURE.md`'s *The rulebook is loaded by where you work* has the measurements and the
-reasoning.
+`docs/architecture/core.md`'s *The rulebook is loaded by where you work* has the measurements and
+the reasoning.
 
 | Area file | What it covers |
 |---|---|

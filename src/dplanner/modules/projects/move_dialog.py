@@ -3,8 +3,8 @@
 A plan repository from the picker — one the library uses, another folder, a clone, or a
 new one, local or to be published — and a folder name inside it. The dialog only answers;
 the module runs ``domain/relocate.move_project`` and reloads, because a move rewrites the
-working tree (ARCHITECTURE.md's *Storage operations that rewrite the working tree are
-synchronous*), and every view that cached a directory is rebuilt rather than patched.
+working tree (`docs/architecture/persistence.md`'s *Storage operations that rewrite the working tree
+are synchronous*), and every view that cached a directory is rebuilt rather than patched.
 """
 
 from pathlib import Path

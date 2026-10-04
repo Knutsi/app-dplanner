@@ -6,7 +6,7 @@ set`` and the review verbs all call :meth:`StatusWorkflow.set_status` and perfor
 before anybody reviewed it is refused, naming ``ready-for-review`` — unless ``because`` says
 why nothing needs reviewing, which is kept as a ``decision`` note on the step in the same
 change. A :class:`Person` is never asked: the director has authority over the worker.
-ARCHITECTURE.md's *An agent finishes at Ready for review* has the reasoning.
+`docs/architecture/agents.md`'s *An agent finishes at Ready for review* has the reasoning.
 
 **A status that says nobody is working the step ends the claim on it**, whoever sets it —
 so a director marking a step done in the window takes the agent's banner down. Ending the

@@ -1,6 +1,7 @@
 """A stack: a chain of steps the canvas draws as one tall card.
 
-A stack is **presentation over a chain**, never a thing in the model (``ARCHITECTURE.md``'s
+A stack is **presentation over a chain**, never a thing in the model
+(``docs/architecture/canvas.md``'s
 *A stack is presentation over a chain*). Each member carries ``"stack": "<id>"`` in its
 ``project_editor`` entry, the first member's seat is the stack's and the others store none,
 and the order is read from the real ``requires`` chain — so ordering, the schedule and Ready
@@ -185,8 +186,8 @@ def link_rule(library: Library, waiter: StepId, kind: str, source: StepId) -> st
     Only ``requires`` counts, and only links that resolve. It reads membership and link
     counts, never positions, and every condition says *some other link exists* — so a link
     legal in a graph is legal in every part of it, which is why one gesture at a time can
-    never break a stack that is one line (``ARCHITECTURE.md``'s *One in, one out is a rule
-    the domain asks*). A run head in a stack somebody broke counts as a first member.
+    never break a stack that is one line (``docs/architecture/canvas.md``'s *One in, one out is a
+    rule the domain asks*). A run head in a stack somebody broke counts as a first member.
     Each refusal names what fixes it.
     """
     if kind != "requires":

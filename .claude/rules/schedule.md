@@ -71,8 +71,8 @@ paths:
   behind a dated wait joins Ready the morning it may start. `dplanner progression show
   --all [PROJECT …]` is its terminal half — positionals, since `--project` is every verb's
   own option — with each row's `project` and `agent` in the text and the JSON alike.
-  `ARCHITECTURE.md`'s *Progression is the status-aware frontier* has the partition rules
-  and why each was a decision.
+  `docs/architecture/schedule.md`'s *Progression is the status-aware frontier* has the partition
+  rules and why each was a decision.
 - **The order says what order, and how much — never when.** The Order tab is the index,
   the step, its wave and its estimate, under one line of volume (`planning/schedule.py`'s
   `volume_words`: *62 days over 24 steps, 2 unestimated*, the sentence `order show`,
@@ -117,8 +117,8 @@ paths:
   the calendar fades the other stretches. **A calendar day two stretches are both worked
   is a stripe of each**, and a landing fills its day with every milestone landing on it.
   A cycle a hand-edited file smuggled in is named by `ordering.cyclic()` and the tab says
-  so instead of drawing a calendar over a broken walk. `ARCHITECTURE.md`'s *Time estimates: two
-  worker pools, one greedy simulation* has the reasoning.
+  so instead of drawing a calendar over a broken walk. `docs/architecture/schedule.md`'s *Time
+  estimates: two worker pools, one greedy simulation* has the reasoning.
 - **The plan re-dates itself from what has happened, and facts beat the sequence.**
   `phases` handed `ScheduleFacts` — `schedule/assumptions.py`'s `schedule_facts`: the
   stored statuses and their `since`, which steps are markers (estimate off), and work in
@@ -129,7 +129,7 @@ paths:
   **Work already started in a stretch not reached yet runs now**, keeping its worker from
   tomorrow beside the stretch being worked and done where it belongs the day it lands, and
   **a marker takes no worker** — both measured with the simulator's parallel scenarios
-  (`ARCHITECTURE.md`'s *Milestones worked in parallel*, which also has the candidates
+  (`docs/architecture/schedule.md`'s *Milestones worked in parallel*, which also has the candidates
   rejected and why).
   **Review and merge are work in flight, dated from when it started** — one fold,
   `planning/status.py`'s `in_flight` / `work_since`, which every time surface reads by
@@ -155,7 +155,8 @@ paths:
   for Efficiency*'s pace, which the file does not compare — is measured with
   `scripts/time_accuracy.py` over all fifteen. A stretch's `start` is where its
   remaining work begins and `began` when its work first began — a view shows `began`.
-  `ARCHITECTURE.md`'s *The plan re-dates itself from what has happened* has the reasoning.
+  `docs/architecture/schedule.md`'s *The plan re-dates itself from what has happened* has the
+  reasoning.
 - **A wait is a step that holds, and no work.** `modules/step_wait/` marks a step
   `{"until": …}` — what requires it may start on that day — or `{"days": n}` working days
   from when it is reached (`planning/wait.py`'s `Wait`, which every walk reads by
@@ -181,7 +182,7 @@ paths:
   none. *Insert Wait Before* (`W` on the canvas) puts a wait of a day in front of a step —
   it takes what the step waited on — as one undo, born through the graph editor's
   `create_step`.
-  `ARCHITECTURE.md`'s *A wait is a step that holds* has the reasoning.
+  `docs/architecture/schedule.md`'s *A wait is a step that holds* has the reasoning.
 - **The simulator is the prototype's, to the frame, and Debug ▸ Time Simulation shows it in
   the real tab.** `schedule/simulation/` is Qt-free: `world.py` plays a scenario,
   `replay.py` writes each day through the owners' writers (`frames.Writers`, every one
@@ -196,8 +197,8 @@ paths:
   *Two tracks*, *Multitasking*, *Late marking*, milestones worked in parallel, which the
   prototype never played (a `SampleShape` of two `tracks`, a world's `juggle` and
   `mark_late`). `scripts/time_accuracy.py` is the number to quote for a model change,
-  printed as recorded and with *Adjust for Efficiency* on. `ARCHITECTURE.md`'s *The Time
-  tab has a simulator* has the reasoning.
+  printed as recorded and with *Adjust for Efficiency* on. `docs/architecture/schedule.md`'s *The
+  Time tab has a simulator* has the reasoning.
 - **Progress is derived; the past is a list of snapshots, and a comparison is two of
   them.** How far a milestone has come — by estimated days, everything through its
   stretch; the count of steps is tallied and worded, never the share — is
@@ -256,7 +257,7 @@ paths:
   recorded day, from the step's `created` stamp and the estimate aspect's own history
   (`estimation`'s `read_history`; every `write` carries the value it replaced, one row
   per day, format 2; `dplanner estimate show` reads it back) — are the terminal's prose;
-  the page says it with the plots. `ARCHITECTURE.md`'s *Progress against the plan* has
+  the page says it with the plots. `docs/architecture/schedule.md`'s *Progress against the plan* has
   the reasoning.
 - **Today is the clock's, never the machine's.** Whatever dates a plan reads the day from
   `core/clock.py`'s `Clock` — `TimeEstimatesDeps.clock` and the reporting module's in the
@@ -265,8 +266,8 @@ paths:
   today. A report is built *for* a day (`build(today=…)`), and every `ReportSource` is
   handed it. `day_changed` re-runs the tab and the recorder, so a window open overnight
   moves on. **A test pins it**: `services.clock.pin(…)` in the window, the `clock` fixture in
-  a CLI test — never an assertion against `date.today()`. `ARCHITECTURE.md`'s *Today is
-  handed in* has the reasoning.
+  a CLI test — never an assertion against `date.today()`. `docs/architecture/schedule.md`'s *Today
+  is handed in* has the reasoning.
 - **A milestone's colour is its place in the project's map, and every surface reads the
   one answer.** `schedule.py`'s `milestone_colors(library, project)` is the
   deal — `ordering.placed`'s sequence, a milestone's own chosen colour over its dealt
@@ -282,4 +283,4 @@ paths:
   report site exported by any of a project's people should paint its milestones alike. *View ▸ Milestone Colours* is therefore a **second presenter** of
   the choice the Time tab's picker and `dplanner schedule palette` already write — a
   sibling of Theme, never inside it, and greyed with its reason when no project is open.
-  `ARCHITECTURE.md`'s *Colour is a place on one map* has the reasoning.
+  `docs/architecture/schedule.md`'s *Colour is a place on one map* has the reasoning.

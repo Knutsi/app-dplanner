@@ -27,8 +27,8 @@ paths:
   `Look`, like every other preference the editor keeps, and `canvas.side_panel` is the verb.
   **Its reading is the count** — `ReadingPanel`, one string and a signal — which the strip's
   leading band shows beside its glyph as `(4)`, read from the panel's last settled rebuild
-  rather than probed in a state callback. `ARCHITECTURE.md`'s *The Problems list lives in
-  the graph, not in the window* has the reasoning.
+  rather than probed in a state callback. `docs/architecture/canvas.md`'s *The Problems list lives
+  in the graph, not in the window* has the reasoning.
 - **Canvas input is a stack of modes, and Escape pops one.** A mode handles input and has
   power over the view; a hook that returns False lets the event fall through to the canvas
   keymap and then to Qt, which is why `IdleMode` is nine lines and why a mode that claims a
@@ -37,8 +37,8 @@ paths:
   a mode-switch action's `checked` stays a pure function of it. A mode that drags something
   the canvas draws — a card's frame, one side of a cut — is a `GestureMode`: it says what it
   holds, how to restore it on Escape and what the release means, and inherits the rest.
-  `ARCHITECTURE.md`'s *Who owns the canvas's input* has the reasoning; add a behaviour as a
-  mode, never as a field.
+  `docs/architecture/canvas.md`'s *Who owns the canvas's input* has the reasoning; add a behaviour
+  as a mode, never as a field.
 - **Lasso is a mode, and it touches cards.** `LassoMode` draws a `QPainterPath`, and on
   release the scene answers `nodes_touching(path)` by the node's *body* rect — never
   `scene.items(path)`, whose hit shape is the body plus `PAINT_MARGIN` and includes the
@@ -53,7 +53,7 @@ paths:
   release is one `graph_divided` signal and one `Divide Graph` command, written only for the
   cards that moved; one divide ends the mode, and Escape puts the cards back and leaves. The
   band drawn beside the cut — the room being made — is the same `OutlinePreviewItem`.
-  `ARCHITECTURE.md`'s *Who owns the canvas's input* has the reasoning.
+  `docs/architecture/canvas.md`'s *Who owns the canvas's input* has the reasoning.
 - **Contract is Divide's other half, and it stops a gap short.** `ContractMode` (Graph ▸
   Divide ▸ Contract Vertically or Horizontally; `X` and `Shift+X`) lays the same cut, and
   `ContractDragMode` pulls the side *behind* the drag after it as one block, clamped live
@@ -65,7 +65,7 @@ paths:
   under that label. **Both drags are one `_CutDragMode`** whose `follow` is the Qt-free rule
   the `layout` verb runs (`shift` for Divide, `contract` here), so the canvas never carries a
   second copy of either; it runs them over `stacks.Packing`'s blocks, so a stack travels
-  whole. `ARCHITECTURE.md`'s *Contract closes a gap and stops one short* has
+  whole. `docs/architecture/canvas.md`'s *Contract closes a gap and stops one short* has
   the reasoning.
 - **Redirect is a mode, and it moves one end of a bundle.** Pick arrows, run *Graph ▸
   Redirect ▸ To Step* (`E`) or *From Step* (`Shift+E`), click a step: every picked link
@@ -79,8 +79,8 @@ paths:
   status line and `dplanner step redirect --to/--from`, which names the arrows by the steps
   they hang off (`Library.edges_of`). **A refusal is per link** — the rest still move, and
   the status line says what did not. The verb is enabled exactly while links are picked,
-  greyed with the reason otherwise. `ARCHITECTURE.md`'s *Redirecting a link moves one end*
-  has the reasoning.
+  greyed with the reason otherwise. `docs/architecture/canvas.md`'s *Redirecting a link moves one
+  end* has the reasoning.
 - **A right-click is composed by what is under it.** The click makes its subject current —
   a card or an arrow outside the pick *becomes* the pick, one inside keeps it, empty canvas
   clears it and notes the point — and the menu is then a function of the selection alone:
@@ -105,8 +105,8 @@ paths:
   removes everything picked**: the key names `("steps.delete", "links.remove")`, and
   `steps.delete` takes any arrow picked beside the steps into the same `remove_steps_command`
   — one undo; `links.remove` is the arrows alone, and `steps.unlink` the link between two
-  picked steps. `ARCHITECTURE.md`'s *A right-click is composed by what is under it* has the
-  reasoning.
+  picked steps. `docs/architecture/shell-ui.md`'s *A right-click is composed by what is under it*
+  has the reasoning.
 - **Marks are a way of looking, remembered per user — and both are on.** Starts and Ends
   (`canvas/marks.py`, Qt-free) are the `marks` of the module's one
   `Look` (`look.py`, with the spotlight, the background and Snap to Grid beside them),
@@ -121,7 +121,7 @@ paths:
   every sync — in the domain rather than beside the marks because `graph.orphan` lint asks
   the same question, and a module may not import another module's copy of an answer. The toggles' `checked` reads the module and the module calls `context.refresh()` —
   the theme-toggle pattern, deliberately not an edge on the activity node, because a
-  preference outlives any tab. `ARCHITECTURE.md`'s *Marks are a way of looking* has the
+  preference outlives any tab. `docs/architecture/canvas.md`'s *Marks are a way of looking* has the
   reasoning.
 - **A step something is wrong about wears a squiggle, and the reading is settled.** The
   editor's underline, 3 px of refusal red hanging `PROBLEM_DROP` below the body and
@@ -135,8 +135,8 @@ paths:
   canvas, because the checks are super-linear in the size of a plan (1 ms at 40 steps,
   9 ms at 120, 66 ms at 300). It names the project on both its signals — `changed` for the
   panel, which lists messages, and `flagged_changed` for the canvas, which draws one mark
-  per step and must not repaint because a title moved. `ARCHITECTURE.md`'s *A problem is a
-  squiggle, and the reading is shared* has the reasoning.
+  per step and must not repaint because a title moved. `docs/architecture/canvas.md`'s *A problem is
+  a squiggle, and the reading is shared* has the reasoning.
 - **A picked step lights its arrows, and the spotlight fades the rest.** One derivation —
   `selection.neighbourhood(edges, picked)`, the arrows with an end among the picked steps and
   the steps at their far ends, re-derived every selection change and every sync — read twice.
@@ -149,7 +149,7 @@ paths:
   preference left on never dims a canvas to say nothing. The fade is item opacity at
   `DIM_OPACITY` (`theme/cards.py`, shared with the coverage trace's lit path), never a
   paint-level flag — a card recedes whole and `renderers.py` learns nothing.
-  `ARCHITECTURE.md`'s *The spotlight is one derivation* has the reasoning.
+  `docs/architecture/canvas.md`'s *The spotlight is one derivation* has the reasoning.
 - **A scrollable area's extent must never depend on what the user is moving.** The canvas is
   a *plane*: a constant scene rect centred on the origin, far larger than any graph. That is
   what lets panning go on for as long as anybody wants, and it is also the answer to the older
@@ -179,7 +179,7 @@ paths:
   The top edge's medallions say what a step *is* and never who works it — no spark and no
   clock among them — because a card says a thing once. The title and the left-edge
   decorations start past the block (`LEFT_INSET`), and `MIN_NODE_W` grew with it.
-  `ARCHITECTURE.md`'s *The key block names the card and says who works it* has the
+  `docs/architecture/canvas.md`'s *The key block names the card and says who works it* has the
   reasoning. The icon's box (`KEY_GLYPH`, 28) is sized so a broad glyph spans a
   three-character key; the report's copy of it is pinned by the same test.
 - **A milestone's outline is doubled** — `theme/cards.py`'s `MILESTONE_BORDER_W` on the canvas
@@ -194,7 +194,7 @@ paths:
   rings composite, so a shadow's alpha buys twice what it looks like. `PAINT_MARGIN` is the
   one number every decoration is measured against and `boundingRect` is exactly it,
   **constant whether or not the node is selected**; `shape()` is the card and its resize
-  band, never the bounding rect. `ARCHITECTURE.md`'s *A picked node is lifted, not
+  band, never the bounding rect. `docs/architecture/canvas.md`'s *A picked node is lifted, not
   recoloured* has the reasoning.
 - **A card's size is the step's, stored beside its position; absence is the default
   footprint.** Drag an edge or a corner (`NodeResizeMode`; the band is `GRAB_IN` inside the
@@ -205,14 +205,14 @@ paths:
   handed — nothing measures from `NODE_W` — the title wraps onto as many lines as the card
   has room for, and the bottom line holds the estimate at the right in full ink — a
   wait's how long it holds, `until 21 Oct` or `3 wd` — and nothing in words: every aspect a
-  card wears is a medallion, a badge, a bar or a pill, never a phrase. `ARCHITECTURE.md`'s *A card's size is the step's* has the reasoning.
-  **The one exception is the branch strip** (`NodeAccent.strip`): a card whose work is on a
-  feature branch names it in a `STRIP_H` band across its foot, and **the card is that much
+  card wears is a medallion, a badge, a bar or a pill, never a phrase.
+  `docs/architecture/canvas.md`'s *A card's size is the step's* has the reasoning. **The one
+  exception is the branch strip** (`NodeAccent.strip`): a card whose work is on a feature branch names it in a `STRIP_H` band across its foot, and **the card is that much
   taller** — `positions.footprint(step, strip, body=node_size)` is the one size rule, the
   canvas sizes its cards by it and every arranger is handed it as `size_for` (the editor's
   `strips` seam, the CLI's `strips` on `layout sort`); the arrows, the handle and the marks
-  meet the *body's* middle, and a resize stores the body. `ARCHITECTURE.md`'s *A card on a
-  branch names it* has the reasoning.
+  meet the *body's* middle, and a resize stores the body. `docs/architecture/canvas.md`'s *A card on
+  a branch names it* has the reasoning.
 - **The look is one per-user value, and snapping is the gesture's, never the write's.**
   `canvas/look.py`: the marks, the background under the graph (plain, dots, lines,
   crosses — painted by `ground.py`) and *Snap to Grid* are one `Look`, kept under one key,
@@ -223,14 +223,14 @@ paths:
   stores what it was given, a sort what it computed, and `layout shift` — a drag by a
   distance — snaps that distance as the gesture would. The drawn pitch is
   `pitch_for(zoom)`, a power-of-two multiple of `GRID` kept a readable distance apart on
-  screen, so the ground is always a coarsening of what snaps. `ARCHITECTURE.md`'s *The
+  screen, so the ground is always a coarsening of what snaps. `docs/architecture/canvas.md`'s *The
   ground is a preference; snapping belongs to the gesture* has the reasoning.
 - **Automatic graph layout is never persisted; an explicit sort is.** A node nobody moved is
   placed by dependency depth every time the project opens — storing that would make merely
   opening a tab dirty the project, and every CLI-created step would grow a position file
   behind the user's back. A sort *action* (`canvas.sort_*`, `dplanner layout sort`) is a
   user gesture, so it writes through the undo stack like a drag. Named layouts are a
-  project-level entry under the same `project_editor` id — `ARCHITECTURE.md`'s *An
+  project-level entry under the same `project_editor` id — `docs/architecture/canvas.md`'s *An
   explicit sort persists; the ambient layout never does* has the reasoning.
 - **Wave view derives positions; only Free view saves them.** Whether a project is in Wave
   view is per-user `user_config` (`layouts/verbs.wave_view`), and toggling it writes nothing:
@@ -245,8 +245,9 @@ paths:
   so a link moves only what it changes the wave of, and nobody else swaps places; never add
   a sweep or a centring. Stacks fold through `stack.fold` (N39/N76). The ruler (`layouts/ruler.py`)
   numbers waves as the Order tab does — START, WAVE 2… — and reads each `Wave`'s span (which
-  `layout show` prints too, off the same arrangement) and the cards' muted accents. `ARCHITECTURE.md`'s *Wave view derives positions; only Free view saves
-  them* has the reasoning.
+  `layout show` prints too, off the same arrangement) and the cards' muted accents.
+  `docs/architecture/canvas.md`'s *Wave view derives positions; only Free view saves them* has the
+  reasoning.
 - **There are no regions; a project saved with them opens without them.** Titled rectangles
   behind the graph were retired — annotation the graph knows nothing about goes stale with
   every sort, tidy and move. `positions.DATA_FORMAT` is format 2, whose one migration drops
@@ -255,7 +256,8 @@ paths:
   brings what it carries current first** (`entry_with` runs `migrated()`): an entry adopted
   from another writer since the open has not met the migration pass, and stamping it format
   2 as it stood would keep what the pass drops. `tests/old_canvas.py` is the old project
-  every proof of this opens. `ARCHITECTURE.md`'s *Regions were retired* has the reasoning.
+  every proof of this opens. `docs/architecture/canvas.md`'s *Regions were retired* has the
+  reasoning.
 - **A stack is one tall card to everything that reads positions.** Canvas data over a real
   `requires` chain, never a model object (`canvas/stacks/stack.py`, N3): every member's
   entry says `"stack": "<id>"`, the **first member's seat is the stack's** and the others
@@ -274,7 +276,7 @@ paths:
   member's seat moves its stack; a resize is `resize_command`, and a member below the first
   writes only its size. A paste mints a new stack for a stack copied whole and drops the key
   from part of one. Add a reader of positions through the fold, never beside it — a second
-  copy of the column is one that can split a stack. `ARCHITECTURE.md`'s *A stack is
+  copy of the column is one that can split a stack. `docs/architecture/canvas.md`'s *A stack is
   presentation over a chain* has the reasoning.
 - **A stack's frame is the stack's handle.** `StackItem` (z −2, under the arrows) is the one
   place the column lives on screen: `follow()` lays every member under the first card by
@@ -302,7 +304,7 @@ paths:
   **Make Stack links whatever is picked into one line** — the links' order, else left to
   right — and a mixed pick's right-click offers it flat, since a drag across a line picks
   its arrows too.
-  `ARCHITECTURE.md`'s *A stack's frame is the stack's handle* has the reasoning.
+  `docs/architecture/canvas.md`'s *A stack's frame is the stack's handle* has the reasoning.
 - **Shift-drag restacks one card, a loose card joins by any drag, and the cards make
   way.** A Shift press on any card narrows the pick to it and starts `RestackMode`, and so
   does a plain press on a loose card the press leaves alone in the pick — joining needs no
@@ -331,8 +333,9 @@ paths:
   flashes; a refused command re-syncs. The card's arrows are not drawn while it is in a
   stack or joining one (`lift_links`). The frame says *Shift-drag to reorder* only while the
   pointer is over its rect (`hint_at`, from `IdleMode.mouse_move`; any other mode or the
-  pointer leaving the view quiets it). This is DESIGN.md's one slide. `ARCHITECTURE.md`'s
-  *Shift-drag restacks one card, and the cards make way* has the reasoning.
+  pointer leaving the view quiets it). This is DESIGN.md's one slide.
+  `docs/architecture/canvas.md`'s *Shift-drag restacks one card, and the cards make way* has the
+  reasoning.
 - **Every stack edit is one command from `stacks/edits.py`, and the stack rule is the
   domain's to ask.** New, make, add, move, take out and dissolve each build one composite
   the canvas and `dplanner stack …` push alike; `bridged_removal` is what Delete, Cut,
@@ -353,8 +356,8 @@ paths:
   stack is `stack.link_rule`, asked through `Library.link_refusal` (`graph-model.md`):
   links arrive at the first member and leave from the last. What another writer brought in
   anyway is `stray_links`, named beside the gaps by `stack list` and lint's `stack.broken`,
-  never repaired. `ARCHITECTURE.md`'s *One in, one out is a rule the domain asks* has the
-  reasoning.
+  never repaired. `docs/architecture/canvas.md`'s *One in, one out is a rule the domain asks* has
+  the reasoning.
 - **The canvas's spatial gestures exist as verbs, and geometry is derived on every read.**
   `dplanner layout show` (`--map`) measures the graph from the stored positions and
   `positions.node_size` through `canvas/geometry.py` and stores nothing — the waves,
@@ -372,8 +375,8 @@ paths:
   reads the cards into lanes on *edges* with an inclusive half-pitch join, gives an overlap
   a sub-row, measures a hole against the reach and rounds it, and closes one past `--gap`
   (`DEFAULT_AIR`, 2) to one gap. None of the four reshapes the graph, so none declares
-  `edits_graph`. `ARCHITECTURE.md`'s *An explicit sort persists; the ambient layout never
-  does* has the reasoning.
+  `edits_graph`. `docs/architecture/canvas.md`'s *An explicit sort persists; the ambient layout
+  never does* has the reasoning.
 - **A live agent run is a chip and a marching ring.** The chip on the bottom edge names the
   state; the dashed ring round the body moves, which is what says "somebody is on this one
   right now". The ring is derived from the chip (`NodeAccent.chip_text`), so one field says
@@ -391,7 +394,7 @@ paths:
   review*. `paint_pulse` breathes bands of the **key tone** round the body, painted before
   it, reaching `PULSE_REACH` inside `PAINT_MARGIN`, over `PULSE_PERIOD` of the clock's phase
   (3.2 s, a divisor of its wrap). DESIGN.md's *Focus and motion* says why it may move;
-  `ARCHITECTURE.md`'s *A card pulses where a person moves next* has the reasoning.
+  `docs/architecture/canvas.md`'s *A card pulses where a person moves next* has the reasoning.
 - **An arrow says more than its kind only through an `EdgeAccent`, translated by the root.**
   `requires` is solid with a head, `relates` dashed without one; beyond that the canvas
   reads `CanvasDeps.edge_accents(project_id)` once per sync, keyed (waiter, kind,
@@ -414,8 +417,8 @@ paths:
   arrow of work on a feature branch not yet landed, in a colour dealt from
   `theme/palettes.LANES` in the order the branches were cut, and takes it away once the
   landing is done — colour means *not on main yet*. Every look stays inside its margin and
-  keeps the lit, picked, hovered and dimmed rules. `ARCHITECTURE.md`'s *An auto-progress link
-  is an aspect on the step that waits* and *An arrow into a review wears its talk bubble*
+  keeps the lit, picked, hovered and dimmed rules. `docs/architecture/graph-model.md`'s *An
+  auto-progress link is an aspect on the step that waits* and *An arrow into a review wears its talk bubble*
   have the reasoning.
 - **A step placed by pointing at a spot earns a stored position.** `StepVerbs.born()` is
   the one place a step is born on the canvas — New and the double-click on empty space
@@ -454,5 +457,5 @@ paths:
   read into *that* feature, and citing them again is a claim only a person can make).
   `dplanner step duplicate` is the same function (`canvas/cli.py`'s `duplicator`, handed to
   `modules/steps/cli.py` by the root).
-  `ARCHITECTURE.md`'s *Edit verbs belong to the surface whose things they act on* and *Copy
-  and paste are a clone through the same command* have the reasoning.
+  `docs/architecture/shell-ui.md`'s *Edit verbs belong to the surface whose things they act on* and
+  *Copy and paste are a clone through the same command* have the reasoning.

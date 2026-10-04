@@ -1,6 +1,7 @@
 # Canvas — the graph editor's modes, gestures, cards and marks
 
-The reasoning behind `.claude/rules/canvas.md`: the rules there are the short, imperative form, and this file is why. `ARCHITECTURE.md` is the index of every area.
+The reasoning behind `.claude/rules/canvas.md`: the rules there are the short, imperative form,
+and this file is why. `ARCHITECTURE.md` is the index of every area.
 
 ## The Problems list lives in the graph, not in the window
 
@@ -807,13 +808,10 @@ stored value does not mention the *class* default rather than False, which is `F
 absence rule and the only reason this change reaches anybody who already has a look on
 disk. A stored `false` still wins — somebody who switched a mark off keeps it off.
 
-There was a third mark, and it is gone. The orphan's ring was the refusal red at full
-strength round a node nothing touched: the socket discs say *this is where the graph ends*,
-which is often correct, while a ring said *nothing touches this at all*, which almost never
-is. What retired it is the squiggle below — `graph.orphan` is a lint check like any other,
-so the general mark covers the case the ring was invented for, and covers it better,
-because the Problems panel then says *which* thing is wrong. A stored `orphans` is ignored
-rather than refused, which is `from_json`'s tolerance doing its job.
+An orphan has no mark of its own: `graph.orphan` is a lint check like any other, so the
+squiggle below covers it, and the Problems panel then says *which* thing is wrong. A stored
+`orphans` is ignored rather than refused, which is `from_json`'s tolerance doing its job.
+(*decisions.md* has what it replaced.)
 
 ## A card pulses where a person moves next
 
@@ -979,14 +977,11 @@ answer at a glance: *who does this one?* Both are painted in the **key block**: 
 inside the card's left edge, clipped to the rounded body, with one glyph for who works the
 step over the key set level and bold, the pair centred.
 
-It used to be a 26 px *spine*, the key rotated a quarter turn up it the way a book's spine
-reads — vertical because a level label wide enough to read would take a line the title
-needs. The spec asked for the primary icon "in the same place as the step id", and an icon
-cannot be read sideways the way a word can, so the strip widened to hold both level: 56 px
-is the widest key a plan realistically deals (`M1234`, 37 px bold at the chrome font's nine
-points) with air either side. It costs the title thirty pixels of width and no height; the
-minimum card (`MIN_NODE_W`, 176 from 144) and the coverage lanes' minimum (`LANE_MIN_W`, 198
-from 168) grew by exactly that, so the narrowest title kept the room it had.
+The primary icon sits "in the same place as the step id", and an icon cannot be read
+sideways the way a word can, so the strip holds both level: 56 px is the widest key a plan
+realistically deals (`M1234`, 37 px bold at the chrome font's nine points) with air either
+side. The minimum card (`MIN_NODE_W`, 176) and the coverage lanes' minimum (`LANE_MIN_W`,
+198) carry that width, so the narrowest title keeps its room.
 
 **Three glyphs and no more**: sparkles for an agent step, a person otherwise, and a clock
 for a wait. The person is on milestones, features and checks too — a person closes those,
@@ -1030,9 +1025,9 @@ through QtSvg, which honours none of the three.
 
 ## A picked node is lifted, not recoloured
 
-Selection used to be a one-pixel-wider border in the accent, and on a graph of twenty nodes
-it was genuinely hard to see which one you had. The replacement is four things that each say
-"this one" in a different register, and one thing it deliberately is **not**.
+A one-pixel-wider border in the accent is not enough: on a graph of twenty nodes it is
+genuinely hard to see which one you have. Selection is four things that each say "this one"
+in a different register, and one thing it deliberately is **not**.
 
 The border thickens and takes the accent (2.5 px). The fill **gains**: whatever alpha the
 node's own fill had, half again. The node draws two pixels **up**, over a soft shadow left at
@@ -1041,13 +1036,12 @@ the item claims a Z of its own while selected, since nodes otherwise share one a
 stacking order is whichever `sync` happened to add last, which would let a neighbour crop the
 shadow.
 
-What it is not is a colour of its own. A wash of the accent over the body was the first
-attempt and it was wrong for a reason worth keeping: a selected milestone stopped being
-purple, a selected feature stopped being teal, and a selected done step stopped looking done.
-The kinds' body colours are identity, and identity should not be something the pointer can
-take away. A gain on the node's own fill preserves every one of them, and reads on light and
-dark alike — the fill is ink over the canvas, so *more* of it means more contrast in either
-direction.
+What it is not is a colour of its own. A wash of the accent over the body is wrong for a
+reason worth keeping: a selected milestone would stop being purple, a selected feature would
+stop being teal, and a selected done step would stop looking done. The kinds' body colours are
+identity, and identity should not be something the pointer can take away. A gain on the node's
+own fill preserves every one of them, and reads on light and dark alike — the fill is ink over
+the canvas, so *more* of it means more contrast in either direction.
 
 **Every card rests on a shadow, and the fill is opaque.** The first cut painted the fill
 translucent (`FILL_ALPHA` ink over the canvas) and clipped the shadow to the ground around
