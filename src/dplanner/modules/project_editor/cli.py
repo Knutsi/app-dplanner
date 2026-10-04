@@ -82,6 +82,7 @@ from dplanner.modules.project_editor.stacks import (
     stack_of,
     stray_links,
 )
+from dplanner.planning import estimate
 
 # The last is Wave view's arrangement, written: the canvas's *Keep This Arrangement*.
 SORT_NAMES = ("flow", "down", "spine", "timeline", "radial", "waves")
@@ -97,7 +98,6 @@ def _no_key(_step: Step) -> str:
 
 
 def commands(
-    days_for: Callable[[Step], float | None],
     *,
     paste_policies: Sequence[PastePolicy] = (),
     file_modules: Sequence[str] = (),
@@ -166,9 +166,9 @@ def commands(
             "flow": lambda: layered_flow(context.library, project, sized),
             "down": lambda: layered_down(context.library, project, sized),
             "spine": lambda: spine(context.library, project, sized),
-            "timeline": lambda: timeline(context.library, project, sized, days_for=days_for),
+            "timeline": lambda: timeline(context.library, project, sized, days_for=estimate.read),
             "radial": lambda: radial(context.library, project, sized, center=center),
-            "waves": lambda: waves(context.library, project, sized, days_for=days_for),
+            "waves": lambda: waves(context.library, project, sized, days_for=estimate.read),
         }[args.algorithm]()
         moves: list[Command] = position_commands(project, placed, label=f"Sort {args.algorithm}")
         for command in moves:
@@ -181,7 +181,7 @@ def commands(
 
     def _show(context: CliContext, args: Namespace) -> int:
         project = find_project(context.library, args.project)
-        geometry = measure(context.library, project, key_of=key_of, days_for=days_for)
+        geometry = measure(context.library, project, key_of=key_of, days_for=estimate.read)
         data: dict[str, Any] = {"project": project.id, **as_json(geometry)}
         if args.map:
             picture = map_text(geometry)

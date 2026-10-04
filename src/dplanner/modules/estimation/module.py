@@ -30,7 +30,6 @@ from dplanner.framework.debounce import DebounceService
 from dplanner.framework.inspector import InspectorSection, InspectorSectionRegistry
 from dplanner.framework.tabs import TabHost
 from dplanner.framework.undo import UndoService
-from dplanner.modules.estimation.aspect import DATA_FORMAT, MODULE_ID, SPEC, enabled, write
 from dplanner.modules.estimation.bulk import (
     ESTIMATE_KIND,
     FILTER_UNESTIMATED,
@@ -38,6 +37,7 @@ from dplanner.modules.estimation.bulk import (
 )
 from dplanner.modules.estimation.quick_input import FREE_LABEL, QUICK_DAYS, push_estimates
 from dplanner.modules.estimation.section import EstimateSection
+from dplanner.planning.estimate import DATA_FORMAT, MODULE_ID, SPEC, enabled, write
 from dplanner.theme.icons import gauge_icon
 
 

@@ -86,7 +86,7 @@ paths:
 - **A branch stretch is a cut and a landing, and what is on it is derived.**
   `modules/branches/` holds two aspects: `branch_cut` (`{"branch": …}`) on a step nobody
   works — no status of its own, done once what it waits on is (a wait of no days, composed
-  in the root's `_status_in`, never through the schedule's `wait_of`) — and `branch_land`
+  in `schedule.status_on`, never through the schedule's `wait_of`) — and `branch_land`
   (`{"cut": id}`) on the agent step that merges it back, counted only while that cut is
   upstream (auto-progress's rule: a stored id read through the graph). **Membership is
   never stored**: `domain/branches.py` reads it forwards — everything after the cut, until

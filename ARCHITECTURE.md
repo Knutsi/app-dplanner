@@ -4044,16 +4044,15 @@ instead of counting hops — so it takes `ordering.placed()`'s answer and lays t
 end from a start date. The order table, `dplanner schedule show` and its `--json` are three
 renderings of one function, and none of them can date a step differently from another.
 
-**It is handed a function, not a schema.** An estimate is a module's `module_data`, and the
-domain must not learn what key it lives under — so `schedule()` asks for `days_for(step)` and
-the composition root closes over the estimation module's reader. That keeps the two
-directions of the rule intact at once: whoever owns a piece of data owns its shape, and
-whoever derives from it needs one implementation rather than one per surface. It is also why
-the derivation works for a build with no estimation module at all: the honest empty answer is
-the same function, asked a question with no answer.
+**It reads the estimate where it lives.** The estimate began as a module's `module_data`, and
+`schedule()` was handed a `days_for(step)` so the domain never learned its key. Since the
+estimate joined the planning tier (`planning/estimate.py`, *Planning owns status*) every walk
+reads it by default, and `days_for` survives as a keyword for the callers that mean other
+days — calendar days stretched by a focus, the simulator's world, a test's fakes. Whoever
+derives from it still needs one implementation rather than one per surface.
 
 The start date itself is the smallest case of the same rule. **A project nobody has dated
-starts today**, and that answer is computed (`estimation.schedule.start_of`) rather than
+starts today**, and that answer is computed (`planning/estimate.py`'s `start_of`) rather than
 written when the tab opens. Writing it would dirty a project for the act of looking at it,
 and it would be wrong by tomorrow — so the only date on disk is one a person chose, and every
 other plan answers "if you start now". Which also deleted a state: there is no "no start
@@ -4089,7 +4088,7 @@ aspect it costs no project-format migration, absence encodes `pending`, both sur
 the verb from one declaration (`dplanner status set '<step>' ready-for-review` is how an
 agent reports back), and the derivation that wants it — the status-aware frontier the Step
 statuses tab reads —
-is handed a `status_for(step)` function, exactly as `schedule()` is handed `days_for`.
+is handed a `status_for(step)` function, because a wait's status depends on the day.
 
 The one enum also shows where an aspect's GUI does not have to be a tab: status registers a
 *Status* submenu of checkable Step verbs instead, and the canvas right-click, the order
@@ -4529,12 +4528,12 @@ agent's claim (*Syncing an external fact* is the same rule from the other side).
 **Time reads review and merge as work in flight, and dates it from when it started.** Not
 landed — the percent, the Step statuses tab and `requires` all say so — so the Time tab, the
 recorder, the matrix, the report and the simulator read both words as *in progress*, through
-one fold in the root's `_time_readers()`, which every time surface reads through. The fold
-covers the day as well as the word. Moving a step to review stamps its `since` today, and the
+one fold, `planning/status.py`'s `in_flight` and `work_since`, which every time surface
+reads through. The fold covers the day as well as the word. Moving a step to review stamps its `since` today, and the
 model credits in-flight work from `since`. Read raw, the day an agent finished would re-cost
 its step at the whole estimate from tomorrow and call the plan broken — a forecast that
-jumps late exactly when work lands. So `since_for` answers `started` for the two words, and
-`Readers.changed_on` keeps the raw day for the one question that wants it: *did a status
+jumps late exactly when work lands. So `work_since` answers `started` for the two words, and
+`status.read_since` keeps the raw day for the one question that wants it: *did a status
 change today?*, which the Work page draws a day solid by. The simulator plays only the
 prototype's four words, so a folded reading never reaches a real plan (a test pins both).
 
@@ -4876,8 +4875,8 @@ plan in an exploration the developer kept:
 **Two aspects on steps, not two node kinds.** *Status is an aspect, and step types are
 emergent* rules out a type field, and the bracket did not need one: a cut is a step
 carrying `branch_cut` (`{"branch": …}`), key `B`, nobody's work — no worker, no status of
-its own, done once what it waits on is, which is a wait of no days composed in the root's
-`_status_in` (never through the schedule's `wait_of`, or reports would name every cut a
+its own, done once what it waits on is, which is a wait of no days composed in
+`schedule.status_on` (never through the schedule's `wait_of`, or reports would name every cut a
 wait) — and a landing is an agent step carrying `branch_land` (`{"cut": id}`). `planning.kinds`'s
 `works_nobody` became the one predicate a wait and a cut share, and every module that
 refuses such a step a status, an agent, a review or a test words its refusal from the name
@@ -5986,7 +5985,7 @@ looks at `Unknown` itself, to name the word.
 
 **Three meanings of done stay three functions.** The stored status (`status.stored`), the
 status a card wears (the root's `_card_status`: pending for a step nobody works) and the
-status on a day (the root's `_status_in`, waits read in) answer different questions, and a
+status on a day (`schedule.status_on`, waits read in) answer different questions, and a
 reader picks one by name rather than by remembering which helper folds what.
 
 **Transitions are not policed.** The graph gates *launching*, not *recording*: a step set
@@ -5994,6 +5993,22 @@ done out of order is honoured (*Progression is the status-aware frontier*). The 
 state-machine sketch would have broken that, so `planning/` owns the vocabulary and the
 readiness rules and stops there; who may set what is a workflow's question, asked by the
 verb that sets it.
+
+**The estimate joined the tier, and the walks read it rather than being handed it.** The
+estimate (`planning/estimate.py`, with the project's start date, under the unchanged id
+`estimation`) is interpreted by the schedule, the critical path and progress alike, so it
+passes the admission test; `modules/estimation/` keeps the editors and the verbs. Once it
+was here, the `days_for` threaded through the root, the order tab, the layout sorts and the
+time module carried nothing but the one reader, and went: the walks default to
+`estimate.read`, and a function parameter stays only where a caller means other days —
+calendar days stretched by a focus, the simulator's world, a folded stack's blocks. The time
+module's view of status (review and merge as work in flight, `status.in_flight`) moved with
+it, and once the wait joined the tier (*Planning owns what a step is*) `wait_of` went the same
+way, so `_time_readers` hands over only agent-ness, the milestone label and the key. The collector vocabulary
+(`planning/scope.py`) moved up too, while the walk it reads, `cone()`, stays in
+`domain/ordering.py` beside `upstream()` — the graph may not import the tier. Date words
+(`planning/dates.py`) live in the tier because its phrases print a day; the chart axis is
+drawing and lives in `cli/report/axis.py`.
 
 ### Planning owns what a step is
 
@@ -6152,9 +6167,9 @@ The rules worth writing down, because each was a decision:
   steps before the one that frees none. A done dependent is walked through but not counted:
   its own dependents still wait through it.
 
-The seam is the one the schedule made: `status_for(step)` and `days_for(step)` are handed
-in by the composition root from the aspects' Qt-free readers, so the domain never learns
-what either is stored as, and the derivation is tested with a dict-backed function. Nothing
+`status_for(step)` is handed in by the composition root — a wait's status depends on the
+day, and the wait is still a module's aspect — and the estimate is read from the planning
+tier; the derivation is tested with dict-backed functions in their place. Nothing
 is persisted, for the ordering's reason — `dplanner status set` changes the answer with no
 window running to notice. The tab (`modules/progression/`), `dplanner progression show` and
 `--json` are three readers of the one function, so no surface can recommend a launch
@@ -6498,8 +6513,8 @@ the day:
 - **A step, not a node kind.** *Status is an aspect, and step types are emergent* rules out
   a type field, and a wait needs none: as a step it works unchanged in cones, ordering,
   cycles, copy and paste and numbering, and it is `step_wait`'s aspect — `{"until": …}` or
-  `{"days": n}` — that the root hands the time module as `wait_of`, the domain's `Wait`,
-  so the domain never learns what marks one.
+  `{"days": n}` — read as `planning/wait.py`'s `Wait` by every walk in the schedule, with
+  `wait_of` left as a keyword for the simulator's world.
 - **It takes no worker and is no work.** `parallel_finish` releases a ready wait straight
   into the running set with the moment it is over (`waits`), and frees no worker when it
   lands; the walk's cost of an `until` wait is nothing, since only the calendar knows when
@@ -7368,7 +7383,7 @@ had; a feature is the one people actually name and demo.
 
 ### The cone stops at the next collector
 
-What separates the three is a single predicate. `domain/scope.py`'s `cone(origin, stops_at)`
+What separates the three is a single predicate. `domain/ordering.py`'s `cone(origin, stops_at)`
 walks `requires` backwards and refuses to pass **through** a step `stops_at` claims — it
 records it as a *boundary* and stops there:
 
@@ -7453,7 +7468,7 @@ kinds that *own* work — a milestone and a feature — stop at it. Four decisio
 - **A boundary is not always a hand-off.** Stopping at the start makes it a boundary of every
   feature right after it, and a boundary is what `scope show` names as *after* and what makes
   the Covers tab offer a second reading. The start is neither — it is where the graph ends, not
-  an earlier collector that took something — so both ask `domain/scope.py`'s `handoffs()`,
+  an earlier collector that took something — so both ask `planning/scope.py`'s `handoffs()`,
   the boundaries some kind carries, and `scope.ungathered` skips a step the feature kind stops
   at without carrying (no link could hand it to one). Nothing new in `ScopeKind`: a third
   field would have been read by exactly those two surfaces.
@@ -7517,7 +7532,7 @@ which is the trade that section already refuses for prose.
 
 The first attempt had one: a *Compose Docs* step you created, linked into the graph, and
 ran. It worked, and it was wrong. A feature and a milestone **already are** the collectors
-the graph defines — `domain/scope.py` has answered "what is behind this, up to the next one"
+the graph defines — `cone()` and `planning/scope.py` have answered "what is behind this, up to the next one"
 since checks arrived — so a second kind of collector, existing only to collect, was a node
 somebody had to remember to create for a question the graph could already answer. Deleting
 it removed a `StepKind`, a Type toggle, a medallion glyph, a mnemonic table the collision

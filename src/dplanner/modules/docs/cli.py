@@ -35,7 +35,6 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Library, Node, Project, Step, TextEdit
-from dplanner.domain.scope import ScopeKind
 from dplanner.domain.shelf import turn_off
 from dplanner.domain.store import FilesFor
 from dplanner.modules.docs.aspect import (
@@ -55,6 +54,7 @@ from dplanner.modules.docs.collect import (
     sources_for,
     state_of,
 )
+from dplanner.planning.scope import ScopeKind
 
 # What each state means for somebody reading `docs status`, and the verb that answers it.
 _ADVICE = {

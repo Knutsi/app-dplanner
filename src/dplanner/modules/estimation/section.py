@@ -15,9 +15,9 @@ from PySide6.QtWidgets import QVBoxLayout
 from dplanner.domain.model import Library, Step
 from dplanner.framework.module_data_section import FIELD_GAP, ModuleDataSection
 from dplanner.framework.undo import UndoService
-from dplanner.modules.estimation.aspect import MODULE_ID, read, read_history, write
 from dplanner.modules.estimation.quick_input import EstimateInput
-from dplanner.planning.schedule import format_date
+from dplanner.planning.dates import format_date
+from dplanner.planning.estimate import MODULE_ID, read, read_history, write
 
 
 class EstimateSection(ModuleDataSection):

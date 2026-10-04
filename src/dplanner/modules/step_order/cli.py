@@ -34,13 +34,12 @@ def wave_label(index: int) -> str:
 
 def commands(
     *,
-    days_for: Callable[[Step], float | None],
     counts_as_work: Callable[[Step], bool],
 ) -> list[CliCommand]:
     """``counts_as_work`` says a wait is no work — no part of the volume."""
 
     def show(context: CliContext, args: Namespace) -> int:
-        return _show(context, args, days_for, counts_as_work)
+        return _show(context, args, counts_as_work)
 
     return [
         CliCommand(
@@ -69,7 +68,6 @@ def _configure(parser: ArgumentParser) -> None:
 def _show(
     context: CliContext,
     args: Namespace,
-    days_for: Callable[[Step], float | None],
     counts_as_work: Callable[[Step], bool],
 ) -> int:
     library = context.library
@@ -90,9 +88,7 @@ def _show(
             for place in found
         ],
     }
-    days, _steps, unestimated = said = volume(
-        [place.step for place in found], days_for, counts_as_work
-    )
+    days, _steps, unestimated = said = volume([place.step for place in found], counts_as_work)
     data |= {"days": days, "unestimated": unestimated}
     table = _table(found)
     context.report(data, f"{table}\n\n{volume_words(*said)}" if table else "No steps yet.")

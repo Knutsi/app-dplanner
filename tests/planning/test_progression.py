@@ -387,7 +387,7 @@ def test_estimated_progress_counts_review_and_merge_as_not_done():
     found = progression(
         library, project, status_of({"A": "done", "B": "ready-for-review", "C": "ready-to-merge"})
     )
-    assert estimated_progress(found, lambda _step: 1.0) == (1.0, 3.0)
+    assert estimated_progress(found, days_for=lambda _step: 1.0) == (1.0, 3.0)
 
 
 def test_percent_counts_done_against_everything():
@@ -410,13 +410,13 @@ def test_estimated_progress_weighs_the_done_work():
     library, project = build("A", "B", "C")
     found = progression(library, project, status_of({"A": "done"}))
     days = {"A": 2.0, "B": 3.0}  # C is unestimated: it contributes to neither number.
-    assert estimated_progress(found, lambda step: days.get(step.title)) == (2.0, 5.0)
+    assert estimated_progress(found, days_for=lambda step: days.get(step.title)) == (2.0, 5.0)
 
 
 def test_estimated_progress_is_none_when_nothing_is_sized():
     library, project = build("A", "B")
     found = progression(library, project, status_of({}))
-    assert estimated_progress(found, lambda _step: None) is None
+    assert estimated_progress(found, days_for=lambda _step: None) is None
 
 
 # -- waits ------------------------------------------------------------------------------------
@@ -446,7 +446,7 @@ def held_by_a_wait(wait, statuses, since=None, today=MONDAY):
 
 
 def test_a_wait_is_no_work_and_holds_what_follows_it_until_its_day():
-    from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import Wait
 
     wednesday = MONDAY + timedelta(days=2)
     found, wait = held_by_a_wait(Wait(until=wednesday), {"A": "done"}, today=MONDAY)
@@ -460,7 +460,7 @@ def test_a_wait_is_no_work_and_holds_what_follows_it_until_its_day():
 
 
 def test_a_wait_holds_while_what_it_waits_on_is_not_done():
-    from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import Wait
 
     found, wait = held_by_a_wait(Wait(until=MONDAY), {}, today=MONDAY + timedelta(days=7))
     assert wait == Waiting() and titles(found.ready) == ["A"]
@@ -469,7 +469,7 @@ def test_a_wait_holds_while_what_it_waits_on_is_not_done():
 
 def test_a_days_wait_is_over_once_its_days_are_waited():
     """Three working days from A's Monday, middle to middle: over on Thursday."""
-    from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import Wait
 
     done = {"A": "done"}
     since = {"A": MONDAY}

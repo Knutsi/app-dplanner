@@ -76,14 +76,11 @@ from dplanner.domain.commands import (
     remove_steps_command,
 )
 from dplanner.domain.model import Library, Project, Step, TextEdit
-from dplanner.domain.ordering import depths, placed
-from dplanner.domain.scope import cone
+from dplanner.domain.ordering import cone, depths, placed
 from dplanner.domain.store import LibraryStore
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
 from dplanner.framework.session import AppSession
-from dplanner.modules.estimation.aspect import read as estimated_days
-from dplanner.modules.estimation.aspect import write as estimate
-from dplanner.modules.estimation.schedule import project_schedule, start_of
+from dplanner.modules.estimation.schedule import project_schedule
 from dplanner.modules.project_editor.clipboard import clip, paste
 from dplanner.modules.project_editor.layout_verbs import wave_view
 from dplanner.modules.project_editor.look import BACKGROUNDS, Look
@@ -98,6 +95,9 @@ from dplanner.modules.time_estimates.module import TimeEstimatesModule
 from dplanner.modules.time_estimates.schedule import read_efficiency, read_start, time_report
 from dplanner.planning import feature as feature_aspect
 from dplanner.planning.agent import enabled as is_agent
+from dplanner.planning.estimate import read as estimated_days
+from dplanner.planning.estimate import start_of
+from dplanner.planning.estimate import write as estimate
 from dplanner.planning.feature import FeatureSource
 from dplanner.planning.feature import write as feature_write
 from dplanner.planning.milestone import read as milestone_label
@@ -755,7 +755,6 @@ def _derive(h: Harness) -> dict[str, float]:
         "time_report": lambda: time_report(
             library,
             project,
-            estimated_days,
             is_agent,
             start=start_of(project),
             efficiency=read_efficiency(project),

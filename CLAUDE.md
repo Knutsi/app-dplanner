@@ -428,9 +428,9 @@ reasoning.
   catches you out: `dplanner step link` changes a graph with no window running to notice.
   Availability comes from exposing the function everywhere — the view, `dplanner order show`,
   `--json` — not from writing the answer down.
-- **A derivation is handed a function, never a schema.** `planning/schedule.py` asks for
-  `days_for(step)` rather than reading `module_data["estimation"]`, so the module that owns
-  the estimate still owns its shape — the seam a module's `Deps` uses, one level down.
+- **Planning reads its own facts; a function is handed in only where it varies.**
+  `planning/schedule.py` reads `planning/estimate.py` by default — `days_for` stays a keyword
+  for stretched days and the simulator — and an aspect a module still owns is handed in.
 
 ## Deliberate divergences from the template
 

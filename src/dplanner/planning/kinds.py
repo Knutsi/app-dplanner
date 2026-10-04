@@ -17,13 +17,13 @@ from enum import Enum
 from typing import Final
 
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.scope import ScopeKind, gatherers
 from dplanner.planning.agent import enabled as is_agent
 from dplanner.planning.branches import A_CUT, is_cut
 from dplanner.planning.check import read as is_check
 from dplanner.planning.feature import is_feature
 from dplanner.planning.milestone import is_milestone
 from dplanner.planning.review import is_review
+from dplanner.planning.scope import ScopeKind, gatherers
 from dplanner.planning.start import read as is_start
 from dplanner.planning.wait import is_wait
 

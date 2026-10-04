@@ -144,13 +144,13 @@ paths:
   different source* have the reasoning.
 - **Renaming a module is a `Takeover`, not a migration.** The on-disk id is the contract
   between the old module and the new one, so the successor's package carries the retired
-  id and a converter and the data moves at open — see `modules/estimation/aspect.py` and
+  id and a converter and the data moves at open — see `planning/estimate.py` and
   `FORMAT.md`'s *Retiring a module*. No project-format change, and no module importing
   another.
 - **A module that writes a number owes it a `float`.** An `int` writes as `5` where a
   reloaded float writes as `5.0`, making a file's bytes depend on whether the project had
   been reopened. `module_data` is opaque to the model, so the coercion belongs in the
-  aspect's `write()` — see `modules/estimation/aspect.py`.
+  aspect's `write()` — see `planning/estimate.py`.
 - **A kind is what a node *is*; a facet is what it carries.** Milestone, Feature, Check and
   Agent Step are kinds — a node exists in order to be one, and wears a body colour for it:
   purple a milestone, **teal a feature**, green a done step (`BODY_TONES` in

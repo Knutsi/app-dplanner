@@ -14,8 +14,8 @@ from dplanner.domain.model import Step
 from dplanner.modules.project_editor.renderers import NodeAccent
 from dplanner.modules.step_agent_run import aspect as agent_run
 from dplanner.planning import agent, check, feature, milestone, status, wait
-from dplanner.planning.schedule import Wait
 from dplanner.planning.status import Status
+from dplanner.planning.wait import Wait
 
 
 @pytest.fixture

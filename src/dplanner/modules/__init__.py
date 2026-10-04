@@ -52,7 +52,6 @@ if TYPE_CHECKING:
     from dplanner.domain.expenditure import Rate, Spent
     from dplanner.domain.locations import Location, LocationRole, ManagedFor
     from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
-    from dplanner.domain.ordering import Placed
     from dplanner.domain.repositories import RepositoryFacts
     from dplanner.domain.store import FilesFor, LibraryStore
     from dplanner.domain.workflow import Actor, EndClaim, PlanView
@@ -69,7 +68,6 @@ if TYPE_CHECKING:
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
     from dplanner.planning.branches import BranchPlan
-    from dplanner.planning.schedule import Scheduled
     from dplanner.planning.status import Reading, Status, Unknown
     from dplanner.theme.providers import ThemeProvider
 
@@ -138,11 +136,7 @@ def default_modules(
     from dplanner.modules.debug.module import DebugDeps, DebugModule
     from dplanner.modules.dictation.module import DictationDeps, DictationModule
     from dplanner.modules.docs.module import DocsCompiledModule, DocsDeps, DocsModule
-    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
-    from dplanner.modules.estimation.aspect import read as estimated_days
-    from dplanner.modules.estimation.aspect import write as estimate_write
     from dplanner.modules.estimation.module import EstimationDeps, EstimationModule
-    from dplanner.modules.estimation.schedule import start_of, write_start
     from dplanner.modules.feature.module import FeatureDeps, FeatureModule
     from dplanner.modules.github.aspect import PR_CLOSED, PR_MERGED, PR_OPEN, pr_label
     from dplanner.modules.github.aspect import read as github_read
@@ -245,6 +239,10 @@ def default_modules(
         separate_instruction as agent_separate,
     )
     from dplanner.planning.agent import write_state as agent_write_state
+    from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+    from dplanner.planning.estimate import read as estimated_days
+    from dplanner.planning.estimate import write as estimate_write
+    from dplanner.planning.estimate import write_start
     from dplanner.planning.feature import MODULE_ID as FEATURE_ID
     from dplanner.planning.feature import is_feature
     from dplanner.planning.feature import read as feature_read
@@ -259,7 +257,7 @@ def default_modules(
     )
     from dplanner.planning.milestone import is_milestone
     from dplanner.planning.milestone import read as milestone_read
-    from dplanner.planning.schedule import Wait, format_days, schedule
+    from dplanner.planning.schedule import format_days
     from dplanner.planning.status import (
         Status,
         is_done,
@@ -269,6 +267,7 @@ def default_modules(
         stored,
         word,
     )
+    from dplanner.planning.wait import Wait
     from dplanner.planning.wait import read as wait_read
     from dplanner.planning.wait import stat as wait_stat
     from dplanner.theme.icons import (
@@ -764,14 +763,6 @@ def default_modules(
             strip_tone=strip[1],
         )
 
-    def step_schedule(project_id: str, order: "Sequence[Placed]") -> "list[Scheduled]":
-        """The order carrying days and dates: the domain's walk, over one module's numbers.
-
-        The domain never learns where an estimate is stored — it is handed a function that
-        answers for a step — and the order view never learns that estimates exist.
-        """
-        return schedule(order, estimated_days, start_of(library.project(project_id)))
-
     def branch_seats(step_ids: "Sequence[str]", cut: "Step", land: "Step") -> "list[Command]":
         """Where Put on a Branch's two new cards stand: the cut a column left of the picked
         card furthest left, the landing a column right of the one furthest right — when those
@@ -1007,8 +998,6 @@ def default_modules(
             strips=lambda project_id: frozenset(
                 _strips(branches.reading_of(library.project(project_id)))
             ),
-            # The timeline sort reads a step's length through this seam; estimation owns it.
-            days_for=estimated_days,
             # What stands beside the canvas: what is wrong with this plan, where it is
             # fixed. The editor never learns whose widget it is — only that it may carry
             # a reading for the button that opens it.
@@ -1219,12 +1208,11 @@ def default_modules(
             tabs=services.tabs,
             clock=clock,
             day_over=day_over,
-            # Estimates, agent-ness, statuses and milestones through the owners' Qt-free
-            # readers — the tab never learns what any of them is stored as.
+            # Agent-ness, waits and milestones through the owners' Qt-free readers; the
+            # estimate and the status are planning facts the tab reads itself.
             readers=_time_readers(),
-            # Clicking the calendar re-dates the plan: one undoable write of the
-            # estimation module's own entry, composed here so neither module imports
-            # the other.
+            # Clicking the calendar re-dates the plan: one undoable write of the project's
+            # start (``planning/estimate.py``), pushed here on the window's undo stack.
             set_start=lambda project_id, when: undo.push(
                 SetModuleDataCommand(
                     project_id, ESTIMATION_ID, write_start(when), label="Set Start Date"
@@ -1361,7 +1349,6 @@ def default_modules(
             step_aspects=lambda step_id: step_aspects(step_id, skip={ESTIMATION_ID}),
             # Days and dates, computed by the domain from what the estimation module
             # stores. Neither module knows the other's name.
-            step_schedule=step_schedule,
             # A milestone row wears a rule and a tint; the name itself stays in the
             # trailing aspects column, which is why the milestone is not skipped here.
             milestone_label=lambda step_id: milestone_read(library.step(step_id)),
@@ -1382,7 +1369,6 @@ def default_modules(
                 store,
                 library,
                 project_id,
-                estimated_days,
                 lambda step: _card_status(step) is Status.DONE,
             ),
             ledger_stamp=lambda project_id: _ledger_stamp(store, project_id),
@@ -2311,13 +2297,13 @@ def _branch_births(project: "Project", branch: str) -> "tuple[Step, Step]":
     agent step of a quarter day, briefed by the stretch it closes rather than by a
     description of its own."""
     from dplanner.domain.model import Step
-    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
-    from dplanner.modules.estimation.aspect import write as estimate_write
     from dplanner.modules.step_description.aspect import MODULE_ID as DESCRIPTION_ID
     from dplanner.modules.step_description.aspect import write_state as description_state
     from dplanner.planning.agent import MODULE_ID as AGENT_ID
     from dplanner.planning.agent import write_state as agent_state
     from dplanner.planning.branches import CUT_ID, LAND_ID, write_cut, write_land
+    from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+    from dplanner.planning.estimate import write as estimate_write
 
     cut = Step(title=branch)
     cut.module_data[CUT_ID] = write_cut(branch)
@@ -2372,8 +2358,9 @@ def _milestone_stats(library: "Library", project: "Project") -> dict[str, str]:
     milestone, which costs the sync no walk at all.
     """
     from dplanner.modules.estimation.schedule import project_schedule
+    from dplanner.planning.dates import format_date
     from dplanner.planning.milestone import is_milestone
-    from dplanner.planning.schedule import format_date, format_days
+    from dplanner.planning.schedule import format_days
 
     if not any(is_milestone(step) for step in project.steps):
         return {}
@@ -2415,7 +2402,7 @@ def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
     """The figure at each card's bottom right: a milestone's total and landing, how long a
     wait holds, any other step's estimate — what the canvas paints, read once for the
     report's graph."""
-    from dplanner.modules.estimation.aspect import read as estimated_days
+    from dplanner.planning.estimate import read as estimated_days
     from dplanner.planning.schedule import format_days
     from dplanner.planning.wait import read as wait_read
     from dplanner.planning.wait import stat as wait_stat
@@ -2492,91 +2479,34 @@ def _primary_glyph(step: "Step") -> tuple[str, str]:
 
 def _time_readers() -> "TimeReaders":
     """What the time module reads of other modules' aspects, for its verbs and its report:
-    estimates, agent-ness, status and the days it changed and began, the start date, milestones, the
-    estimate history and the key a row prints — the owners' Qt-free readers, handed over
-    here so no module imports another's.
-
-    **Time reads review and merge as work in flight.** A step under review or waiting on
-    its merge is not landed — the percent, Step statuses and ``requires`` all say so — so the
-    Time tab, the recorder, the matrix, the report and the simulator read it as in
-    progress, *since the day it started*: its ``since`` moved when it went to review, and
-    the model credits in-flight work from ``since``, so the raw day would re-cost the step
-    at its whole estimate the moment an agent finished it. ``changed_on`` keeps the raw
-    day for what a recorded day counts as a change. ARCHITECTURE.md's *An agent finishes
-    at Ready for review* has the reasoning.
-    """
-    from dplanner.modules.estimation.aspect import enabled as estimate_enabled
-    from dplanner.modules.estimation.aspect import read as estimated_days
-    from dplanner.modules.estimation.aspect import read_history as estimate_history
-    from dplanner.modules.estimation.schedule import start_of
+    agent-ness, milestones and the key a row prints. The estimate, the wait, the status and
+    its days and the start date the module reads from ``planning/`` itself."""
     from dplanner.modules.time_estimates.cli import Readers
     from dplanner.planning.agent import enabled as agent_enabled
     from dplanner.planning.kinds import key_of
     from dplanner.planning.milestone import read as milestone_read
-    from dplanner.planning.status import REVIEW_AND_MERGE, Status, held, stored
-    from dplanner.planning.status import read_since as status_since
-    from dplanner.planning.status import read_started as status_started
-    from dplanner.planning.wait import read as wait_read
-
-    def status_for(step: "Step") -> "Status":
-        status = held(stored(step))
-        return Status.IN_PROGRESS if status in REVIEW_AND_MERGE else status
-
-    def since_for(step: "Step") -> "date | None":
-        if stored(step) in REVIEW_AND_MERGE:
-            return status_started(step) or status_since(step)
-        return status_since(step)
 
     return Readers(
-        days_for=estimated_days,
         is_agent=agent_enabled,
-        status_for=status_for,
-        since_for=since_for,
-        started_for=status_started,
-        changed_on=status_since,
-        is_marker=lambda step: not estimate_enabled(step),
-        wait_of=wait_read,
-        start_of=start_of,
         milestone_label=milestone_read,
-        estimate_history=estimate_history,
         key_of=key_of,
     )
 
 
-def _status_in(library: "Library", today: "date") -> "Callable[[Step], Reading]":
-    """A step's status as the Step statuses tab, its report and the Run Agent gate read it on
-    ``today``: a wait done once it is over and waiting until then (``schedule.wait_status``),
-    so what follows a wait is ready on the day it may start; every other step as its status
-    aspect says."""
-    from dplanner.planning.branches import is_cut
-    from dplanner.planning.schedule import Wait, wait_status
-    from dplanner.planning.status import read_since as status_since
-    from dplanner.planning.status import stored
-    from dplanner.planning.wait import read as wait_read
-
-    # A branch cut holds nothing once what it waits on is done: a wait of no days, read so
-    # here and only here — the schedule's own waits never count one.
-    held = Wait(days=0.0)
-    return wait_status(
-        library,
-        stored,
-        status_since,
-        lambda step: wait_read(step) or (held if is_cut(step) else None),
-        today,
-    )
-
-
 def _ready_in(library: "Library", today: "date") -> "Callable[[Step], Status]":
-    """:func:`_status_in` as readiness reads it (``status.held``): a word this build cannot
+    """``schedule.status_on`` as readiness reads it (``status.held``): a word this build cannot
     read holds its step as blocked, and a wait not over is pending."""
+    from dplanner.planning.schedule import status_on
     from dplanner.planning.status import readiness_of
 
-    return readiness_of(_status_in(library, today))
+    return readiness_of(status_on(library, today))
 
 
 def _wait_aware(library: "Library", today: "Callable[[], date]") -> "Callable[[Step], Reading]":
-    """:func:`_status_in` for a window, on whatever day it is when asked."""
-    return lambda step: _status_in(library, today())(step)
+    """``schedule.status_on`` for a window, on whatever day it is when asked."""
+    from dplanner.planning.schedule import status_on
+
+    return lambda step: status_on(library, today())(step)
 
 
 def _persons_turn(library: "Library", step: "Step", status_for: "Callable[[Step], Status]") -> bool:
@@ -2745,12 +2675,12 @@ def _time_writers() -> "TimeWriters":
     from datetime import date
 
     from dplanner.domain.model import Project, Step
-    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
-    from dplanner.modules.estimation.aspect import write as write_estimate
-    from dplanner.modules.estimation.schedule import write_start
     from dplanner.modules.time_estimates.simulation.frames import PlanState, StepState, Writers
     from dplanner.planning.agent import MODULE_ID as AGENT_ID
     from dplanner.planning.agent import write_state
+    from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
+    from dplanner.planning.estimate import write as write_estimate
+    from dplanner.planning.estimate import write_start
     from dplanner.planning.milestone import MODULE_ID as MILESTONE_ID
     from dplanner.planning.milestone import write as write_label
     from dplanner.planning.status import MODULE_ID as STATUS_ID
@@ -2847,10 +2777,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
     their slots when two modules place at the same rank.
     """
     from dplanner.modules.auto_progress.aspect import auto_progresses
-    from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
-    from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.report import report_source as estimates
-    from dplanner.modules.estimation.schedule import project_schedule
     from dplanner.modules.feature.report import report_source as features
     from dplanner.modules.github.report import report_source as github
     from dplanner.modules.notes.report import report_source as notes
@@ -2862,6 +2789,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
     from dplanner.modules.step_ticket.report import report_source as tickets
     from dplanner.modules.testing.report import report_source as tests
     from dplanner.modules.time_estimates.report import report_source as time_estimates
+    from dplanner.planning.estimate import MODULE_ID as ESTIMATION_ID
     from dplanner.planning.kinds import key_of, kind_word
     from dplanner.planning.milestone import read as milestone_read
 
@@ -2874,7 +2802,6 @@ def _report_sources() -> tuple["ReportSource", ...]:
         progression(
             status_in=_ready_in,
             counts_as_work=_counts_as_work,
-            days_for=estimated_days,
             key_of=key_of,
             auto_progresses=auto_progresses,
         ),
@@ -2891,7 +2818,6 @@ def _report_sources() -> tuple["ReportSource", ...]:
             glyph_of=_primary_glyph,
         ),
         order(
-            schedule_of=project_schedule,
             step_aspects=step_aspects,
             milestone_label=milestone_read,
         ),
@@ -3382,7 +3308,6 @@ def default_cli_commands(
     from dplanner.modules.coverage import cli as coverage_cli
     from dplanner.modules.docs import cli as docs_cli
     from dplanner.modules.estimation import cli as estimation_cli
-    from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.feature import cli as feature_cli
     from dplanner.modules.github import cli as github_cli
     from dplanner.modules.library import cli as library_cli
@@ -3563,22 +3488,18 @@ def default_cli_commands(
         # module's own writes (attach, name) stay in its cli.py — the `scope` split.
         *catalog_commands(sources=sources, titles=read_titles),
         *assets_cli.commands(sources=sources),
-        *order_cli.commands(days_for=estimated_days, counts_as_work=_counts_as_work),
-        # Progression reads statuses and estimates through the aspects' Qt-free readers —
-        # handed over here so no cli.py imports another module's.
+        *order_cli.commands(counts_as_work=_counts_as_work),
+        # Progression reads statuses through the aspects' Qt-free readers — handed over
+        # here so no cli.py imports another module's.
         *progression_cli.commands(
             status_in=_ready_in,
             counts_as_work=_counts_as_work,
-            days_for=estimated_days,
             auto_progresses=auto_progresses,
             is_agent=is_agent,
             asks_person=_asks_person,
             due=_due_steps,
         ),
-        # The timeline sort reads a step's length through estimation's Qt-free reader —
-        # handed over here so neither cli.py imports the other.
         *layout_cli.commands(
-            days_for=estimated_days,
             paste_policies=_paste_policies(),
             file_modules=tuple(source.id for source in sources),
             key_of=key_of,
@@ -3669,13 +3590,13 @@ def _token_rate(
     store: "LibraryStore",
     library: "Library",
     project_id: str,
-    days_for: "Callable[[Step], float | None]",
     done_for: "Callable[[Step], bool]",
 ) -> "Rate | None":
     """Tokens of work per estimated day: learned from the library's *other* projects when
     they have finished history, since a rate learned from the steps it is compared with
     would make the offset end at nought; from this project only when nothing else has."""
     from dplanner.domain.expenditure import ELSEWHERE, HERE, Spent, learned_rate
+    from dplanner.planning.estimate import read as days_for
 
     def over(project_ids: "list[str]", source: str) -> "Rate | None":
         spent: dict[str, Spent] = {}
@@ -3806,7 +3727,6 @@ def aspect_specs() -> list["AspectSpec"]:
     """
     from dplanner.modules.auto_progress import aspect as auto_progress
     from dplanner.modules.docs import aspect as docs
-    from dplanner.modules.estimation import aspect as estimation
     from dplanner.modules.github import aspect as github
     from dplanner.modules.spec import aspect as spec
     from dplanner.modules.step_agent_run import aspect as agent_run
@@ -3818,6 +3738,7 @@ def aspect_specs() -> list["AspectSpec"]:
         agent,
         branches,
         check,
+        estimate,
         feature,
         milestone,
         review,
@@ -3836,7 +3757,7 @@ def aspect_specs() -> list["AspectSpec"]:
         description.SPEC,
         docs.SPEC,
         docs.COMPILED_SPEC,
-        estimation.SPEC,
+        estimate.SPEC,
         feature.SPEC,
         github.SPEC,
         milestone.SPEC,

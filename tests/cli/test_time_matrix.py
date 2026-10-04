@@ -7,7 +7,7 @@ import pytest
 
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.time_estimates.schedule import MODULE_ID
-from dplanner.planning.schedule import format_date
+from dplanner.planning.dates import format_date
 from dplanner.theme.palettes import PALETTES, shades
 
 # The day every run here is dated by, so no date a verb prints depends on the day the suite

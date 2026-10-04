@@ -10,7 +10,6 @@ import pytest
 
 from dplanner.domain.commands import SetEdgesCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.scope import ScopeKind
 from dplanner.domain.store import LibraryStore
 from dplanner.modules.docs.aspect import (
     COMPILED_FORMAT,
@@ -33,6 +32,7 @@ from dplanner.modules.docs.collect import (
     state_of,
 )
 from dplanner.modules.docs.prompt import compile_body
+from dplanner.planning.scope import ScopeKind
 
 
 @pytest.fixture

@@ -136,7 +136,7 @@ CONCRETE_STORAGE = (
 
 # Ceilings (rule 12), recorded on 4 October 2026. Lower one by hand when its count falls;
 # never raise it.
-ROOT_LINES = 3992
+ROOT_LINES = 3913
 DIRECT_COMMANDS = 141
 
 # Every id a module stores data, settings or files under (rule 13). Stored ids are public:
@@ -196,13 +196,14 @@ STORED_IDS = frozenset(
 )
 
 # The aspects planning/ owns (rule 14). An aspect is admitted only when a headless server
-# or daemon must interpret it — status and what a step is, so far. The list growing past
-# about fifteen is the signal that planning/ has become "the important aspects": stop and
-# reconsider rather than add.
+# or daemon must interpret it — status, what a step is and its estimate, so far. The list
+# growing past about fifteen is the signal that planning/ has become "the important
+# aspects": stop and reconsider rather than add.
 PLANNING_ASPECTS = frozenset(
     {
         "branch_cut",
         "branch_land",
+        "estimation",
         "feature",
         "step_agent_instruction",
         "step_check",

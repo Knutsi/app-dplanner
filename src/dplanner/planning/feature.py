@@ -4,7 +4,7 @@ A feature is a thing a person names, demos and tests — and it is a **step**. T
 record beside the project any more: the step's title is the feature's name, its description
 is the feature's description, its file area holds the pictures, and the only fact that is
 the feature's own — the passages of a specification it was read out of — lives here, in the
-step's own entry. What the step *gathers* is still nothing stored: ``domain/scope.py`` walks
+step's own entry. What the step *gathers* is still nothing stored: ``planning/scope.py`` walks
 ``requires`` backwards and stops at the previous feature, recomputed on every read, so
 ``dplanner step link`` cannot leave a feature claiming work it no longer has.
 

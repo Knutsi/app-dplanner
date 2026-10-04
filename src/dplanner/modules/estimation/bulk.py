@@ -49,7 +49,6 @@ from dplanner.framework.signalling import UpdatingIndicator
 from dplanner.framework.table import Cell, Chip, Column, NumberEditor, Table
 from dplanner.framework.toolbar import Toolbar
 from dplanner.framework.widgets import EmptyState, captioned, note
-from dplanner.modules.estimation.aspect import MODULE_ID, read
 from dplanner.modules.estimation.quick_input import (
     FREE_LABEL,
     FREE_TIP,
@@ -60,6 +59,7 @@ from dplanner.modules.estimation.quick_input import (
     push_estimate,
     size_tip,
 )
+from dplanner.planning.estimate import MODULE_ID, read
 from dplanner.planning.schedule import volume, volume_words
 from dplanner.theme.tokens import CAPTION_GAP, FIELD_GAP, PANEL_MARGIN, SECTION_GAP
 
@@ -327,7 +327,7 @@ class BulkEstimateActivity(EntityActivity):
         one wording, so the tab a person sizes steps in and the total they quote afterwards
         cannot disagree."""
         steps = self._steps()
-        said = volume(steps, read, self._deps.counts_as_work)
+        said = volume(steps, self._deps.counts_as_work)
         self.volume.setText(volume_words(*said) if steps else "")
 
     def _aim_first_row(self) -> None:

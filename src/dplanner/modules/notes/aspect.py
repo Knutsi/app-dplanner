@@ -66,7 +66,7 @@ from dplanner.domain.ids import next_id
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import upstream
 from dplanner.domain.store import FilesFor
-from dplanner.planning.schedule import format_date
+from dplanner.planning.dates import format_date
 
 MODULE_ID = "notes"
 RECORDS_KEY = "notes"

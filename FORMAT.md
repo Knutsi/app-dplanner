@@ -789,7 +789,7 @@ model boundary, because an `int` writes as `5` where a reloaded float writes as 
 — making a file's bytes depend on whether the project had been reopened since it was
 written. Module data is opaque to the model and `stamped()` writes whatever dict it is
 handed, so on this axis the duty belongs to whoever owns the number. See
-`modules/estimation/aspect.py`, which is the reference for it, and
+`planning/estimate.py`, which is the reference for it, and
 `modules/project_editor/positions.py`, which owes it for a coordinate.
 
 ## Two writers, one folder
@@ -815,7 +815,7 @@ format through the carried chain, converted, merged into the successor's entry, 
 The retired module's *code* is gone; only its data contract survives, in the package that
 inherited it. Modules never import each other, and this is why they do not have to.
 
-`modules/estimation/aspect.py` is the worked example: `step_estimation` became `estimation`
+`planning/estimate.py` is the worked example: `step_estimation` became `estimation`
 when it grew a project's start date, and the rename cost no project-format migration and no
 import. `planning/milestone.py` is the second: `step_release` became
 `step_milestone` when *release* turned out to be the wrong word for a thing that collects
