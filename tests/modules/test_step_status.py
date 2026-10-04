@@ -395,7 +395,7 @@ def test_checked_only_when_every_chosen_step_stands_there(services, step):
 def test_a_wait_among_the_chosen_greys_the_verb(services, step):
     wait = Step(title="Hold a day")
     AddNodeCommand(services.document.project_of(step.id).id, wait).redo(services.document)
-    from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import Wait
     from dplanner.planning.wait import write as write_wait
 
     services.document.set_module_data(wait.id, "step_wait", write_wait(Wait(days=1.0)))

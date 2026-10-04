@@ -929,8 +929,8 @@ def test_a_wait_is_hatched_on_the_work_page_and_the_calendar_and_named_in_its_mi
     from dplanner.cli.report.parts import Chart
     from dplanner.modules import _time_readers
     from dplanner.modules.time_estimates.report import report_source
-    from dplanner.planning.schedule import Wait
     from dplanner.planning.wait import MODULE_ID as WAIT_ID
+    from dplanner.planning.wait import Wait
     from dplanner.planning.wait import write as write_wait
 
     library = services.document

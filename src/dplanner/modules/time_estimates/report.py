@@ -48,6 +48,7 @@ from dplanner.planning import estimate
 from dplanner.planning.dates import format_date, short_date
 from dplanner.planning.estimate import start_of
 from dplanner.planning.schedule import format_days
+from dplanner.planning.wait import read as wait_read
 
 CHART_ID = "progress"
 TIMELINE_ID = "milestones"
@@ -76,7 +77,7 @@ def report_source(readers: Readers) -> ReportSource:
             for step in project.steps
             if estimate.read(step) is None
             and not estimate.is_marker(step)
-            and readers.wait_of(step) is None
+            and wait_read(step) is None
         )
         if unsized:
             placed.append(

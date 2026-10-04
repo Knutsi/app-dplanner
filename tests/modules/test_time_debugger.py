@@ -134,7 +134,7 @@ def test_a_wait_added_on_the_day_shown_holds_the_step_it_is_put_before(services)
     """Plan edits, as a person would make one on the canvas: a wait before a step not yet
     started, from the day shown — written into the scratch world through the wait's own
     writer."""
-    from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import Wait
     from dplanner.planning.wait import read as wait_read
 
     tab = _opened(services)

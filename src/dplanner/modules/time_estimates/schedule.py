@@ -54,14 +54,14 @@ from dplanner.planning.schedule import (
     SATURDAY,
     Phase,
     ScheduleFacts,
-    Wait,
     critical_path,
-    no_wait,
     phases,
     spent_since,
     working_days_between,
 )
 from dplanner.planning.status import Status, in_flight, read_started, work_since
+from dplanner.planning.wait import Wait
+from dplanner.planning.wait import read as wait_read
 from dplanner.theme.palettes import DEFAULT_PALETTE, Palette, palette, shades
 
 MODULE_ID = "time_estimates"
@@ -523,7 +523,7 @@ def cell_for(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
 ) -> tuple[Cell, Cell]:
     """One staffing, both lenses: the parallel-adjusted cell and the calendar one. Project
     days count work, not dates, so only the calendar is re-dated from ``facts``."""
@@ -578,7 +578,7 @@ def time_report(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
 ) -> TimeReport | None:
     """The full matrix over ``HUMANS`` by ``AGENTS``. None only when the project has no
     steps. ``start`` and ``efficiency`` arrive resolved — the caller owns where a start

@@ -29,9 +29,9 @@ by itself after every settled change, for a plan driven from the terminal — an
 ``progress save`` keeps today's plan under a title on purpose, for ``list`` to print and
 ``--basis`` to name (``progress.py`` has the shape and the reasoning).
 
-The estimate, the status and its days and the project's start are planning facts, imported
-from ``planning/``; the agent-step, wait, milestone and key readers arrive as functions from
-the composition root, the same hand-over ``progression_cli.commands(status_for=…)`` uses —
+The estimate, the wait, the status and its days and the project's start are planning facts,
+imported from ``planning/``; the agent-step, milestone and key readers arrive as functions
+from the composition root, the same hand-over ``progression_cli.commands(status_for=…)`` uses —
 no ``cli.py`` imports another module's.
 
 Qt-free by rule — see ``HEADLESS_FILES`` in ``tests/test_architecture.py``.
@@ -100,7 +100,7 @@ from dplanner.modules.time_estimates.schedule import (
 )
 from dplanner.planning.dates import format_date
 from dplanner.planning.estimate import start_of
-from dplanner.planning.schedule import Phase, ScheduleFacts, Wait, format_days
+from dplanner.planning.schedule import Phase, ScheduleFacts, format_days
 from dplanner.theme.palettes import PALETTES, palette, shades
 
 
@@ -109,8 +109,6 @@ class Readers:
     """The other modules' Qt-free readers a verb here needs, handed over by the root."""
 
     is_agent: Callable[[Step], bool]
-    # What a wait step waits for; None for every other step. A wait is no work at all.
-    wait_of: Callable[[Step], Wait | None]
     milestone_label: Callable[[Step], str]
     key_of: Callable[[Step], str]
 
@@ -178,7 +176,6 @@ class Readers:
             start_for=read_start,
             today=today,
             facts=self.facts(project, today, day_over=day_over, pace=pace),
-            wait_of=self.wait_of,
         )
 
 
@@ -547,7 +544,6 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
         is_milestone=is_milestone,
         start_for=read_start,
         facts=readers.facts(project, today),
-        wait_of=readers.wait_of,
     )
     if report is None:
         context.report({"project": project.id, "steps": 0}, "No steps yet.")
@@ -569,7 +565,6 @@ def _matrix(context: CliContext, args: Namespace, readers: Readers) -> int:
                 efficiency=efficiency,
                 is_milestone=is_milestone,
                 start_for=read_start,
-                wait_of=readers.wait_of,
             )
         )
     # The milestones are printed for one team: the one named, else the project's own.

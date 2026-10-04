@@ -41,7 +41,19 @@ from math import ceil, floor
 from dplanner.domain.model import Library, Project, Step, StepId, local_day
 from dplanner.domain.ordering import Placed, cone, placed
 from dplanner.planning import estimate
-from dplanner.planning.status import Reading, Status, Unknown, Waiting, in_flight, work_since
+from dplanner.planning.branches import is_cut
+from dplanner.planning.status import (
+    Reading,
+    Status,
+    Unknown,
+    Waiting,
+    in_flight,
+    read_since,
+    stored,
+    work_since,
+)
+from dplanner.planning.wait import Wait
+from dplanner.planning.wait import read as wait_read
 
 WORKING_DAYS_PER_WEEK = 5
 SATURDAY = 5  # date.weekday(): Monday is 0.
@@ -179,22 +191,6 @@ def schedule(
     return scheduled
 
 
-@dataclass(frozen=True)
-class Wait:
-    """What a wait step waits for: a day the steps after it may start on (``until``), or
-    ``days`` working days from the moment it is reached. It takes no worker, carries no
-    work and has no status of its own — handed in by ``wait_of`` while the wait aspect is
-    still a module's."""
-
-    until: date | None = None
-    days: float = 0.0
-
-
-def no_wait(_step: Step) -> Wait | None:
-    """``wait_of`` for a plan none of whose steps waits."""
-    return None
-
-
 def no_marker(_step: Step) -> bool:
     """``is_marker`` for a walk that knows no step carrying no work by design."""
     return False
@@ -232,7 +228,7 @@ def parallel_finish(
     days_for: Callable[[Step], float | None] = estimate.read,
     among: Sequence[Step] | None = None,
     running: frozenset[StepId] = frozenset(),
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
     waits: Waits | None = None,
     is_marker: Callable[[Step], bool] = no_marker,
 ) -> ParallelFinish | None:
@@ -337,7 +333,7 @@ def chain_tails(
     steps: Sequence[Step],
     *,
     days_for: Callable[[Step], float | None] = estimate.read,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
 ) -> dict[StepId, float]:
     """Each step's own days plus the longest chain among ``steps`` waiting on it — the
     priority a free worker picks by in :func:`parallel_finish`, where an edge out of
@@ -552,6 +548,24 @@ def wait_status(
     return lambda step: status(step)
 
 
+# A branch cut holds nothing once what it waits on is done: a wait of no days, read so in
+# status_on and only there — the schedule's own waits never count one.
+_CUT_HOLDS = Wait(days=0.0)
+
+
+def status_on(library: Library, today: date) -> Callable[[Step], Reading]:
+    """A step's status on ``today``, as the Step statuses tab, its report and the Run Agent
+    gate read it: :func:`wait_status` over the stored statuses, with a branch cut read as a
+    wait of no days, so what follows a wait or a cut is ready on the day it may start."""
+    return wait_status(
+        library,
+        stored,
+        read_since,
+        lambda step: wait_read(step) or (_CUT_HOLDS if is_cut(step) else None),
+        today,
+    )
+
+
 @dataclass(frozen=True)
 class _Clock:
     """When the next stretch may begin, and how much of that day is already used."""
@@ -572,7 +586,7 @@ def phases(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
 ) -> list[Phase]:
     """The plan as milestones run one after another, each dated from the last.
 

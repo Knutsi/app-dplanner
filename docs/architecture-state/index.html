@@ -417,7 +417,7 @@ footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted
       <tr><td>a step's status word</td><td class="num">4</td><td><code>status_for</code></td><td><code>step_status/aspect.py</code></td></tr>
       <tr><td>pick an existing asset</td><td class="num">4</td><td><code>pick_assets</code></td><td><code>project_assets</code></td></tr>
       <tr><td>a milestone's colour</td><td class="num">3</td><td><code>milestone_color</code></td><td>the root's <code>_milestone_colors</code> over <code>time_estimates/schedule.py</code></td></tr>
-      <tr><td>a step's estimate in days</td><td class="num">2</td><td><code>days_for</code></td><td><code>estimation/aspect.py</code></td></tr>
+      <tr><td>a step's estimate in days</td><td class="num">2</td><td><code>days_for</code></td><td><code>planning/estimate.py</code></td></tr>
       <tr><td>a step's kind glyphs</td><td class="num">1 (+2 copies)</td><td><code>step_icons</code>; recomputed in <code>docs/activity.py</code></td><td>the root's <code>_step_type_icons</code></td></tr>
     </tbody>
   </table></div>
@@ -554,7 +554,7 @@ footer{margin-top:40px;font-family:var(--sans);font-size:.8rem;color:var(--muted
 
   <article class="finding">
     <header><span class="chip bad">regression, today</span><span class="chip good">fixed on this branch</span><h4>A menu-bar state walks every collector's cone on every keystroke</h4></header>
-    <div class="where">modules/docs/module.py::_stale_state → _stale → collect.sources_for → domain/scope.cone · introduced in 252b51d (13 Sep)</div>
+    <div class="where">modules/docs/module.py::_stale_state → _stale → collect.sources_for → domain/ordering.cone · introduced in 252b51d (13 Sep)</div>
     <p>The context refresh went from a flat 4–6 ms to 198 ms at 400 steps in one day. The profile names it: the <em>Compile Out of Date…</em> action's state callback asks <code>_stale(project)</code>, which runs <code>sources_for</code> for every collector in the project — 96 of them on the synthetic plan, 20,786 <code>cone</code> walks and 537,000 node visits per ten keystrokes — and hashes their fragments, to decide what the menu entry's label should say. The menu bar re-evaluates every action's state on every announce, so this runs on every keystroke, click and selection. It is the rule <code>CLAUDE.md</code> already states for the keychain and for subprocesses (no heavy work in a state callback), broken by a derivation instead. The fix is the architecture document's item 3 — memoise the stale set per library revision — or, cheaper today, compute it once per project change in a <code>Debounced</code> and have the state read the last answer, the way the Problems count is read rather than probed.</p>
     <p><strong>Fixed on this branch.</strong> <code>collect.frontier</code> is now the one derivation (one walk per collector where the state made three), the module settles it per project in a <code>Debounced</code> and the state reads the last answer, the settle announces the context so the label catches up, and the gesture still computes fresh. Re-measured at 400 steps: the context refresh is back to 4 ms per announce from 198, a title keystroke's whole reaction is 90 ms from 327, and a click is 60 ms from 323.</p>
   </article>

@@ -3094,8 +3094,8 @@ def test_a_waits_clock_is_amber(services, project, tab):
     """A wait is nobody's work, and says so in the attention amber whatever its date — the
     one glyph in the block that is not the key's ink."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.planning.schedule import Wait
     from dplanner.planning.wait import MODULE_ID as WAIT_ID
+    from dplanner.planning.wait import Wait
     from dplanner.planning.wait import write as wait
     from dplanner.theme.cards import key_block_rects
 

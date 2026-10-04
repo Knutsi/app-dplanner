@@ -446,7 +446,7 @@ def held_by_a_wait(wait, statuses, since=None, today=MONDAY):
 
 
 def test_a_wait_is_no_work_and_holds_what_follows_it_until_its_day():
-    from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import Wait
 
     wednesday = MONDAY + timedelta(days=2)
     found, wait = held_by_a_wait(Wait(until=wednesday), {"A": "done"}, today=MONDAY)
@@ -460,7 +460,7 @@ def test_a_wait_is_no_work_and_holds_what_follows_it_until_its_day():
 
 
 def test_a_wait_holds_while_what_it_waits_on_is_not_done():
-    from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import Wait
 
     found, wait = held_by_a_wait(Wait(until=MONDAY), {}, today=MONDAY + timedelta(days=7))
     assert wait == Waiting() and titles(found.ready) == ["A"]
@@ -469,7 +469,7 @@ def test_a_wait_holds_while_what_it_waits_on_is_not_done():
 
 def test_a_days_wait_is_over_once_its_days_are_waited():
     """Three working days from A's Monday, middle to middle: over on Thursday."""
-    from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import Wait
 
     done = {"A": "done"}
     since = {"A": MONDAY}

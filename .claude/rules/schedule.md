@@ -164,8 +164,8 @@ paths:
   `ARCHITECTURE.md`'s *The plan re-dates itself from what has happened* has the reasoning.
 - **A wait is a step that holds, and no work.** `modules/step_wait/` marks a step
   `{"until": …}` — what requires it may start on that day — or `{"days": n}` working days
-  from when it is reached; the root hands the time module `wait_of`, the planning tier's
-  `Wait`. `parallel_finish` releases a wait without a worker; `phases` ends an
+  from when it is reached (`planning/wait.py`'s `Wait`, which every walk reads by
+  default; the simulator hands in its own `wait_of`). `parallel_finish` releases a wait without a worker; `phases` ends an
   `until` wait at its day's first moment and, re-dated, credits a `days` wait with the days
   it has already waited; `_holds` asks a wait only when it was made. **No tally counts
   one** — `snapshot_of`, `time_report`'s effort and the unsized count leave it out. A step,

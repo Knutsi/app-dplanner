@@ -104,6 +104,7 @@ from dplanner.planning import estimate
 from dplanner.planning.dates import format_date, short_date
 from dplanner.planning.estimate import start_of
 from dplanner.planning.schedule import format_days
+from dplanner.planning.wait import read as wait_read
 from dplanner.theme.cards import title_font
 from dplanner.theme.icons import PALETTE_STRIP, camera_icon, close_icon, palette_strip_icon
 from dplanner.theme.palettes import PALETTES, Palette
@@ -714,7 +715,7 @@ class TimeEstimatesActivity(EntityActivity):
             for step in project.steps
             if estimate.read(step) is None
             and not estimate.is_marker(step)
-            and deps.readers.wait_of(step) is None
+            and wait_read(step) is None
         ]
         # No record holds the unsized steps, so a look back cannot say how many there were.
         self.unsized.setVisible(bool(unsized) and self._as_of is None)

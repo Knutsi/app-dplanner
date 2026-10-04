@@ -111,11 +111,11 @@ from dplanner.planning.milestone import write as milestone_write
 from dplanner.planning.review import MODULE_ID as REVIEW_ID
 from dplanner.planning.review import ReviewSettings
 from dplanner.planning.review import write as review_write
-from dplanner.planning.schedule import Wait
 from dplanner.planning.status import MODULE_ID as STATUS_ID
 from dplanner.planning.status import Status, stored
 from dplanner.planning.status import write as status_write
 from dplanner.planning.wait import MODULE_ID as WAIT_ID
+from dplanner.planning.wait import Wait
 from dplanner.planning.wait import write as wait_write
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme

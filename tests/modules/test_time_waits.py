@@ -21,8 +21,9 @@ from dplanner.modules.time_estimates.simulation.world import (
     run,
     wait_id,
 )
-from dplanner.planning.schedule import SATURDAY, Wait, chain_tails, stretches
+from dplanner.planning.schedule import SATURDAY, chain_tails, stretches
 from dplanner.planning.status import Status
+from dplanner.planning.wait import Wait
 
 MADE = date(2026, 10, 12)
 WEDNESDAY = date(2026, 11, 4)

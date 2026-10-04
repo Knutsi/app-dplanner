@@ -4877,8 +4877,8 @@ plan in an exploration the developer kept:
 **Two aspects on steps, not two node kinds.** *Status is an aspect, and step types are
 emergent* rules out a type field, and the bracket did not need one: a cut is a step
 carrying `branch_cut` (`{"branch": …}`), key `B`, nobody's work — no worker, no status of
-its own, done once what it waits on is, which is a wait of no days composed in the root's
-`_status_in` (never through the schedule's `wait_of`, or reports would name every cut a
+its own, done once what it waits on is, which is a wait of no days composed in
+`schedule.status_on` (never through the schedule's `wait_of`, or reports would name every cut a
 wait) — and a landing is an agent step carrying `branch_land` (`{"cut": id}`). `planning.kinds`'s
 `works_nobody` became the one predicate a wait and a cut share, and every module that
 refuses such a step a status, an agent, a review or a test words its refusal from the name
@@ -5987,7 +5987,7 @@ looks at `Unknown` itself, to name the word.
 
 **Three meanings of done stay three functions.** The stored status (`status.stored`), the
 status a card wears (the root's `_card_status`: pending for a step nobody works) and the
-status on a day (the root's `_status_in`, waits read in) answer different questions, and a
+status on a day (`schedule.status_on`, waits read in) answer different questions, and a
 reader picks one by name rather than by remembering which helper folds what.
 
 **Transitions are not policed.** The graph gates *launching*, not *recording*: a step set
@@ -6005,7 +6005,8 @@ time module carried nothing but the one reader, and went: the walks default to
 `estimate.read`, and a function parameter stays only where a caller means other days —
 calendar days stretched by a focus, the simulator's world, a folded stack's blocks. The time
 module's view of status (review and merge as work in flight, `status.in_flight`) moved with
-it, so `_time_readers` hands over only what modules still own. The collector vocabulary
+it, and once the wait joined the tier (*Planning owns what a step is*) `wait_of` went the same
+way, so `_time_readers` hands over only agent-ness, the milestone label and the key. The collector vocabulary
 (`planning/scope.py`) moved up too, while the walk it reads, `cone()`, stays in
 `domain/ordering.py` beside `upstream()` — the graph may not import the tier. Date words
 (`planning/dates.py`) live in the tier because its phrases print a day; the chart axis is
@@ -6497,8 +6498,8 @@ the day:
 - **A step, not a node kind.** *Status is an aspect, and step types are emergent* rules out
   a type field, and a wait needs none: as a step it works unchanged in cones, ordering,
   cycles, copy and paste and numbering, and it is `step_wait`'s aspect — `{"until": …}` or
-  `{"days": n}` — that the root hands the time module as `wait_of`, the domain's `Wait`,
-  so the domain never learns what marks one.
+  `{"days": n}` — read as `planning/wait.py`'s `Wait` by every walk in the schedule, with
+  `wait_of` left as a keyword for the simulator's world.
 - **It takes no worker and is no work.** `parallel_finish` releases a ready wait straight
   into the running set with the moment it is over (`waits`), and frees no worker when it
   lands; the walk's cost of an `until` wait is nothing, since only the calendar knows when

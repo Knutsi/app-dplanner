@@ -10,8 +10,7 @@ from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
 from dplanner.modules.step_description.aspect import enabled as description_on
 from dplanner.planning.estimate import enabled as estimate_on
-from dplanner.planning.schedule import Wait
-from dplanner.planning.wait import read
+from dplanner.planning.wait import Wait, read
 
 TODAY = date(2026, 9, 4)
 

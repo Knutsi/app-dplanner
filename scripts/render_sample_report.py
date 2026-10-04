@@ -45,9 +45,9 @@ from dplanner.planning.estimate import write_start
 from dplanner.planning.feature import FeatureSource
 from dplanner.planning.feature import write as feature_marker
 from dplanner.planning.milestone import write as milestone
-from dplanner.planning.schedule import Wait
 from dplanner.planning.status import Status
 from dplanner.planning.status import write as status
+from dplanner.planning.wait import Wait
 from dplanner.planning.wait import write as wait
 
 # (title, days, requires by index, status, kind)

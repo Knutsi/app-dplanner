@@ -115,8 +115,9 @@ def test_remove_branch_is_greyed_on_a_step_on_no_branch(services, plan):
 
 
 def test_a_cut_is_nobodys_work_and_reads_done_once_what_it_waits_on_is(services, plan):
-    from dplanner.modules import _card_status, _counts_as_work, _primary_glyph, _status_in
+    from dplanner.modules import _card_status, _counts_as_work, _primary_glyph
     from dplanner.planning.kinds import key_of
+    from dplanner.planning.schedule import status_on
     from dplanner.planning.status import MODULE_ID as STATUS_ID
     from dplanner.planning.status import write as status_write
 
@@ -125,12 +126,12 @@ def test_a_cut_is_nobodys_work_and_reads_done_once_what_it_waits_on_is(services,
     library.set_module_data(card.id, CUT_ID, write_cut("feature/x"))
     assert key_of(card).startswith("B") and _primary_glyph(card) == ("branch", "")
     assert not _counts_as_work(card) and _card_status(card) is Status.PENDING
-    status = _status_in(library, TODAY)
+    status = status_on(library, TODAY)
     assert status(card) is not Status.DONE
     library.set_module_data(
         titled(plan, "Menu").id, STATUS_ID, status_write(Status.DONE, today=TODAY)
     )
-    assert _status_in(library, TODAY)(card) is Status.DONE
+    assert status_on(library, TODAY)(card) is Status.DONE
 
 
 def test_a_merge_into_the_branch_accepts_a_member_under_review(services, plan):

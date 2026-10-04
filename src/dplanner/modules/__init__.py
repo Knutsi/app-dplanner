@@ -251,7 +251,7 @@ def default_modules(
     from dplanner.planning.kinds import Kind, key_of, kind_of, kind_word, works_nobody
     from dplanner.planning.milestone import is_milestone
     from dplanner.planning.milestone import read as milestone_read
-    from dplanner.planning.schedule import Wait, format_days
+    from dplanner.planning.schedule import format_days
     from dplanner.planning.status import (
         Status,
         readiness_of,
@@ -260,6 +260,7 @@ def default_modules(
         stored,
         word,
     )
+    from dplanner.planning.wait import Wait
     from dplanner.planning.wait import read as wait_read
     from dplanner.planning.wait import stat as wait_stat
     from dplanner.theme.icons import (
@@ -2976,57 +2977,34 @@ def _primary_glyph(step: "Step") -> tuple[str, str]:
 
 def _time_readers() -> "TimeReaders":
     """What the time module reads of other modules' aspects, for its verbs and its report:
-    agent-ness, waits, milestones and the key a row prints — the owners' Qt-free readers,
-    handed over here so no module imports another's. The estimate, the status and its days
-    and the start date are planning facts the module imports itself."""
+    agent-ness, milestones and the key a row prints. The estimate, the wait, the status and
+    its days and the start date the module reads from ``planning/`` itself."""
     from dplanner.modules.time_estimates.cli import Readers
     from dplanner.planning.agent import enabled as agent_enabled
     from dplanner.planning.kinds import key_of
     from dplanner.planning.milestone import read as milestone_read
-    from dplanner.planning.wait import read as wait_read
 
     return Readers(
         is_agent=agent_enabled,
-        wait_of=wait_read,
         milestone_label=milestone_read,
         key_of=key_of,
     )
 
 
-def _status_in(library: "Library", today: "date") -> "Callable[[Step], Reading]":
-    """A step's status as the Step statuses tab, its report and the Run Agent gate read it on
-    ``today``: a wait done once it is over and waiting until then (``schedule.wait_status``),
-    so what follows a wait is ready on the day it may start; every other step as its status
-    aspect says."""
-    from dplanner.planning.branches import is_cut
-    from dplanner.planning.schedule import Wait, wait_status
-    from dplanner.planning.status import read_since as status_since
-    from dplanner.planning.status import stored
-    from dplanner.planning.wait import read as wait_read
-
-    # A branch cut holds nothing once what it waits on is done: a wait of no days, read so
-    # here and only here — the schedule's own waits never count one.
-    held = Wait(days=0.0)
-    return wait_status(
-        library,
-        stored,
-        status_since,
-        lambda step: wait_read(step) or (held if is_cut(step) else None),
-        today,
-    )
-
-
 def _ready_in(library: "Library", today: "date") -> "Callable[[Step], Status]":
-    """:func:`_status_in` as readiness reads it (``status.held``): a word this build cannot
+    """``schedule.status_on`` as readiness reads it (``status.held``): a word this build cannot
     read holds its step as blocked, and a wait not over is pending."""
+    from dplanner.planning.schedule import status_on
     from dplanner.planning.status import readiness_of
 
-    return readiness_of(_status_in(library, today))
+    return readiness_of(status_on(library, today))
 
 
 def _wait_aware(library: "Library", today: "Callable[[], date]") -> "Callable[[Step], Reading]":
-    """:func:`_status_in` for a window, on whatever day it is when asked."""
-    return lambda step: _status_in(library, today())(step)
+    """``schedule.status_on`` for a window, on whatever day it is when asked."""
+    from dplanner.planning.schedule import status_on
+
+    return lambda step: status_on(library, today())(step)
 
 
 def _auto_progresses(waiter: "Step", source: "Step") -> bool:

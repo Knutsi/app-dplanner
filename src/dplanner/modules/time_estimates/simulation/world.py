@@ -30,7 +30,6 @@ from dplanner.modules.time_estimates.simulation.timeline import Played, Timeline
 from dplanner.planning.dates import WEEKDAYS, short_date
 from dplanner.planning.schedule import (
     SATURDAY,
-    Wait,
     chain_tails,
     next_working_day,
     stretches,
@@ -38,6 +37,7 @@ from dplanner.planning.schedule import (
     working_days_between,
 )
 from dplanner.planning.status import Status
+from dplanner.planning.wait import Wait
 
 EPSILON = 1e-9
 _ONE_DAY = timedelta(days=1)

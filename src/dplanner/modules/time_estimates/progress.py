@@ -71,14 +71,14 @@ from dplanner.planning.dates import format_date
 from dplanner.planning.schedule import (
     Phase,
     ScheduleFacts,
-    Wait,
     format_days,
     next_working_day,
-    no_wait,
     phases,
     working_days_between,
 )
 from dplanner.planning.status import Status, in_flight, read_since
+from dplanner.planning.wait import Wait
+from dplanner.planning.wait import read as wait_read
 
 HISTORY_ID = "progress_history"
 ROWS_KEY = "days"
@@ -271,7 +271,7 @@ def take(
     start_for: Callable[[Step], date | None],
     today: date,
     facts: ScheduleFacts | None = None,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
     days_for: Callable[[Step], float | None] = estimate.read,
     status_for: Callable[[Step], Status] = in_flight,
     changed_on: Callable[[Step], date | None] = read_since,
@@ -312,7 +312,7 @@ def snapshot_of(
     days_for: Callable[[Step], float | None] = estimate.read,
     status_for: Callable[[Step], Status] = in_flight,
     changed_on: Callable[[Step], date | None] = read_since,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
 ) -> Snapshot:
     """The plan on ``day`` from its dated stretches: each with what has landed in it and
     how many of its steps' statuses changed that day. A wait is no work, so it is no part
@@ -363,7 +363,7 @@ def calendar_phases(
     is_milestone: Callable[[Step], bool],
     start_for: Callable[[Step], date | None],
     facts: ScheduleFacts | None = None,
-    wait_of: Callable[[Step], Wait | None] = no_wait,
+    wait_of: Callable[[Step], Wait | None] = wait_read,
     days_for: Callable[[Step], float | None] = estimate.read,
 ) -> list[Phase]:
     """The plan's stretches dated on the calendar — the simulation over stretched

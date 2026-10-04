@@ -27,7 +27,7 @@ pending. Transitions are not policed: the graph gates *launching*, not *recordin
 
 The three meanings of "done" are three functions: :func:`stored` (what the step says), the
 composition root's ``_card_status`` (what its card wears: nothing for a step nobody works)
-and its ``_status_in`` (what it reads on a given day, waits included).
+and ``schedule.status_on`` (what it reads on a given day, waits included).
 
 **A status remembers two days** (format 2), the facts the Time tab dates work by:
 ``since``, the day it last changed, and ``started``, the day the step first went into any

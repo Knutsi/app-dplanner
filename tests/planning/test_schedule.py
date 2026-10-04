@@ -848,7 +848,8 @@ def _wait_landings(wait, today, statuses=None, since=None, requires=None):
 
 
 def test_a_days_wait_holds_what_waits_on_it_and_the_worker_it_does_not_need_works_on():
-    from dplanner.planning.schedule import Wait, parallel_finish
+    from dplanner.planning.schedule import parallel_finish
+    from dplanner.planning.wait import Wait
 
     library, plan = _made(("A", "W", "B", "C"), {"W": ["A"], "B": ["W"]})
     run = parallel_finish(
@@ -872,7 +873,7 @@ def test_a_days_wait_holds_what_waits_on_it_and_the_worker_it_does_not_need_work
 
 def test_an_until_wait_lets_what_waits_on_it_start_on_its_day_and_not_before():
     """Without it B would follow A on Tuesday; waiting until Wednesday, it lands Wednesday."""
-    from dplanner.planning.schedule import Wait
+    from dplanner.planning.wait import Wait
 
     friday = MONDAY - timedelta(days=3)
     assert _wait_landings(Wait(until=WEDNESDAY), friday) == [MONDAY, WEDNESDAY]
@@ -883,8 +884,8 @@ def test_an_until_wait_lets_what_waits_on_it_start_on_its_day_and_not_before():
 def test_a_wait_whose_day_has_passed_costs_nothing():
     """Thursday, with A done on Monday and B not started: the rest resumes on Friday, with
     nothing left to wait for."""
-    from dplanner.planning.schedule import Wait
     from dplanner.planning.status import Status
+    from dplanner.planning.wait import Wait
 
     thursday = MONDAY + timedelta(days=3)
     landed = _wait_landings(Wait(until=WEDNESDAY), thursday, {"A": Status.DONE}, {"A": MONDAY})
@@ -895,8 +896,8 @@ def test_a_days_wait_is_credited_with_the_days_it_has_already_waited():
     """W waits three days after A, which was planned for Monday and done on Tuesday — so on
     Wednesday the plan no longer holds. W has waited since Tuesday's middle, a day and a
     half; re-dated from Thursday it waits a day and a half more, and B lands on Monday."""
-    from dplanner.planning.schedule import Wait
     from dplanner.planning.status import Status
+    from dplanner.planning.wait import Wait
 
     tuesday = MONDAY + timedelta(days=1)
     chain = {"W": ["A"], "B": ["W"]}
