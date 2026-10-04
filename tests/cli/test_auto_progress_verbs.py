@@ -135,6 +135,24 @@ def test_progression_marks_a_due_step_and_the_json_says_it(cli):
     assert "due" not in cli("progression", "show", "widget")
 
 
+def test_a_status_word_from_a_newer_build_is_never_due_and_stays_on_disk(cli, workspace):
+    """Codex's probe from the structural review: an otherwise due agent step whose status a
+    newer build wrote. Read as pending it was due again — a second launch of work under way."""
+    for source in ("A1", "A2"):
+        cli("auto-progress", "set", "C", source, "on")
+        cli("status", "set", source, "ready-for-review")
+    cli("status", "set", "P", "done")
+    assert "C  (agent, due)" in cli("progression", "show", "widget")
+    entry = next(workspace.glob("*/steps/c/modules")) / "step_status.json"
+    entry.write_text(json.dumps({"status": "paused", "format": 2}))
+    said = cli("progression", "show", "widget")
+    assert "due" not in said
+    found = data(cli("progression", "show", "widget", "--json"))
+    assert "C" not in [row["title"] for row in found["ready"]]
+    assert [row["title"] for row in found["attention"]] == ["C"]
+    assert json.loads(entry.read_text()) == {"status": "paused", "format": 2}
+
+
 def test_a_status_said_as_json_is_one_document(cli):
     for source in ("A1", "A2"):
         cli("auto-progress", "set", "C", source, "on")
