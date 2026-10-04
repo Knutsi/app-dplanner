@@ -32,7 +32,6 @@ from dplanner.cli.report.parts import (
 )
 from dplanner.domain.model import Library, Project
 from dplanner.domain.ordering import cyclic
-from dplanner.domain.schedule import format_date, format_days, short_date
 from dplanner.domain.store import FilesFor
 from dplanner.modules.time_estimates.cli import Readers
 from dplanner.modules.time_estimates.present import (
@@ -45,6 +44,7 @@ from dplanner.modules.time_estimates.present import (
 )
 from dplanner.modules.time_estimates.progress import AT_START, read_history, read_saved
 from dplanner.modules.time_estimates.schedule import read_efficiency, read_start, read_team
+from dplanner.planning.schedule import format_date, format_days, short_date
 
 CHART_ID = "progress"
 TIMELINE_ID = "milestones"

@@ -54,7 +54,6 @@ from PySide6.QtWidgets import (
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import NodeId, Project, StepId
 from dplanner.domain.ordering import cyclic
-from dplanner.domain.schedule import format_date, format_days, short_date
 from dplanner.framework.activity import EntityActivity, follow_project, project_tab_title
 from dplanner.framework.context import (
     SCOPE_SELECTION,
@@ -101,6 +100,7 @@ from dplanner.modules.time_estimates.schedule import (
 from dplanner.modules.time_estimates.shift_view import ShiftView
 from dplanner.modules.time_estimates.snapshots import SaveSnapshotDialog, SnapshotPicker
 from dplanner.modules.time_estimates.work_view import WorkView
+from dplanner.planning.schedule import format_date, format_days, short_date
 from dplanner.theme.cards import title_font
 from dplanner.theme.icons import PALETTE_STRIP, camera_icon, close_icon, palette_strip_icon
 from dplanner.theme.palettes import PALETTES, Palette

@@ -36,8 +36,8 @@ from dplanner.modules.progression.module import (
     ControlCentreActivity,
 )
 from dplanner.modules.step_order.module import ORDER_KIND
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import write as write_status
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import write as write_status
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 

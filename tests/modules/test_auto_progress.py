@@ -21,6 +21,7 @@ from dplanner.modules.project_editor.renderers import EdgeAccent
 from dplanner.modules.project_editor.selection import EdgeRef
 from dplanner.modules.step_agent_instruction import aspect as agent
 from dplanner.modules.step_agent_run import aspect as agent_run
+from dplanner.planning.status import Status
 
 TOGGLE = "links.auto_progress"
 
@@ -178,13 +179,13 @@ def test_a_redirected_link_arrives_plain(services, project, tab):
 
 
 def test_the_step_statuses_tab_puts_a_collector_in_ready_to_start(services, project):
-    from dplanner.modules.step_status.aspect import write as status_write
+    from dplanner.planning.status import write as status_write
 
     c = by_title(project, "C")
     services.actions.run(TOGGLE, picking(services, *arrows(project, "A1", "A2", "A3")))
     for title in ("A1", "A2", "A3"):
         step = by_title(project, title)
-        entry = status_write("ready-for-review", today=services.clock.today())
+        entry = status_write(Status.READY_FOR_REVIEW, today=services.clock.today())
         SetModuleDataCommand(step.id, "step_status", entry).redo(services.document)
     statuses = services.tabs.open("progression", project.id)
     assert c.id in {step.id for step in statuses._found.ready}
@@ -195,11 +196,11 @@ def test_a_source_its_collector_takes_on_is_off_both_boards_ready_for_review(ser
     it as a person's — the same answer the canvas pulses by. P, under review with nobody to
     take it on, is a person's row on both, and A1 is not in what the tab's title counts."""
     from dplanner.modules.progression.module import CONTROL_CENTRE_KIND
-    from dplanner.modules.step_status.aspect import write as status_write
+    from dplanner.planning.status import write as status_write
 
     services.actions.run(TOGGLE, picking(services, *arrows(project, "A1")))
     for title in ("A1", "P"):
-        entry = status_write("ready-for-review", today=services.clock.today())
+        entry = status_write(Status.READY_FOR_REVIEW, today=services.clock.today())
         SetModuleDataCommand(by_title(project, title).id, "step_status", entry).redo(
             services.document
         )

@@ -483,11 +483,11 @@ def test_the_cli_gives_the_same_answer(cli):
 
 def test_the_window_and_the_terminal_agree(services, project, tab):
     """The tab and the verb read one derivation, asserted where they meet: the steps."""
-    from dplanner.domain.progression import progression as derive
-    from dplanner.modules.step_status.aspect import read as status_read
+    from dplanner.planning.progression import progression as derive
+    from dplanner.planning.status import readiness_of, stored
 
     set_status(services, project.steps[0], "done")
-    derived = derive(services.document, project, status_read)
+    derived = derive(services.document, project, readiness_of(stored))
     expected = [
         *(step.id for step in derived.ready),
         *(coming.step.id for coming in derived.upcoming),
@@ -550,9 +550,9 @@ def test_a_step_behind_a_dated_wait_joins_ready_the_morning_it_may_start(service
     """Nothing in the plan changes overnight; the day does, and the tab hears it."""
     from datetime import date
 
-    from dplanner.domain.schedule import Wait
     from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
     from dplanner.modules.step_wait.aspect import write as write_wait
+    from dplanner.planning.schedule import Wait
 
     services.clock.pin(date(2026, 9, 18))
     project = make_project("Discovery")

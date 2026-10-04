@@ -43,8 +43,9 @@ from dplanner.cli.report.parts import (
     Timeline,
 )
 from dplanner.core.markdown import render as markdown
-from dplanner.domain.schedule import format_date
 from dplanner.identity import APP_NAME, APP_VERSION
+from dplanner.planning.schedule import format_date
+from dplanner.planning.status import phrase, word
 
 IMAGE_CAP = 512 * 1024
 IMAGE_BUDGET = 8 * 1024 * 1024
@@ -297,12 +298,13 @@ def _graph(graph: Graph, colors: Colors) -> str:
 
 def _card(card: StepCard, budget: "_ImageBudget") -> str:
     facets = "".join(_facet(facet, budget) for facet in card.facets)
-    status = card.status.replace("-", " ")
+    status = word(card.status)
+    said = phrase(card.status)
     kind = f'<span class="badge kind-{_t(card.kind)}">{_t(card.kind)}</span>' if card.kind else ""
     return (
         f'<article class="card" data-step="{_t(card.id)}" data-key="{_t(card.key)}">'
         f'<header><span class="key">{_t(card.key)}</span><h3>{_t(card.title)}</h3>'
-        f'<div class="badges">{kind}<span class="status status-{_t(card.status)}">{_t(status)}'
+        f'<div class="badges">{kind}<span class="status status-{_t(status)}">{_t(said)}'
         f"</span></div></header>"
         f"{f'<dl class=facets>{facets}</dl>' if facets else NOTHING_MORE}"
         "</article>"

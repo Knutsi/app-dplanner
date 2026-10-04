@@ -35,16 +35,7 @@ from dplanner.cli.report.parts import (
     Stretch,
     Timeline,
 )
-from dplanner.domain.progression import (
-    BLOCKED,
-    DONE,
-    IN_PROGRESS,
-    READY_FOR_REVIEW,
-    READY_TO_MERGE,
-    REVIEW_AND_MERGE,
-    phrase,
-)
-from dplanner.domain.schedule import (
+from dplanner.planning.schedule import (
     SATURDAY,
     Tick,
     axis_ticks,
@@ -52,6 +43,8 @@ from dplanner.domain.schedule import (
     format_days,
     short_date,
 )
+from dplanner.planning.status import REVIEW_AND_MERGE, Status, Unknown, phrase
+from dplanner.planning.status import word as status_word
 
 
 @dataclass(frozen=True)
@@ -217,27 +210,28 @@ def _arrow_head(x: float, y: float, angle: float, color: str) -> str:
 
 # The statuses a card names in a pill on its bottom edge, beside the wash its key block wears:
 # work somebody has in hand. Done says it with a tick and a faded title; pending says nothing.
-PILLED_STATUSES = (IN_PROGRESS, *REVIEW_AND_MERGE, BLOCKED)
+PILLED_STATUSES = frozenset({Status.IN_PROGRESS, *REVIEW_AND_MERGE, Status.BLOCKED})
 
 
-def _status_fill(status: str, colors: Colors) -> str | None:
+def _status_fill(status: Status | Unknown, colors: Colors) -> str | None:
     """The key block's wash for a status, or None for one with nothing to say."""
-    return {
-        IN_PROGRESS: colors.busy,
-        READY_FOR_REVIEW: colors.attention,
-        READY_TO_MERGE: colors.good,
-        BLOCKED: colors.bad,
-        DONE: colors.good,
-    }.get(status)
+    fills: dict[Status | Unknown, str] = {
+        Status.IN_PROGRESS: colors.busy,
+        Status.READY_FOR_REVIEW: colors.attention,
+        Status.READY_TO_MERGE: colors.good,
+        Status.BLOCKED: colors.bad,
+        Status.DONE: colors.good,
+    }
+    return fills.get(status)
 
 
 def _card(node: Node, colors: Colors) -> str:
     x, y, w, h = node.x, node.y, node.w, node.h
-    done = node.status == DONE
+    done = node.status is Status.DONE
     tone = _body_tone(node, colors)
     wash = _status_fill(node.status, colors)
     out = [
-        f'<g class="node kind-{node.kind or "step"} status-{node.status or "pending"}" '
+        f'<g class="node kind-{node.kind or "step"} status-{status_word(node.status)}" '
         f'data-step="{_t(node.id)}"><title>{_t(node.key + " " + node.title)}</title>'
         f'<rect class="shadow" x="{_n(x)}" y="{_n(y + 2)}" width="{_n(w)}" height="{_n(h)}" '
         f'rx="{_n(RADIUS)}" fill="{colors.ink}" fill-opacity="0.06"/>'
@@ -273,8 +267,9 @@ def _card(node: Node, colors: Colors) -> str:
             f"{' font-weight="700"' if node.kind == 'milestone' else ''}>{_t(node.stat)}</text>"
         )
     if node.status in PILLED_STATUSES:
-        word = phrase(node.status)
-        out.append(_pill(inner_x - 4, y + h - PILL_H / 2, word, wash or colors.ink, colors))
+        out.append(
+            _pill(inner_x - 4, y + h - PILL_H / 2, phrase(node.status), wash or colors.ink, colors)
+        )
     if node.badge:
         width = _text_width(node.badge, 10.0) + 12
         out.append(
@@ -332,7 +327,7 @@ def _key_block(node: Node, wash: str | None, colors: Colors) -> str:
 
 def _body_tone(node: Node, colors: Colors) -> str | None:
     # Done outranks a kind, and a milestone outranks a feature — the canvas's rule.
-    if node.status == DONE:
+    if node.status is Status.DONE:
         return colors.good
     if node.kind == "milestone":
         # Its own shade where the plan deals one; the family otherwise, which is what a

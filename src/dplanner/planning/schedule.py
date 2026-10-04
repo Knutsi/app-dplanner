@@ -40,8 +40,8 @@ from math import ceil, floor
 
 from dplanner.domain.model import Library, Project, Step, StepId, local_day
 from dplanner.domain.ordering import Placed, placed
-from dplanner.domain.progression import BLOCKED, DONE, IN_PROGRESS, WAITING
 from dplanner.domain.scope import cone
+from dplanner.planning.status import Reading, Status, Unknown, Waiting
 
 WORKING_DAYS_PER_WEEK = 5
 SATURDAY = 5  # date.weekday(): Monday is 0.
@@ -518,9 +518,9 @@ class ScheduleFacts:
     """What has happened by ``today``, for a plan re-dated from it — handed in like
     ``days_for``, so the domain never learns what a status is stored as or what a focus is.
 
-    ``status_of`` is the stored status (``DONE``, ``IN_PROGRESS``, ``BLOCKED``, anything else
-    pending) and ``since_of`` the day it last changed. ``is_marker`` is a step that carries
-    no work by design — a milestone's own step, a feature, a check — whose status is no fact
+    ``status_of`` is the stored status as readiness sees it (``status.held``) and
+    ``since_of`` the day it last changed. ``is_marker`` is a step that carries no work by
+    design — a milestone's own step, a feature, a check — whose status is no fact
     about the schedule: people rarely mark one done on the day its work lands. ``worked`` is
     how many working days of a running step's work are behind it (``spent_since`` from its
     ``since``, weighed by whoever knows the focus it ran at), and ``resume_days``, where
@@ -533,7 +533,7 @@ class ScheduleFacts:
     """
 
     today: date
-    status_of: Callable[[Step], str]
+    status_of: Callable[[Step], Status]
     since_of: Callable[[Step], date | None]
     is_marker: Callable[[Step], bool]
     worked: Callable[[Step], float]
@@ -552,7 +552,7 @@ def spent_since(day: date | None, today: date) -> float:
 def waited(
     step: Step,
     before: Sequence[Step],
-    status_of: Callable[[Step], str],
+    status_of: Callable[[Step], Status],
     since_of: Callable[[Step], date | None],
     today: date,
 ) -> float:
@@ -560,7 +560,7 @@ def waited(
     made after all that was done has waited since the start of the day it was made;
     otherwise since the day the last of it was done, part-way through it. Nothing while any
     of it is not done."""
-    if any(status_of(one) != DONE for one in before):
+    if any(status_of(one) is not Status.DONE for one in before):
         return 0.0
     done = [day for one in before if (day := since_of(one)) is not None]
     last = max(done, default=None)
@@ -572,30 +572,30 @@ def waited(
 
 def wait_status(
     library: Library,
-    status_of: Callable[[Step], str],
+    status_of: Callable[[Step], Status | Unknown],
     since_of: Callable[[Step], date | None],
     wait_of: Callable[[Step], Wait | None],
     today: date,
-) -> Callable[[Step], str]:
-    """``status_of`` with every wait read as done once it is over and :data:`WAITING` until
+) -> Callable[[Step], Reading]:
+    """``status_of`` with every wait read as done once it is over and :class:`Waiting` until
     then — what the board and the Run Agent gate read, so what follows a wait is ready on the
     day it may start. A wait is over when what it waits on is done and its day has come, or
     its days have been waited; a wait on a wait asks the one before."""
 
-    def status(step: Step, seen: frozenset[StepId] = frozenset()) -> str:
+    def status(step: Step, seen: frozenset[StepId] = frozenset()) -> Reading:
         wait = wait_of(step)
         if wait is None:
             return status_of(step)
         if step.id in seen:  # Defensive: a loop a hand-edited file carries.
-            return WAITING
+            return Waiting()
         before = library.requires(step.id)
         derived = [status(one, seen | {step.id}) for one in before]
-        if any(found != DONE for found in derived):
-            return WAITING
+        if any(found is not Status.DONE for found in derived):
+            return Waiting()
         if wait.until is not None:
-            return DONE if today >= wait.until else WAITING
-        held = waited(step, before, lambda _one: DONE, since_of, today)
-        return DONE if held >= wait.days else WAITING
+            return Status.DONE if today >= wait.until else Waiting()
+        held = waited(step, before, lambda _one: Status.DONE, since_of, today)
+        return Status.DONE if held >= wait.days else Waiting()
 
     return lambda step: status(step)
 
@@ -775,12 +775,12 @@ def _holds(
                 continue
             status, since = facts.status_of(step), facts.since_of(step)
             lands = phase.landing_of(step.id)
-            if status == DONE:
+            if status is Status.DONE:
                 if lands > today or (since is not None and since != lands):
                     return False
             elif lands < today or (lands == today and facts.day_over):
                 return False
-            begun = status in (IN_PROGRESS, BLOCKED)
+            begun = status in (Status.IN_PROGRESS, Status.BLOCKED)
             if begun and since is not None and since > phase.start_day_of(step.id):
                 return False
     return True
@@ -829,7 +829,7 @@ def _resumed(
     carried: dict[StepId, float] | None = None
     settled: dict[StepId, date] = {}
     for index, (milestone, steps) in enumerate(groups):
-        known = {step.id: done_on(step) for step in steps if facts.status_of(step) == DONE}
+        known = {step.id: done_on(step) for step in steps if facts.status_of(step) is Status.DONE}
         known |= {step.id: settled[step.id] for step in steps if step.id in settled}
         left = [step for step in steps if step.id not in known]
         if all(facts.is_marker(step) or wait_of(step) is not None for step in left):
@@ -842,12 +842,13 @@ def _resumed(
                 step.id: days
                 for _later, ahead in groups[index + 1 :]
                 for step in ahead
-                if facts.status_of(step) == IN_PROGRESS and (days := credited(step)) is not None
+                if facts.status_of(step) is Status.IN_PROGRESS
+                and (days := credited(step)) is not None
             }
         own = {step.id for step in left}
         extra = [by_id[step_id] for step_id in carried if step_id not in own]
         running = frozenset(
-            {step.id for step in left if facts.status_of(step) == IN_PROGRESS} | set(carried)
+            {step.id for step in left if facts.status_of(step) is Status.IN_PROGRESS} | set(carried)
         )
 
         def costs(
@@ -862,7 +863,8 @@ def _resumed(
         started = [
             since
             for step in steps
-            if facts.status_of(step) == IN_PROGRESS and (since := facts.since_of(step)) is not None
+            if facts.status_of(step) is Status.IN_PROGRESS
+            and (since := facts.since_of(step)) is not None
         ]
         began_by = min([*known.values(), *started], default=None)
         phase, clock = dated(

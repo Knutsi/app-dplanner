@@ -22,7 +22,6 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QLineEdit, QMenu, QPlainTextEdit, QToolButton, QWidget
 
-from dplanner.domain.schedule import format_date
 from dplanner.framework.dialog import DialogFrame
 from dplanner.framework.signalling import StatusLine
 from dplanner.framework.widgets import block, caption
@@ -33,6 +32,7 @@ from dplanner.modules.time_estimates.progress import (
     Snapshot,
     find_saved,
 )
+from dplanner.planning.schedule import format_date
 from dplanner.theme.tokens import SECTION_GAP
 
 NOTE_LINES = 4

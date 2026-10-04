@@ -15,6 +15,7 @@ from dplanner.modules.step_review.rounds import (
     said,
     turn_launched,
 )
+from dplanner.planning.status import Status, Unknown, held
 
 
 def conversation():
@@ -32,6 +33,14 @@ def write(library, review, entry):
     SetModuleDataCommand(review.id, MODULE_ID, entry).redo(library)
 
 
+def _stored(word):
+    """A word on disk as the status reader reads it: one this build does not know is unknown."""
+    try:
+        return Status(word)
+    except ValueError:
+        return Unknown(word)
+
+
 def due(library, project, running=(), statuses=None):
     return [
         found.step.title
@@ -40,7 +49,7 @@ def due(library, project, running=(), statuses=None):
             project,
             is_agent=lambda _step: True,
             running=lambda step: step.title in running,
-            status_for=lambda step: (statuses or {}).get(step.title, "in-progress"),
+            status_for=lambda step: held(_stored((statuses or {}).get(step.title, "in-progress"))),
         )
     ]
 

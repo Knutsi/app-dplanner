@@ -40,7 +40,7 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import QSizePolicy, QToolTip, QWidget
 
-from dplanner.domain.schedule import SATURDAY, WEEKDAYS, format_date, working_days_between
+from dplanner.planning.schedule import SATURDAY, WEEKDAYS, format_date, working_days_between
 from dplanner.theme.tokens import SECONDARY_ALPHA
 
 MONTHS_SHOWN = 6

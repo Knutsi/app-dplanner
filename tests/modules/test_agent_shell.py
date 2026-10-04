@@ -13,6 +13,7 @@ import pytest
 from dplanner.cli.discovery import PROJECT_ENV
 from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.module import NO_WORKTREE
+from dplanner.planning.status import Status
 
 
 @pytest.fixture
@@ -88,7 +89,7 @@ def test_a_step_that_works_in_place_opens_its_shell_in_the_checkout(
     from dplanner.domain.commands import SetModuleDataCommand
     from dplanner.modules.step_agent_instruction.aspect import MODULE_ID, with_worktree
     from dplanner.modules.step_agent_run.aspect import launched
-    from dplanner.modules.step_status.aspect import read as status
+    from dplanner.planning.status import stored as status
 
     SetModuleDataCommand(step.id, MODULE_ID, with_worktree(step, False)).redo(services.document)
     select(services, step)
@@ -100,7 +101,7 @@ def test_a_step_that_works_in_place_opens_its_shell_in_the_checkout(
     assert f"cd {shlex.quote(str(library_repo))}" in script.read_text()
     # Not a run: no chip, no claim.
     assert not launched(services.document.step(step.id))
-    assert status(services.document.step(step.id)) == "pending"
+    assert status(services.document.step(step.id)) is Status.PENDING
 
 
 def test_a_worktree_step_is_greyed_until_its_worktree_is_here_then_opens_in_it(

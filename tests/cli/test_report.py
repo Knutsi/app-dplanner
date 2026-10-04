@@ -42,8 +42,9 @@ from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.project_editor.positions import MODULE_ID as POSITION_KEY
 from dplanner.modules.project_editor.positions import write_member, write_position
 from dplanner.modules.step_milestone.aspect import write as milestone
-from dplanner.modules.step_status.aspect import read as status_for
-from dplanner.modules.step_status.aspect import write as status
+from dplanner.planning.status import Status
+from dplanner.planning.status import stored as status_for
+from dplanner.planning.status import write as status
 from dplanner.theme.glyph_source import glyph_markup
 
 SCRIPTY = "<script>alert('x')</script> & friends"
@@ -65,7 +66,7 @@ def plan(cli_library, workspace):
         SetModuleDataCommand(steps[0].id, "estimation", estimate(2.0)).redo(library)
         SetModuleDataCommand(steps[1].id, "estimation", estimate(3.0)).redo(library)
         SetModuleDataCommand(
-            steps[0].id, "step_status", status("done", today=date(2026, 9, 21))
+            steps[0].id, "step_status", status(Status.DONE, today=date(2026, 9, 21))
         ).redo(library)
         SetModuleDataCommand(steps[2].id, "step_milestone", milestone("v1")).redo(library)
         area = context.store.files(steps[0].id, "step_description")
@@ -115,10 +116,10 @@ def test_review_and_merge_wash_the_key_block_and_say_their_word():
     amber in the glyph is a wait's alone."""
     person = glyph_markup("person")
     review = Node(
-        "a", "S1", "Parser", 0, 0, 220, 76, status="ready-for-review", glyph_markup=person
+        "a", "S1", "Parser", 0, 0, 220, 76, status=Status.READY_FOR_REVIEW, glyph_markup=person
     )
     merge = Node(
-        "b", "S2", "Indexer", 300, 0, 220, 76, status="ready-to-merge", glyph_markup=person
+        "b", "S2", "Indexer", 300, 0, 220, 76, status=Status.READY_TO_MERGE, glyph_markup=person
     )
     svg = graph_svg(Graph((review, merge), ()), LIGHT)
     washes = re.findall(r'class="key-block" d="[^"]*" fill="([^"]*)"', svg)

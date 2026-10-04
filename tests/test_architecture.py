@@ -1,9 +1,9 @@
 """Layering rules, enforced.
 
-The architecture is ``core`` → ``domain`` → ``framework`` → ``modules`` → the composition
-root (``modules/__init__.py``) → ``app``. These tests parse every source file's imports with
-the standard library's ``ast`` — no Qt is loaded, no import is executed — and fail with the
-offending file and line when a rule is broken.
+The architecture is ``core`` → ``domain`` → ``planning`` → ``cli`` → ``framework`` →
+``modules`` → the composition root (``modules/__init__.py``) → ``app``. These tests parse
+every source file's imports with the standard library's ``ast`` — no Qt is loaded, no import
+is executed — and fail with the offending file and line when a rule is broken.
 
 ``TYPE_CHECKING``-only imports count on purpose: type coupling is still coupling, and an
 architecture that holds only at runtime is one refactor from not holding at all.
@@ -14,14 +14,14 @@ The rules, in prose (see also CLAUDE.md):
    layer, and it is what every application built from this template shares.
 2. ``domain/`` imports no Qt, and imports ``core`` only. Your model must stay testable with
    plain pytest, and must never depend on the machinery that displays it.
-3. ``framework/`` never imports ``modules`` or ``app``. It may use ``core``, ``domain`` and
-   ``theme``.
+3. ``framework/`` never imports ``modules`` or ``app``. It may use ``core``, ``domain``,
+   ``planning`` and ``theme``.
 4. Modules never import each other. Only ``modules/__init__.py`` may import them all.
 5. Modules never import ``AppServices``, the builder, or the concrete window — they receive
    typed ``Deps`` objects and reach the window through the capability protocols.
 6. ``app.py`` and ``entry.py`` never reach into a module subpackage; they may import the
    composition root.
-7. ``cli/`` imports no Qt and nothing above ``domain/``, and a module's ``cli.py`` and
+7. ``cli/`` imports no Qt and nothing above ``planning/``, and a module's ``cli.py`` and
    ``aspect.py`` are the same: importable without a graphics stack. The CLI is how an agent
    drives this application, and it has to start in milliseconds on a machine with no GUI
    libraries at all.
@@ -31,6 +31,9 @@ The rules, in prose (see also CLAUDE.md):
 9. ``theme/`` is a leaf: it imports ``core`` at most, and importing the package loads no Qt —
    a theme provider module reads the themes, the providers and the Omarchy mapping without
    a graphics stack, and the Qt half is imported inside ``apply_theme``.
+10. ``planning/`` imports no Qt and only ``core`` and ``domain``, and ``domain/`` never
+    imports it. The planning model — status, readiness, the schedule — sits on the graph and
+    under every feature, so a feature can read it and it can read no feature.
 
 **When one of these fails, fix the dependency direction, not the test.** Every rule has a
 supported way to get what the shortcut wanted: a capability protocol, a typed callback on
@@ -186,6 +189,7 @@ def collect_violations(root: Path = SRC) -> list[str]:
                 if name.startswith(
                     (
                         f"{PACKAGE}.domain",
+                        f"{PACKAGE}.planning",
                         f"{PACKAGE}.framework",
                         f"{PACKAGE}.modules",
                         f"{PACKAGE}.theme",
@@ -199,6 +203,8 @@ def collect_violations(root: Path = SRC) -> list[str]:
                     forbid(path, line, name, "domain/ must stay free of Qt imports")
                 if name.startswith(
                     (
+                        f"{PACKAGE}.planning",
+                        f"{PACKAGE}.cli",
                         f"{PACKAGE}.framework",
                         f"{PACKAGE}.modules",
                         f"{PACKAGE}.theme",
@@ -206,6 +212,13 @@ def collect_violations(root: Path = SRC) -> list[str]:
                     )
                 ):
                     forbid(path, line, name, "domain/ may import core/ only")
+            elif top == "planning":
+                if name.startswith(QT_PACKAGES):
+                    forbid(path, line, name, "planning/ must stay free of Qt imports")
+                if name.startswith(f"{PACKAGE}.") and not name.startswith(
+                    (f"{PACKAGE}.core", f"{PACKAGE}.domain", f"{PACKAGE}.planning")
+                ):
+                    forbid(path, line, name, "planning/ imports core/ and domain/ only")
             elif top == "cli":
                 if name.startswith(QT_PACKAGES):
                     forbid(path, line, name, "cli/ must stay free of Qt imports")
@@ -218,7 +231,7 @@ def collect_violations(root: Path = SRC) -> list[str]:
                         f"{PACKAGE}.entry",
                     )
                 ):
-                    forbid(path, line, name, "cli/ sits above domain/ and below the modules")
+                    forbid(path, line, name, "cli/ sits above planning/ and below the modules")
             elif top == "framework":
                 if name.startswith(f"{PACKAGE}.modules") or name == f"{PACKAGE}.app":
                     forbid(path, line, name, "framework/ never imports modules or the app")
@@ -298,6 +311,21 @@ def test_the_rules_can_catch_a_violation(tmp_path) -> None:
     )
     violations = collect_violations(root)
     assert any("_architecture_probe" in violation for violation in violations)
+
+
+def test_the_planning_tier_is_fenced_both_ways(tmp_path) -> None:
+    """Self-check for rule 10: the graph never reads the planning model, and the planning
+    model never reads a feature."""
+    root = tmp_path / PACKAGE
+    for package in ("domain", "planning"):
+        (root / package).mkdir(parents=True)
+    graph, model = root / "domain" / "_probe.py", root / "planning" / "_probe.py"
+    graph.write_text(f"from {PACKAGE}.planning.status import Status\n")
+    model.write_text(f"from {PACKAGE}.modules.github import aspect\n")
+    violations = collect_violations(root)
+    for probe in (graph, model):
+        named = str(probe.relative_to(tmp_path))
+        assert any(violation.startswith(named) for violation in violations), named
 
 
 def test_the_composition_root_imports_without_qt() -> None:

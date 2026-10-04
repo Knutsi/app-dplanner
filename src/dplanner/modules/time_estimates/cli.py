@@ -13,7 +13,7 @@ and ``--json``, so the three can never disagree. ``focus``, ``palette``, ``team`
 controls push.
 
 **The dates are re-dated from what has happened**: they stand while the work follows the
-plan, and otherwise the rest resumes from tomorrow (``domain/schedule.py``'s ``phases``).
+plan, and otherwise the rest resumes from tomorrow (``planning/schedule.py``'s ``phases``).
 So a stretch's ``start`` in ``--json`` is where its remaining work begins, ``began`` the
 day any of its work first began — the two differ once reality has left the plan — and
 ``unestimated`` counts the steps still to do that nobody has sized.
@@ -46,7 +46,6 @@ from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project, find_step, project_arg, step_arg
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.schedule import Phase, ScheduleFacts, Wait, format_date, format_days
 from dplanner.modules.time_estimates.progress import (
     A_WEEK_AGO,
     AT_START,
@@ -98,6 +97,8 @@ from dplanner.modules.time_estimates.schedule import (
     write_milestone,
     write_project,
 )
+from dplanner.planning.schedule import Phase, ScheduleFacts, Wait, format_date, format_days
+from dplanner.planning.status import Status
 from dplanner.theme.palettes import PALETTES, palette, shades
 
 
@@ -109,7 +110,7 @@ class Readers:
     is_agent: Callable[[Step], bool]
     # A step's status as the model reads it, and the day it last changed — for a step in
     # progress, the day its work began, which is what in-flight work is credited from.
-    status_for: Callable[[Step], str]
+    status_for: Callable[[Step], Status]
     since_for: Callable[[Step], date | None]
     started_for: Callable[[Step], date | None]  # The day a step first went into a worked status.
     # The day a step's status last changed, whatever it changed to: what a recorded day

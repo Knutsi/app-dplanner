@@ -17,6 +17,7 @@ from dplanner.modules.branches.aspect import (
     write_cut,
     write_land,
 )
+from dplanner.planning.status import Status
 
 TODAY = date(2026, 9, 29)
 
@@ -121,18 +122,20 @@ def test_a_cut_is_nobodys_work_and_reads_done_once_what_it_waits_on_is(services,
         _status_in,
         _step_key,
     )
-    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-    from dplanner.modules.step_status.aspect import write as status_write
+    from dplanner.planning.status import MODULE_ID as STATUS_ID
+    from dplanner.planning.status import write as status_write
 
     library = services.document
     card = titled(plan, "Card")
     library.set_module_data(card.id, CUT_ID, write_cut("feature/x"))
     assert _step_key(card).startswith("B") and _primary_glyph(card) == ("branch", "")
-    assert not _counts_as_work(card) and _card_status(card) == "pending"
+    assert not _counts_as_work(card) and _card_status(card) is Status.PENDING
     status = _status_in(library, TODAY)
-    assert status(card) != "done"
-    library.set_module_data(titled(plan, "Menu").id, STATUS_ID, status_write("done", today=TODAY))
-    assert _status_in(library, TODAY)(card) == "done"
+    assert status(card) is not Status.DONE
+    library.set_module_data(
+        titled(plan, "Menu").id, STATUS_ID, status_write(Status.DONE, today=TODAY)
+    )
+    assert _status_in(library, TODAY)(card) is Status.DONE
 
 
 def test_a_merge_into_the_branch_accepts_a_member_under_review(services, plan):
@@ -177,8 +180,8 @@ def edge(tab, waiter, source):
 def test_the_work_on_a_branch_lies_on_its_lane_until_it_lands(services, plan):
     from dplanner.modules import _branch_births
     from dplanner.modules.branches.edits import put_command
-    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-    from dplanner.modules.step_status.aspect import write as status_write
+    from dplanner.planning.status import MODULE_ID as STATUS_ID
+    from dplanner.planning.status import write as status_write
     from dplanner.theme.palettes import LANES
 
     library = services.document
@@ -193,7 +196,7 @@ def test_the_work_on_a_branch_lies_on_its_lane_until_it_lands(services, plan):
     assert not edge(tab, cut, titled(plan, "Menu")).accent().lane  # The way in is main's.
     assert not edge(tab, titled(plan, "Release"), land).accent().lane  # And the way out.
     assert "merge" in tab._scene._nodes[land.id]._accent.icons
-    library.set_module_data(land.id, STATUS_ID, status_write("done", today=TODAY))
+    library.set_module_data(land.id, STATUS_ID, status_write(Status.DONE, today=TODAY))
     assert not edge(tab, edit, card).accent().lane  # Landed: on main now.
 
 

@@ -8,10 +8,10 @@ from PySide6.QtCore import QDate
 
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
-from dplanner.domain.schedule import Wait
 from dplanner.modules.estimation.aspect import enabled as estimate_on
 from dplanner.modules.step_description.aspect import enabled as description_on
 from dplanner.modules.step_wait.aspect import read
+from dplanner.planning.schedule import Wait
 
 TODAY = date(2026, 9, 4)
 

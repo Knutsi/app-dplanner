@@ -30,7 +30,7 @@ from dplanner.modules.project_editor.renderers import (
 from dplanner.modules.project_editor.selection import EdgeRef
 from dplanner.modules.step_agent_instruction import aspect as agent
 from dplanner.modules.step_review import aspect as review
-from dplanner.modules.step_status import aspect as status
+from dplanner.planning import status
 from dplanner.theme.cards import LIFT
 
 
@@ -75,7 +75,7 @@ def card(tab, project, title):
 
 
 def set_status(services, project, title, word):
-    entry = status.write(word, today=services.clock.today())
+    entry = status.write(status.Status(word), today=services.clock.today())
     step = by_title(project, title)
     SetModuleDataCommand(step.id, status.MODULE_ID, entry).redo(services.document)
 

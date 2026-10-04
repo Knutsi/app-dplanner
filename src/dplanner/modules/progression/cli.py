@@ -3,7 +3,7 @@
 ``order show`` answers what the graph *allows*; this answers where the work *is*: percent
 done, what is stuck, waiting on a merge or a review, or running, the frontier ranked by
 what finishing it unlocks, and what comes one move later. One derivation —
-``domain/progression.py`` — feeds this verb, the Step statuses tab, the Control Centre and
+``planning/progression.py`` — feeds this verb, the Step statuses tab, the Control Centre and
 ``--json``, so none of them can disagree.
 
 ``--all`` is the Control Centre's question in the terminal: every project as one board, or
@@ -31,8 +31,9 @@ from typing import Any
 from dplanner.cli import CliCommand, CliContext, CliError
 from dplanner.cli.lookup import find_project
 from dplanner.domain.model import Library, Project, Step, StepId
-from dplanner.domain.progression import Progression, across, estimated_progress
 from dplanner.domain.short_titles import UNTITLED
+from dplanner.planning.progression import Progression, across, estimated_progress
+from dplanner.planning.status import Status
 
 NO_PROJECT = "name a project, or pass --all for every project"
 SEVERAL = "one project at a time — pass --all to read several as one board"
@@ -40,24 +41,24 @@ SEVERAL = "one project at a time — pass --all to read several as one board"
 
 @dataclass(frozen=True)
 class _Readers:
-    status_for: Callable[[Step], str]
+    status_for: Callable[[Step], Status]
     counts_as_work: Callable[[Step], bool]
     days_for: Callable[[Step], float | None]
     auto_progresses: Callable[[Step, Step], bool]
     is_agent: Callable[[Step], bool]
     asks_person: Callable[[Step], bool]
-    due: Callable[[Library, Project, Callable[[Step], str]], Sequence[Step]]
+    due: Callable[[Library, Project, Callable[[Step], Status]], Sequence[Step]]
 
 
 def commands(
     *,
-    status_in: Callable[[Library, date], Callable[[Step], str]],
+    status_in: Callable[[Library, date], Callable[[Step], Status]],
     counts_as_work: Callable[[Step], bool],
     days_for: Callable[[Step], float | None],
     auto_progresses: Callable[[Step, Step], bool],
     is_agent: Callable[[Step], bool],
     asks_person: Callable[[Step], bool],
-    due: Callable[[Library, Project, Callable[[Step], str]], Sequence[Step]],
+    due: Callable[[Library, Project, Callable[[Step], Status]], Sequence[Step]],
 ) -> list[CliCommand]:
     """``status_in`` reads a step's status in a library on a day — a wait is done once it is
     over, which only the day can say. ``auto_progresses`` says which links free their waiter

@@ -11,15 +11,16 @@ import pytest
 
 from dplanner.domain.commands import AddNodeCommand, SetModuleDataCommand
 from dplanner.domain.model import Step
-from dplanner.domain.schedule import Wait
 from dplanner.modules.feature import aspect as feature
 from dplanner.modules.project_editor.renderers import NodeAccent
 from dplanner.modules.step_agent_instruction import aspect as agent
 from dplanner.modules.step_agent_run import aspect as agent_run
 from dplanner.modules.step_check import aspect as check
 from dplanner.modules.step_milestone import aspect as milestone
-from dplanner.modules.step_status import aspect as status
 from dplanner.modules.step_wait import aspect as wait
+from dplanner.planning import status
+from dplanner.planning.schedule import Wait
+from dplanner.planning.status import Status
 
 
 @pytest.fixture
@@ -65,7 +66,7 @@ def test_a_done_step_is_muted_with_a_green_body(services, project, tab):
     step = project.steps[0]
     services.undo.push(
         SetModuleDataCommand(
-            step.id, status.MODULE_ID, status.write("done", today=date(2026, 9, 21))
+            step.id, status.MODULE_ID, status.write(Status.DONE, today=date(2026, 9, 21))
         )
     )
     accent = node(tab, step)._accent
@@ -80,7 +81,7 @@ def test_a_shipped_milestone_reads_finished(services, project, tab):
     services.undo.push(SetModuleDataCommand(step.id, milestone.MODULE_ID, milestone.write("MVP")))
     services.undo.push(
         SetModuleDataCommand(
-            step.id, status.MODULE_ID, status.write("done", today=date(2026, 9, 21))
+            step.id, status.MODULE_ID, status.write(Status.DONE, today=date(2026, 9, 21))
         )
     )
     accent = node(tab, step)._accent
@@ -120,7 +121,7 @@ def test_a_done_feature_reads_finished(services, project, tab):
     services.undo.push(SetModuleDataCommand(step.id, feature.MODULE_ID, feature.write()))
     services.undo.push(
         SetModuleDataCommand(
-            step.id, status.MODULE_ID, status.write("done", today=date(2026, 9, 21))
+            step.id, status.MODULE_ID, status.write(Status.DONE, today=date(2026, 9, 21))
         )
     )
     accent = node(tab, step)._accent
@@ -151,7 +152,7 @@ def test_in_progress_gets_a_busy_bar(services, project, tab):
     step = project.steps[0]
     services.undo.push(
         SetModuleDataCommand(
-            step.id, status.MODULE_ID, status.write("in-progress", today=date(2026, 9, 21))
+            step.id, status.MODULE_ID, status.write(Status.IN_PROGRESS, today=date(2026, 9, 21))
         )
     )
     accent = node(tab, step)._accent
@@ -163,7 +164,7 @@ def test_blocked_gets_a_bad_bar(services, project, tab):
     step = project.steps[0]
     services.undo.push(
         SetModuleDataCommand(
-            step.id, status.MODULE_ID, status.write("blocked", today=date(2026, 9, 21))
+            step.id, status.MODULE_ID, status.write(Status.BLOCKED, today=date(2026, 9, 21))
         )
     )
     assert node(tab, step)._accent.key_tone == "bad"
@@ -174,7 +175,7 @@ def test_review_wears_the_warn_key_block_and_merge_the_good_one(services, projec
     done, so neither mutes the card or greens its body. The glyph over the key stays in ink:
     amber in the block's glyph is a wait's alone."""
     step = project.steps[0]
-    for word, tone in (("ready-for-review", "warn"), ("ready-to-merge", "good")):
+    for word, tone in ((Status.READY_FOR_REVIEW, "warn"), (Status.READY_TO_MERGE, "good")):
         services.undo.push(
             SetModuleDataCommand(
                 step.id, status.MODULE_ID, status.write(word, today=date(2026, 9, 21))
@@ -190,7 +191,7 @@ def test_a_wait_wears_no_status_it_carried_before_it_became_one(services, projec
     stays the block's one amber, never a stroke on an amber review wash."""
     step = project.steps[0]
     for module_id, entry in (
-        (status.MODULE_ID, status.write("ready-for-review", today=date(2026, 9, 21))),
+        (status.MODULE_ID, status.write(Status.READY_FOR_REVIEW, today=date(2026, 9, 21))),
         (wait.MODULE_ID, wait.write(Wait(days=2.0))),
     ):
         services.undo.push(SetModuleDataCommand(step.id, module_id, entry))
@@ -267,7 +268,7 @@ def test_clearing_the_status_unmutes(services, project, tab):
     step = project.steps[0]
     services.undo.push(
         SetModuleDataCommand(
-            step.id, status.MODULE_ID, status.write("done", today=date(2026, 9, 21))
+            step.id, status.MODULE_ID, status.write(Status.DONE, today=date(2026, 9, 21))
         )
     )
     services.undo.undo()

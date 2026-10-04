@@ -44,7 +44,6 @@ from PySide6.QtWidgets import (
 
 from dplanner.core.clock import Clock
 from dplanner.domain.model import Library
-from dplanner.domain.schedule import WEEKDAYS, Wait, format_date, short_date
 from dplanner.framework.action_registry import ActionRegistry, ActionSpec
 from dplanner.framework.activity import ActivityBase
 from dplanner.framework.context import Context, ContextService, activity_uri
@@ -68,6 +67,8 @@ from dplanner.modules.time_estimates.simulation.scenarios import SCENARIOS, scen
 from dplanner.modules.time_estimates.simulation.simulate import Setup, Simulated, simulate
 from dplanner.modules.time_estimates.simulation.timeline import CADENCES
 from dplanner.modules.time_estimates.simulation.world import wait_title
+from dplanner.planning.schedule import WEEKDAYS, Wait, format_date, short_date
+from dplanner.planning.status import Status
 from dplanner.theme.icons import (
     chevron_left_icon,
     chevron_right_icon,
@@ -534,7 +535,7 @@ class TimeSimulationActivity(ActivityBase):
         chosen = self.wait_before.currentData()
         self.wait_before.clear()
         for step in steps:
-            if step.status == "pending" and step.wait is None:
+            if step.status is Status.PENDING and step.wait is None:
                 self.wait_before.addItem(f"S{step.number} {step.title}", step.id)
         at = self.wait_before.findData(chosen)
         self.wait_before.setCurrentIndex(max(0, at))

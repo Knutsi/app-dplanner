@@ -19,7 +19,7 @@ the last milestone, a landing date per row — one worker after another from a s
 set on this page. That is not how the work happens and not how the plan is scheduled
 (``time_estimates`` simulates two pools of workers), so the tab states the volume instead
 and leaves dating to ``dplanner schedule show``. The estimate stays: it is the step's own
-fact, rendered with ``domain/schedule.py``'s formatter so this table and the terminal
+fact, rendered with ``planning/schedule.py``'s formatter so this table and the terminal
 cannot express one number two ways.
 
 Rebuilt whenever the graph changes. A project holds tens of steps, so a whole redraw is
@@ -38,9 +38,9 @@ from PySide6.QtWidgets import QWidget
 
 from dplanner.domain.model import StepId
 from dplanner.domain.ordering import Placed
-from dplanner.domain.schedule import Scheduled, format_days
 from dplanner.framework.list_rows import HOST_ROLE
 from dplanner.framework.table import Cell, Column, Table
+from dplanner.planning.schedule import Scheduled, format_days
 from dplanner.theme.icons import done_icon, key_badge_icon, layers_icon, step_icon
 from dplanner.theme.tokens import SECONDARY_ALPHA
 from dplanner.theme.tones import recoloured

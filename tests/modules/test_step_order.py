@@ -373,8 +373,8 @@ def test_the_export_rows_carry_numbers_a_spreadsheet_can_compute_with(services, 
     """The table renders "2w" and "18 September"; a CSV is opened to sort and sum, so it
     gets the underlying day counts and ISO dates instead."""
     from dplanner.domain.ordering import placed
-    from dplanner.domain.schedule import schedule
     from dplanner.modules.step_order.export import order_rows
+    from dplanner.planning.schedule import schedule
 
     order = placed(services.document, project)
     days = {"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0}

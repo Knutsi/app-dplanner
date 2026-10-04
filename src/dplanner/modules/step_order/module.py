@@ -26,7 +26,7 @@ ledger lives and how a rate is learned are the composition root's to know.
 
 What the order page says under its caption is the **volume**: the estimated days the order comes
 to, over how many steps, and how many nobody has sized — the sentence ``dplanner order
-show``, ``estimate rollup`` and the Estimates tab all print (``domain/schedule.py``'s
+show``, ``estimate rollup`` and the Estimates tab all print (``planning/schedule.py``'s
 ``volume_words``). It replaced a paragraph explaining what a wave is, which is now the
 caption's own info glyph, and the serial calendar the table used to run out beside it.
 """
@@ -43,7 +43,6 @@ from dplanner.core.fsio import write_csv
 from dplanner.domain.expenditure import Rate, Row, Spent, expenditure, models_in
 from dplanner.domain.model import Library, NodeId, Project, ProjectId, Step, StepId
 from dplanner.domain.ordering import Placed, placed
-from dplanner.domain.schedule import Scheduled, schedule, volume, volume_words
 from dplanner.framework.action_menu import build_menu
 from dplanner.framework.action_registry import (
     DISABLED,
@@ -86,6 +85,7 @@ from dplanner.modules.step_order.expenditure import (
 )
 from dplanner.modules.step_order.export import order_rows
 from dplanner.modules.step_order.view import OrderTable, StepTable
+from dplanner.planning.schedule import Scheduled, schedule, volume, volume_words
 from dplanner.theme.icons import list_icon, spark_icon
 
 MODULE_ID = "step_order"

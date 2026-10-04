@@ -19,7 +19,7 @@ from dplanner.cli import CliCommand, CliContext
 from dplanner.cli.lookup import find_project
 from dplanner.domain.model import Step
 from dplanner.domain.ordering import Placed, placed
-from dplanner.domain.schedule import volume, volume_words
+from dplanner.planning.schedule import volume, volume_words
 
 
 def wave_label(index: int) -> str:

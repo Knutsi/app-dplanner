@@ -47,7 +47,6 @@ from dplanner.core.telemetry import current
 from dplanner.domain.agents import AgentHarness
 from dplanner.domain.commands import SetModuleDataCommand
 from dplanner.domain.model import Library, Node, NodeId, Step, StepId
-from dplanner.domain.progression import DONE, UNKNOWN, outstanding, phrase
 from dplanner.domain.repositories import UNSET, RepositoryFacts
 from dplanner.domain.store import Conflict, FilesFor
 from dplanner.framework.action_menu import append_action
@@ -118,6 +117,8 @@ from dplanner.modules.step_agent_instruction.settings_page import (
     max_agents,
     start_in_progress,
 )
+from dplanner.planning.progression import outstanding
+from dplanner.planning.status import Reading, Status, Unknown, phrase, readiness_of
 from dplanner.theme.icons import spark_icon, typewriter_icon
 
 PLACEHOLDER = "How to carry this step out: which files, which conventions, what done means."
@@ -154,9 +155,9 @@ def _no_clone(_repositories: Sequence[str], done: Callable[[dict[str, Path], str
     done({}, "nothing here can clone a repository")
 
 
-def _all_done(_step: Step) -> str:
+def _all_done(_step: Step) -> Reading:
     """A build with nobody to ask about status: nothing is unfinished, nothing warns."""
-    return DONE
+    return Status.DONE
 
 
 def _unplaced(facts: RepositoryFacts, step: Step | None = None) -> str:
@@ -303,7 +304,7 @@ class StepAgentInstructionDeps:
     # What a step's status claims, through the status aspect's Qt-free reader — the
     # Step statuses tab's seam. Run Agent asks before launching on a step whose
     # prerequisites do not all read done; this module never learns the vocabulary's shape.
-    status_for: Callable[[Step], str] = field(default=_all_done)
+    status_for: Callable[[Step], Reading] = field(default=_all_done)
     # The writer half of the same seam: work on the step has begun. Run Agent calls it as
     # the terminal opens, when the person leaves *On launch* on; True when it wrote. The
     # status aspect owns the word and the fact that the write skips the undo stack — this
@@ -574,8 +575,8 @@ class StepAgentInstructionModule:
             return no_agent(kind)
         if not enabled(step):
             return "mark the step as an agent step first (Agent, in Step Details)"
-        if deps.status_for(step) == UNKNOWN:
-            return "its status was written by a newer DPlanner — update to run it"
+        if isinstance(status := deps.status_for(step), Unknown):
+            return f"its status ({status.word}) was written by a newer DPlanner — update to run it"
         briefed = deps.briefing.instruction(deps.library, step, deps.files)
         if (
             not briefed.body
@@ -772,7 +773,7 @@ class StepAgentInstructionModule:
     def _unfinished(self, step: Step) -> list[Step]:
         """The step's prerequisites it still waits on — what the graph gate asks about."""
         deps = self._deps
-        return outstanding(deps.library, step, deps.status_for, deps.auto_progresses)
+        return outstanding(deps.library, step, readiness_of(deps.status_for), deps.auto_progresses)
 
     def _run_on(self, step: Step, profile: Profile) -> tuple[bool, str, launcher.LaunchFiles]:
         """Launch the agent on one step: whether a shell opened, the briefing it was handed

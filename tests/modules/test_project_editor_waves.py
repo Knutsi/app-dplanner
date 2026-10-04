@@ -40,8 +40,9 @@ from dplanner.modules.project_editor.positions import (
     write_position,
 )
 from dplanner.modules.project_editor.sorts import EN_DASH, arranged_in_waves, waves
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import write as status
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import Status
+from dplanner.planning.status import write as status
 
 # Where each step was put by hand, on the grid: nowhere near its wave, so a move shows.
 HAND = {
@@ -261,7 +262,9 @@ def test_the_ruler_names_each_wave_says_when_it_runs_and_how_much_is_done(servic
     services.undo.push(SetModuleDataCommand(steps["Model"].id, ESTIMATE_ID, estimate(2.0)))
     services.undo.push(SetModuleDataCommand(steps["Screens"].id, ESTIMATE_ID, estimate(0.5)))
     services.undo.push(
-        SetModuleDataCommand(steps["Model"].id, STATUS_ID, status("done", today=date(2026, 9, 28)))
+        SetModuleDataCommand(
+            steps["Model"].id, STATUS_ID, status(Status.DONE, today=date(2026, 9, 28))
+        )
     )
     assert view(tab).ruler.headings() == ()  # Free view has no ruler.
     tab.run_action("canvas.waves")

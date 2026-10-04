@@ -2,7 +2,7 @@
 
 The executor is deliberately the model's own scheduler run against the *true* effort of
 each step: the same two pools, the same "longest remaining chain first" priority
-(``domain/schedule.py``'s ``chain_tails``), the same milestones-in-sequence rule
+(``planning/schedule.py``'s ``chain_tails``), the same milestones-in-sequence rule
 (``stretches``), the same marker taking no worker, with time continuous inside a working
 day. So when the true effort equals the estimate and nothing happens to the plan (*By the
 book*), whatever gap opens between the forecast and what happens is the model's own doing,
@@ -23,8 +23,11 @@ from datetime import date, timedelta
 
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Library, Project, Step
-from dplanner.domain.progression import BLOCKED, DONE, IN_PROGRESS
-from dplanner.domain.schedule import (
+from dplanner.modules.time_estimates.schedule import FocusChange
+from dplanner.modules.time_estimates.simulation.frames import Plan, StepState
+from dplanner.modules.time_estimates.simulation.rng import choose, lognormal, rng, seed_of
+from dplanner.modules.time_estimates.simulation.timeline import Played, Timeline
+from dplanner.planning.schedule import (
     SATURDAY,
     WEEKDAYS,
     Wait,
@@ -35,12 +38,8 @@ from dplanner.domain.schedule import (
     working_days_after,
     working_days_between,
 )
-from dplanner.modules.time_estimates.schedule import FocusChange
-from dplanner.modules.time_estimates.simulation.frames import Plan, StepState
-from dplanner.modules.time_estimates.simulation.rng import choose, lognormal, rng, seed_of
-from dplanner.modules.time_estimates.simulation.timeline import Played, Timeline
+from dplanner.planning.status import Status
 
-PENDING = "pending"
 EPSILON = 1e-9
 _ONE_DAY = timedelta(days=1)
 
@@ -154,7 +153,7 @@ def insert_wait(steps: Sequence[StepState], day: date, before: str, wait: Wait) 
         agent=False,
         created=day,
         start=None,
-        status=PENDING,
+        status=Status.PENDING,
         since=None,
         started=None,
         wait=wait,
@@ -167,7 +166,7 @@ class _World:
         self._params = params
         self._begin = begin
         self._title = start.title
-        self._steps = [replace(step, status=PENDING) for step in start.steps]
+        self._steps = [replace(step, status=Status.PENDING) for step in start.steps]
         self._state = replace(start.state, start=begin if params.dated else None)
         self._today = begin
         self._effort: dict[str, float] = {}
@@ -215,7 +214,7 @@ class _World:
                     self._work(day)
             days.append(Played(day, self._state, tuple(self._steps), tuple(self._events)))
             if done_on is None and all(
-                step.wait is not None or step.status == DONE for step in self._steps
+                step.wait is not None or step.status is Status.DONE for step in self._steps
             ):
                 done_on = day
             if done_on is not None and day >= done_on + timedelta(days=self._params.tail):
@@ -233,7 +232,7 @@ class _World:
         self._steps[at] = step
         return step
 
-    def _set_status(self, step_id: str, status: str) -> StepState:
+    def _set_status(self, step_id: str, status: Status) -> StepState:
         """A status, dated as DPlanner's aspect dates one: ``since`` when it changes,
         ``started`` the first time it goes in progress."""
         was = self._find(step_id)
@@ -243,7 +242,7 @@ class _World:
                 status=status,
                 since=self._today if status != was.status else was.since,
                 started=self._today
-                if status == IN_PROGRESS and was.started is None
+                if status is Status.IN_PROGRESS and was.started is None
                 else was.started,
             )
         )
@@ -281,14 +280,14 @@ class _World:
                 critical = running[0]
                 self._release(critical)
                 self._blocked_until[critical] = working_days_after(day, block.days + 1)
-                step = self._set_status(critical, BLOCKED)
+                step = self._set_status(critical, Status.BLOCKED)
                 self._events.append(
                     f"{_key(step)} {step.title} is blocked for {block.days} working days"
                 )
         for step_id, until in list(self._blocked_until.items()):
             if until <= day:
                 del self._blocked_until[step_id]
-                status = IN_PROGRESS if self._progress.get(step_id) else PENDING
+                status = Status.IN_PROGRESS if self._progress.get(step_id) else Status.PENDING
                 step = self._set_status(step_id, status)
                 self._events.append(f"{_key(step)} is unblocked")
 
@@ -332,7 +331,7 @@ class _World:
                 agent=agent,
                 created=day,
                 start=None,
-                status=PENDING,
+                status=Status.PENDING,
                 since=None,
                 started=None,
             )
@@ -348,7 +347,7 @@ class _World:
             self._events.append(f"{_key(added)} added ({_number(estimate)}d, {kind})")
         if params.reestimate_every and workday % params.reestimate_every == 0:
             waiting = sorted(
-                (step for step in members if step.status == PENDING and _days(step)),
+                (step for step in members if step.status is Status.PENDING and _days(step)),
                 key=lambda step: -(_days(step) or 0.0),
             )[:3]
             for step in waiting:
@@ -408,7 +407,7 @@ class _World:
             (
                 (milestone, members)
                 for milestone, members in self._stretches()
-                if any(step.wait is None and step.status != DONE for step in members)
+                if any(step.wait is None and step.status is not Status.DONE for step in members)
             ),
             None,
         )
@@ -423,14 +422,14 @@ class _World:
         if self._params.mark_late:
             self._unmarked.append(step_id)
             return
-        step = self._set_status(step_id, DONE)
+        step = self._set_status(step_id, Status.DONE)
         self._events.append(f"{_key(step)} {step.title} done")
 
     def _mark(self) -> None:
         """What landed yesterday, marked done this morning: the work was over, the status
         says so only now."""
         for step_id in self._unmarked:
-            step = self._set_status(step_id, DONE)
+            step = self._set_status(step_id, Status.DONE)
             self._events.append(f"{_key(step)} {step.title} marked done")
         self._unmarked = []
 
@@ -454,7 +453,7 @@ class _World:
 
         def done(step_id: str) -> bool:
             return (
-                self._find(step_id).status == DONE
+                self._find(step_id).status is Status.DONE
                 or step_id in self._over
                 or step_id in self._unmarked
             )
@@ -495,7 +494,7 @@ class _World:
                 step
                 for step in self._steps
                 if step.wait is None
-                and step.status not in (DONE, BLOCKED)
+                and step.status not in (Status.DONE, Status.BLOCKED)
                 and step.id not in self._unmarked
                 and step.id not in busy
                 and (self._params.work_ahead or stretch_of[step.id] == now)
@@ -537,8 +536,8 @@ class _World:
                 moved = wait_for(base + time)
                 while (landing := marker()) is not None:
                     moved = True
-                    if landing.status == PENDING:
-                        self._set_status(landing.id, IN_PROGRESS)
+                    if landing.status is Status.PENDING:
+                        self._set_status(landing.id, Status.IN_PROGRESS)
                     self._land(landing.id, day)
                 for agent in (True, False):
                     for slot in range(len(self._agents)) if agent else self._human_slots():
@@ -549,8 +548,8 @@ class _World:
                         if step is None:
                             break
                         moved = True
-                        if step.status == PENDING:
-                            self._set_status(step.id, IN_PROGRESS)
+                        if step.status is Status.PENDING:
+                            self._set_status(step.id, Status.IN_PROGRESS)
                         if self._effort_of(step) - self._progress.get(step.id, 0.0) <= EPSILON:
                             self._land(step.id, day)
                         else:

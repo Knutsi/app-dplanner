@@ -77,7 +77,6 @@ from dplanner.cli.report.parts import Graph
 from dplanner.core.storage.locations import init_repo
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Step, StepId
-from dplanner.domain.schedule import Wait
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.framework.services import AppServices
 from dplanner.framework.session import AppSession
@@ -111,11 +110,12 @@ from dplanner.modules.step_milestone.aspect import write as milestone_write
 from dplanner.modules.step_review.aspect import MODULE_ID as REVIEW_ID
 from dplanner.modules.step_review.aspect import ReviewSettings
 from dplanner.modules.step_review.aspect import write as review_write
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import read as status_for
-from dplanner.modules.step_status.aspect import write as status_write
 from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
 from dplanner.modules.step_wait.aspect import write as wait_write
+from dplanner.planning.schedule import Wait
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import read as status_for
+from dplanner.planning.status import write as status_write
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 

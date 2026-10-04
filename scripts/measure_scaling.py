@@ -77,7 +77,6 @@ from dplanner.domain.commands import (
 )
 from dplanner.domain.model import Library, Project, Step, TextEdit
 from dplanner.domain.ordering import depths, placed
-from dplanner.domain.progression import progression
 from dplanner.domain.scope import cone
 from dplanner.domain.store import LibraryStore
 from dplanner.framework.context import SCOPE_SELECTION, Context, ContextNode, selection_uri
@@ -100,10 +99,11 @@ from dplanner.modules.spec.documents import SpecIndex, import_document, write_in
 from dplanner.modules.step_agent_instruction.aspect import enabled as is_agent
 from dplanner.modules.step_milestone.aspect import read as milestone_label
 from dplanner.modules.step_properties.dialog import StepDetailsDialog
-from dplanner.modules.step_status.aspect import read as step_status
-from dplanner.modules.step_status.aspect import write as status
 from dplanner.modules.time_estimates.module import TimeEstimatesModule
 from dplanner.modules.time_estimates.schedule import read_efficiency, read_start, time_report
+from dplanner.planning.progression import progression
+from dplanner.planning.status import Status, readiness_of, stored
+from dplanner.planning.status import write as status
 
 FEW_TABS = ("project", "order", "time")
 ALL_TABS = (
@@ -372,7 +372,7 @@ def _description(h: Harness) -> None:
 
 @scenario("status")
 def _status(h: Harness) -> None:
-    words = ("in-progress", "done", "blocked", "pending")
+    words = (Status.IN_PROGRESS, Status.DONE, Status.BLOCKED, Status.PENDING)
     for i in range(PUSHES):
         h.push(
             SetModuleDataCommand(
@@ -748,7 +748,7 @@ def _derive(h: Harness) -> dict[str, float]:
         "placed": lambda: placed(library, project),
         "cone": lambda: cone(library, project, last),
         "project_schedule": lambda: project_schedule(library, project),
-        "progression": lambda: progression(library, project, step_status),
+        "progression": lambda: progression(library, project, readiness_of(stored)),
         "link_refusal": lambda: library.link_refusal(first, "requires", last),
         "auto_positions": lambda: auto_positions(library, project),
         "waves": lambda: arranged_in_waves(library, project, default_size, estimated_days),

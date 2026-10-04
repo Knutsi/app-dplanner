@@ -387,9 +387,6 @@ src/dplanner/
 │   ├── ordering.py          what order a project can be done in, and what can start now
 │   ├── scope.py             what a collector gathers: the cone, truncated at the next one
 │   ├── branches.py          which steps are on a feature branch: after a cut, until its landing
-│   ├── schedule.py          the same walk carrying estimates: running totals, dates, and when each
-│   │                        step lands in a staffed simulation
-│   ├── progression.py       the status-aware frontier: what can be launched right now
 │   ├── short_titles.py      what a project is called on a tab: its initials, unique in the library
 │   ├── commands.py          undoable changes — the vocabulary the GUI and CLI share
 │   ├── shelf.py             where a turned-off aspect's data waits: turn_off / turn_on, and the migration into it
@@ -400,6 +397,13 @@ src/dplanner/
 │   │                        git kinds share, with the nesting, the digests and the caps
 │   ├── migrations.py        the format's version history — append only
 │   └── seed.py              what a brand-new library, and a brand-new project, contain
+│
+├── planning/              ── the planning model over the graph: imports core and domain only. Qt-free.
+│   ├── status.py            a step's status: the Status enum, Unknown and Waiting, its stored format,
+│   │                        and how readiness reads one (`held`)
+│   ├── progression.py       the status-aware frontier: what can be launched right now
+│   └── schedule.py          the same walk carrying estimates: running totals, dates, and when each
+│                            step lands in a staffed simulation
 │
 ├── cli/                   ── the headless surface. Qt-free.
 │   ├── command.py           CliCommand, CliContext, CliRegistry
@@ -523,7 +527,8 @@ src/dplanner/
 │   │                        `view.py`) — and what its runs consumed: harvested into the
 │   │                        project's ledger (`harvest.py`, `domain/ledger.py`), said by
 │   │                        `usage.py`; `dplanner usage show|list|harvest|record`)
-│   ├── step_status/         where a step stands — a Status submenu, no tab
+│   ├── step_status/         where a step stands — a Status submenu, no tab, and `status …`;
+│   │                        the vocabulary and format are `planning/status.py`'s
 │   ├── step_milestone/      the steps that mark a milestone — the Milestone tab and the Type ▸ Milestone toggle
 │   ├── step_wait/           a step that holds what requires it, until a day or for working days: the
 │   │                        Type ▸ Wait toggle, the Wait template, its Details block, `dplanner wait`

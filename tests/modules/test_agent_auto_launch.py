@@ -39,9 +39,10 @@ from dplanner.modules.step_review.aspect import ReviewSettings
 from dplanner.modules.step_review.aspect import write as write_review
 from dplanner.modules.step_review.rounds import MODULE_ID as ROUNDS_ID
 from dplanner.modules.step_review.rounds import last, opened, said
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import read as status_of
-from dplanner.modules.step_status.aspect import write as write_status
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import Status
+from dplanner.planning.status import stored as status_of
+from dplanner.planning.status import write as write_status
 
 SETTINGS_SECTION = "step_agent_instruction.launch"
 
@@ -93,7 +94,9 @@ def another_writer(library_file, *titles, word="ready-for-review"):
     library.dirty.connect(lambda owner, aspect: marks.add((owner, aspect)))
     for title in titles:
         step = by_title(library, title)
-        SetModuleDataCommand(step.id, STATUS_ID, write_status(word, today=_today())).redo(library)
+        SetModuleDataCommand(step.id, STATUS_ID, write_status(Status(word), today=_today())).redo(
+            library
+        )
     store.flush(marks)
 
 
@@ -113,7 +116,7 @@ def agent_step(services, project, title, *, status="pending"):
     step = Step(title=title)
     AddNodeCommand(project.id, step).redo(services.document)
     services.document.set_text(step.id, AGENT_ID, f"Carry out {title}.")
-    SetModuleDataCommand(step.id, STATUS_ID, write_status(status, today=_today())).redo(
+    SetModuleDataCommand(step.id, STATUS_ID, write_status(Status(status), today=_today())).redo(
         services.document
     )
     return step
@@ -151,9 +154,9 @@ def test_three_sources_reaching_review_at_once_launch_their_collector_once(
 
     assert len(opened_for) == 1
     collector = services.document.step(plan["C"].id)
-    assert status_of(collector) == "in-progress" and run_state(collector) == "launched"
+    assert status_of(collector) is Status.IN_PROGRESS and run_state(collector) == "launched"
     on_disk = by_title(LibraryStore(library_file).load(), "C")  # Flushed now, not later.
-    assert status_of(on_disk) == "in-progress" and run_state(on_disk) == "launched"
+    assert status_of(on_disk) is Status.IN_PROGRESS and run_state(on_disk) == "launched"
     assert "Launched the agent on" in status_line(services)
     # The next settle, whatever woke it, finds nothing due.
     services.undo.push(SetFieldCommand(plan["A1"].id, "title", "A1, renamed"))
@@ -181,7 +184,7 @@ def test_with_the_switch_off_nothing_is_launched(services, plan, library_file, m
     another_writer(library_file, "A1", "A2", "A3")
     take_in(services)
     assert opened_for == []
-    assert status_of(services.document.step(plan["C"].id)) == "pending"
+    assert status_of(services.document.step(plan["C"].id)) is Status.PENDING
 
 
 # -- the cap -----------------------------------------------------------------------------------
@@ -299,7 +302,7 @@ def test_no_terminal_is_said_once_with_no_dialog_and_retried_when_the_step_chang
     assert asked == ["terminal"]
     assert "Could not launch the agent on" in status_line(services)
     assert "no terminal opened" in status_line(services)
-    assert status_of(services.document.step(plan["C"].id)) == "pending"
+    assert status_of(services.document.step(plan["C"].id)) is Status.PENDING
 
     services.undo.push(SetFieldCommand(plan["A1"].id, "title", "A1, renamed"))
     settle(services)
@@ -344,7 +347,7 @@ def test_the_side_with_the_turn_is_relaunched_once_and_its_status_left_alone(
     assert len(opened_for) == 1
     held = last(services.document.step(reviewer.id), work.id)
     assert held is not None and held.party_turn_launched == held.posted
-    assert status_of(services.document.step(work.id)) == "in-progress"
+    assert status_of(services.document.step(work.id)) is Status.IN_PROGRESS
     # Its relaunched agent died without a word: once per round is once.
     SetModuleDataCommand(work.id, RUN_ID, {}).redo(services.document)
     settle(services)
@@ -385,7 +388,7 @@ def test_a_review_naming_an_agent_no_profile_runs_is_refused_with_that_reason(
     settle(services)
     assert opened_for == []
     assert "no launch profile runs gemini" in status_line(services)
-    assert status_of(services.document.step(reviewer.id)) == "pending"
+    assert status_of(services.document.step(reviewer.id)) is Status.PENDING
 
 
 # -- plan mode ---------------------------------------------------------------------------------

@@ -41,8 +41,8 @@ from dplanner.modules.step_agent_instruction import launcher
 from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 from dplanner.modules.step_agent_instruction.auto_launch import LaunchLocks
 from dplanner.modules.step_agent_instruction.settings_page import AUTO_LAUNCH_KEY
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import write as write_status
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import write as write_status
 from dplanner.theme import apply_theme
 from dplanner.theme.themes import DARK, LIGHT, Theme
 

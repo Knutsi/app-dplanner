@@ -17,7 +17,6 @@ from dplanner.domain.commands import (
     SetModuleDataCommand,
 )
 from dplanner.domain.model import Step, TextEdit
-from dplanner.domain.schedule import format_date
 from dplanner.modules.estimation.aspect import MODULE_ID as ESTIMATION_ID
 from dplanner.modules.estimation.aspect import write as write_days
 from dplanner.modules.estimation.schedule import write_start
@@ -25,8 +24,6 @@ from dplanner.modules.step_agent_instruction.aspect import MODULE_ID as AGENT_ID
 from dplanner.modules.step_agent_instruction.aspect import write_state
 from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
 from dplanner.modules.step_milestone.aspect import write as write_milestone_label
-from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-from dplanner.modules.step_status.aspect import write as write_status
 from dplanner.modules.time_estimates.activity import NO_STEPS
 from dplanner.modules.time_estimates.progress import (
     HISTORY_ID,
@@ -46,6 +43,10 @@ from dplanner.modules.time_estimates.schedule import (
     stretched,
 )
 from dplanner.modules.time_estimates.section import MilestoneScheduleSection
+from dplanner.planning.schedule import format_date
+from dplanner.planning.status import MODULE_ID as STATUS_ID
+from dplanner.planning.status import Status
+from dplanner.planning.status import write as write_status
 from dplanner.theme.palettes import PALETTES, shades
 
 # The day every test here is run on, so no date the tab prints depends on the day the suite
@@ -154,7 +155,7 @@ def test_the_figures_lead_with_where_the_plan_lands_and_how_much_is_done(tab):
 def test_a_finished_plan_leads_with_the_day_it_was_done(services, project, tab):
     for step in project.steps:
         services.undo.push(
-            SetModuleDataCommand(step.id, STATUS_ID, write_status("done", today=TODAY))
+            SetModuleDataCommand(step.id, STATUS_ID, write_status(Status.DONE, today=TODAY))
         )
     assert tab.landing == TODAY
     assert tab.landing_figure.text() == "✓ 4 September"
@@ -610,7 +611,7 @@ def test_two_milestones_worked_at_once_share_their_days_on_the_calendar(services
     then until v1 lands both stretches are being worked, and each such day is both."""
     read, draft, docs, ship = staged.steps
     tab = services.tabs.open("time", staged.id)
-    for step, status in ((read, "done"), (docs, "in-progress")):
+    for step, status in ((read, Status.DONE), (docs, Status.IN_PROGRESS)):
         services.undo.push(
             SetModuleDataCommand(step.id, STATUS_ID, write_status(status, today=TODAY))
         )
@@ -633,7 +634,7 @@ def test_milestones_landing_on_one_day_share_one_mark_and_one_name(services, sta
     tab = services.tabs.open("time", staged.id)
     for step in staged.steps:
         services.undo.push(
-            SetModuleDataCommand(step.id, STATUS_ID, write_status("done", today=TODAY))
+            SetModuleDataCommand(step.id, STATUS_ID, write_status(Status.DONE, today=TODAY))
         )
     shown = tab.shown
     assert shown is not None
@@ -665,7 +666,9 @@ def test_the_work_page_reads_the_recorded_days_and_the_schedule_from_today(servi
     sooner, since the work resumes on the Monday."""
     read, draft, _docs, ship = staged.steps
     tab = services.tabs.open("time", staged.id)
-    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done", today=TODAY)))
+    services.undo.push(
+        SetModuleDataCommand(read.id, STATUS_ID, write_status(Status.DONE, today=TODAY))
+    )
     shown = tab.shown
     assert shown is not None
     assert shown.burnup.scope[-1] == (TODAY, 7.0) and shown.burnup.done[-1] == (TODAY, 2.0)
@@ -768,7 +771,9 @@ def test_a_snapshot_saved_on_purpose_is_named_kept_and_compared_against(services
     again.deleteLater()
     assert tab.then_picker.menu_labels()[2].startswith("Kickoff review · ")
     # Work lands and the plan grows; the saved snapshot is what the page compares against.
-    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done", today=TODAY)))
+    services.undo.push(
+        SetModuleDataCommand(read.id, STATUS_ID, write_status(Status.DONE, today=TODAY))
+    )
     services.undo.push(SetModuleDataCommand(ship.id, ESTIMATION_ID, write_days(4.0)))
     tab.then_picker.picked.emit(Pick("saved", title="Kickoff review"))
     shown = tab.shown
@@ -860,8 +865,8 @@ def slow(services, make_project):
     *finished, last = project.steps
     SetEdgesCommand(last.id, "requires", [step.id for step in finished]).redo(library)
     for step in finished:
-        began = write_status("in-progress", today=date(2026, 9, 7))
-        entry = write_status("done", today=date(2026, 9, 10), previous=began)
+        began = write_status(Status.IN_PROGRESS, today=date(2026, 9, 7))
+        entry = write_status(Status.DONE, today=date(2026, 9, 10), previous=began)
         SetModuleDataCommand(step.id, STATUS_ID, entry).redo(library)
     SetModuleDataCommand(project.id, ESTIMATION_ID, write_start(date(2026, 9, 7))).redo(library)
     SetModuleDataCommand(project.id, MODULE_ID, {"team": [3, 1]}).redo(library)
@@ -922,11 +927,11 @@ def test_a_wait_is_hatched_on_the_work_page_and_the_calendar_and_named_in_its_mi
     Work page and the calendar say it where the pointer is, and v2's words name it."""
     from dplanner.cli.report.drawings import LIGHT, chart_svg
     from dplanner.cli.report.parts import Chart
-    from dplanner.domain.schedule import Wait
     from dplanner.modules import _time_readers
     from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
     from dplanner.modules.step_wait.aspect import write as write_wait
     from dplanner.modules.time_estimates.report import report_source
+    from dplanner.planning.schedule import Wait
 
     library = services.document
     _read, draft, _docs, ship = staged.steps
@@ -961,7 +966,9 @@ def test_the_recorder_writes_the_day_once_off_the_undo_stack(services, staged):
     (row,) = read_history(staged)  # the window opened on the plan and recorded it
     assert row.day == TODAY and row.toward(None).done == 0
     before = services.undo.undo_text()
-    services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, write_status("done", today=TODAY)))
+    services.undo.push(
+        SetModuleDataCommand(read.id, STATUS_ID, write_status(Status.DONE, today=TODAY))
+    )
     (row,) = read_history(staged)
     assert row.toward(None).done == 1
     assert services.undo.undo_text() != before  # the status is the undo step, the record is not
@@ -981,7 +988,7 @@ def test_a_step_started_today_makes_today_a_day_of_work(services, staged):
     read, *_rest = staged.steps
     (row,) = read_history(staged)
     assert row.changed == 0
-    entry = write_status("in-progress", today=TODAY, previous=read.module_data.get(STATUS_ID))
+    entry = write_status(Status.IN_PROGRESS, today=TODAY, previous=read.module_data.get(STATUS_ID))
     services.undo.push(SetModuleDataCommand(read.id, STATUS_ID, entry))
     (row,) = read_history(staged)
     assert row.changed == 1 and row.toward(None).done == 0

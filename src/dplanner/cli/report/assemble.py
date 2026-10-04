@@ -31,6 +31,7 @@ from dplanner.cli.report.parts import (
 )
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.store import FilesFor
+from dplanner.planning.status import Status, Unknown, word
 
 STEPS_TABLE_ID = "steps"
 STEPS_TABLE_ORDER = 10
@@ -44,7 +45,7 @@ class StepCard:
     key: str
     title: str
     kind: str
-    status: str
+    status: Status | Unknown
     facets: tuple[Facet, ...]
 
 
@@ -79,7 +80,7 @@ def build(
     *,
     key_of: Callable[[Step], str],
     kind_of: Callable[[Step], str],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status | Unknown],
     plan_remote: str = "",
     today: date,
 ) -> Report:
@@ -149,7 +150,7 @@ def _steps_table(steps: Sequence[StepCard]) -> Table:
                 card.key,
                 card.title,
                 card.kind,
-                card.status,
+                word(card.status),
                 *(_facet_value(card, label) for label in facet_labels),
             ),
             step_id=card.id,

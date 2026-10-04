@@ -11,7 +11,7 @@ import pytest
 
 from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.ordering import placed
-from dplanner.domain.schedule import (
+from dplanner.planning.schedule import (
     as_weeks,
     format_date,
     format_days,
@@ -192,7 +192,7 @@ def test_each_row_keeps_its_place_in_the_order(project):
 
 
 def test_one_day_is_singular_and_everything_else_plural():
-    from dplanner.domain.schedule import format_day_count
+    from dplanner.planning.schedule import format_day_count
 
     assert format_day_count(1) == "1 day"
     assert format_day_count(2.5) == "2.5 days"
@@ -217,7 +217,7 @@ def diamond():
 
 
 def test_the_path_takes_the_heavier_branch():
-    from dplanner.domain.schedule import critical_path
+    from dplanner.planning.schedule import critical_path
 
     library, project = diamond()
     path = critical_path(library, project, days_of({"A": 1, "B": 2, "C": 10, "D": 1}))
@@ -228,7 +228,7 @@ def test_the_path_takes_the_heavier_branch():
 
 
 def test_unestimated_steps_on_the_path_are_counted_not_priced():
-    from dplanner.domain.schedule import critical_path
+    from dplanner.planning.schedule import critical_path
 
     library, project = diamond()
     path = critical_path(library, project, days_of({"A": 1, "B": 2, "D": 1}))
@@ -241,7 +241,7 @@ def test_unestimated_steps_on_the_path_are_counted_not_priced():
 
 
 def test_equal_branches_break_ties_by_project_order():
-    from dplanner.domain.schedule import critical_path
+    from dplanner.planning.schedule import critical_path
 
     library, project = diamond()
     path = critical_path(library, project, days_of({"A": 1, "B": 3, "C": 3, "D": 1}))
@@ -250,7 +250,7 @@ def test_equal_branches_break_ties_by_project_order():
 
 
 def test_an_empty_project_has_no_path():
-    from dplanner.domain.schedule import critical_path
+    from dplanner.planning.schedule import critical_path
 
     library = Library()
     project = Project(title="Discovery")
@@ -259,7 +259,7 @@ def test_an_empty_project_has_no_path():
 
 
 def test_a_step_can_start_once_the_longest_way_to_it_has_finished():
-    from dplanner.domain.schedule import earliest_starts
+    from dplanner.planning.schedule import earliest_starts
 
     library, project = diamond()
     starts = earliest_starts(library, project, days_of({"A": 1, "B": 2, "C": 10, "D": 1}))
@@ -270,7 +270,7 @@ def test_a_step_can_start_once_the_longest_way_to_it_has_finished():
 
 
 def test_an_unestimated_step_takes_no_days_on_the_way_to_what_waits_on_it(project):
-    from dplanner.domain.schedule import earliest_starts
+    from dplanner.planning.schedule import earliest_starts
 
     library, plan = project
     starts = earliest_starts(library, plan, days_of({"A": 2, "C": 1}))
@@ -278,7 +278,7 @@ def test_an_unestimated_step_takes_no_days_on_the_way_to_what_waits_on_it(projec
 
 
 def test_a_cycle_a_hand_edit_made_is_walked_and_the_link_closing_it_counts_as_met(project):
-    from dplanner.domain.schedule import earliest_starts
+    from dplanner.planning.schedule import earliest_starts
 
     library, plan = project
     a, _b, _c, d = plan.steps
@@ -291,7 +291,7 @@ def test_a_cycle_a_hand_edit_made_is_walked_and_the_link_closing_it_counts_as_me
 def test_a_view_of_a_project_is_measured_by_its_own_edges(project):
     """The graph editor folds a stack into one block — a scratch project whose edges differ
     from the library's — and asks when each block starts."""
-    from dplanner.domain.schedule import earliest_starts
+    from dplanner.planning.schedule import earliest_starts
 
     library, plan = project
     a, b, _c, d = plan.steps
@@ -305,7 +305,7 @@ def test_a_view_of_a_project_is_measured_by_its_own_edges(project):
 
 
 def critical_path_of(library, project, estimates):
-    from dplanner.domain.schedule import critical_path
+    from dplanner.planning.schedule import critical_path
 
     path = critical_path(library, project, days_of(estimates))
     return None if path is None else path.days
@@ -332,7 +332,7 @@ def loose(*sized):
 
 
 def test_one_worker_meets_the_serial_total_and_ample_workers_the_path():
-    from dplanner.domain.schedule import critical_path, parallel_finish
+    from dplanner.planning.schedule import critical_path, parallel_finish
 
     library, project = diamond()
     estimates = days_of({"A": 1, "B": 2, "C": 10, "D": 1})
@@ -344,7 +344,7 @@ def test_one_worker_meets_the_serial_total_and_ample_workers_the_path():
 
 
 def test_neither_pool_takes_the_others_work():
-    from dplanner.domain.schedule import parallel_finish
+    from dplanner.planning.schedule import parallel_finish
 
     library, project, estimates = loose(("H", 5.0), ("X", 1.0), ("Y", 1.0), ("Z", 1.0))
     is_agent = agents_named("X", "Y", "Z")
@@ -357,7 +357,7 @@ def test_neither_pool_takes_the_others_work():
 
 
 def test_a_free_slot_takes_the_longest_remaining_chain_first():
-    from dplanner.domain.schedule import parallel_finish
+    from dplanner.planning.schedule import parallel_finish
 
     # In project order: A 1d, D 2d, C 4d, B 5d requiring A. Greedy-by-index starts A and D
     # and lands at 8; taking the longest tail starts A and C, follows A with B, and lands
@@ -375,7 +375,7 @@ def test_a_free_slot_takes_the_longest_remaining_chain_first():
 
 
 def test_unestimated_steps_cost_nothing_and_are_all_counted():
-    from dplanner.domain.schedule import parallel_finish
+    from dplanner.planning.schedule import parallel_finish
 
     library, project = diamond()
     finish = parallel_finish(
@@ -387,7 +387,7 @@ def test_unestimated_steps_cost_nothing_and_are_all_counted():
 
 
 def test_a_chain_of_unestimated_steps_terminates_at_zero(project):
-    from dplanner.domain.schedule import parallel_finish
+    from dplanner.planning.schedule import parallel_finish
 
     library, found = project
     finish = parallel_finish(library, found, days_of({}), NOBODY, humans=1, agents=1)
@@ -397,7 +397,7 @@ def test_a_chain_of_unestimated_steps_terminates_at_zero(project):
 
 
 def test_quarter_days_sum_exactly():
-    from dplanner.domain.schedule import parallel_finish
+    from dplanner.planning.schedule import parallel_finish
 
     library, found, estimates = loose(("A", 0.25), ("B", 0.75), ("C", 0.25))
     finish = parallel_finish(library, found, estimates, NOBODY, humans=1, agents=1)
@@ -405,7 +405,7 @@ def test_quarter_days_sum_exactly():
 
 
 def test_an_empty_project_has_no_makespan_and_an_empty_pool_is_refused():
-    from dplanner.domain.schedule import parallel_finish
+    from dplanner.planning.schedule import parallel_finish
 
     library = Library()
     project = Project(title="Discovery")
@@ -421,7 +421,7 @@ def test_an_empty_project_has_no_makespan_and_an_empty_pool_is_refused():
 
 
 def test_working_days_between_counts_both_ends_and_skips_the_weekend():
-    from dplanner.domain.schedule import working_days_between
+    from dplanner.planning.schedule import working_days_between
 
     assert working_days_between(MONDAY, MONDAY) == 1
     assert working_days_between(MONDAY, date(2026, 9, 11)) == 5
@@ -431,7 +431,7 @@ def test_working_days_between_counts_both_ends_and_skips_the_weekend():
 def test_the_simulation_says_when_each_step_lands(project):
     """The makespan alone cannot draw an expected-progress curve; the per-step landings
     can — and a phase dates them from its own start."""
-    from dplanner.domain.schedule import parallel_finish, phases
+    from dplanner.planning.schedule import parallel_finish, phases
 
     library, plan = project
     a, b, c, d = plan.steps
@@ -460,7 +460,7 @@ def test_the_simulation_says_when_each_step_lands(project):
 
 
 def test_a_subset_simulation_treats_edges_out_of_it_as_met(project):
-    from dplanner.domain.schedule import parallel_finish
+    from dplanner.planning.schedule import parallel_finish
 
     library, plan = project
     _a, _b, c, d = plan.steps
@@ -472,7 +472,7 @@ def test_a_subset_simulation_treats_edges_out_of_it_as_met(project):
 
 
 def _stretches(library, plan, *, milestones, dated=None, start=MONDAY):
-    from dplanner.domain.schedule import phases
+    from dplanner.planning.schedule import phases
 
     days = days_of({"A": 1.0, "B": 2.0, "C": 3.0, "D": 4.0})
     dated = dated or {}
@@ -547,7 +547,7 @@ def test_work_no_milestone_gathers_runs_last_without_one(project):
 
 
 def test_a_stretch_with_nothing_estimated_has_no_landing_and_costs_no_days(project):
-    from dplanner.domain.schedule import phases
+    from dplanner.planning.schedule import phases
 
     library, plan = project
     first, second = phases(
@@ -608,14 +608,15 @@ def _made(titles, requires=None):
 
 def _facts(today, statuses=None, since=None, markers=()):
     """What has happened by ``today``, by step title — work in flight credited from its day."""
-    from dplanner.domain.schedule import ScheduleFacts, spent_since
+    from dplanner.planning.schedule import ScheduleFacts, spent_since
+    from dplanner.planning.status import Status
 
     def since_of(step):
         return (since or {}).get(step.title)
 
     return ScheduleFacts(
         today=today,
-        status_of=lambda step: (statuses or {}).get(step.title, "pending"),
+        status_of=lambda step: (statuses or {}).get(step.title, Status.PENDING),
         since_of=since_of,
         is_marker=lambda step: step.title in markers,
         worked=lambda step: spent_since(since_of(step), today),
@@ -623,7 +624,7 @@ def _facts(today, statuses=None, since=None, markers=()):
 
 
 def _resumed(library, plan, days, facts, *, milestones=(), humans=1):
-    from dplanner.domain.schedule import phases
+    from dplanner.planning.schedule import phases
 
     return phases(
         library,
@@ -641,10 +642,10 @@ def _resumed(library, plan, days, facts, *, milestones=(), humans=1):
 
 def _under_way(since, today):
     """A's four days are under way, B's two wait on it; one person, dated from Monday."""
-    from dplanner.domain.progression import IN_PROGRESS
+    from dplanner.planning.status import Status
 
     library, plan = _made(("A", "B"), {"B": ["A"]})
-    facts = _facts(today, {"A": IN_PROGRESS}, {"A": since})
+    facts = _facts(today, {"A": Status.IN_PROGRESS}, {"A": since})
     (only,) = _resumed(library, plan, {"A": 4.0, "B": 2.0}, facts)
     return [only.landing_of(step.id) for step in plan.steps]
 
@@ -685,7 +686,7 @@ def test_a_step_due_today_has_until_tonight_and_is_late_once_the_day_is_over():
 
 
 def test_work_in_flight_keeps_its_worker_and_goes_first():
-    from dplanner.domain.schedule import parallel_finish
+    from dplanner.planning.schedule import parallel_finish
 
     library, plan, days = loose(("A", 1.0), ("B", 5.0))
     a, b = plan.steps
@@ -699,12 +700,12 @@ def test_work_in_flight_keeps_its_worker_and_goes_first():
 
 def test_a_step_added_since_the_plan_began_starts_tomorrow_not_in_the_past():
     """B was made on Wednesday, but a plan from Monday had two people start it that day."""
-    from dplanner.domain.progression import IN_PROGRESS
+    from dplanner.planning.status import Status
 
     library, plan = _made(("A", "B"))
     _a, b = plan.steps
     b.created = "2026-09-09T12:00:00"
-    facts = _facts(WEDNESDAY, {"A": IN_PROGRESS}, {"A": MONDAY})
+    facts = _facts(WEDNESDAY, {"A": Status.IN_PROGRESS}, {"A": MONDAY})
     (only,) = _resumed(library, plan, {"A": 4.0, "B": 1.0}, facts, humans=2)
     assert only.start == THURSDAY and only.landing_of(b.id) == THURSDAY
     assert only.began == MONDAY  # A's work began then, and the stretch with it
@@ -713,29 +714,29 @@ def test_a_step_added_since_the_plan_began_starts_tomorrow_not_in_the_past():
 def test_a_done_step_nobody_dated_was_done_no_later_than_it_could_have_been():
     """A status older than its days says done and not when: by its planned landing, or
     today if that is earlier."""
-    from dplanner.domain.progression import DONE, IN_PROGRESS
+    from dplanner.planning.status import Status
 
     library, plan = _made(("A", "B"), {"B": ["A"]})
     a, b = plan.steps
     days = {"A": 2.0, "B": 2.0}
     # Thursday: A was planned to land Tuesday; B, a day late, started today.
-    late = _facts(THURSDAY, {"A": DONE, "B": IN_PROGRESS}, {"B": THURSDAY})
+    late = _facts(THURSDAY, {"A": Status.DONE, "B": Status.IN_PROGRESS}, {"B": THURSDAY})
     (only,) = _resumed(library, plan, days, late)
     assert only.landing_of(a.id) == TUESDAY and only.began == TUESDAY
     assert only.landing_of(b.id) == NEXT_MONDAY  # 1.5 days left, from Friday
     # Monday, the day the plan starts: A cannot have been done later than today.
-    (early,) = _resumed(library, plan, days, _facts(MONDAY, {"A": DONE}))
+    (early,) = _resumed(library, plan, days, _facts(MONDAY, {"A": Status.DONE}))
     assert early.landing_of(a.id) == MONDAY
 
 
 def test_a_milestone_nobody_marked_done_lands_with_its_work_and_holds_nothing_back():
     """A closes M1, whose own step is never marked; B, after M1, closes M2 and is running."""
-    from dplanner.domain.progression import DONE, IN_PROGRESS
+    from dplanner.planning.status import Status
 
     library, plan = _made(("A", "M1", "B", "M2"), {"M1": ["A"], "B": ["M1"], "M2": ["B"]})
     facts = _facts(
         FRIDAY,
-        {"A": DONE, "B": IN_PROGRESS},
+        {"A": Status.DONE, "B": Status.IN_PROGRESS},
         {"A": WEDNESDAY, "B": THURSDAY},
         markers=("M1", "M2"),
     )
@@ -748,12 +749,12 @@ def test_a_milestone_nobody_marked_done_lands_with_its_work_and_holds_nothing_ba
 def test_a_later_milestone_whose_work_is_done_lands_before_an_earlier_one():
     """M2's own work (B) was done first while M1's (A) is still under way: the plan lands
     with its latest milestone, which is no longer its last in sequence."""
-    from dplanner.domain.progression import DONE, IN_PROGRESS
+    from dplanner.planning.status import Status
 
     library, plan = _made(("A", "M1", "B", "M2"), {"M1": ["A"], "M2": ["B"]})
     facts = _facts(
         WEDNESDAY,
-        {"A": IN_PROGRESS, "B": DONE},
+        {"A": Status.IN_PROGRESS, "B": Status.DONE},
         {"A": MONDAY, "B": TUESDAY},
         markers=("M1", "M2"),
     )
@@ -771,7 +772,7 @@ def test_a_later_milestone_whose_work_is_done_lands_before_an_earlier_one():
 def test_a_marker_takes_no_worker():
     """M marks the agent's A done: it lands the moment A does, though the one person is
     five days into B — marking a milestone is no work."""
-    from dplanner.domain.schedule import parallel_finish
+    from dplanner.planning.schedule import parallel_finish
 
     library, plan, days = loose(("A", 1.0), ("B", 5.0), ("M", None))
     a, _b, m = plan.steps
@@ -793,11 +794,11 @@ def test_work_in_flight_in_a_later_milestone_keeps_its_worker_now():
     by Wednesday B has half a day left and A, due Tuesday, is not begun. B keeps the person
     through Thursday morning, so M1 lands a day later than a free person would land it — and
     M2, dated by B's landing, lands first."""
-    from dplanner.domain.progression import IN_PROGRESS
+    from dplanner.planning.status import Status
 
     library, plan = _made(("A", "M1", "B", "M2"), {"M1": ["A"], "M2": ["B"]})
     b = plan.steps[2]
-    facts = _facts(WEDNESDAY, {"B": IN_PROGRESS}, {"B": MONDAY}, markers=("M1", "M2"))
+    facts = _facts(WEDNESDAY, {"B": Status.IN_PROGRESS}, {"B": MONDAY}, markers=("M1", "M2"))
     first, second = _resumed(library, plan, {"A": 2.0, "B": 3.0}, facts, milestones=("M1", "M2"))
     assert first.finish == NEXT_MONDAY  # A from Thursday noon: Thursday, Friday, Monday
     assert (second.landing_of(b.id), second.finish) == (THURSDAY, THURSDAY)
@@ -807,11 +808,11 @@ def test_what_is_left_of_it_when_the_earlier_milestone_lands_carries_on():
     """Two people. B, under way since Monday, has three days left on Wednesday; A is M1's
     one day. M1 lands Thursday with B two days from done — which it is by Monday, and C
     after it Tuesday, not a day later for having started B's three days over."""
-    from dplanner.domain.progression import IN_PROGRESS
+    from dplanner.planning.status import Status
 
     library, plan = _made(("A", "M1", "B", "C", "M2"), {"M1": ["A"], "C": ["B"], "M2": ["C"]})
     b, c = plan.steps[2:4]
-    facts = _facts(WEDNESDAY, {"B": IN_PROGRESS}, {"B": MONDAY}, markers=("M1", "M2"))
+    facts = _facts(WEDNESDAY, {"B": Status.IN_PROGRESS}, {"B": MONDAY}, markers=("M1", "M2"))
     days = {"A": 1.0, "B": 5.5, "C": 1.0}
     first, second = _resumed(library, plan, days, facts, milestones=("M1", "M2"), humans=2)
     assert first.finish == THURSDAY
@@ -830,7 +831,7 @@ def _waits_as(wait, title="W"):
 
 def _wait_landings(wait, today, statuses=None, since=None, requires=None):
     """A takes a day; B waits on the wait W; nobody works on W. Where A and B land."""
-    from dplanner.domain.schedule import phases
+    from dplanner.planning.schedule import phases
 
     library, plan = _made(("A", "W", "B"), requires or {"B": ["W"]})
     (only,) = phases(
@@ -851,7 +852,7 @@ def _wait_landings(wait, today, statuses=None, since=None, requires=None):
 
 
 def test_a_days_wait_holds_what_waits_on_it_and_the_worker_it_does_not_need_works_on():
-    from dplanner.domain.schedule import Wait, parallel_finish
+    from dplanner.planning.schedule import Wait, parallel_finish
 
     library, plan = _made(("A", "W", "B", "C"), {"W": ["A"], "B": ["W"]})
     run = parallel_finish(
@@ -875,7 +876,7 @@ def test_a_days_wait_holds_what_waits_on_it_and_the_worker_it_does_not_need_work
 
 def test_an_until_wait_lets_what_waits_on_it_start_on_its_day_and_not_before():
     """Without it B would follow A on Tuesday; waiting until Wednesday, it lands Wednesday."""
-    from dplanner.domain.schedule import Wait
+    from dplanner.planning.schedule import Wait
 
     friday = MONDAY - timedelta(days=3)
     assert _wait_landings(Wait(until=WEDNESDAY), friday) == [MONDAY, WEDNESDAY]
@@ -886,11 +887,11 @@ def test_an_until_wait_lets_what_waits_on_it_start_on_its_day_and_not_before():
 def test_a_wait_whose_day_has_passed_costs_nothing():
     """Thursday, with A done on Monday and B not started: the rest resumes on Friday, with
     nothing left to wait for."""
-    from dplanner.domain.progression import DONE
-    from dplanner.domain.schedule import Wait
+    from dplanner.planning.schedule import Wait
+    from dplanner.planning.status import Status
 
     thursday = MONDAY + timedelta(days=3)
-    landed = _wait_landings(Wait(until=WEDNESDAY), thursday, {"A": DONE}, {"A": MONDAY})
+    landed = _wait_landings(Wait(until=WEDNESDAY), thursday, {"A": Status.DONE}, {"A": MONDAY})
     assert landed[1] == thursday + timedelta(days=1)
 
 
@@ -898,12 +899,12 @@ def test_a_days_wait_is_credited_with_the_days_it_has_already_waited():
     """W waits three days after A, which was planned for Monday and done on Tuesday — so on
     Wednesday the plan no longer holds. W has waited since Tuesday's middle, a day and a
     half; re-dated from Thursday it waits a day and a half more, and B lands on Monday."""
-    from dplanner.domain.progression import DONE
-    from dplanner.domain.schedule import Wait
+    from dplanner.planning.schedule import Wait
+    from dplanner.planning.status import Status
 
     tuesday = MONDAY + timedelta(days=1)
     chain = {"W": ["A"], "B": ["W"]}
     planned = _wait_landings(Wait(days=3.0), MONDAY - timedelta(days=3), requires=chain)
     assert planned == [MONDAY, MONDAY + timedelta(days=4)]  # W Tuesday to Thursday, B Friday
-    landed = _wait_landings(Wait(days=3.0), WEDNESDAY, {"A": DONE}, {"A": tuesday}, chain)
+    landed = _wait_landings(Wait(days=3.0), WEDNESDAY, {"A": Status.DONE}, {"A": tuesday}, chain)
     assert landed == [tuesday, MONDAY + timedelta(days=7)]

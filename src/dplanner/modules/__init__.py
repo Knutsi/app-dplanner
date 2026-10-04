@@ -54,7 +54,6 @@ if TYPE_CHECKING:
     from dplanner.domain.model import Edge, Library, LinkRule, Project, ProjectId, Step, StepId
     from dplanner.domain.ordering import Placed
     from dplanner.domain.repositories import RepositoryFacts
-    from dplanner.domain.schedule import Scheduled
     from dplanner.domain.scope import ScopeKind
     from dplanner.domain.store import FilesFor, LibraryStore, ModuleFileArea
     from dplanner.framework.mime_files import Payload
@@ -71,6 +70,8 @@ if TYPE_CHECKING:
     from dplanner.modules.step_review.rounds import TurnDue
     from dplanner.modules.time_estimates.cli import Readers as TimeReaders
     from dplanner.modules.time_estimates.simulation.frames import Writers as TimeWriters
+    from dplanner.planning.schedule import Scheduled
+    from dplanner.planning.status import Reading, Status, Unknown
     from dplanner.theme.providers import ThemeProvider
 
 __all__ = [
@@ -111,10 +112,8 @@ def default_modules(
     )
     from dplanner.domain.locations import Placement, roles_by_id
     from dplanner.domain.model import Library, Project, TextEdit
-    from dplanner.domain.progression import DONE
     from dplanner.domain.relocate import move_project
     from dplanner.domain.repositories import RepositoryFacts, repository_facts
-    from dplanner.domain.schedule import Wait, format_days, schedule
     from dplanner.domain.store import LibraryStore
     from dplanner.framework.aspect_bar import AspectTemplate
     from dplanner.framework.context import (
@@ -229,8 +228,6 @@ def default_modules(
         StepReviewModule,
     )
     from dplanner.modules.step_start.module import StepStartDeps, StepStartModule
-    from dplanner.modules.step_status.aspect import read as step_status
-    from dplanner.modules.step_status.aspect import record_merged, record_started
     from dplanner.modules.step_status.module import StepStatusDeps, StepStatusModule
     from dplanner.modules.step_ticket.module import StepTicketDeps, StepTicketModule
     from dplanner.modules.step_wait.aspect import read as wait_read
@@ -245,6 +242,15 @@ def default_modules(
         ProgressHistoryModule,
         TimeEstimatesDeps,
         TimeEstimatesModule,
+    )
+    from dplanner.planning.schedule import Wait, format_days, schedule
+    from dplanner.planning.status import (
+        Status,
+        readiness_of,
+        record_merged,
+        record_started,
+        stored,
+        word,
     )
     from dplanner.theme.icons import (
         clock_icon,
@@ -609,7 +615,7 @@ def default_modules(
         # The settled reading, never a fresh lint pass: the checks are super-linear in the
         # size of a plan (66 ms at 300 steps) and this runs on every canvas sync.
         flagged = problems.flagged(project_id)
-        status_for = _status_in(library, services.clock.today())
+        status_for = _ready_in(library, services.clock.today())
         strips = _strips(branches.reading_of(project))
         return {
             step.id: step_accent(
@@ -701,13 +707,13 @@ def default_modules(
             days = estimated_days(step)
             stat = format_days(days) if days is not None else ""
         return NodeAccent(
-            muted=status == "done",
+            muted=status is Status.DONE,
             badge=milestone,
             pill_text=pill,
             pill_tone={"merged": "good", "closed": "bad"}.get(refs.pr_state, "") if refs else "",
             branch=bool(refs is not None and refs.branch),
             key_text=_step_key(step),
-            key_tone=STEP_STATUS_TONES.get(status, ""),
+            key_tone=STEP_STATUS_TONES.get(word(status), ""),
             key_glyph=key_glyph,
             key_glyph_tone=key_glyph_tone,
             chip_text=chip_text,
@@ -716,7 +722,7 @@ def default_modules(
             # wins the body, and the medallion still says what the node also is.
             body_tone=(
                 "good"
-                if status == "done"
+                if status is Status.DONE
                 else "highlight"
                 if milestone
                 else "feature"
@@ -1122,7 +1128,7 @@ def default_modules(
             # The statuses through the status aspect's Qt-free reader — the tab never
             # learns what one is stored as — with a wait done once it is over, on the
             # clock's day, which the tabs re-run on when it turns.
-            status_for=_wait_aware(library, services.clock.today),
+            status_for=readiness_of(_wait_aware(library, services.clock.today)),
             clock=services.clock,
             counts_as_work=_counts_as_work,
             # A step that collects its sources' work is ready once they are under review.
@@ -1262,7 +1268,7 @@ def default_modules(
             sources=_report_sources(),
             key_of=_step_key,
             kind_of=_step_kind,
-            status_for=step_status,
+            status_for=stored,
             clock=services.clock,
             reporting_site=reporting_site,
         )
@@ -1350,13 +1356,17 @@ def default_modules(
             step_key=lambda step_id: _step_key(library.step(step_id)),
             # The same answer the canvas card's ✓ and the report's read: a wait is never
             # done here, whatever its day.
-            step_done=lambda step_id: _card_status(library.step(step_id)) == DONE,
+            step_done=lambda step_id: _card_status(library.step(step_id)) is Status.DONE,
             # The Expenditure tab: what each step's runs consumed, from the project's
             # usage ledger, and a rate of tokens per estimated day learned from the
             # library's finished steps — where ledgers live is the store's to know.
             step_spent=lambda project_id: _step_spent(store, project_id),
             token_rate=lambda project_id: _token_rate(
-                store, library, project_id, estimated_days, lambda step: _card_status(step) == DONE
+                store,
+                library,
+                project_id,
+                estimated_days,
+                lambda step: _card_status(step) is Status.DONE,
             ),
             ledger_stamp=lambda project_id: _ledger_stamp(store, project_id),
         )
@@ -1413,7 +1423,7 @@ def default_modules(
         from dplanner.modules.step_review.rounds import record_turn_launched
 
         today = services.clock.today()
-        status_for = _status_in(library, today)
+        status_for = _ready_in(library, today)
 
         def running(step: "Step") -> bool:
             return bool(agent_run_state(step)) or agent_runs.live(step.id) > 0
@@ -2314,15 +2324,14 @@ def _source_line(source: "Step", facts: "RepositoryFacts | None") -> str:
     under the checkout of the code location the step works in; whether it is *here* is the
     one thing only this machine can say, so it is asked.
     """
-    from dplanner.domain.progression import phrase
     from dplanner.modules.github.aspect import pr_label
     from dplanner.modules.github.aspect import read as github_read
     from dplanner.modules.step_agent_instruction.aspect import uses_worktree
     from dplanner.modules.step_agent_instruction.launcher import workdir, worktree_path
-    from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.planning.status import phrase, stored
 
     refs = github_read(source)
-    facts_of = [phrase(step_status(source))]
+    facts_of = [phrase(stored(source))]
     facts_of.append(
         f"branch `{refs.branch}`" if refs is not None and refs.branch else "no branch recorded"
     )
@@ -2764,10 +2773,9 @@ def _branch_reading(project: "Project") -> "BranchReading":
 
 def _is_done(step: "Step") -> bool:
     """Whether a step's own status says done — for a landing, that its branch landed."""
-    from dplanner.domain.progression import DONE
-    from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.planning.status import Status, stored
 
-    return step_status(step) == DONE
+    return stored(step) is Status.DONE
 
 
 def _branch_births(project: "Project", branch: str) -> "tuple[Step, Step]":
@@ -2909,9 +2917,9 @@ def _milestone_stats(library: "Library", project: "Project") -> dict[str, str]:
     milestone the project cannot date is absent; so is every step when nothing is a
     milestone, which costs the sync no walk at all.
     """
-    from dplanner.domain.schedule import format_date, format_days
     from dplanner.modules.estimation.schedule import project_schedule
     from dplanner.modules.step_milestone.aspect import read as milestone_read
+    from dplanner.planning.schedule import format_date, format_days
 
     if not any(milestone_read(step) for step in project.steps):
         return {}
@@ -2953,10 +2961,10 @@ def _step_stats(library: "Library", project: "Project") -> dict[str, str]:
     """The figure at each card's bottom right: a milestone's total and landing, how long a
     wait holds, any other step's estimate — what the canvas paints, read once for the
     report's graph."""
-    from dplanner.domain.schedule import format_days
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.step_wait.aspect import read as wait_read
     from dplanner.modules.step_wait.aspect import stat as wait_stat
+    from dplanner.planning.schedule import format_days
 
     stats = _milestone_stats(library, project)
     for step in project.steps:
@@ -2995,15 +3003,14 @@ def _step_type_icons(step: "Step") -> tuple[str, ...]:
     )
 
 
-def _card_status(step: "Step") -> str:
+def _card_status(step: "Step") -> "Status | Unknown":
     """A step's status as its card wears it — the key block's wash, a done body — on the
     canvas, the coverage lanes and the report: none for a step nobody works — a wait, a
     branch cut — which has no status, whatever it carried before it became one. A wait's
     clock is the block's one amber then."""
-    from dplanner.modules.step_status.aspect import PENDING
-    from dplanner.modules.step_status.aspect import read as step_status
+    from dplanner.planning.status import Status, stored
 
-    return PENDING if _works_nobody(step) else step_status(step)
+    return Status.PENDING if _works_nobody(step) else stored(step)
 
 
 def _primary_glyph(step: "Step") -> tuple[str, str]:
@@ -3041,25 +3048,24 @@ def _time_readers() -> "TimeReaders":
     day for what a recorded day counts as a change. ARCHITECTURE.md's *An agent finishes
     at Ready for review* has the reasoning.
     """
-    from dplanner.domain.progression import IN_PROGRESS, REVIEW_AND_MERGE
     from dplanner.modules.estimation.aspect import enabled as estimate_enabled
     from dplanner.modules.estimation.aspect import read as estimated_days
     from dplanner.modules.estimation.aspect import read_history as estimate_history
     from dplanner.modules.estimation.schedule import start_of
     from dplanner.modules.step_agent_instruction.aspect import enabled as agent_enabled
     from dplanner.modules.step_milestone.aspect import read as milestone_read
-    from dplanner.modules.step_status.aspect import read as step_status
-    from dplanner.modules.step_status.aspect import read_since as status_since
-    from dplanner.modules.step_status.aspect import read_started as status_started
     from dplanner.modules.step_wait.aspect import read as wait_read
     from dplanner.modules.time_estimates.cli import Readers
+    from dplanner.planning.status import REVIEW_AND_MERGE, Status, held, stored
+    from dplanner.planning.status import read_since as status_since
+    from dplanner.planning.status import read_started as status_started
 
-    def status_for(step: "Step") -> str:
-        status = step_status(step)
-        return IN_PROGRESS if status in REVIEW_AND_MERGE else status
+    def status_for(step: "Step") -> "Status":
+        status = held(stored(step))
+        return Status.IN_PROGRESS if status in REVIEW_AND_MERGE else status
 
     def since_for(step: "Step") -> "date | None":
-        if step_status(step) in REVIEW_AND_MERGE:
+        if stored(step) in REVIEW_AND_MERGE:
             return status_started(step) or status_since(step)
         return status_since(step)
 
@@ -3079,29 +3085,37 @@ def _time_readers() -> "TimeReaders":
     )
 
 
-def _status_in(library: "Library", today: "date") -> "Callable[[Step], str]":
+def _status_in(library: "Library", today: "date") -> "Callable[[Step], Reading]":
     """A step's status as the Step statuses tab, its report and the Run Agent gate read it on
     ``today``: a wait done once it is over and waiting until then (``schedule.wait_status``),
     so what follows a wait is ready on the day it may start; every other step as its status
     aspect says."""
-    from dplanner.domain.schedule import Wait, wait_status
-    from dplanner.modules.step_status.aspect import read as step_status
-    from dplanner.modules.step_status.aspect import read_since as status_since
     from dplanner.modules.step_wait.aspect import read as wait_read
+    from dplanner.planning.schedule import Wait, wait_status
+    from dplanner.planning.status import read_since as status_since
+    from dplanner.planning.status import stored
 
     # A branch cut holds nothing once what it waits on is done: a wait of no days, read so
     # here and only here — the schedule's own waits never count one.
     held = Wait(days=0.0)
     return wait_status(
         library,
-        step_status,
+        stored,
         status_since,
         lambda step: wait_read(step) or (held if _is_cut(step) else None),
         today,
     )
 
 
-def _wait_aware(library: "Library", today: "Callable[[], date]") -> "Callable[[Step], str]":
+def _ready_in(library: "Library", today: "date") -> "Callable[[Step], Status]":
+    """:func:`_status_in` as readiness reads it (``status.held``): a word this build cannot
+    read holds its step as blocked, and a wait not over is pending."""
+    from dplanner.planning.status import readiness_of
+
+    return readiness_of(_status_in(library, today))
+
+
+def _wait_aware(library: "Library", today: "Callable[[], date]") -> "Callable[[Step], Reading]":
     """:func:`_status_in` for a window, on whatever day it is when asked."""
     return lambda step: _status_in(library, today())(step)
 
@@ -3138,15 +3152,16 @@ def _auto_progresses(waiter: "Step", source: "Step") -> bool:
     return progresses(waiter, source) or reviews(waiter, source)
 
 
-def _persons_turn(library: "Library", step: "Step", status_for: "Callable[[Step], str]") -> bool:
+def _persons_turn(library: "Library", step: "Step", status_for: "Callable[[Step], Status]") -> bool:
     """Whether a person moves ``step`` next — what its card pulses for: ready to merge,
     always; ready for review, unless an agent takes it on from there (``progression.taken``,
     the rule that keeps it off the boards' *Ready for review* too)."""
-    from dplanner.domain.progression import READY_FOR_REVIEW, READY_TO_MERGE, taken
+    from dplanner.planning.progression import taken
+    from dplanner.planning.status import Status
 
     status = status_for(step)
-    return status == READY_TO_MERGE or (
-        status == READY_FOR_REVIEW
+    return status is Status.READY_TO_MERGE or (
+        status is Status.READY_FOR_REVIEW
         and not taken(library, step, status_for, _auto_progresses, _is_agent_step)
     )
 
@@ -3193,7 +3208,7 @@ def _has_run(step: "Step") -> bool:
 def _due_now(
     library: "Library",
     project: "Project",
-    status_for: "Callable[[Step], str]",
+    status_for: "Callable[[Step], Status]",
     running: "Callable[[Step], bool]" = _has_run,
 ) -> "list[tuple[Step, TurnDue | None]]":
     """Every step of ``project`` a window that launches what becomes due would start, in
@@ -3206,8 +3221,8 @@ def _due_now(
     say what they made due, and the window launches it — with ``running`` widened there to
     the runs it is watching, which a claim not yet on disk cannot hide.
     """
-    from dplanner.domain.progression import due
     from dplanner.modules.step_review.rounds import due_turns
+    from dplanner.planning.progression import due
 
     found: dict[str, tuple[Step, TurnDue | None]] = {
         turn.step.id: (turn.step, turn)
@@ -3222,7 +3237,7 @@ def _due_now(
 
 
 def _due_steps(
-    library: "Library", project: "Project", status_for: "Callable[[Step], str]"
+    library: "Library", project: "Project", status_for: "Callable[[Step], Status]"
 ) -> "list[Step]":
     """The due steps alone — what the terminal marks and names."""
     return [step for step, _turn in _due_now(library, project, status_for)]
@@ -3303,11 +3318,11 @@ def _time_writers() -> "TimeWriters":
     from dplanner.modules.step_agent_instruction.aspect import write_state
     from dplanner.modules.step_milestone.aspect import MODULE_ID as MILESTONE_ID
     from dplanner.modules.step_milestone.aspect import write as write_label
-    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-    from dplanner.modules.step_status.aspect import write as write_status
     from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
     from dplanner.modules.step_wait.aspect import write as write_wait
     from dplanner.modules.time_estimates.simulation.frames import PlanState, StepState, Writers
+    from dplanner.planning.status import MODULE_ID as STATUS_ID
+    from dplanner.planning.status import write as write_status
 
     def estimate(step: Step, state: StepState, today: date) -> tuple[str, dict[str, Any]]:
         previous = step.module_data.get(ESTIMATION_ID)
@@ -3364,7 +3379,7 @@ def _status_written(
 
     def due_in(context: "CliContext", project: "Project") -> "list[Step]":
         today = context.clock.today()
-        return _due_steps(context.library, project, _status_in(context.library, today))
+        return _due_steps(context.library, project, _ready_in(context.library, today))
 
     def run(context: "CliContext", args: "Namespace") -> int:
         project = context.library.project_of(
@@ -3420,7 +3435,7 @@ def _report_sources() -> tuple["ReportSource", ...]:
 
     return (
         progression(
-            status_in=_status_in,
+            status_in=_ready_in,
             counts_as_work=_counts_as_work,
             days_for=estimated_days,
             key_of=_step_key,
@@ -3991,8 +4006,8 @@ def _paste_policies() -> tuple["PastePolicy", ...]:
     from dplanner.modules.feature.aspect import drop_cites_for_paste
     from dplanner.modules.step_agent_run.aspect import forget_for_paste
     from dplanner.modules.step_review.rounds import forget_for_paste as forget_rounds
-    from dplanner.modules.step_status.aspect import forget_days_for_paste
     from dplanner.modules.testing.aspect import remint_for_paste
+    from dplanner.planning.status import forget_days_for_paste
 
     return (
         remint_for_paste,
@@ -4310,7 +4325,6 @@ def default_cli_commands(
     from dplanner.core.config_dir import config_dir
     from dplanner.core.telemetry import crash_log_path, journal_path
     from dplanner.domain.locations import roles_by_id
-    from dplanner.domain.progression import DONE, READY_FOR_REVIEW, READY_TO_MERGE
     from dplanner.modules.agent_at_work import cli as at_work_cli
     from dplanner.modules.auto_progress import cli as auto_progress_cli
     from dplanner.modules.branches import cli as branches_cli
@@ -4339,14 +4353,13 @@ def default_cli_commands(
     from dplanner.modules.step_review import cli as review_cli
     from dplanner.modules.step_start import cli as start_cli
     from dplanner.modules.step_status import cli as status_cli
-    from dplanner.modules.step_status.aspect import read as step_status
-    from dplanner.modules.step_status.aspect import status_command
     from dplanner.modules.step_ticket import cli as ticket_cli
     from dplanner.modules.step_wait import cli as wait_cli
     from dplanner.modules.testing import cli as testing_cli
     from dplanner.modules.testing.format import FORMAT_SUBJECT, FORMAT_VERB
     from dplanner.modules.testing.format import guide as test_format
     from dplanner.modules.time_estimates import cli as time_cli
+    from dplanner.planning.status import Status, status_command, stored
 
     specs = aspect_specs()
     time_readers = _time_readers()
@@ -4367,22 +4380,22 @@ def default_cli_commands(
     def end_claim(context: "CliContext", step: "Step") -> bool:
         return board.end(context.library.project_of(step.id).id, step.id)
 
-    def set_status(context: "CliContext", step: "Step", word: str) -> bool:
+    def set_status(context: "CliContext", step: "Step", status: "Status") -> bool:
         """A status written as `status set` writes it, ending a stopped step's claim."""
-        context.apply(status_command(step, word, today=context.clock.today()))
-        return word in status_cli.STOPPED and end_claim(context, step)
+        context.apply(status_command(step, status, today=context.clock.today()))
+        return status in status_cli.STOPPED and end_claim(context, step)
 
     def finish_merged(context: "CliContext", step: "Step") -> bool:
         """A step waiting on its merge is done once its PR reads merged — written as
         `status set` writes it; True when it was finished. A step on a feature branch is
         accepted by its PR merging into that branch, whether or not it was under review."""
-        status = step_status(step)
-        accepted = status == READY_TO_MERGE or (
-            status == READY_FOR_REVIEW and _merged_into_its_branch(context.library, step)
+        status = stored(step)
+        accepted = status is Status.READY_TO_MERGE or (
+            status is Status.READY_FOR_REVIEW and _merged_into_its_branch(context.library, step)
         )
         if not accepted:
             return False
-        set_status(context, step, DONE)
+        set_status(context, step, Status.DONE)
         return True
 
     commands = [
@@ -4447,9 +4460,7 @@ def default_cli_commands(
         *wait_cli.commands(),
         # Who may collect (an agent step) and where each source stands, through the
         # owners' Qt-free readers.
-        *auto_progress_cli.commands(
-            is_agent=_is_agent_step, status_for=step_status, key_of=_step_key
-        ),
+        *auto_progress_cli.commands(is_agent=_is_agent_step, status_for=stored, key_of=_step_key),
         # A branch's two ends are born dressed as the window's Put on a Branch makes them.
         *branches_cli.commands(
             born=_branch_births,
@@ -4463,7 +4474,7 @@ def default_cli_commands(
         # step's refs across; escalating keeps a note for a person.
         *review_cli.commands(
             auto_progresses=_auto_progresses,
-            status_for=step_status,
+            status_for=stored,
             set_status=set_status,
             inherit_refs=_inherit_refs,
             note_escalation=_note_escalation,
@@ -4480,7 +4491,7 @@ def default_cli_commands(
         # `test format` tells the gate what it printed, the way `topology show` does; the
         # gate is built here, so the testing module never learns where the record lives.
         *testing_cli.commands(
-            status_for=step_status, notes_for=_unsettling_notes, note_read=format_gate.record
+            status_for=stored, notes_for=_unsettling_notes, note_read=format_gate.record
         ),
         *check_cli.commands(),
         *start_cli.commands(),
@@ -4500,7 +4511,7 @@ def default_cli_commands(
         # Progression reads statuses and estimates through the aspects' Qt-free readers —
         # handed over here so no cli.py imports another module's.
         *progression_cli.commands(
-            status_in=_status_in,
+            status_in=_ready_in,
             counts_as_work=_counts_as_work,
             days_for=estimated_days,
             auto_progresses=_auto_progresses,
@@ -4531,7 +4542,7 @@ def default_cli_commands(
             sources=_report_sources(),
             key_of=_step_key,
             kind_of=_step_kind,
-            status_for=step_status,
+            status_for=stored,
             reporting_site=_cli_reporting_site,
         ),
         # The journal both surfaces write, read back: the paths are the process's, handed
@@ -4752,10 +4763,10 @@ def aspect_specs() -> list["AspectSpec"]:
     from dplanner.modules.step_review import aspect as review
     from dplanner.modules.step_review import rounds as review_rounds
     from dplanner.modules.step_start import aspect as start
-    from dplanner.modules.step_status import aspect as status
     from dplanner.modules.step_ticket import aspect as ticket
     from dplanner.modules.step_wait import aspect as wait
     from dplanner.modules.testing import aspect as testing
+    from dplanner.planning import status
 
     return [
         agent.SPEC,

@@ -28,6 +28,7 @@ from typing import Final, Literal
 from dplanner.domain.assets import image_references
 from dplanner.domain.model import Library, Project, StepId
 from dplanner.domain.store import FilesFor, ModuleFileArea
+from dplanner.planning.status import Status, Unknown
 
 # Where on the page a part goes, in page order. A module places a part into a slot and
 # ranks it there with ``order`` (10/20/30…), the way an action names a menu and a group.
@@ -247,7 +248,7 @@ class Node:
     w: float
     h: float
     kind: str = ""  # milestone | feature | check | wait | agent | ""
-    status: str = ""  # One of the status aspect's words; "" and pending say nothing.
+    status: Status | Unknown = Status.PENDING  # Pending says nothing.
     stat: str = ""  # The card's bottom-right figure: an estimate, a milestone's total.
     badge: str = ""  # A milestone's label on the top edge.
     # A milestone's own shade of the project's colour map, as "#rrggbb" — the same hex

@@ -1,6 +1,6 @@
 """The plan's assumptions, and the staffing matrix they turn the estimates into.
 
-The derivation is the domain's (``domain/schedule.py``'s ``phases`` over ``parallel_finish``);
+The derivation is the domain's (``planning/schedule.py``'s ``phases`` over ``parallel_finish``);
 this is the module's half — where the stored assumptions live, and the grid of teams
 ``dplanner schedule matrix`` prints (:func:`time_report`). The tab, the recorder and the
 report date the plan for the stored team through the same walk (``progress.take``), so the
@@ -48,8 +48,7 @@ from typing import Any, TypeGuard
 from dplanner.core.module_data import ModuleDataFormat, stamped
 from dplanner.domain.model import Library, Project, Step, StepId
 from dplanner.domain.ordering import cyclic, placed
-from dplanner.domain.progression import DONE, IN_PROGRESS
-from dplanner.domain.schedule import (
+from dplanner.planning.schedule import (
     HALF,
     SATURDAY,
     Phase,
@@ -61,6 +60,7 @@ from dplanner.domain.schedule import (
     spent_since,
     working_days_between,
 )
+from dplanner.planning.status import Status
 from dplanner.theme.palettes import DEFAULT_PALETTE, Palette, palette, shades
 
 MODULE_ID = "time_estimates"
@@ -321,7 +321,7 @@ def pace_so_far(
     days_for: Callable[[Step], float | None],
     *,
     is_agent: Callable[[Step], bool],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
     started_for: Callable[[Step], date | None],
     since_for: Callable[[Step], date | None],
     start: date,
@@ -346,7 +346,13 @@ def pace_so_far(
     spans: dict[StepId, list[_HalfDay]] = {}
     for step in theirs:
         status, started = status_for(step), started_for(step)
-        until = since_for(step) if status == DONE else today if status == IN_PROGRESS else None
+        until = (
+            since_for(step)
+            if status is Status.DONE
+            else today
+            if status is Status.IN_PROGRESS
+            else None
+        )
         if started is not None and until is not None:
             spans[step.id] = _half_days(started, until)
     open_in: dict[_HalfDay, int] = {}
@@ -357,7 +363,7 @@ def pace_so_far(
     count = 0
     for step in theirs:
         days = days_for(step)
-        if days is None or status_for(step) != DONE or step.id not in spans:
+        if days is None or status_for(step) is not Status.DONE or step.id not in spans:
             continue
         given += days
         took += sum(HALF * min(1.0, people / open_in[half]) for half in spans[step.id])
@@ -472,7 +478,7 @@ def schedule_facts(
     today: date,
     *,
     is_agent: Callable[[Step], bool],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status],
     since_for: Callable[[Step], date | None],
     is_marker: Callable[[Step], bool],
     day_over: bool = False,

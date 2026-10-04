@@ -8,17 +8,18 @@ import pytest
 from dplanner.domain.commands import AddNodeCommand
 from dplanner.domain.model import Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
-from dplanner.modules.step_status.aspect import (
+from dplanner.planning.status import (
     MERGED_ORIGIN,
     MODULE_ID,
-    STATUSES,
+    Status,
+    Unknown,
     forget_days_for_paste,
     label,
-    read,
     read_since,
     read_started,
     record_merged,
     record_started,
+    stored,
     write,
 )
 
@@ -28,18 +29,18 @@ MONDAY, TUESDAY, FRIDAY = date(2026, 9, 21), date(2026, 9, 22), date(2026, 9, 25
 
 
 def test_absence_reads_as_pending():
-    assert read(Step(title="A")) == "pending"
+    assert stored(Step(title="A")) is Status.PENDING
 
 
 def test_write_and_read_round_trip():
     step = Step(title="A")
-    step.module_data[MODULE_ID] = write("done", today=date(2026, 9, 21))
-    assert read(step) == "done"
+    step.module_data[MODULE_ID] = write(Status.DONE, today=date(2026, 9, 21))
+    assert stored(step) is Status.DONE
 
 
 def test_pending_writes_nothing():
     """Absence encodes the default: setting a step back to pending removes the file."""
-    assert write("pending", today=date(2026, 9, 21)) == {}
+    assert write(Status.PENDING, today=date(2026, 9, 21)) == {}
 
 
 def test_an_unknown_word_reads_as_unknown_and_stays_on_disk():
@@ -47,41 +48,43 @@ def test_an_unknown_word_reads_as_unknown_and_stays_on_disk():
     nor guess pending, which would make the step due again — and must not touch it."""
     step = Step(title="A")
     step.module_data[MODULE_ID] = {"status": "paused", "format": 1}
-    assert read(step) == "unknown"
+    assert stored(step) == Unknown("paused")
     assert step.module_data[MODULE_ID] == {"status": "paused", "format": 1}
 
 
 def test_an_entry_with_days_but_no_word_reads_as_pending():
     step = Step(title="A")
     step.module_data[MODULE_ID] = {"since": "2026-09-21", "format": 2}
-    assert read(step) == "pending"
+    assert stored(step) is Status.PENDING
 
 
 def test_a_status_remembers_the_day_it_changed_and_the_day_work_began():
     step = Step(title="A")
-    step.module_data[MODULE_ID] = write("in-progress", today=MONDAY)
+    step.module_data[MODULE_ID] = write(Status.IN_PROGRESS, today=MONDAY)
     assert (read_since(step), read_started(step)) == (MONDAY, MONDAY)
     # Said again, nothing moved: the day it changed stands.
     step.module_data[MODULE_ID] = write(
-        "in-progress", today=TUESDAY, previous=step.module_data[MODULE_ID]
+        Status.IN_PROGRESS, today=TUESDAY, previous=step.module_data[MODULE_ID]
     )
     assert read_since(step) == MONDAY
-    step.module_data[MODULE_ID] = write("done", today=FRIDAY, previous=step.module_data[MODULE_ID])
-    assert (read(step), read_since(step), read_started(step)) == ("done", FRIDAY, MONDAY)
+    step.module_data[MODULE_ID] = write(
+        Status.DONE, today=FRIDAY, previous=step.module_data[MODULE_ID]
+    )
+    assert (stored(step), read_since(step), read_started(step)) == (Status.DONE, FRIDAY, MONDAY)
 
 
 def test_a_reopened_step_keeps_the_day_it_first_began():
     """Pending keeps the days — an entry with no status, which reads as pending — so work
     picked up again knows when it first started."""
     step = Step(title="A")
-    step.module_data[MODULE_ID] = write("in-progress", today=MONDAY)
+    step.module_data[MODULE_ID] = write(Status.IN_PROGRESS, today=MONDAY)
     step.module_data[MODULE_ID] = write(
-        "pending", today=TUESDAY, previous=step.module_data[MODULE_ID]
+        Status.PENDING, today=TUESDAY, previous=step.module_data[MODULE_ID]
     )
-    assert "status" not in step.module_data[MODULE_ID] and read(step) == "pending"
+    assert "status" not in step.module_data[MODULE_ID] and stored(step) is Status.PENDING
     assert (read_since(step), read_started(step)) == (TUESDAY, MONDAY)
     step.module_data[MODULE_ID] = write(
-        "in-progress", today=FRIDAY, previous=step.module_data[MODULE_ID]
+        Status.IN_PROGRESS, today=FRIDAY, previous=step.module_data[MODULE_ID]
     )
     assert (read_since(step), read_started(step)) == (FRIDAY, MONDAY)
 
@@ -90,22 +93,17 @@ def test_a_status_written_before_the_days_were_stamped_has_none():
     """An older build's entry says nothing of its days, and nothing reads that as today."""
     step = Step(title="A")
     step.module_data[MODULE_ID] = {"status": "done", "format": 1}
-    assert (read(step), read_since(step), read_started(step)) == ("done", None, None)
+    assert (stored(step), read_since(step), read_started(step)) == (Status.DONE, None, None)
 
 
 def test_a_copy_keeps_the_status_and_forgets_the_days():
     done, pending = Step(title="A"), Step(title="B")
-    done.module_data[MODULE_ID] = write("done", today=FRIDAY)
-    started = write("in-progress", today=MONDAY)
-    pending.module_data[MODULE_ID] = write("pending", today=TUESDAY, previous=started)
+    done.module_data[MODULE_ID] = write(Status.DONE, today=FRIDAY)
+    started = write(Status.IN_PROGRESS, today=MONDAY)
+    pending.module_data[MODULE_ID] = write(Status.PENDING, today=TUESDAY, previous=started)
     forget_days_for_paste(None, [done, pending], {})  # type: ignore[arg-type]
-    assert read(done) == "done" and read_since(done) is None
+    assert stored(done) is Status.DONE and read_since(done) is None
     assert MODULE_ID not in pending.module_data
-
-
-def test_writing_an_unknown_status_is_refused():
-    with pytest.raises(ValueError, match="unknown status"):
-        write("paused", today=date(2026, 9, 21))
 
 
 # -- the window's own claim that work started --------------------------------------------------
@@ -125,7 +123,7 @@ def _one_step():
 def test_record_started_claims_in_progress():
     library, step = _one_step()
     assert record_started(library, step.id, date(2026, 9, 21)) is True
-    assert read(step) == "in-progress"
+    assert stored(step) is Status.IN_PROGRESS
 
 
 def test_record_started_writes_nothing_twice():
@@ -141,13 +139,13 @@ def test_record_merged_finishes_only_a_step_waiting_on_its_merge():
     library, step = _one_step()
     origins = []
     library.module_data_changed.connect(lambda _node, _module, origin: origins.append(origin))
-    step.module_data[MODULE_ID] = write("ready-for-review", today=MONDAY)
+    step.module_data[MODULE_ID] = write(Status.READY_FOR_REVIEW, today=MONDAY)
     assert record_merged(library, step.id, TUESDAY) is False
-    assert read(step) == "ready-for-review"
+    assert stored(step) is Status.READY_FOR_REVIEW
 
-    step.module_data[MODULE_ID] = write("ready-to-merge", today=MONDAY)
+    step.module_data[MODULE_ID] = write(Status.READY_TO_MERGE, today=MONDAY)
     assert record_merged(library, step.id, TUESDAY) is True
-    assert read(step) == "done"
+    assert stored(step) is Status.DONE
     assert origins == [MERGED_ORIGIN]
     assert record_merged(library, step.id, TUESDAY) is False  # Done already: nothing twice.
 
@@ -156,9 +154,9 @@ def test_record_started_overrides_a_finished_claim():
     """Launching on a step that reads done means work resumed — there is no other honest
     reading of it, and the person who did not want that switched the launch setting off."""
     library, step = _one_step()
-    step.module_data[MODULE_ID] = write("done", today=date(2026, 9, 21))
+    step.module_data[MODULE_ID] = write(Status.DONE, today=date(2026, 9, 21))
     assert record_started(library, step.id, date(2026, 9, 21)) is True
-    assert read(step) == "in-progress"
+    assert stored(step) is Status.IN_PROGRESS
 
 
 def test_record_started_on_a_step_that_is_gone_answers_false():
@@ -167,7 +165,7 @@ def test_record_started_on_a_step_that_is_gone_answers_false():
 
 
 def test_review_and_merge_sit_between_in_progress_and_done():
-    assert STATUSES == (
+    assert tuple(status.value for status in Status) == (
         "pending",
         "in-progress",
         "ready-for-review",
@@ -180,16 +178,16 @@ def test_review_and_merge_sit_between_in_progress_and_done():
 def test_any_worked_status_stamps_started_the_first_time():
     """A step an agent was never claimed on still began the day it came back for review;
     done straight from pending says nothing of when it began."""
-    for word in ("in-progress", "ready-for-review", "ready-to-merge"):
-        entry = write(word, today=MONDAY)
-        assert entry["started"] == MONDAY.isoformat(), word
-        later = write("done", today=FRIDAY, previous=entry)
+    for worked in (Status.IN_PROGRESS, Status.READY_FOR_REVIEW, Status.READY_TO_MERGE):
+        entry = write(worked, today=MONDAY)
+        assert entry["started"] == MONDAY.isoformat(), worked
+        later = write(Status.DONE, today=FRIDAY, previous=entry)
         assert later["started"] == MONDAY.isoformat() and later["since"] == FRIDAY.isoformat()
-    assert "started" not in write("done", today=MONDAY)
+    assert "started" not in write(Status.DONE, today=MONDAY)
 
 
 def test_the_menu_words_keep_the_small_words_small():
-    assert [label(word) for word in STATUSES] == [
+    assert [label(status) for status in Status] == [
         "Pending",
         "In Progress",
         "Ready for Review",
@@ -343,7 +341,7 @@ def select(services, step):
 
 def test_the_actions_exist_one_per_state(services):
     ids = {spec.id for spec in services.actions.all_specs()}
-    assert {f"status.{status}" for status in STATUSES} <= ids
+    assert {f"status.{status.value}" for status in Status} <= ids
 
 
 def test_the_current_state_is_checked(services, step):
@@ -360,9 +358,13 @@ def test_running_the_action_sets_the_status_undoably(services, step):
     services.undo.break_coalescing()  # two statuses in a row would merge into one step
     services.clock.pin(TUESDAY)
     services.actions.run("status.done", services.context.current())
-    assert (read(step), read_since(step), read_started(step)) == ("done", TUESDAY, MONDAY)
+    assert (stored(step), read_since(step), read_started(step)) == (Status.DONE, TUESDAY, MONDAY)
     services.undo.undo()  # the days come back with the status
-    assert (read(step), read_since(step), read_started(step)) == ("in-progress", MONDAY, MONDAY)
+    assert (stored(step), read_since(step), read_started(step)) == (
+        Status.IN_PROGRESS,
+        MONDAY,
+        MONDAY,
+    )
 
 
 def test_a_status_verb_moves_every_chosen_step_as_one_undo_step(services, step, make_project):
@@ -376,10 +378,10 @@ def test_a_status_verb_moves_every_chosen_step_as_one_undo_step(services, step, 
     context = services.context.current()
     services.actions.run("status.ready-for-review", context)
     services.actions.run("status.ready-to-merge", context)
-    assert read(step) == read(other) == "ready-to-merge"
+    assert stored(step) == stored(other) is Status.READY_TO_MERGE
     assert services.actions.spec("status.ready-to-merge").state(context).checked is True
     services.undo.undo()
-    assert read(step) == read(other) == "ready-for-review"
+    assert stored(step) == stored(other) is Status.READY_FOR_REVIEW
 
 
 def test_checked_only_when_every_chosen_step_stands_there(services, step):
@@ -393,8 +395,8 @@ def test_checked_only_when_every_chosen_step_stands_there(services, step):
 def test_a_wait_among_the_chosen_greys_the_verb(services, step):
     wait = Step(title="Hold a day")
     AddNodeCommand(services.document.project_of(step.id).id, wait).redo(services.document)
-    from dplanner.domain.schedule import Wait
     from dplanner.modules.step_wait.aspect import write as write_wait
+    from dplanner.planning.schedule import Wait
 
     services.document.set_module_data(wait.id, "step_wait", write_wait(Wait(days=1.0)))
     state = services.actions.spec("status.done").state(_chosen(services, step, wait))

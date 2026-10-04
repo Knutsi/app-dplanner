@@ -48,6 +48,7 @@ from dplanner.modules.project_editor.renderers import (
     medallion_end,
 )
 from dplanner.modules.project_editor.selection import EDGE_KIND, EdgeRef
+from dplanner.planning.status import Status
 from dplanner.theme import apply_theme
 from dplanner.theme.cards import FILL_ALPHA, LIFT
 from dplanner.theme.themes import DARK, LIGHT
@@ -3061,8 +3062,8 @@ def test_the_key_block_is_shaded_by_status(services, project, tab):
     """A status changes the block's wash — busy blue for in-progress, the good green for
     done — while the body keeps its own fill beside it."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.modules.step_status.aspect import MODULE_ID as STATUS_ID
-    from dplanner.modules.step_status.aspect import write as status
+    from dplanner.planning.status import MODULE_ID as STATUS_ID
+    from dplanner.planning.status import write as status
     from dplanner.theme.cards import KEY_BLOCK_W
 
     step = project.steps[0]
@@ -3072,7 +3073,9 @@ def test_the_key_block_is_shaded_by_status(services, project, tab):
     assert inside.name() not in quiet  # The block is a shade of its own, even at rest.
 
     services.undo.push(
-        SetModuleDataCommand(step.id, STATUS_ID, status("in-progress", today=date(2026, 9, 21)))
+        SetModuleDataCommand(
+            step.id, STATUS_ID, status(Status.IN_PROGRESS, today=date(2026, 9, 21))
+        )
     )
     busy = block_colours(render_card(tab, step.id))
     assert busy != quiet
@@ -3080,7 +3083,7 @@ def test_the_key_block_is_shaded_by_status(services, project, tab):
     assert QColor(busiest).blue() > QColor(busiest).red()  # A blue wash.
 
     services.undo.push(
-        SetModuleDataCommand(step.id, STATUS_ID, status("done", today=date(2026, 9, 21)))
+        SetModuleDataCommand(step.id, STATUS_ID, status(Status.DONE, today=date(2026, 9, 21)))
     )
     done = block_colours(render_card(tab, step.id))
     greenest = max(done, key=lambda name: QColor(name).green() - QColor(name).red())
@@ -3091,9 +3094,9 @@ def test_a_waits_clock_is_amber(services, project, tab):
     """A wait is nobody's work, and says so in the attention amber whatever its date — the
     one glyph in the block that is not the key's ink."""
     from dplanner.domain.commands import SetModuleDataCommand
-    from dplanner.domain.schedule import Wait
     from dplanner.modules.step_wait.aspect import MODULE_ID as WAIT_ID
     from dplanner.modules.step_wait.aspect import write as wait
+    from dplanner.planning.schedule import Wait
     from dplanner.theme.cards import key_block_rects
 
     def amber(image: QImage) -> bool:

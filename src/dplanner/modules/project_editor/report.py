@@ -33,6 +33,7 @@ from dplanner.domain.store import FilesFor
 from dplanner.modules.project_editor.placement import positions
 from dplanner.modules.project_editor.positions import node_size
 from dplanner.modules.project_editor.stacks import frame, read_stacks
+from dplanner.planning.status import Status, Unknown
 from dplanner.theme.glyph_source import glyph_markup
 
 
@@ -40,7 +41,7 @@ def report_source(
     *,
     key_of: Callable[[Step], str],
     kind_of: Callable[[Step], str],
-    status_for: Callable[[Step], str],
+    status_for: Callable[[Step], Status | Unknown],
     stats_of: Callable[[Library, Project], dict[StepId, str]],
     badge_of: Callable[[Step], str],
     # Every milestone's own shade, by step id — one deal per project, the same one the

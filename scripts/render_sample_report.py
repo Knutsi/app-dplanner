@@ -30,7 +30,6 @@ from dplanner.core.storage.locations import init_repo
 from dplanner.domain.assets import attach
 from dplanner.domain.commands import AddNodeCommand, SetEdgesCommand, SetModuleDataCommand
 from dplanner.domain.model import Library, Step
-from dplanner.domain.schedule import Wait
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.modules import default_cli_commands, default_module_formats
 from dplanner.modules.estimation.aspect import write as estimate
@@ -40,7 +39,6 @@ from dplanner.modules.feature.aspect import write as feature_marker
 from dplanner.modules.notes.log import MODULE_ID as NOTES_ID
 from dplanner.modules.notes.log import Note, write_log
 from dplanner.modules.step_milestone.aspect import write as milestone
-from dplanner.modules.step_status.aspect import write as status
 from dplanner.modules.step_ticket.aspect import Ticket
 from dplanner.modules.step_ticket.aspect import write as ticket
 from dplanner.modules.step_wait.aspect import write as wait
@@ -48,6 +46,8 @@ from dplanner.modules.testing import runs
 from dplanner.modules.testing.aspect import Test
 from dplanner.modules.testing.aspect import write as tests
 from dplanner.modules.time_estimates.schedule import write_project
+from dplanner.planning.schedule import Wait
+from dplanner.planning.status import write as status
 
 # (title, days, requires by index, status, kind)
 PLAN: list[tuple[str, float | None, list[int], str, str]] = [

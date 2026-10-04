@@ -13,11 +13,10 @@ import pytest
 from tests.modules.time_helpers import frame_of, run_id, runs
 
 from dplanner.domain.model import Project
-from dplanner.domain.progression import DONE
 from dplanner.modules import _time_readers, _time_writers
-from dplanner.modules.step_status.aspect import read_started
 from dplanner.modules.time_estimates.progress import Snapshot
 from dplanner.modules.time_estimates.simulation.replay import Replay
+from dplanner.planning.status import Status, read_started
 
 READERS = _time_readers()
 
@@ -64,7 +63,7 @@ def _landed(project: Project) -> date:
         since
         for step in project.steps
         if not READERS.is_marker(step)
-        and READERS.status_for(step) == DONE
+        and READERS.status_for(step) is Status.DONE
         and (since := READERS.since_for(step)) is not None
     )
 
