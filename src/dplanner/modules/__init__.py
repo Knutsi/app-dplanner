@@ -3000,7 +3000,7 @@ def default_cli_commands(
     from dplanner.modules.project_assets import cli as assets_cli
     from dplanner.modules.project_assets.cli import read_titles
     from dplanner.modules.projects import cli as projects_cli
-    from dplanner.modules.schedule import cli as time_cli
+    from dplanner.modules.schedule import cli as schedule_cli
     from dplanner.modules.spec import cli as spec_cli
     from dplanner.modules.spec.aspect import read_topology
     from dplanner.modules.status_board import cli as progression_cli
@@ -3025,7 +3025,7 @@ def default_cli_commands(
     from dplanner.planning.status import Status, stored
 
     specs = aspect_specs()
-    time_readers = time_cli.Readers()
+    time_readers = schedule_cli.Readers()
     scopes = scope_kinds()
     sources = _asset_sources()
     roles = roles_by_id(default_location_roles())
@@ -3206,7 +3206,7 @@ def default_cli_commands(
         ),
         # The staffing matrix reads estimates, agent-ness and the start date through the
         # owners' Qt-free readers — handed over here so no cli.py imports another module's.
-        *time_cli.commands(time_readers, counts_as_work=_counts_as_work),
+        *schedule_cli.commands(time_readers, counts_as_work=_counts_as_work),
         *github_cli.commands(finish_merged=finish_merged),
         # A note names the step it was made on by id and prints it by key — the
         # same rule every row prints, handed over rather than imported.
@@ -3234,7 +3234,8 @@ def default_cli_commands(
     # the moment a step may become due, which the terminal says.
     commands = [
         _status_written(
-            command, lambda context, project: time_cli.record_day(context, project, time_readers)
+            command,
+            lambda context, project: schedule_cli.record_day(context, project, time_readers),
         )
         if command.path in STATUS_WRITES
         else command
@@ -3523,8 +3524,8 @@ def default_module_formats() -> list[ModuleDataFormat]:
     from dplanner.modules.canvas.layouts import positions
     from dplanner.modules.notes import migrate as notes
     from dplanner.modules.project_assets import cli as project_assets
-    from dplanner.modules.schedule import assumptions as time_schedule
-    from dplanner.modules.schedule import progress as time_progress
+    from dplanner.modules.schedule import assumptions as schedule_assumptions
+    from dplanner.modules.schedule import progress as schedule_progress
 
     # The aspects, plus the module data that is not an aspect: the graph's node positions,
     # the time report's focus factor and the asset browser's display titles. Deriving this
@@ -3537,8 +3538,8 @@ def default_module_formats() -> list[ModuleDataFormat]:
     # decision log and the absorption of the retired handoff aspect.
     return [spec.data_format for spec in aspect_specs()] + [
         positions.DATA_FORMAT,
-        time_schedule.DATA_FORMAT,
-        time_progress.DATA_FORMAT,
+        schedule_assumptions.DATA_FORMAT,
+        schedule_progress.DATA_FORMAT,
         project_assets.DATA_FORMAT,
         shelf.DATA_FORMAT,
         notes.DATA_FORMAT,
