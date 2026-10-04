@@ -6,7 +6,7 @@ paths:
   - "src/dplanner/modules/branches/**"
   - "src/dplanner/domain/branches.py"
   - "tests/domain/test_{model,ids}.py"
-  - "tests/modules/test_stack_edits.py"
+  - "tests/modules/canvas/test_stack_edits.py"
   - "tests/modules/test_auto_progress*.py"
   - "tests/cli/test_auto_progress_verbs.py"
   - "tests/domain/test_branches.py"
@@ -39,7 +39,7 @@ paths:
   on the window's library in `default_modules` and on the CLI's through `entry.py → run →
   open_library` — and `link_refusal` asks each after its own four, so the canvas under the
   cursor, `steps.link`'s state, Redirect and `step link` still ask one question. The stack's
-  "one in, one out" (`project_editor/stacks.link_rule`) is the first. **A rule judges only
+  "one in, one out" (`canvas/stacks/stack.link_rule`) is the first. **A rule judges only
   the first redo of a link a person chose**: `SetEdgesCommand` asks with `rules` and on its
   first redo alone, and an undo, a replayed redo, the store adopting another writer's list,
   `project import`, a paste's clones and every rewire pass `rules=False` and meet only the
@@ -97,7 +97,7 @@ paths:
   **Put on a Branch** (`edits.put_command`) and **Remove Branch** (`remove_command`) are
   one rewire each — outside inputs move to the cut and outside dependents to the landing,
   and back — refused by `ordering.left_between`, the walk `stack make` shares, by a pick
-  that crosses another stretch, and by one that splits a stack (`stacks.stack_split`, the
+  that crosses another stretch, and by one that splits a stack (`stack.stack_split`, the
   graph editor's fact handed in). Remove is never partial, so the window asks first.
   `planning.kinds.works_nobody` is what a wait and a cut share — "a wait", "a branch cut" — and
   every module refusing such a step a status, an agent, a review or a test words its

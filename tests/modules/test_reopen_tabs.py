@@ -9,7 +9,7 @@ import pytest
 
 from dplanner.framework.context import activity_uri
 from dplanner.framework.user_config import get_scoped, library_scope, set_global, set_scoped
-from dplanner.modules.project_editor.module import PROJECT_KIND
+from dplanner.modules.canvas.activity import PROJECT_KIND
 from dplanner.modules.reopen_tabs.module import OPEN_KEY
 from dplanner.modules.reopen_tabs.settings_page import MODULE_ID, REOPEN_KEY
 

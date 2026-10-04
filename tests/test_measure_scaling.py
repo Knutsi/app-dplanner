@@ -32,7 +32,7 @@ def test_discarding_a_build_leaves_nothing_on_the_clipboard(app, tmp_path: Path)
 
 
 def test_waves_measures_every_canvas_in_wave_view(app, tmp_path: Path) -> None:
-    from dplanner.modules.project_editor.layout_verbs import wave_view
+    from dplanner.modules.canvas.layouts.verbs import wave_view
 
     args = Namespace(tabs=("project",), projects=1, unplaced=0.0, immediate=True, waves=True)
     harness = build(app, tmp_path, 10, args)

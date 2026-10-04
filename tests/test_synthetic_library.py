@@ -5,7 +5,7 @@ from pathlib import Path
 from scripts.synthetic_library import build_library
 
 from dplanner.domain.store import LibraryStore
-from dplanner.modules.project_editor.positions import read_position
+from dplanner.modules.canvas.layouts.positions import read_position
 from dplanner.modules.testing import runs
 from dplanner.planning.feature import is_feature
 from dplanner.planning.milestone import read as milestone_label
@@ -48,7 +48,7 @@ def test_an_unplaced_share_leaves_positions_to_the_layout(tmp_path: Path) -> Non
 def test_every_project_measures_and_maps(tmp_path: Path) -> None:
     """The agent's eyes over a real plan: the geometry report and the map, for every
     project the library holds, keyed the way every CLI row is."""
-    from dplanner.modules.project_editor.geometry import map_text, measure, text
+    from dplanner.modules.canvas.geometry import map_text, measure, text
     from dplanner.planning.kinds import key_of
 
     library_file = build_library(tmp_path, steps=30)

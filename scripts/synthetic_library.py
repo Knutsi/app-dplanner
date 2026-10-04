@@ -35,11 +35,11 @@ from dplanner.domain.model import Library, Project, Step
 from dplanner.domain.seed import create_library, seed_project
 from dplanner.domain.store import ModuleFileArea
 from dplanner.modules import default_module_formats
+from dplanner.modules.canvas.layouts.positions import MODULE_ID as EDITOR_ID
+from dplanner.modules.canvas.layouts.positions import write_position
+from dplanner.modules.canvas.layouts.sorts import layered_flow
 from dplanner.modules.notes.aspect import MODULE_ID as NOTES_ID
 from dplanner.modules.notes.aspect import Note, write_log
-from dplanner.modules.project_editor.positions import MODULE_ID as EDITOR_ID
-from dplanner.modules.project_editor.positions import write_position
-from dplanner.modules.project_editor.sorts import layered_flow
 from dplanner.modules.spec.aspect import MODULE_ID as SPEC_ID
 from dplanner.modules.spec.documents import SpecIndex, import_document, write_index
 from dplanner.modules.testing import runs

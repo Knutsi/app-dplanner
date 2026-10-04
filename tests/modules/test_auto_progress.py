@@ -17,8 +17,8 @@ from dplanner.domain.commands import (
 from dplanner.domain.model import SOURCE, Step
 from dplanner.framework.context import SCOPE_SELECTION, ContextNode, selection_uri
 from dplanner.modules.auto_progress import aspect
-from dplanner.modules.project_editor.renderers import EdgeAccent
-from dplanner.modules.project_editor.selection import EdgeRef
+from dplanner.modules.canvas.renderers import EdgeAccent
+from dplanner.modules.canvas.selection import EdgeRef
 from dplanner.modules.step_agent_run import aspect as agent_run
 from dplanner.planning import agent
 from dplanner.planning.status import Status
@@ -118,7 +118,7 @@ def test_a_partly_flagged_pick_turns_all_of_it_on(services, project, tab):
 
 
 def test_the_arrows_right_click_offers_it_checked(services, project, tab):
-    from tests.modules.test_project_editor import a_point_on, offered
+    from tests.modules.canvas.test_canvas import a_point_on, offered
 
     c, a1 = by_title(project, "C"), by_title(project, "A1")
     services.actions.run(TOGGLE, picking(services, *arrows(project, "A1")))

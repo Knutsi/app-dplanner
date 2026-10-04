@@ -2,7 +2,7 @@
 
 The Project Settings dialog and its Repositories tab, locations, the Open, Link, Browse and
 Repositories pages, Share, Move, the archive, checkouts, and the ``dplanner project …`` and
-``dplanner step …`` nouns. The tab a project opens into is ``project_editor``'s.
+``dplanner step …`` nouns. The tab a project opens into is ``canvas``'s.
 
 The module class and its ``Deps`` are imported from ``module.py`` by the composition root.
 This file stays a docstring on purpose: re-exporting the Qt half here would make the

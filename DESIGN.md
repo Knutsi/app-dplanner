@@ -190,7 +190,7 @@ well is `$BG_BASE`, and the canvas already is.
   viewport, and that carries the viewport's children away with the pixels.
 
 A **ruler** is the other overlay: a band pinned across the top of the view, not a panel in a
-corner — Wave view's column headings (`ruler.py`). It is 36 px of `$BG_BASE` at about 72 %
+corner — Wave view's column headings (`layouts/ruler.py`). It is 36 px of `$BG_BASE` at about 72 %
 over the ground, so cards pass under it and are still seen, with the `$BORDER` hairline under
 it; no frame, no radius, since it is an edge of the canvas and not a thing on it. Each
 heading stands over its column at every scroll and zoom and never moves down: the label in
@@ -981,7 +981,7 @@ Dialogs:
 - *(done — S16)* The Run Agent confirmation — a `RunAnywayDialog` on the frame: the launch
   count in its title, what each chosen step waits on in its body, *Run Anyway* the primary.
   Of the fourteen `QInputDialog.getText` prompts, the Project family's four are
-  `LinePrompt`s; feature, project_editor, testing and sync still have theirs.
+  `LinePrompt`s; feature, canvas, testing and sync still have theirs.
 - *(done — the graph editor pass)* Help ▸ About was a `QMessageBox.about` still naming the
   template's product. It is a `DialogFrame` over a `Table` now: the name and version, then
   what DPlanner is built on, a row per component with its licence.

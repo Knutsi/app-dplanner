@@ -1,6 +1,6 @@
 """Which of the rulebook's area files govern a path, or everything a branch changed.
 
-    uv run python scripts/rules.py for src/dplanner/modules/project_editor/look.py
+    uv run python scripts/rules.py for src/dplanner/modules/canvas/look.py
     uv run python scripts/rules.py diff              # since the merge base with origin/main
     uv run python scripts/rules.py diff main --names
 

@@ -168,7 +168,7 @@ def test_a_pasted_landing_lands_its_copied_cut_or_nothing():
 
 
 def edge(tab, waiter, source):
-    from dplanner.modules.project_editor.selection import EdgeRef
+    from dplanner.modules.canvas.selection import EdgeRef
 
     return tab._scene._edges[EdgeRef(waiter=waiter.id, kind="requires", source=source.id)]
 
@@ -201,7 +201,7 @@ def test_a_card_on_a_branch_wears_its_name_underneath_and_stands_taller(services
     still meet the middle of the body above it, and the step stores the body alone."""
     from dplanner.modules.branches.edits import put_command
     from dplanner.modules.branches.plan import branch_births
-    from dplanner.modules.project_editor.positions import NODE_H, STRIP_H
+    from dplanner.modules.canvas.layouts.positions import NODE_H, STRIP_H
 
     library = services.document
     chosen = [titled(plan, t).id for t in ("Card", "Edit", "Canvas", "Drag")]
@@ -222,8 +222,8 @@ def test_a_card_on_a_branch_wears_its_name_underneath_and_stands_taller(services
 def test_a_sort_leaves_a_card_on_a_branch_the_room_of_its_strip():
     from dplanner.domain.commands import SetEdgesCommand
     from dplanner.domain.model import Library, Project
-    from dplanner.modules.project_editor.positions import STRIP_H, footprints, node_size
-    from dplanner.modules.project_editor.sorts import layered_flow
+    from dplanner.modules.canvas.layouts.positions import STRIP_H, footprints, node_size
+    from dplanner.modules.canvas.layouts.sorts import layered_flow
 
     library = Library()
     project = Project(title="Sorted")

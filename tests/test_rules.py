@@ -96,7 +96,7 @@ def governing_names(path: str) -> set[str]:
 
 
 def test_a_path_is_handed_the_areas_that_govern_it() -> None:
-    assert "canvas.md" in governing_names("src/dplanner/modules/project_editor/look.py")
+    assert "canvas.md" in governing_names("src/dplanner/modules/canvas/look.py")
     assert governing_names("src/dplanner/cli/lint.py") == {"cli.md"}
     assert governing_names("README.md") == set()
 

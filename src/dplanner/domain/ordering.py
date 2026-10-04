@@ -8,7 +8,7 @@ the cone behind a step (:func:`cone`), truncated where a predicate says — what
 
 **Plain functions over the model, with no Qt**, so the canvas layout, the order view and the
 CLI all read the same walk — and so the interesting part is testable without a widget in
-sight. `project_editor/placement.py` is the other file that works this way, for the same reason.
+sight. `canvas/layouts/placement.py` is the other file that works this way, for the same reason.
 
 **Deterministic by construction.** A topological sort has many valid answers; this one breaks
 every tie by the project's own step order, so the result changes when the graph changes and
