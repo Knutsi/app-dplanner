@@ -89,7 +89,7 @@ and where this machine has the repositories those projects name.
   clone. It is written by the Project dialog, by `dplanner location checkout`, by the Open
   Project wizard's Repositories page, and by the first `dplanner` call that runs inside a
   checkout whose `origin` is one of a project's code locations — **straight into the file**
-  (`LibraryStore.set_checkout`, read-modify-write and re-stamp), never through a dirty
+  (`LibraryStore.set_checkout`, read-modify-write of that one key), never through a dirty
   mark, because a read verb's transaction must never be refused over a per-machine fact. A
   format-2 row carried its project's code checkout instead; reading one files it under the
   checkout's own origin. A format-1 file reads as format 3 with no checkouts.

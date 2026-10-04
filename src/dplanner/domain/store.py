@@ -323,6 +323,8 @@ class LibraryStore:
         self._problem_entries.clear()
         self._groups = None
         migrated: list[tuple[_ProjectRecord, Project]] = []
+        # Stamped before the read: a write landing after it must read as somebody else's.
+        stamp = self._stat_library()
         file = read_library_file(self.library_path)
         self._checkouts = dict(file.checkouts)
         self._archived = list(file.archived)
@@ -343,7 +345,7 @@ class LibraryStore:
         self._adopt(library)
         for record, project in migrated:
             self._save_project(record, project)
-        self._remember_library_stamp()
+        self._library_stamp = stamp
         return library
 
     def _open_project(self, directory: Path) -> tuple[Project, _ProjectRecord, tuple[Any, ...]]:
@@ -572,11 +574,17 @@ class LibraryStore:
         records a checkout as a side effect of a *read* verb (discovery matched the
         working directory's origin), and a mark would put that run's final flush behind
         the library stamp check — refused with "run this again" over nothing the user
-        did. The file is read back first so another instance's rows survive, and the
-        stamp is taken afterwards so this write never reads as somebody else's; another
-        window takes it in through :meth:`_adopt_library_file`. Membership keeps the
-        flush path. A file that cannot be read whole right now (a torn write) is left
-        alone: the record holds the answer, and the next membership flush writes it.
+        did. Membership keeps the flush path.
+
+        The file is read back first and only *this* key written into it, so the other
+        writer's rows and checkouts survive rather than this store's older copy of them; a
+        window takes the change in through :meth:`_adopt_library_file`. The stamp is taken
+        afterwards — so this write never reads as somebody else's — only when the file was
+        as last seen: one changed underneath must keep reading as changed, or the watcher
+        never adopts the other writer's membership and the next membership flush here
+        writes their project out of the file. A file that cannot be read whole right now
+        (a torn write) is left alone: the record holds the answer, and the next membership
+        flush writes it.
         """
         key = checkout_key(repository)
         if not key or self._checkouts.get(key) == checkout:
@@ -585,12 +593,19 @@ class LibraryStore:
             self._checkouts.pop(key, None)
         else:
             self._checkouts[key] = checkout
+        seen = self._stat_library() == self._library_stamp
         try:
             file = read_library_file(self.library_path, strict=True)
         except (OSError, ValueError):
             return
-        write_library_file(self.library_path, file.projects, self._checkouts, file.archived)
-        self._remember_library_stamp()
+        checkouts = dict(file.checkouts)
+        if checkout is None:
+            checkouts.pop(key, None)
+        else:
+            checkouts[key] = checkout
+        write_library_file(self.library_path, file.projects, checkouts, file.archived)
+        if seen:
+            self._remember_library_stamp()
         self.checkout_changed.emit(key)
 
     def has_unflushed(self, project_id: ProjectId) -> bool:
@@ -768,6 +783,7 @@ class LibraryStore:
         """Membership changed: attach what appeared, detach what left, follow the order."""
         library = self.library
         assert library is not None
+        stamp = self._stat_library()  # Before the read, as load() takes it.
         try:
             file = read_library_file(self.library_path, strict=True)
         except (OSError, ValueError) as error:
@@ -824,7 +840,7 @@ class LibraryStore:
         if len(order) == len(library.projects) and order != [p.id for p in library.projects]:
             library.reorder_children(library.id, order, origin=OUTSIDE_ORIGIN)
             applied += 1
-        self._remember_library_stamp()
+        self._library_stamp = stamp
         return applied
 
     def _adopt_project(
