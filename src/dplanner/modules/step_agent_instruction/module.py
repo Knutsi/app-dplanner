@@ -6,13 +6,12 @@ The tab is the writing half — :class:`AgentSection` stacks the briefing's thre
 and ``ModuleTextField`` does the binding work. The project's own tab is the same field in
 the Project dialog, registered into ``deps.project_settings`` like any project-level section.
 
-Run Agent is the reading half: assemble the step's briefing (both instructions, plus
-whatever context the composition root hands in — this module never learns what a note
-is), stage its attached files beside the prompt in a per-run temp directory, and open a
-terminal on it. The terminal is a **peer process the user owns**, deliberately not a
-TaskRunner task — see ``launcher.py``. Preview Prompt and the no-terminal fallback show
-the same assembled text, because the prompt is the library and the terminal was only one
-way to hand it over.
+Run Agent is the reading half: take the step's briefing from ``agent_briefing`` (its
+``compose.brief``, which the CLI's ``agent prompt`` prints too), stage its attached files
+beside the prompt in a per-run temp directory, and open a terminal on it. The terminal is
+a **peer process the user owns**, deliberately not a TaskRunner task — see
+``launcher.py``. Preview Prompt and the no-terminal fallback show the same assembled text,
+because the prompt is the library and the terminal was only one way to hand it over.
 
 **And an agent may be opened with nothing to do.** *Project ▸ Open Agent in Code* runs
 the same launch profiles in the same terminals, in the project's code, with no briefing
